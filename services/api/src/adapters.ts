@@ -319,6 +319,7 @@ import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } 
 import { inMemorySettings } from '../../platform/src/index';
 import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
+import type { PackBranding } from '../../../packages/catalogue/src/catalogue';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
@@ -2532,6 +2533,23 @@ export function consolidationAdapter(input: {
 }
 
 /**
+ * W3 · M36-FR-02 · OB-321: the part of a shop's stored white-label brand the signed pack carries — the name, the logo and
+ * the colours, only the fields the shop set, and only the shop's OWN brand (a stored brand naming another tenant is
+ * treated as absent, as `resolveBrand` does). Nothing set → undefined, and the pack carries no brand.
+ */
+export function packBrandingOf(stored: TenantBranding | undefined, tenantId: string): PackBranding | undefined {
+  if (stored === undefined || stored.tenantId !== tenantId) return undefined;
+  const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const productName = text(stored.productName); const legalName = text(stored.legalName); const logoRef = text(stored.logoRef);
+  const c = stored.colours;
+  const out: PackBranding = {
+    ...(productName === undefined ? {} : { productName }), ...(legalName === undefined ? {} : { legalName }), ...(logoRef === undefined ? {} : { logoRef }),
+    ...(c === undefined ? {} : { colours: { primary: c.primary, onPrimary: c.onPrimary, ...(c.accent === undefined ? {} : { accent: c.accent }) } }),
+  };
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/**
  * Catalogue-pack ASSEMBLY reader (slice 2) — composes the four master-data stores this session built so the
  * pack build can fold them: the product master, the price lists, the barcode register and the tax-class
  * rate schedules. It reuses the tested adapters above rather than re-reading the streams, so there is one
@@ -2559,6 +2577,8 @@ export function cataloguePreviewAdapter(input: {
     cessSchedule: cessRateStore(input).schedule, // Till bill and GST (A7): the cess in force rides the pack
     bundles: (t) => allOf<BundleDefinition>(input.store, t, streamName(STREAM.catalogue, 'bundles'), 'BundleDefined'), // OB-306: bundles ride the signed pack to the tills
     embeddedRules: scaleLabelRuleStore(input).inForce, // OB-570 "A": the scale-label rules in force ride the signed pack
+    // W3 · M36-FR-02 (OB-321): the shop's own name, logo and colours ride the signed pack — the till prints them offline.
+    branding: async (t) => packBrandingOf(await latest<TenantBranding>(input.store, t, STREAM.platform, 'TenantBrandingSet'), t),
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };
@@ -11377,8 +11397,27 @@ export function partnerAdapter(input: {
   readonly now: () => string;
 }): PartnerDeps {
   const streamFor = (credentialId: string): string => streamName(STREAM.platform, 'partner', credentialId);
+  // W3 (M36-FR-04): one register stream beside the per-record ones, so the office page can LIST them. Each write lands on
+  // both (the same fact, the same idempotency); the per-record stream stays the authority the access-check reads.
+  const registerStream = streamName(STREAM.platform, 'partner-register');
+  type RegisterEntry = { readonly entry: 'credential'; readonly record: PartnerCredential } | { readonly entry: 'certification'; readonly record: Certification } | { readonly entry: 'sandbox'; readonly record: SandboxTenant };
+  const indexed = async (tenantId: string, key: string, entry: RegisterEntry): Promise<void> => {
+    await input.store.append(tenantId, registerStream, makeEvent({
+      id: `partner-register-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`, type: 'PartnerRegisterEntry', occurredAt: input.now(),
+      idempotencyKey: `partner-register-${tenantId}-${key}`, source: 'api/platform', payload: entry as unknown as Record<string, unknown>,
+    }));
+  };
   return {
     now: input.now,
+    register: async (tenantId) => {
+      const credentials = new Map<string, PartnerCredential>(); const certifications = new Map<string, Certification>(); const sandboxes = new Map<string, SandboxTenant>();
+      for (const e of await allOf<RegisterEntry>(input.store, tenantId, registerStream, 'PartnerRegisterEntry')) {
+        if (e.entry === 'credential') credentials.set(e.record.credentialId, e.record);
+        else if (e.entry === 'certification') certifications.set(`${e.record.partnerId}\u001f${e.record.connectorId}`, e.record);
+        else sandboxes.set(e.record.tenantId, e.record);
+      }
+      return { credentials: [...credentials.values()], certifications: [...certifications.values()], sandboxes: [...sandboxes.values()] };
+    },
     credential: async (tenantId, credentialId) =>
       latest<PartnerCredential>(input.store, tenantId, streamFor(credentialId), 'PartnerCredentialSet'),
     recordCredential: async (tenantId, credential, key) => {
@@ -11390,6 +11429,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: credential,
       }));
+      await indexed(tenantId, `cred-${credential.credentialId}-${key}`, { entry: 'credential', record: credential });
     },
     // A connector's certification, latest-wins on its own per-partner+connector sub-stream (a re-cert is a
     // new version; the history stays, hard rule #6). Keyed on the certification's tested versions + date so
@@ -11406,6 +11446,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: certification,
       }));
+      await indexed(tenantId, `cert-${certification.partnerId}-${certification.connectorId}-${key}`, { entry: 'certification', record: certification });
     },
     // A registered sandbox tenant, latest-wins on its own id (a re-register with a new expiry is a new
     // version; the history stays, hard rule #6). A sandbox holds synthetic data only.
@@ -11421,6 +11462,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: sandbox,
       }));
+      await indexed(tenantId, `sandbox-${sandbox.tenantId}-${key}`, { entry: 'sandbox', record: sandbox });
     },
   };
 }

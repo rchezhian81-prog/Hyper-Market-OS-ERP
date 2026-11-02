@@ -175,6 +175,11 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
   'food-safety': { en: 'temperature fridge freezer hygiene', ta: 'வெப்பநிலை குளிர்சாதனம்' },
   'facilities': { en: 'maintenance repair electricity generator ac', ta: 'பராமரிப்பு பழுது' },
+  'partner-webhooks': { en: 'webhook partner subscription dead letter redeliver send again integration outbound connector queue', ta: 'கூட்டாளர் வெப்ஹூக் தேங்கிய செய்தி மீண்டும் அனுப்பு' },
+  'partners': { en: 'partner developer credential sandbox certification connector integrator api access', ta: 'கூட்டாளர் உருவாக்குநர் சான்று சோதனைத் தளம்' },
+  'developer-docs': { en: 'developer api documentation docs openapi reference endpoints sdk', ta: 'உருவாக்குநர் வழிகாட்டி API' },
+  'floor-devices': { en: 'electronic shelf label esl rfid camera cctv sensor iot floor device', ta: 'அலமாரி லேபிள் RFID கேமரா உணரி' },
+  'branding': { en: 'brand shop name logo colours colors white label receipt name', ta: 'கடைப் பெயர் சின்னம் வண்ணம்' },
   'production-recipes': { en: 'recipe bill of materials ingredients cafe bakery deli batch shelf life yield', ta: 'சமையல் முறை பொருட்கள் கஃபே பேக்கரி' },
   'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
@@ -442,6 +447,16 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Connections — integration health (M32): each connector's state, dead letters, last contact. Gated on the SAME
   // permission its route checks (`platform.health.read`).
   { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (D14-FR-06 · M32-FR-02 · P-08): partner webhooks — every subscription, its dead letters (sent again by a person,
+  // never deleted), a new one approved by a second admin, and the connector queues. Gated on the read its list checks.
+  { id: 'partner-webhooks', label: 'Partner webhooks', labelTa: 'கூட்டாளர் வெப்ஹூக்குகள்', path: '/partner-webhooks', requires: 'platform.health.read', group: 'Systems' },
+  // Wave 3 (M36-FR-04 · OB-385): partner credentials, sandboxes and connector certifications, and the developer guide made
+  // from the published contract. Gated on the partner read its routes check.
+  { id: 'partners', label: 'Partners and sandboxes', labelTa: 'கூட்டாளர்களும் சோதனைத் தளங்களும்', path: '/partners', requires: 'platform.partner.read', group: 'Systems' },
+  { id: 'developer-docs', label: 'Developer guide', labelTa: 'உருவாக்குநர் வழிகாட்டி', path: '/developer-docs', requires: 'platform.partner.read', group: 'Systems' },
+  // Wave 3 (D14-FR-05): the floor devices of this store — shelf labels, RFID readers, sensors and camera events (stand-ins
+  // until a vendor is contracted). Gated on the device-list read.
+  { id: 'floor-devices', label: 'Shelf labels and floor devices', labelTa: 'அலமாரி லேபிள்களும் தளச் சாதனங்களும்', path: '/floor-devices', requires: 'platform.health.read', group: 'Systems' },
   // Facilities — overdue maintenance and compliance tasks (M26). Gated on `facilities.overdue.read`.
   { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Floor' },
   // OB-154 (owner, 16 Oct 2026, "Add screens before pilot"): the store-operations pages — head-office pages over their own
@@ -511,6 +526,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // going back to an earlier value (a new version; a high-impact one only with the owner's approval). Store setup keeps
   // answering the setup questions. Gated as Store setup is (`platform.setup.read`); going back needs `platform.setup.write`.
   { id: 'settings', label: 'Settings', labelTa: 'அமைப்புகள்', path: '/settings', requires: 'platform.setup.read', group: 'Administration' },
+  // Wave 3 (M36-FR-02 · OB-321): the shop's own name, logo and colours — they ride the signed pack to the tills' bills.
+  { id: 'branding', label: 'Shop name and colours', labelTa: 'கடைப் பெயரும் வண்ணங்களும்', path: '/branding', requires: 'platform.branding.read', group: 'Systems' },
   // Round 4c (M34-FR-01/02): the Audit log reads head office's stored domain trail — search, check the chain, rebuild one
   // thing from the evidence. Read only. Gated on the trail read (`audit.retention.read`). A head-office page (OB-380).
   { id: 'audit', label: 'Audit log', labelTa: 'தணிக்கைப் பதிவு', path: '/audit-log', requires: 'audit.retention.read', group: 'Administration' },

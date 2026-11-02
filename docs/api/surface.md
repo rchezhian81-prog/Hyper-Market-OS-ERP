@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1654 | 956 | 956 | 183 | 436 |
+| 13 | 1656 | 956 | 956 | 183 | 436 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1489,6 +1489,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/integration/health` | `platform.health.read` | core | — |
 | POST | `/v1/integration/matrix/:entryId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-deliveries/drain` | `platform.setup.write` | core | yes |
+| GET | `/v1/integration/outbound-webhooks` | `platform.health.read` | core | — |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId/deactivate` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/outbound-webhooks/:subscriptionId/dead-letters` | `platform.health.read` | core | — |
@@ -1564,6 +1565,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/operational-health` | `platform.health.read` | core | yes |
 | GET | `/v1/platform/operational-health/observed` | `platform.health.read` | core | — |
 | POST | `/v1/platform/operational-health/observed/raise` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/partners` | `platform.partner.read` | core | — |
 | GET | `/v1/platform/partners/:credentialId` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/partners/:credentialId` | `platform.partner.manage` | core | yes |
 | POST | `/v1/platform/partners/:credentialId/revoke` | `platform.partner.manage` | core | yes |

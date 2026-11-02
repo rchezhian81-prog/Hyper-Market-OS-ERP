@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../../edge/store-edge/src/main';
-import { apiHarness, type ApiHarness } from '../../support/api-harness';
+import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../../support/api-harness';
 
 export const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 export const HAVE_BROWSER = existsSync(CHROMIUM);
@@ -41,11 +41,19 @@ export async function startBoxPageShop(input: {
   readonly pack?: Record<string, unknown>;
   /** The box's own store (default `store-1`). */
   readonly store?: string;
+  /** W3: head office's own options (an outbound partner transport and its signing secrets, D14-FR-06). */
+  readonly harness?: Parameters<typeof apiHarness>[0];
+  /**
+   * W3 (M36-FR-02): something head office hands the box before it starts — e.g. the signed catalogue pack it published,
+   * written where the box keeps the pack it last accepted. The box then runs with head office's own pack-signing key, and
+   * verifies that pack as it would one it pulled.
+   */
+  readonly beforeBoxStarts?: (ho: ApiHarness, tenantId: string, dataDir: string) => Promise<void>;
 }): Promise<BoxPageShop> {
   execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
   const tenantId = randomUUID();
   const store = input.store ?? 'store-1';
-  const ho = apiHarness();
+  const ho = apiHarness(input.harness ?? {});
   await input.seed(ho, tenantId, store);
   const browser: Browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   const dir = await mkdtemp(join(tmpdir(), `sre-r4c-${input.name}-`));
@@ -56,7 +64,8 @@ export async function startBoxPageShop(input: {
     roleAssignments: input.people.map((p) => ({ userId: p.userId, roleId: `r-${p.userId}`, branchScope: [store] })),
     ...(input.pack ?? {}),
   }), 'utf8');
-  const key = ['r4c', input.name, 'box', 'key'].join('-').padEnd(48, '0');
+  if (input.beforeBoxStarts !== undefined) await input.beforeBoxStarts(ho, tenantId, dir);
+  const key = input.beforeBoxStarts !== undefined ? TEST_PACK_KEY : ['r4c', input.name, 'box', 'key'].join('-').padEnd(48, '0');
   const edge: EdgeProcess = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenantId, PACK_SIGNING_KEY: key, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
     EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_SCREEN_TRUST_FORWARDED_USER: '1',

@@ -58,6 +58,9 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'space-setup', 'display-contracts', 'range-clusters', 'product-checks',
   // Round 4d (money, facilities and production): the accounts set-up (posting map and Tally names), the facilities set-up.
   'posting-map', 'facilities-setup', 'production-recipes',
+  // Wave 3 (D14-FR-05/06 · M36-FR-02/04): partner webhooks, partners and sandboxes, the developer guide, the floor devices
+  // (shelf labels, RFID, cameras) and the shop's own name and colours — head-office pages over their own routes.
+  'partner-webhooks', 'partners', 'developer-docs', 'floor-devices', 'branding',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -150,6 +153,11 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'posting-map': 'postingMapData',
   'facilities-setup': 'facilitiesSetupData',
   'production-recipes': 'productionRecipesData',
+  'partner-webhooks': 'partnerWebhooksData',
+  partners: 'partnersData',
+  'developer-docs': 'developerDocsData',
+  'floor-devices': 'floorDevicesData',
+  branding: 'brandingData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -203,6 +211,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'display-contracts': findingsPagePayload,
   // Round 4d: the facilities set-up reads and writes the box's own store (head office keeps each to the stores the person holds).
   'facilities-setup': findingsPagePayload,
+  // Wave 3 (D14-FR-05): the floor devices of the box's own store (head office still keeps each read to the person's stores).
+  'floor-devices': findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

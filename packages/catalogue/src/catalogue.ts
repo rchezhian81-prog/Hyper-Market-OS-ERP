@@ -126,6 +126,18 @@ export interface SnapshotScope {
   readonly channel?: string;
 }
 
+/**
+ * W3 · M36-FR-02 · OB-321: the shop's white-label brand as head office signs it into the pack — the NAME, the LOGO and the
+ * COLOURS only, and only the fields the shop itself set (an unset field is absent; a screen or a bill then falls back to
+ * its own neutral words, never to another shop's). The till prints the name on the bill from this, with no network.
+ */
+export interface PackBranding {
+  readonly productName?: string;
+  readonly legalName?: string;
+  readonly logoRef?: string;
+  readonly colours?: { readonly primary: string; readonly onPrimary: string; readonly accent?: string };
+}
+
 /** A versioned catalogue snapshot the lane holds locally (§31). */
 export interface CatalogueSnapshot {
   readonly tenantId: string;
@@ -143,6 +155,8 @@ export interface CatalogueSnapshot {
   readonly barcodes: readonly CatalogueBarcode[];
   /** Embedded-barcode rules for this tenant (may be empty). */
   readonly embeddedRules?: readonly EmbeddedBarcodeRule[];
+  /** W3 · M36-FR-02: the shop's own brand (name, logo, colours), signed with the rest of the pack. Absent = none set. */
+  readonly branding?: PackBranding;
   /**
    * SF-01 — the offers the lanes apply: every LAUNCHED (active) promotion not yet ended at build time, signed with the
    * rest of the pack (`canonicalise`). The lane evaluates each against its own clock offline (§31). Absent = none.

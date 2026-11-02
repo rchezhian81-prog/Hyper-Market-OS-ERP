@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2091,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
     "unit": 97,
     "integration": 104,
     "realDb": 102,
-    "browser": 91,
+    "browser": 92,
     "connected": 72,
     "device": 0,
     "uat": 0
@@ -2624,7 +2624,7 @@
         "unit": 11,
         "integration": 19,
         "realDb": 8,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2676,7 +2676,8 @@
         ],
         "browser": [
           "tests/e2e/integration-health-delivery.e2e.ts",
-          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
+          "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
@@ -2955,10 +2956,10 @@
       "id": "M36",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 15,
-        "integration": 30,
-        "realDb": 6,
-        "browser": 0,
+        "unit": 17,
+        "integration": 31,
+        "realDb": 7,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -2979,7 +2980,9 @@
           "tests/unit/receipt-presets.test.ts",
           "tests/unit/service-kernel-entitlement.test.ts",
           "tests/unit/shop-realms.test.ts",
-          "tests/unit/the-partner-sdk-keeps-its-promises.test.ts"
+          "tests/unit/the-partner-sdk-keeps-its-promises.test.ts",
+          "tests/unit/w3-the-developer-guide-is-generated-from-the-published-contract.test.ts",
+          "tests/unit/w3-the-shops-brand-is-signed-into-the-pack-and-printed-on-the-bill.test.ts"
         ],
         "integration": [
           "tests/integration/a-partner-builds-against-the-sandbox-with-the-sdk.test.ts",
@@ -3011,6 +3014,7 @@
           "tests/integration/tenant-export.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-shop-is-metered-for-information.test.ts",
+          "tests/integration/w3-the-partner-and-webhook-registers-are-listed.test.ts",
           "tests/migration/tenants-register.test.ts"
         ],
         "realDb": [
@@ -3019,9 +3023,14 @@
           "tests/integration/it-remembers.test.ts",
           "tests/integration/keycloak-shop-realms.test.ts",
           "tests/integration/the-shop-is-metered-for-information.test.ts",
+          "tests/integration/w3-the-partner-and-webhook-registers-are-listed.test.ts",
           "tests/migration/tenants-register.test.ts"
         ],
-        "browser": [],
+        "browser": [
+          "tests/e2e/lib/r4c-box-page.ts",
+          "tests/e2e/w3-partners-sandboxes-and-the-developer-guide.e2e.ts",
+          "tests/e2e/w3-the-shops-brand-is-set-and-rides-the-signed-pack.e2e.ts"
+        ],
         "connected": [],
         "device": [],
         "uat": []
@@ -3769,9 +3778,9 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 8,
-        "integration": 12,
-        "realDb": 5,
-        "browser": 1,
+        "integration": 13,
+        "realDb": 6,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -3799,6 +3808,7 @@
           "tests/integration/partner-sandbox.test.ts",
           "tests/integration/price-integrity.test.ts",
           "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
+          "tests/integration/w3-the-partner-and-webhook-registers-are-listed.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
@@ -3806,10 +3816,14 @@
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
           "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
-          "tests/integration/p6-floor-devices-are-signed-switched-on-and-never-edit-a-ledger.test.ts"
+          "tests/integration/p6-floor-devices-are-signed-switched-on-and-never-edit-a-ledger.test.ts",
+          "tests/integration/w3-the-partner-and-webhook-registers-are-listed.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-price-kiosk-quotes-from-the-signed-list-and-says-how-old-it-is.e2e.ts"
+          "tests/e2e/lib/r4c-box-page.ts",
+          "tests/e2e/the-price-kiosk-quotes-from-the-signed-list-and-says-how-old-it-is.e2e.ts",
+          "tests/e2e/w3-floor-devices-are-seen-registered-and-retried-on-the-office-page.e2e.ts",
+          "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts"
         ],
         "connected": [],
         "device": [],

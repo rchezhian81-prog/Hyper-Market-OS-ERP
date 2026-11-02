@@ -51705,6 +51705,50 @@
         }
       }
     },
+    "/v1/integration/outbound-webhooks": {
+      "get": {
+        "operationId": "getIntegrationOutboundWebhooks",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.health.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntegrationOutboundWebhooksReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.health.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/integration/outbound-webhooks/{subscriptionId}": {
       "post": {
         "operationId": "postIntegrationOutboundWebhooksBySubscriptionId",
@@ -83097,6 +83141,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/platform/partners": {
+      "get": {
+        "operationId": "getPlatformPartners",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.partner.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPlatformPartnersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.partner.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -133538,7 +133626,7 @@
           "certifications": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Certification"
+              "$ref": "#/components/schemas/Certification.workforce.workforce"
             }
           },
           "count": {
@@ -136202,6 +136290,126 @@
               }
             },
             "additionalProperties": true
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/outbound-webhooks.ts"
+      },
+      "GetIntegrationOutboundWebhooksReply": {
+        "type": "object",
+        "required": [
+          "subscriptions",
+          "publishedEvents",
+          "transport",
+          "approvalKind",
+          "deadLettered",
+          "asAt"
+        ],
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "totals",
+                "subscriptionId",
+                "partnerId",
+                "url",
+                "eventTypes",
+                "signingKeyRef",
+                "maxAttempts",
+                "active",
+                "version",
+                "deliverFrom",
+                "setBy",
+                "setAt"
+              ],
+              "properties": {
+                "totals": {
+                  "type": "object",
+                  "required": [
+                    "all",
+                    "delivered",
+                    "pending",
+                    "deadLettered"
+                  ],
+                  "properties": {
+                    "all": {
+                      "type": "number"
+                    },
+                    "delivered": {
+                      "type": "number"
+                    },
+                    "pending": {
+                      "type": "number"
+                    },
+                    "deadLettered": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "subscriptionId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "eventTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "signingKeyRef": {
+                  "type": "string"
+                },
+                "maxAttempts": {
+                  "type": "number"
+                },
+                "active": {
+                  "type": "boolean"
+                },
+                "version": {
+                  "type": "number"
+                },
+                "deliverFrom": {
+                  "type": "string"
+                },
+                "setBy": {
+                  "type": "string"
+                },
+                "setAt": {
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "publishedEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transport": {
+            "type": "string"
+          },
+          "approvalKind": {
+            "type": "string"
+          },
+          "deadLettered": {
+            "type": "number"
           },
           "asAt": {
             "type": "string"
@@ -149183,6 +149391,135 @@
             "type": "string"
           },
           "revokedOn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/partners.ts"
+      },
+      "GetPlatformPartnersReply": {
+        "type": "object",
+        "required": [
+          "today",
+          "credentials",
+          "certifications",
+          "sandboxes",
+          "listed",
+          "asAt"
+        ],
+        "properties": {
+          "today": {
+            "type": "string"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "state",
+                "credentialId",
+                "partnerId",
+                "environment",
+                "scopedTenantIds",
+                "scopes",
+                "issuedOn",
+                "expiresOn"
+              ],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "expired",
+                    "not_yet",
+                    "revoked"
+                  ]
+                },
+                "credentialId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "production",
+                    "sandbox"
+                  ]
+                },
+                "scopedTenantIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "issuedOn": {
+                  "type": "string"
+                },
+                "expiresOn": {
+                  "type": "string"
+                },
+                "revokedOn": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "certifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Certification.platform.partner"
+            }
+          },
+          "sandboxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "sandboxId",
+                "partnerId",
+                "createdOn",
+                "expiresOn",
+                "syntheticDataOnly",
+                "expired"
+              ],
+              "properties": {
+                "sandboxId": {
+                  "type": "string"
+                },
+                "partnerId": {
+                  "type": "string"
+                },
+                "createdOn": {
+                  "type": "string"
+                },
+                "expiresOn": {
+                  "type": "string"
+                },
+                "syntheticDataOnly": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "expired": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "asAt": {
             "type": "string"
           }
         },
@@ -192436,7 +192773,7 @@
         ],
         "properties": {
           "certification": {
-            "$ref": "#/components/schemas/Certification"
+            "$ref": "#/components/schemas/Certification.workforce.workforce"
           }
         },
         "additionalProperties": true,
@@ -260546,6 +260883,9 @@
               "$ref": "#/components/schemas/EmbeddedBarcodeRule"
             }
           },
+          "branding": {
+            "$ref": "#/components/schemas/PackBranding"
+          },
           "promotions": {
             "type": "array",
             "items": {
@@ -261132,7 +261472,55 @@
         },
         "additionalProperties": true
       },
-      "Certification": {
+      "Certification.platform.partner": {
+        "type": "object",
+        "required": [
+          "certificationId",
+          "partnerId",
+          "connectorId",
+          "certifiedOn",
+          "againstVersions",
+          "certifiedBy"
+        ],
+        "properties": {
+          "certificationId": {
+            "type": "string"
+          },
+          "partnerId": {
+            "type": "string"
+          },
+          "connectorId": {
+            "type": "string"
+          },
+          "certifiedOn": {
+            "type": "string"
+          },
+          "againstVersions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "contract",
+                "version"
+              ],
+              "properties": {
+                "contract": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "certifiedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Certification.workforce.workforce": {
         "type": "object",
         "required": [
           "certificationId",
@@ -288151,6 +288539,40 @@
           },
           "lastAt": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PackBranding": {
+        "type": "object",
+        "properties": {
+          "productName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "logoRef": {
+            "type": "string"
+          },
+          "colours": {
+            "type": "object",
+            "required": [
+              "primary",
+              "onPrimary"
+            ],
+            "properties": {
+              "primary": {
+                "type": "string"
+              },
+              "onPrimary": {
+                "type": "string"
+              },
+              "accent": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true

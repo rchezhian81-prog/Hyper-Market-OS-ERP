@@ -42,6 +42,8 @@ export function billTaxInvoice(
     readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly fssaiLicenceNo?: string;
     /** A22 (OB-326): the store's B2C dynamic QR switch and details, from the store pack. Absent or off → no QR. */
     readonly b2cDynamicQr?: B2cDynamicQrSetting;
+    /** W3 · M36-FR-02: the shop's own name from the SIGNED pack (`snapshot.branding.productName`) — printed above the legal name. */
+    readonly brandName?: string;
   } = {},
 ): BillTaxInvoice {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
@@ -58,6 +60,7 @@ export function billTaxInvoice(
     ...(options.duplicate === true ? { duplicate: true } : {}),
     ...(options.template?.footer === undefined ? {} : { footer: options.template.footer }),
     ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
+    ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
     b2cQr: qr,
   });
   const missing = invoiceRenderProblems(rows, bill.taxInvoice);
@@ -84,11 +87,23 @@ export type BillReceipt =
   | { readonly ok: true; readonly lines: readonly string[]; readonly paper: string }
   | { readonly ok: false; readonly why: string };
 
+/** The template's header with the shop's own name first — once, never twice, and nothing when the pack carries no name. */
+export function brandedHeader(brandName: string | undefined, header: readonly string[]): readonly string[] {
+  const name = brandName?.trim() ?? '';
+  if (name === '' || header.some((h) => h.trim().toLowerCase() === name.toLowerCase())) return header;
+  return [name, ...header];
+}
+
 /** The printed lines of a committed sale's bill, or why there are none. Pure; never throws. */
 export function billReceipt(bill: CommittedBill | undefined, template: BillTemplate | null = null, extras: {
   readonly fssaiLicenceNo?: string;
   /** OB-373: a copy printed by its number — marked REPRINT on its face, with why, by whom and when. */
   readonly reprintOf?: { readonly reason: string; readonly by: string; readonly at: string };
+  /**
+   * W3 · M36-FR-02 (OB-321): the shop's own name, as head office signed it into the pack this till holds — the bill's first
+   * header line (unless the published template already starts with it). Read from the pack: no network, nothing invented.
+   */
+  readonly brandName?: string;
 } = {}): BillReceipt {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   let format: PaperFormat = DEFAULT_PAPER_FORMAT;
@@ -102,7 +117,7 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
       lines: bill.lines, taxBands: bill.taxBands,
       netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
       tenders: bill.tenders, pricesIncludeTax: true,
-      header: template?.header ?? [], footer: template?.footer ?? [],
+      header: brandedHeader(extras.brandName, template?.header ?? []), footer: template?.footer ?? [],
       // B10: the store's current FSSAI licence number, printed on every bill.
       ...(extras.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: extras.fssaiLicenceNo }),
       ...(template === null ? {} : { templateVersion: template.version }),
