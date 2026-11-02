@@ -10,7 +10,8 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
-import { segmentDataAdapter } from '../../services/api/src/adapters';
+import { segmentDataAdapter, financeNotesAdapter } from '../../services/api/src/adapters';
+import { issueCreditNote, type SourceInvoice, type CreditReason } from '../../packages/finance/src/index';
 
 /**
  * **FUL-10 — the customer record is built from what the customer actually bought and returned, and one person is one
@@ -68,6 +69,16 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     const call = (hh: ApiHarness, method: 'GET' | 'POST' | 'PUT', path: string, user: string, body?: unknown, key?: string) =>
       hh.request({ method, path, userId: user, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${randomUUID()}` }) });
     const profile = async (ref: string, hh = h, user = 'u-mgr') => (await call(hh, 'GET', `/v1/customers/${ref}/profile`, user)).body as Profile;
+    /** A note against a till sale, straight onto the CreditNoteIssued ledger (see 2b), worked by the tested engine. */
+    const recordNote = async (hh: ApiHarness, b: Record<string, unknown>): Promise<{ status: number }> => {
+      const r = issueCreditNote({
+        noteId: String(b['noteId']), number: String(b['number']), kind: 'credit_note', invoice: b['invoice'] as SourceInvoice, customerId: String(b['customerId']),
+        reason: b['reason'] as CreditReason, taxableMinor: b['taxableMinor'] as number, taxes: b['taxes'] as SourceInvoice['taxes'], issuedOn: String(b['issuedOn']),
+      });
+      if (!r.issued || r.note === undefined) return { status: 422 };
+      await financeNotesAdapter({ store: hh.store, now: () => new Date().toISOString() }).appendCreditNote(T, r.note);
+      return { status: 201 };
+    };
 
     expect((await call(h, 'PUT', '/v1/platform/setup/loyalty.points_per_100_inr', 'u-owner', { value: 1 })).status).toBeLessThan(300);
     for (const mobile of ['98400 12345', '98400 67890', '98400 11111', '98400 22222']) {
@@ -116,8 +127,13 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
       invoice: { invoiceId: saleId, number: `R-${saleId}`, customerId: MEENA, issuedOn: '2026-10-10', taxableMinor: 119_048, taxes: [{ component: 'CGST', rateBps: 250, amountMinor: 2_976 }, { component: 'SGST', rateBps: 250, amountMinor: 2_976 }], grossMinor: 125_000, financialYear: '2026-27' },
       issuedOn: '2026-10-11',
     });
-    expect((await call(h, 'POST', '/v1/finance/credit-notes', 'u-owner', creditNote('cn-1', 'S2', 'price_correction', 20_000, 500), 'cn-1')).status).toBe(201);
-    expect((await call(h, 'POST', '/v1/finance/credit-notes', 'u-owner', creditNote('cn-2', 'S1', 'goods_returned', 47_619, 1_190), 'cn-2')).status).toBe(201);
+    // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): head office now issues a note ONLY against a business tax invoice it
+    // holds — a till bill's return stays on the till's own return and refund (WF-11) — so the route refuses these by name. The
+    // customer record still folds any CreditNoteIssued fact against a till sale (an older note, or one brought over from the
+    // old system), so this suite records its notes straight onto that ledger, worked by the same tested engine.
+    expect((await call(h, 'POST', '/v1/finance/credit-notes', 'u-owner', creditNote('cn-1', 'S2', 'price_correction', 20_000, 500), 'cn-1')).status).toBeGreaterThanOrEqual(400);
+    expect((await recordNote(h, creditNote('cn-1', 'S2', 'price_correction', 20_000, 500))).status).toBe(201);
+    expect((await recordNote(h, creditNote('cn-2', 'S1', 'goods_returned', 47_619, 1_190))).status).toBe(201);
     const p2b = await profile(MEENA);
     expect(p2b.corrections).toMatchObject({ count: 2, creditedMinor: 21_000, debitedMinor: 0 });
     expect(p2b.corrections.recent.map((c) => [c.noteId, c.saleId, c.counted]).sort()).toEqual([['cn-1', 'S2', true], ['cn-2', 'S1', false]]);
@@ -183,7 +199,7 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
       invoice: { invoiceId: 'S4', number: 'R-S4', customerId: MEENA_OLD, issuedOn: '2026-10-10', taxableMinor: 47_619, taxes: s4Taxes, grossMinor: 50_000, financialYear: '2026-27' },
       issuedOn: '2026-10-11',
     };
-    expect((await call(restarted, 'POST', '/v1/finance/credit-notes', 'u-owner', voidNote, 'cn-void')).status).toBe(201);
+    expect((await recordNote(restarted, voidNote)).status).toBe(201);
     const old = await profile(MEENA_OLD, restarted);
     expect(old.purchases).toMatchObject({ count: 1, grossMinor: 50_000 });
     expect(old.corrections).toMatchObject({ count: 1, creditedMinor: 50_000 });
