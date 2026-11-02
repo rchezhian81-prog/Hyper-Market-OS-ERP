@@ -58,6 +58,9 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'space-setup', 'display-contracts', 'range-clusters', 'product-checks',
   // Round 4d (money, facilities and production): the accounts set-up (posting map and Tally names), the facilities set-up.
   'posting-map', 'facilities-setup', 'production-recipes',
+  // W3 (customers): data requests (M16-FR-03), customer value (D07-FR-05), the message queue (M31-FR-04), compensation limits
+  // (M21-FR-03) and gift cards (D07-FR-04).
+  'data-requests', 'customer-value', 'message-queue', 'compensation-limits', 'gift-cards',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -150,6 +153,11 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'posting-map': 'postingMapData',
   'facilities-setup': 'facilitiesSetupData',
   'production-recipes': 'productionRecipesData',
+  'data-requests': 'dataRequestsData',
+  'customer-value': 'customerValueData',
+  'message-queue': 'messageQueueData',
+  'compensation-limits': 'compensationLimitsData',
+  'gift-cards': 'giftCardsData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
