@@ -7,6 +7,8 @@ import { pgClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { issueCreditNote, type SourceInvoice } from '../../packages/finance/src/index';
+import { financeNotesAdapter } from '../../services/api/src/adapters';
 
 // M23-FR-02, API-09 — the PERIOD CREDIT-NOTE RECONCILIATION (CGST s.34 / GSTR-1). The credit notes
 // ISSUED for a return period (grouped by the month they were ISSUED, never the invoice's month) are
@@ -36,8 +38,20 @@ const note = (id: string, taxableMinor: number, taxEach: number, over: Record<st
   issuedOn: '2026-06-15T10:00:00Z', ...over,
 });
 
-const issueNote = (h: ApiHarness, tenant: string, userId: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: '/v1/finance/credit-notes', userId, tenantId: tenant, idempotencyKey: `cn-${String(body['noteId'])}`, body });
+// M23-FR-02 · OB-678 (W3): the issue route no longer takes an invoice from the request — it looks up the business tax invoice
+// head office holds (tests/integration/w3-gst-notes-to-business-customers.test.ts proves that route). This reconciliation
+// suite is about the FOLD of the CreditNoteIssued ledger, so it records its notes straight onto that ledger, each worked by
+// the same tested engine (issueCreditNote) the free-standing notes were — the reconciliation reads them exactly as before.
+const issueNote = async (h: ApiHarness, tenant: string, _userId: string, body: Record<string, unknown>): Promise<{ status: number }> => {
+  const result = issueCreditNote({
+    noteId: String(body['noteId']), number: String(body['number']), kind: 'credit_note', invoice: body['invoice'] as SourceInvoice,
+    customerId: String(body['customerId']), reason: 'goods_returned', taxableMinor: body['taxableMinor'] as number,
+    taxes: body['taxes'] as SourceInvoice['taxes'], alreadyCreditedMinor: 0, issuedOn: String(body['issuedOn']),
+  });
+  if (!result.issued || result.note === undefined) return { status: 422 };
+  await financeNotesAdapter({ store: h.store, now: () => String(body['issuedOn']) }).appendCreditNote(tenant, result.note);
+  return { status: 201 };
+};
 
 const reconcile = (h: ApiHarness, tenant: string, userId: string, period: string, ledgerTaxable: string, ledgerTax: string) =>
   h.request({ method: 'GET', path: '/v1/finance/credit-notes/reconciliation', userId, tenantId: tenant, query: { period, ledgerTaxable, ledgerTax } });
