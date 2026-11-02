@@ -115,6 +115,7 @@ import {
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
 import { wireBuyingAndStockScreens } from './buying-stock-browser-wiring'; // Round 4b: buying and stock
+import { createStaffingSession, staffingWords, staffingOutcomeWords, queueRows as staffingQueueRows, roleWords as staffingRoleWords, STAFFED_QUEUES } from './exception-queue-staffing-session'; // OB-676
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
@@ -364,7 +365,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
-import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, type DispatchSession } from './dispatch-session';
 import { createTillDeskSession, tillDeskWords, tillDeskOutcomeWords, type TillDeskSession } from './till-delivery-desk-session'; // OB-352
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
@@ -5421,7 +5422,7 @@ interface ManagerWindow {
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
-  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords };
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote };
   /** OB-352: the delivery desk's till jobs on the Dispatch page. */
   tillDeliveryDesk?: { readonly session: TillDeskSession; readonly words: typeof tillDeskWords; readonly outcomeWords: typeof tillDeskOutcomeWords };
   approvalRules?: {
@@ -7452,7 +7453,7 @@ if (browserWindow !== undefined) {
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
-  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords };
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote };
   // OB-352: the delivery desk's till jobs, on the same page.
   browserWindow.tillDeliveryDesk = { session: createTillDeskSession({ viewer: browserWindow.dispatchData }), words: tillDeskWords, outcomeWords: tillDeskOutcomeWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
@@ -7502,6 +7503,13 @@ if (browserWindow !== undefined) {
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 4b: the Buying page's Open orders tab (M06-FR-04) and the buying-and-stock sections.
   wireBuyingAndStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // OB-676 (owner, 2 Nov 2026): "Who works each queue" on the Delivery exceptions page — the owner sets and confirms it.
+  if (browserWindow.substitutionExceptionInboxData !== undefined) {
+    (browserWindow as unknown as Record<string, unknown>)['exceptionQueueStaffing'] = {
+      session: createStaffingSession({ viewer: viewerIdentity(browserWindow.substitutionExceptionInboxData) }),
+      words: staffingWords, outcomeWords: staffingOutcomeWords, queueRows: staffingQueueRows, roleWords: staffingRoleWords, queues: STAFFED_QUEUES,
+    };
+  }
   // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
   wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 7 (R7-C): Shelf tags (OB-505) and Quotations (OB-506).

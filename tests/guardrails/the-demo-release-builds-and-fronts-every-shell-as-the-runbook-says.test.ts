@@ -20,7 +20,7 @@ describe('the demo release builds every shell', () => {
   it('every app with a screen model is built, and nothing that has none', () => {
     const withModel = readdirSync('apps').filter((a) => existsSync(join('apps', a, 'src', 'browser-entry.ts'))).sort();
     expect([...SHELLS].sort()).toEqual(withModel);
-    for (const a of ['supplier-app', 'self-checkout', 'price-kiosk', 'queue-pos', 'b2b-app']) expect(SHELLS).toContain(a);
+    for (const a of ['supplier-app', 'self-checkout', 'price-kiosk', 'queue-pos', 'b2b-app', 'concession-app']) expect(SHELLS).toContain(a); // OB-676: + the concessionaire's counter
   });
   it('the release script\'s own default is the same list', () => {
     expect(RELEASE).toContain(`: "\${SRE_BUILD_SHELLS:=${SHELLS.join(' ')}}"`);
@@ -34,7 +34,7 @@ describe('the demo front routes the queue till and the business-customer portal,
   for (const conf of ['infra/compose/nginx.pilot.conf', 'infra/compose/nginx.identity.conf']) {
     it(`${conf}: /b2b/ and /queue-pos/ (with the handheld enrolment /device/) only behind the sign-in`, () => {
       const front = readFileSync(conf, 'utf8');
-      expect(front).toMatch(/location ~ \^\/\(supplier\|b2b\)\/ \{\s*auth_request \/_auth\/verify;/);
+      expect(front).toMatch(/location ~ \^\/\(supplier\|b2b\|concession\)\/ \{\s*auth_request \/_auth\/verify;/); // OB-676: + the concessionaire's counter
       expect(front).toMatch(/location ~ \^\/\(queue-pos\|device\)\/ \{\s*auth_request \/_auth\/verify;\s*error_page 401 = @sre_sign_in;/);
     });
   }
@@ -44,16 +44,18 @@ describe('the demo front routes the queue till and the business-customer portal,
     expect(PILOT).not.toMatch(/EDGE_DEVICE_HOST/); // loopback only: nothing on the network reaches the door but the relay
     expect(PILOT).toMatch(/- edge-device-tls:\/var\/lib\/sre-edge-device-tls/);
     expect(PILOT).toMatch(/\.\.\/\.\.\/apps\/b2b-app\/web:\/usr\/share\/nginx\/html\/b2b:ro/);
+    expect(PILOT).toMatch(/\.\.\/\.\.\/apps\/concession-app\/web:\/usr\/share\/nginx\/html\/concession:ro/); // OB-676
   });
   it('the public proxy forwards those paths only inside the demo gate (404 by name otherwise)', () => {
     for (const snippet of ['(staff-not-public)', '(staff-demo-gate)']) {
       const at = CADDY.indexOf(snippet);
       const body = CADDY.slice(at, CADDY.indexOf('\n}\n', at));
-      for (const p of ['/b2b', '/queue-pos', '/device', '/store-handheld']) expect(body, `${snippet} ${p}`).toMatch(new RegExp(` ${p} ${p}/\\*`));
+      for (const p of ['/b2b', '/concession', '/queue-pos', '/device', '/store-handheld']) expect(body, `${snippet} ${p}`).toMatch(new RegExp(` ${p} ${p}/\\*`));
     }
   });
   it('the demo sign-in hands the B2B portal who is looking', () => {
     expect(readFileSync('infra/pilot/demo-login/screen-bridge.ts', 'utf8')).toContain("'/b2b/index.html': { global: 'b2bData' }");
+    expect(readFileSync('infra/pilot/demo-login/screen-bridge.ts', 'utf8')).toContain("'/concession/index.html': { global: 'concessionData' }"); // OB-676
   });
 });
 

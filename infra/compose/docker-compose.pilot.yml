@@ -95,6 +95,8 @@ services:
       - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
       # Round 3 (OB-559): the business-customer portal, served beside the supplier portal behind the demo sign-in.
       - ../../apps/b2b-app/web:/usr/share/nginx/html/b2b:ro
+      # OB-676 (M27-FR-02): the concessionaire's own counter portal, a party outside the shop like the two above.
+      - ../../apps/concession-app/web:/usr/share/nginx/html/concession:ro
       # Which sign-in the front door asks (OB-15-b): the pilot sign-in (default) or, with SRE_FRONT_CONF=nginx.identity.conf
       # in .env.pilot, the product's sign-in service and the identity server (run with COMPOSE_PROFILES=identity).
       # Switching back is the same one setting.

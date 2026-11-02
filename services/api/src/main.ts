@@ -287,6 +287,9 @@ import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefro
 import { storefrontSelfRoutes } from '../../orders/src/storefront-self';
 import { competitorPriceRoutes } from '../../pricing/src/competitor-prices';
 import { exceptionOwnershipRoutes, raiseBreachAlerts, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
+import { queueStaffingRoutes } from '../../orders/src/exception-queue-staffing';
+import { queueStaffingAdapter, queueStaffingOf, concessionPortalAdapter, SUGGESTED_QUEUE_STAFFING, ROLES_THAT_MAY_WORK_EXCEPTIONS } from './ob676-settings-adapters'; // OB-676
+import { concessionPortalRoutes } from '../../finance/src/concession-portal';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { deliveryServiceRoutes } from '../../orders/src/delivery-service';
@@ -358,7 +361,7 @@ import { movementJobsSurface } from './w2-movement-jobs'; // OB-623: each stock 
 import { fg4BuyingSurface, contractExpirySweep } from './fg4-buying-adapters'; // FG-4 final gaps — contract-expiry alerts, PPV, free samples, scopes, VMI
 import { commercialDesksRoutes, commercialDeskB2BHooks, withSupplierPartnerIndex, commercialDesksSweep, commercialDeskContractState, b2bRecurringOrdersAdapter } from './commercial-desks-adapters'; // OB-288 commercial desks — B2B contracts and desk, supplier review desk, concessions
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep, finBridgeDayBookHooks, finBridgePaymentHooks } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
-import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
+import { fulfilmentDeliveryRoutes, fulDelDriverRunHooks, fulDelStorefrontRouting, handoverTolerancePackConfirmationOf } from './fulfilment-delivery-adapters'; // OB-288 fulfilment & delivery — wave builder, dispatch office, captured proof, code + ETA, routing, contribution rule, fleet settlement
 import { customerFollowupsRoutes } from './customer-followups-adapters'; // OB-288 customer & delivery follow-ups — referrals (OB-351), scan-and-go (OB-350)
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
@@ -1252,6 +1255,7 @@ export function buildSurface(deps: {
         tillControls: tillControlsPackSectionOf({ store, now, settings, signer }), versionPolicy: versionPolicyPackSectionOf({ store, now }), // OB-500 · OB-501 (R7-A)
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
         tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
+        handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1489,7 +1493,12 @@ export function buildSurface(deps: {
     } : couponAdapter({ store, now })),
     // M19-FR-01 / Item 2 — the substitution exception worklist WITH ownership. Registered BEFORE the orders
     // routes so its literal `/v1/orders/substitution-exceptions…` paths are never captured as an order id.
-    ...exceptionOwnershipRoutes(ordersDeps),
+    // OB-676: the owner sets and confirms which roles staff each queue (the code's map is the starting suggestion) — also
+    // registered before the orders routes, for the same reason.
+    ...queueStaffingRoutes(store === undefined
+      ? { suggested: SUGGESTED_QUEUE_STAFFING, rolesThatMayWork: ROLES_THAT_MAY_WORK_EXCEPTIONS, now, versions: async () => [], recordVersion: async () => {} }
+      : queueStaffingAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
+    ...exceptionOwnershipRoutes(store === undefined ? ordersDeps : { ...ordersDeps, queueStaffing: queueStaffingOf({ store }) }),
     ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
     ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
@@ -1730,6 +1739,10 @@ export function buildSurface(deps: {
       depositMovements: empty([]), recordDepositMovement: () => {},
       storeValuation: (_t, branchId) => ({ branchId, ownedValueMinor: 0, ownedLots: 0, excluded: [], excludedValueMinor: 0, detail: 'no store' }), now,
     } : { ...concessionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // OB-676 · M27-FR-02: the concessionaire's own login reads its own counter's sales, stock and invoices — nothing else.
+    ...concessionPortalRoutes(store === undefined ? {
+      now, boundConcessionaire: async () => undefined, contracts: async () => [], sales: async () => [], depositMovements: async () => [], stockOwnedBy: async () => [], invoices: async () => [],
+    } : concessionPortalAdapter({ store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
     ...calendared(concessionTagRoutes)(store === undefined ? {

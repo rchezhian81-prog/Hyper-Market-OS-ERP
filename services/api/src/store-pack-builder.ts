@@ -127,6 +127,11 @@ export interface StorePackBuildInput {
    * limit per till per card (the tenant setting, default ₹500). Absent → neither section is sent (the till says so).
    */
   readonly tillVouchers?: { readonly giftCardOfflineCapMinor: (tenantId: string) => Promise<number> };
+   * OB-676 (owner, 2 Nov 2026): who confirmed the driver cash hand-over limit in force, and when — carried in the policies as
+   * `handoverToleranceConfirmed`, so the store computer and the driver's phone say, with no network, whether the owner has
+   * confirmed it. Absent, or undefined for a store, → left out, which every reader takes as "not confirmed".
+   */
+  readonly handoverToleranceConfirmation?: (tenantId: string, storeId: string) => Promise<{ readonly by: string; readonly at: string; readonly version: number } | undefined>;
 }
 
 /**
@@ -194,7 +199,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const staffPurchase = input.staffPurchase === undefined ? undefined : await input.staffPurchase(tenantId);
     // OB-375 · OB-378: the price kiosk's "stop quoting after" minutes and the self-checkout watch numbers.
     const floorDevices = input.floorDevices === undefined ? {} : await input.floorDevices(tenantId);
+    // OB-676: the owner's confirmation of the hand-over limit, only when he has confirmed the figure in force.
+    const toleranceConfirmed = input.handoverToleranceConfirmation === undefined ? undefined : await input.handoverToleranceConfirmation(tenantId, storeId);
     sections['policies'] = {
+      ...(toleranceConfirmed === undefined ? {} : { handoverToleranceConfirmed: toleranceConfirmed }),
       ...floorDevices,
       ...(staffPurchase === undefined ? {} : { staffPurchase }),
       ...(till.shopState === undefined ? {} : { shopState: till.shopState }),

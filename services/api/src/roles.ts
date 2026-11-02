@@ -167,6 +167,8 @@ const BASE_ROLES: readonly Role[] = [
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
       'order.exception.work', 'order.exception.manage',
+      // OB-676 (owner, 2 Nov 2026): the owner sets and confirms which roles staff each delivery-exception queue.
+      'order.exception.staffing.set',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
@@ -990,6 +992,19 @@ const BASE_ROLES: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'b2b.portal.self',
+    ],
+  },
+  {
+    id: 'concessionaire',
+    name: 'Concessionaire (counter login)',
+    // M27-FR-02 "only the concessionaire accesses it" · OB-676 "A" (owner, 2 Nov 2026, in writing) — the FOURTH role held by
+    // a party outside the business: a concessionaire trading a counter inside the store, signed in to see its OWN counter's
+    // sales, stock and invoices. As narrow as the supplier's: `concession.portal.self` is a READ of the caller's own rows,
+    // scoped server-side from its approved outside-login invite (the routes never trust a concessionaire id in the
+    // request). None of the `concession.*` staff codes — it cannot record a sale, change a contract or issue an invoice.
+    permissions: [
+      'identity.self.read',
+      'concession.portal.self',
     ],
   },
   {

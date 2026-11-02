@@ -15309,6 +15309,182 @@
         }
       }
     },
+    "/v1/concession-portal/me/counters": {
+      "get": {
+        "operationId": "getConcessionPortalMeCounters",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.portal.self",
+        "x-entitlement": "dept.concession",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionPortalMeCountersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.portal.self\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession-portal/me/invoices": {
+      "get": {
+        "operationId": "getConcessionPortalMeInvoices",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.portal.self",
+        "x-entitlement": "dept.concession",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionPortalMeInvoicesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.portal.self\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession-portal/me/sales": {
+      "get": {
+        "operationId": "getConcessionPortalMeSales",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.portal.self",
+        "x-entitlement": "dept.concession",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionPortalMeSalesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.portal.self\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/concession-portal/me/stock": {
+      "get": {
+        "operationId": "getConcessionPortalMeStock",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.portal.self",
+        "x-entitlement": "dept.concession",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConcessionPortalMeStockReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.portal.self\", or the plan lacks \"dept.concession\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/concession/branches/{branchId}/store-valuation": {
       "get": {
         "operationId": "getConcessionBranchesByBranchIdStoreValuation",
@@ -20297,6 +20473,144 @@
           },
           "403": {
             "description": "Not \"delivery.settlement.approve\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/delivery/handover-tolerance": {
+      "get": {
+        "operationId": "getDeliveryHandoverTolerance",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDeliveryHandoverToleranceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/delivery/handover-tolerance/{storeId}": {
+      "post": {
+        "operationId": "postDeliveryHandoverToleranceByStoreId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.controls.set",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "storeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostDeliveryHandoverToleranceByStoreIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDeliveryHandoverToleranceByStoreIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDeliveryHandoverToleranceByStoreIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.controls.set\", or the plan lacks \"delivery\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -49286,6 +49600,499 @@
         }
       }
     },
+    "/v1/identity/outside-logins/concessionaires": {
+      "get": {
+        "operationId": "getIdentityOutsideLoginsConcessionaires",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIdentityOutsideLoginsConcessionairesReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/outside-logins/concessionaires/invites/{inviteId}/approve": {
+      "post": {
+        "operationId": "postIdentityOutsideLoginsConcessionairesInvitesByInviteIdApprove",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "inviteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "x-request-body": "none",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdApproveReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/outside-logins/concessionaires/invites/{inviteId}/reject": {
+      "post": {
+        "operationId": "postIdentityOutsideLoginsConcessionairesInvitesByInviteIdReject",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "inviteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRejectRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRejectReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/outside-logins/concessionaires/invites/{inviteId}/revoke": {
+      "post": {
+        "operationId": "postIdentityOutsideLoginsConcessionairesInvitesByInviteIdRevoke",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "inviteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRevokeRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRevokeReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/outside-logins/concessionaires/invites/{inviteId}/sign-in": {
+      "post": {
+        "operationId": "postIdentityOutsideLoginsConcessionairesInvitesByInviteIdSignIn",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-reauth": {
+          "withinSeconds": 300,
+          "amr": [
+            "mfa"
+          ]
+        },
+        "x-idempotent": true,
+        "x-shown-once": [
+          "oneTimePassword"
+        ],
+        "parameters": [
+          {
+            "name": "inviteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdSignInRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdSignInReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\", or a recent re-authentication is needed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/outside-logins/concessionaires/{partyId}/invites/{inviteId}": {
+      "post": {
+        "operationId": "postIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteId",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "concession.contract.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inviteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"concession.contract.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/identity/outside-logins/customers": {
       "get": {
         "operationId": "getIdentityOutsideLoginsCustomers",
@@ -76211,6 +77018,131 @@
           },
           "403": {
             "description": "Not \"order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/orders/exception-queue-staffing": {
+      "get": {
+        "operationId": "getOrdersExceptionQueueStaffing",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetOrdersExceptionQueueStaffingReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postOrdersExceptionQueueStaffing",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.exception.staffing.set",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostOrdersExceptionQueueStaffingRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOrdersExceptionQueueStaffingReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOrdersExceptionQueueStaffingReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.exception.staffing.set\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -123571,6 +124503,139 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/concession-invoices.ts"
       },
+      "GetConcessionPortalMeCountersReply": {
+        "type": "object",
+        "required": [
+          "concessionaireId",
+          "today",
+          "counters",
+          "deposit",
+          "asAt"
+        ],
+        "properties": {
+          "concessionaireId": {
+            "type": "string"
+          },
+          "today": {
+            "type": "string"
+          },
+          "counters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "contract",
+                "trading"
+              ],
+              "properties": {
+                "contract": {
+                  "$ref": "#/components/schemas/ConcessionContract"
+                },
+                "trading": {
+                  "$ref": "#/components/schemas/ConcessionTradingDecision"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "deposit": {
+            "$ref": "#/components/schemas/DepositPosition"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-portal.ts"
+      },
+      "GetConcessionPortalMeInvoicesReply": {
+        "type": "object",
+        "required": [
+          "concessionaireId",
+          "invoices",
+          "asAt"
+        ],
+        "properties": {
+          "concessionaireId": {
+            "type": "string"
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionInvoice"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-portal.ts"
+      },
+      "GetConcessionPortalMeSalesReply": {
+        "type": "object",
+        "required": [
+          "concessionaireId",
+          "sales",
+          "grossMinor",
+          "count",
+          "asAt"
+        ],
+        "properties": {
+          "concessionaireId": {
+            "type": "string"
+          },
+          "sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionSale"
+            }
+          },
+          "grossMinor": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-portal.ts"
+      },
+      "GetConcessionPortalMeStockReply": {
+        "type": "object",
+        "required": [
+          "concessionaireId",
+          "lines",
+          "valueMinor",
+          "asAt"
+        ],
+        "properties": {
+          "concessionaireId": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConcessionStockLine"
+            }
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/concession-portal.ts"
+      },
       "GetConcessionTradingBreachesReply": {
         "type": "object",
         "required": [
@@ -124327,6 +125392,7 @@
           "plan",
           "routes",
           "held",
+          "handoverTolerance",
           "asAt"
         ],
         "properties": {
@@ -124419,6 +125485,40 @@
               "additionalProperties": true
             }
           },
+          "handoverTolerance": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "valueMinor",
+                  "state"
+                ],
+                "properties": {
+                  "valueMinor": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "not_confirmed"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
           "asAt": {
             "type": "string"
           }
@@ -124473,6 +125573,90 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/fulfilment/src/fleet-settlement.ts"
+      },
+      "GetDeliveryHandoverToleranceReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "storeId",
+          "valueMinor",
+          "suggestedMinor",
+          "state",
+          "confirmed",
+          "changedSinceConfirmed",
+          "history"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "suggestedMinor": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "valueMinor",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "changedSinceConfirmed": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverToleranceConfirmation"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/handover-tolerance.ts"
       },
       "GetDeliveryLocationsReply": {
         "type": "object",
@@ -136681,6 +137865,38 @@
             "type": "string",
             "enum": [
               "b2b_customer",
+              "concessionaire",
+              "customer",
+              "supplier"
+            ]
+          },
+          "logins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutsideLoginRecord"
+            }
+          },
+          "signInsConnected": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "GetIdentityOutsideLoginsConcessionairesReply": {
+        "type": "object",
+        "required": [
+          "role",
+          "logins",
+          "signInsConnected"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "b2b_customer",
+              "concessionaire",
               "customer",
               "supplier"
             ]
@@ -136711,6 +137927,7 @@
             "type": "string",
             "enum": [
               "b2b_customer",
+              "concessionaire",
               "customer",
               "supplier"
             ]
@@ -136741,6 +137958,7 @@
             "type": "string",
             "enum": [
               "b2b_customer",
+              "concessionaire",
               "customer",
               "supplier"
             ]
@@ -148290,6 +149508,157 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/index.ts"
       },
+      "GetOrdersExceptionQueueStaffingReply": {
+        "type": "object",
+        "required": [
+          "rolesThatMayWork",
+          "asAt",
+          "state",
+          "staffing",
+          "suggested",
+          "confirmed",
+          "unowned",
+          "history"
+        ],
+        "properties": {
+          "rolesThatMayWork": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "staffing": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "suggested": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "unowned": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "customer_service_desk",
+                "duty_manager",
+                "finance_recon_queue",
+                "fulfilment_supervisor"
+              ]
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueStaffingVersion"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/exception-queue-staffing.ts"
+      },
       "GetOrdersRefundsPendingReply": {
         "type": "object",
         "required": [
@@ -148357,7 +149726,10 @@
           "exceptions",
           "count",
           "atRiskMinor",
-          "breached"
+          "breached",
+          "staffedBy",
+          "unowned",
+          "staffingState"
         ],
         "properties": {
           "owner": {
@@ -148383,6 +149755,22 @@
           },
           "breached": {
             "type": "number"
+          },
+          "staffedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unowned": {
+            "type": "boolean"
+          },
+          "staffingState": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
           }
         },
         "additionalProperties": true,
@@ -148390,7 +149778,140 @@
         "x-derived-from": "services/orders/src/exception-ownership.ts"
       },
       "GetOrdersSubstitutionExceptionsReply": {
-        "$ref": "#/components/schemas/OwnedWorklist",
+        "type": "object",
+        "required": [
+          "staffing",
+          "exceptions",
+          "count",
+          "atRiskMinor",
+          "open",
+          "queues"
+        ],
+        "properties": {
+          "staffing": {
+            "type": "object",
+            "required": [
+              "state",
+              "byQueue",
+              "unowned"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "confirmed",
+                  "not_confirmed"
+                ]
+              },
+              "byQueue": {
+                "type": "object",
+                "required": [
+                  "fulfilment_supervisor",
+                  "customer_service_desk",
+                  "finance_recon_queue",
+                  "duty_manager"
+                ],
+                "properties": {
+                  "fulfilment_supervisor": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "customer_service_desk": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "finance_recon_queue": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "duty_manager": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": true
+              },
+              "unowned": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "customer_service_desk",
+                    "duty_manager",
+                    "finance_recon_queue",
+                    "fulfilment_supervisor"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnedExceptionView"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "atRiskMinor": {
+            "type": "number"
+          },
+          "open": {
+            "type": "object",
+            "required": [
+              "count",
+              "atRiskMinor",
+              "breached"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "atRiskMinor": {
+                "type": "number"
+              },
+              "breached": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "queues": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "number"
+              },
+              "customer_service_desk": {
+                "type": "number"
+              },
+              "finance_recon_queue": {
+                "type": "number"
+              },
+              "duty_manager": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/exception-ownership.ts"
       },
@@ -177249,6 +178770,199 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/fulfilment/src/fleet-settlement.ts"
       },
+      "PostDeliveryHandoverToleranceByStoreIdReply200": {
+        "type": "object",
+        "required": [
+          "alreadyConfirmed",
+          "asAt",
+          "storeId",
+          "valueMinor",
+          "suggestedMinor",
+          "state",
+          "confirmed",
+          "changedSinceConfirmed",
+          "history"
+        ],
+        "properties": {
+          "alreadyConfirmed": {
+            "type": "boolean"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "suggestedMinor": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "valueMinor",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "changedSinceConfirmed": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverToleranceConfirmation"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/handover-tolerance.ts"
+      },
+      "PostDeliveryHandoverToleranceByStoreIdReply201": {
+        "type": "object",
+        "required": [
+          "alreadyConfirmed",
+          "asAt",
+          "storeId",
+          "valueMinor",
+          "suggestedMinor",
+          "state",
+          "confirmed",
+          "changedSinceConfirmed",
+          "history"
+        ],
+        "properties": {
+          "alreadyConfirmed": {
+            "type": "boolean"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "suggestedMinor": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "valueMinor",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "changedSinceConfirmed": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverToleranceConfirmation"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/handover-tolerance.ts"
+      },
+      "PostDeliveryHandoverToleranceByStoreIdRequest": {
+        "type": "object",
+        "required": [
+          "valueMinor"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/handover-tolerance.ts"
+      },
       "PostDeliveryLocationsByLocationIdReply": {
         "type": "object",
         "required": [
@@ -196812,6 +198526,7 @@
                 "type": "string",
                 "enum": [
                   "b2b_customer",
+                  "concessionaire",
                   "customer",
                   "supplier"
                 ]
@@ -196966,6 +198681,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197090,6 +198806,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197228,6 +198945,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197350,6 +199068,597 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/outside-party-logins.ts"
       },
+      "PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdReply200": {
+        "type": "object",
+        "required": [
+          "invite",
+          "alreadyInvited"
+        ],
+        "properties": {
+          "invite": {
+            "$ref": "#/components/schemas/OutsideLoginRecord"
+          },
+          "alreadyInvited": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdReply201": {
+        "type": "object",
+        "required": [
+          "invite",
+          "alreadyInvited"
+        ],
+        "properties": {
+          "invite": {
+            "type": "object",
+            "required": [
+              "state",
+              "inviteId",
+              "role",
+              "partyId",
+              "userId",
+              "displayName",
+              "invitedBy",
+              "invitedAt",
+              "reason"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "inviteId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "b2b_customer",
+                  "concessionaire",
+                  "customer",
+                  "supplier"
+                ]
+              },
+              "partyId": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "grants": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "invitedBy": {
+                "type": "string"
+              },
+              "invitedAt": {
+                "type": "string"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "alreadyInvited": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesByPartyIdInvitesByInviteIdRequest": {
+        "type": "object",
+        "required": [
+          "displayName"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdApproveReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyApproved"
+            ],
+            "properties": {
+              "login": {
+                "$ref": "#/components/schemas/OutsideLoginRecord"
+              },
+              "alreadyApproved": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyApproved"
+            ],
+            "properties": {
+              "login": {
+                "type": "object",
+                "required": [
+                  "state",
+                  "approvedBy",
+                  "approvedAt",
+                  "inviteId",
+                  "role",
+                  "partyId",
+                  "userId",
+                  "displayName",
+                  "invitedBy",
+                  "invitedAt",
+                  "reason"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "approvedBy": {
+                    "type": "string"
+                  },
+                  "approvedAt": {
+                    "type": "string"
+                  },
+                  "rejectedBy": {
+                    "type": "string"
+                  },
+                  "rejectedAt": {
+                    "type": "string"
+                  },
+                  "rejectReason": {
+                    "type": "string"
+                  },
+                  "revokedBy": {
+                    "type": "string"
+                  },
+                  "revokedAt": {
+                    "type": "string"
+                  },
+                  "revokeReason": {
+                    "type": "string"
+                  },
+                  "inviteId": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "b2b_customer",
+                      "concessionaire",
+                      "customer",
+                      "supplier"
+                    ]
+                  },
+                  "partyId": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "grants": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "invitedBy": {
+                    "type": "string"
+                  },
+                  "invitedAt": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              "alreadyApproved": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRejectReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyRejected"
+            ],
+            "properties": {
+              "login": {
+                "$ref": "#/components/schemas/OutsideLoginRecord"
+              },
+              "alreadyRejected": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyRejected"
+            ],
+            "properties": {
+              "login": {
+                "type": "object",
+                "required": [
+                  "state",
+                  "rejectedBy",
+                  "rejectedAt",
+                  "rejectReason",
+                  "inviteId",
+                  "role",
+                  "partyId",
+                  "userId",
+                  "displayName",
+                  "invitedBy",
+                  "invitedAt",
+                  "reason"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "rejectedBy": {
+                    "type": "string"
+                  },
+                  "rejectedAt": {
+                    "type": "string"
+                  },
+                  "rejectReason": {
+                    "type": "string"
+                  },
+                  "approvedBy": {
+                    "type": "string"
+                  },
+                  "approvedAt": {
+                    "type": "string"
+                  },
+                  "revokedBy": {
+                    "type": "string"
+                  },
+                  "revokedAt": {
+                    "type": "string"
+                  },
+                  "revokeReason": {
+                    "type": "string"
+                  },
+                  "inviteId": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "b2b_customer",
+                      "concessionaire",
+                      "customer",
+                      "supplier"
+                    ]
+                  },
+                  "partyId": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "grants": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "invitedBy": {
+                    "type": "string"
+                  },
+                  "invitedAt": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              "alreadyRejected": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRejectRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRevokeReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyRevoked"
+            ],
+            "properties": {
+              "login": {
+                "$ref": "#/components/schemas/OutsideLoginRecord"
+              },
+              "alreadyRevoked": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "login",
+              "alreadyRevoked"
+            ],
+            "properties": {
+              "login": {
+                "type": "object",
+                "required": [
+                  "state",
+                  "revokedBy",
+                  "revokedAt",
+                  "revokeReason",
+                  "inviteId",
+                  "role",
+                  "partyId",
+                  "userId",
+                  "displayName",
+                  "invitedBy",
+                  "invitedAt",
+                  "reason"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "revokedBy": {
+                    "type": "string"
+                  },
+                  "revokedAt": {
+                    "type": "string"
+                  },
+                  "revokeReason": {
+                    "type": "string"
+                  },
+                  "approvedBy": {
+                    "type": "string"
+                  },
+                  "approvedAt": {
+                    "type": "string"
+                  },
+                  "rejectedBy": {
+                    "type": "string"
+                  },
+                  "rejectedAt": {
+                    "type": "string"
+                  },
+                  "rejectReason": {
+                    "type": "string"
+                  },
+                  "inviteId": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "b2b_customer",
+                      "concessionaire",
+                      "customer",
+                      "supplier"
+                    ]
+                  },
+                  "partyId": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "grants": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "invitedBy": {
+                    "type": "string"
+                  },
+                  "invitedAt": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              "alreadyRevoked": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdRevokeRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdSignInReply": {
+        "type": "object",
+        "required": [
+          "userId",
+          "signInName",
+          "displayName",
+          "state",
+          "secondFactor",
+          "oneTimePassword",
+          "handOver"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "signInName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "secondFactor": {
+            "type": "string"
+          },
+          "oneTimePassword": {
+            "type": "string"
+          },
+          "handOver": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
+      "PostIdentityOutsideLoginsConcessionairesInvitesByInviteIdSignInRequest": {
+        "type": "object",
+        "required": [
+          "signInName"
+        ],
+        "properties": {
+          "oneTimePassword": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "password": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "signInName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/outside-party-logins.ts"
+      },
       "PostIdentityOutsideLoginsCustomersByPartyIdInvitesByInviteIdReply200": {
         "type": "object",
         "required": [
@@ -197399,6 +199708,7 @@
                 "type": "string",
                 "enum": [
                   "b2b_customer",
+                  "concessionaire",
                   "customer",
                   "supplier"
                 ]
@@ -197553,6 +199863,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197677,6 +199988,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197815,6 +200127,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -197986,6 +200299,7 @@
                 "type": "string",
                 "enum": [
                   "b2b_customer",
+                  "concessionaire",
                   "customer",
                   "supplier"
                 ]
@@ -198140,6 +200454,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -198264,6 +200579,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -198402,6 +200718,7 @@
                     "type": "string",
                     "enum": [
                       "b2b_customer",
+                      "concessionaire",
                       "customer",
                       "supplier"
                     ]
@@ -222433,6 +224750,345 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/index.ts"
+      },
+      "PostOrdersExceptionQueueStaffingReply200": {
+        "type": "object",
+        "required": [
+          "alreadyConfirmed",
+          "rolesThatMayWork",
+          "asAt",
+          "state",
+          "staffing",
+          "suggested",
+          "confirmed",
+          "unowned",
+          "history"
+        ],
+        "properties": {
+          "alreadyConfirmed": {
+            "type": "boolean"
+          },
+          "rolesThatMayWork": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "staffing": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "suggested": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "unowned": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "customer_service_desk",
+                "duty_manager",
+                "finance_recon_queue",
+                "fulfilment_supervisor"
+              ]
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueStaffingVersion"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/exception-queue-staffing.ts"
+      },
+      "PostOrdersExceptionQueueStaffingReply201": {
+        "type": "object",
+        "required": [
+          "alreadyConfirmed",
+          "rolesThatMayWork",
+          "asAt",
+          "state",
+          "staffing",
+          "suggested",
+          "confirmed",
+          "unowned",
+          "history"
+        ],
+        "properties": {
+          "alreadyConfirmed": {
+            "type": "boolean"
+          },
+          "rolesThatMayWork": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_confirmed"
+            ]
+          },
+          "staffing": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "suggested": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "version",
+                  "by",
+                  "at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "number"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "unowned": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "customer_service_desk",
+                "duty_manager",
+                "finance_recon_queue",
+                "fulfilment_supervisor"
+              ]
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueStaffingVersion"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/exception-queue-staffing.ts"
+      },
+      "PostOrdersExceptionQueueStaffingRequest": {
+        "type": "object",
+        "required": [
+          "staffing"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "staffing": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/exception-queue-staffing.ts"
       },
       "PostOrdersSubstitutionExceptionsBreachAlertsReply": {
         "type": "object",
@@ -265228,6 +267884,77 @@
         },
         "additionalProperties": true
       },
+      "ConcessionSale": {
+        "type": "object",
+        "required": [
+          "saleId",
+          "contractId",
+          "concessionaireId",
+          "branchId",
+          "at",
+          "grossMinor",
+          "taxMinor",
+          "tenderedTo"
+        ],
+        "properties": {
+          "saleId": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "concessionaireId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "grossMinor": {
+            "type": "number"
+          },
+          "taxMinor": {
+            "type": "number"
+          },
+          "tenderedTo": {
+            "type": "string",
+            "enum": [
+              "concessionaire_till",
+              "store_till"
+            ]
+          },
+          "refundOf": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConcessionStockLine": {
+        "type": "object",
+        "required": [
+          "productId",
+          "locationId",
+          "onHandMinor",
+          "valueMinor"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "onHandMinor": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "ConcessionTag": {
         "type": "object",
         "required": [
@@ -280247,6 +282974,68 @@
         },
         "additionalProperties": true
       },
+      "HandoverToleranceConfirmation": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "version",
+          "valueMinor",
+          "previousMinor",
+          "kind",
+          "settingsVersion",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "valueMinor": {
+            "type": "number"
+          },
+          "previousMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "as_suggested",
+              "changed"
+            ]
+          },
+          "settingsVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Health": {
         "type": "object",
         "required": [
@@ -289962,6 +292751,7 @@
             "type": "string",
             "enum": [
               "b2b_customer",
+              "concessionaire",
               "customer",
               "supplier"
             ]
@@ -290391,75 +293181,6 @@
           },
           "detail": {
             "type": "string"
-          }
-        },
-        "additionalProperties": true
-      },
-      "OwnedWorklist": {
-        "type": "object",
-        "required": [
-          "exceptions",
-          "count",
-          "atRiskMinor",
-          "open",
-          "queues"
-        ],
-        "properties": {
-          "exceptions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OwnedExceptionView"
-            }
-          },
-          "count": {
-            "type": "number"
-          },
-          "atRiskMinor": {
-            "type": "number"
-          },
-          "open": {
-            "type": "object",
-            "required": [
-              "count",
-              "atRiskMinor",
-              "breached"
-            ],
-            "properties": {
-              "count": {
-                "type": "number"
-              },
-              "atRiskMinor": {
-                "type": "number"
-              },
-              "breached": {
-                "type": "number"
-              }
-            },
-            "additionalProperties": true
-          },
-          "queues": {
-            "type": "object",
-            "required": [
-              "fulfilment_supervisor",
-              "customer_service_desk",
-              "finance_recon_queue",
-              "duty_manager"
-            ],
-            "properties": {
-              "fulfilment_supervisor": {
-                "type": "number"
-              },
-              "customer_service_desk": {
-                "type": "number"
-              },
-              "finance_recon_queue": {
-                "type": "number"
-              },
-              "duty_manager": {
-                "type": "number"
-              }
-            },
-            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -295390,6 +298111,78 @@
             "type": "number"
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "QueueStaffingVersion": {
+        "type": "object",
+        "required": [
+          "version",
+          "staffing",
+          "asSuggested",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "staffing": {
+            "type": "object",
+            "required": [
+              "fulfilment_supervisor",
+              "customer_service_desk",
+              "finance_recon_queue",
+              "duty_manager"
+            ],
+            "properties": {
+              "fulfilment_supervisor": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "customer_service_desk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finance_recon_queue": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "duty_manager": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "asSuggested": {
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
             "type": "string"
           }
         },

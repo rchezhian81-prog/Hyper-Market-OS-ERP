@@ -4186,6 +4186,48 @@ export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; rea
   };
 }
 
+/**
+ * The stock on the ledger valued at weighted-average cost, one row per product and place AND per owner (M27-FR-02): each
+ * ownership pool valued SEPARATELY — a concessionaire's cost is never averaged into the store's. Reads the append-only
+ * ledger; writes nothing. The store valuation splits these; a concessionaire's own login reads only its own (OB-676).
+ */
+export async function ownedStockRows(store: EventStore, tenantId: string): Promise<OwnedStockValue[]> {
+  const events = await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+  const movements = events
+    .map((e) => payloadOf<Movement>(e))
+    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+
+  const adjustments = await stockCostAdjustments(store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
+  const groups = new Map<string, Movement[]>();
+  for (const m of movements) {
+    const ownership: StockOwnership = m.ownership ?? 'own';
+    const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
+    const key = `${ownership}\u001f${ownerId}`;
+    groups.set(key, [...(groups.get(key) ?? []), m]);
+  }
+
+  const rows: OwnedStockValue[] = [];
+  for (const [key, ms] of groups) {
+    const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
+    const valued = weightedAverageValuation(
+      withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
+        productId: m.productId, locationId: m.locationId,
+        effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+        isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+        ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+      })),
+      'INR',
+    );
+    for (const v of valued) {
+      rows.push({
+        productId: v.productId, locationId: v.locationId,
+        ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
+      });
+    }
+  }
+  return rows;
+}
+
 export function concessionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4242,42 +4284,7 @@ export function concessionAdapter(input: {
      * `splitStoreValuation` reports what the store owns and names what it does not. Reads the
      * append-only ledger; writes nothing.
      */
-    storeValuation: async (tenantId, branchId) => {
-      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
-      const movements = events
-        .map((e) => payloadOf<Movement>(e))
-        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
-
-      const adjustments = await stockCostAdjustments(input.store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
-      const groups = new Map<string, Movement[]>();
-      for (const m of movements) {
-        const ownership: StockOwnership = m.ownership ?? 'own';
-        const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
-        const key = `${ownership}\u001f${ownerId}`;
-        groups.set(key, [...(groups.get(key) ?? []), m]);
-      }
-
-      const rows: OwnedStockValue[] = [];
-      for (const [key, ms] of groups) {
-        const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
-        const valued = weightedAverageValuation(
-          withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
-            productId: m.productId, locationId: m.locationId,
-            effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
-            ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
-          })),
-          'INR',
-        );
-        for (const v of valued) {
-          rows.push({
-            productId: v.productId, locationId: v.locationId,
-            ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
-          });
-        }
-      }
-      return splitStoreValuation({ branchId, rows });
-    },
+    storeValuation: async (tenantId, branchId) => splitStoreValuation({ branchId, rows: await ownedStockRows(input.store, tenantId) }),
 
     recordDepositMovement: async (tenantId, movement) => {
       await input.store.append(tenantId, forConcessionaire(movement.concessionaireId), makeEvent({
@@ -14669,6 +14676,14 @@ export async function outsideLoginOf(store: EventStore, tenantId: string, userId
   return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))?.role;
 }
 
+/**
+ * OB-676 (M27-FR-02): the concessionaire a login is bound to NOW — its approved, unrevoked concessionaire invite, read from
+ * head office's own records (never the request). undefined: bound to nobody (never approved, rejected or revoked).
+ */
+export async function concessionaireBoundTo(store: EventStore, tenantId: string, userId: string): Promise<string | undefined> {
+  return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && r.role === 'concessionaire' && r.state === 'approved')?.partyId;
+}
+
 /** Round 14 (verifier G6): the per-login write guard an outside-login invite and approval claim the login under. */
 const outsideLoginGuard = (userId: string): string => `outside-login:${userId}`;
 
@@ -14763,6 +14778,8 @@ export function outsidePartyLoginAdapter(input: {
     partyExists: async (tenantId, role, partyId) => {
       if (role === 'b2b_customer') return (await b2bCreditAdapter(input).account(tenantId, partyId)) !== undefined;
       if (role === 'supplier') return (await supplierPortalAdapter(input).partner(tenantId, partyId)) !== undefined;
+      // OB-676: a concessionaire is on record when a counter's contract names it (the contract index, written with each contract).
+      if (role === 'concessionaire') return (await allOf<{ concessionaireId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed')).some((x) => x.concessionaireId === partyId);
       // A customer record is what the shop holds about them: a purchase, a return or a loyalty membership (customer 360).
       const c = customer360Adapter(input);
       await c.catchUp(tenantId);
@@ -14789,6 +14806,8 @@ export function outsidePartyLoginAdapter(input: {
         }));
       }
       // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
+      // OB-676: a concessionaire's login is bound by its APPROVED invite itself — the portal reads the login's current party
+      // from the approved, unrevoked invite (`concessionaireBoundTo`), so a revocation unbinds it in the same act.
     },
   };
 }

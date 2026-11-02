@@ -26,8 +26,9 @@ import type { SlotBooking } from '../../orders/src/delivery-service';
 import {
   STREAM, streamName, ordersAdapter, ordersForExport, catalogueAdapter, warehouseAdapter, assignmentsAdapter, fulfilmentWaveAdapter,
   driverRunAdapter, dispatchAdapter, deliveryServiceAdapter, serviceabilityAdapter, syncedGoodsReceiptAdapter, permissionsHeldBy, assignedStoresOf,
-  financeAdapter,
+  financeAdapter, storeSettingsAdapter, orgStructureAdapter,
 } from './adapters';
+import { handoverToleranceRoutes, handoverToleranceStanding, type HandoverToleranceConfirmation, type HandoverToleranceDeps } from '../../fulfilment/src/handover-tolerance';
 import type { StoredPostingMap } from '../../finance/src/day-book';
 import type { JournalEntry } from '../../finance/src/index';
 import { latestRoutes } from '../../fulfilment/src/assignments';
@@ -70,7 +71,30 @@ const S = {
   fleet: (routeId: string) => streamName(STREAM.delivery, 'fleet-settlement', routeId),
   /** D09-FR-06: every route that has a settlement step — so the books can find every movement without a scan. */
   fleetIndex: streamName(STREAM.delivery, 'fleet-settlement-index'),
+  /** OB-676: the owner's confirmations of a store's driver cash hand-over limit. */
+  handoverTolerance: (storeId: string) => streamName(STREAM.delivery, 'handover-tolerance', storeId),
 };
+
+/** OB-676: every confirmation of a store's driver cash hand-over limit, oldest first. */
+const handoverToleranceConfirmations = (store: EventStore, tenantId: string, storeId: string): Promise<HandoverToleranceConfirmation[]> =>
+  payloads<HandoverToleranceConfirmation>(store, tenantId, S.handoverTolerance(storeId), 'HandoverToleranceConfirmed');
+
+/**
+ * OB-676: the store pack's word on the driver hand-over limit — who confirmed the figure in force and when, or nothing when
+ * the owner has not confirmed it (the store computer and the phone then say "not confirmed"). For `buildStorePackSections`.
+ */
+export function handoverTolerancePackConfirmationOf(input: { readonly store: EventStore }): (tenantId: string, storeId: string) => Promise<{ readonly by: string; readonly at: string; readonly version: number } | undefined> {
+  return async (tenantId, storeId) => {
+    const standing = handoverToleranceStanding(storeId, await storeSettingsAdapter({ store: input.store }).settings(tenantId, storeId), await handoverToleranceConfirmations(input.store, tenantId, storeId));
+    return standing.confirmed === null ? undefined : { by: standing.confirmed.by, at: standing.confirmed.at, version: standing.confirmed.version };
+  };
+}
+
+/** OB-676: the confirmed-or-not standing of the limit, for the Dispatch board. */
+export async function handoverToleranceAt(store: EventStore, tenantId: string, storeId: string): Promise<{ readonly valueMinor: number | null; readonly state: 'confirmed' | 'not_confirmed' }> {
+  const s = handoverToleranceStanding(storeId, await storeSettingsAdapter({ store }).settings(tenantId, storeId), await handoverToleranceConfirmations(store, tenantId, storeId));
+  return { valueMinor: s.valueMinor, state: s.state };
+}
 
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 32);
 const payloads = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -253,6 +277,7 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
   const dispatch = dispatchAdapter({ store, now });
   const board: DispatchBoardDeps = {
     now, ...audit,
+    handoverTolerance: (t, storeId) => handoverToleranceAt(store, t, storeId), // OB-676
     permissionsOfUser: (t, u) => permissionsHeldBy(store, t, u),
     ordersAt, bookingOf,
     shopClock: async (t, iso) => wallClockIn(iso, await input.timeZone(t)),
@@ -358,7 +383,17 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     },
   };
 
-  return { controls, proof, judgeDoorProof, waveBuilder, board, routing, fleet, latestStops };
+  // ── OB-676: the owner confirms the driver cash hand-over limit ───────────────────────────────────────────
+  const settingsRegister = storeSettingsAdapter({ store });
+  const handoverTolerance: HandoverToleranceDeps = {
+    now, ...audit,
+    stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
+    settings: settingsRegister.settings, recordSettings: settingsRegister.recordSettings,
+    confirmations: (t, storeId) => handoverToleranceConfirmations(store, t, storeId),
+    recordConfirmation: (t, c) => put(store, t, S.handoverTolerance(c.storeId), 'HandoverToleranceConfirmed', `${c.storeId}|v${c.version}`, c.at, c),
+  };
+
+  return { controls, proof, judgeDoorProof, waveBuilder, board, routing, fleet, latestStops, handoverTolerance };
 }
 
 /** The package's routes. A bare composition (no store) is given an in-memory one, as the other packages are, so the route
@@ -372,6 +407,7 @@ export function fulfilmentDeliveryRoutes(input: FulDelInput): readonly Route[] {
     ...dispatchBoardRoutes(d.board),
     ...orderRoutingRoutes(d.routing),
     ...fleetSettlementRoutes(d.fleet),
+    ...handoverToleranceRoutes(d.handoverTolerance), // OB-676
   ];
 }
 
