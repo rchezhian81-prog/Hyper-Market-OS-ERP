@@ -73,6 +73,17 @@
           <ul class="rows" id="record-complaints"></ul>
           <h4 id="othercases-h">Other questions and requests</h4>
           <ul class="rows" id="record-other"></ul>
+          <!-- M16-FR-01 (W3): the household this record is in (linked and unlinked as facts) and its identity history. -->
+          <h4 id="household-h">Household</h4>
+          <p id="record-household"></p>
+          <form id="household-form" class="row-form" hidden>
+            <label for="household-id"><span id="l-household-id">Household name or code</span><input id="household-id" autocomplete="off" /></label>
+            <button id="household-link" type="submit"><span id="household-link-text">Link to this household</span></button>
+            <button id="household-unlink" type="button" class="quiet" hidden><span id="household-unlink-text">Take out of the household</span></button>
+          </form>
+          <p class="status" id="household-status" role="status" aria-live="polite"></p>
+          <h4 id="history-h">Identity history</h4>
+          <ul class="rows" id="record-history"></ul>
         </div>
       </section>
       <section aria-labelledby="segments-h">

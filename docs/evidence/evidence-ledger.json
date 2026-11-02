@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2089,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 102,
     "browser": 91,
-    "connected": 72,
+    "connected": 73,
     "device": 0,
     "uat": 0
   },
@@ -1439,10 +1439,10 @@
       "id": "M16",
       "label": "WIRED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 19,
         "realDb": 9,
-        "browser": 3,
+        "browser": 5,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1460,7 +1460,8 @@
           "tests/unit/r4-insight-sessions.test.ts",
           "tests/unit/storefront-browse.test.ts",
           "tests/unit/the-customer-record-folds-the-desks-cases.test.ts",
-          "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
+          "tests/unit/voice-and-sms-links-are-switched-off.test.ts",
+          "tests/unit/w3-customers-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
@@ -1497,7 +1498,9 @@
         "browser": [
           "tests/e2e/customer-privacy-centre.e2e.ts",
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
-          "tests/e2e/the-customers-page-meets-the-spec.e2e.ts"
+          "tests/e2e/the-customers-page-meets-the-spec.e2e.ts",
+          "tests/e2e/w3-customer-data-requests.e2e.ts",
+          "tests/e2e/w3-customer-value-and-household.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
@@ -1516,7 +1519,7 @@
         "unit": 12,
         "integration": 19,
         "realDb": 6,
-        "browser": 6,
+        "browser": 7,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1571,7 +1574,8 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/stored-value-oversight-delivery.e2e.ts",
           "tests/e2e/the-served-till-names-a-member.e2e.ts",
-          "tests/e2e/the-served-till-spends-points-and-store-credit.e2e.ts"
+          "tests/e2e/the-served-till-spends-points-and-store-credit.e2e.ts",
+          "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -1730,7 +1734,7 @@
         "unit": 22,
         "integration": 21,
         "realDb": 10,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1800,7 +1804,8 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/customer-privacy-centre.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
-          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
+          "tests/e2e/w3-customer-data-requests.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts"
@@ -1815,10 +1820,10 @@
       "id": "M21",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 19,
         "realDb": 5,
-        "browser": 3,
+        "browser": 4,
         "connected": 3,
         "device": 0,
         "uat": 0
@@ -1832,7 +1837,8 @@
           "tests/unit/r4d-campaign-attribution.test.ts",
           "tests/unit/service-desk-campaigns.test.ts",
           "tests/unit/service-desk-cases.test.ts",
-          "tests/unit/the-campaigns-session.test.ts"
+          "tests/unit/the-campaigns-session.test.ts",
+          "tests/unit/w3-customers-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -1865,7 +1871,8 @@
         "browser": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
           "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
-          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts"
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
+          "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
@@ -2564,11 +2571,11 @@
       "id": "M31",
       "label": "WIRED",
       "counts": {
-        "unit": 6,
+        "unit": 7,
         "integration": 14,
         "realDb": 7,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -2579,7 +2586,8 @@
           "tests/unit/messaging-budget.test.ts",
           "tests/unit/notifications.test.ts",
           "tests/unit/receipt-presets.test.ts",
-          "tests/unit/receipt.test.ts"
+          "tests/unit/receipt.test.ts",
+          "tests/unit/w3-customers-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -2608,9 +2616,12 @@
         ],
         "browser": [
           "tests/e2e/document-template-publish-delivery.e2e.ts",
-          "tests/e2e/r4c-the-do-not-contact-list.e2e.ts"
+          "tests/e2e/r4c-the-do-not-contact-list.e2e.ts",
+          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3390,10 +3401,10 @@
       "id": "D07",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 12,
         "realDb": 6,
-        "browser": 1,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -3401,7 +3412,8 @@
       "files": {
         "unit": [
           "tests/unit/customer-privacy-centre.test.ts",
-          "tests/unit/loyalty-tiers-and-points-expiry.test.ts"
+          "tests/unit/loyalty-tiers-and-points-expiry.test.ts",
+          "tests/unit/w3-customers-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -3426,7 +3438,9 @@
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
         ],
         "browser": [
-          "tests/e2e/customer-privacy-centre.e2e.ts"
+          "tests/e2e/customer-privacy-centre.e2e.ts",
+          "tests/e2e/w3-customer-value-and-household.e2e.ts",
+          "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts"
         ],
         "connected": [],
         "device": [],

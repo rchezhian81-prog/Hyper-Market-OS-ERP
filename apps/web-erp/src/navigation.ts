@@ -176,6 +176,11 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'food-safety': { en: 'temperature fridge freezer hygiene', ta: 'வெப்பநிலை குளிர்சாதனம்' },
   'facilities': { en: 'maintenance repair electricity generator ac', ta: 'பராமரிப்பு பழுது' },
   'production-recipes': { en: 'recipe bill of materials ingredients cafe bakery deli batch shelf life yield', ta: 'சமையல் முறை பொருட்கள் கஃபே பேக்கரி' },
+  'data-requests': { en: 'privacy data request access export copy erasure erase forget delete dpdp consent', ta: 'தனியுரிமை தரவு கோரிக்கை நகல் அழி' },
+  'customer-value': { en: 'customer value lifetime margin ranking segment rules groups loyal lapsing clv', ta: 'வாடிக்கையாளர் மதிப்பு தரவரிசை குழு விதிகள்' },
+  'message-queue': { en: 'message queue sms whatsapp email notification budget dead letter withheld stuck', ta: 'செய்தி வரிசை அறிவிப்பு செலவு வரம்பு' },
+  'compensation-limits': { en: 'compensation goodwill limit authority ceiling service desk refund credit', ta: 'இழப்பீடு வரம்பு சேவை மேசை' },
+  'gift-cards': { en: 'gift card voucher balance issue redeem stored value', ta: 'பரிசு அட்டை இருப்பு வழங்கு' },
   'facilities-setup': { en: 'asset spare parts amc chiller freezer cold room range schedule pest fire food safety check setup', ta: 'சொத்து உதிரி பாகம் குளிர் அறை அட்டவணை சோதனை அமைப்பு' },
   'loss-prevention': { en: 'theft fraud investigation case', ta: 'திருட்டு மோசடி' },
   'dispatch': { en: 'delivery driver van route', ta: 'டெலிவரி' },
@@ -469,6 +474,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // who asked, why) and lifted the same way, append-only. Gated on the list read (`notification.send.check`); the writes need
   // `notification.suppression.manage`. A head-office page (OB-380).
   { id: 'do-not-contact', label: 'Do not contact', labelTa: 'தொடர்பு கொள்ள வேண்டாம்', path: '/do-not-contact', requires: 'notification.send.check', group: 'Customers' },
+  // W3 (customers): head-office pages over their own routes (OB-380), each asking its own permission (OB-572); every write's
+  // route checks its own word. Data requests (M16-FR-03), Customer value (D07-FR-05 · M16-FR-04), Message queue
+  // (M31-FR-04), Compensation limits (M21-FR-03) and Gift cards (D07-FR-04).
+  { id: 'data-requests', label: 'Customer data requests', labelTa: 'வாடிக்கையாளர் தரவுக் கோரிக்கைகள்', path: '/data-requests', requires: 'privacy.request.manage', group: 'Customers' },
+  { id: 'customer-value', label: 'Customer value', labelTa: 'வாடிக்கையாளர் மதிப்பு', path: '/customer-value', requires: 'customer.segment.read', group: 'Customers' },
+  { id: 'message-queue', label: 'Message queue', labelTa: 'செய்தி வரிசை', path: '/message-queue', requires: 'notification.send.check', group: 'Customers' },
+  { id: 'compensation-limits', label: 'Compensation limits', labelTa: 'இழப்பீட்டு வரம்புகள்', path: '/compensation-limits', requires: 'service.case.read', group: 'Customers' },
+  { id: 'gift-cards', label: 'Gift cards', labelTa: 'பரிசு அட்டைகள்', path: '/gift-cards', requires: 'loyalty.value.read', group: 'Customers' },
   // OB-288 wave 3 (M21-FR-01 · M21-FR-02): plan, approve, send and follow a campaign, and switch the journeys on or off — a
   // head-office page (served by the store computer since OB-380). Gated on the campaign read (`customer.campaign.read`); each
   // write's route checks its own word (template manage, campaign send).

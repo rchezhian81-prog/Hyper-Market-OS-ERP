@@ -654,6 +654,11 @@
     'posting-map': 'book-open', // Round 4d — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
+    'data-requests': 'shield-check', // W3 — an icon already in the set
+    'customer-value': 'chart-column', // W3 — an icon already in the set
+    'message-queue': 'message-circle', // W3 — an icon already in the set
+    'compensation-limits': 'banknote', // W3 — an icon already in the set
+    'gift-cards': 'ticket', // W3 — an icon already in the set
     'cert-in': 'shield-check', // Round 4c — an icon already in the set
     'space-setup': 'boxes', // Wave 2 — an icon already in the set
     'display-contracts': 'banknote', // Wave 2 — an icon already in the set
