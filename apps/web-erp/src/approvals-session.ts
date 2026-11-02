@@ -115,7 +115,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindCustomerCreditNote' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindCustomerCreditNote' | 'kindCustomerDebitNote' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -182,6 +182,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
     kindB2BCreditLimit: 'Set or change a business customer\'s credit limit (and payment terms)',
     kindCustomerCreditNote: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
+    kindCustomerDebitNote: 'Issue a GST debit note to a business customer (more added to their tax invoice)',
     kindTenantClosure: 'Close this shop\'s account (access ends; the law\'s records and the audit are kept)', // OB-288 P4
     kindFloorDeviceReview: 'Sign as the security reviewer: switch on cameras, shelf labels, RFID or sensors', // OB-407
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
@@ -268,6 +269,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
     kindB2BCreditLimit: 'வணிக வாடிக்கையாளரின் கடன் வரம்பை (மற்றும் கட்டண நிபந்தனைகளை) அமைத்தல் அல்லது மாற்றுதல்',
     kindCustomerCreditNote: 'வணிக வாடிக்கையாளருக்கு GST வரவுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலிலிருந்து திருப்பித் தரும் பணம்)',
+    kindCustomerDebitNote: 'வணிக வாடிக்கையாளருக்கு GST பற்றுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலில் கூடுதலாகச் சேர்ப்பது)',
     kindTenantClosure: 'இந்தக் கடையின் கணக்கை மூடுதல் (அணுகல் முடியும்; சட்டம் கேட்கும் பதிவுகளும் தணிக்கையும் வைக்கப்படும்)', // OB-288 P4
     kindFloorDeviceReview: 'பாதுகாப்புச் சரிபார்ப்பாளராகக் கையொப்பமிடுதல்: கேமரா, அலமாரி விலைச் சீட்டு, RFID அல்லது உணரிகளை இயக்குதல்', // OB-407
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
@@ -369,6 +371,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit',
   // M23-FR-02 · OB-678: a GST credit note to a business customer — a refund under the money limits.
   customer_credit_note: 'kindCustomerCreditNote',
+  // OB-679: every debit note to a business customer — a second person approves, at any amount.
+  customer_debit_note: 'kindCustomerDebitNote',
   // OB-288 P4 (M36-FR-03): closing the shop's account — IT asks, the owner approves.
   tenant_closure: 'kindTenantClosure',
   // OB-407: the named security reviewer's signature on switching on a floor device (cameras, shelf labels, RFID, sensors).

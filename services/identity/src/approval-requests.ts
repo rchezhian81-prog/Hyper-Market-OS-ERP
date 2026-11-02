@@ -50,7 +50,7 @@ export interface ApprovalKind {
    * instead: a person who holds `checkerPermission` here AND holds the `checkerRole` role. The owner never approves his own
    * request. Anybody else's request of the kind is decided exactly as before. Absent: no such second approver.
    */
-  readonly whenTheOwnerAsks?: { readonly checkerPermission: string; readonly checkerRole: string };
+  readonly whenTheOwnerAsks?: { readonly checkerPermission: string; readonly checkerRole: string; readonly anyAmount?: true };
 }
 
 /** OB-613: the role whose holder raised a request decides whether `whenTheOwnerAsks` applies. */
@@ -386,8 +386,17 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   // money limits (OB-290) — the store manager approves up to his refund limit (₹5,000), the owner without limit; the
   // accountant has no figure set, so a note above another approver's limit waits for the owner. The person who raised it
   // never approves it. The amount asked is the note's whole value (taxable value plus its GST), worked out by head office.
+  // OB-679 (owner, 2 Nov 2026, in writing): a credit note the OWNER raises himself is approved by the accountant, at any amount
+  // (`anyAmount` — the accountant's missing refund figure does not bind this one case); the owner never approves his own.
   customer_credit_note: {
     kind: 'customer_credit_note', label: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
+    makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve', validForMinutes: 24 * 60,
+    whenTheOwnerAsks: { checkerPermission: 'finance.creditnote.ownerrequest.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE, anyAmount: true },
+  },
+  // OB-679 (owner, 2 Nov 2026, in writing): EVERY debit note to a customer needs a second, different person's approval, at any
+  // amount — no money ladder (the kind is not money-limited); nobody approves their own; one approval issues one note.
+  customer_debit_note: {
+    kind: 'customer_debit_note', label: 'Issue a GST debit note to a business customer (more added to their tax invoice)',
     makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve', validForMinutes: 24 * 60,
   },
   // OB-360 (owner, 24–25 Oct 2026, in writing): EVERY change of a B2B credit limit (or the terms set with it) goes through
@@ -546,6 +555,16 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
     for (const role of roles) if (!out.has(role)) out.set(role, await deps.namedDeciderOf?.(tenantId, role));
     return out;
   };
+  /**
+   * OB-679: a request the OWNER raised, of a kind whose `whenTheOwnerAsks` is `anyAmount`, decided by its second approver
+   * (the accountant: the word AND the role) — not bound by the decider's money limit. Anyone else's request, and anyone
+   * else deciding it, keeps the limits exactly as before.
+   */
+  const ownerRequestAnyAmount = async (tenantId: string, userId: string, request: Pick<ApprovalRequest, 'kind' | 'raisedByTheOwner'>): Promise<boolean> => {
+    const alt = request.raisedByTheOwner === true ? APPROVAL_KINDS[request.kind]?.whenTheOwnerAsks : undefined;
+    if (alt === undefined || alt.anyAmount !== true) return false;
+    return (await holds(tenantId, userId, alt.checkerPermission)) && (await rolesOf(tenantId, userId)).includes(alt.checkerRole);
+  };
   const deciderView = (role: NamedDecider, person: NamedPerson | undefined): DeciderView => person === undefined
     ? { role, named: false, whatToDo: NAMED_DECIDER_WORDS[role].nameFirst }
     : { role, named: true, userId: person.userId, displayName: person.displayName };
@@ -630,6 +649,8 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         const mineToDecide: ApprovalState[] = []; let routedToOwner = 0;
         for (const s of open) {
           const subject = limitedSubjectOf(s.request.kind);
+          // OB-679: the owner's own request of an `anyAmount` kind is the accountant's to decide at any amount.
+          if (await ownerRequestAnyAmount(ctx.tenantId, ctx.userId, s.request)) { mineToDecide.push(s); continue; }
           if (deps.authorityOf !== undefined && subject !== undefined && s.request.valueMinor !== null
             && !mayApproveValue(await deps.authorityOf(ctx.tenantId, ctx.userId, s.request.kind), s.request.valueMinor)) { routedToOwner += 1; continue; }
           mineToDecide.push(s);
@@ -702,7 +723,8 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
           });
         }
         // OB-290: approving money is bounded by the checker's own limit, read on the server (rejecting needs no budget).
-        if (decision === 'approved' && deps.authorityOf !== undefined && state.request.valueMinor !== null && limitedSubjectOf(state.request.kind) !== undefined) {
+        if (decision === 'approved' && deps.authorityOf !== undefined && state.request.valueMinor !== null && limitedSubjectOf(state.request.kind) !== undefined
+          && !(await ownerRequestAnyAmount(ctx.tenantId, ctx.userId, state.request))) {
           const authority = await deps.authorityOf(ctx.tenantId, ctx.userId, state.request.kind);
           if (!mayApproveValue(authority, state.request.valueMinor)) {
             throw apiError(422, {

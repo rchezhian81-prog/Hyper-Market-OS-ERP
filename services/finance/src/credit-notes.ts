@@ -13,7 +13,9 @@
 // it is issued only on an approval of exactly it (kind `customer_credit_note`, the amount = the note's whole value) given
 // by a second person in their own session — the store manager up to his refund limit (₹5,000), the owner without limit; the
 // accountant has no figure set, so above another approver's limit it waits for the owner. Nobody approves their own note.
-// A DEBIT note adds to what the customer owes; OB-678 sets no approval for it, so none is asked (said in the reply).
+// OB-679 (owner, 2 Nov 2026, in writing): a credit note the OWNER raises himself is approved by the accountant at any amount
+// (the OB-613 pattern); and EVERY DEBIT note needs a second, different person's approval too (kind `customer_debit_note`),
+// at any amount — no money ladder. One approval issues one note.
 //
 // Issuing a note writes, in ONE batch (services/api/src/adapters.ts): the note itself, the movement on the customer's AR
 // ledger, and a fact for the books (`b2b:credit_note` / `b2b:debit_note`) that the accountant's existing B2B posting run
@@ -44,8 +46,12 @@ export const CUSTOMER_NOTE_SERIES: Readonly<Record<NoteKind, string>> = Object.f
 export const CUSTOMER_NOTE_FORMAT: Readonly<Record<NoteKind, NumberFormat>> = Object.freeze({ credit_note: { prefix: 'CN-', padTo: 6 }, debit_note: { prefix: 'CDN-', padTo: 6 } });
 /** The approval kind a credit note is issued on (OB-290 refund limits). */
 export const CREDIT_NOTE_APPROVAL_KIND = 'customer_credit_note';
+/** OB-679: the approval kind each note is issued on — a credit note under the refund ladder, a debit note at any amount. */
+export const NOTE_APPROVAL_KIND: Readonly<Record<NoteKind, string>> = Object.freeze({ credit_note: CREDIT_NOTE_APPROVAL_KIND, debit_note: 'customer_debit_note' });
 /** What the approval is about — one note of one customer. */
 export const creditNoteSubjectRef = (customerId: string, noteId: string): string => `credit-note:${customerId}/${noteId}`;
+export const noteSubjectRef = (kind: NoteKind, customerId: string, noteId: string): string =>
+  kind === 'credit_note' ? creditNoteSubjectRef(customerId, noteId) : `debit-note:${customerId}/${noteId}`;
 
 /** Where a note stands in the books. */
 export type NotePosting =
@@ -167,8 +173,8 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
   };
 
   const approvalAsk = (ctx: RequestContext, a: Asked, note: CustomerNote) => ({
-    kind: CREDIT_NOTE_APPROVAL_KIND, subjectRef: creditNoteSubjectRef(a.customerId, a.noteId), valueMinor: note.grossMinor,
-    details: actionDetails(ctx.body), summary: `Credit note to ${a.customerId} against ${note.againstInvoiceNumber}: ₹${(note.grossMinor / 100).toFixed(2)} (${a.reason.replace(/_/g, ' ')})`,
+    kind: NOTE_APPROVAL_KIND[a.kind], subjectRef: noteSubjectRef(a.kind, a.customerId, a.noteId), valueMinor: note.grossMinor,
+    details: actionDetails(ctx.body), summary: `${a.kind === 'credit_note' ? 'Credit' : 'Debit'} note to ${a.customerId} against ${note.againstInvoiceNumber}: ₹${(note.grossMinor / 100).toFixed(2)} (${a.reason.replace(/_/g, ' ')})`,
   });
 
   const postingOf = async (t: string): Promise<(n: CustomerNote) => NotePosting> => {
@@ -197,10 +203,8 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
         const { note } = await workOut(ctx, a, '(numbered when issued)');
         return {
           status: 200,
-          body: {
-            note, needsApproval: a.kind === 'credit_note',
-            ...(a.kind === 'credit_note' ? { approval: approvalAsk(ctx, a, note) } : { noApprovalWhy: 'OB-678 sets an approval for a credit note (money back) only; a debit note adds to what the customer owes.' }),
-          },
+          // OB-678 · OB-679: every note — credit or debit — is issued only on a second person's approval of exactly it.
+          body: { note, needsApproval: true, approval: approvalAsk(ctx, a, note) },
         };
       },
     },
@@ -228,37 +232,36 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
         // Validate WITHOUT drawing a number — a refused note must leave no gap in the series.
         const probe = await workOut(ctx, a, '(probe)');
 
-        // OB-678 · OB-290: a credit note is a refund — issued only on a second person's approval of exactly it.
-        let approvedBy: string | undefined;
-        let spend: (() => Promise<void>) | undefined;
-        if (a.kind === 'credit_note') {
-          const approvalId = (ctx.body as Record<string, unknown>)['approvalId'];
-          const ask = approvalAsk(ctx, a, probe.note);
-          if (!isStr(approvalId)) {
-            throw apiError(422, {
-              code: 'credit_note_needs_approval',
-              whatHappened: `A credit note is money back to the customer and counts as a refund (OB-678): this one, for ₹${(probe.note.grossMinor / 100).toFixed(2)}, is issued only once a second person approves it — the store manager up to his refund limit, the owner without limit.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind ${ask.kind}, subjectRef ${ask.subjectRef}, valueMinor ${ask.valueMinor}, with exactly this note as the details), then send the note again naming the approval. Nothing was issued.`,
-            });
-          }
-          const opened = await openApproval(deps.approvals ?? NO_APPROVALS, {
-            tenantId: t, approvalId: approvalId.trim(), kind: ask.kind, subjectRef: ask.subjectRef, details: ask.details,
-            valueMinor: ask.valueMinor, maker: ctx.userId, usedBy: ctx.userId, now: deps.now(),
+        // OB-678 · OB-290: a credit note is a refund; OB-679: a debit note needs a second person too, at any amount. Either is
+        // issued only on a second person's approval of exactly it.
+        const approvalId = (ctx.body as Record<string, unknown>)['approvalId'];
+        const ask = approvalAsk(ctx, a, probe.note);
+        if (!isStr(approvalId)) {
+          throw apiError(422, {
+            code: a.kind === 'credit_note' ? 'credit_note_needs_approval' : 'debit_note_needs_approval',
+            whatHappened: a.kind === 'credit_note'
+              ? `A credit note is money back to the customer and counts as a refund (OB-678): this one, for ₹${(probe.note.grossMinor / 100).toFixed(2)}, is issued only once a second person approves it — the store manager up to his refund limit, the owner without limit (a credit note the owner raises: the accountant, OB-679).`
+              : `Every debit note to a customer is issued only once a second, different person approves it, at any amount (OB-679): this one is for ₹${(probe.note.grossMinor / 100).toFixed(2)}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind ${ask.kind}, subjectRef ${ask.subjectRef}, valueMinor ${ask.valueMinor}, with exactly this note as the details), then send the note again naming the approval. Nothing was issued.`,
           });
-          approvedBy = opened.decision.decidedBy;
-          spend = opened.spend;
         }
+        const opened = await openApproval(deps.approvals ?? NO_APPROVALS, {
+          tenantId: t, approvalId: approvalId.trim(), kind: ask.kind, subjectRef: ask.subjectRef, details: ask.details,
+          valueMinor: ask.valueMinor, maker: ctx.userId, usedBy: ctx.userId, now: deps.now(),
+        });
+        const approvedBy = opened.decision.decidedBy;
+        const spend = opened.spend;
         const seq = await deps.allocateNumber(t, CUSTOMER_NOTE_SERIES[a.kind]);
         const { note } = await workOut(ctx, a, formatNumber(CUSTOMER_NOTE_FORMAT[a.kind], seq));
-        await spend?.();
-        const issued: CustomerNote = { ...note, issuedBy: ctx.userId, ...(approvedBy === undefined ? {} : { approvedBy }) };
+        await spend();
+        const issued: CustomerNote = { ...note, issuedBy: ctx.userId, approvedBy };
         await deps.recordCustomerNote(t, issued, ctx.userId);
         await deps.recordAudit?.(t, {
           actorId: ctx.userId, action: `finance.${a.kind}.issue`, objectType: 'b2b_customer', objectId: a.customerId, at: deps.now(),
           origin: { tenantId: t, branchId: ctx.branchId ?? null }, before: null,
           after: { number: issued.number, againstInvoice: issued.againstInvoiceNumber, taxableMinor: String(issued.taxableMinor), taxMinor: String(issued.taxMinor), grossMinor: String(issued.grossMinor), reason: issued.reason },
-          ...(isStr((ctx.body as Record<string, unknown>)['approvalId']) ? { approvalId: String((ctx.body as Record<string, unknown>)['approvalId']).trim() } : {}),
+          approvalId: approvalId.trim(),
           correlationId: a.noteId,
         });
         const posting = (await postingOf(t))(issued);
@@ -266,8 +269,7 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
           status: 201,
           body: {
             note: issued, number: issued.number, taxAdjustable: issued.taxAdjustable, declareInPeriod: issued.declareInPeriod, posting,
-            ...(approvedBy === undefined ? { noApprovalWhy: 'OB-678 sets an approval for a credit note only; a debit note adds to what the customer owes.' } : { approvedBy }),
-            invoiceUnchanged: true,
+            approvedBy, invoiceUnchanged: true,
           },
         };
       },

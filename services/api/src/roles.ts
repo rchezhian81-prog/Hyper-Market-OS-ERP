@@ -247,6 +247,8 @@ const BASE_ROLES: readonly Role[] = [
       // ── Round 4c · OB-613 — begin: held ONLY so the owner may grant the accountant role (no-escalation rule). He never
       // approves with them: they count only for a request HE raised, and only from a holder of the accountant role.
       'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // OB-679: likewise held only so the owner may grant it; it counts only for a credit note HE raised, from the accountant.
+      'finance.creditnote.ownerrequest.approve',
       // ── Round 4c · OB-613 — end
       // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
       // M36-FR-01 · OB-321: read the shop's usage meter (for information). M36-FR-03: APPROVE the shop's account closure the IT
@@ -898,6 +900,8 @@ const BASE_ROLES: readonly Role[] = [
       // approval rule (never a change to the accountant's own limits). Only those owner-raised requests: anyone else's
       // still needs the owner.
       'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // OB-679 (owner, 2 Nov 2026, in writing): the accountant approves a GST credit note the OWNER raised, at any amount.
+      'finance.creditnote.ownerrequest.approve',
       // ── Round 4c · OB-613 — end
     ],
   },

@@ -1,8 +1,8 @@
 // Business customers — GST credit and debit notes (W3 · M23-FR-02 · OB-678 · OB-290 · §28 · hard rules #2 #10).
 // Every rule lives in the TESTED session (apps/web-erp/src/b2b-notes-session.ts, window.b2bNotes). This file only draws the
-// open customer's tax invoices, the notes asked for and issued, and passes each click through: a DEBIT note is issued at
-// once; a CREDIT note is worked out by head office and a second person's approval of exactly it is asked — once approved,
-// "Issue the approved credit note" issues it. The page never sends invoice figures. Nothing is read on open.
+// open customer's tax invoices, the notes asked for and issued, and passes each click through: every note (credit or debit)
+// is worked out by head office and a second person's approval of exactly it is asked (OB-678 · OB-679) — once approved,
+// "Issue the approved note" issues it. The page never sends invoice figures. Nothing is read on open.
 // No prompt/confirm/alert.
 
 const $ = (id) => document.getElementById(id);
@@ -38,11 +38,10 @@ function paintInvoices(view) {
     const reason = select('cn-reason', [['', '—'], ...REASONS.map((r) => [r, w(`reason_${r}`)])]);
     rows.append(labelled(w('kindL'), kind), labelled(w('reasonL'), reason));
     const go = document.createElement('button'); go.type = 'button'; go.className = 'cn-raise'; go.textContent = w('askCredit');
-    kind.addEventListener('change', () => { go.textContent = w(kind.value === 'debit_note' ? 'issueDebit' : 'askCredit'); });
     go.addEventListener('click', async () => {
       const rupeesByLine = {}; for (const [k, i] of Object.entries(typed)) rupeesByLine[k] = i.value;
       const out = await nt.session.raise({ kind: kind.value, customerId: customerId ?? '', invoiceDocumentId: inv.documentId, reason: reason.value, rupeesByLine });
-      status(out, kind.value === 'debit_note' ? 'issuedNow' : 'askedNow');
+      status(out, 'askedNow');
       if (out.result === 'ok') await show();
     });
     li.append(rows, go); ul.append(li);
