@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2084,
+  "testFiles": 2088,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 39
   },
   "totals": {
-    "unit": 97,
+    "unit": 98,
     "integration": 104,
     "realDb": 102,
-    "browser": 91,
-    "connected": 72,
+    "browser": 93,
+    "connected": 74,
     "device": 0,
     "uat": 0
   },
@@ -504,7 +504,7 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 21,
+        "unit": 22,
         "integration": 24,
         "realDb": 14,
         "browser": 10,
@@ -532,6 +532,7 @@
           "tests/unit/rfq.test.ts",
           "tests/unit/round-a-today-counts-head-offices-approvals-and-orders.test.ts",
           "tests/unit/supplier-performance.test.ts",
+          "tests/unit/supplier-records-session.test.ts",
           "tests/unit/supplier-terms-session.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts"
@@ -1882,11 +1883,11 @@
       "id": "M22",
       "label": "WIRED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 17,
         "realDb": 10,
-        "browser": 3,
-        "connected": 2,
+        "browser": 4,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1896,6 +1897,7 @@
           "tests/unit/b2b-collections.test.ts",
           "tests/unit/b2b-contracts.test.ts",
           "tests/unit/b2b-documents.test.ts",
+          "tests/unit/b2b-portal-ordering-and-payment-notes.test.ts",
           "tests/unit/b2b-portal-session.test.ts",
           "tests/unit/b2b.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
@@ -1940,11 +1942,13 @@
         "browser": [
           "tests/e2e/b2b-portal-delivery.e2e.ts",
           "tests/e2e/b2b-portal-on-the-production-api.e2e.ts",
-          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts"
+          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-a-business-customer-asks-orders-and-pays-and-finance-matches-it.e2e.ts"
         ],
         "connected": [
           "tests/e2e/b2b-portal-on-the-production-api.e2e.ts",
-          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts"
+          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-a-business-customer-asks-orders-and-pays-and-finance-matches-it.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2351,8 +2355,8 @@
         "unit": 9,
         "integration": 13,
         "realDb": 7,
-        "browser": 7,
-        "connected": 1,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2399,10 +2403,12 @@
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
           "tests/e2e/the-scrap-and-packaging-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-scrap-page-says-why-the-manager-has-no-form.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/write-off-capture-delivery.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts"
+          "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3825,8 +3831,8 @@
         "unit": 11,
         "integration": 14,
         "realDb": 9,
-        "browser": 1,
-        "connected": 1,
+        "browser": 2,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3872,10 +3878,12 @@
           "tests/integration/the-shop-is-metered-for-information.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3890,8 +3898,8 @@
         "unit": 8,
         "integration": 10,
         "realDb": 5,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3925,8 +3933,12 @@
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3940,8 +3952,8 @@
         "unit": 7,
         "integration": 10,
         "realDb": 5,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3974,8 +3986,12 @@
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4092,8 +4108,8 @@
         "unit": 7,
         "integration": 6,
         "realDb": 4,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -4124,10 +4140,12 @@
         "browser": [
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/operations-dismiss-delivery.e2e.ts",
-          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts"
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts"
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4187,8 +4205,8 @@
         "unit": 8,
         "integration": 8,
         "realDb": 4,
-        "browser": 5,
-        "connected": 2,
+        "browser": 6,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -4224,11 +4242,13 @@
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4286,8 +4306,8 @@
         "unit": 13,
         "integration": 7,
         "realDb": 3,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -4323,10 +4343,12 @@
         ],
         "browser": [
           "tests/e2e/lib/ai-inbox-shop.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/workforce-dismiss-delivery.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -4384,7 +4406,7 @@
       "id": "WF-02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 0,
+        "unit": 1,
         "integration": 9,
         "realDb": 5,
         "browser": 3,
@@ -4393,7 +4415,9 @@
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/supplier-records-session.test.ts"
+        ],
         "integration": [
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/purchase-orders.test.ts",
@@ -4433,8 +4457,8 @@
         "unit": 3,
         "integration": 14,
         "realDb": 8,
-        "browser": 4,
-        "connected": 3,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4474,12 +4498,14 @@
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
-          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
-          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4628,8 +4654,8 @@
         "unit": 4,
         "integration": 8,
         "realDb": 5,
-        "browser": 4,
-        "connected": 1,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -4660,11 +4686,13 @@
         "browser": [
           "tests/e2e/indents-delivery.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/warehouse-handheld-transfers-with-the-line-down.e2e.ts",
           "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/transfers-on-the-production-api.e2e.ts"
+          "tests/e2e/transfers-on-the-production-api.e2e.ts",
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "device": [],
         "uat": []

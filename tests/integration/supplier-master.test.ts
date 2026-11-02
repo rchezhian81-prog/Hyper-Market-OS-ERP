@@ -108,6 +108,11 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     expect((kept.body as { supplier: { documents: { verifiedBy?: string; verifiedAt?: string }[] } }).supplier.documents[0]).toMatchObject({ verifiedBy: 'u-buyer', verifiedAt: doc.verifiedAt });
     // A CHANGED document still carrying the buyer's name is a new claim — refused unless the sender verifies it.
     expect(codeOf(await propose(h, 's-v', { name: 'Verified Traders Pvt', documents: [{ ...gst, validUntil: '2030-12-31', verifiedBy: 'u-buyer' }] }, 'u-checker', 'sup-s-v-changed'))).toBe('actor_is_the_caller');
+    // W3 (WF-02): updating the details WITHOUT sending papers (the Suppliers page's "add or update" form) keeps every paper on
+    // file, verifier and all — leaving the field out never deletes the supplier's documents.
+    const detailsOnly = await propose(h, 's-v', { name: 'Verified Traders Pvt Ltd', paymentTermsDays: 15 }, 'u-checker', 'sup-s-v-details');
+    expect(detailsOnly.status).toBe(200);
+    expect((detailsOnly.body as { supplier: { documents: { documentId: string; verifiedBy?: string; verifiedAt?: string }[] } }).supplier.documents).toEqual([expect.objectContaining({ documentId: 'd1', verifiedBy: 'u-buyer', verifiedAt: doc.verifiedAt })]);
   });
   it('a purchase user PROPOSES a supplier, a DIFFERENT person approves it, a look-alike is said as a possible duplicate, the list says who needs a person and why; nothing for a cashier or another tenant', async () => {
     const h = await seeded();
