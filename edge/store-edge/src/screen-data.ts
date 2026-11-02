@@ -185,6 +185,18 @@ function privacySlaOf(packed: unknown): { readonly privacySlaDays: number; reado
   return fixed.flag === null ? { privacySlaDays: fixed.days } : { privacySlaDays: fixed.days, privacySlaFlag: fixed.flag, packedPrivacySlaDays: fixed.storedDays };
 }
 
+/**
+ * W3 · M36-FR-02 (OB-321): the shop's own brand — name, logo, colours — as the SIGNED catalogue pack this box holds carries
+ * it, for every screen this box serves (`window.sreBrand`): the office chrome shows the name and colour, the till prints the
+ * name on the bill. Read from the box's own copy, never a network call; undefined when the pack carries no brand (the
+ * screens then keep their own neutral words, never another shop's).
+ */
+export function screenBrand(input: ScreenInput): Record<string, unknown> | undefined {
+  const b = input.cataloguePack?.snapshot.branding;
+  if (b === undefined) return undefined;
+  return { ...b, packVersion: input.cataloguePack!.snapshot.version };
+}
+
 export function catalogueFreshness(input: ScreenInput): Record<string, unknown> {
   const pack = input.cataloguePack;
   if (pack === undefined) {
@@ -260,6 +272,8 @@ export interface TillCatalogue {
   readonly promotions?: SignedPack['snapshot']['promotions'];
   /** OB-306: the own-barcode bundles head office signed into the pack — the till explodes a bundle sale into its components. */
   readonly bundles?: SignedPack['snapshot']['bundles'];
+  /** W3 · M36-FR-02: the shop's own name, logo and colours head office signed into the pack — the bill prints the name. */
+  readonly branding?: SignedPack['snapshot']['branding'];
 }
 
 /**
@@ -296,6 +310,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       ...(snapshot.embeddedRules === undefined ? {} : { embeddedRules: snapshot.embeddedRules }),
       ...(snapshot.promotions === undefined ? {} : { promotions: snapshot.promotions }),
       ...(snapshot.bundles === undefined ? {} : { bundles: snapshot.bundles }),
+      ...(snapshot.branding === undefined ? {} : { branding: snapshot.branding }),
       products: snapshot.products.map((p) => ({
         productId: p.productId,
         sku: p.sku,
@@ -501,6 +516,8 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     ...(till.promotions === undefined ? {} : { promotions: till.promotions }),
     // OB-306: the bundle definitions ride through as signed, so the till explodes a bundle line offline.
     ...(till.bundles === undefined ? {} : { bundles: till.bundles }),
+    // W3 · M36-FR-02: the shop's own name, logo and colours, as head office signed them — the bill prints the name offline.
+    ...(till.branding === undefined ? {} : { branding: till.branding }),
     products,
     barcodes,
     // Named, never silently dropped: a product missing from the till is a product nobody can sell.

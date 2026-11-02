@@ -90,6 +90,7 @@ describe('every menu item the store computer may offer is answered by its server
       // Wave 3: the Safety incidents page too — it starts on this box's own store's incidents.
       expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance', 'facilities-setup', 'safety-incidents'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
       expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance', 'facilities-setup', 'online-orders'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
+      expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance', 'facilities-setup', 'floor-devices'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
       expect(payload['userId']).toBe('u-owner');
     }
   });

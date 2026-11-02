@@ -154,6 +154,10 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
   const bundles = [...(snapshot.bundles ?? [])]
     .sort((a, b) => (a.bundleProductId < b.bundleProductId ? -1 : a.bundleProductId > b.bundleProductId ? 1 : a.version - b.version))
     .map((d) => stableJson(d));
+  // W3 · M36-FR-02 (OB-321): the shop's own name, logo and colours ride under the signature — a pack edited after signing to
+  // print another name on the bill fails to verify. Only when the pack carries a brand, so a pack without one signs to
+  // exactly the bytes it always did (a box's held pack still verifies after the upgrade).
+  const branding = snapshot.branding === undefined ? [] : ['--branding', stableJson(snapshot.branding)];
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
@@ -162,7 +166,8 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     ...(expired.length === 0 ? [] : ['--expired', ...expired]),
     ...(categories.length === 0 ? [] : ['--categories', ...categories]),
     ...(cess.length === 0 ? [] : ['--cess', ...cess]),
-    ...(bundles.length === 0 ? [] : ['--bundles', ...bundles])]
+    ...(bundles.length === 0 ? [] : ['--bundles', ...bundles]),
+    ...branding]
     .join(RECORD);
 }
 

@@ -368,16 +368,29 @@
     return asked === own;
   }
 
+  // W3 · M36-FR-02 (OB-321): the shop's own name and colours, as head office signed them into the pack this store computer
+  // holds (`window.sreBrand`, no network). Absent → the menu keeps its own words; a colour is used only when it is a hex.
+  function shopBrand() {
+    const b = window.sreBrand;
+    if (!b || typeof b !== 'object') return null;
+    const hex = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+    const name = typeof b.productName === 'string' && b.productName.trim() !== '' ? b.productName.trim() : null;
+    return { name, primary: hex(b.colours?.primary), onPrimary: hex(b.colours?.onPrimary) };
+  }
+
   function brand() {
+    const own = shopBrand();
     const block = document.createElement('div');
     block.className = 'brand';
+    if (own) block.setAttribute('data-shop-brand', '');
     const mark = document.createElement('span');
     mark.className = 'mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = 'SRE';
+    mark.textContent = own?.name ? own.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase() : 'SRE';
+    if (own?.primary && own?.onPrimary) { mark.style.background = own.primary; mark.style.color = own.onPrimary; }
     const words = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = 'Hyper Market';
+    name.textContent = own?.name ?? 'Hyper Market';
     const what = document.createElement('small');
     what.textContent = t('workspace');
     words.append(name, what);
@@ -660,6 +673,11 @@
     'message-queue': 'message-circle', // W3 — an icon already in the set
     'compensation-limits': 'banknote', // W3 — an icon already in the set
     'gift-cards': 'ticket', // W3 — an icon already in the set
+    'partner-webhooks': 'send', // Wave 3 — an icon already in the set
+    'partners': 'key-round', // Wave 3 — an icon already in the set
+    'developer-docs': 'book-open', // Wave 3 — an icon already in the set
+    'floor-devices': 'tag', // Wave 3 — an icon already in the set
+    'branding': 'store', // Wave 3 — an icon already in the set
     'cert-in': 'shield-check', // Round 4c — an icon already in the set
     'emergency-access': 'key-round', // Wave 3 — an icon already in the set
     'safety-incidents': 'shield-alert', // Wave 3 — an icon already in the set

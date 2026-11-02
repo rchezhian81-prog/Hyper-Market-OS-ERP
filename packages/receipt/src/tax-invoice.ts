@@ -559,12 +559,19 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
   readonly fssaiLicenceNo?: string;
   /** A22 (OB-326, switched off): the B2C dynamic QR for this bill — printed after the payments only when it is ready. */
   readonly b2cQr?: B2cQrPlan;
+  /**
+   * W3 · M36-FR-02 (OB-321): the shop's own trading name from the signed pack, printed above the legal name — only when it
+   * differs from it. Untagged: it carries no Rule 46 field, so the legal name, address and GSTIN below stay what they are.
+   */
+  readonly brandName?: string;
 } = {}): readonly InvoiceRow[] {
   const w = LABELS[options.language ?? 'en'];
   const rows: InvoiceRow[] = [];
   const rule = (): void => { rows.push({ kind: 'rule', fields: [] }); };
   rows.push({ kind: 'title', fields: ['title'], text: w[doc.title] });
   if (options.duplicate === true) rows.push({ kind: 'title', fields: ['duplicate'], text: w['duplicate'] });
+  const brand = options.brandName?.trim() ?? '';
+  if (brand !== '' && brand.toLowerCase() !== doc.supplier.legalName.trim().toLowerCase()) rows.push({ kind: 'centre', fields: [], text: brand });
   rows.push({ kind: 'centre', fields: ['supplier_legal_name'], text: doc.supplier.legalName });
   for (const line of doc.supplier.placeOfBusiness) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
   rows.push({ kind: 'centre', fields: ['supplier_gstin'], text: `${w['gstin']}: ${doc.supplier.gstin}` });

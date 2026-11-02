@@ -1650,7 +1650,11 @@ export function bootPos(config?: {
     const day = session.laneToday();
     return day === undefined ? undefined : fssaiLicenceNumberOn(config?.fssaiLicence, day);
   };
-  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), ((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()));
+  // W3 · M36-FR-02 (OB-321): the shop's own name from the SIGNED catalogue pack this till holds — no network at sale time.
+  const brandName = (): string | undefined => { const n = config?.catalogue?.branding?.productName; return typeof n === 'string' && n.trim() !== '' ? n.trim() : undefined; };
+  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), {
+    ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
+  });
   // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
   const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
     const t = receiptTemplate();
@@ -1659,7 +1663,7 @@ export function bootPos(config?: {
   };
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
     billTaxInvoice(session.lastBill(), {
-      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
       ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...options,
     });
 
@@ -1864,7 +1868,7 @@ export function bootPos(config?: {
     if (r['printed'] !== true) return { ok: false, why: said, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }), ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}) };
     const printed = billCopyPrint(r as unknown as BillCopyAnswer, {
       realTrading: config?.realTrading === true, identity: config?.taxInvoice ?? null, ...(input.language === undefined ? {} : { language: input.language }),
-      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
       ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }),
       reason: body.reason, by, at: new Date().toISOString(),
     });
