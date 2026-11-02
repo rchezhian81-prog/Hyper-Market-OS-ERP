@@ -47,9 +47,10 @@ const linksTheFoundation = (html: string): boolean => {
 };
 
 describe('the screens this covers', () => {
-  it('finds the twelve screen apps and their pages, and leaves the marketing site alone', () => {
+  it('finds the thirteen screen apps and their pages, and leaves the marketing site alone', () => {
+    // OB-676 (M27-FR-02): the concessionaire's own counter portal joined.
     // OB-288 P6: the self-checkout lane and the price kiosk joined (R8-3 · D14-FR-02); Pkg 6b: the queue till (D04-FR-05).
-    expect(apps).toEqual(['b2b-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'price-kiosk', 'queue-pos', 'self-checkout', 'supplier-app', 'warehouse-app', 'web-erp']);
+    expect(apps).toEqual(['b2b-app', 'concession-app', 'customer-app', 'delivery-app', 'owner-app', 'picker-app', 'pos', 'price-kiosk', 'queue-pos', 'self-checkout', 'supplier-app', 'warehouse-app', 'web-erp']);
     expect(pages.length).toBeGreaterThanOrEqual(56);
     expect(pages.some((p) => p.startsWith('apps/site/'))).toBe(false);
   });

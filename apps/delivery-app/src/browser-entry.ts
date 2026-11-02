@@ -50,6 +50,8 @@ export interface DriverData {
   readonly contributionRule?: ContributionRule;
   /** |over/short| at or above which a cash handover needs the cash office. Per-tenant. */
   readonly handoverToleranceMinor?: number;
+  /** OB-676: true only when the owner has confirmed `handoverToleranceMinor` (the signed pack says so); else "not confirmed". */
+  readonly handoverToleranceConfirmed?: boolean;
   /** OB-521: the signed pack's app version policy, as the store computer served it (`null` = the pack carries none). */
   readonly appVersionPolicy?: unknown;
 }
@@ -63,6 +65,8 @@ interface DriverWindow {
   driverOutbox?: DeviceOutbox;
   /** The tolerance the screen applies to a handover variance, from the tenant's config. */
   driverHandoverToleranceMinor?: number;
+  /** OB-676: whether the owner has confirmed that tolerance — the screen says "not confirmed" beside a cash difference until he has. */
+  driverHandoverToleranceConfirmed?: boolean;
   /** Anything that went wrong with the device's own storage, for the view to show (P-08). */
   driverStorageProblem?: string | null;
   /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
@@ -153,9 +157,10 @@ if (browserWindow !== undefined) {
   // OB-537 (Round 9): every record this handheld queues carries the app build that made it.
   const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamping?.stamp, APP_BUILD_VERSION);
   browserWindow.driverOutbox = outbox;
-  // Defaulted to ₹100 and overridable per tenant. A tolerance of zero would send every driver to
-  // the cash office over a rupee, and a control everybody routes around is not a control.
+  // The store's limit from the signed pack. OB-676 (owner, 2 Nov 2026): with none served the phone keeps the old ₹100 —
+  // and, like a figure the owner has not confirmed, it is said as NOT CONFIRMED wherever a cash difference shows.
   browserWindow.driverHandoverToleranceMinor = browserWindow.driverData?.handoverToleranceMinor ?? 10_000;
+  browserWindow.driverHandoverToleranceConfirmed = browserWindow.driverData?.handoverToleranceMinor !== undefined && browserWindow.driverData.handoverToleranceConfirmed === true;
   const session = bootDriver(browserWindow.driverData, outbox);
   if (session !== null) {
     browserWindow.routeSession = session;

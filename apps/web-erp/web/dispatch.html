@@ -119,6 +119,8 @@
         <h3 id="board-h">The day’s routes</h3>
         <div class="row-form"><button id="show-board" type="button"><span id="show-board-text">Show the routes</span></button></div>
         <p class="status" id="board-status" role="status" aria-live="polite"></p>
+        <!-- OB-676: the limit every cash difference below is judged against — "not confirmed by the owner" until he confirms it. -->
+        <p id="board-tolerance" hidden></p>
         <ul class="rows" id="board" hidden></ul>
       </section>
 
@@ -135,6 +137,24 @@
         <div class="row-form"><button id="show-controls" type="button"><span id="show-controls-text">Show the numbers</span></button></div>
         <p class="status" id="controls-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="controls" hidden></ul>
+      </section>
+
+      <!-- OB-676 (owner, 2 Nov 2026): the driver cash hand-over limit — today's figure offered as the starting suggestion, shown
+           "not confirmed" until the owner confirms it; a confirmation is audited and a change is a new version. -->
+      <section aria-labelledby="tolerance-h">
+        <h3 id="tolerance-h">Driver cash hand-over limit</h3>
+        <div class="row-form"><button id="show-tolerance" type="button"><span id="show-tolerance-text">Show the limit</span></button></div>
+        <p class="status" id="tolerance-status" role="status" aria-live="polite"></p>
+        <div id="tolerance" hidden>
+          <p id="tolerance-state"></p>
+          <div class="row-form" id="tolerance-form" hidden>
+            <label for="tolerance-value"><span id="tolerance-value-l">Limit (₹)</span><input id="tolerance-value" inputmode="decimal" autocomplete="off" /></label>
+            <label for="tolerance-note"><span id="tolerance-note-l">Note (optional)</span><input id="tolerance-note" autocomplete="off" maxlength="200" /></label>
+            <button id="confirm-tolerance" type="button"><span id="confirm-tolerance-text">Confirm this limit</span></button>
+          </div>
+          <h4 id="tolerance-history-h" hidden>Every confirmation</h4>
+          <ul class="rows" id="tolerance-history"></ul>
+        </div>
       </section>
 
       <section aria-labelledby="settle-h">

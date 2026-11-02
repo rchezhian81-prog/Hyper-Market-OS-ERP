@@ -992,6 +992,11 @@ export interface PackPolicies {
   /** |over/short| at or above which a driver's cash handover needs the cash office. */
   readonly handoverToleranceMinor: number;
   /**
+   * OB-676 (owner, 2 Nov 2026): who confirmed `handoverToleranceMinor` and when. Absent → the owner has NOT confirmed the
+   * figure: the box and the driver's phone keep working on it and say "not confirmed" wherever a cash difference shows.
+   */
+  readonly handoverToleranceConfirmed?: { readonly by: string; readonly at: string; readonly version: number };
+  /**
    * |over/short| at or above which a TILL's shift close is material — needs a reason and is raised for the cash office
    * (M14-FR-02, SP-4c). Optional: a pack that names none makes the box apply its default AND say so on every close
    * (`toleranceKnown: false`), never a silent constant.

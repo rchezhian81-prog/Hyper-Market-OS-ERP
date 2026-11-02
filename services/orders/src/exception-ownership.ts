@@ -25,6 +25,7 @@ import {
   type OwnedException, type ExceptionOwnerRole, type ExceptionSlaPolicy,
 } from '../../../packages/orders/src/substitution-exception-ownership';
 import type { OrdersDeps, StoredSubstitution } from './index';
+import { queuesStaffedUnder, type QueueStaffingStanding } from './exception-queue-staffing';
 
 export interface ExceptionOwnershipDeps {
   /** Every owned exception the tenant has acted on — latest per exception id. */
@@ -46,6 +47,11 @@ export interface ExceptionOwnershipDeps {
    * dead letter and budget). Idempotent on the alert's id; answers whether it was newly queued.
    */
   readonly enqueueBreachAlert?: (tenantId: string, alert: BreachAlert) => Promise<boolean> | boolean;
+  /**
+   * OB-676 (owner, 2 Nov 2026): which roles staff each queue, as the owner set and confirmed it — or, until he has, the
+   * starting suggestion (`QUEUES_STAFFED_BY`), said "not confirmed". Absent: the starting suggestion, unconfirmed.
+   */
+  readonly queueStaffing?: (tenantId: string) => Promise<QueueStaffingStanding>;
 }
 
 /**
@@ -121,10 +127,10 @@ export async function raiseBreachAlerts(deps: OrdersDeps & ExceptionOwnershipDep
 export const OWNER_ROLES: readonly ExceptionOwnerRole[] = ['fulfilment_supervisor', 'customer_service_desk', 'finance_recon_queue', 'duty_manager'];
 
 /**
- * Which exception queues a catalogue role STAFFS. The owner's approved model names the queues (Item 2); this is
- * the standing arrangement in a single-store deployment: management works every queue and is the terminal
- * owner; the accountant is the finance / payment-reconciliation queue; the service-desk (cashier) staff are the
- * customer-service desk. Written in one place so the owner can change who staffs what without touching a route.
+ * Which exception queues a catalogue role STAFFS — the STARTING SUGGESTION only (OB-676, owner, 2 Nov 2026): the owner sets
+ * and confirms the roles per queue on the Delivery exceptions page (`exception-queue-staffing.ts`); until he does, the queues
+ * run on this, said "not confirmed". The arrangement it suggests: management works every queue and is the terminal owner;
+ * the accountant is the finance / payment-reconciliation queue; the service-desk (cashier) staff are the customer-service desk.
  */
 export const QUEUES_STAFFED_BY: Readonly<Record<string, readonly ExceptionOwnerRole[]>> = Object.freeze({
   owner: OWNER_ROLES,
@@ -240,9 +246,15 @@ export function exceptionOwnershipRoutes(deps: OrdersDeps & ExceptionOwnershipDe
     }
     return { owned, policy };
   };
-  // A caller may work an item only from a queue their role staffs — the duty manager staffs them all.
+  // OB-676: the staffing in force — the owner's confirmed version, else the starting suggestion (unconfirmed).
+  const staffingOf = async (tenantId: string): Promise<Pick<QueueStaffingStanding, 'state' | 'staffing' | 'unowned'>> => {
+    if (deps.queueStaffing !== undefined) return deps.queueStaffing(tenantId);
+    const staffing = Object.fromEntries(OWNER_ROLES.map((q) => [q, Object.keys(QUEUES_STAFFED_BY).filter((r) => (QUEUES_STAFFED_BY[r] ?? []).includes(q)).sort()])) as Record<ExceptionOwnerRole, string[]>;
+    return { state: 'not_confirmed', staffing, unowned: OWNER_ROLES.filter((q) => staffing[q].length === 0) };
+  };
+  // A caller may work an item only from a queue their role staffs — the duty manager's queue is the terminal owner of them all.
   const mustStaff = async (tenantId: string, userId: string, owned: OwnedException): Promise<ExceptionOwnerRole> => {
-    const queues = queuesStaffedBy(await deps.rolesOf(tenantId, userId));
+    const queues = queuesStaffedUnder((await staffingOf(tenantId)).staffing, await deps.rolesOf(tenantId, userId));
     if (queues.includes(owned.owner)) return owned.owner;
     if (queues.includes('duty_manager')) return 'duty_manager';
     throw apiError(422, {
@@ -268,7 +280,9 @@ export function exceptionOwnershipRoutes(deps: OrdersDeps & ExceptionOwnershipDe
       handler: async (ctx) => {
         const now = deps.now();
         const { items, derived, policy } = await ownedWorklist(deps, ctx.tenantId, now);
-        return { status: 200, body: presentWorklist(items, derived, policy, now) };
+        // OB-676: who staffs each queue, whether the owner confirmed it, and every queue nobody staffs (unowned, never dropped).
+        const staffing = await staffingOf(ctx.tenantId);
+        return { status: 200, body: { ...presentWorklist(items, derived, policy, now), staffing: { state: staffing.state, byQueue: staffing.staffing, unowned: staffing.unowned } } };
       },
     },
     // One role's open queue, worst first — what a desk or the finance recon queue works from.
@@ -288,7 +302,8 @@ export function exceptionOwnershipRoutes(deps: OrdersDeps & ExceptionOwnershipDe
         const { items, derived, policy } = await ownedWorklist(deps, ctx.tenantId, now);
         const all = presentWorklist(items, derived, policy, now);
         const queue = all.exceptions.filter((x) => x.owner === owner && x.state !== 'resolved');
-        return { status: 200, body: { owner, exceptions: queue, count: queue.length, atRiskMinor: queue.reduce((s, x) => s + x.amountMinor, 0), breached: queue.filter((x) => x.sla.breached).length } };
+        const staffing = await staffingOf(ctx.tenantId);
+        return { status: 200, body: { owner, exceptions: queue, count: queue.length, atRiskMinor: queue.reduce((s, x) => s + x.amountMinor, 0), breached: queue.filter((x) => x.sla.breached).length, staffedBy: staffing.staffing[owner] ?? [], unowned: staffing.unowned.includes(owner), staffingState: staffing.state } };
       },
     },
     // Claim: a named person takes the item off the queue — it stays visible, now as in_progress under their name.

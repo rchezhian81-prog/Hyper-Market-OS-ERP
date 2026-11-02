@@ -75,7 +75,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('logins for
     try {
       await says(s.page, 'outside-source-text', /^Head office, as at/);
       expect(s.writes, 'nothing is written on open').toEqual([]);
-      expect(await options(s.page)).toEqual(['b2b_customer', 'customer', 'supplier']);
+      // OB-676 (owner, 2 Nov 2026): a concessionaire's own counter login is the fourth kind (M27-FR-02).
+      expect(await options(s.page)).toEqual(['b2b_customer', 'customer', 'supplier', 'concessionaire']);
       await says(s.page, 'outside-list', /No outside logins have been invited yet/);
       // Refused in head office's words: an account it does not hold.
       await s.page.selectOption('#outside-kind', 'b2b_customer');
@@ -107,7 +108,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('logins for
     const s = await open(ACCT);
     try {
       await says(s.page, 'outside-source-text', /^Head office, as at/);
-      expect(await options(s.page), 'only the kind the accountant manages').toEqual(['b2b_customer']);
+      // The accountant manages business accounts and (OB-676) concessions — those two kinds only.
+      expect(await options(s.page), 'only the kinds the accountant manages').toEqual(['b2b_customer', 'concessionaire']);
       const row = s.page.locator('#outside-list .row');
       await row.locator('button', { hasText: 'Approve' }).click();
       await says(s.page, 'outside-result-text', /^Approved\. Meena Raman can now sign in to their own record/);
