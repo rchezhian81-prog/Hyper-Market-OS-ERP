@@ -224,7 +224,11 @@ export function drawChart(doc: ChartDocument, host: ChartHost | null, spec: Char
     let tallest = -1;
     model.rows.forEach((r, i) => { if (r.known && (tallest < 0 || r.pct > model.rows[tallest]!.pct)) tallest = i; });
     model.rows.forEach((row, i) => {
-      const col = el('div', `sre-chart-col${row.known ? '' : ' sre-chart-unknown'}${row.mark === null ? '' : ' sre-chart-marked'}`);
+      // A figure on top is wider than its column; near either edge it lines up with that edge so it never pokes past
+      // the screen's side on a phone (a sideways scroll), and stays centred over the middle columns.
+      const n = model.rows.length;
+      const edge = n < 2 ? '' : i < n / 3 ? ' sre-chart-col-start' : i >= (2 * n) / 3 ? ' sre-chart-col-end' : '';
+      const col = el('div', `sre-chart-col${edge}${row.known ? '' : ' sre-chart-unknown'}${row.mark === null ? '' : ' sre-chart-marked'}`);
       col.dataset['key'] = row.key;
       col.append(el('span', 'sre-chart-top', i === tallest || row.mark !== null ? (row.mark === null ? row.text : `${row.mark} · ${row.text}`) : row.known ? '' : '?'));
       const bar = svg('svg', { class: 'sre-chart-stem', viewBox: '0 0 10 100', preserveAspectRatio: 'none', focusable: 'false' });
