@@ -126,9 +126,21 @@ export interface IncomingTender {
    * never the values. Written by the store computer (one a till sends is dropped there); head office raises it, critical.
    */
   readonly cardDataRemoved?: { readonly fields?: readonly string[] };
+  /**
+   * D07-FR-04 · OB-677: on a `gift_card` tender, the gift card's own code (the shop's stored-value instrument — never a bank
+   * card) and whether the store computer took it while it could not reach head office. Head office takes the value off the
+   * card once (`till:<saleId>:gc<n>`); a card overspent across tills is raised as `gift_card_overspent`.
+   */
+  readonly giftCard?: { readonly code: string; readonly capturedOffline?: boolean };
 }
 
 export interface IncomingSale {
+  /**
+   * D06-FR-03 · OB-673: the coupon(s) the till honoured on this bill, and what each took off (already spread over the lines,
+   * so the lines still add to the total). Head office records each use once (`till:<saleId>:<code>`) — never refusing the
+   * sale; a coupon used beyond its limit is raised as `coupon_used_beyond_its_limit` for the manager.
+   */
+  readonly coupons?: readonly { readonly code: string; readonly discountMinor: number }[];
   /**
    * OB-299 (M12-FR-02): the customer paid in full at the till and the bill is to be DELIVERED — the delivery-fee product and
    * what its line charged. Head office books it as one delivery job after banking (`deliveryOnSale`). A record.
@@ -284,6 +296,19 @@ export type SaleExceptionKind =
   /** Verifier r20 IC-3: a bill head office did NOT bank (a different bill already holds its sale id) carried a member, points
    *  or store credit. Loyalty follows only the banked bill; this one's is raised for a person to settle when it is banked. */
   | 'loyalty_on_a_bill_not_banked'
+  /** D06-FR-03 · OB-673: a coupon the till honoured (offline, or on two tills at once) had already reached its limit — of uses
+   *  in all, or for this customer. The sale stands and the use is kept; the manager decides. Valued at the discount given. */
+  | 'coupon_used_beyond_its_limit'
+  /** D06-FR-03 · OB-673: a coupon the till honoured was not valid when used by head office's own record (expired, unknown,
+   *  not this customer's, or the bill was too small). The sale stands and the use is kept; the manager decides. */
+  | 'coupon_not_valid_when_used'
+  /** D07-FR-04 · OB-677: a gift card was spent at the till for more than its true balance once every till's and channel's
+   *  spends arrived — spent twice across tills while the link was down. Valued at the shortfall; nothing is reversed. */
+  | 'gift_card_overspent'
+  /** D07-FR-04 · OB-677: a gift card the till took is not one head office holds, or had expired when it was spent. */
+  | 'gift_card_not_valid_when_spent'
+  /** D07-FR-04 · OB-677: a gift card sold at the till carries a code head office already holds for another card. */
+  | 'gift_card_sold_twice'
   /** OB-500: a line was lowered at the till BELOW the product's floor price at that store (margin floor over its buying cost).
    *  The till and its store computer refuse this; head office's backstop for an old till or a floor that changed. */
   | 'price_cut_below_floor'

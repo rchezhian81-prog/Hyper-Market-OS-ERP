@@ -8,6 +8,9 @@
 //     has not synced. The cloud holds the WHOLE redemption history, so when the second lane syncs, the
 //     central `redeemCoupon` sees the limit is already reached and REFUSES it — a visible 409, never a
 //     silent last-write-wins. A re-sync of the SAME redemption id is idempotent (200), not a second use.
+//     W3 · OB-673 (owner, 2 Nov 2026): a coupon the TILL honoured arrives with its sale instead (`tillVoucherEffects`,
+//     till-vouchers.ts) — the customer already has the discount, so that use is KEPT and a use past the limit is raised as
+//     an exception for the manager, never refused. This route stays the door for a use that has not happened yet.
 //   • EXPIRY and ELIGIBILITY are checked at redemption, not at issue.
 //   • A PERSONALISED OFFER carries the consent gate (M16-FR-02): an offer built from someone's shopping
 //     history is profiling and sending it is marketing — BOTH consents are required, and a refusal NAMES

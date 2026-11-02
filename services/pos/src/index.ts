@@ -108,6 +108,12 @@ export interface PosDeps {
    * not judge a HUID sold twice (a composition without the sales ledger); a gold line with no HUID is still raised.
    */
   readonly huidsSoldElsewhere?: (tenantId: string, sale: IncomingSale) => Promise<ReadonlyMap<string, string>>;
+  /**
+   * D06-FR-03 · OB-673 · D07-FR-04 · OB-677: what the sale's coupons and gift-card tenders do at head office
+   * (`tillVoucherEffects`, services/customer/src/till-vouchers.ts) — recorded once per sale, never refusing; the
+   * exceptions it raises are recorded by it. Absent → coupons and gift cards on a till bill are not applied here.
+   */
+  readonly vouchersOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
   readonly loyaltySpendOnSale?: (tenantId: string, sale: IncomingSale) => Promise<readonly {
     readonly kind: string; readonly ref: string; readonly requestedMinor: number; readonly appliedMinor: number;
     readonly shortfallMinor: number; readonly alreadyApplied: boolean; readonly detail: string;
@@ -130,6 +136,7 @@ const TENDER_WORDS: Readonly<Record<string, string>> = {
   cash: 'cash', card: 'card', upi: 'UPI', store_credit: 'store credit', split: 'split', exchange_credit: 'exchange credit', loyalty_points: 'points',
   // OB-256: the mirror pilot's tender — its own words, never "cash" (P-08).
   paid_on_old_erp: 'paid on the old system',
+  gift_card: 'gift card', // OB-677
 };
 
 /**
@@ -149,7 +156,8 @@ export function notBankedBillEffects(s: IncomingSale): string {
     cash > 0 ? `the cash (${cash}) is in till ${s.laneId}'s drawer, which will count OVER by it at shift close until this bill is banked` : '',
     exchange > 0 ? `the exchange credit (${exchange}) was given against a return that IS banked, so its exchange clearing stays open by ${exchange} until this bill is banked` : '',
     `stock: ${lines.length === 0 ? 'no lines' : `${lines.join(', ')} — not taken out of stock at head office`}`,
-    'coupons: any coupon redeemed for this sale id stays redeemed',
+    // W3 · OB-673 · OB-677: a till bill's own coupons and gift-card payments follow only the bill head office banked.
+    `coupons: any coupon redeemed for this sale id stays redeemed${(s.coupons ?? []).length === 0 ? '' : `; this bill's coupon(s) ${(s.coupons ?? []).map((c) => `${c.code} (${c.discountMinor} off)`).join(', ')} were NOT recorded`}${s.tenders.some((t) => t.kind === 'gift_card') ? '; its gift-card payment was NOT taken off the card' : ''}`,
   ].filter((x) => x !== '').join('; ');
 }
 
@@ -316,6 +324,18 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           }
         }
 
+        // D06-FR-03 · OB-673 · D07-FR-04 · OB-677: the coupons the till honoured and the gift cards it took — recorded once, on a
+        // resend too, and never refusing (the customer has the goods). A coupon used past its limit or a card overspent across
+        // tills is raised as a valued exception for the manager (hard rule #10). A fault is said, never thrown.
+        let vouchers: unknown;
+        if (deps.vouchersOnSale !== undefined && ((loyaltyBill.coupons?.length ?? 0) > 0 || loyaltyBill.tenders.some((t) => t.kind === 'gift_card'))) {
+          try {
+            vouchers = await deps.vouchersOnSale(ctx.tenantId, loyaltyBill);
+          } catch (err) {
+            vouchers = { outcome: 'not_recorded', detail: `The sale is banked, but its coupons or gift cards were not recorded: ${err instanceof Error ? err.message : String(err)}. The store computer's resend will try again.` };
+          }
+        }
+
         // Loyalty (PF-09-a): earned once per sale, on a retry too (it is idempotent), so a crash between banking and
         // earning heals on the till's resend. It never touches the sale's answer — a fault here is said, not thrown.
         let loyalty: unknown;
@@ -340,7 +360,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
 
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(delivery === undefined ? {} : { delivery }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}), ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }) } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(delivery === undefined ? {} : { delivery }), ...(spends === undefined ? {} : { spends }), ...(vouchers === undefined ? {} : { vouchers }), ...(notThisBill ?? {}), ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }) } };
       },
     },
     {

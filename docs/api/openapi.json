@@ -109860,6 +109860,79 @@
         }
       }
     },
+    "/v1/stored-value/till-sales": {
+      "post": {
+        "operationId": "postStoredValueTillSales",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "pos.sale.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostStoredValueTillSalesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "202": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostStoredValueTillSalesReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"pos.sale.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/stored-value/velocity": {
       "get": {
         "operationId": "getStoredValueVelocity",
@@ -115001,7 +115074,8 @@
           "split",
           "exchange_credit",
           "loyalty_points",
-          "paid_on_old_erp"
+          "paid_on_old_erp",
+          "gift_card"
         ]
       },
       "ApiError": {
@@ -244490,6 +244564,116 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/customer/src/stored-value.ts"
       },
+      "PostStoredValueTillSalesReply": {
+        "type": "object",
+        "required": [
+          "saleId",
+          "recorded",
+          "cards",
+          "exceptions"
+        ],
+        "properties": {
+          "saleId": {
+            "type": "string"
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "cards": {
+            "type": "array",
+            "items": {
+              "x-untyped": "unknown"
+            }
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleException"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/till-vouchers.ts"
+      },
+      "PostStoredValueTillSalesRequest": {
+        "type": "object",
+        "required": [
+          "cards",
+          "committedAt",
+          "saleId",
+          "tenders"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "faceValueMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "cashierId": {
+            "type": "string"
+          },
+          "committedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "laneId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "operatorVerified": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "saleId": {
+            "type": "string"
+          },
+          "tenders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "amountMinor": {
+                  "type": "integer"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "totalMinor": {
+            "type": "integer"
+          },
+          "tradingDay": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/till-vouchers.ts"
+      },
       "PostStorefrontCartQuoteReply": {
         "anyOf": [
           {
@@ -280996,6 +281180,21 @@
               }
             },
             "additionalProperties": true
+          },
+          "giftCard": {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "capturedOffline": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -301178,6 +301377,11 @@
               "cashier_unknown",
               "cess_not_on_the_line",
               "committed_in_the_future",
+              "coupon_not_valid_when_used",
+              "coupon_used_beyond_its_limit",
+              "gift_card_not_valid_when_spent",
+              "gift_card_overspent",
+              "gift_card_sold_twice",
               "gold_huid_sold_twice",
               "gold_sold_without_huid",
               "line_charged_below_zero",

@@ -13,8 +13,10 @@ import { tillRuleFlagsOf } from '../../../packages/restricted-sales/src/till-gat
 
 /** One part of a split payment (PF-09 step 3 · M12-FR-03). Amounts in paise. */
 export interface SplitPart {
-  readonly kind: 'cash' | 'card' | 'upi' | 'loyalty_points' | 'store_credit';
+  readonly kind: 'cash' | 'card' | 'upi' | 'loyalty_points' | 'store_credit' | 'gift_card';
   readonly amountMinor: number;
+  /** W3 · OB-677: a gift-card part — the card's own code (the store computer decides it against its copy, before its disk). */
+  readonly giftCardCode?: string;
   /** A card/UPI part: the store computer's attempt reference it was approved under. */
   readonly ref?: string;
   /** OB-271: a card/UPI part's approval / reference number from the shop's own machine (real trading). */
@@ -504,6 +506,7 @@ export function createPosView(
         status: part.kind === 'card' || part.kind === 'upi' ? (part.ref === undefined || part.ref === '' ? 'uncertain' : 'authorized') : 'settled',
         ...(part.ref === undefined || part.ref === '' ? {} : { ref: part.ref }),
         ...(part.machineRef === undefined || part.machineRef === '' ? {} : { machineRef: part.machineRef }),
+        ...(part.kind === 'gift_card' && part.giftCardCode !== undefined ? { giftCard: { code: part.giftCardCode } } : {}),
       }));
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;

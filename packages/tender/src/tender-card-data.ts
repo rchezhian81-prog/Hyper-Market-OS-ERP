@@ -26,7 +26,10 @@ export const holdsCardNumber = (text: string): boolean => containsCardNumber(tex
  * The fields a stored tender may carry, in the till's and head office's shapes. Anything else is removed. `cardDataRemoved`
  * is the store computer's own mark of what it removed (field names only); a till-sent one is dropped at the store computer.
  */
-export const TENDER_FIELDS = ['kind', 'amount', 'amountMinor', 'status', 'ref', 'machineRef', 'points', 'card', 'cardDataRemoved'] as const;
+export const TENDER_FIELDS = ['kind', 'amount', 'amountMinor', 'status', 'ref', 'machineRef', 'points', 'card', 'cardDataRemoved',
+  // D07-FR-04 · OB-677: a gift-card tender's own code (the shop's stored-value instrument, never a bank card) and whether the
+  // store computer took it while head office could not be reached. A code shaped like a card number is still removed.
+  'giftCard'] as const;
 
 /** One tender's removed fields, by NAME (e.g. `ref` or a field inside `card`) — never their values. */
 export interface TenderCardDataRemoval {
