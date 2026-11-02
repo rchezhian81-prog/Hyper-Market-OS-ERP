@@ -52,7 +52,7 @@ export async function startInboxShop(input: {
     readonly webDir?: string;
   };
   /** Round 26: more web-erp pages the journey opens in the same shell (e.g. the owner's Approvals page), each with its own global. */
-  readonly alsoPages?: readonly { readonly path: string; readonly html: string; readonly dataGlobal: string }[];
+  readonly alsoPages?: readonly { readonly path: string; readonly html: string; readonly dataGlobal: string; readonly extraData?: (api: (path: string) => Promise<unknown>) => Promise<Record<string, unknown>> }[];
   readonly seed: (cloud: RealCloud) => Promise<void>;
   /** The journey builds the organisation itself (it starts from an empty tree): set no practice store up and grant the
    *  br-1 manager only when it calls `grantManager()`. */
@@ -109,7 +109,8 @@ export async function startInboxShop(input: {
           // What the store computer tells the screen: who is looking and what they hold — head office's answer.
           const me = await fetch(`${cloud.baseUrl}/v1/identity/me`, { headers: { authorization: `Bearer ${token}` } });
           const who = (await me.json()) as { userId: string; permissions: string[] };
-          const extra = input.page.extraData === undefined ? {} : await input.page.extraData(async (p) => (await fetch(`${cloud.baseUrl}${p}`, { headers: { authorization: `Bearer ${token}` } })).json() as unknown);
+          const extraOf = also?.extraData ?? input.page.extraData;
+          const extra = extraOf === undefined ? {} : await extraOf(async (p) => (await fetch(`${cloud.baseUrl}${p}`, { headers: { authorization: `Bearer ${token}` } })).json() as unknown);
           const data = { userId: who.userId, permissions: who.permissions, ...extra };
           body = body.replace('<!--SCREEN-DATA-->', `<script>window.${dataGlobal} = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`);
         }
