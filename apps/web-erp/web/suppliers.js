@@ -278,6 +278,8 @@ function paint() {
 
   paintApprover(view);
   paintProposer(view);
+  // The papers / bank / hold section is wired further down; the very first paint runs before it (and shows no list yet).
+  if (typeof paintRecords === 'function') paintRecords(view);
 }
 
 // APPROVE — a HUMAN write that runs ONLY on this explicit click, never on load. The session refuses the proposer
@@ -324,6 +326,128 @@ async function refresh() {
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 refresh();
+
+// ── W3 · WF-02: a supplier's papers, the two-person bank account change, and the hold ───────────────────────────────
+// Its own tested session (window.supplierRecords, apps/web-erp/src/supplier-records-session.ts). Showing a supplier's papers
+// is a click (a GET); each save, check, ask, record and hold is a click under the reader's own session. A bank change is
+// asked here, approved by a DIFFERENT person on the Approvals page and recorded here naming that approval — the details
+// recorded are the approved request's own, never typed again. Only a masked account is ever typed or shown.
+function recordsFn() {
+  const rec = window.supplierRecords ?? null;
+  const rt = (k) => (rec === null ? k : rec.words(lang, k));
+  const say = (node, out, good) => {
+    node.textContent = rec.outcomeWords(lang, out, good);
+    node.dataset.result = out.result;
+  };
+  let shown = null; // the supplier whose papers are on screen
+  async function showAsks() {
+    const list = el('bank-asks');
+    if (!rec.session.may.bank) { list.replaceChildren(); return; }
+    const out = await rec.session.myBankAsks();
+    if (out.result !== 'ok') { const li = document.createElement('li'); li.textContent = rec.outcomeWords(lang, out, ''); list.replaceChildren(li); return; }
+    const mine = shown === null ? out.value : out.value.filter((a) => a.subjectRef === shown);
+    if (mine.length === 0) { const li = document.createElement('li'); li.textContent = rt('noAsks'); list.replaceChildren(li); return; }
+    list.replaceChildren(...mine.map((a) => {
+      const li = document.createElement('li');
+      li.dataset.request = a.requestId;
+      li.dataset.status = a.status;
+      const what = document.createElement('span');
+      what.textContent = `${a.subjectRef} → ${String(a.details['newAccount'] ?? '')} · ${rt(`st_${a.status}`)}${a.decidedBy ? ` · ${a.decidedBy}` : ''}${a.decisionReason ? ` — ${a.decisionReason}` : ''}`;
+      li.append(what);
+      if (a.status === 'approved') {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'sre-btn record-bank'; b.textContent = rt('record');
+        b.addEventListener('click', async () => {
+          const done = await rec.session.recordBankChange(a);
+          say(el('bank-status'), done, 'recordedNow');
+          if (done.result === 'ok') { await refresh(); await show(); }
+        });
+        li.append(b);
+      }
+      return li;
+    }));
+  }
+  async function show() {
+    const supplierId = el('rec-supplier').value;
+    const out = await rec.session.detail(supplierId);
+    if (out.result !== 'ok') { say(el('rec-status'), out, ''); el('rec-body').hidden = true; shown = null; return; }
+    shown = supplierId;
+    el('rec-status').textContent = '';
+    el('rec-body').hidden = false;
+    const d = out.value;
+    const docs = d.supplier?.documents ?? [];
+    el('doc-list').replaceChildren(...(d.supplier === null ? [rt('noRecord')] : docs.length === 0 ? [rt('noDocs')] : []).map((w) => { const li = document.createElement('li'); li.textContent = w; return li; }),
+      ...docs.map((doc) => {
+        const li = document.createElement('li');
+        li.dataset.document = doc.documentId;
+        li.dataset.checked = doc.verifiedBy ? 'yes' : 'no';
+        const what = document.createElement('span');
+        what.textContent = `${rt(`k_${doc.kind}`)} ${doc.reference} · ${rt('validFrom')} ${doc.validFrom} · ${rt('validUntil')} ${doc.validUntil} · ${doc.verifiedBy ? `${rt('checkedBy')} ${doc.verifiedBy}` : rt('notChecked')}`;
+        li.append(what);
+        if (!doc.verifiedBy && rec.session.may.manage) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'sre-btn verify-doc'; b.textContent = rt('verify');
+          b.addEventListener('click', async () => {
+            const done = await rec.session.verifyDocument(supplierId, doc.documentId);
+            say(el('doc-status'), done, 'verifiedNow');
+            if (done.result === 'ok') await show();
+          });
+          li.append(b);
+        }
+        return li;
+      }));
+    el('doc-add').hidden = !(rec.session.may.manage && d.supplier !== null);
+    el('hold-box').hidden = !rec.session.may.hold;
+    el('hold-state').textContent = d.blocked ? rt('onHold') : rt('notOnHold');
+    el('hold-go').textContent = d.blocked ? rt('lift') : rt('hold');
+    el('hold-go').dataset.blocked = d.blocked ? 'true' : 'false';
+    el('bank-box').hidden = !rec.session.may.bank;
+    await showAsks();
+  }
+  function paintRecords(view) {
+    if (rec === null || !rec.session.may.read || view.suppliers.length === 0) { el('records').hidden = true; return; }
+    el('records').hidden = false;
+    for (const [id, k] of [['rec-h', 'h'], ['rec-lead', 'lead'], ['l-rec-supplier', 'supplier'], ['rec-show', 'show'], ['docs-h', 'docsH'], ['doc-add-h', 'addH'],
+      ['l-doc-kind', 'kind'], ['l-doc-ref', 'reference'], ['l-doc-from', 'validFrom'], ['l-doc-until', 'validUntil'], ['l-doc-seen', 'seenNow'], ['doc-save', 'add'],
+      ['hold-h', 'holdH'], ['l-hold-why', 'holdWhy'], ['bank-h', 'bankH'], ['bank-lead', 'bankLead'], ['l-bank-account', 'account'], ['l-bank-via', 'via'],
+      ['l-bank-on', 'arrivedOn'], ['l-bank-called', 'calledBack'], ['l-bank-held', 'heldNumber'], ['l-bank-why', 'why'], ['bank-ask', 'ask'], ['asks-h', 'asksH']]) el(id).textContent = rt(k);
+    const select = el('rec-supplier');
+    const chosen = select.value;
+    select.replaceChildren(...view.suppliers.map((s) => { const o = document.createElement('option'); o.value = s.supplierId; o.textContent = s.headline === s.supplierId ? s.supplierId : `${s.headline} (${s.supplierId})`; return o; }));
+    if (chosen && view.suppliers.some((s) => s.supplierId === chosen)) select.value = chosen;
+    const kinds = el('doc-kind'); const kv = kinds.value;
+    kinds.replaceChildren(...rec.kinds.map((k) => { const o = document.createElement('option'); o.value = k; o.textContent = rt(`k_${k}`); return o; }));
+    if (kv) kinds.value = kv;
+    const via = el('bank-via'); const vv = via.value;
+    via.replaceChildren(...rec.via.map((k) => { const o = document.createElement('option'); o.value = k; o.textContent = rt(`v_${k}`); return o; }));
+    if (vv) via.value = vv;
+    if (shown !== null && el('hold-go').dataset.blocked !== undefined) el('hold-go').textContent = el('hold-go').dataset.blocked === 'true' ? rt('lift') : rt('hold');
+  }
+  if (rec !== null) {
+    el('rec-show').addEventListener('click', () => { void show(); });
+    el('rec-supplier').addEventListener('change', () => { el('rec-body').hidden = true; shown = null; });
+    el('doc-save').addEventListener('click', async () => {
+      const out = await rec.session.addDocument(el('rec-supplier').value, { kind: el('doc-kind').value, reference: el('doc-ref').value, validFrom: el('doc-from').value, validUntil: el('doc-until').value, seenNow: el('doc-seen').checked });
+      say(el('doc-status'), out, 'addedNow');
+      if (out.result === 'ok') { for (const id of ['doc-ref', 'doc-from', 'doc-until']) el(id).value = ''; el('doc-seen').checked = false; await show(); }
+    });
+    el('hold-go').addEventListener('click', async () => {
+      const blocked = el('hold-go').dataset.blocked !== 'true';
+      const out = await rec.session.setHold(el('rec-supplier').value, blocked, el('hold-why').value);
+      say(el('hold-status'), out, blocked ? 'heldNow' : 'liftedNow');
+      if (out.result === 'ok') { el('hold-why').value = ''; await refresh(); await show(); }
+    });
+    el('bank-ask').addEventListener('click', async () => {
+      const out = await rec.session.askBankChange(el('rec-supplier').value, { account: el('bank-account').value, via: el('bank-via').value, arrivedOn: el('bank-on').value, calledBack: el('bank-called').value, heldNumber: el('bank-held').value, why: el('bank-why').value });
+      say(el('bank-status'), out, 'askedNow');
+      if (out.result === 'ok') { for (const id of ['bank-account', 'bank-on', 'bank-called', 'bank-held', 'bank-why']) el(id).value = ''; await showAsks(); }
+    });
+  }
+  return paintRecords;
+}
+// eslint-disable-next-line no-var -- read by paint() above, which may run before this line (it then skips the section).
+var paintRecords = recordsFn();
+paint();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
