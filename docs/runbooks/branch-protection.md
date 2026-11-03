@@ -12,10 +12,11 @@ In GitHub: **Settings → Branches → Add branch ruleset** (or "Add rule") for 
 branch `main`, and enable:
 
 - **Require a pull request before merging.** No direct pushes to `main`.
-- **Require status checks to pass before merging**, and select ALL SIX CI checks (from `.github/workflows/ci.yml`):
+- **Require status checks to pass before merging**, and select ALL SEVEN CI checks (from `.github/workflows/ci.yml`):
   **"Type check, lint, tests, secret & dependency scan"**, **"Stage gate suites (real PostgreSQL)"**,
   **"The container builds, starts, and refuses a bad configuration"**, **"Browser suites (real Chromium) — required, never skip"**,
-  **"Performance suites — required, never skip"** and **"Identity server suites (real Keycloak)"**. The browser and
+  **"Performance suites — required, never skip"**, **"Identity server suites (real Keycloak)"** and
+  **"Security scans — SAST, container images, infrastructure (QG-03 / QG-06) — fail on critical or high"**. The browser and
   performance checks exist since GT-01 (4 Oct 2026): before that the automatic build ran no browser or performance suite
   at all, and the deploy job did not wait for them. The identity check exists since 10 Oct 2026 (before it, the real
   Keycloak suites ran only by hand).
