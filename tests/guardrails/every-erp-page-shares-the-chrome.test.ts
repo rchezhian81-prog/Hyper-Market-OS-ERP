@@ -331,6 +331,12 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'training-checks.js': 'apps/web-erp/src/training-checks-session.ts',
     // W3 (money): each new page's words are in its tested session model.
     'settlement.js': 'apps/web-erp/src/settlement-bank-session.ts',
+    // W4 (finance · WF-05): the after-match sections' words are in their tested session model.
+    'supplier-bills-check.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
+    'day-book-payables.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
+    'tally-files-ap.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
+    // W4 (M07-FR-03 · WF-04): the Goods receipts decisions section's words are in its tested session model.
+    'goods-receipt-decisions.js': 'apps/web-erp/src/goods-receipt-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

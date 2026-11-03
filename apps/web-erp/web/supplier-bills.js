@@ -664,6 +664,8 @@ if (who === null || session === null) {
 }
 paint();
 if (session !== null) { void refresh(); void refreshWaiting(); }
+// W4 · WF-05: a checked bill saved by the second-check section (supplier-bills-check.js) — the register reads it back.
+window.addEventListener('sre-bills-changed', () => { if (session !== null) void refresh(); });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it just will not be cached */ });

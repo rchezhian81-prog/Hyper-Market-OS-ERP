@@ -84,14 +84,46 @@ async function show() {
   paintAsked(asked.result === 'ok' ? asked.value : []);
 }
 
+// W4 · M23-FR-02: the month's credit notes against the books, as head office read them from the posted ledger.
+const signed = (minor) => `${minor > 0 ? '+' : minor < 0 ? '−' : ''}${money(Math.abs(minor))}`;
+let reconciled = null;
+function paintReconciliation(r) {
+  const figs = $('cnr-figs'); figs.replaceChildren();
+  const fig = (key, words, value) => { const d = el('div', undefined, 'fig'); d.dataset.fig = key; d.append(el('span', words, 'meta'), el('strong', value)); figs.append(d); };
+  fig('notes', w('notesSide'), `${r.notesIssued} ${w('notesCount')} · ${money(r.notesTotalMinor)} (${w('valueL')} ${money(r.creditedTaxableMinor)} + ${w('gstL')} ${money(r.creditedTaxMinor)})`);
+  fig('books', w('booksSide'), r.ledger.split === 'by_account'
+    ? `${money(r.ledger.totalMinor)} (${w('valueL')} ${money(r.ledger.taxableMinor)} + ${w('gstL')} ${money(r.ledger.taxMinor)})`
+    : `${money(r.ledger.totalMinor)} — ${w('splitUnknown')}`);
+  fig('difference', w('diffL'), `${signed(r.differenceMinor)} — ${w(r.reconciles ? 'agrees' : 'differs')}`);
+  figs.dataset.reconciles = String(r.reconciles);
+  const ul = $('cnr-missing'); ul.replaceChildren();
+  if (r.outsideTaxWindowMinor > 0) ul.append(el('li', `⚠ ${money(r.outsideTaxWindowMinor)} ${w('outsideWindow')}`, 'meta'));
+  if (r.notInTheBooks.length === 0) { ul.append(el('li', w('missingNone'))); return; }
+  ul.append(el('li', w('missingH'), 'meta'));
+  for (const n of r.notInTheBooks) {
+    const li = el('li', `⚠ ${n.number} · ${money(n.grossMinor)} · ${w(`state_${n.state}`)}${n.postedToPeriod ? ` ${n.postedToPeriod}` : ''}`);
+    li.dataset.missing = n.number; li.dataset.state = n.state; ul.append(li);
+  }
+}
+async function reconcile() {
+  const out = await nt.session.reconcile($('cnr-period').value);
+  $('cnr-status').dataset.result = out.result;
+  if (out.result !== 'ok') { $('cnr-status').textContent = nt.outcomeWords(lang, out, ''); return; }
+  $('cnr-status').textContent = '';
+  reconciled = out.value; paintReconciliation(reconciled);
+}
+
 function paintWords() {
-  for (const [id, k] of [['cn-h', 'h'], ['cn-lead', 'lead'], ['cn-show-text', 'show'], ['cn-asked-h', 'askedH'], ['cn-notes-h', 'notesH']]) $(id).textContent = w(k);
+  for (const [id, k] of [['cn-h', 'h'], ['cn-lead', 'lead'], ['cn-show-text', 'show'], ['cn-asked-h', 'askedH'], ['cn-notes-h', 'notesH'],
+    ['cnr-h', 'reconH'], ['cnr-lead', 'reconLead'], ['cnr-period-l', 'periodL'], ['cnr-show-text', 'reconShow']]) $(id).textContent = w(k);
+  if (reconciled !== null) paintReconciliation(reconciled);
 }
 
 if (nt !== null && nt.session.may.issue) {
   $('cn').hidden = false;
   paintWords();
   $('cn-show').addEventListener('click', () => { void show(); });
+  $('cnr-show').addEventListener('click', () => { void reconcile(); });
   // The page's one language toggle (b2b.js flips it first); this section follows.
   $('lang').addEventListener('click', () => { lang = document.documentElement.lang === 'ta' ? 'ta' : 'en'; paintWords(); if (customerId !== null) void show(); });
 }

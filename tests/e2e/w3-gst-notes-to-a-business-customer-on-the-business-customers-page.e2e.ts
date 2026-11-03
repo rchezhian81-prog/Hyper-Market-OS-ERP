@@ -179,4 +179,45 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
     const ret = (await shop.cloud().request({ method: 'GET', path: `/v1/finance/gstr1/return?from=${day.slice(0, 7)}-01&to=${day.slice(0, 7)}-31`, userId: ACCOUNTANT })).body as { creditDebitNotes?: { registered: { noteNumber: string; recipientGstin: string }[] } };
     expect(ret.creditDebitNotes?.registered.map((r) => [r.noteNumber, r.recipientGstin])).toEqual([['CDN-000001', BUYER_GSTIN], ['CN-000001', BUYER_GSTIN]]);
   }, 120_000);
+
+  // W4 · M23-FR-02: the month's credit notes against the books, read by head office from the POSTED LEDGER (only the month
+  // leaves the screen). Before the accountant's rule the ₹210 credit note is a +₹210 difference, named "waiting for the
+  // accountant's posting rule"; once the rule is written and the posting run puts it in the books, the month agrees exactly.
+  it('the accountant compares the month\'s credit notes with the books on the page: a signed difference, then agreement once posted (M23-FR-02)', async () => {
+    const notes = ((await shop.cloud().request({ method: 'GET', path: '/v1/finance/credit-notes/customers/CATERER', userId: ACCOUNTANT })).body as { notes: { number: string; issuedOn: string }[] }).notes;
+    const month = notes.find((n) => n.number === 'CN-000001')!.issuedOn.slice(0, 7); // the shop's own date of the note
+    const s = await open(ACCOUNTANT);
+    const reads: string[] = [];
+    s.page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname === '/v1/finance/credit-notes/reconciliation') reads.push(u.search); });
+    try {
+      await s.page.waitForSelector('#cn:not([hidden])', { timeout: 15_000 });
+      await s.page.click('#cnr-show');
+      await says(s.page, '#cnr-status', /^Choose the month first\.$/);
+      await s.page.fill('#cnr-period', month);
+      await s.page.click('#cnr-show');
+      await says(s.page, '#cnr-figs [data-fig="notes"]', /1 note\(s\) · ₹210\.00 \(value ₹200\.00 \+ GST ₹10\.00\)/);
+      await says(s.page, '#cnr-figs [data-fig="books"]', /₹0\.00/);
+      await says(s.page, '#cnr-figs [data-fig="difference"]', /^Difference\+₹210\.00 — Does not agree with the books\.$/);
+      await says(s.page, '#cnr-missing li[data-missing="CN-000001"]', /CN-000001 · ₹210\.00 · waiting for the accountant's posting rule/);
+      expect(reads, 'only the month is sent — no ledger figure').toEqual([`?period=${month}`]);
+
+      // The accountant writes HIS rule (these account names are this test's) and runs the B2B posting.
+      const map = (await shop.cloud().request({ method: 'GET', path: '/v1/finance/posting-map', userId: ACCOUNTANT })).body as { suggested?: { rules: unknown[] }; map?: { rules: unknown[] } | null };
+      const base = map.map?.rules ?? map.suggested?.rules ?? [];
+      const rule = { kind: 'b2b:credit_note', legs: [{ account: 'sales_returns', side: 'debit', component: 'net' }, { account: 'gst_output', side: 'debit', component: 'tax' }, { account: 'trade_receivables', side: 'credit', component: 'total' }] };
+      await ok(shop.cloud().request({ method: 'PUT', path: '/v1/finance/posting-map', userId: ACCOUNTANT, idempotencyKey: 'map-cn', body: { rules: [...base.filter((r) => (r as { kind: string }).kind !== 'b2b:credit_note'), rule] } }), 'the accountant\'s rule');
+      await ok(shop.cloud().request({ method: 'POST', path: '/v1/finance/b2b/post', userId: ACCOUNTANT, idempotencyKey: 'b2b-post-cn', body: {} }), 'the posting run');
+
+      await s.page.click('#cnr-show');
+      await says(s.page, '#cnr-figs [data-fig="books"]', /₹210\.00 \(value ₹200\.00 \+ GST ₹10\.00\)/);
+      await says(s.page, '#cnr-figs [data-fig="difference"]', /— Agrees exactly with the books\.$/);
+      expect(await s.page.getAttribute('#cnr-figs', 'data-reconciles')).toBe('true');
+      await says(s.page, '#cnr-missing', /Every credit note of the month is in its books\./);
+      await s.page.click('#lang');
+      await says(s.page, '#cnr-h', /ஒரு மாதத்தின் வரவுக் குறிப்புகள் கணக்குப் புத்தகத்துடன்/);
+      await says(s.page, '#cnr-figs [data-fig="difference"]', /புத்தகத்துடன் சரியாகப் பொருந்துகிறது/);
+      expect(s.writes, 'comparing writes nothing').toEqual([]);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+  }, 120_000);
 });
