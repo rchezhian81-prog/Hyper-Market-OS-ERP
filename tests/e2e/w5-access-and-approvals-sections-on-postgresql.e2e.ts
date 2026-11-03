@@ -53,7 +53,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 access 
     expect(ask.status, JSON.stringify(ask.body)).toBeLessThan(300);
     const requestId = (ask.body as { requestId: string }).requestId;
     await decide(ACCT, requestId);
-    const { rule: _r, ...body } = details;
+    const body: Record<string, unknown> = { ...details }; delete body['rule'];
     const put = await as(OWNER, 'PUT', '/v1/approvals/rules/escalation-waits', { ...body, approvalId: requestId });
     expect(put.status, JSON.stringify(put.body)).toBe(200);
   };

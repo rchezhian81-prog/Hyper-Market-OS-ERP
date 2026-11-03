@@ -210,6 +210,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
       // OB-407: the named security reviewer's signature on switching on a floor device.
       floor_device_review: { en: APPROVALS_COPY.en.kindFloorDeviceReview, ta: APPROVALS_COPY.ta.kindFloorDeviceReview },
+      // OB-681: the CA's own login — the owner asks, the IT custodian approves.
+      ca_role_grant: { en: APPROVALS_COPY.en.kindCaRoleGrant, ta: APPROVALS_COPY.ta.kindCaRoleGrant },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

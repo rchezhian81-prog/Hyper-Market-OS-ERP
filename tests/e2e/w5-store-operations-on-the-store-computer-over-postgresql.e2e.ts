@@ -30,7 +30,6 @@ const MGR = 'u-mgr';
 
 describe.skipIf(!CONNECTED)('W5 · store operations on the store computer over PostgreSQL', () => {
   let shop: BoxCloudShop;
-  const as = (method: 'POST' | 'PUT', path: string, body: unknown, who = OWNER) => ok(shop.call(method, path, who, body), path);
 
   beforeAll(async () => {
     shop = await startBoxPageOnCloud({

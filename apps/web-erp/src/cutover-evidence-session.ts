@@ -122,7 +122,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
  * page says in words). Every named column must be in the header; an empty file, or one with no data row, is refused.
  */
 export function readEvidenceFile(file: EvidenceFile, text: string): readonly Record<string, unknown>[] | Invalid {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   const header = cellsOf(lines[0] ?? '').map((h) => h.toLowerCase());
   const cols = EVIDENCE_FILES[file] as readonly Column[];
   const at = new Map(cols.map((x) => [x.col, header.indexOf(x.col)]));
