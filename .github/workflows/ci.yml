@@ -488,6 +488,17 @@ jobs:
             --in scan-reports/trivy-image-api.raw.json --in scan-reports/trivy-image-edge.raw.json \
             --out scan-reports/trivy-image.findings.json
 
+      # W4 · QG-03: read main's branch protection with the token this build has (docs/runbooks/branch-protection.md). GitHub
+      # shows protection only to an ADMINISTRATOR's token — the owner issues a read-only one as the BRANCH_PROTECTION_TOKEN
+      # secret; without it the build's own token is refused and the reading says NOT KNOWN, which holds QG-03 on the gate
+      # register (never GO). The reading is a findings report, sent with the others below. It never fails the build.
+      - name: Branch protection on main, read as a QG-03 reading (not known without the owner's administrator token)
+        if: always()
+        env:
+          BRANCH_PROTECTION_TOKEN: ${{ secrets.BRANCH_PROTECTION_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types scripts/branch-protection-reading.mts --out scan-reports/branch-protection.findings.json
+
       - name: Keep every findings report (for the security register — POST /v1/compliance/finding-scans)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

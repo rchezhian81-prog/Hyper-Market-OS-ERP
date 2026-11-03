@@ -157,6 +157,83 @@
         <p class="status" id="diff-status" role="status" aria-live="polite"></p>
       </section>
 
+      <!-- W4 · MG-02 the export checked against its seal -->
+      <section aria-labelledby="seal-h" id="seal">
+        <h3 id="seal-h">Check the export against its seal before loading</h3>
+        <p class="lead" id="seal-lead"></p>
+        <div class="row-form">
+          <label for="seal-file"><span data-w="sealFile"></span><input id="seal-file" type="file" accept=".json,application/json" /></label>
+          <label for="seal-extract"><span data-w="extractFile"></span><input id="seal-extract" type="file" accept=".csv,text/csv" /></label>
+        </div>
+        <button id="seal-verify" type="button"><span data-w="verifyBtn"></span></button>
+        <p class="status" id="seal-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="seal-result"></ul>
+      </section>
+
+      <!-- W4 · MG-04 the old data's problems, decided -->
+      <section aria-labelledby="prob-h" id="prob">
+        <h3 id="prob-h">Problems in the old data</h3>
+        <p class="lead" id="prob-lead"></p>
+        <button id="prob-show" type="button" class="quiet"><span data-w="showProblems"></span></button>
+        <ul class="rows" id="prob-list"></ul>
+        <div id="prob-decide">
+          <div class="row-form">
+            <label for="prob-which"><span data-w="excWhich"></span><select id="prob-which"></select></label>
+            <label for="prob-action"><span data-w="excAction"></span><select id="prob-action"></select></label>
+            <label for="prob-survivor"><span data-w="excSurvivor"></span><input id="prob-survivor" type="text" autocomplete="off" /></label>
+          </div>
+          <label for="prob-reason"><span data-w="excReason"></span><textarea id="prob-reason" rows="2"></textarea></label>
+          <button id="prob-decide-btn" type="button"><span data-w="decideProblem"></span></button>
+        </div>
+        <p class="status" id="prob-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 · MG-05 the trial load's record -->
+      <section aria-labelledby="trial-h" id="trial">
+        <h3 id="trial-h">Trial load</h3>
+        <p class="lead" id="trial-lead"></p>
+        <div class="row-form">
+          <label for="trial-id"><span data-w="trialId"></span><input id="trial-id" type="text" autocomplete="off" /></label>
+          <label for="trial-rows"><span data-w="trialRows"></span><input id="trial-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="trial-minutes"><span data-w="trialMinutes"></span><input id="trial-minutes" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="trial-full"><span data-w="trialFull"></span><input id="trial-full" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label class="check" for="trial-empty"><input id="trial-empty" type="checkbox" /> <span data-w="trialEmpty"></span></label>
+        </div>
+        <button id="trial-run" type="button"><span data-w="runTrial"></span></button>
+        <p class="status" id="trial-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="trial-result"></ul>
+      </section>
+
+      <!-- W4 · MG-06 the figures, signed -->
+      <section aria-labelledby="tot-h" id="tot">
+        <h3 id="tot-h">The figures (control totals)</h3>
+        <p class="lead" id="tot-lead"></p>
+        <button id="tot-show" type="button" class="quiet"><span data-w="showTotals"></span></button>
+        <ul class="rows" id="tot-list"></ul>
+        <div id="tot-sign">
+          <div class="row-form">
+            <label for="tot-which"><span data-w="totWhich"></span><select id="tot-which"></select></label>
+          </div>
+          <label for="tot-statement"><span data-w="totStatement"></span><textarea id="tot-statement" rows="2"></textarea></label>
+          <button id="tot-sign-btn" type="button"><span data-w="signTotal"></span></button>
+        </div>
+        <p class="status" id="tot-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 · WF-19 the switch-over gate's own reading, and the rehearsed going-back -->
+      <section aria-labelledby="gate-h" id="gate">
+        <h3 id="gate-h">Can we switch over — the checks</h3>
+        <p class="lead" id="gate-lead"></p>
+        <div class="row-form">
+          <label for="gate-cutover"><span data-w="gateCutover"></span><input id="gate-cutover" type="text" autocomplete="off" /></label>
+          <button id="gate-read" type="button"><span data-w="readGate"></span></button>
+          <button id="gate-rollback" type="button" class="quiet"><span data-w="showRollback"></span></button>
+        </div>
+        <p class="status" id="gate-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="gate-result"></ul>
+        <ul class="rows" id="gate-rollback-result"></ul>
+      </section>
+
       <!-- MG-11 night, OB-52 window, MG-08 reversal -->
       <section aria-labelledby="night-h" id="night">
         <h3 id="night-h">The switch-over night</h3>

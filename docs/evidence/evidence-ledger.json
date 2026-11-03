@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2157,
+  "testFiles": 2161,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,8 +21,8 @@
     "unit": 98,
     "integration": 104,
     "realDb": 104,
-    "browser": 102,
-    "connected": 91,
+    "browser": 104,
+    "connected": 97,
     "device": 0,
     "uat": 0
   },
@@ -5399,17 +5399,18 @@
       "id": "WF-19",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 1,
+        "unit": 2,
         "integration": 13,
         "realDb": 8,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
-          "tests/unit/erp-migration-session.test.ts"
+          "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-delta-lands-once.test.ts",
@@ -5437,9 +5438,12 @@
           "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [
-          "tests/e2e/migration-decision-delivery.e2e.ts"
+          "tests/e2e/migration-decision-delivery.e2e.ts",
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -5597,7 +5601,7 @@
       "id": "QG-03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 2,
         "realDb": 1,
         "browser": 1,
@@ -5609,7 +5613,8 @@
         "unit": [
           "tests/unit/a-cut-short-encryption-tag-is-refused.test.ts",
           "tests/unit/compliance-findings.test.ts",
-          "tests/unit/compliance-gate-decisions.test.ts"
+          "tests/unit/compliance-gate-decisions.test.ts",
+          "tests/unit/w4-qg03-branch-protection-is-read-and-not-known-holds.test.ts"
         ],
         "integration": [
           "tests/integration/risk-register.test.ts",
@@ -5713,7 +5718,7 @@
       "id": "QG-06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 5,
         "realDb": 3,
         "browser": 2,
@@ -5730,7 +5735,8 @@
           "tests/unit/erp-risk-acceptance-session.test.ts",
           "tests/unit/qg10-release-evidence.test.ts",
           "tests/unit/the-gate-readings-never-read-silence-as-a-pass.test.ts",
-          "tests/unit/two-signatures-accept-a-critical-risk.test.ts"
+          "tests/unit/two-signatures-accept-a-critical-risk.test.ts",
+          "tests/unit/w4-qg03-branch-protection-is-read-and-not-known-holds.test.ts"
         ],
         "integration": [
           "tests/integration/a-critical-risk-is-accepted-only-by-the-owner-and-the-named-reviewer.test.ts",
@@ -5765,8 +5771,8 @@
         "unit": 13,
         "integration": 17,
         "realDb": 9,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -5817,9 +5823,12 @@
           "tests/integration/we-get-it-out-ourselves.test.ts"
         ],
         "browser": [
-          "tests/e2e/finance-month-close-delivery.e2e.ts"
+          "tests/e2e/finance-month-close-delivery.e2e.ts",
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -5831,8 +5840,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 3,
-        "integration": 7,
-        "realDb": 4,
+        "integration": 8,
+        "realDb": 5,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -5851,13 +5860,15 @@
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/risk-followthrough.test.ts",
           "tests/integration/risk-register.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w4-qg08-the-scheduled-rollback-drill-is-the-evidence-the-gate-reads.test.ts"
         ],
         "realDb": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w4-qg08-the-scheduled-rollback-drill-is-the-evidence-the-gate-reads.test.ts"
         ],
         "browser": [
           "tests/e2e/the-quality-gates-page-reads-the-recovery-and-the-outside-evidence.e2e.ts"
@@ -6072,11 +6083,11 @@
       "id": "MG-02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 5,
         "realDb": 3,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -6086,7 +6097,8 @@
           "tests/unit/migration-extraction.test.ts",
           "tests/unit/migration-load-command.test.ts",
           "tests/unit/migration-load.test.ts",
-          "tests/unit/migration-preservation-route.test.ts"
+          "tests/unit/migration-preservation-route.test.ts",
+          "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
           "tests/integration/backup-is-one-moment.test.ts",
@@ -6100,8 +6112,12 @@
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/we-get-it-out-ourselves.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -6150,11 +6166,11 @@
       "id": "MG-04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 8,
         "realDb": 3,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -6170,7 +6186,8 @@
           "tests/unit/migration-report-parser.test.ts",
           "tests/unit/migration-screen-route.test.ts",
           "tests/unit/sync-http-transport.test.ts",
-          "tests/unit/tender-legacy-card-purge.test.ts"
+          "tests/unit/tender-legacy-card-purge.test.ts",
+          "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
@@ -6188,24 +6205,27 @@
           "tests/migration/schema-migrations.test.ts"
         ],
         "browser": [
-          "tests/e2e/migration-decision-delivery.e2e.ts"
+          "tests/e2e/migration-decision-delivery.e2e.ts",
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "MG-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 10,
         "realDb": 7,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -6218,7 +6238,8 @@
           "tests/unit/migration-slice-import.test.ts",
           "tests/unit/migration-trial-reconcile-route.test.ts",
           "tests/unit/migration-trial.test.ts",
-          "tests/unit/the-pilot-department-rides-the-catalogue-and-the-register.test.ts"
+          "tests/unit/the-pilot-department-rides-the-catalogue-and-the-register.test.ts",
+          "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
@@ -6241,8 +6262,12 @@
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -6253,11 +6278,11 @@
       "id": "MG-06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 13,
         "realDb": 4,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -6279,7 +6304,8 @@
           "tests/unit/migration-verification-report.test.ts",
           "tests/unit/migration-witness-route.test.ts",
           "tests/unit/service-commerce.test.ts",
-          "tests/unit/sync-http-transport.test.ts"
+          "tests/unit/sync-http-transport.test.ts",
+          "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
@@ -6303,14 +6329,17 @@
           "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [
-          "tests/e2e/migration-decision-delivery.e2e.ts"
+          "tests/e2e/migration-decision-delivery.e2e.ts",
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-wf19-the-old-system-checks-load-is-decided-signed-and-read-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "MG-07",

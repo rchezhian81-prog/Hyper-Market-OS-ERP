@@ -35,3 +35,6 @@ export declare function runRollbackDrill(input: DrillInput & {
   readonly workDir?: string;
   readonly drillId?: string;
 }): Promise<DrillRecord>;
+
+/** W4 · QG-08: the drill's result as the body of POST /v1/platform/dr-drills (the rollback rehearsal), or why it is not one. */
+export declare function rehearsalBodyOf(record: DrillRecord): { readonly recordable: true; readonly body: { readonly drillId: string; readonly rehearsal: 'rollback'; readonly dataLossSeconds: 0; readonly recoverySeconds: number }; readonly words: string } | { readonly recordable: false; readonly why: string };

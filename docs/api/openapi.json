@@ -123510,6 +123510,7 @@
                     "dependency",
                     "iac",
                     "pentest",
+                    "repository",
                     "review",
                     "sast",
                     "secret"
@@ -174833,6 +174834,7 @@
                         "dependency",
                         "iac",
                         "pentest",
+                        "repository",
                         "review",
                         "sast",
                         "secret"
@@ -174865,6 +174867,7 @@
                   "dependency",
                   "iac",
                   "pentest",
+                  "repository",
                   "review",
                   "sast",
                   "secret"
@@ -174949,6 +174952,7 @@
                         "dependency",
                         "iac",
                         "pentest",
+                        "repository",
                         "review",
                         "sast",
                         "secret"
@@ -174981,6 +174985,7 @@
                   "dependency",
                   "iac",
                   "pentest",
+                  "repository",
                   "review",
                   "sast",
                   "secret"
@@ -306845,6 +306850,7 @@
               "dependency",
               "iac",
               "pentest",
+              "repository",
               "review",
               "sast",
               "secret"

@@ -19,3 +19,10 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
 locations, a third batch-tracked) on a real PostgreSQL, read back to the unit and the paisa. It takes 25 minutes or more, so
 it runs **every night on `main`** (03:17 shop time) and **on demand** (Actions → this workflow → Run workflow, choosing the
 product count) — never on a pull request, so no pull request waits for it. A skipped run is refused, not counted green.
+
+**`rollback-drill.yml`** (W4, 3 Nov 2026) — QG-08 / pilot gate G9: the timed rollback drill (`scripts/rollback-drill.mjs`)
+runs **end to end with `--run`** against the whole composed stack on a fresh runner: the stack is put live on the current
+commit of `main` by `infra/deploy/release.sh`, the drill backs it up, restores the copy into a separate empty database and
+reconciles it, puts the previous commit back, then the current one again, all timed against §32. It runs **every week on
+`main`** (Monday 03:43 shop time) and **on demand**, never on a pull request. Its artifact holds the drill record and the
+rollback rehearsal body (`*.qg08-rollback.json`, the body of `POST /v1/platform/dr-drills`) — the evidence QG-08 reads.
