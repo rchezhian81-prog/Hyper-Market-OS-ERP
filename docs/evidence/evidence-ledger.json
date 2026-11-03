@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2222,
+  "testFiles": 2225,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1583,11 +1583,11 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 19,
         "realDb": 6,
-        "browser": 10,
-        "connected": 2,
+        "browser": 11,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1605,6 +1605,7 @@
           "tests/unit/repeat-orders-session.test.ts",
           "tests/unit/till-side-the-tier-multiplier-rides-the-wallet-feed.test.ts",
           "tests/unit/w5-customer-desk-sections-session.test.ts",
+          "tests/unit/w6-the-loyalty-desk-pays-out-a-referral-reward.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
@@ -1646,11 +1647,13 @@
           "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
           "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts",
           "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts",
-          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
-          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2901,11 +2904,11 @@
       "id": "M33",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 24,
+        "unit": 25,
         "integration": 20,
         "realDb": 4,
-        "browser": 6,
-        "connected": 2,
+        "browser": 7,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2934,7 +2937,8 @@
           "tests/unit/tenant-setup-concurrency.test.ts",
           "tests/unit/tenant-setup.test.ts",
           "tests/unit/version-policy-projection.test.ts",
-          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts",
+          "tests/unit/w6-the-devices-page-reads-the-fleet-from-head-office.test.ts"
         ],
         "integration": [
           "tests/integration/background-jobs.test.ts",
@@ -2970,11 +2974,13 @@
           "tests/e2e/r4c-tills-and-devices-registers-a-till.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
