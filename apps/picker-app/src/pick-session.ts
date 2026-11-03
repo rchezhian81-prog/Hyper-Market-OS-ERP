@@ -29,7 +29,7 @@
 
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, multiplyByInteger, scaleMoney, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { precisionOf, minorPerUnitOf, quantityLabel, toDecimalString, typedQuantityMinor, type Uom } from '../../../packages/contracts/src/quantity';
+import { precisionOf, minorPerUnitOf, normaliseUom, quantityLabel, toDecimalString, typedQuantityMinor, type Uom } from '../../../packages/contracts/src/quantity';
 import { confirmSubstitution } from '../../../packages/fulfilment/src/delivery';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { NewWorkRefusedError } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
@@ -223,6 +223,10 @@ export class PickSession {
     this.pickerId = options.pickerId ?? null;
     this.lines = assigned.map((l) => ({
       ...l,
+      // W4 (M19-FR-02): head office's wave lines carry the product master's unit as spelled ("each", "KG"); the quantity and
+      // price helpers are keyed on the stored code, so it is read through the one shared spelling map (OB-31 rule 4). An
+      // unknown spelling stays as given (the helpers then refuse it rather than guess).
+      uom: normaliseUom(l.uom) ?? l.uom,
       state: 'pending' as LineState,
       pickedQty: 0,
       finalPrice: money(0, this.currency),

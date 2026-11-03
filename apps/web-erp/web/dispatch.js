@@ -10,7 +10,7 @@ const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.dispatch ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false };
+const may = session?.may ?? { named: false, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
@@ -19,7 +19,7 @@ const runDate = () => $('run-date').value;
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show-orders', 'search'], ['show-waves', 'list-checks'], ['build', 'package'], ['plan', 'navigation'], ['off-road', 'rotate-ccw'],
-  ['show-board', 'truck'], ['show-held', 'percent'], ['show-controls', 'sliders'], ['show-tolerance', 'wallet'], ['confirm-tolerance', 'check'], ['propose', 'wallet'], ['approve-settle', 'badge-check'], ['paid', 'receipt']]) {
+  ['show-board', 'truck'], ['show-held', 'percent'], ['show-controls', 'sliders'], ['show-tolerance', 'wallet'], ['confirm-tolerance', 'check'], ['propose', 'wallet'], ['approve-settle', 'badge-check'], ['paid', 'receipt'], ['show-pack', 'package'], ['dispatch-order', 'truck'], ['show-manifest', 'clipboard-list']]) {
   const i = icon(name); if (i !== null) $(id).prepend(i, ' ');
 }
 
@@ -262,6 +262,60 @@ async function confirmTolerance() {
   drawTolerance(out.value);
 }
 
+// ── W4 · M19-FR-02: dispatch a packed order — the manifest is head office's, built from the recorded pack ──────────
+const sendOrder = () => $('send-order').value.trim();
+async function showPack() {
+  $('manifest').hidden = true;
+  const out = await session.orderPack(sendOrder());
+  if (out.result !== 'ok') { $('send-pack').hidden = true; say('send-status', out); return; }
+  const p = out.value;
+  $('send-status').className = 'status'; $('send-status').textContent = '';
+  $('send-pack').hidden = false;
+  $('pack-lines').replaceChildren(
+    ...p.lines.map((l) => {
+      const li = text('li', `${l.shortMinor > 0 ? '⚠' : '✓'} ${l.name} (${l.productId}) · ${l.packedMinor} ${t('packedK')}${l.shortMinor > 0 ? ` · ${l.shortMinor} ${t('shortK')}` : ''} · ${t('crateK')} ${l.crateId} · ${api.rupees(l.finalPriceMinor)}`, `row tone-${l.shortMinor > 0 ? 'error' : 'ok'}`);
+      li.dataset.line = l.lineId; li.dataset.crate = l.crateId;
+      if (l.shortMinor > 0) li.append(toldBox(l.lineId));
+      return li;
+    }),
+    ...p.refused.map((r) => { const li = text('li', `⚠ ${t('refusedLineK')}: ${r.lineId} — ${r.detail}`, 'row tone-error'); li.dataset.line = r.lineId; li.append(toldBox(r.lineId)); return li; }),
+  );
+  // One tamper seal per crate, typed (or scanned) from the crate itself — never filled in by the page.
+  $('crate-seals').replaceChildren(...[...new Set(p.lines.map((l) => l.crateId))].sort().map((crate) => {
+    const label = document.createElement('label'); const input = document.createElement('input');
+    input.className = 'seal'; input.dataset.crate = crate; input.autocomplete = 'off';
+    label.append(text('span', `${t('sealL')} — ${t('crateK')} ${crate}`), input);
+    return label;
+  }));
+  $('dispatch-order').disabled = !may.sendOrders;
+}
+function toldBox(lineId) {
+  const label = document.createElement('label'); label.className = 'pick';
+  const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'told'; box.value = lineId;
+  label.append(box, text('span', t('customerToldL')));
+  return label;
+}
+async function dispatchOrder() {
+  const seals = Object.fromEntries([...document.querySelectorAll('#crate-seals input.seal')].map((i) => [i.dataset.crate, i.value]));
+  const resolvedLineIds = [...document.querySelectorAll('#pack-lines input.told:checked')].map((b) => b.value);
+  const out = await session.dispatchOrder({ orderId: sendOrder(), storeId: store(), seals, resolvedLineIds });
+  if (out.result !== 'ok') { say('send-status', out); return; }
+  good('send-status', `${t('dispatchedK')} ${out.value.manifest?.manifestId ?? ''} · ${out.value.detail}`);
+  await showManifest();
+}
+async function showManifest() {
+  const out = await session.manifest(sendOrder());
+  if (out.result !== 'ok') { $('manifest').hidden = true; say('send-status', out); return; }
+  const m = out.value;
+  $('manifest').hidden = false;
+  $('manifest').dataset.manifest = m.manifestId;
+  const head = text('li', `${t('manifestK')} ${m.manifestId} · ${m.orderId} · ${m.crates.length} ${t('cratesK')} · ${api.rupees(m.totalMinor)} · ${t('dispatchedByK')} ${m.dispatchedBy}`, 'row tone-ok');
+  head.dataset.kind = 'head';
+  const seals = text('li', `${t('sealsK')}: ${Object.entries(m.seals).map(([c, v]) => `${c} → ${v}`).join(' · ')}${m.temperatureReadings.length === 0 ? '' : ` · ${t('tempK')}: ${m.temperatureReadings.map((r) => `${(r.tenthsC / 10).toFixed(1)} °C`).join(', ')}`}`, 'row');
+  seals.dataset.kind = 'seals';
+  $('manifest').replaceChildren(head, ...m.lines.map((l) => { const li = text('li', `${l.name} (${l.productId}) · ${l.quantityMinor} · ${t('crateK')} ${l.crateId}`, 'row'); li.dataset.line = l.lineId; li.dataset.kind = 'line'; return li; }), seals);
+}
+
 // ── Own-fleet settlement ─────────────────────────────────────────────────────
 function settled(out) {
   if (out.result !== 'ok') { say('settle-status', out); return; }
@@ -277,6 +331,7 @@ function paint() {
     ['off-driver-l', 'pickerL'], ['off-reason-l', 'reasonL'], ['off-road-text', 'offRoad'], ['board-h', 'boardH'], ['show-board-text', 'showBoard'], ['contribution-h', 'heldH'],
     ['show-held-text', 'showHeld'], ['controls-h', 'controlsH'], ['show-controls-text', 'showControls'],
     ['tolerance-h', 'toleranceH'], ['show-tolerance-text', 'showTolerance'], ['tolerance-value-l', 'toleranceL'], ['tolerance-note-l', 'toleranceReasonL'], ['confirm-tolerance-text', 'confirmTolerance'], ['tolerance-history-h', 'tolHistoryH'], ['settle-h', 'settleH'], ['settle-route-l', 'routeIdL'],
+    ['send-h', 'sendH'], ['send-order-l', 'orderL'], ['show-pack-text', 'showPack'], ['dispatch-order-text', 'dispatchOrder'], ['show-manifest-text', 'showManifest'],
     ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) $(id).textContent = t(k);
   $('off-driver-l').textContent = lang === 'ta' ? 'டிரைவர்' : 'Driver';
   $('lang').textContent = t('lang');
@@ -286,6 +341,7 @@ function paint() {
   $('plan').disabled = !may.dispatch; $('off-road').disabled = !may.dispatch; $('propose').disabled = !may.dispatch;
   $('show-board').disabled = !may.read; $('show-held').disabled = !may.read; $('show-controls').disabled = !may.read; $('show-tolerance').disabled = !may.read;
   $('approve-settle').disabled = !may.approveSettlement; $('paid').disabled = !may.approveSettlement;
+  $('show-pack').disabled = !may.readPacks; $('show-manifest').disabled = !may.readPacks; $('dispatch-order').disabled = !may.sendOrders;
 }
 
 $('show-orders').addEventListener('click', () => { void showOrders(); });
@@ -298,6 +354,9 @@ $('show-held').addEventListener('click', () => { void showHeld(); });
 $('show-controls').addEventListener('click', () => { void showControls(); });
 $('show-tolerance').addEventListener('click', () => { void showTolerance(); });
 $('confirm-tolerance').addEventListener('click', () => { void confirmTolerance(); });
+$('show-pack').addEventListener('click', () => { void showPack(); });
+$('dispatch-order').addEventListener('click', () => { void dispatchOrder(); });
+$('show-manifest').addEventListener('click', () => { void showManifest(); });
 $('propose').addEventListener('click', async () => settled(await session.propose($('settle-route').value.trim())));
 $('approve-settle').addEventListener('click', async () => settled(await session.approveSettlement($('settle-route').value.trim())));
 $('paid').addEventListener('click', async () => settled(await session.recordPaid($('settle-route').value.trim(), $('paid-amount').value, $('voucher').value)));

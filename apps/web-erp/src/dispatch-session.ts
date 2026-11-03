@@ -57,6 +57,22 @@ export interface ContributionRow { readonly orderId: string; readonly standing: 
 export interface ContributionRead { readonly thresholdMinor: number | null; readonly thresholdState: 'set' | 'not_set'; readonly orders: readonly ContributionRow[] }
 export interface Settlement { readonly routeId: string; readonly stage: string; readonly proposed: { readonly amountMinor: number; readonly drops: number; readonly by: string } | null; readonly approved: { readonly by: string } | null; readonly paidMinor: number; readonly differenceMinor: number | null; readonly books: string }
 
+/** W4 · M19-FR-02: an order's pack as head office recorded it — what can be sent, each line in its crate, the refusals listed. */
+export interface OrderPack {
+  readonly orderId: string; readonly packed: boolean; readonly outcome: string; readonly totalMinor: number; readonly detail: string;
+  readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly name: string; readonly packedMinor: number; readonly shortMinor: number; readonly finalPriceMinor: number; readonly handling: string; readonly crateId: string }[];
+  readonly refused: readonly { readonly lineId: string; readonly reason: string; readonly detail: string }[];
+}
+/** W4 · M19-FR-02: the dispatch manifest — built by head office FROM the recorded pack, never from the order. */
+export interface OrderManifest {
+  readonly manifestId: string; readonly orderId: string; readonly locationId: string; readonly crates: readonly string[]; readonly totalMinor: number;
+  readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly name: string; readonly quantityMinor: number; readonly crateId: string; readonly handling: string }[];
+  readonly temperatureReadings: readonly { readonly lineId: string; readonly tenthsC: number }[];
+  readonly seals: Readonly<Record<string, string>>; readonly dispatchedAt: string; readonly dispatchedBy: string; readonly detail: string;
+}
+/** The manifest number the page asks for an order: one per order (the route is idempotent, so asking again is the same manifest). */
+export const manifestIdFor = (orderId: string): string => `MF-${orderId.trim()}`;
+
 export const DISPATCH_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Dispatch',
@@ -97,6 +113,12 @@ export const DISPATCH_COPY = {
     tolNotConfirmedShort: 'not confirmed by the owner', needRupees: 'Enter the limit in rupees, above zero (e.g. 100 or 100.50).', confirmed: 'Confirmed:',
     settleH: 'Own-fleet settlement', routeIdL: 'Route', propose: 'Propose the settlement', approveSettle: 'Approve the settlement', paid: 'Record the payment',
     amountL: 'Amount paid (₹)', voucherL: 'Voucher', stage: 'Stage', drops: 'drops', settleBooks: 'Books',
+    // W4 · M19-FR-02: dispatch a packed order with a manifest built from what was packed; seal each crate; show the manifest.
+    sendH: 'Dispatch a packed order', orderL: 'Order', showPack: 'Show its pack', dispatchOrder: 'Dispatch this order', showManifest: 'Show its manifest',
+    needOrder: 'Say which order.', needSeals: 'Type the tamper seal on every crate.', cannotPack: 'Your role cannot read packs and manifests.',
+    cannotSend: 'Your role cannot dispatch orders.', crateK: 'Crate', sealL: 'Tamper seal', packedK: 'packed', refusedLineK: 'Not packed',
+    customerToldL: 'The customer has been told', dispatchedK: 'Dispatched — manifest', manifestK: 'Manifest', cratesK: 'crates', sealsK: 'Seals', tempK: 'Cold-chain readings',
+    dispatchedByK: 'dispatched by',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read deliveries.', cannotWave: 'Your role cannot build waves.',
     cannotDispatch: 'Your role cannot plan or hand out routes.', cannotDecide: 'Your role cannot decide on held orders.', cannotSet: 'Only the owner enters these numbers.',
     cannotApprove: 'Your role cannot approve settlements.',
@@ -139,6 +161,11 @@ export const DISPATCH_COPY = {
     tolNotConfirmedShort: 'உரிமையாளர் உறுதிசெய்யவில்லை', needRupees: 'வரம்பை ரூபாயில், பூஜ்ஜியத்திற்கு மேல் உள்ளிடுங்கள் (எ.கா. 100 அல்லது 100.50).', confirmed: 'உறுதிசெய்யப்பட்டது:',
     settleH: 'சொந்த வாகனக் கணக்குத் தீர்வு', routeIdL: 'வழி', propose: 'தீர்வை முன்மொழி', approveSettle: 'தீர்வை அனுமதி', paid: 'செலுத்தியதைப் பதிவு செய்',
     amountL: 'செலுத்திய தொகை (₹)', voucherL: 'வவுச்சர்', stage: 'நிலை', drops: 'டெலிவரிகள்', settleBooks: 'கணக்கேடுகள்',
+    sendH: 'பேக் செய்த ஆர்டரை அனுப்பு', orderL: 'ஆர்டர்', showPack: 'அதன் பேக்கைக் காட்டு', dispatchOrder: 'இந்த ஆர்டரை அனுப்பு', showManifest: 'அதன் பட்டியலைக் காட்டு',
+    needOrder: 'எந்த ஆர்டர் என்று சொல்லுங்கள்.', needSeals: 'ஒவ்வொரு பெட்டியின் முத்திரையையும் உள்ளிடுங்கள்.', cannotPack: 'உங்கள் பங்கு பேக்குகளையும் பட்டியல்களையும் படிக்க முடியாது.',
+    cannotSend: 'உங்கள் பங்கு ஆர்டர்களை அனுப்ப முடியாது.', crateK: 'பெட்டி', sealL: 'முத்திரை', packedK: 'பேக் செய்யப்பட்டது', refusedLineK: 'பேக் செய்யப்படவில்லை',
+    customerToldL: 'வாடிக்கையாளரிடம் சொல்லப்பட்டது', dispatchedK: 'அனுப்பப்பட்டது — பட்டியல்', manifestK: 'பட்டியல்', cratesK: 'பெட்டிகள்', sealsK: 'முத்திரைகள்', tempK: 'குளிர்ச் சங்கிலி அளவீடுகள்',
+    dispatchedByK: 'அனுப்பியவர்',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு டெலிவரிகளைப் படிக்க முடியாது.', cannotWave: 'உங்கள் பங்கு அலைகளை உருவாக்க முடியாது.',
     cannotDispatch: 'உங்கள் பங்கு வழிகளைத் திட்டமிடவோ கொடுக்கவோ முடியாது.', cannotDecide: 'உங்கள் பங்கு நிறுத்திய ஆர்டர்களில் முடிவெடுக்க முடியாது.', cannotSet: 'இந்த எண்களை உரிமையாளர் மட்டுமே உள்ளிடுவார்.',
     cannotApprove: 'உங்கள் பங்கு தீர்வுகளை அனுமதிக்க முடியாது.',
@@ -197,7 +224,7 @@ export function readDrivers(text: string, runDate: string, offsetMinutes: number
 }
 
 export interface DispatchSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean; readonly readPacks: boolean; readonly sendOrders: boolean };
   candidates(storeId: string): Promise<Outcome<Candidates>>;
   buildWave(input: { readonly waveId: string; readonly storeId: string; readonly pickerId: string; readonly orderIds: readonly string[] }): Promise<Outcome<WaveBuilt>>;
   waves(storeId: string): Promise<Outcome<{ readonly waves: readonly WaveRow[] }>>;
@@ -217,6 +244,16 @@ export interface DispatchSession {
   propose(routeId: string): Promise<Outcome<Settlement>>;
   approveSettlement(routeId: string): Promise<Outcome<Settlement>>;
   recordPaid(routeId: string, rupeesText: string, voucherRef: string): Promise<Outcome<Settlement>>;
+  /** W4 · M19-FR-02: the order's pack head office recorded (`GET /v1/fulfilment/orders/:id/pack`, fulfilment.pack.read). */
+  orderPack(orderId: string): Promise<Outcome<OrderPack>>;
+  /**
+   * W4 · M19-FR-02: dispatch the order (`POST /v1/fulfilment/orders/:id/dispatch`, fulfilment.pack.record) from the store,
+   * with the tamper seal typed for every crate and the short or refused lines the customer has been told about. Head office
+   * builds the manifest from the recorded pack and refuses an unsealed crate or an untold line in its own words.
+   */
+  dispatchOrder(input: { readonly orderId: string; readonly storeId: string; readonly seals: Readonly<Record<string, string>>; readonly resolvedLineIds?: readonly string[] }): Promise<Outcome<{ readonly dispatched: boolean; readonly outcome: string; readonly detail: string; readonly manifest?: OrderManifest }>>;
+  /** W4 · M19-FR-02: the dispatch manifest (`GET /v1/fulfilment/orders/:id/manifest`, fulfilment.pack.read). */
+  manifest(orderId: string): Promise<Outcome<OrderManifest>>;
 }
 
 export function createDispatchSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): DispatchSession {
@@ -226,7 +263,10 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
   const may = {
     named, read: has('delivery.run.read'), waves: has('fulfilment.wave.assign'), dispatch: has('delivery.dispatch.manage'),
     decide: has('delivery.contribution.approve'), setNumbers: has('delivery.controls.set'), approveSettlement: has('delivery.settlement.approve'),
+    // W4 · M19-FR-02: each route's own word — reading a pack or a manifest, and dispatching an order.
+    readPacks: has('fulfilment.pack.read'), sendOrders: has('fulfilment.pack.record'),
   };
+  const orderOk = (o: string): Outcome<never> | undefined => (o.trim() === '' ? { result: 'invalid', why: 'needOrder' } : undefined);
   const call = makeCaller({ ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }), keyPrefix: 'dispatch' });
   const gate = (allowed: boolean, why: string): Outcome<never> | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !allowed ? { result: 'invalid', why } : undefined);
   const enc = encodeURIComponent;
@@ -301,5 +341,15 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
       const minor = Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
       return call<Settlement>('POST', `/v1/delivery/fleet-settlements/${enc(routeId)}/paid`, { amountMinor: minor, voucherRef: voucherRef.trim() });
     },
+    orderPack: async (orderId) => gate(may.readPacks, 'cannotPack') ?? orderOk(orderId) ?? call<OrderPack>('GET', `/v1/fulfilment/orders/${enc(orderId.trim())}/pack`),
+    dispatchOrder: async (i) => {
+      const g = gate(may.sendOrders, 'cannotSend') ?? orderOk(i.orderId) ?? storeOk(i.storeId); if (g !== undefined) return g;
+      const seals = Object.fromEntries(Object.entries(i.seals).map(([crate, seal]) => [crate, seal.trim()]));
+      if (Object.keys(seals).length === 0 || Object.values(seals).some((v) => v === '')) return { result: 'invalid', why: 'needSeals' };
+      return call('POST', `/v1/fulfilment/orders/${enc(i.orderId.trim())}/dispatch`, {
+        manifestId: manifestIdFor(i.orderId), locationId: i.storeId.trim(), seals, ...(i.resolvedLineIds === undefined || i.resolvedLineIds.length === 0 ? {} : { resolvedLineIds: [...i.resolvedLineIds] }),
+      });
+    },
+    manifest: async (orderId) => gate(may.readPacks, 'cannotPack') ?? orderOk(orderId) ?? call<OrderManifest>('GET', `/v1/fulfilment/orders/${enc(orderId.trim())}/manifest`),
   };
 }
