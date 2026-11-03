@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createGstReturnsSession, recommendedAction, GST_RETURNS_COPY, COPY_KEYS,
-  commandActionsFor, returnCommandKey, buildReturnCommand, GST_RETURN_ACTION_EVENT,
-  type GstReturnsPorts, type ReturnRow, type GstReturnActionPayload,
+  createGstReturnsSession, recommendedAction, GST_RETURNS_COPY, COPY_KEYS, commandActionsFor,
+  type GstReturnsPorts, type ReturnRow, type HeadOfficeCall, type HeadOfficeAnswer,
 } from '../../apps/web-erp/src/gst-returns-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
-import { SyncOutbox } from '../../packages/sync/src/outbox';
 
 /**
  * **GST returns — the filing-status operator view (item 3, the 4th UI domain).**
@@ -14,6 +12,10 @@ import { SyncOutbox } from '../../packages/sync/src/outbox';
  * (failed) or an unresolved outcome (unknown) — each with a status that is never a bare colour and, in plain
  * language, the next step. It is read-gated the same way the server is, and it files nothing (a stuck return
  * is surfaced for a person, never resolved silently — hard rule #10).
+ *
+ * W5 (route audit rows 161–167 · API-09 · M23 · §28 · §31): Approve used to queue a `GstReturnActionRequested` command the
+ * sync agent has no route for, so it never reached head office. The list is now read live and every act goes straight to
+ * head office's maker-checker routes once (the key kept while an answer is lost).
  */
 
 const ROWS: ReturnRow[] = [
@@ -24,17 +26,13 @@ const ROWS: ReturnRow[] = [
   { period: '032026', state: 'previewed', previewedBy: 'u-maker' },
 ];
 
-const ports = (over: Partial<GstReturnsPorts> = {}): GstReturnsPorts => {
-  const box = new SyncOutbox();
-  return {
-    rows: () => ROWS,
-    mayRead: () => true,
-    mayApprove: () => true,
-    maySubmit: () => true,
-    outbox: () => box,
-    ...over,
-  };
-};
+const ports = (over: Partial<GstReturnsPorts> = {}): GstReturnsPorts => ({
+  rows: () => ROWS,
+  mayRead: () => true,
+  mayApprove: () => true,
+  maySubmit: () => true,
+  ...over,
+});
 
 const session = (over: Partial<GstReturnsPorts> = {}, userId: string | null = 'u-fin') =>
   createGstReturnsSession({ userId }, ports(over));
@@ -123,125 +121,178 @@ describe('view', () => {
   });
 });
 
-// ── action-wiring: approve / submit → offline outbox command ────────────────────────────────────────────
+// ── W5 (route audit rows 161–167): every act goes straight to head office, once ───────────────────────────────
 
-/** A session sharing one outbox with the test, so an enqueue is observable. */
-const acting = (over: Partial<GstReturnsPorts> = {}, userId: string | null = 'u-fin') => {
-  const box = new SyncOutbox();
-  const s = createGstReturnsSession({ userId }, ports({ outbox: () => box, ...over }));
-  return { s, box };
+/** A pretend head office holding the submissions, that records every call (method, path, body, key). */
+function fakeHeadOffice(initial: Record<string, Record<string, unknown>>) {
+  const subs = new Map<string, Record<string, unknown>>(Object.entries(initial).map(([p, v]) => [p, { period: p, ...v }]));
+  const calls: { method: string; path: string; body?: unknown; key?: string }[] = [];
+  const seenKeys = new Map<string, HeadOfficeAnswer>();
+  let lose = 0;
+  const ho: HeadOfficeCall = async (method, path, body, key) => {
+    calls.push({ method, path, ...(body !== undefined ? { body } : {}), ...(key !== undefined ? { key } : {}) });
+    if (method === 'GET' && path === '/v1/finance/gstr1/submissions') return { kind: 'ok', status: 200, body: { submissions: [...subs.values()].map((s) => ({ period: s['period'], state: s['state'] })) } };
+    const one = /^\/v1\/finance\/gstr1\/submission\/(\d{6})$/.exec(path);
+    if (method === 'GET' && one) return { kind: 'ok', status: 200, body: subs.get(one[1]!) };
+    const g3b = /^\/v1\/finance\/gstr3b\/(\d{6})$/.exec(path);
+    if (method === 'GET' && g3b) return { kind: 'ok', status: 200, body: { gstr1PreviewDigest: `digest-${g3b[1]}` } };
+    const act = /^\/v1\/finance\/gstr1\/submission\/(\d{6})\/(approve|cancel|reconcile|preview)$/.exec(path);
+    if (method === 'POST' && act) {
+      if (lose > 0) { lose -= 1; return { kind: 'lost' }; } // the answer is lost (the act may or may not have landed)
+      if (key !== undefined && seenKeys.has(key)) return seenKeys.get(key)!; // the kernel answers a key once
+      const period = act[1]!; const verb = act[2]!;
+      const s = subs.get(period) ?? { period };
+      const next: Record<string, unknown> = verb === 'approve' ? { ...s, state: 'approved', approvedBy: 'u-fin' } : verb === 'cancel' ? { ...s, state: 'cancelled' }
+        : verb === 'preview' ? { period, state: 'previewed', previewedBy: 'u-fin', returnDigest: (body as { returnDigest: string }).returnDigest }
+          : { ...s, state: (body as { resolvedState: string }).resolvedState };
+      subs.set(period, next);
+      const answer: HeadOfficeAnswer = { kind: 'ok', status: 200, body: { period, current: next } };
+      if (key !== undefined) seenKeys.set(key, answer);
+      return answer;
+    }
+    return { kind: 'refused', status: 404, code: 'not_found', whatHappened: 'no such route', nextSafeAction: '' };
+  };
+  return { ho, calls, subs, loseNext: (n = 1) => { lose = n; }, posts: () => calls.filter((c) => c.method === 'POST') };
+}
+
+let keySeq = 0;
+const live = (initial: Record<string, Record<string, unknown>>, over: Partial<GstReturnsPorts> = {}, userId: string | null = 'u-fin') => {
+  const fake = fakeHeadOffice(initial);
+  const s = createGstReturnsSession({ userId }, ports({ headOffice: fake.ho, newKey: () => `k-${++keySeq}`, mayPrepare: () => true, ...over }));
+  return { s, fake };
 };
-const AT = '2026-08-14T11:00:00.000Z';
 
-describe('commandActionsFor — only the two one-click governance steps, in the right states', () => {
-  it('offers approve on a prepared return, submit on an approved one, and NOTHING elsewhere', () => {
-    expect(commandActionsFor('previewed')).toEqual(['approve']);
-    expect(commandActionsFor('approved')).toEqual(['submit']);
-    // A stuck return (failed/unknown) is corrected or reconciled by a person — never a one-click button (rule #10).
-    expect(commandActionsFor('failed')).toEqual([]);
-    expect(commandActionsFor('unknown')).toEqual([]);
-    // In-flight and terminal states offer nothing.
-    expect(commandActionsFor('submitting')).toEqual([]);
-    expect(commandActionsFor('filed')).toEqual([]);
-    expect(commandActionsFor('cancelled')).toEqual([]);
+describe('commandActionsFor — exactly the acts head office allows in each state', () => {
+  it('prepared: approve or withdraw; approved: file (switched off) or withdraw; unknown: reconcile; nothing elsewhere', () => {
+    expect(commandActionsFor('previewed')).toEqual(['approve', 'cancel']);
+    expect(commandActionsFor('approved')).toEqual(['submit', 'cancel']);
+    expect(commandActionsFor('unknown')).toEqual(['reconcile']);
+    for (const s of ['failed', 'submitting', 'filed', 'cancelled'] as const) expect(commandActionsFor(s)).toEqual([]);
   });
 });
 
-describe('view — the governance buttons each row offers', () => {
-  it('a prepared return offers approve to a DIFFERENT person; an approved one offers submit', () => {
-    const v = session().view('en'); // config userId = u-fin, which is not the maker u-maker
-    const prepared = v.rows.find((r) => r.period === '032026');
-    expect(prepared?.actions.map((a) => a.action)).toEqual(['approve']);
-    expect(prepared?.actions[0]?.enabled).toBe(true);
-    const approved = v.rows.find((r) => r.period === '052026');
-    expect(approved?.actions.map((a) => a.action)).toEqual(['submit']);
-    expect(approved?.actions[0]?.enabled).toBe(true);
+describe('load — the filing list is read LIVE from head office (route audit rows 164–165)', () => {
+  it('reads the list and each period, with who prepared and approved it', async () => {
+    const { s } = live({ '052026': { state: 'previewed', previewedBy: 'u-maker', detail: 'awaiting approval' } }, { rows: () => [] });
+    expect(s.view('en').source).toBe('none');
+    await s.load();
+    const v = s.view('en');
+    expect(v.source).toBe('head_office');
+    expect(v.rows.map((r) => [r.period, r.preparedBy])).toEqual([['052026', 'u-maker']]);
   });
 
-  it('the MAKER cannot approve their own return — the button is disabled and says so (maker ≠ checker, §28)', () => {
-    const asMaker = session({}, 'u-maker').view('en');
-    const prepared = asMaker.rows.find((r) => r.period === '032026');
-    expect(prepared?.actions[0]?.enabled).toBe(false);
-    expect(prepared?.actions[0]?.note).toBeTruthy();
+  it('with head office out of reach, the box copy is shown as NOT live and nothing can be acted on (§31)', async () => {
+    const s = createGstReturnsSession({ userId: 'u-fin' }, ports({ headOffice: async () => ({ kind: 'lost' }) }));
+    await s.load();
+    const v = s.view('en');
+    expect(v.source).toBe('box');
+    expect(v.liveProblem).toBe(GST_RETURNS_COPY.en.liveLost);
+    const prepared = v.rows.find((r) => r.period === '032026')!;
+    expect(prepared.actions.every((a) => !a.enabled)).toBe(true);
+    expect(await s.act({ period: '032026', action: 'approve' })).toEqual({ ok: false, reason: 'not_live' });
   });
 
-  it('a failed and an unknown return offer NO button — a person corrects/reconciles them (rule #10)', () => {
-    const v = session().view('en');
-    expect(v.rows.find((r) => r.period === '062026')?.actions).toEqual([]); // failed
-    expect(v.rows.find((r) => r.period === '072026')?.actions).toEqual([]); // unknown
-    expect(v.rows.find((r) => r.period === '042026')?.actions).toEqual([]); // filed
-  });
-
-  it('a user without the approve role sees approve disabled and told why; likewise submit', () => {
-    const noApprove = session({ mayApprove: () => false }).view('en').rows.find((r) => r.period === '032026');
-    expect(noApprove?.actions[0]?.enabled).toBe(false);
-    expect(noApprove?.actions[0]?.note).toBeTruthy();
-    const noSubmit = session({ maySubmit: () => false }).view('en').rows.find((r) => r.period === '052026');
-    expect(noSubmit?.actions[0]?.enabled).toBe(false);
-    expect(noSubmit?.actions[0]?.note).toBeTruthy();
+  it('says how many requests an earlier version left unsent on this computer — never sent, never dropped', () => {
+    const s = createGstReturnsSession({ userId: 'u-fin' }, ports({ unsentEarlier: () => 2 }));
+    expect(s.view('en').unsentEarlier).toBe(`2 ${GST_RETURNS_COPY.en.unsentEarlier}`);
   });
 });
 
-describe('requestAction — commits an offline command, never a network call', () => {
-  it('enqueues a well-formed, PII-free approve command and marks the row requested', () => {
-    const { s, box } = acting();
-    const res = s.requestAction({ period: '032026', action: 'approve', at: AT });
-    expect(res.ok).toBe(true);
-    expect(box.unsentCount()).toBe(1);
-    const item = box.pending()[0]!;
-    expect(item.event.type).toBe(GST_RETURN_ACTION_EVENT);
-    expect(item.event.source).toBe('web-erp/gst-returns');
-    const payload = item.event.payload as GstReturnActionPayload;
-    expect(payload).toEqual({ period: '032026', action: 'approve', requestedBy: 'u-fin', observedState: 'previewed' });
-    expect(item.event.idempotencyKey).toBe(returnCommandKey('032026', 'approve', 'previewed'));
-    const action = s.view('en').rows.find((r) => r.period === '032026')?.actions[0];
-    expect(action?.queued).toBe('pending');
-    expect(action?.enabled).toBe(false);
+describe('act — straight to head office\'s maker-checker routes, exactly once (route audit rows 161, 163, 166, 167)', () => {
+  it('approve POSTs to …/approve under the person\'s session and reads the list again', async () => {
+    const { s, fake } = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' } });
+    await s.load();
+    const res = await s.act({ period: '032026', action: 'approve' });
+    expect(res).toEqual({ ok: true, action: 'approve', period: '032026', state: 'approved' });
+    expect(fake.posts()).toEqual([{ method: 'POST', path: '/v1/finance/gstr1/submission/032026/approve', body: {}, key: `k-${keySeq}` }]);
+    expect(s.view('en').rows[0]!.status.label).toBe(GST_RETURNS_COPY.en.stApproved);
+    expect(s.resultWords('en', res)).toBe('Approved: 032026');
   });
 
-  it('is idempotent — a double click collapses to ONE command', () => {
-    const { s, box } = acting();
-    const a = s.requestAction({ period: '052026', action: 'submit', at: AT });
-    const b = s.requestAction({ period: '052026', action: 'submit', at: AT });
-    expect(a.ok).toBe(true);
-    expect(b).toEqual({ ok: false, reason: 'already_queued' });
-    expect(box.unsentCount()).toBe(1);
+  it('a lost answer keeps the key: pressing again is the SAME act, so head office does it once', async () => {
+    const { s, fake } = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' } });
+    await s.load();
+    fake.loseNext();
+    expect(await s.act({ period: '032026', action: 'approve' })).toEqual({ ok: false, reason: 'lost' });
+    const approve = s.view('en').rows[0]!.actions.find((a) => a.action === 'approve')!;
+    expect(approve.note).toBe(GST_RETURNS_COPY.en.lostRetry);
+    expect(approve.enabled).toBe(true);
+    await s.act({ period: '032026', action: 'approve' });
+    const [first, second] = fake.posts();
+    expect(second!.key).toBe(first!.key);
   });
 
-  it('refuses a MAKER approving their own return, and queues nothing (§28)', () => {
-    const asMaker = acting({}, 'u-maker');
-    expect(asMaker.s.requestAction({ period: '032026', action: 'approve', at: AT })).toEqual({ ok: false, reason: 'self_approval' });
-    expect(asMaker.box.unsentCount()).toBe(0);
+  it('a second click while the first is on its way sends nothing', async () => {
+    const { s, fake } = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' } });
+    await s.load();
+    const [a, b] = await Promise.all([s.act({ period: '032026', action: 'approve' }), s.act({ period: '032026', action: 'approve' })]);
+    expect([a.ok, b]).toEqual([true, { ok: false, reason: 'already_sending' }]);
+    expect(fake.posts()).toHaveLength(1);
   });
 
-  it('refuses an action a state does not offer — a filed or failed return is never advanced by a button (rule #10)', () => {
-    const { s, box } = acting();
-    expect(s.requestAction({ period: '042026', action: 'approve', at: AT })).toEqual({ ok: false, reason: 'not_actionable' }); // filed
-    expect(s.requestAction({ period: '062026', action: 'submit', at: AT })).toEqual({ ok: false, reason: 'not_actionable' }); // failed
-    expect(s.requestAction({ period: '052026', action: 'approve', at: AT })).toEqual({ ok: false, reason: 'not_actionable' }); // approved offers submit, not approve
-    expect(box.unsentCount()).toBe(0);
+  it('the MAKER cannot approve their own return — refused here, nothing sent (maker ≠ checker, §28)', async () => {
+    const { s, fake } = live({ '032026': { state: 'previewed', previewedBy: 'u-fin' } });
+    await s.load();
+    expect(s.view('en').rows[0]!.actions.find((a) => a.action === 'approve')).toMatchObject({ enabled: false, note: GST_RETURNS_COPY.en.youPrepared });
+    expect(await s.act({ period: '032026', action: 'approve' })).toEqual({ ok: false, reason: 'self_approval' });
+    expect(fake.posts()).toEqual([]);
   });
 
-  it('refuses without the role, without a named operator, and for an unknown period', () => {
-    const noApprove = acting({ mayApprove: () => false });
-    expect(noApprove.s.requestAction({ period: '032026', action: 'approve', at: AT })).toEqual({ ok: false, reason: 'not_permitted' });
-    const noSubmit = acting({ maySubmit: () => false });
-    expect(noSubmit.s.requestAction({ period: '052026', action: 'submit', at: AT })).toEqual({ ok: false, reason: 'not_permitted' });
-    const nobody = acting({}, null);
-    expect(nobody.s.requestAction({ period: '052026', action: 'submit', at: AT })).toEqual({ ok: false, reason: 'not_permitted' });
-    const { s } = acting();
-    expect(s.requestAction({ period: '999999', action: 'submit', at: AT })).toEqual({ ok: false, reason: 'unknown_period' });
+  it('withdraw needs a reason; reconcile needs what the portal shows and the evidence', async () => {
+    const { s, fake } = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' }, '072026': { state: 'unknown' } });
+    await s.load();
+    expect(await s.act({ period: '032026', action: 'cancel', reason: '  ' })).toEqual({ ok: false, reason: 'needs_reason' });
+    expect(await s.act({ period: '072026', action: 'reconcile', note: 'seen' })).toEqual({ ok: false, reason: 'needs_evidence' });
+    expect(fake.posts()).toEqual([]);
+    expect((await s.act({ period: '032026', action: 'cancel', reason: 'figures wrong' })).ok).toBe(true);
+    expect((await s.act({ period: '072026', action: 'reconcile', resolvedState: 'filed', note: 'ARN on the portal', arn: 'AA330526123' })).ok).toBe(true);
+    expect(fake.posts().map((c) => [c.path, c.body])).toEqual([
+      ['/v1/finance/gstr1/submission/032026/cancel', { reason: 'figures wrong' }],
+      ['/v1/finance/gstr1/submission/072026/reconcile', { resolvedState: 'filed', note: 'ARN on the portal', arn: 'AA330526123' }],
+    ]);
   });
 
-  it('a re-request after the return has moved to a new state is a DISTINCT command', () => {
-    expect(returnCommandKey('052026', 'submit', 'approved'))
-      .not.toBe(returnCommandKey('052026', 'submit', 'submitting'));
+  it('filing to the portal is switched off: shown, never enabled, never sent', async () => {
+    const { s, fake } = live({ '052026': { state: 'approved', previewedBy: 'u-maker', approvedBy: 'u-checker' } });
+    await s.load();
+    expect(s.view('en').rows[0]!.actions.find((a) => a.action === 'submit')).toMatchObject({ enabled: false, note: GST_RETURNS_COPY.en.filingOff });
+    expect(await s.act({ period: '052026', action: 'submit' })).toEqual({ ok: false, reason: 'filing_off' });
+    expect(fake.posts()).toEqual([]);
   });
 
-  it('buildReturnCommand uses its idempotency key as the event id, so a duplicate can only collapse', () => {
-    const cmd = buildReturnCommand({ period: '052026', action: 'submit', observedState: 'approved', requestedBy: 'u-fin', at: AT });
-    expect(cmd.id).toBe(cmd.idempotencyKey);
-    expect(cmd.occurredAt).toBe(AT);
+  it('a stuck or filed return is never advanced by a button (rule #10)', async () => {
+    const { s } = live({ '042026': { state: 'filed', arn: 'ARN' }, '062026': { state: 'failed' } });
+    await s.load();
+    expect(await s.act({ period: '042026', action: 'approve' })).toEqual({ ok: false, reason: 'not_actionable' });
+    expect(await s.act({ period: '062026', action: 'reconcile', resolvedState: 'filed', note: 'x' })).toEqual({ ok: false, reason: 'not_actionable' });
+    expect(await s.act({ period: '999999', action: 'approve' })).toEqual({ ok: false, reason: 'unknown_period' });
+  });
+
+  it('refuses without the role or a named person', async () => {
+    const noRole = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' } }, { mayApprove: () => false });
+    await noRole.s.load();
+    expect(await noRole.s.act({ period: '032026', action: 'approve' })).toEqual({ ok: false, reason: 'not_permitted' });
+    const nobody = live({ '032026': { state: 'previewed', previewedBy: 'u-maker' } }, {}, null);
+    await nobody.s.load();
+    expect(await nobody.s.act({ period: '032026', action: 'approve' })).toEqual({ ok: false, reason: 'not_permitted' });
+  });
+});
+
+describe('prepare — the maker records head office\'s OWN digest of the month (route audit row 166)', () => {
+  it('reads gstr1PreviewDigest from GSTR-3B and POSTs it to …/preview', async () => {
+    const { s, fake } = live({});
+    await s.load();
+    const res = await s.prepare('052026');
+    expect(res).toEqual({ ok: true, action: 'preview', period: '052026', state: 'previewed' });
+    expect(fake.posts().map((c) => [c.path, c.body])).toEqual([['/v1/finance/gstr1/submission/052026/preview', { returnDigest: 'digest-052026' }]]);
+    expect(s.view('en').rows.map((r) => r.period)).toEqual(['052026']);
+  });
+
+  it('refuses a malformed month or a person who may not prepare, before anything is sent', async () => {
+    const { s, fake } = live({}, { mayPrepare: () => false });
+    expect(await s.prepare('13-2026')).toEqual({ ok: false, reason: 'bad_period' });
+    expect(await s.prepare('052026')).toEqual({ ok: false, reason: 'not_permitted' });
+    expect(fake.calls).toEqual([]);
   });
 });
 
