@@ -182,6 +182,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'floor-devices': { en: 'electronic shelf label esl rfid camera cctv sensor iot floor device', ta: 'அலமாரி லேபிள் RFID கேமரா உணரி' },
   'branding': { en: 'brand shop name logo colours colors white label receipt name', ta: 'கடைப் பெயர் சின்னம் வண்ணம்' },
   'production-recipes': { en: 'recipe bill of materials ingredients cafe bakery deli batch shelf life yield', ta: 'சமையல் முறை பொருட்கள் கஃபே பேக்கரி' },
+  'production-costs': { en: 'production cost costing yield variance loss cafe bakery batch finance review', ta: 'உற்பத்திச் செலவு விளைச்சல் கணக்கு' },
   'data-requests': { en: 'privacy data request access export copy erasure erase forget delete dpdp consent', ta: 'தனியுரிமை தரவு கோரிக்கை நகல் அழி' },
   'customer-value': { en: 'customer value lifetime margin ranking segment rules groups loyal lapsing clv', ta: 'வாடிக்கையாளர் மதிப்பு தரவரிசை குழு விதிகள்' },
   'message-queue': { en: 'message queue sms whatsapp email notification budget dead letter withheld stuck', ta: 'செய்தி வரிசை அறிவிப்பு செலவு வரம்பு' },
@@ -358,6 +359,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // what one batch makes, how long it keeps. A head-office page served by the store computer. Gated on the read the
   // route checks (`production.read`); saving checks `production.recipe.manage` on the server.
   { id: 'production-recipes', label: 'Recipes', labelTa: 'சமையல் முறைகள்', path: '/production-recipes', requires: 'production.read', group: 'Production' },
+  // W4 (M11-FR-02 · §28 "costing reviewed by Finance"): what each run's output cost and every yield outside its range — its
+  // own narrow word, so the accountant reviews costing without the production board.
+  { id: 'production-costs', label: 'Production costs', labelTa: 'உற்பத்திச் செலவு', path: '/production-costs', requires: 'production.cost.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
   // the bin and transfer routes check (`inventory.availability.read`).
   { id: 'warehouse-supervisor', label: 'Warehouse', labelTa: 'கிடங்கு', path: '/warehouse-supervisor/', requires: 'inventory.availability.read', group: 'Inventory' },

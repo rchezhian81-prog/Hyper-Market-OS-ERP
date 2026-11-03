@@ -586,7 +586,60 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         return { status: 200, body: { runs, asAt: deps.now() } };
       },
     },
+    {
+      // W4 · M11-FR-02 §28 "costing reviewed by Finance": what each production run's output cost, line by line, and
+      // every yield outside the recipe's range as an exception with its money (P-08) — READ ONLY, under its own narrow
+      // word (`production.cost.read`), so the accountant reviews costing without the production board, the plan or the
+      // release. Exceptions first, then the newest. A run whose ingredients carry no cost says so by name, never zero.
+      api: 'API-04', method: 'GET', path: '/v1/production/costs',
+      permission: 'production.cost.read',
+      handler: async (ctx) => {
+        const locationId = ctx.query['locationId'];
+        if (isStr(locationId)) await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1
+        const all = await deps.runs(ctx.tenantId);
+        const visible: (typeof all)[number][] = [];
+        for (const r of all) if ((!isStr(locationId) || r.locationId === locationId) && await locationInScope(ctx, r.locationId, deps.locationBranches)) visible.push(r);
+        const runs = visible.map(productionCostOf).sort((a, b) => (a.exceptions.length > 0 ? 0 : 1) - (b.exceptions.length > 0 ? 0 : 1) || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+        return { status: 200, body: { runs, withExceptions: runs.filter((r) => r.exceptions.length > 0).length, notValued: runs.filter((r) => !r.valued).length, asAt: deps.now() } };
+      },
+    },
   ];
+}
+
+/** W4 · M11-FR-02: one run's costing as Finance reviews it. */
+export interface ProductionCostView {
+  readonly runId: string; readonly recipeId: string; readonly departmentId: string; readonly locationId: string;
+  readonly outputProductId: string; readonly outputBatchId: string; readonly outputQuantityMinor: number; readonly outputUom: string;
+  readonly at: string; readonly producedBy: string; readonly currency: CurrencyCode;
+  /** True when every ingredient carried a cost — the output's value is then authoritative. */
+  readonly valued: boolean;
+  /** What the ingredients consumed were worth, or null when one carried no cost (never faked as zero). */
+  readonly inputCostMinor: number | null;
+  /** The output's cost per WHOLE unit of its unit (₹ per kg, per piece), or null when not valued. */
+  readonly unitCostPerWholeMinor: number | null;
+  readonly lines: readonly RunCostLine[];
+  readonly notValuedBecause: readonly string[];
+  readonly yieldBp: number; readonly yieldVerdict: string;
+  readonly exceptions: readonly ProductionException[];
+  /** `run_cost` (OB-68: each ingredient at its average buying cost, else its registered cost) or `registered_cost` (a run recorded before OB-68). */
+  readonly costBasis: 'run_cost' | 'registered_cost';
+}
+
+/** W4 · M11-FR-02 (pure): a stored run → its costing view. A run recorded before OB-68 is shown on its registered cost and says so. */
+export function productionCostOf(r: StoredRun): ProductionCostView {
+  const base = {
+    runId: r.runId, recipeId: r.recipeId, departmentId: r.departmentId, locationId: r.locationId, outputProductId: r.outputProductId,
+    outputBatchId: r.outputBatchId, outputQuantityMinor: r.outputQuantityMinor, outputUom: r.outputUom, at: r.at, producedBy: r.producedBy,
+    currency: r.currency, yieldBp: r.yieldBp, yieldVerdict: r.yieldVerdict, exceptions: r.exceptions,
+  };
+  if (r.runCost !== undefined) {
+    return { ...base, valued: r.runCost.valued, inputCostMinor: r.runCost.inputCostMinor, unitCostPerWholeMinor: r.runCost.unitCostPerWholeMinor, lines: r.runCost.lines, notValuedBecause: r.runCost.notValuedBecause, costBasis: 'run_cost' };
+  }
+  return {
+    ...base, valued: r.costKnown, inputCostMinor: r.costKnown ? r.inputCostMinor : null,
+    unitCostPerWholeMinor: r.costKnown ? r.outputUnitCostMinor * minorPerUnitOf(r.outputUom) : null,
+    lines: [], notValuedBecause: r.uncostedProducts, costBasis: 'registered_cost',
+  };
 }
 
 /** Refuse producing/labelling for a department the tenant does not operate, as an `apiError` or null. */

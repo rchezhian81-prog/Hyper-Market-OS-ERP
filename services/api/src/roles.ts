@@ -115,7 +115,7 @@ const BASE_ROLES: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       // SP-8 (F08): the floor indent chain — raise, approve / reject and read the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
-      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
+      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read', 'production.cost.read',
       'concession.tag.sync',
       // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
       'approvals.decision.sync',
@@ -532,7 +532,7 @@ const BASE_ROLES: readonly Role[] = [
       'inventory.online.buffer.set',
       // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
-      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
+      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read', 'production.cost.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read',
@@ -905,6 +905,11 @@ const BASE_ROLES: readonly Role[] = [
       // OB-679 (owner, 2 Nov 2026, in writing): the accountant approves a GST credit note the OWNER raised, at any amount.
       'finance.creditnote.ownerrequest.approve',
       // ── Round 4c · OB-613 — end
+      // ── W4 · M11-FR-02 §28 "costing reviewed by Finance" — begin: the accountant READS what each production run's output
+      // cost and its yield exceptions (GET /v1/production/costs). Its own narrow word: no production board, plan, recipe,
+      // run, release or cost registration comes with it.
+      'production.cost.read',
+      // ── W4 · M11-FR-02 — end
     ],
   },
   {

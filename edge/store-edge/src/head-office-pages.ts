@@ -75,6 +75,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'partner-webhooks', 'partners', 'developer-docs', 'floor-devices', 'branding',
   // W3 (migration controls): Old system checks — MG-01/03/07/08/09/11/12 head-office routes that had no screen.
   'old-system',
+  // W4 (M11-FR-02): Production costs — Finance reviews what each production run's output cost.
+  'production-costs',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -187,6 +189,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'floor-devices': 'floorDevicesData',
   branding: 'brandingData',
   'old-system': 'oldSystemData',
+  'production-costs': 'productionCostsData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
