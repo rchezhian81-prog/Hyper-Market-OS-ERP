@@ -6646,27 +6646,21 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdRequest"
+                "type": "object"
               }
             }
           }
         },
+        "x-request-body": "none",
         "x-body-schema": "derived",
+        "x-never-succeeds": true,
+        "description": "Retired or refusal-only: every call is refused, by name, with one of the error replies below.",
         "responses": {
-          "201": {
-            "description": "The reply, as the handler builds it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdReply"
-                }
-              }
-            }
-          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -128324,6 +128318,9 @@
       "GetFinanceCreditNotesReconciliationReply": {
         "type": "object",
         "required": [
+          "ledger",
+          "notesTotalMinor",
+          "notInTheBooks",
           "asAt",
           "period",
           "notesIssued",
@@ -128335,6 +128332,108 @@
           "detail"
         ],
         "properties": {
+          "ledger": {
+            "type": "object",
+            "required": [
+              "read",
+              "derivation",
+              "journals",
+              "totalMinor",
+              "taxableMinor",
+              "taxMinor",
+              "split",
+              "netAccount",
+              "taxAccount"
+            ],
+            "properties": {
+              "read": {
+                "type": "string"
+              },
+              "derivation": {
+                "type": "string"
+              },
+              "journals": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "totalMinor": {
+                "type": "number"
+              },
+              "taxableMinor": {
+                "type": "number"
+              },
+              "taxMinor": {
+                "type": "number"
+              },
+              "split": {
+                "type": "string",
+                "enum": [
+                  "by_account",
+                  "not_known"
+                ]
+              },
+              "netAccount": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "taxAccount": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "notesTotalMinor": {
+            "type": "number"
+          },
+          "notInTheBooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "noteId",
+                "number",
+                "grossMinor",
+                "taxAdjustable",
+                "state"
+              ],
+              "properties": {
+                "postedToPeriod": {
+                  "type": "string"
+                },
+                "noteId": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "grossMinor": {
+                  "type": "number"
+                },
+                "taxAdjustable": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "asAt": {
             "type": "string"
           },
@@ -170116,79 +170215,6 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-collections.ts"
-      },
-      "PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdReply": {
-        "type": "object",
-        "required": [
-          "salespersonId",
-          "accrualId",
-          "commissionMinor",
-          "currency"
-        ],
-        "properties": {
-          "salespersonId": {
-            "type": "string"
-          },
-          "accrualId": {
-            "type": "string"
-          },
-          "commissionMinor": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "EUR",
-              "GBP",
-              "INR",
-              "USD"
-            ]
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/b2b-commission.ts"
-      },
-      "PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdRequest": {
-        "type": "object",
-        "required": [
-          "baseMinor",
-          "rateBps"
-        ],
-        "properties": {
-          "baseMinor": {
-            "type": "integer"
-          },
-          "capMinor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "currency": {
-            "type": "string"
-          },
-          "rateBps": {
-            "type": "integer"
-          },
-          "ref": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "string"
-              }
-            ]
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/b2b-commission.ts"
       },
       "PostB2bCommissionsBySalespersonIdRulesByRuleIdApproveReply": {
         "type": "object",

@@ -181,6 +181,17 @@
         <ul class="rows" id="cn-asked"></ul>
         <h3 id="cn-notes-h"></h3>
         <ul class="rows" id="cn-notes"></ul>
+        <!-- W4 · M23-FR-02: the month's credit notes (every business customer) against what the books carry for that month —
+             head office reads the posted ledger itself; only the month is sent. A difference is shown with its sign. -->
+        <h3 id="cnr-h"></h3>
+        <p class="meta" id="cnr-lead"></p>
+        <div class="row-form">
+          <label for="cnr-period"><span id="cnr-period-l"></span><input id="cnr-period" type="month" autocomplete="off" /></label>
+        </div>
+        <button id="cnr-show" type="button"><span id="cnr-show-text"></span></button>
+        <p class="status" id="cnr-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="cnr-figs"></div>
+        <ul class="rows" id="cnr-missing"></ul>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

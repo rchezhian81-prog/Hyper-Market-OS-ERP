@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2157,
+  "testFiles": 2162,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1289,8 +1289,8 @@
         "unit": 20,
         "integration": 20,
         "realDb": 8,
-        "browser": 7,
-        "connected": 1,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1356,10 +1356,12 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",
-          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts"
+          "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts",
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts"
+          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2000,11 +2002,11 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 31,
+        "unit": 33,
         "integration": 41,
         "realDb": 26,
-        "browser": 10,
-        "connected": 3,
+        "browser": 11,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -2040,7 +2042,9 @@
           "tests/unit/tally-export.test.ts",
           "tests/unit/trial-balance-and-centres.test.ts",
           "tests/unit/w3-gst-notes-to-business-customers.test.ts",
-          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
+          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/w4-the-credit-note-reconciliation-reads-the-books.test.ts",
+          "tests/unit/w4-wf05-the-after-match-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -2123,12 +2127,14 @@
           "tests/e2e/the-month-is-closed-and-reopened-on-the-month-end-page-through-the-store-computer.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
           "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts",
-          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts"
+          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts",
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
-          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts"
+          "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts",
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4723,18 +4729,19 @@
       "id": "WF-05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
-        "integration": 9,
+        "unit": 3,
+        "integration": 10,
         "realDb": 4,
-        "browser": 2,
-        "connected": 1,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
-          "tests/unit/tally-export.test.ts"
+          "tests/unit/tally-export.test.ts",
+          "tests/unit/w4-wf05-the-after-match-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
@@ -4745,7 +4752,8 @@
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/supplier-account.test.ts"
+          "tests/integration/supplier-account.test.ts",
+          "tests/integration/w4-wf05-a-checked-bill-reaches-the-books-and-the-tally-file.test.ts"
         ],
         "realDb": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
@@ -4755,10 +4763,12 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
-          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []

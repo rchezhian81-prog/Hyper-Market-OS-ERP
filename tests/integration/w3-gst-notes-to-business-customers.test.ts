@@ -199,6 +199,17 @@ describe.each(backings)('M23-FR-02 · OB-678 — GST notes to a business custome
     expect(run2.exceptions.map((e) => e.sourceId)).toEqual(['debit_note:CUST1:D-1']); // still waiting — said, never silent
     const after = ((await call('GET', '/v1/finance/credit-notes/customers/CUST1', 'u-acct')).body as { notes: NoteRow[] }).notes;
     expect(after.map((n) => [n.number, n.posting.state])).toEqual([['CDN-000001', 'waiting_for_posting_rule'], ['CN-000001', 'posted'], ['CN-000002', 'posted'], ['CN-000003', 'posted']]);
+    // ── W4 · M23-FR-02: the period reconciliation reads what the posting run just put on the ledger — no figure typed.
+    // The three credit notes (₹2,10,000 + ₹6,30,000 + ₹7,35,000 by value with GST) against their journals: exact; the debit
+    // note is not credit and is not in it. A request still carrying typed ledger figures is refused by name.
+    const journalPeriod = ((await call('GET', '/v1/finance/b2b/postings', 'u-acct')).body as { journals: { entryId: string; period: string }[] }).journals.find((j) => j.entryId === 'b2b:credit_note:CUST1:N-1')?.period;
+    const recon = (await call('GET', '/v1/finance/credit-notes/reconciliation', 'u-acct', undefined, { period: month })).body as { notesIssued: number; notesTotalMinor: number; differenceMinor: number; reconciles: boolean; ledger: { totalMinor: number; taxMinor: number; split: string; journals: string[] }; notInTheBooks: unknown[] };
+    expect(journalPeriod).toBe(month);
+    expect(recon).toMatchObject({ notesIssued: 3, notesTotalMinor: 21_000 + 630_000 + 735_000, differenceMinor: 0, reconciles: true, notInTheBooks: [] });
+    expect(recon.ledger).toMatchObject({ totalMinor: 21_000 + 630_000 + 735_000, taxMinor: 1_000 + 30_000 + 35_000, split: 'by_account' });
+    expect(recon.ledger.journals).toEqual(['b2b:credit_note:CUST1:N-1', 'b2b:credit_note:CUST1:N-2', 'b2b:credit_note:CUST1:N-3']);
+    expect(code(await call('GET', '/v1/finance/credit-notes/reconciliation', 'u-acct', undefined, { period: month, ledgerTaxable: '0', ledgerTax: '0' }))).toBe('ledger_is_read_not_typed');
+    expect((await call('GET', '/v1/finance/credit-notes/reconciliation', 'u-mgr', undefined, { period: month })).status).toBe(403);
 
     // ── Audited: who issued each note and the approval behind a credit note.
     const trail = (await h.store.readStream(t, streamName(STREAM.audit, 'domain-trail'), { type: 'AuditRecordSealed' }))

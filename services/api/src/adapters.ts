@@ -9367,7 +9367,12 @@ export function financeNotesAdapter(input: {
     // The posting rules in force (kinds only) and the B2B facts already journalled — where each note stands in the books.
     postingState: async (tenantId) => {
       const [map, journals] = await Promise.all([books.postingMap(tenantId), books.b2bJournals(tenantId)]);
-      return { ruleKinds: map?.rules.map((r) => r.kind), journals: journals.map((j) => ({ sourceId: j.b2b.sourceId, entryId: j.entryId, period: j.period })) };
+      // W4 · M23-FR-02: the rules (accounts by leg) and each journal's kind and lines too — the period credit-note
+      // reconciliation reads what the posted ledger carries from these, the same JournalPosted facts the month close reads.
+      return {
+        ruleKinds: map?.rules.map((r) => r.kind), ...(map === undefined ? {} : { rules: map.rules }),
+        journals: journals.map((j) => ({ sourceId: j.b2b.sourceId, entryId: j.entryId, period: j.period, kind: j.b2b.kind, lines: j.lines })),
+      };
     },
     // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
     // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
