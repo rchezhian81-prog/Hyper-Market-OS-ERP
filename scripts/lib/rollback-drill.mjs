@@ -120,3 +120,27 @@ export async function runRollbackDrill({ previous, current, targetKind, project,
   if (over.length > 0) return finish('over_target', `${over.join('; ')} — every step worked, but G9 is not passed until it is inside the targets`);
   return finish('passed', 'the previous release went back on, the backup restored and reconciled, and the current release came back — all inside the targets');
 }
+
+/**
+ * W4 · QG-08 — the drill's result as the gate reads it: the exact body of `POST /v1/platform/dr-drills` for the ROLLBACK
+ * rehearsal (packages/ops/src/recovery-gate.ts), scored there against its fixed §32 target (the previous release back
+ * within 30 minutes, no committed sale lost). The recovery time is the measured rollback leg — the previous release put
+ * back and READY. The data loss is 0 because the drill never touches the live database: the rollback is a release change
+ * (release.sh never restores over or edits the database), and the backup it took restored into a SEPARATE empty database
+ * and reconciled to the paisa — a drill whose recovery leg did not reconcile never reaches the rollback at all.
+ *
+ * A drill that passed or ran over its target becomes a body (an over-target rollback is scored a MISS by head office, never
+ * quietly a pass). A drill that was refused, or whose previous release never came back, has no rollback time to score:
+ * it is NOT a rehearsal record — `recordable: false`, with why — and its run goes red so a person records the miss.
+ */
+export function rehearsalBodyOf(record) {
+  const rollbackMs = record?.timingsMs?.rollback;
+  if ((record?.outcome !== 'passed' && record?.outcome !== 'over_target') || typeof rollbackMs !== 'number' || !(rollbackMs >= 0)) {
+    return { recordable: false, why: `the drill ${record?.drillId ?? '(no id)'} ended ${record?.outcome ?? 'without an outcome'} — ${record?.detail ?? 'no detail'}; there is no rollback time to score, so a person records the miss (QG-08 stays HOLD)` };
+  }
+  return {
+    recordable: true,
+    body: { drillId: record.drillId, rehearsal: 'rollback', dataLossSeconds: 0, recoverySeconds: Math.ceil(rollbackMs / 1000) },
+    words: `rollback rehearsal ${record.drillId}: the previous release back and READY in ${(rollbackMs / 60000).toFixed(1)} min (target 30 min), no data lost — the database is never touched by a rollback`,
+  };
+}

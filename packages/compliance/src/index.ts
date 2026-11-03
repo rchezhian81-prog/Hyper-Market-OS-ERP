@@ -15,3 +15,5 @@ export * from './qg10-evidence';
 export * from './gate-evidence';
 // W3 · QG-04 / QG-07 / QG-10: the machine readings of head office's own records, as gate blockers.
 export * from './gate-readings';
+// W4 · QG-03: the branch-protection reading of main (CI reads it; not known holds the gate, never GO).
+export * from './branch-protection';
