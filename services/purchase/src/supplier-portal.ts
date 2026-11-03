@@ -581,9 +581,11 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
       permission: 'supplier.portal.review',
       handler: async (ctx) => {
         const raw = Number(ctx.query['threshold']);
-        const threshold = Number.isInteger(raw) && raw > 0 ? raw : 3;
+        const asked = Number.isInteger(raw) && raw > 0;
+        const threshold = asked ? raw : 3;
         const probing = findProbing(await deps.auditEntries(ctx.tenantId), threshold);
-        return { status: 200, body: { probing, threshold, count: probing.length, asAt: deps.now() } };
+        // OB-686: the 3 is a kept safety limit, built in — said so ("built-in, not yet set by the owner"), never passed off as his.
+        return { status: 200, body: { probing, threshold, builtIn: !asked, count: probing.length, asAt: deps.now() } };
       },
     },
     {

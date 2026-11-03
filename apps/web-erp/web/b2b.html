@@ -214,6 +214,17 @@
         <p class="status" id="bk-status" role="status" aria-live="polite"></p>
         <div class="figs" id="bk-figs"></div>
         <ul class="rows" id="bk-rows"></ul>
+        <!-- OB-686: the owner's chasing steps — "not set" until he sets them; no step is given until then. -->
+        <h4 id="bk-steps-h"></h4>
+        <p class="meta" id="bk-steps-line" role="status" aria-live="polite"></p>
+        <div class="row-form" id="bk-steps-form" hidden>
+          <label for="bk-steps-floor"><span id="bk-steps-floor-l"></span><input id="bk-steps-floor" inputmode="decimal" autocomplete="off" /></label>
+          <label for="bk-steps-remind"><span id="bk-steps-remind-l"></span><input id="bk-steps-remind" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-final"><span id="bk-steps-final-l"></span><input id="bk-steps-final" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-stop"><span id="bk-steps-stop-l"></span><input id="bk-steps-stop" inputmode="numeric" autocomplete="off" /></label>
+          <button id="bk-steps-save" type="button"><span id="bk-steps-save-text"></span></button>
+        </div>
+        <p class="status" id="bk-steps-status" role="status" aria-live="polite"></p>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

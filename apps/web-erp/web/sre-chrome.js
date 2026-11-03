@@ -687,6 +687,7 @@
     'ops-alerts': 'triangle-alert', // Wave 3 — an icon already in the set
     'failed-jobs': 'history', // W4 — an icon already in the set
     'compliance-registers': 'shield-check', // W5 — an icon already in the set
+    'payroll-legal': 'scale', // W5 · OB-684 — an icon already in the set
     'document-retention': 'files', // Wave 3 — an icon already in the set
     'sales-commission': 'percent', // Wave 3 — an icon already in the set
     'space-setup': 'boxes', // Wave 2 — an icon already in the set

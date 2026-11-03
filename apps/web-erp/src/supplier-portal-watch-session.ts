@@ -21,7 +21,7 @@ export const SUPPLIER_PORTAL_WATCH_COPY = {
     compliant: 'Every required paper is in date and verified.', notCompliant: 'Not every paper is in order — blocked by: {kinds}.', d_valid: 'valid', d_expiring: 'expiring soon', d_expired: 'expired', d_missing: 'missing', d_unverified: 'not verified',
     opening: 'Opening', invoiced: 'Invoiced', debited: 'Debit notes', credited: 'Credit notes', paid: 'Paid', closing: 'Closing balance', disputed: 'Disputed (kept apart)', addsUp: 'The statement adds up a second way.', doesNotAddUp: 'The statement does NOT add up — a line has no bucket. A person must look.',
     notShared: 'This supplier\'s statement is not shared on the portal — that is not a balance of zero.', noLines: 'No statement line yet.',
-    probeH: 'Portal logins trying other suppliers\' data', probeShow: 'Show them', noProbing: 'No supplier login has reached the pattern head office watches for ({threshold} refusals).', probeRow: '{user} (supplier {partner}): {attempts} attempts', threshold: 'Counted from {threshold} refusals',
+    probeH: 'Portal logins trying other suppliers\' data', probeShow: 'Show them', noProbing: 'No supplier login has reached the pattern head office watches for ({threshold} refusals).', probeRow: '{user} (supplier {partner}): {attempts} attempts', threshold: 'Counted from {threshold} refusals', thresholdBuiltIn: 'Counted from {threshold} refusals — built-in, not yet set by the owner',
     needPartner: 'Type the supplier first.', needDate: 'Give the day as YYYY-MM-DD.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot review supplier portal records.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.',
@@ -32,7 +32,7 @@ export const SUPPLIER_PORTAL_WATCH_COPY = {
     compliant: 'தேவையான ஒவ்வொரு ஆவணமும் செல்லுபடியானது, சரிபார்க்கப்பட்டது.', notCompliant: 'எல்லா ஆவணங்களும் சரியாக இல்லை — தடுப்பவை: {kinds}.', d_valid: 'செல்லுபடி', d_expiring: 'விரைவில் காலாவதி', d_expired: 'காலாவதியானது', d_missing: 'இல்லை', d_unverified: 'சரிபார்க்கப்படவில்லை',
     opening: 'தொடக்கம்', invoiced: 'விலைப்பட்டியல்', debited: 'பற்று குறிப்புகள்', credited: 'வரவு குறிப்புகள்', paid: 'செலுத்தியது', closing: 'இறுதி இருப்பு', disputed: 'சர்ச்சையில் (தனியாக)', addsUp: 'அறிக்கை இரண்டாம் வழியிலும் பொருந்துகிறது.', doesNotAddUp: 'அறிக்கை பொருந்தவில்லை — ஒரு வரிக்கு வகை இல்லை. ஒருவர் பார்க்க வேண்டும்.',
     notShared: 'இந்தச் சப்ளையரின் அறிக்கை போர்டலில் பகிரப்படவில்லை — அது பூஜ்ஜிய இருப்பு அல்ல.', noLines: 'இன்னும் அறிக்கை வரி இல்லை.',
-    probeH: 'மற்ற சப்ளையர் தரவைத் தேடும் போர்டல் உள்நுழைவுகள்', probeShow: 'அவற்றைக் காட்டு', noProbing: 'தலைமை அலுவலகம் கவனிக்கும் அளவை ({threshold} மறுப்புகள்) எந்தச் சப்ளையர் உள்நுழைவும் எட்டவில்லை.', probeRow: '{user} (சப்ளையர் {partner}): {attempts} முயற்சிகள்', threshold: '{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது',
+    probeH: 'மற்ற சப்ளையர் தரவைத் தேடும் போர்டல் உள்நுழைவுகள்', probeShow: 'அவற்றைக் காட்டு', noProbing: 'தலைமை அலுவலகம் கவனிக்கும் அளவை ({threshold} மறுப்புகள்) எந்தச் சப்ளையர் உள்நுழைவும் எட்டவில்லை.', probeRow: '{user} (சப்ளையர் {partner}): {attempts} முயற்சிகள்', threshold: '{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது', thresholdBuiltIn: '{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை',
     needPartner: 'முதலில் சப்ளையரைத் தட்டச்சு செய்யவும்.', needDate: 'நாளை YYYY-MM-DD ஆகக் கொடுக்கவும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு சப்ளையர் போர்டல் பதிவுகளை மதிப்பாய்வு செய்ய முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை.',
@@ -51,7 +51,7 @@ export interface Statement {
   readonly paidMinor: number; readonly closingMinor: number; readonly disputedMinor: number; readonly lines: readonly { readonly documentRef: string; readonly kind: string; readonly date: string; readonly amountMinor: number; readonly status: string }[];
   readonly reconciles: boolean; readonly detail: string;
 }
-export interface Probing { readonly probing: readonly { readonly partnerId: string; readonly userId: string; readonly attempts: number; readonly detail: string }[]; readonly threshold: number; readonly count: number }
+export interface Probing { readonly probing: readonly { readonly partnerId: string; readonly userId: string; readonly attempts: number; readonly detail: string }[]; readonly threshold: number; readonly builtIn?: boolean; readonly count: number }
 
 type Why = 'nobody' | 'cannotRead' | 'needPartner' | 'needDate';
 type Done<T> = Promise<Outcome<T, Why>>;

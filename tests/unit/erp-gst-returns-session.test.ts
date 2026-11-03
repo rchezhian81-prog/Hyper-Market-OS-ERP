@@ -136,7 +136,7 @@ function fakeHeadOffice(initial: Record<string, Record<string, unknown>>) {
     if (method === 'GET' && one) return { kind: 'ok', status: 200, body: subs.get(one[1]!) };
     const g3b = /^\/v1\/finance\/gstr3b\/(\d{6})$/.exec(path);
     if (method === 'GET' && g3b) return { kind: 'ok', status: 200, body: { gstr1PreviewDigest: `digest-${g3b[1]}` } };
-    const act = /^\/v1\/finance\/gstr1\/submission\/(\d{6})\/(approve|cancel|reconcile|preview)$/.exec(path);
+    const act = /^\/v1\/finance\/gstr1\/submission\/(\d{6})\/(approve|cancel|reconcile|preview|filed-by-hand)$/.exec(path);
     if (method === 'POST' && act) {
       if (lose > 0) { lose -= 1; return { kind: 'lost' }; } // the answer is lost (the act may or may not have landed)
       if (key !== undefined && seenKeys.has(key)) return seenKeys.get(key)!; // the kernel answers a key once
@@ -144,6 +144,7 @@ function fakeHeadOffice(initial: Record<string, Record<string, unknown>>) {
       const s = subs.get(period) ?? { period };
       const next: Record<string, unknown> = verb === 'approve' ? { ...s, state: 'approved', approvedBy: 'u-fin' } : verb === 'cancel' ? { ...s, state: 'cancelled' }
         : verb === 'preview' ? { period, state: 'previewed', previewedBy: 'u-fin', returnDigest: (body as { returnDigest: string }).returnDigest }
+          : verb === 'filed-by-hand' ? { ...s, state: 'filed', arn: (body as { arn: string }).arn, filedByHand: { by: 'u-fin', name: 'Murugan S', at: '2026-06-11T05:00:00.000Z' } }
           : { ...s, state: (body as { resolvedState: string }).resolvedState };
       subs.set(period, next);
       const answer: HeadOfficeAnswer = { kind: 'ok', status: 200, body: { period, current: next } };
@@ -165,7 +166,7 @@ const live = (initial: Record<string, Record<string, unknown>>, over: Partial<Gs
 describe('commandActionsFor — exactly the acts head office allows in each state', () => {
   it('prepared: approve or withdraw; approved: file (switched off) or withdraw; unknown: reconcile; nothing elsewhere', () => {
     expect(commandActionsFor('previewed')).toEqual(['approve', 'cancel']);
-    expect(commandActionsFor('approved')).toEqual(['submit', 'cancel']);
+    expect(commandActionsFor('approved')).toEqual(['submit', 'fileByHand', 'cancel']);
     expect(commandActionsFor('unknown')).toEqual(['reconcile']);
     for (const s of ['failed', 'submitting', 'filed', 'cancelled'] as const) expect(commandActionsFor(s)).toEqual([]);
   });
@@ -301,5 +302,62 @@ describe('the copy is complete in both languages', () => {
     const gaps = bilingualGaps(GST_RETURNS_COPY, COPY_KEYS);
     expect(gaps.en, `English missing: ${gaps.en.join(', ')}`).toEqual([]);
     expect(gaps.ta, `Tamil missing: ${gaps.ta.join(', ')}`).toEqual([]);
+  });
+});
+
+// W5 · OB-683 (owner, 3 Nov 2026) · M23-FR-02: after an approved GSTR-1 is uploaded on the portal by hand, the person who
+// uploaded it records the portal's ARN; the return then shows "Filed by hand on the portal" with the ARN and their name.
+describe('OB-683 — record an approved GSTR-1 filed by hand on the portal', () => {
+  it('an approved return offers "Record it filed by hand (ARN)" to a person who may file, with an ARN field', async () => {
+    const { s } = live({ '052026': { state: 'approved', previewedBy: 'u-maker', approvedBy: 'u-owner' } });
+    await s.load();
+    const hand = s.view('en').rows[0]!.actions.find((a) => a.action === 'fileByHand')!;
+    expect(hand).toMatchObject({ enabled: true, needs: 'arn', label: GST_RETURNS_COPY.en.btnFileByHand });
+    expect(s.view('ta').rows[0]!.actions.find((a) => a.action === 'fileByHand')!.label).toBe(GST_RETURNS_COPY.ta.btnFileByHand);
+    // Live filing stays switched off beside it.
+    expect(s.view('en').rows[0]!.actions.find((a) => a.action === 'submit')).toMatchObject({ enabled: false, note: GST_RETURNS_COPY.en.filingOff });
+  });
+
+  it('without the file-returns role it is shown switched off and refused — nothing sent', async () => {
+    const { s, fake } = live({ '052026': { state: 'approved', previewedBy: 'u-maker' } }, { maySubmit: () => false });
+    await s.load();
+    expect(s.view('en').rows[0]!.actions.find((a) => a.action === 'fileByHand')).toMatchObject({ enabled: false, note: GST_RETURNS_COPY.en.needsSubmitRole });
+    expect(await s.act({ period: '052026', action: 'fileByHand', arn: 'AA330626012345X' })).toEqual({ ok: false, reason: 'not_permitted' });
+    expect(fake.posts()).toEqual([]);
+  });
+
+  it('an empty or malformed ARN is refused in words before anything is sent', async () => {
+    const { s, fake } = live({ '052026': { state: 'approved', previewedBy: 'u-maker' } });
+    await s.load();
+    const empty = await s.act({ period: '052026', action: 'fileByHand', arn: '  ' });
+    expect(empty).toEqual({ ok: false, reason: 'needs_arn' });
+    expect(s.resultWords('en', empty)).toBe(GST_RETURNS_COPY.en.needArn);
+    for (const bad of ['AA33062601234', 'SANDBOX-052026', 'XX330626012345X', 'AA331326012345X']) {
+      const r = await s.act({ period: '052026', action: 'fileByHand', arn: bad });
+      expect(r, bad).toEqual({ ok: false, reason: 'bad_arn' });
+    }
+    expect(s.resultWords('ta', { ok: false, reason: 'bad_arn' })).toBe(GST_RETURNS_COPY.ta.badArn);
+    expect(fake.posts()).toEqual([]);
+  });
+
+  it('a good ARN (typed with a space, in small letters) is sent ONCE as { arn } only — no person, no time from the page', async () => {
+    const { s, fake } = live({ '052026': { state: 'approved', previewedBy: 'u-maker', approvedBy: 'u-owner' } });
+    await s.load();
+    const res = await s.act({ period: '052026', action: 'fileByHand', arn: 'aa33 0626012345x' });
+    expect(res).toEqual({ ok: true, action: 'fileByHand', period: '052026', state: 'filed' });
+    expect(fake.posts()).toEqual([{ method: 'POST', path: '/v1/finance/gstr1/submission/052026/filed-by-hand', body: { arn: 'AA330626012345X' }, key: `k-${keySeq}` }]);
+    expect(s.resultWords('en', res)).toBe(`${GST_RETURNS_COPY.en.doneFileByHand}: 052026`);
+    // The return now reads "Filed by hand on the portal", with the ARN and the name head office recorded.
+    const row = s.view('en').rows[0]!;
+    expect(row.status.label).toBe('Filed by hand on the portal');
+    expect(row.filedByHand).toEqual({ label: 'Filed by hand on the portal', arn: 'AA330626012345X', name: 'Murugan S', line: 'Filed by hand on the portal · Portal reference AA330626012345X · recorded by Murugan S' });
+    expect(row.actions).toEqual([]);
+    expect(s.view('ta').rows[0]!.status.label).toBe(GST_RETURNS_COPY.ta.stFiledByHand);
+  });
+
+  it('a return filed through an acknowledgement (not by hand) does not claim to be filed by hand', () => {
+    const v = session().view('en').rows.find((r) => r.period === '042026')!;
+    expect(v.status.label).toBe(GST_RETURNS_COPY.en.stFiled);
+    expect(v.filedByHand).toBeUndefined();
   });
 });

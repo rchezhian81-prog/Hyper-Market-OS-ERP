@@ -26,6 +26,7 @@ import type { Page } from 'playwright-core';
  *     cut-off and both sides — writing nothing; the cost and profit centres are read against the ledger.
  *   • M23-FR-01 — account classes: "not set yet" with head office's suggestion only shown; the accountant gives two accounts
  *     their class and saves; head office holds exactly those, and the month's profit and loss then reads.
+ *   • OB-686 · M22-FR-04 — the chasing steps are the owner's: "not set by the owner" and no step until he sets them on the page.
  *   • M22-FR-01/02/04 · M23 — Business customers: the dunning step for an overdue customer (a reminder; nothing sent),
  *     what the customer is shown against what the books hold (head office's own figures), an order delivered and not
  *     billed, and no portal login trying doors; Tamil words.
@@ -206,13 +207,39 @@ describe.skipIf(!CONNECTED)('W5 · the accountant\'s books on the store computer
     await a.close();
   }, 120_000);
 
+  it('OB-686 · M22-FR-04: no built-in chasing steps — "not set by the owner" gives no step; the owner sets his own on the page', async () => {
+    const a = await open(ACCT, '/b2b');
+    await a.page.waitForSelector('#bk:not([hidden])');
+    await says(a.page, '#bk-steps-line', /^Not set by the owner — no chasing step is given/);
+    expect(await a.page.locator('#bk-steps-form').isHidden(), 'only the owner is offered the form').toBe(true);
+    await a.page.fill('#bk-customer', CUST);
+    await a.page.click('#bk-dunning');
+    await says(a.page, '#bk-figs', /No step: the chasing steps are not set by the owner\./);
+    await says(a.page, '#bk-figs', /Oldest overdue \(days\)\s*10/);
+    await a.close();
+    const o = await open(OWNER, '/b2b');
+    await o.page.waitForSelector('#bk-steps-form:not([hidden])');
+    await o.page.fill('#bk-steps-floor', '500'); await o.page.fill('#bk-steps-remind', '60'); await o.page.fill('#bk-steps-final', '7'); await o.page.fill('#bk-steps-stop', '90');
+    await o.page.click('#bk-steps-save');
+    await says(o.page, '#bk-steps-status', /^Write the amount in rupees and the three day counts as whole numbers that rise/);
+    expect(o.writes).toEqual([]);
+    await o.page.fill('#bk-steps-remind', '7'); await o.page.fill('#bk-steps-final', '60');
+    await o.page.click('#bk-steps-save');
+    await says(o.page, '#bk-steps-status', /^Saved\./);
+    await says(o.page, '#bk-steps-line', /^Chase from ₹500\.00 · a reminder after 7 days overdue · a final notice after 60 · stopping supply is recommended after 90 \(set by /);
+    expect(o.writes).toEqual(['POST /v1/b2b/collections/chasing-steps']);
+    expect(o.errors).toEqual([]);
+    await o.close();
+    expect(await ok(shop.call('GET', '/v1/b2b/collections/chasing-steps', ACCT), 'steps')).toMatchObject({ state: 'set', steps: { minimumChaseMinor: 50_000, reminderAfterDays: 7, finalNoticeAfterDays: 60, stopSupplyAfterDays: 90, setBy: OWNER } });
+  }, 120_000);
+
   it('M22-FR-01/02/04 · M23: Business customers — the dunning step, the customer against the books, the order chain, no probing; Tamil', async () => {
     const a = await open(ACCT, '/b2b');
     await a.page.waitForSelector('#bk:not([hidden])');
     expect(await a.page.inputValue('#bk-asof'), 'the shop\'s own date').toBe(TODAY);
     await a.page.fill('#bk-customer', CUST);
     await a.page.click('#bk-dunning');
-    await says(a.page, '#bk-figs', /Send a reminder/);
+    await says(a.page, '#bk-figs', /Send a reminder/); // the owner's own 7 days (set above), never a built-in
     await says(a.page, '#bk-figs', /Oldest overdue \(days\)\s*10/);
     const ar = (await ok(shop.call('GET', `/v1/b2b/collections/${CUST}/reconciliation?asOf=${TODAY}`, ACCT), 'ar')) as { portalOutstandingMinor: number; financeOutstandingMinor: number; agrees: boolean };
     await a.page.click('#bk-reconcile');
@@ -228,6 +255,7 @@ describe.skipIf(!CONNECTED)('W5 · the accountant\'s books on the store computer
     await says(a.page, '#bk-rows', /ordered, delivered and billed agree/);
     await a.page.click('#bk-probing');
     await says(a.page, '#bk-rows', /No portal login has reached the pattern head office watches for \(3 refusals\)\./);
+    await says(a.page, '#bk-rows', /Counted from 3 refusals — built-in, not yet set by the owner/); // OB-686
     expect(a.writes, 'every one of these is a read').toEqual([]);
     await a.page.click('#lang');
     await says(a.page, '#bk-h', /வசூல்/);

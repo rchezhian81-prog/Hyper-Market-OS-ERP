@@ -72,6 +72,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'training-checks',
   // W5 (M34-FR-03 · M34-FR-04 · OB-331): Licences, controls and findings.
   'compliance-registers',
+  // W5 · OB-684: Payroll legal figures — the CA's legal figures alone (never anyone's pay; never in the offline shell).
+  'payroll-legal',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
   'settlement',
   // W3 (M18 · D05-FR-03): the online-orders desk and the delivery area and slots.
@@ -189,6 +191,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'sales-commission': 'salesCommissionData',
   'training-checks': 'trainingChecksData',
   'compliance-registers': 'complianceRegistersData',
+  'payroll-legal': 'payrollLegalData',
   'online-orders': 'onlineOrdersData',
   'delivery-area': 'deliveryAreaData',
   'partner-webhooks': 'partnerWebhooksData',

@@ -27,6 +27,7 @@ export type Lang = 'en' | 'ta';
 export const PAYROLL_STATUTORY_COPY = {
   en: {
     holdNote: 'Prepare and show only. Issuing payslips to staff, approving, locking and the salary bank file stay on hold (owner decision OB-209).',
+    legalPageH: 'Payroll legal figures', legalPageLead: 'Only the legal figures the CA fills in: the EPF and ESI rates, ceilings and headcounts, the normal hours, the overtime rate, the minimum-wage classes and what every payslip must show. Nobody\'s pay, no payslip and no total for any person is on this page (owner decision OB-684). It is read live from head office each time and kept nowhere on this computer.',
     legalH: 'The CA\'s legal figures', legalLead: 'Every figure is the CA\'s to fill, with where it comes from and their reference. Until then it shows "not confirmed" and the check that needs it says "not checked".',
     confirmed: 'confirmed', not_confirmed: 'not confirmed', figure: 'Figure', value: 'Value', source: 'Where it comes from (Act, rule, notification)', confirmation: 'Confirmed by the CA (name and reference)',
     save: 'Save', saved: 'Saved on head office.', overtimeFloor: 'Overtime is never paid at less than twice the ordinary rate.',
@@ -46,6 +47,7 @@ export const PAYROLL_STATUTORY_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved, and nothing shown is current.', reading: 'Reading from head office…',
   },
   ta: {
+    legalPageH: 'ஊதியச் சட்ட எண்கள்', legalPageLead: 'தணிக்கையாளர் நிரப்பும் சட்ட எண்கள் மட்டும்: EPF, ESI விகிதங்கள், உச்சவரம்புகள், பணியாளர் எண்ணிக்கைகள், வழக்கமான வேலை நேரம், கூடுதல் நேர விகிதம், குறைந்தபட்ச ஊதிய வகுப்புகள், ஒவ்வொரு சம்பளச் சீட்டும் காட்ட வேண்டியவை. எவருடைய ஊதியமும், சம்பளச் சீட்டும், எவருக்குமான மொத்தமும் இந்தப் பக்கத்தில் இல்லை (உரிமையாளர் முடிவு OB-684). ஒவ்வொரு முறையும் தலைமை அலுவலகத்திலிருந்து நேரடியாகப் படிக்கப்படுகிறது; இந்தக் கணினியில் எங்கும் வைக்கப்படுவதில்லை.',
     holdNote: 'தயாரித்துக் காட்ட மட்டும். பணியாளர்களுக்குச் சம்பளச் சீட்டு வழங்குதல், அனுமதித்தல், பூட்டுதல், சம்பள வங்கிக் கோப்பு நிறுத்தி வைக்கப்பட்டுள்ளன (உரிமையாளர் முடிவு OB-209).',
     legalH: 'தணிக்கையாளரின் சட்ட எண்கள்', legalLead: 'ஒவ்வொரு எண்ணையும் தணிக்கையாளர் நிரப்ப வேண்டும் — அது எங்கிருந்து வருகிறது, அவரது குறிப்புடன். அதுவரை "உறுதி செய்யப்படவில்லை" எனக் காட்டும்; அது தேவைப்படும் சரிபார்ப்பு "சரிபார்க்கப்படவில்லை" எனச் சொல்லும்.',
     confirmed: 'உறுதி செய்யப்பட்டது', not_confirmed: 'உறுதி செய்யப்படவில்லை', figure: 'எண்', value: 'மதிப்பு', source: 'எங்கிருந்து (சட்டம், விதி, அறிவிப்பு)', confirmation: 'தணிக்கையாளர் உறுதி (பெயர், குறிப்பு)',
@@ -159,5 +161,28 @@ export function createPayrollStatutorySession(input: { readonly viewer: { readon
     contributions: async (p) => gate(may.statutory, 'cannotRead') ?? month(p) ?? call('GET', `/v1/hr/payroll/contributions/${enc(p.trim())}`),
     late: async (p) => gate(may.statutory, 'cannotRead') ?? month(p) ?? call('GET', `/v1/hr/payroll/payslip-exceptions?period=${enc(p.trim())}`),
     issued: async (e) => gate(may.statutory, 'cannotRead') ?? (e.trim() === '' ? bad('needFields') : call('GET', `/v1/hr/payroll/payslips/${enc(e.trim())}`)),
+  };
+}
+
+/** The legal figures alone — what the "Payroll legal figures" page may reach (OB-684). */
+export interface PayrollLegalSession {
+  readonly may: { readonly named: boolean; readonly legalRead: boolean; readonly legalSet: boolean };
+  legalSettings: PayrollStatutorySession['legalSettings'];
+  setFigure: PayrollStatutorySession['setFigure'];
+  setMinimumWage: PayrollStatutorySession['setMinimumWage'];
+  setParticulars: PayrollStatutorySession['setParticulars'];
+}
+
+/**
+ * W5 · OB-684 (owner, 3 Nov 2026) · C15 · C16 · C19: the separate "Payroll legal figures" page, for the CA, gated on
+ * `payroll.legal.read`. It carries ONLY the legal figures: the payslip, the month's check, the EPF/ESI totals, the late and
+ * issued payslips — everything that names a person or their pay — are not on this session at all, so the page cannot reach
+ * them whatever it is asked. Head office re-checks every call.
+ */
+export function createPayrollLegalSession(input: Parameters<typeof createPayrollStatutorySession>[0]): PayrollLegalSession {
+  const full = createPayrollStatutorySession(input);
+  return {
+    may: { named: full.may.named, legalRead: full.may.legalRead, legalSet: full.may.legalSet },
+    legalSettings: full.legalSettings, setFigure: full.setFigure, setMinimumWage: full.setMinimumWage, setParticulars: full.setParticulars,
   };
 }

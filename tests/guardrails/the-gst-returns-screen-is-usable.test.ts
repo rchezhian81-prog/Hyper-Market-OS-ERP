@@ -110,7 +110,7 @@ describe('a governance act goes to head office through the session, never from t
   it('only the acts head office allows are offered — a stuck one is reconciled with evidence, never one-clicked (rule #10)', () => {
     // Bound in the model, not the view.
     expect(commandActionsFor('previewed')).toEqual(['approve', 'cancel']);
-    expect(commandActionsFor('approved')).toEqual(['submit', 'cancel']);
+    expect(commandActionsFor('approved')).toEqual(['submit', 'fileByHand', 'cancel']);
     expect(commandActionsFor('unknown')).toEqual(['reconcile']);
     expect(commandActionsFor('failed')).toEqual([]);
     expect(commandActionsFor('filed')).toEqual([]);

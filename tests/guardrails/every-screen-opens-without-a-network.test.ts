@@ -304,7 +304,7 @@ describe('a back-office view that registers the worker is one the worker keeps',
   });
 
   it('the online-only pages stay unregistered, so they are never cached', () => {
-    for (const f of ['payroll.js', 'payroll-payslip.js']) {
+    for (const f of ['payroll.js', 'payroll-payslip.js', 'payroll-legal.js']) { // OB-684: the payroll legal figures too
       expect(registering, `${f} now registers the worker — decide whether it may be cached offline`).not.toContain(f);
     }
   });

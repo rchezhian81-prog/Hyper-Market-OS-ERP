@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { createPayrollStatutorySession, PAYROLL_STATUTORY_COPY, paiseFrom, daysInMonth } from '../../apps/web-erp/src/payroll-statutory-session';
+import { createPayrollStatutorySession, createPayrollLegalSession, PAYROLL_STATUTORY_COPY, paiseFrom, daysInMonth } from '../../apps/web-erp/src/payroll-statutory-session';
 import { createWorkingTimeSession, WORKING_TIME_COPY, holidayLines, paiseOf } from '../../apps/web-erp/src/working-time-session';
 import { createPoshRegisterSession, POSH_REGISTER_COPY } from '../../apps/web-erp/src/posh-register-session';
 import { createAppointmentLettersSession, LETTERS_COPY } from '../../apps/web-erp/src/appointment-letters-session';
@@ -192,5 +192,58 @@ describe('OB-323: a kept signed copy of an appointment letter is looked at by it
     const s = createAppointmentLettersSession({ viewer: v('hr.appointmentletter.issue'), fetch: ho.fetch });
     await s.signedScan('AL-1', 'scan-abc');
     expect(ho.sent).toEqual([{ method: 'GET', path: '/v1/hr/workforce/appointment-letters/AL-1/signed-scan/scan-abc', body: undefined }]);
+  });
+});
+
+// W5 · OB-684 (owner, 3 Nov 2026) · C15 · C16 · C19: the separate "Payroll legal figures" page's session — the legal figures
+// alone; the CA's words reach them, and nothing that names a person or their pay is on it.
+describe('OB-684: the Payroll legal figures session carries the legal figures only', () => {
+  const CA_WORDS = ROLE_CATALOGUE.find((r) => r.id === 'chartered_accountant')!.permissions;
+  it('the CA reads and fills the legal figures with their own words (and holds no payroll.statutory.read)', async () => {
+    expect(CA_WORDS).toEqual(expect.arrayContaining(['payroll.legal.read', 'payroll.legal.configure']));
+    expect(CA_WORDS).not.toContain('payroll.statutory.read');
+    const ho = fakeHeadOffice();
+    const ca = createPayrollLegalSession({ viewer: { userId: 'u-ca', permissions: CA_WORDS }, fetch: ho.fetch });
+    expect(ca.may).toEqual({ named: true, legalRead: true, legalSet: true });
+    await ca.legalSettings();
+    await ca.setFigure('overtimeMultiplierPercent', { value: '200', source: 'Code on Wages 2019', confirmation: 'CA ref 1' });
+    expect(ho.sent.map((x) => `${x.method} ${x.path}`)).toEqual(['GET /v1/hr/payroll/legal-settings', 'POST /v1/hr/payroll/legal-settings/overtimeMultiplierPercent']);
+  });
+  it('offers nothing about a person or their pay — no payslip, no check, no totals, no late or issued list', () => {
+    const ca = createPayrollLegalSession({ viewer: { userId: 'u-ca', permissions: CA_WORDS } });
+    expect(Object.keys(ca).sort()).toEqual(['legalSettings', 'may', 'setFigure', 'setMinimumWage', 'setParticulars']);
+  });
+  it('a cashier is refused before anything is sent; nobody signed in is said', async () => {
+    const ho = fakeHeadOffice();
+    const till = createPayrollLegalSession({ viewer: { userId: 'u-till', permissions: ROLE_CATALOGUE.find((r) => r.id === 'cashier')!.permissions }, fetch: ho.fetch });
+    expect(await till.legalSettings()).toEqual({ result: 'invalid', why: 'cannotReadLegal' });
+    expect(await till.setFigure('overtimeMultiplierPercent', { value: '200', source: 's', confirmation: 'c' })).toEqual({ result: 'invalid', why: 'cannotSetLegal' });
+    expect(await createPayrollLegalSession({ viewer: undefined, fetch: ho.fetch }).legalSettings()).toEqual({ result: 'invalid', why: 'nobody' });
+    expect(ho.sent).toEqual([]);
+  });
+  it('the page\'s own words have their Tamil twins', () => {
+    expect(PAYROLL_STATUTORY_COPY.ta.legalPageH).toBe('ஊதியச் சட்ட எண்கள்');
+    expect(PAYROLL_STATUTORY_COPY.en.legalPageLead).toMatch(/Nobody's pay, no payslip and no total for any person/);
+  });
+});
+
+// W5 · OB-686 (owner, 3 Nov 2026) · M25-FR-01: the labour-cost guide is the owner's setting — no built-in 12%.
+describe('OB-686: the owner\'s labour-cost guide', () => {
+  it('reads it; only the owner sets it, as a percentage of sales sent in basis points', async () => {
+    const ho = fakeHeadOffice();
+    const owner = createWorkingTimeSession({ viewer: v('workforce.roster.read', 'workforce.labour.guide.set'), fetch: ho.fetch });
+    await owner.labourGuide();
+    for (const bad of ['', 'twelve', '0', '100.5', '-3']) expect(await owner.setLabourGuide(bad), bad).toEqual({ result: 'invalid', why: 'badGuide' });
+    await owner.setLabourGuide(' 9.5% ');
+    expect(ho.sent.map((x) => [`${x.method} ${x.path}`, x.body])).toEqual([['GET /v1/hr/workforce/labour-cost-guide', undefined], ['POST /v1/hr/workforce/labour-cost-guide', { guideBps: 950 }]]);
+    const mgr = createWorkingTimeSession({ viewer: v('workforce.roster.read', 'workforce.roster.manage'), fetch: ho.fetch });
+    expect(await mgr.setLabourGuide('10')).toEqual({ result: 'invalid', why: 'cannotSet' });
+    expect(ho.sent).toHaveLength(2);
+    expect(ROLE_CATALOGUE.filter((r) => r.permissions.includes('workforce.labour.guide.set')).map((r) => r.id)).toEqual(['owner']);
+  });
+  it('says "not set by the owner" in English and Tamil', () => {
+    expect(WORKING_TIME_COPY.en.guideOwnerNotSet).toBe('Not set by the owner — the cost and its share are shown, and nothing is compared.');
+    expect(WORKING_TIME_COPY.en.guideNotSet).toBe('guide not set by the owner — nothing compared');
+    expect(Object.keys(WORKING_TIME_COPY.ta).sort()).toEqual(Object.keys(WORKING_TIME_COPY.en).sort());
   });
 });

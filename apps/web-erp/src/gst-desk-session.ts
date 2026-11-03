@@ -39,7 +39,7 @@ export const GST_DESK_COPY = {
   en: {
     g1H: 'GSTR-1 for the month', g1Lead: 'Head office\'s GSTR-1 for the month: the full return, Table 12 (HSN summary) and Table 12 worked out from the till\'s own sales. The GSTN file is the file you upload on the GST portal yourself — nothing is filed from this page.',
     month: 'Month (MMYYYY)', gstin: 'The shop\'s GSTIN', turnover: 'Annual turnover (₹) — sets the HSN digits', showReturn: 'Show the return', showT12: 'Show Table 12', showT12Sales: 'Table 12 from the till\'s sales', download: 'Download the GSTN file',
-    fileNote: 'Upload this file on the GST portal yourself. Check it in the GSTN offline tool before the first live filing (OB-433). Nothing was filed.',
+    fileNote: 'Upload this file on the GST portal yourself. Check it in the GSTN offline tool before the first live filing (OB-433). Once a second person has approved the return and you have uploaded it, record the portal\'s ARN on the return in the list above (OB-683). Nothing was filed.',
     b2b: 'B2B invoices', b2c: 'B2C by rate', hsnRows: 'HSN rows', notes: 'credit / debit notes', taxable: 'taxable', tax: 'tax', documents: 'documents',
     unmapped: 'sold items with no HSN or rate — NOT on the return until mapped', soldLines: 'sold lines', returnedLines: 'returned lines', net: 'net of returns',
     rate: 'rate', qty: 'qty',
@@ -82,7 +82,7 @@ export const GST_DESK_COPY = {
   ta: {
     g1H: 'மாதத்தின் GSTR-1', g1Lead: 'தலைமை அலுவலகத்தின் மாத GSTR-1: முழு வருமானம், அட்டவணை 12 (HSN சுருக்கம்), கல்லாவின் சொந்த விற்பனையிலிருந்து கணக்கிட்ட அட்டவணை 12. GSTN கோப்பை நீங்களே GST போர்ட்டலில் பதிவேற்றுகிறீர்கள் — இந்தப் பக்கத்திலிருந்து எதுவும் தாக்கல் செய்யப்படாது.',
     month: 'மாதம் (MMYYYY)', gstin: 'கடையின் GSTIN', turnover: 'ஆண்டு விற்றுமுதல் (₹) — HSN இலக்கங்களை முடிவு செய்கிறது', showReturn: 'வருமானத்தைக் காட்டு', showT12: 'அட்டவணை 12-ஐக் காட்டு', showT12Sales: 'கல்லா விற்பனையிலிருந்து அட்டவணை 12', download: 'GSTN கோப்பைப் பதிவிறக்கு',
-    fileNote: 'இந்தக் கோப்பை நீங்களே GST போர்ட்டலில் பதிவேற்றுங்கள். முதல் நேரடித் தாக்கலுக்கு முன் GSTN ஆஃப்லைன் கருவியில் சரிபார்க்கவும் (OB-433). எதுவும் தாக்கல் செய்யப்படவில்லை.',
+    fileNote: 'இந்தக் கோப்பை நீங்களே GST போர்ட்டலில் பதிவேற்றுங்கள். முதல் நேரடித் தாக்கலுக்கு முன் GSTN ஆஃப்லைன் கருவியில் சரிபார்க்கவும் (OB-433). இரண்டாவது நபர் ஒப்புதல் அளித்து நீங்கள் பதிவேற்றிய பின், மேலே உள்ள பட்டியலில் அந்த வருமானத்தில் போர்ட்டலின் ARN-ஐப் பதிவு செய்யுங்கள் (OB-683). எதுவும் தாக்கல் செய்யப்படவில்லை.',
     b2b: 'B2B விலைப்பட்டியல்கள்', b2c: 'வீதப்படி B2C', hsnRows: 'HSN வரிசைகள்', notes: 'வரவு / பற்று குறிப்புகள்', taxable: 'வரிக்குரியது', tax: 'வரி', documents: 'ஆவணங்கள்',
     unmapped: 'HSN அல்லது வீதம் இல்லாத விற்ற பொருட்கள் — பொருத்தும் வரை வருமானத்தில் இல்லை', soldLines: 'விற்ற வரிகள்', returnedLines: 'திருப்பிய வரிகள்', net: 'திருப்பியவை கழித்து',
     rate: 'வீதம்', qty: 'அளவு',

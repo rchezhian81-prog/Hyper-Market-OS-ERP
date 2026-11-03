@@ -241,6 +241,7 @@ describe.skipIf(!HAVE_BROWSER)('W5 · concessions, buying and suppliers on the s
     await says(b.page, '#sp-rows li[data-fig="disputed"]', /Disputed \(kept apart\): ₹70\.00/);
     await says(b.page, '#sp-rows', /The statement adds up a second way\./);
     await b.page.click('#sp-probe');
+    await says(b.page, '#sp-probe-rows', /Counted from 3 refusals — built-in, not yet set by the owner/); // OB-686
     await says(b.page, '#sp-probe-rows', /No supplier login has reached the pattern head office watches for \(3 refusals\)\./);
     expect(b.writes, 'every one of these is a read').toEqual([]);
     await b.page.click('#lang');

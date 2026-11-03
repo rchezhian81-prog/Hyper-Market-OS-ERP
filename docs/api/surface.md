@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1688 | 973 | 973 | 192 | 440 |
+| 13 | 1693 | 976 | 976 | 194 | 442 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -990,6 +990,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b/collections/:customerId/invoices/:invoiceId` | `b2b.receivable.record` | `b2b` | yes |
 | POST | `/v1/b2b/collections/:customerId/payments/:receiptId` | `b2b.receivable.record` | `b2b` | yes |
 | GET | `/v1/b2b/collections/:customerId/reconciliation` | `b2b.receivable.record` | `b2b` | — |
+| GET | `/v1/b2b/collections/chasing-steps` | `b2b.account.read` | `b2b` | — |
+| POST | `/v1/b2b/collections/chasing-steps` | `b2b.chasing.steps.set` | `b2b` | yes |
 | GET | `/v1/b2b/commissions/:salespersonId` | `b2b.commission.read` | `b2b` | — |
 | POST | `/v1/b2b/commissions/:salespersonId/accruals/:accrualId` | `b2b.commission.record` | `b2b` | yes |
 | GET | `/v1/b2b/commissions/:salespersonId/rules` | `b2b.commission.read` | `b2b` | — |
@@ -1111,6 +1113,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/gstr1/submission/:period` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/gstr1/submission/:period/approve` | `finance.gstr.approve` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/cancel` | `finance.gstr.approve` | core | yes |
+| POST | `/v1/finance/gstr1/submission/:period/filed-by-hand` | `finance.gstr.submit` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/poll` | `finance.gstr.submit` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/preview` | `finance.gstr.generate` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/reconcile` | `finance.gstr.submit` | core | yes |
@@ -1470,6 +1473,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/hr/workforce/incentive` | `workforce.incentive.read` | core | yes |
 | GET | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | yes |
+| GET | `/v1/hr/workforce/labour-cost-guide` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/labour-cost-guide` | `workforce.labour.guide.set` | core | yes |
 | GET | `/v1/hr/workforce/labour-demand` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/labour-standards` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/labour-standards/:role` | `workforce.standard.set` | core | yes |

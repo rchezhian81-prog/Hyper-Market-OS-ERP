@@ -16,7 +16,8 @@ import { startW4Shop, openAs, says, type W4Shop } from './lib/w4-office-shop';
  *   • Staff schedule (the store manager): the week's roster breaks the daily hours cap — the check names the breach and
  *     head office REFUSES the publication in its words (OB-152 "A"); the shift is shortened, the week checks clean and is
  *     published; the owner sets the cashier's service standard; labour cost against the day's sales is shown with
- *     "guide not set" — no comparison against a number the owner never gave.
+ *     "guide not set" — no comparison against a number the owner never gave (OB-686: no built-in 12%); the owner sets his own
+ *     labour-cost guide and the day is then compared against it.
  * Synthetic data only: a fresh random tenant, made-up staff and hours. All dates are fixed — nothing depends on "today".
  */
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -121,7 +122,10 @@ describe.skipIf(!existsSync(CHROMIUM))('W5 working time, leave, registers and th
       await says(s.page, `#rp-out [data-week="${WEEK}"][data-state="published"]`, /2026-11-09 – 2026-11-15published/);
       await s.page.fill('#lc-date', '2026-11-02'); await s.page.fill('#lc-sales', '10000');
       await s.page.click('#lc-show');
-      await says(s.page, '#lc-line', /^Labour cost ₹800\.00 · 8\.00% of sales · guide not set$/);
+      // OB-686: no built-in guide — the cost and its share, and nothing compared.
+      await says(s.page, '#lg-line', /^Not set by the owner — the cost and its share are shown, and nothing is compared\.$/);
+      await says(s.page, '#lc-line', /^Labour cost ₹800\.00 · 8\.00% of sales · guide not set by the owner — nothing compared$/);
+      expect(await s.page.locator('#lg-save').count(), 'the labour-cost guide is the owner\'s').toBe(0);
       expect(await s.page.locator('#ls-save').count(), 'the service standard is the owner\'s').toBe(0);
       expect(s.writes.filter((w) => w.startsWith('POST /v1/hr/compliance/roster-publications/')).length).toBe(2);
       expect(s.errors).toEqual([]);
@@ -133,7 +137,17 @@ describe.skipIf(!existsSync(CHROMIUM))('W5 working time, leave, registers and th
       await s.page.fill('#ls-role', 'cashier'); await s.page.fill('#ls-n', '20');
       await s.page.click('#ls-save');
       await says(s.page, '#ls-out [data-role="cashier"]', /cashier: 20.*set by u-owner/);
-      expect(s.writes).toEqual(['POST /v1/hr/workforce/labour-standards/cashier']);
+      // OB-686: the owner sets his own labour-cost guide (5% of sales); the day's 8% is then above it.
+      await s.page.fill('#lg-percent', 'a lot');
+      await s.page.click('#lg-save');
+      await says(s.page, '#lg-status', /^Write the guide as a percentage of sales/);
+      await s.page.fill('#lg-percent', '5');
+      await s.page.click('#lg-save');
+      await says(s.page, '#lg-line', /^5% of sales \(set by u-owner\)$/);
+      await s.page.fill('#rc-branch', 'br-1'); await s.page.fill('#lc-date', '2026-11-02'); await s.page.fill('#lc-sales', '10000');
+      await s.page.click('#lc-show');
+      await says(s.page, '#lc-line', /^Labour cost ₹800\.00 · 8\.00% of sales · above the owner's guide$/);
+      expect(s.writes).toEqual(['POST /v1/hr/workforce/labour-standards/cashier', 'POST /v1/hr/workforce/labour-cost-guide']);
       await s.page.click('#lang');
       await says(s.page, '#rc-h', /^வாரப் பணிமுறையைச் சரிபார்த்து வெளியிடு$/);
       expect(s.errors).toEqual([]);

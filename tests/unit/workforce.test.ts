@@ -310,10 +310,21 @@ describe('labour cost is REPORTED, never enforced', () => {
   it('is quiet when labour is within the guide', () => {
     const view = labourCost({
       branchId: 'b-main', hours: [{ employeeId: 'e-1', hours: 8 }], employees: staff,
-      salesMinor: 1_000_000,
+      salesMinor: 1_000_000, guideBps: 1_200,
     });
     expect(view.aboveGuide).toBe(false);
     expect(view.detail).toBe('labour is 7.2% of sales');
+  });
+
+  // W5 · OB-686 (owner, 3 Nov 2026): the built-in 12% guide is REMOVED — no guide, no comparison; the cost and share remain.
+  it('OB-686: with no guide nothing is compared — not even against the old 12% — and the cost and its share are still shown', () => {
+    const view = labourCost({
+      branchId: 'b-main', hours: [{ employeeId: 'e-1', hours: 8 }, { employeeId: 'e-2', hours: 8 }], employees: staff, salesMinor: 1_000_000,
+    });
+    // 16.8% would have been "above" the old built-in 12%; now there is no guide, so nothing is above anything.
+    expect(view).toMatchObject({ labourCostMinor: 168_000, labourBps: 1_680, guideBps: null, aboveGuide: false });
+    expect(view.detail).toBe('labour is 16.8% of sales — no guide is set by the owner, so nothing is compared');
+    expect(labourCost({ branchId: 'b-main', hours: [{ employeeId: 'e-1', hours: 8 }], employees: staff, salesMinor: 1_000_000, guideBps: 500 })).toMatchObject({ guideBps: 500, aboveGuide: true });
   });
 });
 

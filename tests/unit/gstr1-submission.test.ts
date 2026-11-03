@@ -7,6 +7,7 @@ import {
   isSubmissionException,
   InvalidGstr1Submission,
   assertFilingPeriod,
+  isGstPortalArn,
   type Gstr1SubmissionEvent,
 } from '../../packages/finance/src/index';
 
@@ -150,5 +151,46 @@ describe('assertFilingPeriod', () => {
     expect(() => assertFilingPeriod('082026')).not.toThrow();
     expect(() => assertFilingPeriod('2026-08')).toThrow(InvalidGstr1Submission);
     expect(() => assertFilingPeriod('8/2026')).toThrow(InvalidGstr1Submission);
+  });
+});
+
+// W5 · OB-683 (owner, 3 Nov 2026) · M23-FR-02: an approved return uploaded on the GST portal by hand is recorded filed with
+// the portal's ARN — only an approved return, only once, only a well-formed ARN.
+describe('OB-683 — filed by hand on the portal', () => {
+  const byHand = (arn: string, at = '2026-09-02T06:00:00Z', by = 'owner', byName = 'Murugan S'): Gstr1SubmissionEvent => ({ kind: 'filedByHand', arn, by, byName, at });
+
+  it('the ARN is the portal\'s 15-character form; anything else is malformed', () => {
+    for (const good of ['AA330626012345X', 'AA331126000001A', 'AA071225999999Z', 'AA330626012345'.concat('7')]) expect(isGstPortalArn(good), good).toBe(true);
+    for (const bad of ['', 'AA33062601234', 'aa330626012345x', 'AA000626012345X', 'AA331326012345X', 'AA330026012345X', 'BB330626012345X', 'AA 330626012345X', 'SANDBOX-082026', 'AA3306260123456X']) {
+      expect(isGstPortalArn(bad), bad).toBe(false);
+    }
+  });
+
+  it('an approved return folds to filed, by hand, with the ARN, the name and head office\'s time', () => {
+    const agg = fold([previewed, approved, byHand('AA330926012345X')]);
+    expect(agg).toMatchObject({ state: 'filed', arn: 'AA330926012345X', filedByHand: { by: 'owner', name: 'Murugan S', at: '2026-09-02T06:00:00Z' } });
+    expect(agg?.detail).toBe('filed by hand on the portal by Murugan S — portal reference AA330926012345X');
+  });
+
+  it('is recorded once: a second hand filing is ignored by the fold and refused by the rule', () => {
+    const agg = fold([previewed, approved, byHand('AA330926012345X'), byHand('AA330926099999Z', '2026-09-03T06:00:00Z', 'accts', 'Someone')]);
+    expect(agg).toMatchObject({ arn: 'AA330926012345X', filedByHand: { by: 'owner' } });
+    expect(evaluateGstr1SubmissionTransition({ current: agg!, action: 'fileByHand', actor: 'accts', arn: 'AA330926099999Z' })).toMatchObject({ allowed: false, refusal: 'already_filed' });
+  });
+
+  it('only an approved return: a prepared, withdrawn or in-flight one is refused, and the fold ignores it', () => {
+    for (const events of [[previewed], [previewed, approved, submitted], [previewed, { kind: 'cancelled', by: 'maker', reason: 'x', at: '2026-09-01T10:06:00Z' } as Gstr1SubmissionEvent]]) {
+      const current = fold(events)!;
+      expect(evaluateGstr1SubmissionTransition({ current, action: 'fileByHand', actor: 'owner', arn: 'AA330926012345X' })).toMatchObject({ allowed: false, refusal: 'not_approved' });
+      expect(fold([...events, byHand('AA330926012345X')])?.state).toBe(current.state);
+    }
+    expect(evaluateGstr1SubmissionTransition({ action: 'fileByHand', actor: 'owner', arn: 'AA330926012345X' })).toMatchObject({ allowed: false, refusal: 'no_submission' });
+  });
+
+  it('a malformed ARN is refused even on an approved return; a good one is allowed', () => {
+    const current = fold([previewed, approved])!;
+    expect(evaluateGstr1SubmissionTransition({ current, action: 'fileByHand', actor: 'owner', arn: 'SANDBOX-1' })).toMatchObject({ allowed: false, refusal: 'arn_malformed' });
+    expect(evaluateGstr1SubmissionTransition({ current, action: 'fileByHand', actor: 'owner' })).toMatchObject({ allowed: false, refusal: 'arn_malformed' });
+    expect(evaluateGstr1SubmissionTransition({ current, action: 'fileByHand', actor: 'owner', arn: 'AA330926012345X' })).toMatchObject({ allowed: true, resultingState: 'filed' });
   });
 });

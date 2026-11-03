@@ -6191,6 +6191,121 @@
         }
       }
     },
+    "/v1/b2b/collections/chasing-steps": {
+      "get": {
+        "operationId": "getB2bCollectionsChasingSteps",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.account.read",
+        "x-entitlement": "b2b",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetB2bCollectionsChasingStepsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.account.read\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postB2bCollectionsChasingSteps",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "b2b.chasing.steps.set",
+        "x-entitlement": "b2b",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostB2bCollectionsChasingStepsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostB2bCollectionsChasingStepsReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"b2b.chasing.steps.set\", or the plan lacks \"b2b\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/b2b/collections/{customerId}/ageing": {
       "get": {
         "operationId": "getB2bCollectionsByCustomerIdAgeing",
@@ -30647,6 +30762,90 @@
         }
       }
     },
+    "/v1/finance/gstr1/submission/{period}/filed-by-hand": {
+      "post": {
+        "operationId": "postFinanceGstr1SubmissionByPeriodFiledByHand",
+        "tags": [
+          "API-09 Finance"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "finance.gstr.submit",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "period",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFinanceGstr1SubmissionByPeriodFiledByHandRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFinanceGstr1SubmissionByPeriodFiledByHandReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"finance.gstr.submit\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/finance/gstr1/submission/{period}/poll": {
       "post": {
         "operationId": "postFinanceGstr1SubmissionByPeriodPoll",
@@ -46018,6 +46217,121 @@
           },
           "403": {
             "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/hr/workforce/labour-cost-guide": {
+      "get": {
+        "operationId": "getHrWorkforceLabourCostGuide",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.roster.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetHrWorkforceLabourCostGuideReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.roster.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postHrWorkforceLabourCostGuide",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "workforce.labour.guide.set",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostHrWorkforceLabourCostGuideRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostHrWorkforceLabourCostGuideReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"workforce.labour.guide.set\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -120478,12 +120792,159 @@
         "x-derived-from": "services/finance/src/b2b-collections.ts"
       },
       "GetB2bCollectionsByCustomerIdDunningReply": {
-        "$ref": "#/components/schemas/DunningDecision",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "customerId",
+              "stepsSet",
+              "chaseableMinor",
+              "worstDaysOverdue",
+              "needsHuman",
+              "detail"
+            ],
+            "properties": {
+              "customerId": {
+                "type": "string"
+              },
+              "stepsSet": {
+                "type": "boolean"
+              },
+              "chaseableMinor": {
+                "type": "number"
+              },
+              "worstDaysOverdue": {
+                "type": "number"
+              },
+              "needsHuman": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "stepsSet",
+              "steps",
+              "customerId",
+              "step",
+              "chaseableMinor",
+              "worstDaysOverdue",
+              "needsHuman",
+              "detail"
+            ],
+            "properties": {
+              "stepsSet": {
+                "type": "boolean"
+              },
+              "steps": {
+                "type": "object",
+                "required": [
+                  "minimumChaseMinor",
+                  "reminderAfterDays",
+                  "finalNoticeAfterDays",
+                  "stopSupplyAfterDays",
+                  "setBy",
+                  "setAt"
+                ],
+                "properties": {
+                  "minimumChaseMinor": {
+                    "type": "number"
+                  },
+                  "reminderAfterDays": {
+                    "type": "number"
+                  },
+                  "finalNoticeAfterDays": {
+                    "type": "number"
+                  },
+                  "stopSupplyAfterDays": {
+                    "type": "number"
+                  },
+                  "setBy": {
+                    "type": "string"
+                  },
+                  "setAt": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "customerId": {
+                "type": "string"
+              },
+              "step": {
+                "type": "string",
+                "enum": [
+                  "final_notice",
+                  "none",
+                  "reminder",
+                  "statement",
+                  "stop_supply"
+                ]
+              },
+              "chaseableMinor": {
+                "type": "number"
+              },
+              "worstDaysOverdue": {
+                "type": "number"
+              },
+              "needsHuman": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-collections.ts"
       },
       "GetB2bCollectionsByCustomerIdReconciliationReply": {
         "$ref": "#/components/schemas/ArReconciliation",
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-collections.ts"
+      },
+      "GetB2bCollectionsChasingStepsReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "say"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "say": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "steps"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "steps": {
+                "$ref": "#/components/schemas/ChasingStepsSetting"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-collections.ts"
       },
@@ -121981,6 +122442,7 @@
         "required": [
           "probing",
           "threshold",
+          "builtIn",
           "count",
           "refusals",
           "asAt"
@@ -121994,6 +122456,9 @@
           },
           "threshold": {
             "type": "number"
+          },
+          "builtIn": {
+            "type": "boolean"
           },
           "count": {
             "type": "number"
@@ -137311,19 +137776,58 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/help-centre.ts"
       },
+      "GetHrWorkforceLabourCostGuideReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "guide"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "guide": {
+                "$ref": "#/components/schemas/LabourGuideSetting"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-store.ts"
+      },
       "GetHrWorkforceLabourCostReply": {
         "type": "object",
         "required": [
           "date",
+          "guideFrom",
           "branchId",
           "labourCostMinor",
           "salesMinor",
           "labourBps",
+          "guideBps",
           "aboveGuide",
           "detail"
         ],
         "properties": {
           "date": {
+            "type": "string"
+          },
+          "guideFrom": {
             "type": "string"
           },
           "branchId": {
@@ -137343,6 +137847,16 @@
               {
                 "type": "string",
                 "const": "not_meaningful"
+              }
+            ]
+          },
+          "guideBps": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
               }
             ]
           },
@@ -165477,6 +165991,7 @@
         "required": [
           "probing",
           "threshold",
+          "builtIn",
           "count",
           "asAt"
         ],
@@ -165489,6 +166004,9 @@
           },
           "threshold": {
             "type": "number"
+          },
+          "builtIn": {
+            "type": "boolean"
           },
           "count": {
             "type": "number"
@@ -170637,6 +171155,50 @@
             }
           },
           "receivedMinor": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-collections.ts"
+      },
+      "PostB2bCollectionsChasingStepsReply": {
+        "type": "object",
+        "required": [
+          "state",
+          "steps"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "steps": {
+            "$ref": "#/components/schemas/ChasingStepsSetting"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/b2b-collections.ts"
+      },
+      "PostB2bCollectionsChasingStepsRequest": {
+        "type": "object",
+        "required": [
+          "finalNoticeAfterDays",
+          "minimumChaseMinor",
+          "reminderAfterDays",
+          "stopSupplyAfterDays"
+        ],
+        "properties": {
+          "finalNoticeAfterDays": {
+            "type": "integer"
+          },
+          "minimumChaseMinor": {
+            "type": "integer"
+          },
+          "reminderAfterDays": {
+            "type": "integer"
+          },
+          "stopSupplyAfterDays": {
             "type": "integer"
           }
         },
@@ -186967,6 +187529,38 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/gstr1-submission-store.ts"
       },
+      "PostFinanceGstr1SubmissionByPeriodFiledByHandReply": {
+        "type": "object",
+        "required": [
+          "period",
+          "current"
+        ],
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/Gstr1SubmissionAggregate"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/gstr1-submission-store.ts"
+      },
+      "PostFinanceGstr1SubmissionByPeriodFiledByHandRequest": {
+        "type": "object",
+        "required": [
+          "arn"
+        ],
+        "properties": {
+          "arn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/gstr1-submission-store.ts"
+      },
       "PostFinanceGstr1SubmissionByPeriodPollReply": {
         "anyOf": [
           {
@@ -197851,6 +198445,38 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce.ts"
+      },
+      "PostHrWorkforceLabourCostGuideReply": {
+        "type": "object",
+        "required": [
+          "state",
+          "guide"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "guide": {
+            "$ref": "#/components/schemas/LabourGuideSetting"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-store.ts"
+      },
+      "PostHrWorkforceLabourCostGuideRequest": {
+        "type": "object",
+        "required": [
+          "guideBps"
+        ],
+        "properties": {
+          "guideBps": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/finance/src/attendance-store.ts"
       },
       "PostHrWorkforceLabourCostReply": {
         "$ref": "#/components/schemas/LabourCostView",
@@ -267606,6 +268232,38 @@
         },
         "additionalProperties": true
       },
+      "ChasingStepsSetting": {
+        "type": "object",
+        "required": [
+          "setBy",
+          "setAt",
+          "minimumChaseMinor",
+          "reminderAfterDays",
+          "finalNoticeAfterDays",
+          "stopSupplyAfterDays"
+        ],
+        "properties": {
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
+          },
+          "minimumChaseMinor": {
+            "type": "number"
+          },
+          "reminderAfterDays": {
+            "type": "number"
+          },
+          "finalNoticeAfterDays": {
+            "type": "number"
+          },
+          "stopSupplyAfterDays": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "CheckAttempt": {
         "type": "object",
         "required": [
@@ -276744,45 +277402,6 @@
         },
         "additionalProperties": true
       },
-      "DunningDecision": {
-        "type": "object",
-        "required": [
-          "customerId",
-          "step",
-          "chaseableMinor",
-          "worstDaysOverdue",
-          "needsHuman",
-          "detail"
-        ],
-        "properties": {
-          "customerId": {
-            "type": "string"
-          },
-          "step": {
-            "type": "string",
-            "enum": [
-              "final_notice",
-              "none",
-              "reminder",
-              "statement",
-              "stop_supply"
-            ]
-          },
-          "chaseableMinor": {
-            "type": "number"
-          },
-          "worstDaysOverdue": {
-            "type": "number"
-          },
-          "needsHuman": {
-            "type": "boolean"
-          },
-          "detail": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": true
-      },
       "DunningStatus": {
         "type": "object",
         "required": [
@@ -283937,6 +284556,26 @@
               "validation"
             ]
           },
+          "filedByHand": {
+            "type": "object",
+            "required": [
+              "by",
+              "name",
+              "at"
+            ],
+            "properties": {
+              "by": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
           "detail": {
             "type": "string"
           }
@@ -287701,6 +288340,7 @@
           "labourCostMinor",
           "salesMinor",
           "labourBps",
+          "guideBps",
           "aboveGuide",
           "detail"
         ],
@@ -287725,10 +288365,40 @@
               }
             ]
           },
+          "guideBps": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
           "aboveGuide": {
             "type": "boolean"
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "LabourGuideSetting": {
+        "type": "object",
+        "required": [
+          "guideBps",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "guideBps": {
+            "type": "number"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
             "type": "string"
           }
         },

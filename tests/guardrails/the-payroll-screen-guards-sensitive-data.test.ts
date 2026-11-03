@@ -43,7 +43,7 @@ describe('online-first: the payroll shell caches nothing', () => {
   it('served by the store computer (OB-380), it retains nothing: identity-only payload, not in the shell cache, read live', () => {
     expect((SCREENS as readonly string[]).includes('payroll'), 'payroll is a store-box screen since OB-380').toBe(true);
     expect(Object.keys(headOfficePagePayload()).sort(), 'the box injects no payroll figure — only who is looking').toEqual(['permissions', 'servedBy']);
-    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8'), 'payroll is never put in the offline shell cache').not.toMatch(/'\.\/payroll(-payslip)?\.(js|html)'/);
+    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8'), 'payroll is never put in the offline shell cache').not.toMatch(/'\.\/payroll(-payslip|-legal)?\.(js|html)'/);
     expect(code).toMatch(/window\.payrollLive/);
   });
 
@@ -137,5 +137,27 @@ describe('inc3: statutory report is CONFIRM-WITH-CA, and adjustments are never s
     // The flag badges are rendered from the line flags; a flagged line cannot pass silently.
     expect(code).toMatch(/FLAG_LABEL_KEY/);
     expect(code).toMatch(/\.flag/);
+  });
+});
+
+// W5 · OB-684 (owner, 3 Nov 2026) · C15 · C16 · C19: the separate "Payroll legal figures" page keeps the payroll posture and
+// reaches the legal figures ONLY — no person's pay, no payslip, no total per person.
+describe('OB-684: the Payroll legal figures page — the CA\'s legal figures alone, cached nowhere', () => {
+  const LEGAL_JS = stripComments(readFileSync('apps/web-erp/web/payroll-legal.js', 'utf8'));
+  const LEGAL_SESSION = readFileSync('apps/web-erp/src/payroll-statutory-session.ts', 'utf8');
+  const legalFn = LEGAL_SESSION.slice(LEGAL_SESSION.indexOf('export function createPayrollLegalSession'));
+  it('is its own menu item, gated on payroll.legal.read (never payroll.statutory.read)', () => {
+    expect(ERP_NAVIGATION.find((n) => n.id === 'payroll-legal')).toMatchObject({ label: 'Payroll legal figures', path: '/payroll-legal', requires: 'payroll.legal.read', group: 'People' });
+    expect((SCREENS as readonly string[]).includes('payroll-legal')).toBe(true);
+  });
+  it('registers no worker, keeps nothing in the browser, and is not in the offline shell', () => {
+    expect(LEGAL_JS).not.toMatch(/serviceWorker/);
+    for (const sink of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie']) expect(LEGAL_JS, sink).not.toContain(sink);
+    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8')).not.toContain('payroll-legal');
+  });
+  it('its session carries the legal figures and nothing that names a person or their pay', () => {
+    expect(legalFn).toMatch(/legalSettings: full\.legalSettings, setFigure: full\.setFigure, setMinimumWage: full\.setMinimumWage, setParticulars: full\.setParticulars,/);
+    for (const reach of ['prepare', 'check', 'recordTotals', 'contributions', 'late', 'issued', 'statutory-payslips', 'payslips', 'pay-run']) expect(legalFn, reach).not.toMatch(new RegExp(`\\b${reach}\\b`));
+    for (const reach of ['prepare(', 'check(', 'recordTotals(', 'contributions(', 'late(', 'issued(', '/payslips', 'statutory-check', 'pay-run']) expect(LEGAL_JS, reach).not.toContain(reach);
   });
 });

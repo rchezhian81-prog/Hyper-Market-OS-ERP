@@ -1678,7 +1678,7 @@ export function buildSurface(deps: {
     } : { ...b2bCustomerGstinAdapter({ store, now }), account: b2bCreditAdapter({ store, now }).account }),
     ...b2bCollectionsRoutes(store === undefined ? {
       invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
-    } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
+    } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // FUL-09: B2B invoices and collections reach the books, once, through the accountant's mapping.
     ...b2bPostingRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
@@ -1929,7 +1929,7 @@ export function buildSurface(deps: {
     // labourCost (REPORTED, never enforced — §29). Writes manage-gated; the day's sales figure is supplied.
     ...attendanceStoreRoutes(store === undefined ? {
       putAttendance: () => {}, attendance: () => [], employees: () => [], now,
-    } : attendanceStoreAdapter({ store, now })),
+    } : { ...attendanceStoreAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // R2 addendum C18: the TN Shops and Establishments working-time pack (limits are settings; publish enforces them;
     // the attendance, leave and holiday registers). C20: the Internal Committee complaints register and annual report.
     ...(store === undefined ? [] : hrComplianceRoutes(hrComplianceAdapter({ store, now }))),
@@ -1978,7 +1978,7 @@ export function buildSurface(deps: {
     // The LIVE portal path stays off-by-default + killable; the deterministic sandbox runs otherwise.
     ...gstr1SubmissionRoutes(store === undefined ? {
       load: () => undefined, append: () => {}, listPeriods: () => [], now,
-    } : gstr1SubmissionAdapter({ store, now })),
+    } : { ...gstr1SubmissionAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),

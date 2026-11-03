@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2219,
+  "testFiles": 2222,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2003,8 +2003,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 16,
-        "integration": 17,
-        "realDb": 10,
+        "integration": 18,
+        "realDb": 11,
         "browser": 6,
         "connected": 5,
         "device": 0,
@@ -2046,7 +2046,8 @@
           "tests/integration/b2b-portal.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/quotations.test.ts",
-          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -2058,7 +2059,8 @@
           "tests/integration/a-paused-recurring-order-never-makes-up-its-missed-days.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
-          "tests/integration/the-close-checks-credit-customer-receivables.test.ts"
+          "tests/integration/the-close-checks-credit-customer-receivables.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "browser": [
           "tests/e2e/b2b-portal-delivery.e2e.ts",
@@ -2085,9 +2087,9 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 36,
-        "integration": 41,
-        "realDb": 26,
+        "unit": 37,
+        "integration": 42,
+        "realDb": 27,
         "browser": 14,
         "connected": 7,
         "device": 0,
@@ -2114,6 +2116,7 @@
           "tests/unit/finance-posting.test.ts",
           "tests/unit/fulfilment-driver-runs-synced.test.ts",
           "tests/unit/gst-desk-session.test.ts",
+          "tests/unit/gstr1-submission.test.ts",
           "tests/unit/loyalty-stored-value.test.ts",
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/migration-sign-route.test.ts",
@@ -2173,6 +2176,7 @@
           "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
           "tests/integration/w3-cash-deposited-to-the-bank-is-recorded-and-checked-at-the-close.test.ts",
           "tests/integration/w3-gst-notes-to-business-customers.test.ts",
+          "tests/integration/w5-an-approved-gstr1-is-recorded-filed-by-hand-with-its-arn.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
@@ -2201,7 +2205,8 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
-          "tests/integration/w3-gst-notes-to-business-customers.test.ts"
+          "tests/integration/w3-gst-notes-to-business-customers.test.ts",
+          "tests/integration/w5-an-approved-gstr1-is-recorded-filed-by-hand-with-its-arn.test.ts"
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
@@ -2239,8 +2244,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 10,
-        "realDb": 4,
+        "integration": 11,
+        "realDb": 5,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -2264,13 +2269,15 @@
           "tests/integration/supplier-portal-probing.test.ts",
           "tests/integration/supplier-portal-scoping.test.ts",
           "tests/integration/supplier-portal-statement.test.ts",
-          "tests/integration/supplier-portal.test.ts"
+          "tests/integration/supplier-portal.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "realDb": [
           "tests/integration/a-buyer-decides-supplier-submissions-from-one-queue.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/beyond-the-till.test.ts",
-          "tests/integration/supplier-portal-feeds-purchasing.test.ts"
+          "tests/integration/supplier-portal-feeds-purchasing.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "browser": [
           "tests/e2e/supplier-portal-delivery.e2e.ts",
@@ -2292,8 +2299,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 15,
-        "integration": 27,
-        "realDb": 12,
+        "integration": 28,
+        "realDb": 13,
         "browser": 13,
         "connected": 3,
         "device": 0,
@@ -2342,6 +2349,7 @@
           "tests/integration/the-help-centre-emergency-procedures-and-appointment-letters.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts",
           "tests/integration/workforce-labour-cost.test.ts",
           "tests/integration/workforce-roster.test.ts",
           "tests/integration/workforce-tenant-isolation.test.ts"
@@ -2358,7 +2366,8 @@
           "tests/integration/sales-per-labour-hour-from-the-roster.test.ts",
           "tests/integration/the-adoption-gate-names-who-is-not-ready.test.ts",
           "tests/integration/the-help-centre-emergency-procedures-and-appointment-letters.test.ts",
-          "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts"
+          "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts",
+          "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "browser": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",

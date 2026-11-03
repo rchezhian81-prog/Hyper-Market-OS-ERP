@@ -3,7 +3,7 @@
 // attached to its own window global from the viewer the front door injected for that page (identity only). Nothing is
 // read or written here.
 
-import { createPayrollStatutorySession, payrollStatutoryWords, payrollStatutoryOutcomeWords, statutoryRupees } from './payroll-statutory-session';
+import { createPayrollStatutorySession, createPayrollLegalSession, payrollStatutoryWords, payrollStatutoryOutcomeWords, statutoryRupees } from './payroll-statutory-session';
 import { createWorkingTimeSession, workingTimeWords, workingTimeOutcomeWords, WT_LIMIT_KEYS, WT_LEAVE_TYPES, WT_LEAVE_KINDS } from './working-time-session';
 import { shopMomentOf } from './findings-session';
 import { createPoshRegisterSession, poshRegisterWords, poshRegisterOutcomeWords, POSH_STEP_OUTCOMES } from './posh-register-session';
@@ -17,6 +17,10 @@ export function wireW5People(win: Record<string, unknown>, viewerIdentity: (raw:
   // C15 · C16 · C19 (OB-209: compute and show only): the statutory pay checks on the Payroll page.
   if (win['payrollData'] !== undefined) {
     win['payrollStatutory'] = { session: createPayrollStatutorySession({ viewer: viewerIdentity(win['payrollData']) }), words: payrollStatutoryWords, outcomeWords: payrollStatutoryOutcomeWords, rupees: statutoryRupees };
+  }
+  // OB-684 · C15 · C16 · C19: the separate "Payroll legal figures" page — the CA's legal figures alone, never anyone's pay.
+  if (win['payrollLegalData'] !== undefined) {
+    win['payrollLegal'] = { session: createPayrollLegalSession({ viewer: viewerIdentity(win['payrollLegalData']) }), words: payrollStatutoryWords, outcomeWords: payrollStatutoryOutcomeWords, rupees: statutoryRupees };
   }
   // C18 · OB-142: working-time limits, leave, the statutory registers, the roster check and publication, service standards
   // and labour cost — one tested session, each page drawing the sections it carries.

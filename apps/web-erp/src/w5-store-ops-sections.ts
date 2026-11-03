@@ -7,6 +7,8 @@
 //     threshold, the store-credit and no-receipt caps, the write-off and count thresholds and the match tolerances. A number
 //     the owner never set is shown as NOT SET — the field is never pre-filled with a figure; where head office applies its own
 //     built-in safe rule until then, that is SAID, never hidden (P-08). Only the owner holds the words that set them.
+//     OB-686 (owner, 3 Nov 2026): the kept safety limits — write-off ₹500, count ₹1,000, every refund needs a manager, the
+//     bill match 0% / 1% / ₹1 — each read "built-in, not yet set by the owner" until he sets his own (one wording, EN and TA).
 //   • /indents — reject an indent (a different person, §28), cancel what is still owed, send stock back to the back store;
 //     the returns waiting at the back store are listed — they are counted in on the warehouse HANDHELD (M09-FR-03).
 //   • /goods-receipt — the goods a direct delivery (DSD) check-in HELD beyond the order: keep or refuse, by someone other
@@ -135,12 +137,12 @@ export const POLICY_COPY = {
     read: 'The numbers in force', readGo: 'Read them again',
     notSet: 'Not set by the owner.',
     windowL: 'Return window', windowSet: '{days} day(s) after the sale — later returns need a supervisor.', windowNot: 'Not set by the owner — returns are not limited by age until it is set.',
-    refundL: 'Refund approval threshold', refundSet: '{amount} — a refund at or above this needs a manager\'s approval.', refundNot: 'Not set by the owner — until it is, every refund needs a manager\'s approval (head office\'s safe rule).',
+    refundL: 'Refund approval threshold', refundSet: '{amount} — a refund at or above this needs a manager\'s approval.', refundNot: 'Every refund needs a manager\'s approval — built-in, not yet set by the owner.',
     creditL: 'Store-credit cap', creditSet: '{amount} — the most store credit one refund may create.', creditNot: 'Not set by the owner — store credit cannot be given until it is set.',
     noReceiptL: 'No-receipt return cap', noReceiptSet: '{amount} — the most one return without a bill may refund.', noReceiptOff: '₹0 — returns without a bill are switched off.', noReceiptNot: 'Not set by the owner — returns without a bill are switched off until it is set.',
-    writeOffL: 'Write-off threshold', writeOffSet: '{amount} — a loss at or above this needs a photo and a manager\'s sign-off.', writeOffNot: 'Not set by the owner — until it is, head office uses its built-in {amount}.',
-    countL: 'Count approval threshold', countSet: '{amount} — a count difference worth this or more needs a second person.', countNot: 'Not set by the owner — until it is, head office uses its built-in {amount}.',
-    matchL: 'Supplier bill match tolerances', matchSet: 'quantity {qty} · price {price} · differences under {small} are ignored.', matchNot: 'Not set by the owner — until it is, head office uses its built-in: quantity {qty}, price {price}, ignore under {small}.',
+    writeOffL: 'Write-off threshold', writeOffSet: '{amount} — a loss at or above this needs a photo and a manager\'s sign-off.', writeOffNot: '{amount} — built-in, not yet set by the owner.',
+    countL: 'Count approval threshold', countSet: '{amount} — a count difference worth this or more needs a second person.', countNot: '{amount} — built-in, not yet set by the owner.',
+    matchL: 'Supplier bill match tolerances', matchSet: 'quantity {qty} · price {price} · differences under {small} are ignored.', matchNot: 'quantity {qty} · price {price} · differences under {small} are ignored — built-in, not yet set by the owner.',
     setBy: 'set by {who} on {when}',
     setWindow: 'Set the return window', days: 'Days after the sale', setRefund: 'Set the refund approval threshold', setCredit: 'Set the store-credit cap',
     setNoReceipt: 'Set the no-receipt return cap', setWriteOff: 'Set the write-off threshold', setCount: 'Set the count approval threshold',
@@ -153,12 +155,12 @@ export const POLICY_COPY = {
     read: 'நடைமுறையில் உள்ள எண்கள்', readGo: 'மீண்டும் படி',
     notSet: 'உரிமையாளர் அமைக்கவில்லை.',
     windowL: 'திரும்பப் பெறும் காலம்', windowSet: 'விற்பனைக்குப் பின் {days} நாள் — அதன் பின் திரும்புவதற்கு மேற்பார்வையாளர் தேவை.', windowNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை திரும்புதலுக்கு வயது வரம்பு இல்லை.',
-    refundL: 'பணத் திருப்ப ஒப்புதல் வரம்பு', refundSet: '{amount} — இதற்கு மேல் திருப்புவதற்கு மேலாளர் ஒப்புதல் தேவை.', refundNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை ஒவ்வொரு திருப்பத்திற்கும் மேலாளர் ஒப்புதல் தேவை (தலைமை அலுவலகத்தின் பாதுகாப்பு விதி).',
+    refundL: 'பணத் திருப்ப ஒப்புதல் வரம்பு', refundSet: '{amount} — இதற்கு மேல் திருப்புவதற்கு மேலாளர் ஒப்புதல் தேவை.', refundNot: 'ஒவ்வொரு திருப்பத்திற்கும் மேலாளர் ஒப்புதல் தேவை — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
     creditL: 'கடைக் கடன் உச்சவரம்பு', creditSet: '{amount} — ஒரு திருப்பம் உருவாக்கக்கூடிய அதிகபட்ச கடைக் கடன்.', creditNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை கடைக் கடன் தர முடியாது.',
     noReceiptL: 'ரசீது இல்லாத திருப்ப உச்சவரம்பு', noReceiptSet: '{amount} — ரசீது இல்லாத ஒரு திருப்பம் தரக்கூடிய அதிகபட்சம்.', noReceiptOff: '₹0 — ரசீது இல்லாத திருப்பங்கள் நிறுத்தப்பட்டுள்ளன.', noReceiptNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை ரசீது இல்லாத திருப்பங்கள் நிறுத்தப்பட்டுள்ளன.',
-    writeOffL: 'தள்ளுபடி வரம்பு', writeOffSet: '{amount} — இதற்கு மேல் இழப்புக்குப் புகைப்படமும் மேலாளர் கையொப்பமும் தேவை.', writeOffNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை தலைமை அலுவலகம் தன் உள்ளமைந்த {amount} பயன்படுத்துகிறது.',
-    countL: 'எண்ணிக்கை ஒப்புதல் வரம்பு', countSet: '{amount} — இதற்கு மேல் மதிப்புள்ள எண்ணிக்கை வேறுபாட்டுக்கு இரண்டாம் நபர் தேவை.', countNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை தலைமை அலுவலகம் தன் உள்ளமைந்த {amount} பயன்படுத்துகிறது.',
-    matchL: 'சப்ளையர் பில் பொருத்த வரம்புகள்', matchSet: 'அளவு {qty} · விலை {price} · {small}க்குக் கீழ் வேறுபாடுகள் கவனிக்கப்படாது.', matchNot: 'உரிமையாளர் அமைக்கவில்லை — அமைக்கும் வரை தலைமை அலுவலகம் தன் உள்ளமைந்தவற்றைப் பயன்படுத்துகிறது: அளவு {qty}, விலை {price}, {small}க்குக் கீழ் கவனிக்காது.',
+    writeOffL: 'தள்ளுபடி வரம்பு', writeOffSet: '{amount} — இதற்கு மேல் இழப்புக்குப் புகைப்படமும் மேலாளர் கையொப்பமும் தேவை.', writeOffNot: '{amount} — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
+    countL: 'எண்ணிக்கை ஒப்புதல் வரம்பு', countSet: '{amount} — இதற்கு மேல் மதிப்புள்ள எண்ணிக்கை வேறுபாட்டுக்கு இரண்டாம் நபர் தேவை.', countNot: '{amount} — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
+    matchL: 'சப்ளையர் பில் பொருத்த வரம்புகள்', matchSet: 'அளவு {qty} · விலை {price} · {small}க்குக் கீழ் வேறுபாடுகள் கவனிக்கப்படாது.', matchNot: 'அளவு {qty} · விலை {price} · {small}க்குக் கீழ் வேறுபாடுகள் கவனிக்கப்படாது — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
     setBy: '{who} {when} அன்று அமைத்தார்',
     setWindow: 'திரும்பப் பெறும் காலத்தை அமை', days: 'விற்பனைக்குப் பின் நாட்கள்', setRefund: 'பணத் திருப்ப ஒப்புதல் வரம்பை அமை', setCredit: 'கடைக் கடன் உச்சவரம்பை அமை',
     setNoReceipt: 'ரசீது இல்லாத திருப்ப உச்சவரம்பை அமை', setWriteOff: 'தள்ளுபடி வரம்பை அமை', setCount: 'எண்ணிக்கை ஒப்புதல் வரம்பை அமை',

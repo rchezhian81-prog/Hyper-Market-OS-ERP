@@ -81,10 +81,10 @@ describe.skipIf(!CONNECTED)('W5 · store operations on the store computer over P
   it('Settings: every owner number reads "Not set" until he sets it; he sets two; head office holds them; Tamil too', async () => {
     const p = await shop.open(OWNER, '/settings');
     await says(p.page, '#w5-policy-heading', /^The owner's shop rules — the numbers$/);
-    await says(p.page, '#w5-policy-read-rows li[data-key="refund-threshold"]', /^Refund approval threshold: Not set by the owner — until it is, every refund needs a manager's approval/);
+    await says(p.page, '#w5-policy-read-rows li[data-key="refund-threshold"]', /^Refund approval threshold: Every refund needs a manager's approval — built-in, not yet set by the owner\./);
     await says(p.page, '#w5-policy-read-rows li[data-key="no-receipt-cap"]', /Not set by the owner — returns without a bill are switched off until it is set\./);
-    await says(p.page, '#w5-policy-read-rows li[data-key="write-off-threshold"]', /Not set by the owner — until it is, head office uses its built-in ₹500\.00\./);
-    await says(p.page, '#w5-policy-read-rows li[data-key="match-policy"]', /Not set by the owner/);
+    await says(p.page, '#w5-policy-read-rows li[data-key="write-off-threshold"]', /₹500\.00 — built-in, not yet set by the owner\./); // OB-686
+    await says(p.page, '#w5-policy-read-rows li[data-key="match-policy"]', /built-in, not yet set by the owner/);
     expect(await p.page.inputValue('#w5-policy-set-refund-threshold-amount')).toBe('');
     await fill(p.page, 'w5-policy-set-refund-threshold', { amount: 'lots' });
     await says(p.page, '#w5-policy-set-refund-threshold-said', /^Type an amount in rupees/);
