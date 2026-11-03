@@ -10,7 +10,8 @@ import { createLpSignalsSession, lpSignalsWords, rupees as lpRupees, percent as 
 import { createRelatedPartiesSession, relatedPartiesWords, relatedPartiesOutcomeWords } from './related-parties-session';
 import { createAdoptionSession, adoptionWords, adoptionOutcomeWords, rupees as adoptionRupees, hoursOf } from './adoption-session';
 import { createHelpSession, helpWords, helpOutcomeWords, type HelpData } from './help-session';
-import { createAppointmentLettersSession, lettersWords, lettersOutcomeWords } from './appointment-letters-session';
+import { shopMomentOf } from './findings-session';
+import { createAppointmentLettersSession, lettersWords, lettersOutcomeWords, SCAN_MEDIA_TYPES } from './appointment-letters-session';
 import { createFacilitiesOfficeSession, createEquipmentReadingQueue, facilitiesOfficeWords, facilitiesOfficeOutcomeWords, degrees, lowSpareLines, type HeldEquipment } from './facilities-office-session';
 import { createWriteOffQueue, createWriteOffDecideSession, writeOffQueueWords, writeOffQueueOutcomeWords } from './write-off-queue-session';
 import { createRelabelSession, relabelWords, relabelOutcomeWords, relabelAssigneeWords } from './relabel-session';
@@ -59,7 +60,7 @@ export function wireLpWorkforcePages(win: Win, viewerIdentity: (raw: unknown) =>
   }
   // Appointment letters (C17 · OB-323).
   if (win['appointmentLettersData'] !== undefined) {
-    win['appointmentLetters'] = { session: createAppointmentLettersSession({ viewer: viewerIdentity(win['appointmentLettersData']) }), words: lettersWords, outcomeWords: lettersOutcomeWords };
+    win['appointmentLetters'] = { session: createAppointmentLettersSession({ viewer: viewerIdentity(win['appointmentLettersData']) }), words: lettersWords, outcomeWords: lettersOutcomeWords, scanMediaTypes: SCAN_MEDIA_TYPES, moment: shopMomentOf };
   }
   // Facilities — the office read (M26-FR-01/02/04) and the manual readings through the store computer (M26-FR-02).
   const fac = rec(win['facilitiesData']);

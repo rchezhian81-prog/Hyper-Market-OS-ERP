@@ -108,6 +108,19 @@ describe('pay release stays on hold (OB-209)', () => {
     for (const banned of ['STAGE_ACTIONS', 'renderActions', 'session.can(']) expect(liveView.includes(banned), `the box's payroll view draws "${banned}"`).toBe(false);
   });
 
+  it('W5 (C15 · C16 · C19 · OB-209): the statutory section on the payroll page writes only compute-and-record routes — never issue, approve, lock or the bank file', () => {
+    const src = readFileSync('apps/web-erp/src/payroll-statutory-session.ts', 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    const writes = [...src.matchAll(/call(?:<[^>]+>)?\('(POST|PUT)', [`']([^`']+)[`']/g)].map((m) => m[2]!.replace(/\$\{[^}]+\}/g, ':x'));
+    expect(writes.sort()).toEqual([
+      '/v1/hr/payroll/contributions/:x/totals', '/v1/hr/payroll/legal-settings/:x', '/v1/hr/payroll/legal-settings/minimum-wage-:x',
+      '/v1/hr/payroll/legal-settings/payslip-particulars', '/v1/hr/payroll/statutory-payslips/:x/:x',
+    ]);
+    for (const banned of ['pay-run', 'bank-file', 'release-switch', '/journal', '/settlement', "'POST', `/v1/hr/payroll/payslips"]) expect(src.includes(banned), `the statutory section reaches "${banned}"`).toBe(false);
+    const view = readFileSync('apps/web-erp/web/payroll-statutory.js', 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    for (const banned of ['STAGE_ACTIONS', 'renderActions', 'session.can(', 'approve', 'bank-file', 'localStorage', 'sessionStorage', 'indexedDB', 'serviceWorker']) expect(view.includes(banned), `the statutory view draws "${banned}"`).toBe(false);
+    expect(readFileSync('apps/web-erp/web/sw.js', 'utf8'), 'the statutory section is never put in the offline shell cache').not.toMatch(/payroll-statutory/);
+  });
+
   it('the R4 pay code never reaches the release path', () => {
     const files = [
       'services/finance/src/statutory-pay.ts', 'services/api/src/r4-pay-epr-adapters.ts',

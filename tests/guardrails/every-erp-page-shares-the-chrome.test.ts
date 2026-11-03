@@ -350,6 +350,9 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'buying-related-party.js': 'apps/web-erp/src/related-party-order-session.ts',
     'supplier-payments.js': 'apps/web-erp/src/supplier-payment-session.ts',
     'supplier-portal-watch.js': 'apps/web-erp/src/supplier-portal-watch-session.ts',
+    // W5: the people, payroll and HR register sections' words live in their tested sessions.
+    'payroll-statutory.js': 'apps/web-erp/src/payroll-statutory-session.ts', 'posh-register.js': 'apps/web-erp/src/posh-register-session.ts',
+    'settings-working-time.js': 'apps/web-erp/src/working-time-session.ts', 'staff-registers.js': 'apps/web-erp/src/working-time-session.ts', 'schedule-roster.js': 'apps/web-erp/src/working-time-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

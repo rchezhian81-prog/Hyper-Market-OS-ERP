@@ -34,6 +34,15 @@
       .acts { display: flex; gap: 8px; flex-wrap: wrap; }
       .meta { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
+      /* W5: the working-time and register sections (forms, selects, the state of each row). */
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      ul.rows > li[data-state="pending"], ul.rows > li[data-state="breach"] { border-left-color: var(--degraded); }
+      ul.rows > li[data-state="in_force"], ul.rows > li[data-state="stands"] { border-left-color: var(--ok); }
+      table.reg { border-collapse: collapse; font-size: 14px; width: 100%; } table.reg th, table.reg td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
+      .wide { overflow-x: auto; max-width: 100%; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -83,9 +92,12 @@
         </form>
         <p class="status" id="shift-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- W5 (C18): record leave and read the three statutory registers — staff-registers.js. -->
+      <section id="hr-registers" hidden aria-labelledby="hr-leave-h"></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./staff.js" type="module"></script>
+    <script src="./staff-registers.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
