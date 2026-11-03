@@ -145347,6 +145347,7 @@
                   "type": "object",
                   "required": [
                     "forProductId",
+                    "productIds",
                     "summary",
                     "suggestedByAi",
                     "notice",
@@ -145355,6 +145356,12 @@
                   "properties": {
                     "forProductId": {
                       "type": "string"
+                    },
+                    "productIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "summary": {
                       "type": "string"

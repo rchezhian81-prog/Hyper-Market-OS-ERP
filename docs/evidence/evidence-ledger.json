@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2157,
+  "testFiles": 2161,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 104,
     "browser": 102,
-    "connected": 91,
+    "connected": 92,
     "device": 0,
     "uat": 0
   },
@@ -271,8 +271,8 @@
         "unit": 21,
         "integration": 22,
         "realDb": 6,
-        "browser": 7,
-        "connected": 3,
+        "browser": 8,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -339,12 +339,14 @@
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
-          "tests/e2e/unsellable-screen.e2e.ts"
+          "tests/e2e/unsellable-screen.e2e.ts",
+          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
-          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts"
+          "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
+          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1765,8 +1767,8 @@
         "unit": 22,
         "integration": 21,
         "realDb": 10,
-        "browser": 6,
-        "connected": 1,
+        "browser": 7,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1836,10 +1838,12 @@
           "tests/e2e/customer-privacy-centre.e2e.ts",
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
-          "tests/e2e/w3-customer-data-requests.e2e.ts"
+          "tests/e2e/w3-customer-data-requests.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/customer-order-delivery.e2e.ts"
+          "tests/e2e/customer-order-delivery.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3036,8 +3040,8 @@
         "unit": 17,
         "integration": 32,
         "realDb": 8,
-        "browser": 3,
-        "connected": 0,
+        "browser": 6,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -3106,11 +3110,18 @@
           "tests/migration/tenants-register.test.ts"
         ],
         "browser": [
+          "tests/e2e/lib/box-page-on-cloud.ts",
           "tests/e2e/lib/r4c-box-page.ts",
           "tests/e2e/w3-partners-sandboxes-and-the-developer-guide.e2e.ts",
-          "tests/e2e/w3-the-shops-brand-is-set-and-rides-the-signed-pack.e2e.ts"
+          "tests/e2e/w3-the-shops-brand-is-set-and-rides-the-signed-pack.e2e.ts",
+          "tests/e2e/w4-connected-m36-partners-and-the-developer-guide-on-the-store-computer.e2e.ts",
+          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/lib/box-page-on-cloud.ts",
+          "tests/e2e/w4-connected-m36-partners-and-the-developer-guide-on-the-store-computer.e2e.ts",
+          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4162,8 +4173,8 @@
         "unit": 9,
         "integration": 8,
         "realDb": 6,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -4201,11 +4212,13 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/picker-substitution-delivery.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
-          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
-          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4269,8 +4282,8 @@
         "unit": 7,
         "integration": 6,
         "realDb": 4,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -4302,11 +4315,13 @@
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/operations-dismiss-delivery.e2e.ts",
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "connected": [
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4366,8 +4381,8 @@
         "unit": 8,
         "integration": 8,
         "realDb": 4,
-        "browser": 6,
-        "connected": 3,
+        "browser": 7,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4404,12 +4419,14 @@
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "connected": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4467,8 +4484,8 @@
         "unit": 13,
         "integration": 7,
         "realDb": 3,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -4505,11 +4522,13 @@
         "browser": [
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
           "tests/e2e/workforce-dismiss-delivery.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -4525,8 +4544,8 @@
         "unit": 0,
         "integration": 10,
         "realDb": 3,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -4550,12 +4569,14 @@
           "tests/integration/the-first-five-workflows-survive-a-lost-reply.test.ts"
         ],
         "browser": [
+          "tests/e2e/lib/box-page-on-cloud.ts",
           "tests/e2e/product-publish-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/lib/box-page-on-cloud.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
         ],
