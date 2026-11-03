@@ -74,8 +74,10 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isIso = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
-const inWindow = (at: string, from: string | undefined, to: string | undefined): boolean =>
-  (from === undefined || at >= from) && (to === undefined || at <= `${to}T23:59:59.999Z`);
+/** W5 (M01-FR-02 · OB-606): is the shop's own date of `at` inside the window? A window of days is the SHOP's days — never
+ *  the UTC date of the moment (from 18:30 to 24:00 UTC the shop is already on the next day). */
+const inShopWindow = (day: string, from: string | undefined, to: string | undefined): boolean =>
+  (from === undefined || day >= from) && (to === undefined || day <= to);
 
 function ids(ctx: RequestContext): { readonly contractId: string; readonly tagId: string } {
   return { contractId: ctx.params['contractId'] ?? '', tagId: ctx.params['tagId'] ?? '' };
@@ -242,11 +244,11 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
           });
         }
         const { contract, tags } = await load(ctx.tenantId, contractId);
-        const window = tags.filter((t) => inWindow(t.at, from, to));
-        const totals = concessionTagTotals({
-          tags, tenantId: ctx.tenantId, concessionaireId: contract.concessionaireId,
-          ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }),
-        });
+        const clock = shopClock(deps.calendar);
+        const window: ConcessionTag[] = [];
+        for (const t of tags) if (inShopWindow(await clock.dateOf(ctx.tenantId, t.at), from, to)) window.push(t);
+        // The totals are of exactly the lines shown — the window already chosen by the shop's days.
+        const totals = concessionTagTotals({ tags: window, tenantId: ctx.tenantId, concessionaireId: contract.concessionaireId });
         return { status: 200, body: { contractId, concessionaireId: contract.concessionaireId, tags: window, totals, asAt: deps.now() } };
       },
     },
@@ -269,8 +271,9 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
         const target = STATUS_ORDER.indexOf(status);
         const now = deps.now();
         const marked: string[] = [];
+        const clock = shopClock(deps.calendar);
         for (const tag of tags) {
-          if (!inWindow(tag.at, b['from'], b['to'])) continue;
+          if (!inShopWindow(await clock.dateOf(ctx.tenantId, tag.at), b['from'], b['to'])) continue;
           if (STATUS_ORDER.indexOf(tag.settlementStatus) >= target) continue; // forward only; never un-settle
           await deps.appendTag(ctx.tenantId, markSettlementStatus(tag, status, ctx.userId, byRole, now));
           marked.push(tag.tagId);

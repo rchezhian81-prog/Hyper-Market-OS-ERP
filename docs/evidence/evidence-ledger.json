@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2186,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1383,11 +1383,11 @@
       "id": "M15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 18,
         "realDb": 6,
-        "browser": 8,
-        "connected": 1,
+        "browser": 9,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1410,7 +1410,8 @@
           "tests/unit/service-pos.test.ts",
           "tests/unit/settlement.test.ts",
           "tests/unit/stored-fraud-signals.test.ts",
-          "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts"
+          "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-related-party-order-needs-the-owner.test.ts",
@@ -1448,10 +1449,12 @@
           "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
           "tests/e2e/the-served-till-keeps-void-evidence.e2e.ts",
           "tests/e2e/the-served-till-records-no-sale-and-price-override.e2e.ts",
-          "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts"
+          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1943,11 +1946,11 @@
       "id": "M22",
       "label": "WIRED",
       "counts": {
-        "unit": 15,
+        "unit": 16,
         "integration": 17,
         "realDb": 10,
-        "browser": 5,
-        "connected": 4,
+        "browser": 6,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -1967,7 +1970,8 @@
           "tests/unit/identity-session-revocation.test.ts",
           "tests/unit/identity-test-idp.test.ts",
           "tests/unit/the-commercial-desk-sessions.test.ts",
-          "tests/unit/w3-security-people-and-operations-sessions.test.ts"
+          "tests/unit/w3-security-people-and-operations-sessions.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -2005,13 +2009,15 @@
           "tests/e2e/b2b-portal-on-the-production-api.e2e.ts",
           "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
           "tests/e2e/w3-a-business-customer-asks-orders-and-pays-and-finance-matches-it.e2e.ts",
-          "tests/e2e/w3-a-salespersons-commission-rate-is-proposed-and-approved.e2e.ts"
+          "tests/e2e/w3-a-salespersons-commission-rate-is-proposed-and-approved.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/b2b-portal-on-the-production-api.e2e.ts",
           "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
           "tests/e2e/w3-a-business-customer-asks-orders-and-pays-and-finance-matches-it.e2e.ts",
-          "tests/e2e/w3-a-salespersons-commission-rate-is-proposed-and-approved.e2e.ts"
+          "tests/e2e/w3-a-salespersons-commission-rate-is-proposed-and-approved.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2023,11 +2029,11 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 33,
+        "unit": 34,
         "integration": 41,
         "realDb": 26,
-        "browser": 11,
-        "connected": 4,
+        "browser": 13,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -2065,7 +2071,8 @@
           "tests/unit/w3-gst-notes-to-business-customers.test.ts",
           "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts",
           "tests/unit/w4-the-credit-note-reconciliation-reads-the-books.test.ts",
-          "tests/unit/w4-wf05-the-after-match-sessions-call-only-head-offices-own-routes.test.ts"
+          "tests/unit/w4-wf05-the-after-match-sessions-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -2149,13 +2156,17 @@
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
           "tests/e2e/w3-card-upi-and-bank-are-reconciled-on-their-page.e2e.ts",
           "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts",
-          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
           "tests/e2e/w3-gst-notes-to-a-business-customer-on-the-business-customers-page.e2e.ts",
-          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts"
+          "tests/e2e/w4-connected-m23-card-upi-and-bank-on-the-real-cloud.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2167,11 +2178,11 @@
       "id": "M24",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 10,
         "realDb": 4,
-        "browser": 2,
-        "connected": 1,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2180,7 +2191,8 @@
           "tests/unit/concession-expiry-alerts-and-delivery-status.test.ts",
           "tests/unit/supplier-portal-session.test.ts",
           "tests/unit/supplier-portal.test.ts",
-          "tests/unit/the-commercial-desk-sessions.test.ts"
+          "tests/unit/the-commercial-desk-sessions.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-buyer-decides-supplier-submissions-from-one-queue.test.ts",
@@ -2202,10 +2214,12 @@
         ],
         "browser": [
           "tests/e2e/supplier-portal-delivery.e2e.ts",
-          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts"
+          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts"
+          "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2375,11 +2389,11 @@
       "id": "M27",
       "label": "WIRED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 10,
         "realDb": 5,
-        "browser": 7,
-        "connected": 4,
+        "browser": 8,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -2395,7 +2409,8 @@
           "tests/unit/lane-server-concession-tags.test.ts",
           "tests/unit/ob676-three-values-the-owner-confirms.test.ts",
           "tests/unit/r4d-concession-invoice.test.ts",
-          "tests/unit/the-commercial-desk-sessions.test.ts"
+          "tests/unit/the-commercial-desk-sessions.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-concession-expiry-reaches-the-owner.test.ts",
@@ -2423,13 +2438,15 @@
           "tests/e2e/r4d-a-concession-invoice-is-made-approved-and-issued.e2e.ts",
           "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
           "tests/e2e/till-concession-tag-through-the-box.e2e.ts",
-          "tests/e2e/w4-m27-a-concession-invoice-and-a-lapsed-counter-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m27-a-concession-invoice-and-a-lapsed-counter-on-postgresql.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/ob676-a-concessionaire-sees-only-its-own-counter.e2e.ts",
           "tests/e2e/outside-logins-on-the-production-api.e2e.ts",
           "tests/e2e/the-commercial-desks-run-on-the-production-api.e2e.ts",
-          "tests/e2e/w4-m27-a-concession-invoice-and-a-lapsed-counter-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m27-a-concession-invoice-and-a-lapsed-counter-on-postgresql.e2e.ts",
+          "tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3212,11 +3229,11 @@
       "id": "D02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 10,
         "realDb": 4,
-        "browser": 5,
-        "connected": 1,
+        "browser": 6,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3226,7 +3243,8 @@
           "tests/unit/erp-merchandising-session.test.ts",
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
-          "tests/unit/w3-catalogue-pricing-sessions.test.ts"
+          "tests/unit/w3-catalogue-pricing-sessions.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -3251,10 +3269,12 @@
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
           "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts",
-          "tests/e2e/w3-the-range-gap-report-on-the-store-groups-page.e2e.ts"
+          "tests/e2e/w3-the-range-gap-report-on-the-store-groups-page.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3658,7 +3678,7 @@
       "id": "D09",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 12,
         "realDb": 3,
         "browser": 5,
@@ -3679,7 +3699,8 @@
           "tests/unit/orders-fulfilment-plan.test.ts",
           "tests/unit/orders-substitution-exception-ownership.test.ts",
           "tests/unit/picker-session.test.ts",
-          "tests/unit/the-driver-captures-proof-at-the-door.test.ts"
+          "tests/unit/the-driver-captures-proof-at-the-door.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-placed-delivery-goes-to-the-branch-head-office-routes.test.ts",
@@ -3721,11 +3742,11 @@
       "id": "D10",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 13,
         "realDb": 8,
-        "browser": 5,
-        "connected": 1,
+        "browser": 6,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3734,7 +3755,8 @@
           "tests/unit/finance-close-session.test.ts",
           "tests/unit/supplier-advances-session.test.ts",
           "tests/unit/trial-balance-and-centres.test.ts",
-          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts"
+          "tests/unit/w3-money-sessions-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
@@ -3766,10 +3788,12 @@
           "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/supplier-advances-are-paid-used-and-undone-on-the-supplier-bills-page.e2e.ts",
           "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts",
-          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts"
+          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/finance-close-on-the-production-api.e2e.ts"
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

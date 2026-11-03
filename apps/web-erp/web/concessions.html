@@ -132,10 +132,51 @@
         <h4 id="ci-list-h"></h4>
         <div id="ci-list"></div>
       </section>
+
+      <!-- W5 (M27-FR-02/03/04): the counter's sale lines with their commission, a docket line recorded at the desk, a
+           supervisor's reversal or adjustment (a new line naming the old), marking a window's lines, the sales on a day a
+           counter could not trade, and the store's own stock value without the concessions' (apps/web-erp/src/concession-tags-session.ts,
+           window.concessionTags, drawn by concession-tags.js). Nothing is read on open. -->
+      <section id="tags" hidden aria-labelledby="tg-h">
+        <h3 id="tg-h"></h3>
+        <p class="muted" id="tg-lead"></p>
+        <div class="row-form">
+          <label for="tg-contract"><span id="tg-contract-l"></span><input id="tg-contract" autocomplete="off" /></label>
+          <label for="tg-from"><span id="tg-from-l"></span><input id="tg-from" type="date" /></label>
+          <label for="tg-to"><span id="tg-to-l"></span><input id="tg-to" type="date" /></label>
+        </div>
+        <div class="actions">
+          <button id="tg-show" type="button" class="quiet"><span id="tg-show-text"></span></button>
+          <button id="tg-mark-charge" type="button" class="quiet" hidden><span id="tg-mark-charge-text"></span></button>
+          <button id="tg-mark-settled" type="button" class="quiet" hidden><span id="tg-mark-settled-text"></span></button>
+        </div>
+        <p class="status" id="tg-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="tg-figs"></div>
+        <ul class="rows" id="tg-rows"></ul>
+        <details id="tg-record" hidden>
+          <summary id="tg-record-h"></summary>
+          <div class="row-form" id="tg-fields"></div>
+          <button id="tg-record-go" type="button"><span id="tg-record-text"></span></button>
+          <p class="status" id="tg-record-status" role="status" aria-live="polite"></p>
+        </details>
+        <h4 id="tg-breaches-h"></h4>
+        <button id="tg-breaches" type="button" class="quiet"><span id="tg-breaches-text"></span></button>
+        <ul class="rows" id="tg-breach-rows"></ul>
+        <h4 id="tg-val-h"></h4>
+        <p class="muted" id="tg-val-lead"></p>
+        <div class="row-form">
+          <label for="tg-branch"><span id="tg-branch-l"></span><input id="tg-branch" autocomplete="off" /></label>
+        </div>
+        <button id="tg-val" type="button" class="quiet"><span id="tg-val-text"></span></button>
+        <p class="status" id="tg-val-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="tg-val-figs"></div>
+        <ul class="rows" id="tg-val-rows"></ul>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./concessions.js" type="module"></script>
     <script src="./concession-invoices.js" type="module"></script>
+    <script src="./concession-tags.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

@@ -343,7 +343,8 @@ $('reopen').addEventListener('click', () => busy($('reopen'), async () => {
 
 // ── The frame ───────────────────────────────────────────────────────────────────────────────────────────────
 
-const TABS = ['payments', 'pl', 'stock', 'plan', 'month', 'owed'];
+// W5: 'books' and 'ca' are drawn by finance-close-books.js (their own session; each read is a click there).
+const TABS = ['payments', 'pl', 'stock', 'plan', 'month', 'owed', 'books', 'ca'];
 async function show(name) {
   tab = name;
   for (const t of TABS) { $(`view-${t}`).hidden = t !== name; $(`tab-${t}`).setAttribute('aria-current', t === name ? 'page' : 'false'); }
