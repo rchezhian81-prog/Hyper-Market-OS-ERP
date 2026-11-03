@@ -6646,27 +6646,21 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdRequest"
+                "type": "object"
               }
             }
           }
         },
+        "x-request-body": "none",
         "x-body-schema": "derived",
+        "x-never-succeeds": true,
+        "description": "Retired or refusal-only: every call is refused, by name, with one of the error replies below.",
         "responses": {
-          "201": {
-            "description": "The reply, as the handler builds it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdReply"
-                }
-              }
-            }
-          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -93301,6 +93295,50 @@
         }
       }
     },
+    "/v1/production/costs": {
+      "get": {
+        "operationId": "getProductionCosts",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "production.cost.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetProductionCostsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"production.cost.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/production/costs/{productId}": {
       "post": {
         "operationId": "postProductionCostsByProductId",
@@ -123510,6 +123548,7 @@
                     "dependency",
                     "iac",
                     "pentest",
+                    "repository",
                     "review",
                     "sast",
                     "secret"
@@ -128324,6 +128363,9 @@
       "GetFinanceCreditNotesReconciliationReply": {
         "type": "object",
         "required": [
+          "ledger",
+          "notesTotalMinor",
+          "notInTheBooks",
           "asAt",
           "period",
           "notesIssued",
@@ -128335,6 +128377,108 @@
           "detail"
         ],
         "properties": {
+          "ledger": {
+            "type": "object",
+            "required": [
+              "read",
+              "derivation",
+              "journals",
+              "totalMinor",
+              "taxableMinor",
+              "taxMinor",
+              "split",
+              "netAccount",
+              "taxAccount"
+            ],
+            "properties": {
+              "read": {
+                "type": "string"
+              },
+              "derivation": {
+                "type": "string"
+              },
+              "journals": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "totalMinor": {
+                "type": "number"
+              },
+              "taxableMinor": {
+                "type": "number"
+              },
+              "taxMinor": {
+                "type": "number"
+              },
+              "split": {
+                "type": "string",
+                "enum": [
+                  "by_account",
+                  "not_known"
+                ]
+              },
+              "netAccount": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "taxAccount": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "notesTotalMinor": {
+            "type": "number"
+          },
+          "notInTheBooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "noteId",
+                "number",
+                "grossMinor",
+                "taxAdjustable",
+                "state"
+              ],
+              "properties": {
+                "postedToPeriod": {
+                  "type": "string"
+                },
+                "noteId": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "grossMinor": {
+                  "type": "number"
+                },
+                "taxAdjustable": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "asAt": {
             "type": "string"
           },
@@ -145347,6 +145491,7 @@
                   "type": "object",
                   "required": [
                     "forProductId",
+                    "productIds",
                     "summary",
                     "suggestedByAi",
                     "notice",
@@ -145355,6 +145500,12 @@
                   "properties": {
                     "forProductId": {
                       "type": "string"
+                    },
+                    "productIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "summary": {
                       "type": "string"
@@ -155707,6 +155858,35 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/production-plan.ts"
+      },
+      "GetProductionCostsReply": {
+        "type": "object",
+        "required": [
+          "runs",
+          "withExceptions",
+          "notValued",
+          "asAt"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionCostView"
+            }
+          },
+          "withExceptions": {
+            "type": "number"
+          },
+          "notValued": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/production.ts"
       },
       "GetProductionDepartmentsReply": {
         "type": "object",
@@ -170117,79 +170297,6 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/b2b-collections.ts"
       },
-      "PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdReply": {
-        "type": "object",
-        "required": [
-          "salespersonId",
-          "accrualId",
-          "commissionMinor",
-          "currency"
-        ],
-        "properties": {
-          "salespersonId": {
-            "type": "string"
-          },
-          "accrualId": {
-            "type": "string"
-          },
-          "commissionMinor": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "EUR",
-              "GBP",
-              "INR",
-              "USD"
-            ]
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/b2b-commission.ts"
-      },
-      "PostB2bCommissionsBySalespersonIdAccrualsByAccrualIdRequest": {
-        "type": "object",
-        "required": [
-          "baseMinor",
-          "rateBps"
-        ],
-        "properties": {
-          "baseMinor": {
-            "type": "integer"
-          },
-          "capMinor": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "currency": {
-            "type": "string"
-          },
-          "rateBps": {
-            "type": "integer"
-          },
-          "ref": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "string"
-              }
-            ]
-          }
-        },
-        "additionalProperties": true,
-        "x-body-schema": "derived",
-        "x-derived-from": "services/finance/src/b2b-commission.ts"
-      },
       "PostB2bCommissionsBySalespersonIdRulesByRuleIdApproveReply": {
         "type": "object",
         "required": [
@@ -173132,6 +173239,33 @@
             },
             "additionalProperties": true
           },
+          "draft": {
+            "type": "object",
+            "required": [
+              "keptAsDraft",
+              "onSale",
+              "stillNeeded",
+              "detail"
+            ],
+            "properties": {
+              "keptAsDraft": {
+                "type": "boolean"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "stillNeeded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
           "categoriesDefined": {
             "type": "array",
             "items": {
@@ -173584,6 +173718,33 @@
                 "type": "string"
               },
               "approvedBy": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "draft": {
+            "type": "object",
+            "required": [
+              "keptAsDraft",
+              "onSale",
+              "stillNeeded",
+              "detail"
+            ],
+            "properties": {
+              "keptAsDraft": {
+                "type": "boolean"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "stillNeeded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "detail": {
                 "type": "string"
               }
             },
@@ -174833,6 +174994,7 @@
                         "dependency",
                         "iac",
                         "pentest",
+                        "repository",
                         "review",
                         "sast",
                         "secret"
@@ -174865,6 +175027,7 @@
                   "dependency",
                   "iac",
                   "pentest",
+                  "repository",
                   "review",
                   "sast",
                   "secret"
@@ -174949,6 +175112,7 @@
                         "dependency",
                         "iac",
                         "pentest",
+                        "repository",
                         "review",
                         "sast",
                         "secret"
@@ -174981,6 +175145,7 @@
                   "dependency",
                   "iac",
                   "pentest",
+                  "repository",
                   "review",
                   "sast",
                   "secret"
@@ -278379,6 +278544,7 @@
             "type": "string",
             "enum": [
               "cess_on_demerit_slab",
+              "draft_not_on_sale",
               "liquor_not_sold",
               "medicine_not_sold",
               "no_price",
@@ -297739,6 +297905,127 @@
         },
         "additionalProperties": true
       },
+      "ProductionCostView": {
+        "type": "object",
+        "required": [
+          "runId",
+          "recipeId",
+          "departmentId",
+          "locationId",
+          "outputProductId",
+          "outputBatchId",
+          "outputQuantityMinor",
+          "outputUom",
+          "at",
+          "producedBy",
+          "currency",
+          "valued",
+          "inputCostMinor",
+          "unitCostPerWholeMinor",
+          "lines",
+          "notValuedBecause",
+          "yieldBp",
+          "yieldVerdict",
+          "exceptions",
+          "costBasis"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "recipeId": {
+            "type": "string"
+          },
+          "departmentId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "outputProductId": {
+            "type": "string"
+          },
+          "outputBatchId": {
+            "type": "string"
+          },
+          "outputQuantityMinor": {
+            "type": "number"
+          },
+          "outputUom": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "producedBy": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR",
+              "GBP",
+              "INR",
+              "USD"
+            ]
+          },
+          "valued": {
+            "type": "boolean"
+          },
+          "inputCostMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "unitCostPerWholeMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunCostLine"
+            }
+          },
+          "notValuedBecause": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "yieldBp": {
+            "type": "number"
+          },
+          "yieldVerdict": {
+            "type": "string"
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionException"
+            }
+          },
+          "costBasis": {
+            "type": "string",
+            "enum": [
+              "registered_cost",
+              "run_cost"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
       "ProductionDepartment": {
         "type": "object",
         "required": [
@@ -306845,6 +307132,7 @@
               "dependency",
               "iac",
               "pentest",
+              "repository",
               "review",
               "sast",
               "secret"
@@ -307358,6 +307646,8 @@
           "resolved",
           "breached",
           "breachedValue",
+          "met",
+          "escalateNow",
           "firstResponseBreached",
           "csatHundredths",
           "responseRateBps",
@@ -307374,6 +307664,15 @@
             "type": "number"
           },
           "breachedValue": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "met": {
+            "type": "number"
+          },
+          "escalateNow": {
             "type": "array",
             "items": {
               "type": "string"

@@ -108,6 +108,22 @@
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
 
+      <!-- W4 · WF-05 (M23-FR-01): supplier bills in the books — matched bills, debit notes and payments, posted through the
+           accountant's own rules (nothing typed), each journal listed and, per supplier, the register beside the books.
+           Session: apps/web-erp/src/supplier-bills-to-the-books-session.ts (window.payablesBooks); drawn by day-book-payables.js. -->
+      <section class="evidence" id="ap" hidden aria-labelledby="ap-heading">
+        <h3 id="ap-heading"></h3>
+        <p class="muted" id="ap-lead"></p>
+        <div class="picker">
+          <button id="ap-show" class="quiet" type="button"></button>
+          <button id="ap-post" class="act" type="button" hidden></button>
+        </div>
+        <p class="muted" id="ap-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="ap-suppliers" aria-label="Supplier accounts against the books"></ul>
+        <ul class="rows" id="ap-journals" aria-label="Supplier bills in the books"></ul>
+        <ul class="rows" id="ap-exceptions" aria-label="Supplier bills not in the books"></ul>
+      </section>
+
       <!-- M14-FR-04: the closed-day evidence pack for the CA. -->
       <section class="evidence" id="evidence" hidden aria-labelledby="evidence-heading">
         <h3 id="evidence-heading"></h3>
@@ -120,6 +136,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./day-book.js" type="module"></script>
+    <script src="./day-book-payables.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

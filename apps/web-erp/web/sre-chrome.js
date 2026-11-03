@@ -668,6 +668,7 @@
     'settlement': 'banknote', // W3 — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
+    'production-costs': 'banknote', // W4 — an icon already in the set
     'data-requests': 'shield-check', // W3 — an icon already in the set
     'customer-value': 'chart-column', // W3 — an icon already in the set
     'message-queue': 'message-circle', // W3 — an icon already in the set
@@ -684,6 +685,7 @@
     'training-checks': 'badge-check', // Wave 3 · OB-675 — an icon already in the set
     'safety-incidents': 'shield-alert', // Wave 3 — an icon already in the set
     'ops-alerts': 'triangle-alert', // Wave 3 — an icon already in the set
+    'failed-jobs': 'history', // W4 — an icon already in the set
     'document-retention': 'files', // Wave 3 — an icon already in the set
     'sales-commission': 'percent', // Wave 3 — an icon already in the set
     'space-setup': 'boxes', // Wave 2 — an icon already in the set

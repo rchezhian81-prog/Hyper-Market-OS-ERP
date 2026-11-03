@@ -9,6 +9,11 @@
 //     answer and who it escalates to; change one or add one, and set how old the newest backup may be
 //     (`PUT /v1/platform/alert-rules`, the whole set, based on the version read — a save on top of someone else's is refused,
 //     OB-120). The built-in rules are shown as they are; changing them stays the owner's, on head office's own terms (OB-115).
+//   • BACKUP AND RESTORE READINGS (W4 · M35-FR-01) — the newest backup the backup job itself reported (when it ran, whether it
+//     completed, was encrypted and copied off-site, its size and checksum) and the newest GOOD one, with head office's own
+//     reading of the backup (`GET /v1/platform/operational-health/observed`); and the latest backup-restore rehearsal — passed,
+//     failed, run out or never done (`GET /v1/platform/recovery-gate`, for a person holding `backup.verify.read`). Reads only;
+//     a backup is recorded by the backup job alone, never from this screen.
 // Reading needs `platform.health.read`; acknowledging and changing rules `platform.alert.manage`. Head office re-checks each.
 // Every word this page adds has a Tamil twin; head office's own sentences stay in English (OB-553).
 
@@ -33,6 +38,10 @@ export const OPS_ALERTS_COPY = {
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot see operational alerts.', cannotManage: 'You can see the alerts; ticking them and changing who owns them needs the alert manager\'s permission.',
     needComponent: 'Say what the alert watches.', needOwner: 'Name the owner (staff id and name).', needMinutes: 'Type the minutes as a whole number above 0.', needHours: 'Type the hours as a whole number above 0.', exists: 'An alert for that already exists — change its owner instead.', readFirst: 'Read the rules first.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or changed.', reading: 'Asking head office…',
+    readingsH: 'Backup and restore readings', newestBackup: 'Newest backup', newestGood: 'Newest good backup (completed, encrypted, copied off-site)', noBackup: 'No backup has been reported by the backup job yet.', noGood: 'None yet — no backup has completed encrypted and copied off-site.',
+    bk_completed: 'completed', bk_failed: 'did NOT complete', bk_encrypted: 'encrypted', bk_unencrypted: 'NOT encrypted', bk_offsite: 'copied off-site', bk_onsite: 'NO off-site copy', bytes: 'bytes', reportedBy: 'reported by',
+    backupReading: 'Head office\'s reading of the backup', restoreH: 'Latest restore rehearsal', rs_passed: 'passed', rs_failed: 'FAILED', rs_expired: 'run out — rehearse it again', rs_missing: 'never rehearsed', rehearsedBy: 'rehearsed by', passUntil: 'counts until',
+    cannotRestore: 'Your role cannot see the restore rehearsals.',
   },
   ta: {
     title: 'செயல்பாட்டு எச்சரிக்கைகள்',
@@ -48,6 +57,10 @@ export const OPS_ALERTS_COPY = {
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு செயல்பாட்டு எச்சரிக்கைகளைப் பார்க்க முடியாது.', cannotManage: 'எச்சரிக்கைகளைப் பார்க்கலாம்; குறிக்கவும் பொறுப்பாளரை மாற்றவும் எச்சரிக்கை மேலாளர் அனுமதி தேவை.',
     needComponent: 'எச்சரிக்கை எதைக் கண்காணிக்கிறது என்று சொல்லுங்கள்.', needOwner: 'பொறுப்பாளரைக் குறிப்பிடுங்கள் (பணியாளர் அடையாளமும் பெயரும்).', needMinutes: 'நிமிடங்களை 0-க்கு மேற்பட்ட முழு எண்ணாகத் தட்டச்சு செய்யுங்கள்.', needHours: 'மணி நேரத்தை 0-க்கு மேற்பட்ட முழு எண்ணாகத் தட்டச்சு செய்யுங்கள்.', exists: 'அதற்கான எச்சரிக்கை ஏற்கனவே உள்ளது — அதன் பொறுப்பாளரை மாற்றுங்கள்.', readFirst: 'முதலில் விதிகளைப் படியுங்கள்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, மாற்றப்படவில்லை.', reading: 'தலைமை அலுவலகத்திடம் கேட்கிறது…',
+    readingsH: 'காப்புப் பிரதி, மீட்பு அளவீடுகள்', newestBackup: 'புதிய காப்புப் பிரதி', newestGood: 'புதிய நல்ல காப்புப் பிரதி (முடிந்தது, குறியாக்கப்பட்டது, வெளியே நகலெடுக்கப்பட்டது)', noBackup: 'காப்புப் பிரதிப் பணி இன்னும் எந்தக் காப்புப் பிரதியையும் தெரிவிக்கவில்லை.', noGood: 'இன்னும் இல்லை — எந்தக் காப்புப் பிரதியும் குறியாக்கத்துடன் முடிந்து வெளியே நகலெடுக்கப்படவில்லை.',
+    bk_completed: 'முடிந்தது', bk_failed: 'முடியவில்லை', bk_encrypted: 'குறியாக்கப்பட்டது', bk_unencrypted: 'குறியாக்கப்படவில்லை', bk_offsite: 'வெளியே நகலெடுக்கப்பட்டது', bk_onsite: 'வெளி நகல் இல்லை', bytes: 'பைட்டுகள்', reportedBy: 'தெரிவித்தவர்',
+    backupReading: 'காப்புப் பிரதி பற்றித் தலைமை அலுவலகத்தின் அளவீடு', restoreH: 'கடைசி மீட்பு ஒத்திகை', rs_passed: 'வெற்றி', rs_failed: 'தோல்வி', rs_expired: 'காலாவதியானது — மீண்டும் ஒத்திகை செய்யுங்கள்', rs_missing: 'ஒத்திகை செய்யப்படவில்லை', rehearsedBy: 'ஒத்திகை செய்தவர்', passUntil: 'செல்லுபடியாகும் வரை',
+    cannotRestore: 'உங்கள் பங்கு மீட்பு ஒத்திகைகளைப் பார்க்க முடியாது.',
   },
 } as const;
 
@@ -64,9 +77,15 @@ export interface AlertRules {
   readonly version: number; readonly rules: readonly AlertRule[]; readonly builtIn: readonly { readonly alertId: string; readonly state: string; readonly words: string }[];
   readonly thresholds: unknown; readonly backupMaxAgeSeconds: number;
 }
+/** W4 · M35-FR-01: one backup as the backup job reported it. */
+export interface BackupRow { readonly backupId: string; readonly at: string; readonly ok: boolean; readonly encrypted: boolean; readonly offsite: boolean; readonly sizeBytes?: number; readonly checksum?: string; readonly detail?: string; readonly recordedBy: string }
+/** W4 · M35-FR-01: the backup readings — the newest backup, when the newest good one ran, and head office's own reading. */
+export interface BackupReadings { readonly latest: BackupRow | null; readonly lastGoodAt: string | null; readonly reading: { readonly status: string; readonly detail: string } | null; readonly asAt: string }
+/** W4 · M35-FR-01: the latest backup-restore rehearsal, as head office's recovery reading has it. */
+export interface RestoreReading { readonly state: 'passed' | 'failed' | 'expired' | 'missing'; readonly detail: string; readonly drillId?: string; readonly drilledAt?: string; readonly drilledBy?: string; readonly passExpiresAt?: string }
 export interface OwnerForm { readonly ownerUserId: string; readonly ownerName: string; readonly ackWithinMinutes: string; readonly escalatesToUserId: string }
 
-type Why = 'nobody' | 'cannotRead' | 'cannotManage' | 'needComponent' | 'needOwner' | 'needMinutes' | 'needHours' | 'exists' | 'readFirst';
+type Why = 'nobody' | 'cannotRead' | 'cannotManage' | 'cannotRestore' | 'needComponent' | 'needOwner' | 'needMinutes' | 'needHours' | 'exists' | 'readFirst';
 type Done<T> = Promise<Outcome<T, Why>>;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -87,7 +106,11 @@ function alertRowOf(a: unknown): AlertRow[] {
 export const ruleIdOf = (component: string, firesAt: string): string => `shop:${component.trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, '-')}:${firesAt}`;
 
 export interface OpsAlertsSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly manage: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly manage: boolean; readonly restore: boolean };
+  /** W4 · M35-FR-01: the newest backup and the newest good one, with head office's reading of the backup. */
+  backups(): Done<BackupReadings>;
+  /** W4 · M35-FR-01: the latest backup-restore rehearsal. */
+  restore(): Done<RestoreReading>;
   mine(): Done<readonly AlertRow[]>;
   board(): Done<readonly AlertRow[]>;
   acknowledge(alertId: string): Done<{ readonly acknowledged: true }>;
@@ -100,10 +123,10 @@ export interface OpsAlertsSession {
 export function createOpsAlertsSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch }): OpsAlertsSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
-  const may = { named, read: named && held.has('platform.health.read'), manage: named && held.has('platform.alert.manage') };
+  const may = { named, read: named && held.has('platform.health.read'), manage: named && held.has('platform.alert.manage'), restore: named && held.has('backup.verify.read') };
   const call = makeCaller({ keyPrefix: 'ops-alerts', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
   const no = (why: Why): { result: 'invalid'; why: Why } => ({ result: 'invalid', why });
-  const gate = (need: 'read' | 'manage') => (!named ? no('nobody') : !may[need] ? no(need === 'read' ? 'cannotRead' : 'cannotManage') : undefined);
+  const gate = (need: 'read' | 'manage' | 'restore') => (!named ? no('nobody') : !may[need] ? no(need === 'read' ? 'cannotRead' : need === 'manage' ? 'cannotManage' : 'cannotRestore') : undefined);
   const ownerOf = (f: OwnerForm): Outcome<Pick<AlertRule, 'ownerUserId' | 'ownerName' | 'ackWithinMinutes' | 'escalatesToUserId'>, Why> => {
     if (f.ownerUserId.trim() === '' || f.ownerName.trim() === '') return no('needOwner');
     const minutes = whole(f.ackWithinMinutes);
@@ -118,6 +141,42 @@ export function createOpsAlertsSession(input: { readonly viewer: { readonly user
   };
   return {
     may,
+    backups: async () => {
+      const g = gate('read'); if (g) return g;
+      const out = await call<{ observed?: unknown; health?: unknown; asAt?: unknown }>('GET', '/v1/platform/operational-health/observed');
+      if (out.result !== 'ok') return out;
+      const observed = isObj(out.value.observed) ? out.value.observed : {};
+      const b = observed['lastBackup'];
+      const latest: BackupRow | null = isObj(b) && typeof b['backupId'] === 'string' ? {
+        backupId: b['backupId'], at: str(b['at']), ok: b['ok'] === true, encrypted: b['encrypted'] === true, offsite: b['offsite'] === true, recordedBy: str(b['recordedBy']),
+        ...(typeof b['sizeBytes'] === 'number' ? { sizeBytes: b['sizeBytes'] } : {}), ...(typeof b['checksum'] === 'string' ? { checksum: b['checksum'] } : {}), ...(typeof b['detail'] === 'string' ? { detail: b['detail'] } : {}),
+      } : null;
+      const signals = isObj(observed['signals']) ? observed['signals'] : {};
+      const components = isObj(out.value.health) && Array.isArray(out.value.health['components']) ? out.value.health['components'] as unknown[] : [];
+      const c = components.find((x): x is Record<string, unknown> => isObj(x) && x['name'] === 'backup');
+      return {
+        result: 'ok',
+        value: {
+          latest, lastGoodAt: typeof signals['lastBackupAt'] === 'string' ? signals['lastBackupAt'] : null,
+          reading: c === undefined ? null : { status: str(c['status']), detail: str(c['detail']) }, asAt: str(out.value.asAt),
+        },
+      };
+    },
+    restore: async () => {
+      const g = gate('restore'); if (g) return g;
+      const out = await call<{ rehearsals?: unknown[] }>('GET', '/v1/platform/recovery-gate');
+      if (out.result !== 'ok') return out;
+      const r = (out.value.rehearsals ?? []).find((x): x is Record<string, unknown> => isObj(x) && x['kind'] === 'backup_restore');
+      const state = r !== undefined && (r['state'] === 'passed' || r['state'] === 'failed' || r['state'] === 'expired') ? r['state'] : 'missing';
+      return {
+        result: 'ok',
+        value: {
+          state, detail: str(r?.['detail']),
+          ...(typeof r?.['drillId'] === 'string' ? { drillId: r['drillId'] } : {}), ...(typeof r?.['drilledAt'] === 'string' ? { drilledAt: r['drilledAt'] } : {}),
+          ...(typeof r?.['drilledBy'] === 'string' ? { drilledBy: r['drilledBy'] } : {}), ...(typeof r?.['passExpiresAt'] === 'string' ? { passExpiresAt: r['passExpiresAt'] } : {}),
+        },
+      };
+    },
     mine: async () => {
       const g = gate('read'); if (g) return g;
       const out = await call<{ alerts?: unknown[] }>('GET', '/v1/platform/alerts/inbox');

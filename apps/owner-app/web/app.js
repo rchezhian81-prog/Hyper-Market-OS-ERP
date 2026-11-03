@@ -325,7 +325,9 @@ function renderTrends(brief) {
   const time = brief.freshness.lastSyncedAt ? shopWhen(brief.freshness.lastSyncedAt) : t('neverSynced');
   const covers = (key) => fillIn(t(key), { branch, time });
   const missing = brief.freshness.state === 'missing';
-  const today = brief.freshness.lastSyncedAt ? window.sreShopDay?.dateOf(brief.freshness.lastSyncedAt) ?? '' : '';
+  // W4 (P-02): "today" is the trading day the store computer counted these figures for — its own rule, the same day head
+  // office's dashboard counts — never a date worked out again here (past a day end after midnight that names the wrong day).
+  const today = trends.today ?? '';
   chartOrSay(el('chart-hour'), {
     id: 'hour', kind: 'columns', title: t('hourTitle'), covers: covers('hourCovers'), labelHeading: t('hourHeading'), valueHeading: t('takenHeading'),
     empty: t('hourEmpty'),

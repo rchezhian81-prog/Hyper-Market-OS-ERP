@@ -1,0 +1,164 @@
+name: Timed rollback drill on the composed stack (QG-08, weekly)
+
+# W4 · QG-08 "Backup restore, store recovery, rollback and incident escalation rehearsed" (roadmap §22, §32) — pilot gate G9.
+# The timed rollback drill (scripts/rollback-drill.mjs, docs/runbooks/rollback-drill.md) runs END TO END with --run, here,
+# against the whole composed stack on a fresh runner, with synthetic data only:
+#
+#   1. the stack is put live on the CURRENT commit of main by the box's own release script (infra/deploy/release.sh);
+#   2. the drill backs the stack's database up, copies it to a stand-in backup drive, restores it into a SEPARATE EMPTY
+#      database (the restore-target service below) and reconciles it to the paisa;
+#   3. it puts the PREVIOUS commit of main back (the simulated failure) and waits for READY, then the current one again;
+#   4. it prints every time against the §32 targets and writes the drill record — and, for a drill that ran, the body of
+#      POST /v1/platform/dr-drills for the ROLLBACK rehearsal (`<drill>.qg08-rollback.json`), the evidence the QG-08 gate
+#      reads (packages/ops/src/recovery-gate.ts scores it against its fixed 30-minute target).
+#
+# It takes most of an hour (four stack builds), so it is NOT on the pull-request build: it runs every week on main and on
+# demand from GitHub → Actions → this workflow → "Run workflow". A red run names the step that failed. No secret is used
+# (hard rule #4): the stack's passwords and keys are generated here for this run only and never committed or printed.
+# It never runs against production (hard rule #7): the drill refuses MIGRATION_TARGET_KIND=production before anything.
+on:
+  schedule:
+    # 22:13 UTC on Sunday = 03:43 on Monday in Tamil Nadu: the shop is shut and the runners are quiet.
+    - cron: '13 22 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollback-drill
+  cancel-in-progress: false
+
+jobs:
+  rollback-drill:
+    name: Timed rollback drill — previous release back, backup restored, current release forward (QG-08)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    services:
+      # The EMPTY database standing in for the replacement machine (the restore refuses one that has tables).
+      restore-target:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_restore_target
+          # Throwaway container, reachable only from this job: trust auth, so no credential appears in this file.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both releases must be on origin/main for release.sh to deploy them (it refuses anything else).
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Use the PostgreSQL 16 client tools (the same major version as the database) and the backup's encryption tool
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common age
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+
+      - name: The two releases — the current commit of main and the one before it
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main" || { echo "::error::the drill puts releases of main back and forward — run it on main (release.sh refuses any other commit)"; exit 1; }
+          CURRENT=$(git rev-parse HEAD)
+          PREVIOUS=$(git rev-parse HEAD^1)
+          test "$CURRENT" != "$PREVIOUS"
+          echo "DRILL_CURRENT=$CURRENT" >> "$GITHUB_ENV"
+          echo "DRILL_PREVIOUS=$PREVIOUS" >> "$GITHUB_ENV"
+          echo "current $CURRENT, previous $PREVIOUS"
+
+      - name: The box's settings — made here for this run only, never committed
+        run: |
+          mkdir -p "$RUNNER_TEMP/sre" "$RUNNER_TEMP/drill" "$RUNNER_TEMP/backup-drive"
+          # release.sh's own settings file (infra/deploy/deploy.conf.example), pointed at this checkout and this runner.
+          {
+            echo "SRE_APP_DIR=$GITHUB_WORKSPACE"
+            echo "SRE_COMPOSE_PROJECT=sre-drill"
+            echo "SRE_COMPOSE_FILES=docker-compose.yml"
+            echo "SRE_ENV_FILE=.env"
+            echo "SRE_BUILD_TOOLS="
+            echo "SRE_RECREATE_SERVICES="
+            echo "SRE_RELEASE_LOG=$RUNNER_TEMP/sre/releases.log"
+            echo "SRE_DEPLOY_LOCK=$RUNNER_TEMP/sre/deploy.lock"
+            echo "SRE_QG10_LOG=$RUNNER_TEMP/sre/qg10-evidence.jsonl"
+            # No QG-10 machine key on this runner: each release attempt says "QG-10 note NOT POSTED" (P-08).
+            echo "SRE_QG10_PUSH_TOKEN_FILE=$RUNNER_TEMP/sre/no-qg10-key"
+          } > "$RUNNER_TEMP/sre/deploy.conf"
+          cd infra/compose
+          cp .env.example .env
+          PW=$(openssl rand -hex 24)
+          echo "::add-mask::$PW"
+          {
+            echo "POSTGRES_PASSWORD=$PW"
+            echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "BOX_HISTORY_SEAL_KEY=$(openssl rand -base64 48)"
+            echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
+            echo "IDP_ISSUER=https://idp.ci.invalid/"
+            echo "EDGE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            echo "MIGRATION_TARGET_KIND=rehearsal"
+          } >> .env
+          # Assembled with printf so the literal scheme://user:password@host shape never appears in a committed file.
+          printf 'DATABASE_URL=%s://%s:%s@db:5432/%s\n' postgres sre_app "$PW" sre_retail_os >> .env
+
+      - name: The box is live on the current release (release.sh, as on the box)
+        env:
+          SRE_DEPLOY_CONF: ${{ runner.temp }}/sre/deploy.conf
+        run: bash infra/deploy/release.sh "$DRILL_CURRENT" scheduled-drill "$GITHUB_RUN_ID" "attempt=$GITHUB_RUN_ATTEMPT"
+
+      - name: The timed rollback drill, end to end (--run) — QG-08 evidence
+        env:
+          SRE_DEPLOY_CONF: ${{ runner.temp }}/sre/deploy.conf
+          RESTORE_TARGET_URL: postgres://sre@127.0.0.1:5433/sre_restore_target
+        run: |
+          # The database the box runs on, as its administrator (the backup reads every shop's rows), from the settings made
+          # above — in the environment only, never on the command line (the drill refuses otherwise).
+          PW=$(grep '^POSTGRES_PASSWORD=' infra/compose/.env | tail -1 | cut -d= -f2-)
+          ADMIN=$(grep '^POSTGRES_USER=' infra/compose/.env | tail -1 | cut -d= -f2-)
+          DB=$(grep '^POSTGRES_DB=' infra/compose/.env | tail -1 | cut -d= -f2-)
+          export DATABASE_URL=$(printf '%s://%s:%s@127.0.0.1:5432/%s' postgres "$ADMIN" "$PW" "$DB")
+          node scripts/rollback-drill.mjs --previous "$DRILL_PREVIOUS" --current "$DRILL_CURRENT" --project sre-drill \
+            --work "$RUNNER_TEMP/drill" --backup-drive "$RUNNER_TEMP/backup-drive" --settings infra/compose/.env --run
+
+      - name: What the QG-08 gate reads — the rollback rehearsal, for the register
+        if: always()
+        run: |
+          {
+            echo "### QG-08 — the timed rollback drill"
+            for f in "$RUNNER_TEMP"/drill/rollback-drill-*.json; do
+              case "$f" in *.qg08-rollback.json) ;; *) [ -f "$f" ] && echo "- drill record: \`$(basename "$f")\` — $(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(`${r.outcome.toUpperCase()}: ${r.detail}`)' "$f")";; esac
+            done
+            for f in "$RUNNER_TEMP"/drill/*.qg08-rollback.json; do
+              [ -f "$f" ] || { echo "- no rollback rehearsal body: the drill did not run to a rollback time — a person records the miss; QG-08 holds"; continue; }
+              echo "- the body of \`POST /v1/platform/dr-drills\` (recorded on head office's gate register in a named person's own sign-in):"
+              echo '```json'; cat "$f"; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the drill record, the QG-08 evidence and the release logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qg08-rollback-drill
+          path: |
+            ${{ runner.temp }}/drill/
+            ${{ runner.temp }}/sre/releases.log
+            ${{ runner.temp }}/sre/qg10-evidence.jsonl
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: |
+          cd infra/compose
+          docker compose -p sre-drill -f docker-compose.yml --env-file .env logs --no-color --tail 80 api || true
+          docker compose -p sre-drill -f docker-compose.yml --env-file .env down -v --remove-orphans || true
+          rm -f .env

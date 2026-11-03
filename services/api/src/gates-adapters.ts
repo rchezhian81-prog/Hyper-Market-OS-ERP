@@ -12,7 +12,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers,
+  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers, qg03BranchProtectionBlockers,
   type SecurityFinding, type GateDecision, type GateBlocker, type GateEvidenceRecord,
 } from '../../../packages/compliance/src/index';
 import { gateEvidenceRoutes, type GateEvidenceDeps } from '../../compliance/src/gate-evidence';
@@ -101,7 +101,9 @@ export function gateEvidenceAdapter(input: { readonly store: EventStore; readonl
  *   QG-05  the p95 timings on certified hardware against the fixed §32 targets;
  *   QG-06  the independent penetration test (from R4, the first customer-facing release);
  *   QG-07  every one of the five domains' control totals recorded and signed;
- *   QG-10  each computer's newest release attempt verified (no note at all is a blocker too).
+ *   QG-10  each computer's newest release attempt verified (no note at all is a blocker too);
+ *   QG-03  (W4) the CI's reading of main's branch protection: none on file, or a latest reading that could not see all of
+ *          it, is NOT KNOWN and holds the gate (what a reading found missing is an open high finding, above).
  * Nothing on record is never a pass (P-08).
  */
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
@@ -116,10 +118,11 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const fromSync = qg04SyncBlockers([...latestPerStore(await syncWatermarksAdapter({ store }).records(tenantId)).values()]).map(asCheck);
   const fromTotals = qg07Blockers(await migrationControlTotalsOn(store, tenantId)).map(asCheck);
   const fromReleases = qg10Blockers(await qg10EvidenceAdapter({ store, now }).notes(tenantId)).map(asCheck);
+  const fromBranch = qg03BranchProtectionBlockers(await all<{ tool: string; scannedAt: string; complete: boolean; runId: string }>(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported')).map(asCheck);
   return [
     ...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId), // QG-09 (OB-288 LP/workforce package)
     ...await qg02TrainingBlockers(store, now, tenantId), // W3 · OB-675: QG-02 training — the scored check per role
-    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases,
+    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases, ...fromBranch,
   ];
 }
 

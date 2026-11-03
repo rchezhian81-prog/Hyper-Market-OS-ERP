@@ -2883,7 +2883,9 @@ export async function startEdge(
   // taken when not older than what is held, laid into the pack for the picker and driver phones, persisted so a reboot keeps
   // them. The whole feed replaces what was held, so a packed wave or a settled route leaves the phones by itself. A box whose
   // pack names no store cannot ask, and says so once.
-  const storeIdOfBox = pack.policies.known ? pack.policies.value.storeId : undefined;
+  // W4: a box set up from head office (OB-26 "A") names its store in its own settings (EDGE_STORE_ID) — on its FIRST boot it
+  // holds no setup yet, and asking by the pack it had at boot left the phones with no wave and no route until a restart.
+  const storeIdOfBox = headOfficeStoreId ?? (pack.policies.known ? pack.policies.value.storeId : undefined);
   const assignmentsSource = storeIdOfBox === undefined ? null : httpAssignmentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, storeId: storeIdOfBox, fetch: cloudFetch });
   if (assignmentsSource === null) say('this box\'s pack names no store, so head office cannot be asked for assignments — the phones use the pack file\'s wave and route.');
   const assignmentsReceiver: AssignmentsFeedReceiver = {

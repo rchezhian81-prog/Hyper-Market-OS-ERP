@@ -127,7 +127,9 @@ import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · cat
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { wireW3TrainingChecks } from './w3-training-checks-browser-wiring'; // Wave 3 · OB-675 Training checks (QG-02)
+import { wireW4Production } from './w4-production-browser-wiring'; // W4 · M11 plan, batch trace and production costs
 import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
+import { wireW4Finance } from './w4-finance-browser-wiring'; // W4 · WF-05: the bill's second check, debit notes, supplier bills in the books and for Tally
 import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
 import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
@@ -7525,7 +7527,9 @@ if (browserWindow !== undefined) {
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
   wireW3TrainingChecks(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · OB-675 Training checks (QG-02)
+  wireW4Production(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · M11 plan, batch trace and production costs
   wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
+  wireW4Finance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · WF-05 after-match steps
   wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
   wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks
 }

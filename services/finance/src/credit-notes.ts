@@ -62,6 +62,52 @@ export type NotePosting =
 /** The fact a note is filed under for the books, the same shape as a B2B invoice's (`invoice:<customer>:<doc>`). */
 export const notePostableSourceId = (note: Pick<CustomerNote, 'kind' | 'customerId' | 'noteId'>): string => `${note.kind}:${note.customerId}:${note.noteId}`;
 
+/** One B2B journal the accountant's posting run put on the ledger (the same `JournalPosted` facts the month close reads). */
+export interface NotesBooksJournal {
+  readonly sourceId: string;
+  readonly entryId: string;
+  /** The accounting period the journal posted to (a closed month's note posts to the next open one). */
+  readonly period: string;
+  /** `b2b:credit_note`, `b2b:debit_note`, `b2b:invoice` … */
+  readonly kind?: string;
+  readonly lines?: readonly { readonly accountCode: string; readonly debitMinor: number; readonly creditMinor: number }[];
+}
+
+/** Where the books stand for the notes: the posting rules in force and the B2B journals already posted. */
+export interface NotesBooks {
+  /** The kinds the posting map in force has a rule for; undefined while no map is defined. */
+  readonly ruleKinds: readonly string[] | undefined;
+  /** The posting map's rules (accounts by leg) — which account carries a credit note's value and which its GST. */
+  readonly rules?: readonly { readonly kind: string; readonly legs: readonly { readonly account: string; readonly side: 'debit' | 'credit'; readonly component: string }[] }[];
+  readonly journals: readonly NotesBooksJournal[];
+}
+
+/**
+ * W4 · M23-FR-02: what the POSTED LEDGER carries as credit-note value for an accounting period — read from the B2B journals
+ * the posting run put on the ledger (kind `b2b:credit_note`, posted to that period), never typed by a person. The value is
+ * the journals' debits (each journal balances, so that is the note's whole value). The GST part is what the accountant's
+ * rule debits to the account its `tax` leg names, the rest is the taxable value; when no rule names a separate tax account
+ * the split is "not known" — the whole value is still compared exactly.
+ */
+export function creditNotesInTheBooks(books: NotesBooks, period: string): {
+  readonly journals: readonly string[]; readonly totalMinor: number; readonly taxableMinor: number; readonly taxMinor: number;
+  readonly split: 'by_account' | 'not_known'; readonly netAccount: string | null; readonly taxAccount: string | null;
+} {
+  const rule = books.rules?.find((r) => r.kind === 'b2b:credit_note');
+  const netAccount = rule?.legs.find((l) => l.side === 'debit' && l.component === 'net')?.account ?? null;
+  const taxAccount = rule?.legs.find((l) => l.side === 'debit' && l.component === 'tax')?.account ?? null;
+  const split = taxAccount !== null && taxAccount !== netAccount ? 'by_account' : 'not_known';
+  const mine = books.journals.filter((j) => j.kind === 'b2b:credit_note' && j.period === period);
+  let totalMinor = 0; let taxMinor = 0;
+  for (const j of mine) {
+    for (const l of j.lines ?? []) {
+      totalMinor += l.debitMinor;
+      if (split === 'by_account' && l.accountCode === taxAccount) taxMinor += l.debitMinor - l.creditMinor;
+    }
+  }
+  return { journals: mine.map((j) => j.entryId).sort(), totalMinor, taxableMinor: totalMinor - taxMinor, taxMinor, split, netAccount, taxAccount };
+}
+
 export interface CreditNoteDeps {
   /** Every credit/debit note issued, folded from the CreditNoteIssued events (the period reconciliation reads these). */
   readonly notes: (tenantId: string) => Promise<readonly CreditNote[]> | readonly CreditNote[];
@@ -76,7 +122,7 @@ export interface CreditNoteDeps {
   /** The maker-checker engine (OB-290). Absent: no approval is ever found, so no credit note issues. */
   readonly approvals?: ApprovalPort;
   /** Where the books stand: the posting rules in force (kinds only) and the B2B facts already journalled. */
-  readonly postingState?: (tenantId: string) => Promise<{ readonly ruleKinds: readonly string[] | undefined; readonly journals: readonly { readonly sourceId: string; readonly entryId: string; readonly period: string }[] }>;
+  readonly postingState?: (tenantId: string) => Promise<NotesBooks>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
@@ -302,17 +348,26 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
       },
     },
     {
-      // The period credit-note reconciliation (M23-FR-02, CGST s.34 / GSTR-1). The notes ISSUED for a return period (grouped
-      // by each note's own declareInPeriod — the month ISSUED, never the invoice's) against what the accounts POSTED for the
-      // period (`?ledgerTaxable=&ledgerTax=`, supplied), the difference EXACT and signed. A read; nothing is posted here.
+      // The period credit-note reconciliation (M23-FR-02, CGST s.34 / GSTR-1). The CREDIT notes issued for a return period
+      // (grouped by each note's own declareInPeriod — the month ISSUED, never the invoice's) against what the POSTED LEDGER
+      // carries for that accounting period: the `b2b:credit_note` journals the accountant's posting run put on it — the same
+      // `JournalPosted` facts the month close reads (W4: before, the two ledger figures were typed into the query). The
+      // difference is EXACT and signed (notes less books). Every note of the period that is not in that period's books is
+      // named with why (waiting for the posting rule, not posted yet, or posted to a later month). A read; nothing is posted.
       // Gated on the tier that ISSUES the notes (owner + accountant), not the store manager.
       api: 'API-09', method: 'GET', path: '/v1/finance/credit-notes/reconciliation',
       permission: 'finance.creditnote.issue',
       handler: async (ctx) => {
         const period = ctx.query['period'];
-        const ledgerTaxable = ctx.query['ledgerTaxable'];
-        const ledgerTax = ctx.query['ledgerTax'];
-        if (period === undefined || !/^\d{4}-\d{2}$/.test(period)) {
+        if (ctx.query['ledgerTaxable'] !== undefined || ctx.query['ledgerTax'] !== undefined) {
+          throw apiError(400, {
+            code: 'ledger_is_read_not_typed',
+            whatHappened: 'The request carried ledger figures. Head office reads what the books carry for the period from the posted ledger itself; a typed figure is never compared (M23-FR-02).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send only ?period=YYYY-MM. A reconciliation reads, it never writes.',
+          });
+        }
+        if (period === undefined || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
           throw apiError(400, {
             code: 'reconciliation_needs_a_period',
             whatHappened: 'The credit-note reconciliation needs ?period=YYYY-MM — the return period (the month notes were ISSUED) to reconcile.',
@@ -320,21 +375,43 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
             nextSafeAction: 'Send the period. A reconciliation reads, it never writes.',
           });
         }
-        if (ledgerTaxable === undefined || !/^\d+$/.test(ledgerTaxable) || ledgerTax === undefined || !/^\d+$/.test(ledgerTax)) {
-          throw apiError(400, {
-            code: 'reconciliation_needs_ledger_figures',
-            whatHappened: 'The reconciliation needs the figures the accounts posted to compare against: ?ledgerTaxable=<minor>&ledgerTax=<minor> (whole minor units).',
+        if (deps.postingState === undefined) {
+          throw apiError(503, {
+            code: 'ledger_not_wired',
+            whatHappened: 'Head office cannot read the posted ledger here, so the credit notes cannot be compared with the books.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send both ledger figures. A reconciliation reads, it never writes.',
+            nextSafeAction: 'Nothing was compared. Try again where head office keeps the books.',
           });
         }
-        const reconciliation = reconcileNotes({
-          period,
-          notes: await deps.notes(ctx.tenantId),
-          ledgerTaxableMinor: Number(ledgerTaxable),
-          ledgerTaxMinor: Number(ledgerTax),
+        const t = ctx.tenantId;
+        const [all, books] = await Promise.all([deps.notes(t), deps.postingState(t)]);
+        // A credit-note reconciliation: debit notes ADD to a bill and are not credit (they are listed on their own GSTR-1 rows).
+        const credits = all.filter((n) => n.kind === 'credit_note');
+        const ledger = creditNotesInTheBooks(books, period);
+        const reconciliation = reconcileNotes({ period, notes: credits, ledgerTaxableMinor: ledger.taxableMinor, ledgerTaxMinor: ledger.taxMinor });
+        const posted = new Map(books.journals.map((j) => [j.sourceId, j] as const));
+        const rules = books.ruleKinds;
+        const notInTheBooks = credits.filter((n) => n.declareInPeriod === period).flatMap((n) => {
+          const j = posted.get(notePostableSourceId(n));
+          if (j !== undefined && j.period === period) return [];
+          const state = j !== undefined ? 'posted_to_another_period' : rules === undefined || !rules.includes('b2b:credit_note') ? 'waiting_for_posting_rule' : 'not_posted_yet';
+          return [{ noteId: n.noteId, number: n.number, grossMinor: n.grossMinor, taxAdjustable: n.taxAdjustable, state, ...(j === undefined ? {} : { postedToPeriod: j.period }) }];
         });
-        return { status: 200, body: { ...reconciliation, asAt: deps.now() } };
+        return {
+          status: 200,
+          body: {
+            ...reconciliation,
+            ledger: {
+              read: 'posted_ledger',
+              derivation: `finance ledger: the debits of every b2b:credit_note journal posted to ${period}${ledger.split === 'by_account' ? `; GST is what they debit to ${ledger.taxAccount}, the rest the taxable value` : ' (no posting rule names a separate GST account, so the split between value and GST is not known; the whole value is compared)'}`,
+              journals: ledger.journals, totalMinor: ledger.totalMinor, taxableMinor: ledger.taxableMinor, taxMinor: ledger.taxMinor,
+              split: ledger.split, netAccount: ledger.netAccount, taxAccount: ledger.taxAccount,
+            },
+            notesTotalMinor: reconciliation.creditedTaxableMinor + reconciliation.creditedTaxMinor,
+            notInTheBooks,
+            asAt: deps.now(),
+          },
+        };
       },
     },
   ];

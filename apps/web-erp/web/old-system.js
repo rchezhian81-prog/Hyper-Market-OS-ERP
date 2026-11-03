@@ -1,5 +1,6 @@
 // Old system checks — the office page over head office's migration controls (W3 · MG-01 · MG-03 · MG-07 · MG-08 · MG-09 ·
-// MG-11 · MG-12). The session (apps/web-erp/src/old-system-session.ts, in the bundle as window.oldSystem) asks head
+// MG-11 · MG-12; W4 · WF-19 · MG-02 · MG-04 · MG-05 · MG-06: the seal check, the problems, the trial load, the figures and
+// the switch-over checks). The session (apps/web-erp/src/old-system-session.ts, in the bundle as window.oldSystem) asks head
 // office; this page holds only what the person is typing (the source list, the mapping draft) and shows every answer in
 // head office's words — each state an icon AND words. Nothing is read on open and nothing on a timer. Every word has a
 // Tamil twin. No prompt, confirm or alert.
@@ -16,6 +17,8 @@ const entries = [];
 const seen = [];
 let domains = [];
 let exclusions = [];
+let problems = [];
+let totals = [];
 
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function item(tone, head, ...lines) {
@@ -76,7 +79,7 @@ function paintDomains() {
 function paint() {
   document.title = `SRE ${t('title')}`;
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
-  for (const [id, k] of [['disc-h', 'discH'], ['disc-lead', 'discLead'], ['map-h', 'mapH'], ['map-lead', 'mapLead'], ['excl-h', 'exclH'], ['excl-lead', 'exclLead'], ['diff-h', 'diffH'], ['diff-lead', 'diffLead'], ['night-h', 'nightH'], ['night-lead', 'nightLead'], ['retire-h', 'retireH'], ['retire-lead', 'retireLead']]) $(id).textContent = t(k);
+  for (const [id, k] of [['disc-h', 'discH'], ['disc-lead', 'discLead'], ['map-h', 'mapH'], ['map-lead', 'mapLead'], ['excl-h', 'exclH'], ['excl-lead', 'exclLead'], ['diff-h', 'diffH'], ['diff-lead', 'diffLead'], ['night-h', 'nightH'], ['night-lead', 'nightLead'], ['retire-h', 'retireH'], ['retire-lead', 'retireLead'], ['seal-h', 'sealH'], ['seal-lead', 'sealLead'], ['prob-h', 'excH'], ['prob-lead', 'excLead'], ['trial-h', 'trialH'], ['trial-lead', 'trialLead'], ['tot-h', 'totH'], ['tot-lead', 'totLead'], ['gate-h', 'gateH'], ['gate-lead', 'gateLead']]) $(id).textContent = t(k);
   for (const n of document.querySelectorAll('[data-w]')) n.textContent = t(n.dataset.w);
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.oldSystemData?.userId ?? '';
@@ -86,6 +89,7 @@ function paint() {
   options($('map-domain'), api?.mappingDomains ?? [], (v) => t(`d_${v}`));
   options($('seen-domain'), api?.mappingDomains ?? [], (v) => t(`d_${v}`));
   options($('excl-scope'), api?.exclusionScopes ?? [], (v) => t(`s_${v}`));
+  options($('prob-action'), api?.resolutionActions ?? [], (v) => t(`a_${v}`));
   // Each section offers only what this person may do — head office re-checks every act.
   $('disc').hidden = !may.discover;
   $('map').hidden = !may.mapRead && !may.mapApprove;
@@ -99,9 +103,21 @@ function paint() {
   $('night').hidden = !may.windowRead;
   for (const id of ['night-check', 'reverse-ask', 'reverse-approve']) $(id).hidden = !may.cutoverDecide;
   $('retire').hidden = !may.retire;
+  // W4 · WF-19
+  $('seal').hidden = !may.verify;
+  $('prob').hidden = !may.diffRead;
+  $('prob-decide').hidden = !may.resolve;
+  $('trial').hidden = !may.trial;
+  $('tot').hidden = !may.exclusionsRead;
+  $('tot-sign').hidden = !may.sign;
+  $('gate').hidden = !may.cutoverDecide && !may.windowRead;
+  $('gate-read').hidden = !may.cutoverDecide;
+  $('gate-rollback').hidden = !may.windowRead;
   paintLists();
   paintExclusions();
   paintDomains();
+  paintProblems();
+  paintTotals();
 }
 
 // ── MG-01 ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -272,6 +288,122 @@ async function assess() {
   $('retire-result').replaceChildren(head, ...r.blockedBy.map((b) => { const li = item('error', `⚠ ${t(`r_${b}`)}`); li.dataset.blocker = b; return li; }), item('ok', `✓ ${t('neverDeleted')}`));
 }
 
+// ── W4 · MG-02 the export against its seal ───────────────────────────────────────────────────────────────
+const textOf = async (input) => { const f = input.files?.[0]; return f === undefined ? '' : f.text(); };
+async function verifySeal() {
+  const out = await session.verifyExtract(await textOf($('seal-file')), await textOf($('seal-extract')));
+  if (out.result !== 'ok') { say('seal-status', out); $('seal-result').replaceChildren(); return; }
+  const v = out.value;
+  const same = v.matches && v.rowCountMatches;
+  $('seal-status').textContent = '';
+  const li = item(same ? 'ok' : 'error', same ? `✓ ${t('verifiedOk')}` : `⚠ ${t('verifiedNo')}`, v.detail);
+  li.dataset.verified = String(same);
+  $('seal-result').replaceChildren(li);
+}
+
+// ── W4 · MG-04 the old data's problems ────────────────────────────────────────────────────────────────────
+function paintProblems() {
+  $('prob-list').replaceChildren(...(problems.length === 0 ? [text('li', t('problemsNone'), 'facts')] : problems.map((x) => {
+    const r = x.resolution;
+    const blocking = x.severity === 'blocking';
+    const tone = r !== undefined ? 'ok' : blocking ? 'error' : 'degraded';
+    const li = item(tone, `${r !== undefined ? '✓' : blocking ? '⚠' : '⏸'} ${x.exceptionId} · ${x.kind.replace(/_/g, ' ')}${blocking && r === undefined ? ` · ${t('blockingK')}` : ''}`,
+      `${x.evidence} · ${x.legacyIds.join(', ')}${x.valueMinor === undefined ? '' : ` · ${api.rupees(x.valueMinor)}`}`,
+      r === undefined ? t('undecidedK2') : `${t('decidedByK2')}: ${r.decidedBy} — ${t(`a_${r.action}`)} — “${r.reason}”`);
+    li.dataset.problem = x.exceptionId;
+    li.dataset.decided = String(r !== undefined);
+    return li;
+  })));
+  options($('prob-which'), problems.filter((x) => x.resolution === undefined).map((x) => x.exceptionId), (v) => v);
+}
+async function showProblems() {
+  const out = await session.problems();
+  if (out.result !== 'ok') { say('prob-status', out); return; }
+  problems = [...out.value.exceptions].sort((a, z) => Number(a.resolution !== undefined) - Number(z.resolution !== undefined) || Number(z.severity === 'blocking') - Number(a.severity === 'blocking'));
+  const o = out.value.outstanding;
+  $('prob-status').className = `status ${o.clearForCutover ? 'good' : 'err'}`;
+  $('prob-status').textContent = o.blockingUnresolved.length === 0 ? `✓ ${t('clearK')}` : `⚠ ${o.blockingUnresolved.length} ${t('blockingLeftK')}`;
+  paintProblems();
+}
+async function decideProblem() {
+  const out = await session.decideProblem($('prob-which').value, $('prob-action').value, $('prob-reason').value, $('prob-survivor').value);
+  if (out.result !== 'ok') { say('prob-status', out); return; }
+  $('prob-reason').value = ''; $('prob-survivor').value = '';
+  await showProblems();
+}
+
+// ── W4 · MG-05 the trial load's record ────────────────────────────────────────────────────────────────────
+const mins = (ms) => `${(ms / 60000).toLocaleString('en-IN', { maximumFractionDigits: 1 })} ${t('minK')}`;
+async function runTrial() {
+  const out = await session.trialLoad({ trialId: $('trial-id').value, rows: $('trial-rows').value, minutes: $('trial-minutes').value, fullRows: $('trial-full').value, preparedEmpty: $('trial-empty').checked });
+  if (out.result !== 'ok') { say('trial-status', out); return; }
+  const r = out.value;
+  good('trial-status', t('trialOk'));
+  const li = item('ok', `✓ ${r.trialId}`,
+    `${r.rowsLoaded.toLocaleString('en-IN')} ${t('loadedK')} · ${t('tookK')} ${mins(r.elapsedMs ?? 0)} · ${t('projectsK')} ${mins(r.projectedFullVolumeMs ?? 0)}${r.repeatable ? ` · ${t('repeatableK')}` : ''}`,
+    r.detail);
+  li.dataset.trial = r.trialId;
+  $('trial-result').replaceChildren(li);
+}
+
+// ── W4 · MG-06 the figures ────────────────────────────────────────────────────────────────────────────────
+let reconciliation = null;
+function paintTotals() {
+  const status = new Map((reconciliation?.assessments ?? []).map((a) => [a.totalId, a]));
+  $('tot-list').replaceChildren(...(totals.length === 0 ? [text('li', t('totalsNone'), 'facts')] : totals.map((x) => {
+    const a = status.get(x.totalId);
+    const tone = x.signature !== undefined && a?.status !== 'open' ? 'ok' : a?.status === 'open' ? 'error' : 'degraded';
+    const li = item(tone, `${x.signature !== undefined ? '✓' : '⏸'} ${x.totalId} · ${x.name}${a === undefined ? '' : ` · ${t(`ts_${a.status}`)}`}`,
+      `${t('oldSaysK')} ${x.legacyValue} (${x.legacyDerivation}) · ${t('cameK')} ${x.loadedValue} (${x.loadedDerivation})`,
+      x.signature === undefined ? t('notSignedK') : `${t('signedByK')}: ${x.signature.signedBy} — “${x.signature.statement}”`);
+    li.dataset.total = x.totalId;
+    li.dataset.signed = String(x.signature !== undefined);
+    return li;
+  })));
+  options($('tot-which'), totals.filter((x) => x.signature === undefined).map((x) => x.totalId), (v) => v);
+}
+async function showTotals() {
+  const out = await session.totals();
+  if (out.result !== 'ok') { say('tot-status', out); return; }
+  totals = out.value.totals;
+  reconciliation = out.value.reconciliation;
+  $('tot-status').className = `status ${reconciliation.qg07Passed ? 'good' : 'err'}`;
+  $('tot-status').textContent = reconciliation.qg07Passed ? `✓ ${t('qg07Ok')}` : `⚠ ${t('qg07No')}`;
+  $('tot-status').dataset.qg07 = String(reconciliation.qg07Passed);
+  paintTotals();
+}
+async function signTotal() {
+  const out = await session.signTotal($('tot-which').value, $('tot-statement').value);
+  if (out.result !== 'ok') { say('tot-status', out); return; }
+  $('tot-statement').value = '';
+  await showTotals();
+}
+
+// ── W4 · WF-19 the switch-over gate's own reading ─────────────────────────────────────────────────────────
+async function readGate() {
+  const out = await session.gate($('gate-cutover').value);
+  if (out.result !== 'ok') { say('gate-status', out); $('gate-result').replaceChildren(); return; }
+  const g = out.value;
+  $('gate-status').textContent = '';
+  const head = item(g.decision.go ? 'ok' : 'error', g.decision.go ? `✓ ${t('goK')}` : `⚠ ${t('notYetK')}`, g.detail);
+  head.dataset.go = String(g.decision.go);
+  $('gate-result').replaceChildren(head, ...g.checks.map((c) => {
+    const li = item(c.state === 'passed' ? 'ok' : c.state === 'failed' ? 'error' : 'idle', `${c.state === 'passed' ? '✓' : c.state === 'failed' ? '✗' : '○'} ${t(`ck_${c.check}`)} — ${t(`c_${c.state}`)}`, c.evidence);
+    li.dataset.check = c.check;
+    li.dataset.state = c.state;
+    return li;
+  }));
+}
+async function showGateRollback() {
+  const out = await session.rollback($('gate-cutover').value);
+  if (out.result !== 'ok') { say('gate-status', out); $('gate-rollback-result').replaceChildren(); return; }
+  const r = out.value;
+  $('gate-status').textContent = '';
+  const li = item(r.demonstrated ? 'ok' : 'error', r.demonstrated ? `✓ ${t('rbDemonstrated')}` : `⚠ ${t('rbNot')}`, `${r.rollback.cutoverId} · ${r.rollback.state} · ${r.rollback.decidedBy} · ${r.rollback.decidedAt}`, r.rollback.detail);
+  li.dataset.demonstrated = String(r.demonstrated);
+  $('gate-rollback-result').replaceChildren(li);
+}
+
 // ── wiring ────────────────────────────────────────────────────────────────────────────────────────────────
 const on = (id, fn) => $(id).addEventListener('click', () => { void fn(); });
 on('src-add', addSource); on('src-check', checkSources);
@@ -281,6 +413,8 @@ on('diff-show', showDiffs); on('diff-run', runDiff);
 $('diff-domain').addEventListener('change', paintDomains);
 on('window-show', showWindow); on('night-check', nightCheck); on('reverse-ask', askReversal); on('reverse-approve', approveReversal); on('reverse-show', showReversal);
 on('ar-assess', assess);
+on('seal-verify', verifySeal); on('prob-show', showProblems); on('prob-decide-btn', decideProblem); on('trial-run', runTrial);
+on('tot-show', showTotals); on('tot-sign-btn', signTotal); on('gate-read', readGate); on('gate-rollback', showGateRollback);
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 

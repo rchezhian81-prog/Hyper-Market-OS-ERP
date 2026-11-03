@@ -18,8 +18,10 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../../edge/store-edge/src/main';
+import { issueTillPins } from '../../support/till-operator';
+import { deviceBase, sharedDeviceTls, trustingBrowserArgs } from '../../support/box-tls';
 import { startRealCloud, type RealCloud } from '../../support/real-store';
 import { TEST_IDP, type ApiHarness } from '../../support/api-harness';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
@@ -46,8 +48,22 @@ export interface BoxCloudShop {
   call(method: 'GET' | 'POST' | 'PUT', path: string, who: string, body?: unknown, branchId?: string): Promise<Reply>;
   /** Open `path` on the store computer as `who`. Every `/v1` call the page makes is listed (`writes`: the non-GETs). */
   open(who: string, path: string, opts?: { readonly acceptDownloads?: boolean }): Promise<{ page: Page; status: number; errors: string[]; reads: string[]; writes: string[]; close(): Promise<void> }>;
+  /** W4: the real store computer itself (its sync agent, pulls and queues). */
+  readonly edge: EdgeProcess;
+  /**
+   * W4 (`phones` given): open `path` on the box's DEVICE socket (https, trusted the way an enrolled handheld trusts the box)
+   * in a phone-sized browser. The phone talks only to the box — never to head office (P-01).
+   */
+  phone(path: string, opts?: BrowserContextOptions): Promise<{ page: Page; errors: string[]; close(): Promise<void> }>;
   stop(): Promise<void>;
 }
+
+/**
+ * W4: the box's own link to head office, as a shop's store computer is installed — its machine identity (`boxUser`, which
+ * the caller's seed grants `store_computer` for the store), so its sync agent carries the phones' and tills' work up and its
+ * pulls bring head office's assignments, terms and (with `storePackFromHeadOffice`, OB-26 "A") its whole signed setup down.
+ */
+export interface BoxLink { readonly boxUser: string; readonly storePackFromHeadOffice?: boolean }
 
 /**
  * The real API seen through the in-memory harness's `request` shape, so the shared setup helpers (`tests/support/*`, which
@@ -108,6 +124,16 @@ export async function startBoxPageOnCloud(input: {
   readonly seed: (cloud: RealCloud, h: ApiHarness, store: string) => Promise<void>;
   /** The box's own store (default `store-1`). */
   readonly store?: string;
+  /** W4: the box's own link to head office (default: none — the page's calls reach head office through the browser). */
+  readonly link?: BoxLink;
+  /** W4: open the box's device socket for the phones; `pins` are the people whose till PINs the box's administrator issues. */
+  readonly phones?: { readonly pins: readonly string[] };
+  /**
+   * W4 (M36-FR-02 · WF-01): something head office hands the box before it starts — e.g. the signed catalogue pack the real
+   * cloud published, written where the box keeps the pack it last accepted (`signed-pack.json` in `dataDir`). The box runs
+   * with the same pack-signing key the cloud signs with, so it verifies that pack exactly as one it pulled.
+   */
+  readonly beforeBoxStarts?: (cloud: RealCloud, dataDir: string) => Promise<void>;
 }): Promise<BoxCloudShop> {
   if (DATABASE_URL === undefined) throw new Error('startBoxPageOnCloud needs DATABASE_URL');
   execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
@@ -129,8 +155,10 @@ export async function startBoxPageOnCloud(input: {
   let edge: EdgeProcess | undefined;
   let browser: Browser | undefined;
   const dir = await mkdtemp(join(tmpdir(), `sre-w3c-${input.name}-`));
+  const tls = input.phones === undefined ? undefined : await sharedDeviceTls();
   try {
     await input.seed(cloud, h, store);
+    if (input.phones !== undefined) await issueTillPins(dir, key, input.phones.pins);
     // The box's pack names each person with head office's own words for them — what the box checks before it serves a page.
     const roles: { id: string; name: string; permissions: string[] }[] = [];
     for (const p of input.people) {
@@ -138,15 +166,20 @@ export async function startBoxPageOnCloud(input: {
       roles.push({ id: `r-${p.userId}`, name: p.userId, permissions: [...new Set(['identity.self.read', ...(me.permissions ?? [])])] });
     }
     const packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, JSON.stringify({
+    const fromHeadOffice = input.link?.storePackFromHeadOffice === true;
+    if (!fromHeadOffice) await writeFile(packFile, JSON.stringify({
       version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: store, branchId: store },
       roles, roleAssignments: input.people.map((p) => ({ userId: p.userId, roleId: `r-${p.userId}`, branchScope: [store] })),
     }), 'utf8');
+    if (input.beforeBoxStarts !== undefined) await input.beforeBoxStarts(cloud, dir);
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenantId, PACK_SIGNING_KEY: key, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
-      EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile, EDGE_SCREEN_TRUST_FORWARDED_USER: '1',
+      EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_SCREEN_TRUST_FORWARDED_USER: '1',
+      ...(fromHeadOffice ? { EDGE_STORE_PACK_SOURCE: 'head-office', EDGE_STORE_ID: store } : { EDGE_PACK_FILE: packFile }),
+      ...(input.link === undefined ? {} : { CLOUD_API_URL: cloud.baseUrl, CLOUD_API_TOKEN: TEST_IDP.issue({ sub: input.link.boxUser, tenantId, branchId: store }) }),
+      ...(tls === undefined ? {} : { EDGE_DEVICE_PORT: '0', EDGE_DEVICE_TLS_DIR: tls.dir }),
     }, () => {}))!;
-    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM, ...(tls === undefined ? {} : { args: trustingBrowserArgs(tls.keyPin) }) });
   } catch (e) {
     await browser?.close(); await edge?.stop(); await cloud.stop(); await rm(dir, { recursive: true, force: true });
     throw e;
@@ -155,7 +188,17 @@ export async function startBoxPageOnCloud(input: {
   const b = browser;
 
   return {
-    cloud, tenantId, store, call,
+    cloud, tenantId, store, call, edge: box,
+    phone: async (path, opts) => {
+      if (tls === undefined) throw new Error('this box was started without `phones`, so it has no device socket');
+      const context = await b.newContext({ viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block', ...opts });
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(`${deviceBase(box)}${path}`, { waitUntil: 'load' });
+      return { page, errors, close: () => context.close() };
+    },
     open: async (who, path, opts) => {
       const context = await b.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { 'x-sre-user': who }, acceptDownloads: opts?.acceptDownloads === true });
       const reads: string[] = []; const writes: string[] = [];
@@ -190,6 +233,6 @@ export async function startBoxPageOnCloud(input: {
       const res = await page.goto(`http://127.0.0.1:${box.screens!.port}${path}`, { waitUntil: 'load' });
       return { page, status: res?.status() ?? 0, errors, reads, writes, close: () => context.close() };
     },
-    stop: async () => { await b.close(); await box.stop(); await cloud.stop().catch(() => {}); await rm(dir, { recursive: true, force: true }); },
+    stop: async () => { await b.close(); await box.stop(); await cloud.stop().catch(() => {}); await rm(dir, { recursive: true, force: true }); if (tls !== undefined) await rm(join(tls.dir, '..'), { recursive: true, force: true }); },
   };
 }

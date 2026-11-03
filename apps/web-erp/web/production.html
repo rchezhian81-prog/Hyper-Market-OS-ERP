@@ -16,7 +16,8 @@
       is RELEASE FOR SALE, or HOLD on a failed check: a HUMAN write that runs ONLY on an explicit click, never on
       load, in the operator's own name. The server re-checks production.release and refuses an expired batch; no
       AI releases food for sale (hard rule #5). The board is read live (GET /v1/production/runs); offline the
-      screen shows its clearly-marked sample stand-in and says so.
+      screen shows its clearly-marked sample stand-in and says so. W4: the advisory production plan (GET /v1/production/plan)
+      and the batch trace (GET /v1/production/batches/:id/inputs, /v1/production/input-batches/:id/trace) — reads only.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -91,6 +92,20 @@
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Finished batches to release"></ul>
 
+      <!-- W4 (M11-FR-01): plan production — head office's advisory plan (GET /v1/production/plan); nothing is made from here (production-plan.js). -->
+      <section class="form" id="planner" hidden aria-labelledby="plan-h">
+        <h3 id="plan-h"></h3>
+        <p class="note" id="plan-lead"></p>
+        <form id="plan-form" class="grid" novalidate>
+          <div><label for="plan-location" id="plan-location-label"></label><input id="plan-location" type="text" autocomplete="off" /></div>
+          <div><label for="plan-day" id="plan-day-label"></label><input id="plan-day" type="text" inputmode="numeric" autocomplete="off" placeholder="YYYY-MM-DD" /></div>
+          <button id="plan-go" class="act" type="submit"><span id="plan-go-text"></span></button>
+        </form>
+        <p class="note" id="plan-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="plan-rows" aria-labelledby="plan-h"></ul>
+        <p class="note" id="plan-not-operated" hidden></p>
+      </section>
+
       <section class="form" id="runner" hidden aria-label="Record a run">
         <h3 id="run-heading"></h3>
         <p class="note" id="run-hint"></p>
@@ -114,6 +129,19 @@
           <button id="repack-go" class="act" type="submit"><span id="repack-go-text"></span></button>
         </form>
         <p class="status" id="repack-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 (M11-FR-03): trace a batch — the ingredient batches in a finished batch, and forward from an ingredient batch (production-plan.js). -->
+      <section class="form" id="tracer" hidden aria-labelledby="trace-h">
+        <h3 id="trace-h"></h3>
+        <p class="note" id="trace-lead"></p>
+        <form id="trace-form" class="grid" novalidate>
+          <div><label for="trace-batch" id="trace-batch-label"></label><input id="trace-batch" type="text" autocomplete="off" /></div>
+          <button id="trace-inputs" class="act" type="submit"><span id="trace-inputs-text"></span></button>
+          <button id="trace-forward" class="act" type="button" hidden><span id="trace-forward-text"></span></button>
+        </form>
+        <p class="note" id="trace-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="trace-rows" aria-labelledby="trace-h"></ul>
       </section>
 
       <section class="form" id="labeller" hidden aria-label="Print the label">
@@ -181,6 +209,7 @@
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./production.js" type="module"></script>
     <script src="./production-repack.js" type="module"></script>
+    <script src="./production-plan.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

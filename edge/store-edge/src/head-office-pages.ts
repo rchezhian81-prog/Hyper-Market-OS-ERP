@@ -64,6 +64,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // Wave 3 (security, people and operations): emergency access, safety incidents, operational alerts, document retention,
   // sales commission.
   'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
+  // W4 (M35-FR-03): Failed jobs — the background jobs that failed, and send one round again.
+  'failed-jobs',
   // Wave 3 (OB-675 · QG-02): Training checks — the scored check per role.
   'training-checks',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
@@ -75,6 +77,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'partner-webhooks', 'partners', 'developer-docs', 'floor-devices', 'branding',
   // W3 (migration controls): Old system checks — MG-01/03/07/08/09/11/12 head-office routes that had no screen.
   'old-system',
+  // W4 (M11-FR-02): Production costs — Finance reviews what each production run's output cost.
+  'production-costs',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -176,6 +180,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'emergency-access': 'emergencyAccessData',
   'safety-incidents': 'safetyIncidentsData',
   'ops-alerts': 'opsAlertsData',
+  'failed-jobs': 'failedJobsData',
   'document-retention': 'documentRetentionData',
   'sales-commission': 'salesCommissionData',
   'training-checks': 'trainingChecksData',
@@ -187,6 +192,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'floor-devices': 'floorDevicesData',
   branding: 'brandingData',
   'old-system': 'oldSystemData',
+  'production-costs': 'productionCostsData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({

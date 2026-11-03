@@ -14,7 +14,7 @@ const when = (iso) => (api === null ? iso : api.moment(iso));
 function field(id, words, control) { const l = document.createElement('label'); l.htmlFor = id; control.id = id; l.append(text('span', words), control); return l; }
 function input(value, cls) { const i = document.createElement('input'); i.autocomplete = 'off'; i.value = value ?? ''; i.className = cls; return i; }
 
-let mine = null; let all = null; let rules = null;
+let mine = null; let all = null; let rules = null; let backups = null; let restore = null; let restoreWhy = '';
 
 function alertItem(a, withAck) {
   const li = document.createElement('li'); li.dataset.alert = a.alertId; li.dataset.state = a.state;
@@ -75,17 +75,60 @@ function paintRules() {
   $('b-hours').value = String(Math.round(rules.backupMaxAgeSeconds / 3600));
 }
 
+// W4 · M35-FR-01: the backup and restore readings — what the backup job itself reported, and the latest restore rehearsal.
+function paintReadings() {
+  $('readings').replaceChildren();
+  if (backups !== null) {
+    const b = backups.latest;
+    const newest = document.createElement('li'); newest.dataset.reading = 'newest';
+    newest.append(text('h4', t('newestBackup')));
+    if (b === null) newest.append(text('p', t('noBackup'), 'meta'));
+    else {
+      const good = b.ok && b.encrypted && b.offsite;
+      newest.dataset.good = String(good);
+      newest.append(text('p', `${good ? '✓' : '⚠'} ${b.backupId} · ${when(b.at)} · ${t(b.ok ? 'bk_completed' : 'bk_failed')} · ${t(b.encrypted ? 'bk_encrypted' : 'bk_unencrypted')} · ${t(b.offsite ? 'bk_offsite' : 'bk_onsite')}${b.sizeBytes === undefined ? '' : ` · ${b.sizeBytes} ${t('bytes')}`} · ${t('reportedBy')} ${b.recordedBy}`, 'meta'));
+      if (b.checksum !== undefined) newest.append(text('p', b.checksum, 'meta'));
+      if (b.detail !== undefined) newest.append(text('p', b.detail, 'meta'));
+    }
+    const lastGood = document.createElement('li'); lastGood.dataset.reading = 'good';
+    lastGood.append(text('h4', t('newestGood')), text('p', backups.lastGoodAt === null ? t('noGood') : when(backups.lastGoodAt), 'meta'));
+    $('readings').append(newest, lastGood);
+    if (backups.reading !== null) {
+      const r = document.createElement('li'); r.dataset.reading = 'health'; r.dataset.status = backups.reading.status;
+      r.append(text('h4', `${t('backupReading')} — ${t(`lv_${backups.reading.status}`)}`), text('p', backups.reading.detail, 'meta'));
+      $('readings').append(r);
+    }
+  }
+  const rs = document.createElement('li'); rs.dataset.reading = 'restore';
+  rs.append(text('h4', t('restoreH')));
+  if (restore !== null) {
+    rs.dataset.state = restore.state;
+    rs.append(text('p', `${restore.state === 'passed' ? '✓' : '⚠'} ${t(`rs_${restore.state}`)}${restore.drilledAt === undefined ? '' : ` · ${when(restore.drilledAt)}`}${restore.drilledBy === undefined ? '' : ` · ${t('rehearsedBy')} ${restore.drilledBy}`}${restore.state === 'passed' && restore.passExpiresAt !== undefined ? ` · ${t('passUntil')} ${when(restore.passExpiresAt)}` : ''}`, 'meta'));
+    if (restore.detail !== '') rs.append(text('p', restore.detail, 'meta'));
+  } else if (restoreWhy !== '') rs.append(text('p', restoreWhy, 'meta'));
+  if (backups !== null || restore !== null || restoreWhy !== '') $('readings').append(rs);
+}
+
 function paint() {
   document.title = `SRE ${t('title')}`;
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['mine-h', 'mineH'], ['all-h', 'allH'], ['rules-h', 'rulesH'], ['builtin-h', 'builtInH'], ['add-h', 'addH'], ['n-component-l', 'component'], ['n-fires-l', 'firesAt'], ['n-owner-l', 'ownerId'], ['n-name-l', 'ownerName'], ['n-minutes-l', 'ackMinutes'], ['n-escalates-l', 'escalatesTo'], ['n-add-text', 'add'], ['backup-h', 'backupH'], ['b-hours-l', 'backupAge'], ['b-save-text', 'saveBackup']]) $(id).textContent = t(key);
+  for (const [id, key] of [['mine-h', 'mineH'], ['all-h', 'allH'], ['readings-h', 'readingsH'], ['rules-h', 'rulesH'], ['builtin-h', 'builtInH'], ['add-h', 'addH'], ['n-component-l', 'component'], ['n-fires-l', 'firesAt'], ['n-owner-l', 'ownerId'], ['n-name-l', 'ownerName'], ['n-minutes-l', 'ackMinutes'], ['n-escalates-l', 'escalatesTo'], ['n-add-text', 'add'], ['backup-h', 'backupH'], ['b-hours-l', 'backupAge'], ['b-save-text', 'saveBackup']]) $(id).textContent = t(key);
   const sel = $('n-fires'); const was = sel.value;
   sel.replaceChildren(...(api?.levels ?? []).map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = t(`lv_${v}`); return o; }));
   if (was !== '') sel.value = was;
-  paintAlerts(); paintRules();
+  paintAlerts(); paintRules(); paintReadings();
 }
 
+async function loadReadings() {
+  $('readings-status').textContent = t('reading');
+  const [b, r] = await Promise.all([session.backups(), may.restore ? session.restore() : Promise.resolve(null)]);
+  let why = '';
+  if (b.result === 'ok') backups = b.value; else { backups = null; why = api.outcomeWords(lang, b); }
+  if (r === null) { restore = null; restoreWhy = t('cannotRestore'); } else if (r.result === 'ok') { restore = r.value; restoreWhy = ''; } else { restore = null; restoreWhy = api.outcomeWords(lang, r); }
+  $('readings-status').textContent = why;
+  paintReadings();
+}
 async function loadRules() {
   $('rules-status').textContent = t('reading');
   const out = await session.rules();
@@ -121,7 +164,7 @@ paint();
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
 else {
-  $('mine-s').hidden = false; $('all-s').hidden = false; $('rules-s').hidden = false;
+  $('mine-s').hidden = false; $('all-s').hidden = false; $('readings-s').hidden = false; $('rules-s').hidden = false;
   if (may.manage) $('manage').hidden = false; else $('page-status').textContent = t('cannotManage');
-  void load(); void loadRules();
+  void load(); void loadRules(); void loadReadings();
 }

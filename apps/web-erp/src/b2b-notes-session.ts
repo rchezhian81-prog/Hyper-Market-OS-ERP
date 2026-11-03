@@ -38,6 +38,13 @@ export const B2B_NOTES_COPY = {
     notInWindow: 'issued after the GST time limit — no tax adjustment',
     needCustomer: 'Open a customer first.', needLines: 'Write a value in rupees on at least one line.', needReason: 'Choose the reason.',
     nobody: 'Nobody is signed in on this screen.', cannotIssue: 'Your role cannot issue credit or debit notes.',
+    reconH: 'Credit notes against the books, for a month', reconLead: 'Every credit note issued in the month (to every business customer) against what the books carry for that month — read by head office from the posted ledger, to the paisa. A difference is a note not in the books yet, or one put in another month; a person settles it.',
+    periodL: 'Month', reconShow: 'Compare with the books', needPeriod: 'Choose the month first.',
+    notesSide: 'Credit notes issued', booksSide: 'The books carry', diffL: 'Difference', agrees: 'Agrees exactly with the books.', differs: 'Does not agree with the books.',
+    notesCount: 'note(s)', valueL: 'value', gstL: 'GST', splitUnknown: 'the accountant\'s rule puts value and GST in one account, so the GST part is not known — the whole is compared',
+    outsideWindow: 'issued after the GST time limit (no tax adjustment, kept out of these figures)',
+    missingH: 'Not in this month\'s books', state_waiting_for_posting_rule: 'waiting for the accountant\'s posting rule', state_not_posted_yet: 'rule written — not posted yet',
+    state_posted_to_another_period: 'put in the books for', missingNone: 'Every credit note of the month is in its books.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
@@ -57,6 +64,13 @@ export const B2B_NOTES_COPY = {
     notInWindow: 'GST கால வரம்புக்குப் பின் வெளியிட்டது — வரிச் சரிசெய்தல் இல்லை',
     needCustomer: 'முதலில் ஒரு வாடிக்கையாளரைத் திறக்கவும்.', needLines: 'குறைந்தது ஒரு வரியில் ரூபாயில் மதிப்பை எழுதுங்கள்.', needReason: 'காரணத்தைத் தேர்ந்தெடுக்கவும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotIssue: 'உங்கள் பணி வரவு அல்லது பற்றுக் குறிப்புகளை வெளியிட முடியாது.',
+    reconH: 'ஒரு மாதத்தின் வரவுக் குறிப்புகள் கணக்குப் புத்தகத்துடன்', reconLead: 'மாதத்தில் (எல்லா வணிக வாடிக்கையாளர்களுக்கும்) வெளியிட்ட ஒவ்வொரு வரவுக் குறிப்பும், அந்த மாதத்துக்குப் புத்தகம் காட்டுவதுடன் — பதிவான கணக்கேட்டிலிருந்து தலைமை அலுவலகம் படிக்கிறது, பைசா வரை. வேறுபாடு என்பது இன்னும் புத்தகத்தில் சேராத குறிப்பு, அல்லது வேறு மாதத்தில் சேர்ந்தது; ஒருவர் அதைத் தீர்க்கிறார்.',
+    periodL: 'மாதம்', reconShow: 'புத்தகத்துடன் ஒப்பிடு', needPeriod: 'முதலில் மாதத்தைத் தேர்ந்தெடுக்கவும்.',
+    notesSide: 'வெளியிட்ட வரவுக் குறிப்புகள்', booksSide: 'புத்தகம் காட்டுவது', diffL: 'வேறுபாடு', agrees: 'புத்தகத்துடன் சரியாகப் பொருந்துகிறது.', differs: 'புத்தகத்துடன் பொருந்தவில்லை.',
+    notesCount: 'குறிப்புகள்', valueL: 'மதிப்பு', gstL: 'GST', splitUnknown: 'கணக்காளரின் விதி மதிப்பையும் GST-யையும் ஒரே கணக்கில் வைக்கிறது, எனவே GST பகுதி தெரியவில்லை — முழுத் தொகை ஒப்பிடப்படுகிறது',
+    outsideWindow: 'GST கால வரம்புக்குப் பின் வெளியிட்டது (வரிச் சரிசெய்தல் இல்லை, இந்த எண்களில் சேர்க்கவில்லை)',
+    missingH: 'இந்த மாதப் புத்தகத்தில் இல்லாதவை', state_waiting_for_posting_rule: 'கணக்காளரின் பதிவு விதிக்காகக் காத்திருக்கிறது', state_not_posted_yet: 'விதி எழுதப்பட்டது — இன்னும் பதியவில்லை',
+    state_posted_to_another_period: 'புத்தகத்தில் சேர்ந்த மாதம்', missingNone: 'மாதத்தின் ஒவ்வொரு வரவுக் குறிப்பும் அதன் புத்தகத்தில் உள்ளது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
 } as const;
@@ -91,7 +105,15 @@ export interface NoteForm {
   readonly rupeesByLine: Readonly<Record<string, string>>;
 }
 
-type Why = 'nobody' | 'cannotIssue' | 'needCustomer' | 'needLines' | 'needReason';
+/** W4 · M23-FR-02: the month's credit notes against what the posted ledger carries (`GET /v1/finance/credit-notes/reconciliation`). */
+export interface NotesReconciliation {
+  readonly period: string; readonly notesIssued: number; readonly creditedTaxableMinor: number; readonly creditedTaxMinor: number; readonly notesTotalMinor: number;
+  readonly outsideTaxWindowMinor: number; readonly reconciles: boolean; readonly differenceMinor: number;
+  readonly ledger: { readonly totalMinor: number; readonly taxableMinor: number; readonly taxMinor: number; readonly split: 'by_account' | 'not_known'; readonly journals: readonly string[] };
+  readonly notInTheBooks: readonly { readonly noteId: string; readonly number: string; readonly grossMinor: number; readonly state: 'waiting_for_posting_rule' | 'not_posted_yet' | 'posted_to_another_period'; readonly postedToPeriod?: string }[];
+}
+
+type Why = 'nobody' | 'cannotIssue' | 'needCustomer' | 'needLines' | 'needReason' | 'needPeriod';
 type Done<T> = Promise<Outcome<T, Why>>;
 
 /** The body head office reads — a note id, the invoice by its id and each line's value in paise. Never invoice figures. */
@@ -121,6 +143,8 @@ export interface NotesSession {
   raise(f: NoteForm): Done<{ readonly asked?: string; readonly number?: string }>;
   /** Issue the note an approved request is for — exactly what was asked. */
   issueApproved(request: AskedNote): Done<{ readonly number?: string }>;
+  /** W4 · M23-FR-02: a month's credit notes against the posted ledger — only the month is sent; head office reads the books. */
+  reconcile(period: string): Done<NotesReconciliation>;
 }
 
 export function createNotesSession(input: {
@@ -163,6 +187,11 @@ export function createNotesSession(input: {
       const no = gate(); if (no !== undefined) return no;
       const r = await call<{ number: string }>('POST', '/v1/finance/credit-notes', { ...request.details, approvalId: request.requestId });
       return r.result === 'ok' ? { result: 'ok', value: { number: r.value.number } } : r;
+    },
+    reconcile: async (period) => {
+      const no = gate(); if (no !== undefined) return no;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period.trim())) return { result: 'invalid', why: 'needPeriod' };
+      return call('GET', `/v1/finance/credit-notes/reconciliation?period=${encodeURIComponent(period.trim())}`);
     },
   };
 }

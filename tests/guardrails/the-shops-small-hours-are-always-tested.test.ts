@@ -24,6 +24,7 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts',
   'tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts',
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
+  'tests/integration/w4-the-owner-app-and-the-dashboard-agree-on-today.test.ts', // W4 · P-02
   'tests/integration/w3-failed-office-sign-ins-and-lockouts-are-kept-through-a-restart.test.ts', // W3 · D13-FR-06
   'tests/integration/price-list-effective-dating.test.ts',
   'tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts',
@@ -38,6 +39,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts',
   // W3 · QG-04: the served till sells through a cloud outage — its price is dated the shop's today.
   'tests/e2e/qg04-the-served-till-sells-through-a-cloud-outage-and-syncs-once.e2e.ts',
+  // W4 · M20-FR-02: the customer's repeat order starts on the shop's today.
+  'tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')

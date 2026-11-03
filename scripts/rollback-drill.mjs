@@ -10,10 +10,10 @@
 // RESTORE_TARGET_URL is an EMPTY database standing in for a replacement machine (the restore refuses one with tables).
 // Both come from the environment, never the command line, so no credential lands in shell history.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { runRollbackDrill, drillProblems } from './lib/rollback-drill.mjs';
+import { runRollbackDrill, drillProblems, rehearsalBodyOf } from './lib/rollback-drill.mjs';
 import { rehearseRecovery } from './lib/recovery-rehearsal.mjs';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i === -1 ? undefined : process.argv[i + 1]; };
@@ -72,4 +72,15 @@ const steps = {
 
 const record = await runRollbackDrill({ ...input, steps, workDir, log: (l) => console.log(l) });
 console.log(`  record   ${join(workDir, `${record.drillId}.json`)}`);
+// W4 · QG-08: the result as the gate reads it — the body of POST /v1/platform/dr-drills for the rollback rehearsal, kept
+// next to the record (a new file, never overwritten), for a named person to record on head office's register.
+const evidence = rehearsalBodyOf(record);
+if (evidence.recordable) {
+  const file = join(workDir, `${record.drillId}.qg08-rollback.json`);
+  writeFileSync(file, `${JSON.stringify(evidence.body, null, 2)}\n`, { flag: 'wx' });
+  console.log(`  QG-08    ${evidence.words}`);
+  console.log(`  evidence ${file} (the body of POST /v1/platform/dr-drills)`);
+} else {
+  console.log(`  QG-08    NOT a rehearsal record — ${evidence.why}`);
+}
 process.exit(record.outcome === 'passed' ? 0 : 1);

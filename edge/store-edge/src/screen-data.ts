@@ -1055,6 +1055,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       // this branch last synced, a box with no line would report nothing and the owner would see
       // "never synced" about the shop that has been trading all day in front of him.
       lastSyncedAt: input.now,
+      // W4 (P-02): the trading day these figures are for — this box's own rule (the shop's zone and day end from the signed
+      // pack), the same day head office's dashboard counts. The phone marks "today" by it, never by working a date out again.
+      tradingDay: input.tradingDay,
       sales: day.facts,
       // Round 4 (P-08): the bills that could not be costed, with what they took and how it was paid — the owner app
       // shows the takings and says the margin is not known, instead of "no sales".

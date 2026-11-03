@@ -1,5 +1,7 @@
 // W3 · MG-01 · MG-03 · MG-07 · MG-08 · MG-09 · MG-12 · MG-11 (roadmap §30 migration controls) — the "Old system checks"
-// office page's tested, DOM-free session. Until now these head-office routes had no caller on any screen: a named person
+// office page's tested, DOM-free session. W4 adds the load's own steps (WF-19 · MG-02 · MG-04 · MG-05 · MG-06): the export
+// checked against its seal, the old data's problems decided, the trial load's record (volume, time, projection), the
+// figures signed, and the switch-over gate's own reading with the rehearsed going-back. Until now these head-office routes had no caller on any screen: a named person
 // could only discover the old sources, approve a code mapping, decide a left-behind exclusion, compare two exports, check
 // the switch-over night, undo an opening load or assess retiring the old system by hand-made API calls.
 //
@@ -77,6 +79,45 @@ export interface RetirementRead {
   readonly archiveId: string; readonly mayRetireSystem: boolean; readonly blockedBy: readonly string[];
   readonly retentionEndsOn: string; readonly dataIsNeverDeleted: true; readonly detail: string;
 }
+// ── W4 · WF-19 · MG-02 · MG-04 · MG-05 · MG-06 — the load, its problems, its trial, its figures and the switch-over checks ─────
+/** MG-02 — head office's answer to "are these the bytes that were sealed?" (digest AND row count). */
+export interface VerifyRead { readonly matches: boolean; readonly rowCountMatches: boolean; readonly expected: string; readonly actual: string; readonly detail: string }
+/** MG-05 — the trial-load record: the volume, the time it took, and the projection to the full volume. */
+export interface TrialLoadRead {
+  readonly ok: boolean; readonly trialId: string; readonly rowsLoaded: number; readonly elapsedMs?: number; readonly projectedFullVolumeMs?: number;
+  readonly repeatable: boolean; readonly detail: string;
+}
+export interface MigrationExceptionRead {
+  readonly exceptionId: string; readonly kind: string; readonly severity: string; readonly confidence: string; readonly legacyIds: readonly string[];
+  readonly evidence: string; readonly valueMinor?: number;
+  readonly resolution?: { readonly action: string; readonly decidedBy: string; readonly decidedAt: string; readonly reason: string; readonly survivingLegacyId?: string };
+}
+export interface ExceptionsRead {
+  readonly exceptions: readonly MigrationExceptionRead[];
+  readonly outstanding: { readonly total: number; readonly blockingUnresolved: readonly { readonly exceptionId: string }[]; readonly clearForCutover: boolean; readonly detail: string };
+}
+export interface ControlTotalRead {
+  readonly totalId: string; readonly kind: string; readonly name: string; readonly unit: string; readonly legacyValue: number; readonly loadedValue: number;
+  readonly legacyDerivation: string; readonly loadedDerivation: string;
+  readonly signature?: { readonly signedBy: string; readonly signerRole: string; readonly signedAt: string; readonly statement: string };
+}
+export interface TotalsRead {
+  readonly totals: readonly ControlTotalRead[];
+  readonly reconciliation: { readonly qg07Passed: boolean; readonly detail: string; readonly assessments: readonly { readonly totalId: string; readonly status: string; readonly signed: boolean; readonly difference: number; readonly detail: string }[] };
+}
+/** The switch-over gate's own reading: every check worked out from head office's records ("not known" never passes). */
+export interface GateRead {
+  readonly decision: { readonly go: boolean; readonly failed: readonly string[] };
+  readonly checks: readonly { readonly check: string; readonly state: 'passed' | 'failed' | 'not_known'; readonly evidence: string }[];
+  readonly notKnown: readonly string[]; readonly detail: string;
+}
+export interface RollbackRead {
+  readonly rollback: { readonly cutoverId: string; readonly state: string; readonly performed: boolean; readonly trigger: string; readonly decidedBy: string; readonly decidedAt: string; readonly detail: string };
+  readonly reconciliations: readonly { readonly reconciled: boolean; readonly decidedAt: string }[];
+  readonly demonstrated: boolean;
+}
+export const RESOLUTION_ACTIONS = Object.freeze(['correct', 'exclude', 'migrate_as_is', 'merge'] as const);
+
 export interface RetirementDraft {
   readonly archiveId: string; readonly sourceId: string; readonly digest: string; readonly rowCount: string; readonly archivedOn: string;
   readonly retentionYears: string; readonly earliestRecordDate: string; readonly latestRecordDate: string; readonly restoreVerifiedOn: string;
@@ -140,6 +181,33 @@ export const OLD_SYSTEM_COPY = {
     assess: 'Check whether it may be switched off', mayRetire: 'The old system MAY be switched off', mayNot: 'Not yet', keepUntil: 'keep the records until', neverDeleted: 'The old data is never deleted, whatever else happens.',
     r_retention_not_elapsed: 'the keeping period has not ended', r_restore_never_verified: 'nobody has shown a restore from the archive works', r_cutover_not_accepted: 'the switch-over is not accepted', r_open_assessment: 'open questions could still need the records',
     noArchive: 'Fill in every archive field (fingerprint, rows, dates).', noOpen: 'Open questions is a whole number (0 if none).',
+    // W4 · MG-02 · MG-04 · MG-05 · MG-06 · WF-19
+    sealH: 'Check the export against its seal before loading', sealLead: 'The seal was taken when the export came out of the old system. Head office checks the file you are about to load is that same file — its fingerprint AND its number of rows. A file that does not match must not be loaded.',
+    sealFile: 'The seal kept when the export was taken (JSON)', extractFile: 'The export about to be loaded (CSV)', verifyBtn: 'Check it against its seal',
+    verifiedOk: 'The same export that was sealed', verifiedNo: 'NOT the export that was sealed — do not load it', rowsK: 'data rows',
+    noSealFile: 'Choose the seal file kept when the export was taken.', notASeal: 'That file is not a seal — it needs the fingerprint and row count taken when the export came out.', noExtractFile: 'Choose the export file about to be loaded.',
+    excH: 'Problems in the old data', excLead: 'Everything wrong with the old data, the ones that stop the switch-over first. Nothing here is ever deleted — a decided one stays on the list as the record that somebody looked at it, in their name.',
+    showProblems: 'Show the problems', problemsNone: 'No problem has been recorded from the old data.', blockingK: 'STOPS THE SWITCH-OVER', undecidedK2: 'nobody has decided', decidedByK2: 'decided by',
+    excWhich: 'Which problem', excAction: 'What to do', a_correct: 'Correct it', a_exclude: 'Leave it out', a_migrate_as_is: 'Bring it across as it is', a_merge: 'Merge it into another record',
+    excSurvivor: 'The record that stays (for a merge)', excReason: 'Why', decideProblem: 'Record my decision',
+    noProblem: 'Choose a problem.', noAction: 'Choose what to do.', noProblemReason: 'Say why — a decision about the old data carries your name and your reason.', noSurvivor: 'Name the record that stays.',
+    clearK: 'Nothing blocking is left', blockingLeftK: 'blocking problem(s) nobody has decided',
+    trialH: 'Trial load', trialLead: 'A rehearsal load into the practice shop at full volume, timed — the switch-over night is a real evening, so how long it takes is an answer, not a footnote. Head office refuses one that rehearses nothing: an export not checked against its seal, a blocking problem nobody decided, or a practice shop not emptied first.',
+    trialId: 'Name this trial', trialRows: 'Rows loaded', trialMinutes: 'Minutes it took', trialFull: 'Rows the real switch-over will carry (leave empty if the same)', trialEmpty: 'The practice shop was emptied before this load',
+    runTrial: 'Record the trial load', trialOk: 'Trial load recorded', loadedK: 'rows loaded', tookK: 'took', projectsK: 'the full volume would take', repeatableK: 'can be repeated', minK: 'min',
+    verifyFirst: 'Check the export against its seal first — a trial of an unchecked export rehearses nothing.', noTrialId: 'Name the trial (letters, digits, dot, dash).', noTrialRows: 'Rows loaded is a whole number.', noMinutes: 'Minutes is a number, for example 12.5.', noFull: 'Rows for the real switch-over is a whole number.',
+    totH: 'The figures (control totals)', totLead: 'Every figure twice — what the old system says and what came across — with how each side was worked out. Somebody who did not run the load signs each one; a finance or tax figure only the chartered accountant signs.',
+    showTotals: 'Show the figures', totalsNone: 'No figure has been recorded yet — nothing has been checked, which is not the same as everything agreeing.',
+    oldSaysK: 'old system', cameK: 'came across', signedByK: 'signed by', notSignedK: 'NOT SIGNED', totWhich: 'Which figure', totStatement: 'What you checked', signTotal: 'Sign this figure',
+    qg07Ok: 'Every figure agrees and is signed (QG-07)', qg07No: 'Not every figure agrees and is signed yet (QG-07)', noTotal: 'Choose a figure.', noTotStatement: 'Say what you checked, in your own words.',
+    ts_reconciled: 'agrees exactly', ts_explained: 'explained by what was agreed to leave behind', ts_open: 'does not agree',
+    gateH: 'Can we switch over — the checks', gateLead: 'Head office works out every check from its own records — none is a box somebody ticks. What only the store computer knows (its unsent sales, the team on the night) reads "not known" here; the owner says GO at the store computer\'s migration screen.',
+    gateCutover: 'Switch-over name', readGate: 'Read the checks', showRollback: 'Show the rehearsed going-back', goK: 'YES — every check has passed', notYetK: 'NOT YET',
+    c_passed: 'passed', c_failed: 'not yet', c_not_known: 'not known',
+    rbDemonstrated: 'Going back to the old system was rehearsed — performed and reconciled', rbNot: 'Going back to the old system is NOT shown to work yet',
+    ck_control_totals_signed: 'Every figure agrees and is signed', ck_rollback_demonstrated: 'Going back to the old system was rehearsed', ck_parallel_run_sufficient: 'Enough clean days running both',
+    ck_edge_fully_synced: 'The store computer has sent everything', ck_blocking_exceptions_cleared: 'No blocking problem left', ck_delta_applied: 'The last changes were loaded',
+    ck_team_named: 'The team for the night is named', ck_owner_go: 'The owner said GO', ck_backup_verified: 'A good backup, recent enough', ck_rollback_limits_agreed: 'The going-back limits are agreed',
   },
   ta: {
     lang: 'English', title: 'பழைய முறை சோதனைகள்',
@@ -189,6 +257,32 @@ export const OLD_SYSTEM_COPY = {
     assess: 'அணைக்கலாமா என்று சோதி', mayRetire: 'பழைய முறையை அணைக்கலாம்', mayNot: 'இன்னும் இல்லை', keepUntil: 'பதிவுகளை வைத்திருக்க வேண்டிய நாள் வரை', neverDeleted: 'எது நடந்தாலும் பழைய தரவு ஒருபோதும் அழிக்கப்படுவதில்லை.',
     r_retention_not_elapsed: 'வைத்திருக்கும் காலம் முடியவில்லை', r_restore_never_verified: 'காப்பகத்திலிருந்து மீட்பு வேலை செய்வதை யாரும் காட்டவில்லை', r_cutover_not_accepted: 'மாற்றம் ஏற்கப்படவில்லை', r_open_assessment: 'திறந்த கேள்விகளுக்கு இன்னும் பதிவுகள் தேவைப்படலாம்',
     noArchive: 'காப்பகத்தின் ஒவ்வொரு புலத்தையும் நிரப்பவும் (கைரேகை, வரிசைகள், நாட்கள்).', noOpen: 'திறந்த கேள்விகள் முழு எண் (இல்லையெனில் 0).',
+    sealH: 'ஏற்றும் முன் ஏற்றுமதியை அதன் முத்திரையுடன் சோதி', sealLead: 'ஏற்றுமதி பழைய முறையிலிருந்து வெளியே வந்தபோது முத்திரை எடுக்கப்பட்டது. நீங்கள் ஏற்றப்போகும் கோப்பு அதே கோப்புதானா என்று தலைமை அலுவலகம் சோதிக்கிறது — அதன் கைரேகையும் வரிசை எண்ணிக்கையும். பொருந்தாத கோப்பை ஏற்றக்கூடாது.',
+    sealFile: 'ஏற்றுமதி எடுத்தபோது வைத்த முத்திரை (JSON)', extractFile: 'ஏற்றப்போகும் ஏற்றுமதி (CSV)', verifyBtn: 'முத்திரையுடன் சோதி',
+    verifiedOk: 'முத்திரையிடப்பட்ட அதே ஏற்றுமதி', verifiedNo: 'முத்திரையிடப்பட்ட ஏற்றுமதி அல்ல — இதை ஏற்ற வேண்டாம்', rowsK: 'தரவு வரிசைகள்',
+    noSealFile: 'ஏற்றுமதி எடுத்தபோது வைத்த முத்திரைக் கோப்பைத் தேர்ந்தெடுக்கவும்.', notASeal: 'அந்தக் கோப்பு முத்திரை அல்ல — ஏற்றுமதி வந்தபோது எடுத்த கைரேகையும் வரிசை எண்ணிக்கையும் தேவை.', noExtractFile: 'ஏற்றப்போகும் ஏற்றுமதிக் கோப்பைத் தேர்ந்தெடுக்கவும்.',
+    excH: 'பழைய தரவில் உள்ள சிக்கல்கள்', excLead: 'பழைய தரவில் தவறான அனைத்தும், மாற்றத்தை நிறுத்துபவை முதலில். இங்கே எதுவும் அழிக்கப்படுவதில்லை — முடிவு செய்யப்பட்டது யாரோ பார்த்தார் என்ற பதிவாக, அவரது பெயரில், பட்டியலில் இருக்கும்.',
+    showProblems: 'சிக்கல்களைக் காட்டு', problemsNone: 'பழைய தரவிலிருந்து எந்தச் சிக்கலும் பதிவு செய்யப்படவில்லை.', blockingK: 'மாற்றத்தை நிறுத்துகிறது', undecidedK2: 'யாரும் முடிவு செய்யவில்லை', decidedByK2: 'முடிவு செய்தவர்',
+    excWhich: 'எந்தச் சிக்கல்', excAction: 'என்ன செய்வது', a_correct: 'திருத்து', a_exclude: 'விட்டுவிடு', a_migrate_as_is: 'அப்படியே கொண்டு வா', a_merge: 'வேறொரு பதிவுடன் இணை',
+    excSurvivor: 'நிலைக்கும் பதிவு (இணைப்புக்கு)', excReason: 'ஏன்', decideProblem: 'என் முடிவைப் பதிவு செய்',
+    noProblem: 'ஒரு சிக்கலைத் தேர்ந்தெடுக்கவும்.', noAction: 'என்ன செய்வது என்று தேர்ந்தெடுக்கவும்.', noProblemReason: 'ஏன் என்று சொல்லவும் — பழைய தரவு பற்றிய முடிவு உங்கள் பெயரையும் காரணத்தையும் சுமக்கிறது.', noSurvivor: 'நிலைக்கும் பதிவைப் பெயரிடவும்.',
+    clearK: 'நிறுத்தும் எதுவும் மீதமில்லை', blockingLeftK: 'யாரும் முடிவு செய்யாத நிறுத்தும் சிக்கல்(கள்)',
+    trialH: 'சோதனை ஏற்றம்', trialLead: 'பயிற்சிக் கடைக்குள் முழு அளவில் ஒத்திகை ஏற்றம், நேரம் அளந்து — மாறும் இரவு ஒரு உண்மையான மாலை, எனவே எவ்வளவு நேரம் ஆகிறது என்பது பதில், அடிக்குறிப்பு அல்ல. எதையும் ஒத்திகை செய்யாததைத் தலைமை அலுவலகம் மறுக்கிறது: முத்திரையுடன் சோதிக்காத ஏற்றுமதி, யாரும் முடிவு செய்யாத நிறுத்தும் சிக்கல், அல்லது முதலில் காலி செய்யாத பயிற்சிக் கடை.',
+    trialId: 'இந்தச் சோதனைக்குப் பெயர்', trialRows: 'ஏற்றிய வரிசைகள்', trialMinutes: 'ஆன நிமிடங்கள்', trialFull: 'உண்மையான மாற்றம் கொண்டு செல்லும் வரிசைகள் (அதே எனில் காலியாக விடவும்)', trialEmpty: 'இந்த ஏற்றத்திற்கு முன் பயிற்சிக் கடை காலி செய்யப்பட்டது',
+    runTrial: 'சோதனை ஏற்றத்தைப் பதிவு செய்', trialOk: 'சோதனை ஏற்றம் பதிவு செய்யப்பட்டது', loadedK: 'ஏற்றிய வரிசைகள்', tookK: 'ஆனது', projectsK: 'முழு அளவுக்கு ஆகும் நேரம்', repeatableK: 'மீண்டும் செய்யலாம்', minK: 'நிமி',
+    verifyFirst: 'முதலில் ஏற்றுமதியை அதன் முத்திரையுடன் சோதிக்கவும் — சோதிக்காத ஏற்றுமதியின் சோதனை எதையும் ஒத்திகை செய்வதில்லை.', noTrialId: 'சோதனைக்குப் பெயரிடவும் (எழுத்துகள், எண்கள், புள்ளி, கோடு).', noTrialRows: 'ஏற்றிய வரிசைகள் முழு எண்.', noMinutes: 'நிமிடங்கள் ஒரு எண், எ.கா. 12.5.', noFull: 'உண்மையான மாற்றத்தின் வரிசைகள் முழு எண்.',
+    totH: 'எண்கள் (கட்டுப்பாட்டு மொத்தங்கள்)', totLead: 'ஒவ்வொரு எண்ணும் இருமுறை — பழைய முறை சொல்வதும் வந்து சேர்ந்ததும் — ஒவ்வொரு பக்கமும் எப்படிக் கணக்கிடப்பட்டது என்பதுடன். ஏற்றத்தை இயக்காத ஒருவர் ஒவ்வொன்றிலும் கையொப்பமிடுகிறார்; நிதி அல்லது வரி எண்ணில் பட்டயக் கணக்காளர் மட்டுமே கையொப்பமிடுவார்.',
+    showTotals: 'எண்களைக் காட்டு', totalsNone: 'இன்னும் எந்த எண்ணும் பதிவு செய்யப்படவில்லை — எதுவும் சோதிக்கப்படவில்லை, அது எல்லாம் பொருந்துகிறது என்பதற்குச் சமம் அல்ல.',
+    oldSaysK: 'பழைய முறை', cameK: 'வந்து சேர்ந்தது', signedByK: 'கையொப்பமிட்டவர்', notSignedK: 'கையொப்பம் இல்லை', totWhich: 'எந்த எண்', totStatement: 'நீங்கள் சோதித்தது', signTotal: 'இந்த எண்ணில் கையொப்பமிடு',
+    qg07Ok: 'ஒவ்வொரு எண்ணும் பொருந்தி கையொப்பமிடப்பட்டது (QG-07)', qg07No: 'இன்னும் ஒவ்வொரு எண்ணும் பொருந்திக் கையொப்பமிடப்படவில்லை (QG-07)', noTotal: 'ஒரு எண்ணைத் தேர்ந்தெடுக்கவும்.', noTotStatement: 'நீங்கள் சோதித்ததை உங்கள் சொந்த வார்த்தைகளில் சொல்லவும்.',
+    ts_reconciled: 'சரியாகப் பொருந்துகிறது', ts_explained: 'விட்டுச் செல்ல ஒப்புக்கொண்டதால் விளக்கப்பட்டது', ts_open: 'பொருந்தவில்லை',
+    gateH: 'மாற முடியுமா — சோதனைகள்', gateLead: 'ஒவ்வொரு சோதனையையும் தலைமை அலுவலகம் தனது சொந்தப் பதிவுகளிலிருந்து கணக்கிடுகிறது — யாரும் டிக் செய்யும் பெட்டி இல்லை. கடைக் கணினிக்கு மட்டுமே தெரிந்தவை (அனுப்பாத விற்பனைகள், இரவுக் குழு) இங்கே "தெரியாது" எனப் படிக்கும்; உரிமையாளர் GO-வைக் கடைக் கணினியின் தரவு மாற்றத் திரையில் சொல்கிறார்.',
+    gateCutover: 'மாற்றத்தின் பெயர்', readGate: 'சோதனைகளைப் படி', showRollback: 'ஒத்திகை செய்த பின்வாங்கலைக் காட்டு', goK: 'ஆம் — ஒவ்வொரு சோதனையும் தேறியது', notYetK: 'இன்னும் இல்லை',
+    c_passed: 'தேறியது', c_failed: 'இன்னும் இல்லை', c_not_known: 'தெரியாது',
+    rbDemonstrated: 'பழைய முறைக்குத் திரும்புவது ஒத்திகை செய்யப்பட்டது — செய்து, பொருத்தப்பட்டது', rbNot: 'பழைய முறைக்குத் திரும்புவது இன்னும் வேலை செய்வதாகக் காட்டப்படவில்லை',
+    ck_control_totals_signed: 'ஒவ்வொரு எண்ணும் பொருந்தி கையொப்பமிடப்பட்டது', ck_rollback_demonstrated: 'பழைய முறைக்குத் திரும்புவது ஒத்திகை செய்யப்பட்டது', ck_parallel_run_sufficient: 'இரண்டையும் இயக்கிய போதுமான சுத்தமான நாட்கள்',
+    ck_edge_fully_synced: 'கடைக் கணினி அனைத்தையும் அனுப்பியது', ck_blocking_exceptions_cleared: 'நிறுத்தும் சிக்கல் எதுவும் இல்லை', ck_delta_applied: 'கடைசி மாற்றங்கள் ஏற்றப்பட்டன',
+    ck_team_named: 'இரவுக்கான குழு பெயரிடப்பட்டது', ck_owner_go: 'உரிமையாளர் GO சொன்னார்', ck_backup_verified: 'போதுமான சமீபத்திய நல்ல காப்புப் பிரதி', ck_rollback_limits_agreed: 'பின்வாங்கும் வரம்புகள் ஒப்புக்கொள்ளப்பட்டன',
   },
 } as const;
 export type OldSystemCopyKey = keyof typeof OLD_SYSTEM_COPY.en;
@@ -247,6 +341,27 @@ export function paiseOf(text: string): number | undefined {
   return Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
 }
 
+/** MG-02 — the data rows of an export: every non-empty line after the header (the count its seal was taken with). */
+export const dataRowsOf = (csv: string): number => csv.replace(/^\uFEFF/, '').split(/\r?\n/).slice(1).filter((l) => l.trim() !== '').length;
+
+/** MG-02 — the seal file as kept (the seal itself, or slice.json's `{ seal }` entry) → the seal, or undefined. */
+export function readSeal(text: string): Readonly<Record<string, unknown>> | undefined {
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { return undefined; }
+  const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const seal = isObj(raw) && isObj(raw['seal']) ? raw['seal'] : raw;
+  if (!isObj(seal) || typeof seal['digest'] !== 'string' || typeof seal['rowCount'] !== 'number' || seal['sealed'] !== true) return undefined;
+  return seal;
+}
+
+/** "12.5" minutes → 750000 ms; undefined when it is not a positive number of minutes. */
+export function msOfMinutes(text: string): number | undefined {
+  const m = /^(\d+)(?:\.(\d{1,3}))?$/.exec(text.trim());
+  if (m === null) return undefined;
+  const ms = Math.round(Number(text.trim()) * 60_000);
+  return ms > 0 ? ms : undefined;
+}
+
 /** The download the approved table is kept as — the chain-of-custody copy the load reads. */
 export function approvedTableFile(t: MappingTableRead): { readonly name: string; readonly href: string } {
   return { name: `${t.mappingId}-v${t.version}-approved.json`, href: `data:application/json;charset=utf-8,${encodeURIComponent(`${JSON.stringify(t, null, 2)}\n`)}` };
@@ -261,6 +376,8 @@ export interface OldSystemMay {
   readonly diffRead: boolean; readonly diffRun: boolean;
   readonly windowRead: boolean; readonly cutoverDecide: boolean;
   readonly retire: boolean;
+  // W4 · WF-19
+  readonly verify: boolean; readonly trial: boolean; readonly resolve: boolean; readonly sign: boolean;
 }
 
 export interface OldSystemSession {
@@ -280,6 +397,20 @@ export interface OldSystemSession {
   approveReversal(loadId: string): Promise<Outcome<unknown>>;
   reversal(loadId: string): Promise<Outcome<ReversalRead>>;
   assessRetirement(d: RetirementDraft): Promise<Outcome<RetirementRead>>;
+  // ── W4 · WF-19: the load, its problems, its trial, its figures, the switch-over checks ──
+  /** MG-02 — is the export about to be loaded the one that was sealed? Remembered for the trial load on this page. */
+  verifyExtract(sealText: string, csv: string): Promise<Outcome<VerifyRead>>;
+  /** MG-04 — every problem ever recorded, and what still stops the switch-over. */
+  problems(): Promise<Outcome<ExceptionsRead>>;
+  decideProblem(exceptionId: string, action: string, reason: string, survivor: string): Promise<Outcome<unknown>>;
+  /** MG-05 — the trial load: the verified export and head office's own count of undecided blocking problems go with it. */
+  trialLoad(d: { readonly trialId: string; readonly rows: string; readonly minutes: string; readonly fullRows: string; readonly preparedEmpty: boolean }): Promise<Outcome<TrialLoadRead>>;
+  /** MG-06 — the figures and their reconciliation (QG-07). */
+  totals(): Promise<Outcome<TotalsRead>>;
+  signTotal(totalId: string, statement: string): Promise<Outcome<unknown>>;
+  /** WF-19 — the switch-over gate's own reading (no GO is said from here). */
+  gate(cutoverId: string): Promise<Outcome<GateRead>>;
+  rollback(cutoverId: string): Promise<Outcome<RollbackRead>>;
 }
 
 export function createOldSystemSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): OldSystemSession {
@@ -293,6 +424,8 @@ export function createOldSystemSession(input: { readonly viewer: ViewerIdentity 
     diffRead: has('migration.cleaning.read'), diffRun: has('migration.exception.record'),
     windowRead: has('migration.parallel.read'), cutoverDecide: has('migration.cutover.decide'),
     retire: has('migration.retirement.assess'),
+    verify: has('migration.preservation.verify'), trial: has('migration.trial.run'),
+    resolve: has('migration.exception.resolve'), sign: has('migration.controltotal.sign'),
   };
   const call = makeCaller({ keyPrefix: 'old-system', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const gate = (right: boolean): Invalid | undefined => (!named ? invalid('nobody') : right ? undefined : invalid('notAllowed'));
@@ -317,6 +450,8 @@ export function createOldSystemSession(input: { readonly viewer: ViewerIdentity 
     return { mappingId: t.mappingId.trim(), tenantId: tid, version, status: 'draft', entries: t.entries };
   };
   const enc = encodeURIComponent;
+  /** MG-02: what head office said about the export checked on this page — the trial load sends exactly that. */
+  let verified: boolean | undefined;
   return {
     may,
     discover: async (sources) => gate(may.discover) ?? (sources.length === 0 ? invalid('noSources') : call('POST', '/v1/migration/discovery', { sources })),
@@ -394,5 +529,51 @@ export function createOldSystemSession(input: { readonly viewer: ViewerIdentity 
         cutoverAccepted: d.cutoverAccepted, openAssessments: open,
       });
     },
+    verifyExtract: async (sealText, csv) => {
+      const no = gate(may.verify); if (no) return no;
+      if (sealText.trim() === '') return invalid('noSealFile');
+      const extract = readSeal(sealText); if (extract === undefined) return invalid('notASeal');
+      if (csv.trim() === '') return invalid('noExtractFile');
+      const out = await call<VerifyRead>('POST', '/v1/migration/extracts/verify', { extract, material: csv, rowCount: dataRowsOf(csv) });
+      verified = out.result === 'ok' ? out.value.matches && out.value.rowCountMatches : verified;
+      return out;
+    },
+    problems: async () => gate(may.diffRead) ?? call('GET', '/v1/migration/exceptions'),
+    decideProblem: async (id, action, reason, survivor) => {
+      const no = gate(may.resolve); if (no) return no;
+      if (id.trim() === '') return invalid('noProblem');
+      if (!(RESOLUTION_ACTIONS as readonly string[]).includes(action)) return invalid('noAction');
+      if (reason.trim() === '') return invalid('noProblemReason');
+      if (action === 'merge' && survivor.trim() === '') return invalid('noSurvivor');
+      return call('POST', `/v1/migration/exceptions/${enc(id.trim())}/resolution`, { action, reason: reason.trim(), ...(action === 'merge' ? { survivingLegacyId: survivor.trim() } : {}) });
+    },
+    trialLoad: async (d) => {
+      const no = gate(may.trial); if (no) return no;
+      if (!ID.test(d.trialId.trim())) return invalid('noTrialId');
+      const rows = whole(d.rows); if (rows === undefined) return invalid('noTrialRows');
+      const elapsedMs = msOfMinutes(d.minutes); if (elapsedMs === undefined) return invalid('noMinutes');
+      const full = d.fullRows.trim() === '' ? undefined : whole(d.fullRows);
+      if (d.fullRows.trim() !== '' && full === undefined) return invalid('noFull');
+      if (verified === undefined) return invalid('verifyFirst');
+      // The blocking problems nobody decided are head office's own count, read now — never typed (MG-04).
+      const open = await call<ExceptionsRead>('GET', '/v1/migration/exceptions');
+      if (open.result !== 'ok') return open;
+      return call('POST', '/v1/migration/trial-loads', {
+        trialId: d.trialId.trim(), rowsToLoad: rows, elapsedMs, extractVerified: verified,
+        blockingExceptionsOpen: open.value.outstanding.blockingUnresolved.length, targetPreparedEmpty: d.preparedEmpty,
+        ...(full === undefined ? {} : { fullVolumeRows: full }),
+      });
+    },
+    totals: async () => gate(may.exclusionsRead) ?? call('GET', '/v1/migration/control-totals'),
+    signTotal: async (id, statement) => {
+      const no = gate(may.sign); if (no) return no;
+      if (id.trim() === '') return invalid('noTotal');
+      if (statement.trim() === '') return invalid('noTotStatement');
+      return call('POST', `/v1/migration/control-totals/${enc(id.trim())}/signature`, { statement: statement.trim() });
+    },
+    // The gate's own reading: no `ownerGo` and no evidence of the page's own — head office answers every check from its
+    // records, and what only the store computer knows reads "not known" (the owner says GO at the box).
+    gate: async (cutoverId) => gate(may.cutoverDecide) ?? (cutoverId.trim() === '' ? invalid('noCutover') : call('POST', '/v1/migration/cutover/decision', { cutoverId: cutoverId.trim(), evidence: {} })),
+    rollback: async (cutoverId) => gate(may.windowRead) ?? (cutoverId.trim() === '' ? invalid('noCutover') : call('GET', `/v1/migration/cutover/rollback/${enc(cutoverId.trim())}`)),
   };
 }
