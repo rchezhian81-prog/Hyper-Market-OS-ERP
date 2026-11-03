@@ -342,7 +342,7 @@ export function paiseOf(text: string): number | undefined {
 }
 
 /** MG-02 — the data rows of an export: every non-empty line after the header (the count its seal was taken with). */
-export const dataRowsOf = (csv: string): number => csv.replace(/^﻿/, '').split(/\r?\n/).slice(1).filter((l) => l.trim() !== '').length;
+export const dataRowsOf = (csv: string): number => csv.replace(/^\uFEFF/, '').split(/\r?\n/).slice(1).filter((l) => l.trim() !== '').length;
 
 /** MG-02 — the seal file as kept (the seal itself, or slice.json's `{ seal }` entry) → the seal, or undefined. */
 export function readSeal(text: string): Readonly<Record<string, unknown>> | undefined {

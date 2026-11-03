@@ -50,14 +50,13 @@ export async function startW4Shop(input: {
     const sql = pgPoolClient(pool);
     return apiHarness({ ...extra, store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) });
   };
-  let memory: ApiHarness | undefined;
   if (input.databaseUrl !== undefined) {
     pool = new Pool({ connectionString: input.databaseUrl, max: 6, options: '-c app.tenant_id=*' });
     await runMigrations(pgPoolClient(pool), readdirSync('db/migrations').filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join('db/migrations', name), 'utf8') })));
   }
   let h = build();
-  memory = pool === undefined ? h : undefined;
+  const memory: ApiHarness | undefined = pool === undefined ? h : undefined;
 
   const tokenFor = (req: IncomingMessage): string => {
     const cookie = req.headers.cookie ?? '';
