@@ -73,6 +73,22 @@
         </form>
         <p class="status" id="names-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- W5 (M23-FR-01 · WF-18): the account classes the profit and loss, trial balance and centres read — set by the
+           accountant; head office's suggested set is only shown (apps/web-erp/src/account-classes-session.ts,
+           window.accountClasses, drawn by posting-map-classes.js). Nothing is read on open. -->
+      <section id="classes" hidden aria-labelledby="classes-h">
+        <h3 id="classes-h"></h3>
+        <p class="meta" id="classes-lede"></p>
+        <button id="classes-show" type="button" class="quiet"><span id="classes-show-text"></span></button>
+        <p class="status" id="classes-state" role="status" aria-live="polite"></p>
+        <ul class="rows" id="classes-rows"></ul>
+        <div id="classes-add" hidden>
+          <label for="classes-new"><span id="classes-new-l"></span><input id="classes-new" autocomplete="off" /></label>
+          <button id="classes-add-go" type="button" class="quiet"><span id="classes-add-text"></span></button>
+        </div>
+        <button id="classes-save" type="button" hidden><span id="classes-save-text"></span></button>
+        <p class="status" id="classes-status" role="status" aria-live="polite"></p>
+      </section>
       <section id="history" hidden aria-labelledby="history-h">
         <h3 id="history-h"></h3>
         <h4 id="map-history-h"></h4>
@@ -83,6 +99,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./posting-map.js" type="module"></script>
+    <script src="./posting-map-classes.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

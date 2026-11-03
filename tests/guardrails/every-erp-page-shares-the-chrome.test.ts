@@ -342,6 +342,14 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'audit-log-holds.js': 'apps/web-erp/src/legal-holds-session.ts',
     // W5 (route audit bundle 2): the GST and tax desk's words are in its tested session model.
     'gst-returns-desk.js': 'apps/web-erp/src/gst-desk-session.ts',
+    // W5 (books and commercial ledgers): each new section's words are in its tested session model.
+    'finance-close-books.js': 'apps/web-erp/src/books-postings-session.ts',
+    'posting-map-classes.js': 'apps/web-erp/src/account-classes-session.ts',
+    'b2b-books.js': 'apps/web-erp/src/b2b-books-session.ts',
+    'concession-tags.js': 'apps/web-erp/src/concession-tags-session.ts',
+    'buying-related-party.js': 'apps/web-erp/src/related-party-order-session.ts',
+    'supplier-payments.js': 'apps/web-erp/src/supplier-payment-session.ts',
+    'supplier-portal-watch.js': 'apps/web-erp/src/supplier-portal-watch-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
