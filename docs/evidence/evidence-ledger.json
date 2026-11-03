@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2187,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 104,
     "browser": 104,
-    "connected": 98,
+    "connected": 99,
     "device": 0,
     "uat": 0
   },
@@ -32,11 +32,11 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 32,
+        "unit": 33,
         "integration": 30,
         "realDb": 12,
-        "browser": 12,
-        "connected": 5,
+        "browser": 13,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -73,7 +73,8 @@
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rules-read-the-shops-day-after-midnight.test.ts",
           "tests/unit/the-shop-clock-dates-by-the-shops-zone.test.ts",
-          "tests/unit/trading-day.test.ts"
+          "tests/unit/trading-day.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
@@ -133,14 +134,16 @@
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
+          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts",
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
-          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts"
+          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -152,11 +155,11 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 32,
+        "unit": 33,
         "integration": 29,
         "realDb": 13,
-        "browser": 10,
-        "connected": 4,
+        "browser": 11,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -193,7 +196,8 @@
           "tests/unit/round-a-today-counts-head-offices-approvals-and-orders.test.ts",
           "tests/unit/service-store-core.test.ts",
           "tests/unit/sign-in-service.test.ts",
-          "tests/unit/till-operators.test.ts"
+          "tests/unit/till-operators.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-buyer-and-a-receiver-act-only-in-their-scope.test.ts",
@@ -251,13 +255,15 @@
           "tests/e2e/r4c-users-and-roles-give-and-take-back-a-role.e2e.ts",
           "tests/e2e/the-access-review-page-shows-who-holds-what.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts",
-          "tests/e2e/w3-emergency-access-is-asked-approved-given-and-ended-early.e2e.ts"
+          "tests/e2e/w3-emergency-access-is-asked-approved-given-and-ended-early.e2e.ts",
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/approvals-on-the-production-api.e2e.ts",
           "tests/e2e/delegation-on-the-production-api.e2e.ts",
           "tests/e2e/the-access-review-page-shows-who-holds-what.e2e.ts",
-          "tests/e2e/w3-emergency-access-is-asked-approved-given-and-ended-early.e2e.ts"
+          "tests/e2e/w3-emergency-access-is-asked-approved-given-and-ended-early.e2e.ts",
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2509,11 +2515,11 @@
       "id": "M29",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 19,
         "realDb": 9,
-        "browser": 5,
-        "connected": 2,
+        "browser": 6,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2536,7 +2542,8 @@
           "tests/unit/the-findings-page-shows-what-head-office-found.test.ts",
           "tests/unit/the-owner-sees-takings-and-truthful-freshness.test.ts",
           "tests/unit/the-scrap-packaging-and-compare-screens-call-only-head-offices-own-routes.test.ts",
-          "tests/unit/ui3-the-owner-trend-is-the-shops-own.test.ts"
+          "tests/unit/ui3-the-owner-trend-is-the-shops-own.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts",
@@ -2575,11 +2582,13 @@
           "tests/e2e/owner-alerts-and-data-in-on-the-production-api.e2e.ts",
           "tests/e2e/the-compare-screen-ranks-and-drills-within-the-readers-branches.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts",
-          "tests/e2e/ui3-the-owner-app-and-reports-read-at-a-glance.e2e.ts"
+          "tests/e2e/ui3-the-owner-app-and-reports-read-at-a-glance.e2e.ts",
+          "tests/e2e/w5-reports-cash-and-imports-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/company-report.e2e.ts",
-          "tests/e2e/owner-alerts-and-data-in-on-the-production-api.e2e.ts"
+          "tests/e2e/owner-alerts-and-data-in-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-reports-cash-and-imports-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2591,11 +2600,11 @@
       "id": "M30",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 13,
         "realDb": 7,
-        "browser": 5,
-        "connected": 3,
+        "browser": 6,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -2612,7 +2621,8 @@
           "tests/unit/import-mapping-quality.test.ts",
           "tests/unit/import.test.ts",
           "tests/unit/reporting-catalogue-route.test.ts",
-          "tests/unit/reporting-consolidation.test.ts"
+          "tests/unit/reporting-consolidation.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/ai-mapping-quality.test.ts",
@@ -2643,12 +2653,14 @@
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/data-io-delivery.e2e.ts",
           "tests/e2e/data-io-update-and-undo-on-the-production-api.e2e.ts",
-          "tests/e2e/screens-open-offline.e2e.ts"
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/w5-reports-cash-and-imports-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/company-report.e2e.ts",
-          "tests/e2e/data-io-update-and-undo-on-the-production-api.e2e.ts"
+          "tests/e2e/data-io-update-and-undo-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-reports-cash-and-imports-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2726,11 +2738,11 @@
       "id": "M32",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 19,
         "realDb": 8,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2746,7 +2758,8 @@
           "tests/unit/integration-api-gateway.test.ts",
           "tests/unit/integration-connector.test.ts",
           "tests/unit/integration-secrets.test.ts",
-          "tests/unit/kernel-payment-data-residency.test.ts"
+          "tests/unit/kernel-payment-data-residency.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/connector-delivery.test.ts",
@@ -2782,10 +2795,12 @@
         "browser": [
           "tests/e2e/integration-health-delivery.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
-          "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts"
+          "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2797,11 +2812,11 @@
       "id": "M33",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 23,
+        "unit": 24,
         "integration": 20,
         "realDb": 4,
-        "browser": 4,
-        "connected": 0,
+        "browser": 6,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2829,7 +2844,8 @@
           "tests/unit/support-access-lifecycle-projection.test.ts",
           "tests/unit/tenant-setup-concurrency.test.ts",
           "tests/unit/tenant-setup.test.ts",
-          "tests/unit/version-policy-projection.test.ts"
+          "tests/unit/version-policy-projection.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/background-jobs.test.ts",
@@ -2863,14 +2879,19 @@
           "tests/e2e/admin-support-access-delivery.e2e.ts",
           "tests/e2e/fleet-change-delivery.e2e.ts",
           "tests/e2e/r4c-tills-and-devices-registers-a-till.e2e.ts",
-          "tests/e2e/screens-open-offline.e2e.ts"
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M34",
@@ -2941,11 +2962,11 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 39,
         "realDb": 31,
-        "browser": 7,
-        "connected": 5,
+        "browser": 8,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -2968,7 +2989,8 @@
           "tests/unit/the-store-computer-stamps-when-it-took-the-refund.test.ts",
           "tests/unit/the-till-re-sends-its-devices.test.ts",
           "tests/unit/w3-security-people-and-operations-sessions.test.ts",
-          "tests/unit/w4-operations-sessions.test.ts"
+          "tests/unit/w4-operations-sessions.test.ts",
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
         ],
         "integration": [
           "tests/integration/a-build-lease-cut-off-here-is-freed-on-the-database-at-once.test.ts",
@@ -3051,14 +3073,16 @@
           "tests/e2e/store-computers-on-the-production-api.e2e.ts",
           "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts",
           "tests/e2e/w4-a-failed-job-is-seen-and-run-again.e2e.ts",
-          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts"
+          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts",
           "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts",
           "tests/e2e/w4-a-failed-job-is-seen-and-run-again.e2e.ts",
-          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts"
+          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts",
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
