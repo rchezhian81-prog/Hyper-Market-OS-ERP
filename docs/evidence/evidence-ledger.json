@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2188,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,7 +18,7 @@
     "WIRED": 4
   },
   "totals": {
-    "unit": 99,
+    "unit": 100,
     "integration": 104,
     "realDb": 104,
     "browser": 104,
@@ -32,11 +32,11 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 32,
+        "unit": 33,
         "integration": 30,
         "realDb": 12,
-        "browser": 12,
-        "connected": 5,
+        "browser": 13,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -73,7 +73,8 @@
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
           "tests/unit/the-rules-read-the-shops-day-after-midnight.test.ts",
           "tests/unit/the-shop-clock-dates-by-the-shops-zone.test.ts",
-          "tests/unit/trading-day.test.ts"
+          "tests/unit/trading-day.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
@@ -133,14 +134,16 @@
           "tests/e2e/the-manager-sees-when-the-box-zone-is-not-the-shops.e2e.ts",
           "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
+          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/r13a-the-office-pages-open-on-the-shops-day.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
-          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts"
+          "tests/e2e/the-organisation-page-activates-a-store-only-with-the-owners-approval.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1463,11 +1466,11 @@
       "id": "M16",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 19,
         "realDb": 9,
-        "browser": 6,
-        "connected": 3,
+        "browser": 7,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -1485,7 +1488,8 @@
           "tests/unit/storefront-browse.test.ts",
           "tests/unit/the-customer-record-folds-the-desks-cases.test.ts",
           "tests/unit/voice-and-sms-links-are-switched-off.test.ts",
-          "tests/unit/w3-customers-sessions.test.ts"
+          "tests/unit/w3-customers-sessions.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
@@ -1525,12 +1529,14 @@
           "tests/e2e/the-customers-page-meets-the-spec.e2e.ts",
           "tests/e2e/w3-customer-data-requests.e2e.ts",
           "tests/e2e/w3-customer-value-and-household.e2e.ts",
-          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
           "tests/e2e/the-customers-page-meets-the-spec.e2e.ts",
-          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1542,11 +1548,11 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 19,
         "realDb": 6,
-        "browser": 9,
-        "connected": 1,
+        "browser": 10,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1563,6 +1569,7 @@
           "tests/unit/repeat-orders-engine.test.ts",
           "tests/unit/repeat-orders-session.test.ts",
           "tests/unit/till-side-the-tier-multiplier-rides-the-wallet-feed.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
@@ -1603,10 +1610,12 @@
           "tests/e2e/the-served-till-spends-points-and-store-credit.e2e.ts",
           "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
           "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts",
-          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts"
+          "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts"
+          "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1685,11 +1694,11 @@
       "id": "M19",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 25,
+        "unit": 26,
         "integration": 18,
         "realDb": 6,
-        "browser": 13,
-        "connected": 5,
+        "browser": 14,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -1719,7 +1728,8 @@
           "tests/unit/substitution-exception-ownership-routes.test.ts",
           "tests/unit/the-driver-captures-proof-at-the-door.test.ts",
           "tests/unit/w4-the-dispatch-page-dispatches-a-packed-order-and-shows-its-manifest.test.ts",
-          "tests/unit/w4-the-picker-picks-a-head-office-line-whose-unit-is-spelled-each.test.ts"
+          "tests/unit/w4-the-picker-picks-a-head-office-line-whose-unit-is-spelled-each.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1762,14 +1772,16 @@
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
           "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/ob676-the-owner-confirms-the-driver-cash-limit-on-the-dispatch-page.e2e.ts",
           "tests/e2e/ob676-the-owner-sets-who-works-each-exception-queue.e2e.ts",
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1781,11 +1793,11 @@
       "id": "M20",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 21,
         "realDb": 10,
-        "browser": 7,
-        "connected": 2,
+        "browser": 9,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -1812,7 +1824,8 @@
           "tests/unit/storefront-browse.test.ts",
           "tests/unit/storefront-checkout.test.ts",
           "tests/unit/storefront-scope.test.ts",
-          "tests/unit/the-online-basket-is-priced-by-the-tills-engines.test.ts"
+          "tests/unit/the-online-basket-is-priced-by-the-tills-engines.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1856,11 +1869,15 @@
           "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
           "tests/e2e/w3-customer-data-requests.e2e.ts",
-          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
-          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1872,11 +1889,11 @@
       "id": "M21",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 19,
         "realDb": 5,
-        "browser": 5,
-        "connected": 4,
+        "browser": 7,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -1890,7 +1907,8 @@
           "tests/unit/service-desk-campaigns.test.ts",
           "tests/unit/service-desk-cases.test.ts",
           "tests/unit/the-campaigns-session.test.ts",
-          "tests/unit/w3-customers-sessions.test.ts"
+          "tests/unit/w3-customers-sessions.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -1925,13 +1943,17 @@
           "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
           "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts",
-          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts"
+          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
           "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
-          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts"
+          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3212,11 +3234,11 @@
       "id": "D02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 10,
         "realDb": 4,
-        "browser": 5,
-        "connected": 1,
+        "browser": 6,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3226,7 +3248,8 @@
           "tests/unit/erp-merchandising-session.test.ts",
           "tests/unit/merchandising-space.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
-          "tests/unit/w3-catalogue-pricing-sessions.test.ts"
+          "tests/unit/w3-catalogue-pricing-sessions.test.ts",
+          "tests/unit/w5-the-customer-app-tells-a-search-miss-and-keeps-a-nominee.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -3251,10 +3274,12 @@
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
           "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts",
-          "tests/e2e/w3-the-range-gap-report-on-the-store-groups-page.e2e.ts"
+          "tests/e2e/w3-the-range-gap-report-on-the-store-groups-page.e2e.ts",
+          "tests/e2e/w5-the-customer-app-names-a-nominee-and-tells-the-shop-what-it-could-not-find-on-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-the-customer-app-names-a-nominee-and-tells-the-shop-what-it-could-not-find-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3658,11 +3683,11 @@
       "id": "D09",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 12,
         "realDb": 3,
-        "browser": 5,
-        "connected": 2,
+        "browser": 6,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -3679,7 +3704,8 @@
           "tests/unit/orders-fulfilment-plan.test.ts",
           "tests/unit/orders-substitution-exception-ownership.test.ts",
           "tests/unit/picker-session.test.ts",
-          "tests/unit/the-driver-captures-proof-at-the-door.test.ts"
+          "tests/unit/the-driver-captures-proof-at-the-door.test.ts",
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-placed-delivery-goes-to-the-branch-head-office-routes.test.ts",
@@ -3705,11 +3731,13 @@
           "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts",
           "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts"
+          "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -5249,16 +5277,18 @@
       "id": "WF-15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 0,
+        "unit": 1,
         "integration": 8,
         "realDb": 3,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/w5-customer-desk-sections-session.test.ts"
+        ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
@@ -5278,11 +5308,13 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
           "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
-          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
-          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []

@@ -79,6 +79,9 @@ const WORDS = {
     rightExport: 'Send me a copy of my information', rightErasure: 'Delete my information',
     erasureCaveat: 'We cannot delete everything: invoices and tax records have to be kept by law. We will tell you exactly what stays and why.',
     requestRaised: 'We have your request',
+    nomineeTitle: 'My nominee', nomineeLead: 'You may name someone who can use these rights for you if you die or can no longer act. The shop checks it first. No name or phone number is needed.',
+    nomineeRef: 'Their account or nomination form number', nomineeRel: 'How they are related to you', nomineeSave: 'Save my nominee', nomineeWithdraw: 'Withdraw my nominee',
+    nomineeNone: 'You have not named a nominee.', nomineeIs: 'Your nominee', nomineeNeed: 'Type their reference and how they are related to you.',
     sampleShop: 'Sample shop — these are not real prices.',
     unknownPurpose: 'That setting is not one we use.',
     priceChanged: 'Prices changed while you were deciding. Please check your basket again before paying.',
@@ -115,6 +118,9 @@ const WORDS = {
     rightExport: 'என் தகவலின் நகலை அனுப்புங்கள்', rightErasure: 'என் தகவலை நீக்குங்கள்',
     erasureCaveat: 'எல்லாவற்றையும் நீக்க முடியாது: இன்வாய்ஸ் மற்றும் வரிப் பதிவுகளைச் சட்டப்படி வைத்திருக்க வேண்டும். எது இருக்கும், ஏன் என்று சரியாகச் சொல்வோம்.',
     requestRaised: 'உங்கள் கோரிக்கை எங்களிடம் உள்ளது',
+    nomineeTitle: 'என் நியமனதாரர்', nomineeLead: 'நீங்கள் இறந்தால் அல்லது செயல்பட முடியாவிட்டால் உங்களுக்காக இந்த உரிமைகளைப் பயன்படுத்த ஒருவரை நியமிக்கலாம். கடை முதலில் சரிபார்க்கும். பெயரோ தொலைபேசி எண்ணோ தேவையில்லை.',
+    nomineeRef: 'அவர்களின் கணக்கு அல்லது நியமனப் படிவ எண்', nomineeRel: 'அவர்கள் உங்களுக்கு என்ன உறவு', nomineeSave: 'என் நியமனதாரரைச் சேமி', nomineeWithdraw: 'என் நியமனதாரரைத் திரும்பப் பெறு',
+    nomineeNone: 'நீங்கள் நியமனதாரர் யாரையும் நியமிக்கவில்லை.', nomineeIs: 'உங்கள் நியமனதாரர்', nomineeNeed: 'அவர்களின் குறிப்பையும் உறவையும் தட்டச்சு செய்யுங்கள்.',
     sampleShop: 'மாதிரிக் கடை — இவை உண்மையான விலைகள் அல்ல.',
     unknownPurpose: 'அந்த அமைப்பை நாங்கள் பயன்படுத்துவதில்லை.',
     priceChanged: 'நீங்கள் யோசித்துக் கொண்டிருந்தபோது விலை மாறியது. பணம் செலுத்தும் முன் கூடையை மீண்டும் சரிபார்க்கவும்.',
@@ -400,6 +406,14 @@ function renderSearch() {
   el('results').replaceChildren(...hits.map((hit) => productRow(hit.product ?? hit)));
 }
 el('search').addEventListener('input', () => { renderSearch(); });
+// W5 · D02-FR-04 · OB-319: a FINISHED search (Enter, or leaving the box) that found nothing is told to the shop — the words
+// only, never who searched — so the range-gap report sees what customers looked for and the shop does not stock. Not on
+// every keystroke (half a word is not a search). Signed out or offline, nothing is sent and nothing changes for the customer.
+el('search').addEventListener('change', () => {
+  const term = el('search').value.trim();
+  if (term === '' || shop.search(term).length > 0 || typeof shop.recordSearchMiss !== 'function') return;
+  void shop.recordSearchMiss(term);
+});
 
 function renderLists() {
   const lists = window.shopData?.savedLists ?? [];
@@ -852,6 +866,36 @@ function renderRights() {
   }));
 }
 
+/**
+ * W5 · C5 (DPDP s.14): my nominee — named, changed or withdrawn ON THE SHOP and read back; the screen shows what the shop
+ * holds, never what was typed. Withdrawing is one tap, like naming.
+ */
+function renderNominee() {
+  el('nominee-title').textContent = t('nomineeTitle');
+  el('nominee-lead').textContent = t('nomineeLead');
+  el('nominee-ref-label').textContent = t('nomineeRef');
+  el('nominee-rel-label').textContent = t('nomineeRel');
+  el('nominee-save').textContent = t('nomineeSave');
+  el('nominee-withdraw').textContent = t('nomineeWithdraw');
+  const now = typeof shop.myNominee === 'function' ? shop.myNominee() : null;
+  el('nominee-now').textContent = now === null ? t('nomineeNone') : `${t('nomineeIs')}: ${now.nomineeRef} (${now.relationship})`;
+  el('nominee-withdraw').hidden = now === null;
+}
+el('nominee-save').addEventListener('click', async () => {
+  const ref = el('nominee-ref').value.trim(); const rel = el('nominee-rel').value.trim();
+  if (ref === '' || rel === '') { tell(t('nomineeTitle'), t('nomineeNeed'), 'bad'); return; }
+  if (typeof shop.setNominee !== 'function') return;
+  const out = await shop.setNominee(ref, rel);
+  tell(t('nomineeTitle'), out.tellTheCustomer, out.ok ? 'good' : 'bad');
+  render();
+});
+el('nominee-withdraw').addEventListener('click', async () => {
+  if (typeof shop.withdrawNominee !== 'function') return;
+  const out = await shop.withdrawNominee();
+  tell(t('nomineeTitle'), out.tellTheCustomer, out.ok ? 'good' : 'bad');
+  render();
+});
+
 // ── Paint ───────────────────────────────────────────────────────────────────
 
 function paintChrome() {
@@ -886,7 +930,7 @@ function render() {
   if (view === 'shop') { renderSearch(); renderLists(); void renderMine(); }
   if (view === 'basket') renderBasket();
   if (view === 'order') { renderOrder(); void renderHelp(); }
-  if (view === 'privacy') { renderConsent(); renderRights(); }
+  if (view === 'privacy') { renderConsent(); renderRights(); renderNominee(); }
   // R4 Lane 2 (B23 · D-28 · WF-16 · M20-FR-04): the online store's sections, drawn by online-store.js.
   window.shopR4?.render(view);
   // OB-288 wave 3 (WF-13 · M20 · M21 · D08 · A04 · A05): offers, repeat orders, addresses, help — customer-commerce.js.
