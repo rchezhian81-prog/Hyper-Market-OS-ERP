@@ -15,6 +15,8 @@ import { setUpPracticeStores } from '../support/real-store';
  *     panel that does not add up is refused in head office's words; a second tab that opened the product before that save
  *     is refused by name and nothing of it is written; a published product's tax class changes only after the accountant
  *     approves it on her Approvals page.
+ *   • OB-546: an age limit typed on Product details for a product already on sale is asked, approved by the accountant on her
+ *     page and saved naming her; an unreadable age is refused by name.
  * Synthetic data only. Needs DATABASE_URL and Chromium; else it SKIPS.
  */
 
@@ -177,6 +179,37 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     const after = (await shop.call('GET', '/v1/catalogue/products/DAL', OWNER)).body as { product: { taxClass: string; safety: { ingredients: string } } };
     expect(after.product.taxClass).toBe('19053100');
     expect(after.product.safety.ingredients).toBe('Split pigeon peas'); // the full save never re-sent safety (OB-627)
+    expect(a.errors).toEqual([]);
+    await a.close();
+  }, 180_000);
+
+  it('OB-546: an age limit newly on a product on sale is asked on the safety save, approved by the accountant on her page, then saved naming her', async () => {
+    await ok(shop.call('POST', '/v1/catalogue/products/DRINK/publish', OWNER, { product: {
+      sku: 'SKU-DRINK', name: 'Synthetic energy drink 250 ml', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '10063020', lifecycle: 'active',
+      mrpHistory: [{ value: { minor: 12_500, currency: 'INR' }, effectiveFrom: '2026-01-01' }], safety: { allergens: [], countryOfOrigin: 'India' },
+    } }), 'drink on sale');
+    const a = await shop.open(OWNER, '/product-details/?product=DRINK');
+    await says(a.page, '#v-state', /^On sale$/);
+    await a.page.fill('#s-minage', '18');
+    await a.page.fill('#s-why', 'the shop sells it to adults only (synthetic)');
+    await a.page.click('#save-safety');
+    await says(a.page, '#safety-status', /^This needs a second person: .*minimum age.* press “Save safety and label” again\.$/);
+    expect(((await shop.call('GET', '/v1/catalogue/products/DRINK', OWNER)).body as { product: { safety: { minimumAge?: number } } }).product.safety.minimumAge).toBeUndefined();
+    await a.page.click('#ask-safety-approval');
+    await says(a.page, '#safety-status', /^Asked\./);
+    await a.page.click('#save-safety');
+    await says(a.page, '#safety-status', /^Still waiting for the second person/);
+    await accountantApproves('regulated_product_publish', 'product:DRINK');
+    await a.page.click('#save-safety');
+    await says(a.page, '#safety-status', new RegExp(`^Saved with the approval of ${ACCT}\\.$`));
+    expect(((await shop.call('GET', '/v1/catalogue/products/DRINK', OWNER)).body as { product: { safety: { minimumAge?: number } } }).product.safety.minimumAge).toBe(18);
+    // A minimum age the till cannot read is refused by head office, by name.
+    await a.page.fill('#s-minage', 'eighteen');
+    await a.page.fill('#s-why', 'typo test (synthetic)');
+    await a.page.click('#save-safety');
+    await says(a.page, '#safety-status', /^Head office refused: The minimum age to buy this product must be a whole number of years/);
+    await a.page.click('#lang');
+    await says(a.page, '#l-s-minage', /^வாங்கக் குறைந்தபட்ச வயது/);
     expect(a.errors).toEqual([]);
     await a.close();
   }, 180_000);

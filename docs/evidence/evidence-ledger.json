@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2161,
+  "testFiles": 2163,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 104,
     "browser": 102,
-    "connected": 92,
+    "connected": 93,
     "device": 0,
     "uat": 0
   },
@@ -269,10 +269,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 21,
-        "integration": 22,
+        "integration": 23,
         "realDb": 6,
-        "browser": 8,
-        "connected": 4,
+        "browser": 9,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -322,7 +322,8 @@
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/tax-class-rates.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w4-an-incomplete-product-is-kept-as-a-draft-and-never-reaches-a-pack.test.ts"
         ],
         "realDb": [
           "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
@@ -340,13 +341,15 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
-          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts"
+          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/scale-label-rules-on-the-catalogue-page.e2e.ts",
-          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts"
+          "tests/e2e/w4-connected-m03-tax-cess-and-safety-facts-on-the-store-computer.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -361,8 +364,8 @@
         "unit": 9,
         "integration": 11,
         "realDb": 4,
-        "browser": 7,
-        "connected": 2,
+        "browser": 8,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -404,11 +407,13 @@
           "tests/e2e/the-range-drop-is-head-offices-word-through-the-store-computer.e2e.ts",
           "tests/e2e/w2-shelves-and-floor-are-set-up-and-the-shelf-pages-read-them.e2e.ts",
           "tests/e2e/w2-store-groups-and-seasons-set-the-range.e2e.ts",
-          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts"
+          "tests/e2e/w2-supplier-display-space-is-recorded-and-finance-approves-it.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts",
-          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts"
+          "tests/e2e/the-owner-is-told-of-contracts-ending.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -423,8 +428,8 @@
         "unit": 20,
         "integration": 23,
         "realDb": 8,
-        "browser": 8,
-        "connected": 1,
+        "browser": 9,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -494,10 +499,12 @@
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts"
+          "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts"
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3135,8 +3142,8 @@
         "unit": 4,
         "integration": 12,
         "realDb": 4,
-        "browser": 3,
-        "connected": 2,
+        "browser": 4,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -3170,11 +3177,13 @@
         "browser": [
           "tests/e2e/product-publish-delivery.e2e.ts",
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
-          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts"
+          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
-          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts"
+          "tests/e2e/w3-a-tobacco-product-goes-on-sale-from-the-product-page.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4544,8 +4553,8 @@
         "unit": 0,
         "integration": 10,
         "realDb": 3,
-        "browser": 5,
-        "connected": 3,
+        "browser": 6,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4573,12 +4582,14 @@
           "tests/e2e/product-publish-delivery.e2e.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
-          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "connected": [
           "tests/e2e/lib/box-page-on-cloud.ts",
           "tests/e2e/product-publish-on-the-production-api.e2e.ts",
-          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4706,8 +4717,8 @@
         "unit": 0,
         "integration": 9,
         "realDb": 3,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -4731,14 +4742,17 @@
         ],
         "browser": [
           "tests/e2e/goods-receipt-delivery.e2e.ts",
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-connected-wf01-a-new-product-goes-from-draft-to-the-till-and-the-app.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-05",

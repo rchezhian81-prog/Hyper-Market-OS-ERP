@@ -85,7 +85,9 @@ export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp'
   /** B17 · OB-348: liquor — refused by the shop's state (Tamil Nadu: TASMAC), never handed to a lane to sell. */
   | 'liquor_not_sold'
   /** B18 · OB-310: a medicine — SRE sells no medicines, so none is handed to a lane to sell. */
-  | 'medicine_not_sold';
+  | 'medicine_not_sold'
+  /** W4 · M03-FR-01: a draft — head office keeps it, but it is not on sale, so no lane or app is ever handed it. */
+  | 'draft_not_on_sale';
 
 export interface ExcludedProduct {
   readonly productId: string;
@@ -114,6 +116,11 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
   const excluded: ExcludedProduct[] = [];
 
   for (const master of input.products) {
+    // W4 · M03-FR-01: a draft is never in a pack — not on any till, the app or a shelf label. Left out and said.
+    if (master.status === 'draft') {
+      excluded.push({ productId: master.productId, sku: master.sku, reason: 'draft_not_on_sale' });
+      continue;
+    }
     // B17 · OB-348: liquor never reaches a lane — flagged on the master, or under an alcoholic-drink HSN. Left out and said.
     if (master.regulatedFlags?.['liquor'] === true || isLiquorHsn(master.taxClassId)) {
       excluded.push({ productId: master.productId, sku: master.sku, reason: 'liquor_not_sold' });

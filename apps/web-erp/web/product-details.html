@@ -138,6 +138,8 @@
             <label for="s-packer"><span id="l-s-packer">Packer or importer</span><input id="s-packer" autocomplete="off" /></label>
             <label for="s-care"><span id="l-s-care">Consumer care contact</span><input id="s-care" autocomplete="off" /></label>
             <label class="check" for="s-packedBySre"><input id="s-packedBySre" type="checkbox" /><span id="l-s-packedBySre">SRE packs or labels it</span></label>
+            <!-- W4 · OB-546: an age limit (a whole number of years). Newly on a product on sale, it needs a second person. -->
+            <label for="s-minage"><span id="l-s-minage">Minimum age to buy it (years — leave empty if none)</span><input id="s-minage" inputmode="numeric" autocomplete="off" /></label>
           </div>
         </fieldset>
         <fieldset>
@@ -155,6 +157,7 @@
             <label for="s-why"><span id="l-s-why">Why (kept with the version)</span><input id="s-why" autocomplete="off" maxlength="200" /></label>
             <button id="save-safety" class="primary" type="button">Save safety and label</button>
             <button id="safety-reload" type="button" hidden>Reload</button>
+            <button id="ask-safety-approval" type="button" hidden>Ask for approval</button>
           </div>
           <p class="status" id="safety-status" role="status" aria-live="polite"></p>
         </fieldset>
