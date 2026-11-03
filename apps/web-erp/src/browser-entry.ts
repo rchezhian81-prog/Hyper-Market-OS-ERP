@@ -138,6 +138,7 @@ import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system c
 import { wireW5Compliance } from './w5-compliance-browser-wiring'; // W5 · EPR records, licences/controls/findings, legal holds and evidence pack
 import { wireW5Books } from './w5-books-browser-wiring'; // W5 · the accountant's books and the commercial ledgers (M23 · M22 · M27 · M24 · M15-FR-03)
 import { wireW5StoreOps } from './w5-store-ops-browser-wiring'; // W5 · store operations: policy numbers, indents, DSD, OSA, trace requests, costs, bins, facilities, LP
+import { wireW5Customers } from './w5-customers-browser-wiring'; // W5 · customers, privacy, service desk and online orders
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -7569,4 +7570,5 @@ if (browserWindow !== undefined) {
   wireW5Compliance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · compliance, risk, EPR and audit registers
   wireW5Books(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · books and commercial ledgers
   wireW5StoreOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · store operations sections
+  wireW5Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · customers, privacy, service desk and online orders
 }

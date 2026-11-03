@@ -47,6 +47,7 @@ const PINNED_SUITES: readonly string[] = [
   // W5 · M23/M22/M27/M24: the books and the commercial ledgers — the shop day's dunning date, receipts, tag window and payments.
   'tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts',
   'tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts',
+  'tests/e2e/w5-the-customer-app-names-a-nominee-and-tells-the-shop-what-it-could-not-find-on-postgresql.e2e.ts', // W5 · D02-FR-04 range-gap window
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')
