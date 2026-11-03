@@ -68,6 +68,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'failed-jobs',
   // Wave 3 (OB-675 · QG-02): Training checks — the scored check per role.
   'training-checks',
+  // W5 (M34-FR-03 · M34-FR-04 · OB-331): Licences, controls and findings.
+  'compliance-registers',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
   'settlement',
   // W3 (M18 · D05-FR-03): the online-orders desk and the delivery area and slots.
@@ -184,6 +186,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'document-retention': 'documentRetentionData',
   'sales-commission': 'salesCommissionData',
   'training-checks': 'trainingChecksData',
+  'compliance-registers': 'complianceRegistersData',
   'online-orders': 'onlineOrdersData',
   'delivery-area': 'deliveryAreaData',
   'partner-webhooks': 'partnerWebhooksData',

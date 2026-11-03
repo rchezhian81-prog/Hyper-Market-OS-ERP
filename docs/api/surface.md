@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1684 | 971 | 971 | 192 | 439 |
+| 13 | 1686 | 971 | 971 | 192 | 439 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1296,6 +1296,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 |---|---|---|---|---|
 | GET | `/v1/compliance/alerts` | `compliance.obligation.read` | core | — |
 | POST | `/v1/compliance/attestations/:attestationId` | `compliance.risk.manage` | core | yes |
+| GET | `/v1/compliance/control-register` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/controls/:controlId` | `compliance.risk.manage` | core | yes |
 | GET | `/v1/compliance/controls/health` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/epr/assets/:assetId/not-e-waste` | `epr.register.record` | core | yes |
@@ -1330,6 +1331,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/gates/:gate/can-pass` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/gates/blocked` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/incidents/:incidentId` | `compliance.risk.manage` | core | yes |
+| GET | `/v1/compliance/obligations` | `compliance.obligation.read` | core | — |
 | POST | `/v1/compliance/obligations/:obligationId` | `compliance.obligation.manage` | core | yes |
 | POST | `/v1/compliance/obligations/:obligationId/close` | `compliance.obligation.manage` | core | yes |
 | POST | `/v1/compliance/obligations/:obligationId/evidence` | `compliance.obligation.manage` | core | yes |

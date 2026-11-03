@@ -11,6 +11,9 @@
       search (GET /v1/audit/trail), check the whole chain (GET /v1/audit/trail/verify), rebuild one thing from the evidence
       (GET /v1/audit/trail/reconstruct). Reads only — nothing here, nor anywhere, changes or removes a record. Its session is
       apps/web-erp/src/audit-log-session.ts. No prompt/confirm/alert; nothing on a timer.
+      W5 (M34-FR-01/02): legal holds — list, place with a reason, lift (GET/POST /v1/audit/legal-holds, …/:holdId/lift); what
+      may be reviewed for deletion over the recorded trail (POST /v1/audit/retention/plan-produced — deletes nothing); and the
+      evidence pack for a span of shop days (POST /v1/audit/evidence-pack-produced), saved as a file. audit-log-holds.js.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -29,7 +32,7 @@
       .row-form > label { flex: 1 1 160px; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
-      ul.rows > li.tone-error { border-left-color: var(--error); }
+      ul.rows > li.tone-error { border-left-color: var(--error); } ul.rows > li.tone-ok { border-left-color: var(--ok); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); }
       .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
       .meta { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
@@ -83,9 +86,45 @@
         <p id="rebuilt-state"></p>
         <ul class="rows" id="history"></ul>
       </section>
+      <!-- W5 (M34-FR-01/02): legal holds, what may be reviewed for deletion, and the evidence pack — audit-log-holds.js over
+           window.legalHolds (apps/web-erp/src/legal-holds-session.ts). Nothing here deletes anything. -->
+      <section id="holds" hidden aria-labelledby="holds-h">
+        <h3 id="holds-h" data-w="holdsH"></h3>
+        <p class="meta" data-w="holdsLead"></p>
+        <p class="status" id="holds-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="hold-list"></ul>
+        <form class="row-form" id="hold-form" hidden>
+          <label for="h-reason"><span data-w="holdReason"></span><input id="h-reason" autocomplete="off" /></label>
+          <label for="h-type"><span data-w="holdType"></span><input id="h-type" autocomplete="off" /></label>
+          <label for="h-id"><span data-w="holdId"></span><input id="h-id" autocomplete="off" /></label>
+          <label for="h-actor"><span data-w="holdActor"></span><input id="h-actor" autocomplete="off" /></label>
+          <label for="h-from"><span data-w="holdFrom"></span><input id="h-from" type="date" /></label>
+          <label for="h-until"><span data-w="holdUntil"></span><input id="h-until" type="date" /></label>
+          <button id="h-go" type="submit" data-w="placeGo"></button>
+        </form>
+      </section>
+      <section id="plan" hidden aria-labelledby="plan-h">
+        <h3 id="plan-h" data-w="planH"></h3>
+        <p class="meta" data-w="planLead"></p>
+        <button id="p-go" type="button" class="quiet" data-w="planGo"></button>
+        <p class="status" id="plan-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="plan-rows"></ul>
+      </section>
+      <section id="pack" hidden aria-labelledby="pack-h">
+        <h3 id="pack-h" data-w="packH"></h3>
+        <p class="meta" data-w="packLead"></p>
+        <form class="row-form" id="pack-form">
+          <label for="k-from"><span data-w="packFrom"></span><input id="k-from" type="date" /></label>
+          <label for="k-until"><span data-w="packUntil"></span><input id="k-until" type="date" /></label>
+          <button id="k-go" type="submit" data-w="packGo"></button>
+        </form>
+        <p class="status" id="pack-status" role="status" aria-live="polite"></p>
+        <button id="k-again" type="button" class="quiet" data-w="download" hidden></button>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./audit-log.js" type="module"></script>
+    <script src="./audit-log-holds.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

@@ -12152,6 +12152,50 @@
         }
       }
     },
+    "/v1/compliance/control-register": {
+      "get": {
+        "operationId": "getComplianceControlRegister",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.risk.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceControlRegisterReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.risk.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/compliance/controls/health": {
       "get": {
         "operationId": "getComplianceControlsHealth",
@@ -14397,6 +14441,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/compliance/obligations": {
+      "get": {
+        "operationId": "getComplianceObligations",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.obligation.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceObligationsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.obligation.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -123103,6 +123191,44 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/obligations.ts"
       },
+      "GetComplianceControlRegisterReply": {
+        "type": "object",
+        "required": [
+          "controls",
+          "incidents",
+          "remediations",
+          "attestations"
+        ],
+        "properties": {
+          "controls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Control"
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            }
+          },
+          "remediations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Remediation"
+            }
+          },
+          "attestations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attestation"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/risk.ts"
+      },
       "GetComplianceControlsHealthReply": {
         "type": "object",
         "required": [
@@ -123925,6 +124051,31 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/risk.ts"
+      },
+      "GetComplianceObligationsReply": {
+        "type": "object",
+        "required": [
+          "obligations",
+          "count",
+          "active"
+        ],
+        "properties": {
+          "obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Obligation"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "active": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/obligations.ts"
       },
       "GetComplianceRemediationsOverdueReply": {
         "type": "object",
@@ -260877,6 +261028,34 @@
         },
         "additionalProperties": true
       },
+      "Attestation": {
+        "type": "object",
+        "required": [
+          "attestationId",
+          "controlId",
+          "attestedBy",
+          "attestedAt",
+          "statement"
+        ],
+        "properties": {
+          "attestationId": {
+            "type": "string"
+          },
+          "controlId": {
+            "type": "string"
+          },
+          "attestedBy": {
+            "type": "string"
+          },
+          "attestedAt": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "AttributeDefinition": {
         "type": "object",
         "required": [
@@ -269883,6 +270062,30 @@
             "type": "boolean"
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Control": {
+        "type": "object",
+        "required": [
+          "controlId",
+          "title",
+          "implements",
+          "ownerUserId"
+        ],
+        "properties": {
+          "controlId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "implements": {
+            "type": "string"
+          },
+          "ownerUserId": {
             "type": "string"
           }
         },
@@ -285512,6 +285715,52 @@
             ]
           },
           "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Incident": {
+        "type": "object",
+        "required": [
+          "incidentId",
+          "title",
+          "severity",
+          "occurredAt",
+          "detectedAt",
+          "controlId"
+        ],
+        "properties": {
+          "incidentId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "sev1",
+              "sev2",
+              "sev3"
+            ]
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "detectedAt": {
+            "type": "string"
+          },
+          "controlId": {
+            "type": "string"
+          },
+          "remediationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "closedAt": {
             "type": "string"
           }
         },
