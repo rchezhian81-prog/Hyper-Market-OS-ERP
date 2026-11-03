@@ -145491,6 +145491,7 @@
                   "type": "object",
                   "required": [
                     "forProductId",
+                    "productIds",
                     "summary",
                     "suggestedByAi",
                     "notice",
@@ -145499,6 +145500,12 @@
                   "properties": {
                     "forProductId": {
                       "type": "string"
+                    },
+                    "productIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "summary": {
                       "type": "string"
@@ -173232,6 +173239,33 @@
             },
             "additionalProperties": true
           },
+          "draft": {
+            "type": "object",
+            "required": [
+              "keptAsDraft",
+              "onSale",
+              "stillNeeded",
+              "detail"
+            ],
+            "properties": {
+              "keptAsDraft": {
+                "type": "boolean"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "stillNeeded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
           "categoriesDefined": {
             "type": "array",
             "items": {
@@ -173684,6 +173718,33 @@
                 "type": "string"
               },
               "approvedBy": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "draft": {
+            "type": "object",
+            "required": [
+              "keptAsDraft",
+              "onSale",
+              "stillNeeded",
+              "detail"
+            ],
+            "properties": {
+              "keptAsDraft": {
+                "type": "boolean"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "stillNeeded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "detail": {
                 "type": "string"
               }
             },
@@ -278483,6 +278544,7 @@
             "type": "string",
             "enum": [
               "cess_on_demerit_slab",
+              "draft_not_on_sale",
               "liquor_not_sold",
               "medicine_not_sold",
               "no_price",

@@ -42,13 +42,20 @@ describe('product master authoring (M03-FR-01/03)', () => {
     expect(noHsn.status).toBe(422);
     expect(codeOf(noHsn)).toBe('product_not_publishable');
     // A food item declares its allergens (an empty list is "none"; silence is not) and country of origin.
-    const food = { sku: 'SKU-BREAD', name: 'Bread 400g', baseUom: 'each', primaryCategoryId: 'food', taxClass: '1905', lifecycle: 'draft', safety: { countryOfOrigin: 'India' } };
+    const food = { sku: 'SKU-BREAD', name: 'Bread 400g', baseUom: 'each', primaryCategoryId: 'food', taxClass: '1905', lifecycle: 'new', safety: { countryOfOrigin: 'India' } };
     const noAllergen = await publish(h, 'u-owner', 'p-bread', food, [FOOD], 'k-bread');
     expect(noAllergen.status).toBe(422);
     expect(codeOf(noAllergen)).toBe('product_not_publishable');
     // Neither was stored.
     expect((await get(h, 'u-owner', 'p-nohsn')).status).toBe(404);
     expect((await get(h, 'u-owner', 'p-bread')).status).toBe(404);
+    // W4 · M03-FR-01 "incomplete product saved as draft": the same bread sent as a DRAFT is kept — not on sale — and the
+    // reply says what it still needs. Even a draft needs its tax class (FR-01 acceptance): no HSN is refused as a draft too.
+    const asDraft = await publish(h, 'u-owner', 'p-bread', { ...food, lifecycle: 'draft' }, [FOOD], 'k-bread-draft');
+    expect(asDraft.status).toBe(201);
+    expect(asDraft.body).toMatchObject({ product: { lifecycle: 'draft' }, draft: { keptAsDraft: true, onSale: false, stillNeeded: [expect.stringMatching(/allergen/)] } });
+    expect(((await get(h, 'u-owner', 'p-bread')).body as { product: { lifecycle: string } }).product.lifecycle).toBe('draft');
+    expect((await publish(h, 'u-owner', 'p-nohsn', { ...SALT, taxClass: null, lifecycle: 'draft' }, [GROCERY], 'k-nohsn-draft')).status).toBe(422);
   });
 
   it('an age-restricted category needs a minimum age (422); a minimum age the till cannot read — text, zero, a fraction — is refused as unreadable (400), never published unflagged (E1b · M12-FR-04)', async () => {
@@ -58,7 +65,7 @@ describe('product master authoring (M03-FR-01/03)', () => {
     // non-alcoholic) in a synthetic age-restricted category carries the same rule.
     const RESTRICTED = { categoryId: 'restricted', name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] };
     const drink = (safety?: unknown) =>
-      ({ sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', ...(safety === undefined ? {} : { safety }) });
+      ({ sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'new', ...(safety === undefined ? {} : { safety }) });
 
     const missing = await publish(h, 'u-owner', 'p-energy', drink(), [RESTRICTED], 'k-energy-missing');
     expect(missing.status).toBe(422);

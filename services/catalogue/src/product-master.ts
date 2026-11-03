@@ -124,6 +124,22 @@ export interface ProductMasterDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
+/**
+ * W4 · M03-FR-01: what a product needs to be SAVED at all, even as a draft — its name, SKU, unit, category and tax class
+ * ("a product cannot be saved without a category and tax class"). Everything else may still be missing in a draft.
+ */
+const DRAFT_NEEDS: ReadonlySet<string> = new Set(['name', 'sku', 'baseUom', 'primaryCategoryId', 'taxClass']);
+/**
+ * W4 · M03-FR-01: a draft may be INCOMPLETE, never WRONG — an issue is a "still needed" only when the field it names has not
+ * been given at all. A value that is there but cannot be accepted (an unreadable HUID, a nutrition panel that does not add
+ * up) is refused by name exactly as before, draft or not.
+ */
+function notGivenYet(record: ProductRecord, field: string): boolean {
+  let v: unknown = record;
+  for (const part of field.split('.')) v = v !== null && typeof v === 'object' ? (v as Record<string, unknown>)[part] : undefined;
+  return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+}
+
 /** The lifecycles a till sells (the pack maps `new` to active). */
 const SELLING: readonly ProductLifecycle[] = ['new', 'active', 'clearance'];
 
@@ -349,12 +365,29 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
   // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
   // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
   // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
-  let published: ProductRecord;
+  // Set by the judgement below on every path that does not refuse (published as judged, or kept as the draft sent).
+  let published: ProductRecord = toPublish;
   let activationRefused: ReturnType<typeof warningStanding> | undefined;
+  // W4 · M03-FR-01 "Alt/error: incomplete product saved as draft": a product sent as a DRAFT that head office has never put on
+  // sale (new, or held only as a draft) is KEPT as a draft when it is not yet complete — never in a pack, never on a till or
+  // the app — and the reply says, in words, what it still needs. It still needs its name, SKU, unit, category and tax class
+  // to be saved at all (M03-FR-01 acceptance). A COMPLETE product sent as a draft goes on sale as `new`, as before.
+  let stillNeeded: readonly string[] | undefined;
   try {
     published = publishProduct(toPublish, categories); // draft → 'new' on first publish
+    // W4 · M03-FR-01: a product head office already holds AS A DRAFT, sent again as a draft, stays a draft even once it is
+    // complete — it goes on sale only when a person moves it to new or active (never because a safety save completed it).
+    // A tobacco product keeps its own B16 path: held as a draft only until its warning picture is confirmed, then put on sale
+    // by saving it again (OB-140 "A") — that gate, not this one, decides when it goes on sale.
+    if (toPublish.lifecycle === 'draft' && current?.lifecycle === 'draft' && !isTobacco(current)) { published = { ...published, lifecycle: 'draft' }; stillNeeded = []; }
   } catch (err) {
-    if (err instanceof NotPublishableError) {
+    const keptAsDraft = err instanceof NotPublishableError && toPublish.lifecycle === 'draft'
+      && (current === undefined || current.lifecycle === 'draft')
+      && err.issues.every((i) => !DRAFT_NEEDS.has(i.field) && notGivenYet(toPublish, i.field));
+    if (keptAsDraft) {
+      published = toPublish;
+      stillNeeded = (err as NotPublishableError).issues.map((i) => i.message);
+    } else if (err instanceof NotPublishableError) {
       throw apiError(422, {
         code: 'product_not_publishable',
         // The blocking reasons in plain English — the person fixing it is not a programmer.
@@ -371,7 +404,7 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
         nextSafeAction: 'Include the product’s category in categories[], or correct primaryCategoryId.',
       });
     }
-    throw err;
+    if (!keptAsDraft) throw err;
   }
   // B16 (COTPA s.7 · OB-140 "A"): a tobacco product is ACTIVATED only with a named person's confirmation that its packs
   // carry the health-warning picture in force today. Without one, a product sent as a draft is kept as a draft (not on
@@ -479,6 +512,10 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
       status: 201 as const,
       body: {
         product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
+        // W4 · M03-FR-01: kept as a draft — not on sale, never in a pack — with what it still needs, in words (P-08).
+        ...(stillNeeded === undefined ? {} : { draft: { keptAsDraft: true, onSale: false, stillNeeded, detail: stillNeeded.length === 0
+          ? 'Kept as a draft — not on sale and not in any pack. It is complete: move it to new or active to put it on sale.'
+          : `Kept as a draft — not on sale and not in any pack. Before it can go on sale it still needs: ${stillNeeded.join('; ')}.` } }),
         ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
         ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
         ...(regulatedApproval === undefined ? {} : { regulatedApproval: { regulated: gained, approvedBy: regulatedApproval.decision.decidedBy, approvalId: regulatedApproval.decision.requestId } }), // OB-503

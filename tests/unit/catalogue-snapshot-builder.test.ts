@@ -191,4 +191,13 @@ describe('buildCatalogueSnapshot', () => {
     expect(hit.product.name).toBe('Rice 1kg');
     expect(cache.version()).toBe(5);
   });
+
+  it('W4 · M03-FR-01: a draft is never in a pack — left out and said, even with a price and a tax class', () => {
+    const r = buildCatalogueSnapshot(input({
+      products: [master({ productId: 'p1', sku: 'RICE1', name: 'Rice 1kg' }), master({ productId: 'p2', sku: 'GHEE1', name: 'Ghee 500 ml', status: 'draft' })],
+      priceEntries: [priceEntry({ id: 'base', productId: 'p1', scope: 'store', scopeRef: 'store-1' }), priceEntry({ id: 'ghee', productId: 'p2', scope: 'store', scopeRef: 'store-1' })],
+    }));
+    expect(r.snapshot.products.map((p) => p.productId)).toEqual(['p1']);
+    expect(r.excluded).toEqual([{ productId: 'p2', sku: 'GHEE1', reason: 'draft_not_on_sale' }]);
+  });
 });

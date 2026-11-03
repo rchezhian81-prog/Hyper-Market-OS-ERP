@@ -159,7 +159,7 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
     // OB-503: a regulated product reaching the tills does so with a second person's approval of exactly that publish.
     const publishApproved = async (id: string, p: unknown, categories: unknown[]) => call('POST', `/v1/catalogue/products/${id}/publish`, await regulatedPublishBody(h, T, id, { product: p, categories }));
 
-    const noPack = await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true }), [TOBACCO]);
+    const noPack = await publish('p-cig', { ...product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true }), lifecycle: 'new' }, [TOBACCO]); // sent to go on sale
     expect(noPack.status).toBe(422);
     expect(JSON.stringify(noPack.body)).toContain('a tobacco product needs its pack size');
     const underAge = await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 16, tobacco: true, packMinimumMinor: 1 }), [TOBACCO]);

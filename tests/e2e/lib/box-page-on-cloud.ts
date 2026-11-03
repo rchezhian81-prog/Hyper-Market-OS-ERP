@@ -128,6 +128,12 @@ export async function startBoxPageOnCloud(input: {
   readonly link?: BoxLink;
   /** W4: open the box's device socket for the phones; `pins` are the people whose till PINs the box's administrator issues. */
   readonly phones?: { readonly pins: readonly string[] };
+  /**
+   * W4 (M36-FR-02 · WF-01): something head office hands the box before it starts — e.g. the signed catalogue pack the real
+   * cloud published, written where the box keeps the pack it last accepted (`signed-pack.json` in `dataDir`). The box runs
+   * with the same pack-signing key the cloud signs with, so it verifies that pack exactly as one it pulled.
+   */
+  readonly beforeBoxStarts?: (cloud: RealCloud, dataDir: string) => Promise<void>;
 }): Promise<BoxCloudShop> {
   if (DATABASE_URL === undefined) throw new Error('startBoxPageOnCloud needs DATABASE_URL');
   execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
@@ -165,6 +171,7 @@ export async function startBoxPageOnCloud(input: {
       version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: store, branchId: store },
       roles, roleAssignments: input.people.map((p) => ({ userId: p.userId, roleId: `r-${p.userId}`, branchScope: [store] })),
     }), 'utf8');
+    if (input.beforeBoxStarts !== undefined) await input.beforeBoxStarts(cloud, dir);
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenantId, PACK_SIGNING_KEY: key, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
       EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_SCREEN_TRUST_FORWARDED_USER: '1',

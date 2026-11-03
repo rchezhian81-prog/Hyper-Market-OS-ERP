@@ -70,6 +70,22 @@ async function agentStopped(deps: AiControlDeps, tenantId: string, agent: AgentI
   return { stopped: false, enabled };
 }
 
+/**
+ * W4 · A04 (found by the connected customer-app run): WHICH products a shortlist offers, closest in price first — read from
+ * the proposal's own evidence (`services/api/src/ai-shopping.ts` names each alternative's stock read as
+ * `inventory availability` · `/v1/inventory/availability?productId=…`, in shortlist order). Without these ids the app could
+ * only offer to add the product that ran out. The wanted product itself is never one of them.
+ */
+function alternativesNamedIn(p: Pick<Proposal, 'evidence'>, forProductId: string): readonly string[] {
+  const ids: string[] = [];
+  for (const e of p.evidence) {
+    if (e.source !== 'inventory availability') continue;
+    const id = new URL(e.reference, 'http://evidence').searchParams.get('productId');
+    if (id !== null && id !== '' && id !== forProductId && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 /** OB-314: a customer's explicit opt-in to personalisation — the latest record for the purpose, on any channel. */
 export function personalisationConsented(records: readonly { readonly purpose: string; readonly given: boolean; readonly recordedAt: string }[]): boolean {
   let latest: { readonly given: boolean; readonly recordedAt: string } | undefined;
@@ -241,7 +257,7 @@ export function aiControlRoutes(deps: AiControlDeps): readonly Route[] {
         }
         const alternatives = productId === '' ? [] : (await deps.run(ctx.tenantId, 'A04'))
           .filter((p) => p.proposalId.startsWith(`a04-alternatives-${productId}-${locationId}-`))
-          .map((p) => ({ forProductId: productId, summary: p.summary, suggestedByAi: true as const, notice: AI_SUGGESTION_NOTICE, confidence: p.confidence ?? RULE_CONFIDENCE }));
+          .map((p) => ({ forProductId: productId, productIds: alternativesNamedIn(p, productId), summary: p.summary, suggestedByAi: true as const, notice: AI_SUGGESTION_NOTICE, confidence: p.confidence ?? RULE_CONFIDENCE }));
         // Purchase-based personalisation: ONLY with the explicit opt-in; otherwise nothing of their history is read.
         let boughtBefore: readonly { readonly productId: string; readonly inStock: number; readonly suggestedByAi: true; readonly notice: typeof AI_SUGGESTION_NOTICE }[] = [];
         if (consented) {

@@ -52,6 +52,8 @@ const WORDS = {
     safetySaveH: 'Save the safety, label and nutrition facts', safetySaveLead: 'These facts are saved on their own, with the version you opened. If someone else saved this product since, head office refuses and nothing of yours is saved — nobody’s change is ever overwritten.',
     saveSafety: 'Save safety and label', reload: 'Reload', safetyFirst: 'This product is not saved yet: its safety and label facts go with the record the first time — press “Save as a new version”.',
     changedMeanwhile: 'Someone else saved this product after you opened it. Nothing of yours was saved. Press “Reload” to see what is held now, then make your change again.',
+    minAge: 'Minimum age to buy it (years — leave empty if none)', keptDraft: 'Kept as a draft — not on sale and not in any pack. Before it can go on sale it still needs: {list}.', draftComplete: 'Kept as a draft — not on sale and not in any pack. It is complete: choose New or Active and save to put it on sale.',
+    needsApprovalSafety: 'This needs a second person: {why} Press “Ask for approval”; once they approve it on their Approvals page, press “Save safety and label” again.',
     useSafetySave: 'You changed the safety, label or nutrition facts: save them with “Save safety and label” below. Nothing was saved.', savedVersion: 'Saved — version {v}.',
     yes: 'yes', count: '{n} on record', defined: '{n} levels', subsCount: '{n} in order', notSet: 'not set', notKnown: 'Not known', by: 'by', version: 'Version', attrsFor: 'Attributes of this category',
   },
@@ -88,6 +90,8 @@ const WORDS = {
     safetySaveH: 'பாதுகாப்பு, லேபிள், ஊட்டச்சத்து விவரங்களைச் சேமி', safetySaveLead: 'இந்த விவரங்கள் நீங்கள் திறந்த பதிப்புடன் தனியாகச் சேமிக்கப்படும். அதன் பிறகு வேறொருவர் இந்தப் பொருளைச் சேமித்திருந்தால், தலைமை அலுவலகம் மறுக்கும்; உங்களுடையது எதுவும் சேமிக்கப்படாது — யாருடைய மாற்றமும் அழிக்கப்படாது.',
     saveSafety: 'பாதுகாப்பையும் லேபிளையும் சேமி', reload: 'மீண்டும் ஏற்று', safetyFirst: 'இந்தப் பொருள் இன்னும் சேமிக்கப்படவில்லை: முதல் முறை அதன் பாதுகாப்பு, லேபிள் விவரங்கள் பதிவுடன் சேர்ந்து செல்லும் — “புதிய பதிப்பாகச் சேமி” அழுத்துங்கள்.',
     changedMeanwhile: 'நீங்கள் திறந்த பிறகு வேறொருவர் இந்தப் பொருளைச் சேமித்துவிட்டார். உங்களுடையது எதுவும் சேமிக்கப்படவில்லை. இப்போது உள்ளதைப் பார்க்க “மீண்டும் ஏற்று” அழுத்தி, உங்கள் மாற்றத்தை மீண்டும் செய்யுங்கள்.',
+    minAge: 'வாங்கக் குறைந்தபட்ச வயது (ஆண்டுகள் — இல்லையெனில் காலியாக விடுங்கள்)', keptDraft: 'வரைவாக வைக்கப்பட்டது — விற்பனையில் இல்லை, எந்தப் பொதியிலும் இல்லை. விற்பனைக்கு வருவதற்கு முன் இன்னும் தேவை: {list}.', draftComplete: 'வரைவாக வைக்கப்பட்டது — விற்பனையில் இல்லை, எந்தப் பொதியிலும் இல்லை. இது முழுமையானது: விற்பனைக்கு வைக்க புதியது அல்லது செயலில் என்பதைத் தேர்வு செய்து சேமியுங்கள்.',
+    needsApprovalSafety: 'இதற்கு இரண்டாம் நபர் தேவை: {why} “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும், மீண்டும் “பாதுகாப்பையும் லேபிளையும் சேமி” அழுத்துங்கள்.',
     useSafetySave: 'பாதுகாப்பு, லேபிள் அல்லது ஊட்டச்சத்து விவரங்களை மாற்றியுள்ளீர்கள்: கீழே உள்ள “பாதுகாப்பையும் லேபிளையும் சேமி” மூலம் சேமியுங்கள். எதுவும் சேமிக்கப்படவில்லை.', savedVersion: 'சேமிக்கப்பட்டது — பதிப்பு {v}.',
     yes: 'ஆம்', count: '{n} பதிவில்', defined: '{n} நிலைகள்', subsCount: '{n} வரிசையில்', notSet: 'அமைக்கப்படவில்லை', notKnown: 'தெரியவில்லை', by: 'செய்தவர்', version: 'பதிப்பு', attrsFor: 'இந்த வகையின் பண்புகள்',
   },
@@ -143,6 +147,7 @@ let barcodes = null;
 let pack = null;
 let bundle = null;        // { bundle, history } or null
 let subs = null;          // { list, set, history }
+let pendingSafetyAsk = null; // W4 · OB-546: the approval the last SAFETY save needed (an age limit newly on a product on sale)
 let pendingAsk = null;    // { kind, subjectRef, details, summary } — the approval the last save needed
 let tab = 'record';
 
@@ -223,6 +228,7 @@ function fillRecord() {
   $('s-none').checked = Array.isArray(s.allergens) && s.allergens.length === 0;
   $('s-origin').value = s.countryOfOrigin ?? ''; $('s-storage').value = s.storageConditions ?? ''; $('s-net').value = s.netQuantity ?? '';
   $('s-packer').value = s.packerDetails ?? ''; $('s-care').value = s.consumerCareContact ?? ''; $('s-packedBySre').checked = s.packedBySre === true;
+  $('s-minage').value = s.minimumAge === undefined ? '' : String(s.minimumAge);
   const n = s.nutrition ?? {};
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
@@ -247,6 +253,9 @@ function safetyFromForm() {
   const allergens = text('s-allergens').split(',').map((a) => a.trim()).filter((a) => a !== '');
   if (allergens.length > 0) s.allergens = allergens; else if ($('s-none').checked) s.allergens = []; else delete s.allergens;
   if ($('s-packedBySre').checked) s.packedBySre = true; else delete s.packedBySre;
+  // W4 · OB-546: an age limit is a whole number of years; one head office cannot read is sent as typed and refused there by name.
+  const age = text('s-minage');
+  if (age === '') delete s.minimumAge; else s.minimumAge = /^\d+$/.test(age) ? Number(age) : age;
   const boxes = [...NUTRIENTS, ['servingSize']].map(([key]) => [key, text(`n-${key}`)]);
   if (boxes.every(([, v]) => v === '')) delete s.nutrition;
   else {
@@ -363,7 +372,7 @@ function paintWords() {
     ['l-r-name', 'name'], ['l-r-sku', 'sku'], ['l-r-baseUom', 'baseUom'], ['l-r-category', 'category'], ['l-r-brand', 'brand'], ['l-r-manufacturer', 'manufacturer'], ['l-r-parent', 'parent'],
     ['l-r-taxClass', 'taxClass'], ['l-r-lifecycle', 'lifecycle'], ['o-draft', 'draft'], ['o-new', 'new'], ['o-active', 'active'], ['o-clearance', 'clearance'], ['o-discontinued', 'discontinued'],
     ['mrp-h', 'mrpH'], ['l-m-from', 'mrpFrom'], ['l-m-rupees', 'mrpRupees'], ['safety-h', 'safetyH'], ['l-s-ingredients', 'ingredients'], ['l-s-allergens', 'allergens'], ['l-s-none', 'none'],
-    ['l-s-origin', 'origin'], ['l-s-storage', 'storage'], ['l-s-net', 'net'], ['l-s-packer', 'packer'], ['l-s-care', 'care'], ['l-s-packedBySre', 'packedBySre'],
+    ['l-s-origin', 'origin'], ['l-s-storage', 'storage'], ['l-s-net', 'net'], ['l-s-packer', 'packer'], ['l-s-care', 'care'], ['l-s-packedBySre', 'packedBySre'], ['l-s-minage', 'minAge'], ['ask-safety-approval', 'ask'],
     ['nutrition-h', 'nutritionH'], ['nutrition-lead', 'nutritionLead'], ['safety-save-h', 'safetySaveH'], ['safety-save-lead', 'safetySaveLead'], ['l-s-why', 'why'], ['save-safety', 'saveSafety'], ['safety-reload', 'reload'], ['l-r-why', 'why'], ['save', 'save'], ['ask-approval', 'ask'],
     ['codes-h', 'tabCodes'], ['codes-lead', 'codesLead'], ['l-b-code', 'code'], ['l-b-kind', 'kind'], ['o-internal', 'internal'], ['o-case', 'case'], ['o-embedded', 'embedded'], ['l-b-level', 'level'], ['add-barcode', 'addBarcode'],
     ['pack-h', 'packH'], ['pack-lead', 'packLead'], ['save-pack', 'savePack'], ['l-cv-qty', 'cvQty'], ['l-cv-level', 'cvLevel'], ['convert', 'convert'],
@@ -387,6 +396,7 @@ function paint() {
   }
   for (const el of document.querySelectorAll('#view-record fieldset input, #view-record fieldset select, #view-record fieldset textarea, #pack-rows input')) el.disabled = !mayEdit;
   $('ask-approval').hidden = pendingAsk === null || !mayEdit;
+  $('ask-safety-approval').hidden = pendingSafetyAsk === null || !mayEdit;
   $('save-safety').disabled = !mayEdit || held === null;
   $('safety-reload').hidden = !safetyConflict;
   if (safetyConflict) tell($('safety-status'), false, t('changedMeanwhile'));
@@ -471,6 +481,9 @@ async function saveRecord() {
   if (!out.ok) { say(st, out, ''); return; }
   // Said only once head office's new version is read back into the form — what is shown is what head office kept.
   await loadLists(); await load();
+  // W4 · M03-FR-01: kept as a draft — said with what it still needs (head office's words), never shown as on sale.
+  const kept = out.body?.draft;
+  if (kept?.keptAsDraft === true) { tell($('record-status'), true, (kept.stillNeeded ?? []).length === 0 ? t('draftComplete') : fill(t('keptDraft'), { list: kept.stillNeeded.join('; ') })); return; }
   tell($('record-status'), true, approval.decidedBy === undefined ? t('saved') : fill(t('usingApproval'), { by: approval.decidedBy }));
 }
 
@@ -482,7 +495,22 @@ async function saveSafety() {
   const why = $('s-why').value.trim();
   if (why === '') { tell(st, false, t('needWhy')); return; }
   if (heldVersion === undefined) { tell(st, false, t('cannotRead')); return; }
-  const out = await call('POST', `/v1/catalogue/products/${encodeURIComponent(productId)}/safety`, { expectedVersion: heldVersion, safety: safetyFromForm(), reason: why });
+  const body = { expectedVersion: heldVersion, safety: safetyFromForm(), reason: why };
+  // W4 · OB-546: an age limit newly on a product on sale needs a second person — the approval given for exactly this save
+  // is named; while it waits, nothing is sent.
+  const subjectRef = `product:${productId}`;
+  const details = { ...body, productId };
+  const found = await ownApproval('regulated_product_publish', subjectRef, details);
+  if (found.waiting === true) { tell(st, false, t('waiting')); return; }
+  const out = await call('POST', `/v1/catalogue/products/${encodeURIComponent(productId)}/safety`, { ...body, ...(found.approvalId === undefined ? {} : { approvalId: found.approvalId }) });
+  if (!out.ok && out.body?.error?.code === 'regulated_product_needs_second_person') {
+    const rejected = await ownApproval('regulated_product_publish', subjectRef, details);
+    pendingSafetyAsk = { kind: 'regulated_product_publish', subjectRef, details, summary: `Age-limited product: ${held?.name ?? productId} (${productId})` };
+    tell(st, false, rejected.rejected !== undefined ? fill(t('rejectedBy'), { why: rejected.rejected }) : fill(t('needsApprovalSafety'), { why: out.body.error.whatHappened }));
+    $('ask-safety-approval').hidden = false;
+    return;
+  }
+  pendingSafetyAsk = null;
   if (out.status === 409 && out.body?.error?.code === 'product_changed_meanwhile') {
     // Nothing was written. The person's typed facts stay on the form until they press Reload.
     safetyConflict = true; tell(st, false, t('changedMeanwhile')); $('safety-reload').hidden = false;
@@ -491,7 +519,7 @@ async function saveSafety() {
   if (!out.ok) { say(st, out, ''); return; }
   // Said only once head office's new version is read back into the form — what is shown is what head office kept.
   await load();
-  tell($('safety-status'), true, fill(t('savedVersion'), { v: heldVersion ?? out.body?.version }));
+  tell($('safety-status'), true, found.decidedBy === undefined ? fill(t('savedVersion'), { v: heldVersion ?? out.body?.version }) : fill(t('usingApproval'), { by: found.decidedBy }));
 }
 
 async function askApproval() {
@@ -507,6 +535,14 @@ $('ask').addEventListener('submit', (e) => { e.preventDefault(); void load(); })
 $('r-category').addEventListener('change', paintAttributes);
 $('save').addEventListener('click', () => { void saveRecord(); });
 $('ask-approval').addEventListener('click', () => { void askApproval(); });
+$('ask-safety-approval').addEventListener('click', async () => {
+  const st = $('safety-status');
+  if (pendingSafetyAsk === null) return;
+  const why = $('s-why').value.trim();
+  if (why === '') { tell(st, false, t('needWhy')); return; }
+  const out = await call('POST', '/v1/approvals/requests', { kind: pendingSafetyAsk.kind, subjectRef: pendingSafetyAsk.subjectRef, details: pendingSafetyAsk.details, valueMinor: null, summary: pendingSafetyAsk.summary, reason: why });
+  if (out.ok) { tell(st, true, t('asked')); $('ask-safety-approval').hidden = true; } else say(st, out, '');
+});
 $('save-safety').addEventListener('click', () => { void saveSafety(); });
 $('safety-reload').addEventListener('click', () => { void load(); });
 $('barcode-form').addEventListener('submit', async (e) => {
