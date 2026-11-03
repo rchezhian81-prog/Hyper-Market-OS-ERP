@@ -210,6 +210,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'emergency-access': { en: 'temporary access break glass elevated support urgent', ta: 'தற்காலிக அணுகல் அவசரம்' },
   'safety-incidents': { en: 'injury accident near miss fire first aid safety incident', ta: 'காயம் விபத்து தீ பாதுகாப்பு' },
   'ops-alerts': { en: 'alert backup down offline escalation owner acknowledge', ta: 'எச்சரிக்கை காப்புப் பிரதி' },
+  // W4 (M35-FR-03).
+  'failed-jobs': { en: 'background job failed retry run again overnight error', ta: 'பணி தோல்வி மீண்டும்' },
   'document-retention': { en: 'retention dispose disposal archive keep documents', ta: 'ஆவணம் காப்பு அகற்று' },
   'sales-commission': { en: 'commission salesperson rate incentive earned', ta: 'கமிஷன் விற்பனையாளர்' },
 });
@@ -640,6 +642,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'safety-incidents', label: 'Safety incidents', labelTa: 'பாதுகாப்பு நிகழ்வுகள்', path: '/safety-incidents', requires: 'facilities.incident.record', group: 'People' },
   // Wave 3 (M35-FR-04): my alerts, every live alert, tick one as seen, and who owns each alert.
   { id: 'ops-alerts', label: 'Operational alerts', labelTa: 'செயல்பாட்டு எச்சரிக்கைகள்', path: '/ops-alerts', requires: 'platform.health.read', group: 'Systems' },
+  // W4 (M35-FR-03): the background jobs that failed, with their error, and send one round again (P-08).
+  { id: 'failed-jobs', label: 'Failed jobs', labelTa: 'தோல்வியடைந்த பணிகள்', path: '/failed-jobs', requires: 'platform.job.read', group: 'Systems' },
   // Wave 3 (M31-FR-01): documents past their keeping time, and record a disposal with a reason.
   { id: 'document-retention', label: 'Document retention', labelTa: 'ஆவணக் காப்புக் காலம்', path: '/document-retention', requires: 'document.template.read', group: 'Operations' },
   // Wave 3 (M22-FR-03): a business salesperson's commission rate — proposed, approved by someone else — and what they earned.

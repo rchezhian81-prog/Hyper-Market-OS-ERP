@@ -7,6 +7,7 @@ import { createSafetyIncidentsSession, safetyWords, safetyOutcomeWords, INCIDENT
 import { createOpsAlertsSession, opsAlertsWords, opsAlertsOutcomeWords, ALERT_LEVELS } from './ops-alerts-session';
 import { createDocumentRetentionSession, retentionWords, retentionOutcomeWords } from './document-retention-session';
 import { createSalesCommissionSession, commissionWords, commissionOutcomeWords, percentOf, rupeesOf } from './sales-commission-session';
+import { createFailedJobsSession, failedJobsWords, failedJobsOutcomeWords } from './failed-jobs-session';
 import { shopMomentOf } from './findings-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
@@ -29,6 +30,10 @@ export function wireW3SecOps(win: Record<string, unknown>, viewerIdentity: (raw:
   }
   if (win['opsAlertsData'] !== undefined) {
     win['opsAlerts'] = { session: createOpsAlertsSession({ viewer: viewerIdentity(win['opsAlertsData']) }), words: opsAlertsWords, outcomeWords: opsAlertsOutcomeWords, levels: ALERT_LEVELS, moment: shopMomentOf };
+  }
+  // W4 (M35-FR-03): the failed background jobs, and send one round again.
+  if (win['failedJobsData'] !== undefined) {
+    win['failedJobs'] = { session: createFailedJobsSession({ viewer: viewerIdentity(win['failedJobsData']) }), words: failedJobsWords, outcomeWords: failedJobsOutcomeWords, moment: shopMomentOf };
   }
   if (win['documentRetentionData'] !== undefined) {
     win['documentRetention'] = { session: createDocumentRetentionSession({ viewer: viewerIdentity(win['documentRetentionData']) }), words: retentionWords, outcomeWords: retentionOutcomeWords };

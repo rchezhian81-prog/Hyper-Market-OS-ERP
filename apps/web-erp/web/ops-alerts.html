@@ -10,7 +10,9 @@
       Operational alerts (W3 · M35-FR-04 · §32 · P-03 · P-08). A THIN CLIENT over head office's alert lifecycle and alert
       rules: my alerts (GET /v1/platform/alerts/inbox), every live alert (GET /v1/platform/alerts), tick one as seen
       (POST /v1/platform/alerts/:alertId/acknowledge), and who owns each alert and the backup age (GET and PUT
-      /v1/platform/alert-rules, sending basedOnVersion — the version read). Its session is apps/web-erp/src/ops-alerts-session.ts.
+      /v1/platform/alert-rules, sending basedOnVersion — the version read), and (W4 · M35-FR-01) the backup and restore
+      readings: the newest backup the backup job reported and the newest good one (GET /v1/platform/operational-health/observed)
+      and the latest backup-restore rehearsal (GET /v1/platform/recovery-gate). Its session is apps/web-erp/src/ops-alerts-session.ts.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -58,6 +60,11 @@
         <h3 id="all-h"></h3>
         <p class="status" id="all-status" role="status" aria-live="polite"></p>
         <ul class="rows history" id="all"></ul>
+      </section>
+      <section id="readings-s" hidden aria-labelledby="readings-h">
+        <h3 id="readings-h"></h3>
+        <p class="status" id="readings-status" role="status" aria-live="polite"></p>
+        <ul class="rows history" id="readings"></ul>
       </section>
       <section id="rules-s" hidden aria-labelledby="rules-h">
         <h3 id="rules-h"></h3>

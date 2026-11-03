@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2157,
+  "testFiles": 2164,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -33,7 +33,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 32,
-        "integration": 29,
+        "integration": 30,
         "realDb": 12,
         "browser": 12,
         "connected": 5,
@@ -104,7 +104,8 @@
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-box-dates-by-the-shops-zone-even-on-a-utc-machine.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
-          "tests/integration/trading-day-cutoff.test.ts"
+          "tests/integration/trading-day-cutoff.test.ts",
+          "tests/integration/w4-the-owner-app-and-the-dashboard-agree-on-today.test.ts"
         ],
         "realDb": [
           "tests/integration/a-branch-closes-only-on-measured-facts.test.ts",
@@ -1854,8 +1855,8 @@
         "unit": 9,
         "integration": 19,
         "realDb": 5,
-        "browser": 4,
-        "connected": 3,
+        "browser": 5,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -1903,12 +1904,14 @@
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
           "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
           "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
-          "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts"
+          "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts",
+          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
           "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
-          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts"
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
+          "tests/e2e/w4-the-service-report-covers-every-case.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2481,7 +2484,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 18,
-        "integration": 18,
+        "integration": 19,
         "realDb": 9,
         "browser": 5,
         "connected": 2,
@@ -2527,7 +2530,8 @@
           "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
           "tests/integration/the-owners-takings-are-net-of-refunds.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/w4-the-owner-app-and-the-dashboard-agree-on-today.test.ts"
         ],
         "realDb": [
           "tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts",
@@ -2633,8 +2637,8 @@
         "unit": 8,
         "integration": 14,
         "realDb": 7,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2678,11 +2682,13 @@
           "tests/e2e/document-template-publish-delivery.e2e.ts",
           "tests/e2e/r4c-the-do-not-contact-list.e2e.ts",
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
-          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts"
+          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-m31-documents-and-messages-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-a-document-past-its-keeping-time-is-disposed-on-the-retention-page.e2e.ts",
-          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts"
+          "tests/e2e/w3-message-queue-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-m31-documents-and-messages-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2909,11 +2915,11 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 39,
         "realDb": 31,
-        "browser": 5,
-        "connected": 3,
+        "browser": 7,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -2935,7 +2941,8 @@
           "tests/unit/the-store-computer-role-covers-what-the-box-sends.test.ts",
           "tests/unit/the-store-computer-stamps-when-it-took-the-refund.test.ts",
           "tests/unit/the-till-re-sends-its-devices.test.ts",
-          "tests/unit/w3-security-people-and-operations-sessions.test.ts"
+          "tests/unit/w3-security-people-and-operations-sessions.test.ts",
+          "tests/unit/w4-operations-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-build-lease-cut-off-here-is-freed-on-the-database-at-once.test.ts",
@@ -3016,12 +3023,16 @@
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
           "tests/e2e/r4c-cert-in-and-capacity.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts"
+          "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts",
+          "tests/e2e/w4-a-failed-job-is-seen-and-run-again.e2e.ts",
+          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts"
         ],
         "connected": [
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts"
+          "tests/e2e/w3-an-operational-alert-is-owned-ticked-as-seen-and-re-owned.e2e.ts",
+          "tests/e2e/w4-a-failed-job-is-seen-and-run-again.e2e.ts",
+          "tests/e2e/w4-the-backup-and-restore-readings-are-on-the-alerts-page.e2e.ts"
         ],
         "device": [],
         "uat": []
