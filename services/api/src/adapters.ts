@@ -94,7 +94,7 @@ import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/sr
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCustomerGstinDeps, CustomerGstinRecord, CustomerGstinRemoval, CustomerGstinFact } from '../../finance/src/b2b-customer-gstin';
 import { gstinInForce } from '../../finance/src/b2b-customer-gstin';
-import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
+import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment, ChasingStepsSetting } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
 import { checkCredit } from '../../../packages/b2b/src/credit';
@@ -140,7 +140,7 @@ import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
-import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
+import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance, LabourGuideSetting } from '../../finance/src/attendance-store';
 import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../finance/src/checklist-store';
 import type { TaskStoreDeps, TaskDefinition as WfTaskDef, TaskCompletion as WfTaskDone } from '../../finance/src/task-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
@@ -1184,8 +1184,11 @@ export function gstr1SubmissionAdapter(input: {
   readonly now: () => string;
 }): Gstr1SubmissionStoreDeps {
   const streamFor = (period: string): string => forGstr1Submission(period);
+  const people = peopleAdapter(input);
   return {
     now: input.now,
+    // OB-683: the name shown beside a return filed by hand — the signed-in person's own record in the staff register.
+    personName: async (tenantId, userId) => (await people.people(tenantId)).find((p) => p.userId === userId)?.displayName,
 
     load: async (tenantId, period) => {
       const persisted = await input.store.readStream(tenantId, streamFor(period));
@@ -1197,11 +1200,14 @@ export function gstr1SubmissionAdapter(input: {
       // A given step at a given instant is one fact — keyed on kind + actor + at, so a retry collapses.
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'portal';
+      // OB-683: a return is filed by hand ONCE per period — keyed on the period alone, so a second record (any person, any
+      // time) collapses onto the first at the store, whatever raced it.
+      const key = event.kind === 'filedByHand' ? `gstr1sub-${tenantId}-${period}-filedByHand` : `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`;
       const lifecycle = makeEvent({
-        id: keyedEventId('gstr1sub', `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`),
+        id: keyedEventId('gstr1sub', key),
         type: 'Gstr1SubmissionRecorded',
         occurredAt: input.now(),
-        idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
+        idempotencyKey: key,
         source: 'api/finance',
         payload: event,
       });
@@ -1904,8 +1910,17 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
  * stored staff for a branch and runs the tested `labourCost` (reported, never enforced).
  */
 export function attendanceStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): AttendanceStoreDeps {
+  const LABOUR_GUIDE = streamName(STREAM.workforce, 'labour-cost-guide');
   return {
     now: input.now,
+    // OB-686: the owner's labour-cost guide — append-only, every version kept; the newest applies. None → "not set".
+    labourGuide: (tenantId) => latest<LabourGuideSetting>(input.store, tenantId, LABOUR_GUIDE, 'LabourCostGuideSet'),
+    recordLabourGuide: async (tenantId, setting) => {
+      const key = `labour-guide-${tenantId}-${setting.setAt}-${setting.setBy}`;
+      await input.store.append(tenantId, LABOUR_GUIDE, makeEvent({
+        id: keyedEventId('labour-guide', key), type: 'LabourCostGuideSet', occurredAt: setting.setAt, idempotencyKey: key, source: 'api/hr', payload: setting,
+      }));
+    },
     putAttendance: async (tenantId, record, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
         // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
@@ -5716,8 +5731,19 @@ export function b2bCollectionsAdapter(input: {
 }): B2BCollectionsDeps {
   // Each B2B customer folds its own stream. Invoices are recorded with settledMinor 0; each invoice's
   // real settled is PROJECTED by summing the allocations of every recorded payment (#2 — never stored).
+  const CHASING_STEPS = streamName(STREAM.b2b, 'chasing-steps');
   return {
     now: input.now,
+
+    // OB-686: the owner's chasing steps — append-only, every version kept; the newest applies. None → "not set".
+    chasingSteps: (tenantId) => latest<ChasingStepsSetting>(input.store, tenantId, CHASING_STEPS, 'B2BChasingStepsSet'),
+    recordChasingSteps: async (tenantId, setting) => {
+      const key = `b2b-chasing-steps-${tenantId}-${setting.setAt}-${setting.setBy}`;
+      await input.store.append(tenantId, CHASING_STEPS, makeEvent({
+        id: keyedEventId('b2b-chasing-steps', key), type: 'B2BChasingStepsSet', occurredAt: setting.setAt,
+        idempotencyKey: key, source: 'api/finance', payload: setting,
+      }));
+    },
 
     // The finance AR balance for this customer — PROJECTED from the SAME receivable-movement stream
     // the credit surface folds (M22-FR-01), so the reconciliation compares the collections sub-ledger

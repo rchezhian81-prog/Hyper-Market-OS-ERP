@@ -7,7 +7,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.workingTime ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, rosterRead: false, rosterManage: false, setStandard: false };
+const may = session?.may ?? { named: false, rosterRead: false, rosterManage: false, setStandard: false, setGuide: false };
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const t = (k) => (api === null ? k : api.words(lang(), k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
@@ -20,9 +20,9 @@ const say = (id, out, okWords = '') => { $(id).textContent = out.result === 'ok'
 const rupees = (m) => `₹${(m / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 let check = null; let pubs = null; let standards = null; let cost = null; let published = null;
-// The guide is the owner's number. When none is typed, head office's engine still compares against a built-in figure; that
-// figure is not the owner's, so this page then shows no comparison at all — only the cost and its share, "guide not set".
-let costGuideTyped = false;
+// The guide is the owner's number (OB-686: the old built-in 12% is gone). Head office compares against a guide typed here for
+// a what-if, else the owner's own setting; with neither it compares nothing — the cost and its share, "guide not set".
+let guide = null; // the owner's guide as head office answered ({ state: 'not_set' } | { state: 'set', guide })
 
 function checkNode() {
   const box = el('div', { id: 'rc-out' });
@@ -61,9 +61,17 @@ function costNode() {
   const box = el('div', { id: 'lc-out' });
   if (cost === null) return box;
   const share = cost.labourBps === 'not_meaningful' ? t('notMeaningful') : `${(cost.labourBps / 100).toFixed(2)}% ${t('shareOfSales')}`;
-  const guide = !costGuideTyped ? t('guideNotSet') : cost.aboveGuide ? t('aboveGuide') : '';
-  box.append(el('p', { cls: 'status', id: 'lc-line', text: `${t('costIs')} ${rupees(cost.labourCostMinor)} · ${share}${guide === '' ? '' : ` · ${guide}`}` }));
-  if (costGuideTyped) box.append(el('p', { cls: 'muted', text: cost.detail ?? '' }));
+  const compared = cost.guideBps !== null && cost.guideBps !== undefined;
+  const words = !compared ? t('guideNotSet') : cost.aboveGuide ? t('aboveGuide') : `${t('withinGuide')} (${cost.guideBps / 100}%)`;
+  box.append(el('p', { cls: 'status', id: 'lc-line', 'data-guide': cost.guideFrom ?? (compared ? 'typed' : 'not_set'), text: `${t('costIs')} ${rupees(cost.labourCostMinor)} · ${share} · ${words}` }));
+  if (compared) box.append(el('p', { cls: 'muted', text: cost.detail ?? '' }));
+  return box;
+}
+
+function guideNode() {
+  const line = guide === null ? '' : guide.state === 'set' ? t('guideOwnerSet').replace('{percent}', String(guide.guide.guideBps / 100)).replace('{who}', guide.guide.setBy) : t('guideOwnerNotSet');
+  const box = el('div', { id: 'lg-box' }, el('h3', { text: t('guideOwnerH') }), el('p', { cls: 'status', id: 'lg-line', 'data-state': guide?.state ?? '', text: line }));
+  if (may.setGuide) box.append(el('div', { cls: 'form-row' }, field('lg-percent', t('guidePercent'), { inputmode: 'decimal' }), btn('lg-save', t('guideSave'), 'check')), statusLine('lg-status'));
   return box;
 }
 
@@ -74,6 +82,7 @@ function paint() {
     statusLine('rc-status'), checkNode(), el('h3', { text: t('publicationsH') }), pubsNode(),
     el('h3', { text: t('standardsH') }), statusLine('ls-status'), standardsNode(),
     ...(may.setStandard ? [el('div', { cls: 'form-row' }, field('ls-role', t('role')), field('ls-n', t('billsPerHour'), { inputmode: 'numeric' }), btn('ls-save', t('save'), 'check')), statusLine('ls-save-status')] : []),
+    guideNode(),
     el('h3', { text: t('costH') }), el('div', { cls: 'form-row' }, field('lc-date', t('date'), { type: 'date' }), field('lc-sales', t('sales'), { inputmode: 'decimal' }), field('lc-guide', t('guide'), { inputmode: 'numeric' }), btn('lc-show', t('showCost'), 'indian-rupee')),
     statusLine('lc-status'), costNode());
   for (const [id, v] of Object.entries(typed)) { const n = $(id); if (n !== null) n.value = v; }
@@ -81,6 +90,7 @@ function paint() {
 }
 
 async function loadPubs() { const b = val('rc-branch'); if (b.trim() === '') return; const out = await session.publications(b); pubs = out.result === 'ok' ? out.value : null; }
+async function loadGuide() { const out = await session.labourGuide(); guide = out.result === 'ok' ? out.value : null; paint(); }
 async function loadStandards() { const out = await session.standards(); standards = out.result === 'ok' ? out.value : null; paint(); say('ls-status', out); }
 
 function wire() {
@@ -97,10 +107,10 @@ function wire() {
     await loadPubs(); paint(); say('rc-status', out);
   });
   on('ls-save', async () => { const out = await session.setStandard(val('ls-role'), val('ls-n')); if (out.result === 'ok') await loadStandards(); say('ls-save-status', out, t('saved')); });
+  on('lg-save', async () => { const out = await session.setLabourGuide(val('lg-percent')); if (out.result === 'ok') { guide = out.value; paint(); } say('lg-status', out, t('saved')); });
   on('lc-show', async () => {
     $('lc-status').textContent = t('reading');
     const out = await session.labourCost(val('rc-branch'), val('lc-date'), val('lc-sales'), val('lc-guide'));
-    costGuideTyped = val('lc-guide').trim() !== '';
     cost = out.result === 'ok' ? out.value : null; paint(); say('lc-status', out);
   });
 }
@@ -110,4 +120,5 @@ if (api !== null && $('roster-pub') !== null && may.named && may.rosterRead) {
   $('lang').addEventListener('click', () => { paint(); });
   paint();
   void loadStandards();
+  void loadGuide();
 }

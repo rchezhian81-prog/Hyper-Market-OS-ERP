@@ -73,13 +73,16 @@ describe('Settings — the owner\'s shop policy numbers (M13-FR-01/02/03 · M28-
     ]);
     const t = text(said);
     expect(t).toContain('Return window: Not set by the owner — returns are not limited by age until it is set.');
-    expect(t).toContain('Refund approval threshold: Not set by the owner — until it is, every refund needs a manager\'s approval');
+    // OB-686: the kept safety limits say they are built-in and not the owner's — one wording.
+    expect(t).toContain('Refund approval threshold: Every refund needs a manager\'s approval — built-in, not yet set by the owner.');
     expect(t).toContain('Store-credit cap: Not set by the owner — store credit cannot be given until it is set.');
     expect(t).toContain('No-receipt return cap: Not set by the owner — returns without a bill are switched off until it is set.');
-    expect(t).toContain('Write-off threshold: Not set by the owner — until it is, head office uses its built-in ₹500.00.');
-    expect(t).toContain('Count approval threshold: Not set by the owner — until it is, head office uses its built-in ₹1,000.00.');
-    expect(t).toContain('quantity 0%, price 1%, ignore under ₹1.00');
+    expect(t).toContain('Write-off threshold: ₹500.00 — built-in, not yet set by the owner.');
+    expect(t).toContain('Count approval threshold: ₹1,000.00 — built-in, not yet set by the owner.');
+    expect(t).toContain('Supplier bill match tolerances: quantity 0% · price 1% · differences under ₹1.00 are ignored — built-in, not yet set by the owner.');
+    expect(t.match(/built-in, not yet set by the owner/g)).toHaveLength(4);
     expect(text(said, 'ta')).toContain('உரிமையாளர் அமைக்கவில்லை');
+    expect(text(said, 'ta').match(/உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை/g)).toHaveLength(4);
     expect(ho.calls.every((c) => c.method === 'GET')).toBe(true);
   });
 

@@ -43,7 +43,7 @@ export const WORKING_TIME_COPY = {
     published: 'Published.', needs_publishing: 'needs publishing', stands: 'published', roster_changed_since: 'roster changed since — publish again', publicationsH: 'Weeks published', noPublications: 'No week is published for this store yet.',
     standardsH: 'Service standard per role (owner\'s number)', role: 'Role', billsPerHour: 'Bills one person serves an hour', noStandards: 'No service standard is set yet — the forecast cannot work out staff for a role without one.', setBy: 'set by',
     costH: 'Labour cost against the day\'s sales (reported, never a cap)', sales: 'The day\'s sales (₹)', guide: 'Owner\'s guide (basis points, optional)', showCost: 'Show the labour cost',
-    costIs: 'Labour cost', shareOfSales: 'of sales', aboveGuide: 'above the owner\'s guide', guideNotSet: 'guide not set', notMeaningful: 'not meaningful (no sales)',
+    costIs: 'Labour cost', shareOfSales: 'of sales', aboveGuide: 'above the owner\'s guide', guideNotSet: 'guide not set by the owner — nothing compared', guideOwnerH: 'The owner\'s labour-cost guide', guideOwnerNotSet: 'Not set by the owner — the cost and its share are shown, and nothing is compared.', guideOwnerSet: '{percent}% of sales (set by {who})', guidePercent: 'Guide (% of sales)', guideSave: 'Save the guide', badGuide: 'Write the guide as a percentage of sales, more than 0 and at most 100, e.g. 10 or 9.5.', fromOwner: 'against the owner\'s guide', withinGuide: 'within the guide', notMeaningful: 'not meaningful (no sales)',
     needFields: 'Fill in every field first.', badDate: 'Write the date as YYYY-MM-DD.', badNumber: 'Write a whole number.', badHolidays: 'Write each holiday as YYYY-MM-DD and its name.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot read this.', cannotSet: 'Only the owner sets these.', cannotManage: 'Your role cannot record this.', cannotRegister: 'Your role cannot read the registers.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.', reading: 'Reading from head office…',
@@ -65,7 +65,7 @@ export const WORKING_TIME_COPY = {
     published: 'வெளியிடப்பட்டது.', needs_publishing: 'வெளியிட வேண்டும்', stands: 'வெளியிடப்பட்டது', roster_changed_since: 'பின்னர் பணிமுறை மாறியது — மீண்டும் வெளியிடு', publicationsH: 'வெளியிட்ட வாரங்கள்', noPublications: 'இந்தக் கடைக்கு இன்னும் எந்த வாரமும் வெளியிடப்படவில்லை.',
     standardsH: 'பங்குக்கான சேவைத் தரம் (உரிமையாளரின் எண்)', role: 'பங்கு', billsPerHour: 'ஒருவர் ஒரு மணிநேரத்தில் கவனிக்கும் பில்கள்', noStandards: 'இன்னும் சேவைத் தரம் அமைக்கப்படவில்லை — அது இல்லாமல் ஒரு பங்குக்கு எத்தனை பேர் தேவை எனக் கணிக்க முடியாது.', setBy: 'அமைத்தவர்',
     costH: 'நாளின் விற்பனைக்கு எதிரான பணியாளர் செலவு (அறிவிப்பு மட்டும், வரம்பு அல்ல)', sales: 'நாளின் விற்பனை (₹)', guide: 'உரிமையாளரின் வழிகாட்டி (அடிப்படைப் புள்ளிகள், விருப்பம்)', showCost: 'பணியாளர் செலவைக் காட்டு',
-    costIs: 'பணியாளர் செலவு', shareOfSales: 'விற்பனையில்', aboveGuide: 'உரிமையாளரின் வழிகாட்டிக்கு மேல்', guideNotSet: 'வழிகாட்டி அமைக்கப்படவில்லை', notMeaningful: 'பொருளற்றது (விற்பனை இல்லை)',
+    costIs: 'பணியாளர் செலவு', shareOfSales: 'விற்பனையில்', aboveGuide: 'உரிமையாளரின் வழிகாட்டிக்கு மேல்', guideNotSet: 'உரிமையாளர் வழிகாட்டி அமைக்கவில்லை — எதுவும் ஒப்பிடப்படவில்லை', guideOwnerH: 'உரிமையாளரின் பணியாளர் செலவு வழிகாட்டி', guideOwnerNotSet: 'உரிமையாளர் அமைக்கவில்லை — செலவும் அதன் பங்கும் காட்டப்படும், எதுவும் ஒப்பிடப்படாது.', guideOwnerSet: 'விற்பனையில் {percent}% ({who} அமைத்தார்)', guidePercent: 'வழிகாட்டி (விற்பனையில் %)', guideSave: 'வழிகாட்டியைச் சேமி', badGuide: 'வழிகாட்டியை விற்பனையின் சதவீதமாக எழுதுங்கள் — 0க்கு மேல், 100 வரை, எ.கா. 10 அல்லது 9.5.', fromOwner: 'உரிமையாளரின் வழிகாட்டியுடன் ஒப்பிட்டு', withinGuide: 'வழிகாட்டிக்குள்', notMeaningful: 'பொருளற்றது (விற்பனை இல்லை)',
     needFields: 'முதலில் எல்லாப் புலங்களையும் நிரப்புங்கள்.', badDate: 'நாளை YYYY-MM-DD என எழுதுங்கள்.', badNumber: 'முழு எண்ணை எழுதுங்கள்.', badHolidays: 'ஒவ்வொரு விடுமுறையையும் YYYY-MM-DD மற்றும் அதன் பெயருடன் எழுதுங்கள்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு இதைப் படிக்க முடியாது.', cannotSet: 'உரிமையாளர் மட்டுமே இவற்றை அமைக்கிறார்.', cannotManage: 'உங்கள் பங்கு இதைப் பதிவு செய்ய முடியாது.', cannotRegister: 'உங்கள் பங்கு பதிவேடுகளைப் படிக்க முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, சேமிக்கப்படவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
@@ -80,7 +80,7 @@ export const WT_LIMIT_KEYS = ['weeklyHolidayMinDays', 'maxDailyWorkMinutes', 'ma
 export const WT_LEAVE_TYPES = ['casual', 'sick', 'festival', 'unpaid'] as const;
 export const WT_LEAVE_KINDS = ['annual', ...WT_LEAVE_TYPES] as const;
 
-type Why = 'nobody' | 'cannotRead' | 'cannotSet' | 'cannotManage' | 'cannotRegister' | 'needFields' | 'badDate' | 'badNumber' | 'badHolidays';
+type Why = 'nobody' | 'cannotRead' | 'cannotSet' | 'cannotManage' | 'cannotRegister' | 'needFields' | 'badDate' | 'badNumber' | 'badHolidays' | 'badGuide';
 type Done<T> = Promise<Outcome<T, Why>>;
 const isDate = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
 const whole = (v: string): number | undefined => (/^\d+$/.test(v.trim()) ? Number(v.trim()) : undefined);
@@ -103,7 +103,7 @@ export function holidayLines(text: string): readonly { readonly date: string; re
 }
 
 export interface WorkingTimeSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly configure: boolean; readonly rosterRead: boolean; readonly rosterManage: boolean; readonly registers: boolean; readonly setStandard: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly configure: boolean; readonly rosterRead: boolean; readonly rosterManage: boolean; readonly registers: boolean; readonly setStandard: boolean; readonly setGuide: boolean };
   settings(): Done<Record<string, unknown>>;
   setLimit(key: string, f: { readonly value: string; readonly source: string; readonly confirmation: string }): Done<Record<string, unknown>>;
   setLeaveType(type: string, f: { readonly daysPerYear: string; readonly carryOverMaxDays: string; readonly source: string; readonly confirmation: string }): Done<Record<string, unknown>>;
@@ -116,6 +116,10 @@ export interface WorkingTimeSession {
   standards(): Done<{ readonly standards: readonly { readonly role: string; readonly billsPerStaffHour: number; readonly setBy: string; readonly setAt: string }[] }>;
   setStandard(role: string, billsPerStaffHour: string): Done<Record<string, unknown>>;
   labourCost(branchId: string, date: string, salesRupees: string, guideBps: string): Done<Record<string, unknown>>;
+  /** OB-686: the owner's labour-cost guide ({ state: 'not_set' } until he sets it — no built-in 12%). */
+  labourGuide(): Done<Record<string, unknown>>;
+  /** OB-686: the owner sets it, as a percentage of sales ("10" or "9.5"). */
+  setLabourGuide(percent: string): Done<Record<string, unknown>>;
 }
 
 export function createWorkingTimeSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newPublicationId?: () => string }): WorkingTimeSession {
@@ -124,7 +128,7 @@ export function createWorkingTimeSession(input: { readonly viewer: { readonly us
   const has = (p: string): boolean => named && held.has(p);
   const may = {
     named, read: has('hr.compliance.read'), configure: has('hr.compliance.configure'), rosterRead: has('workforce.roster.read'),
-    rosterManage: has('workforce.roster.manage'), registers: has('hr.register.read'), setStandard: has('workforce.standard.set'),
+    rosterManage: has('workforce.roster.manage'), registers: has('hr.register.read'), setStandard: has('workforce.standard.set'), setGuide: has('workforce.labour.guide.set'),
   };
   const call = makeCaller({ keyPrefix: 'wt', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
   const newPublicationId = input.newPublicationId ?? (() => newId('RP'));
@@ -186,6 +190,15 @@ export function createWorkingTimeSession(input: { readonly viewer: { readonly us
       const guideBps = guide.trim() === '' ? undefined : whole(guide);
       if (guide.trim() !== '' && (guideBps === undefined || guideBps < 1)) return bad('badNumber');
       return call('GET', `/v1/hr/workforce/labour-cost?${qs({ branchId: b.trim(), date: date.trim(), salesMinor: String(salesMinor), guideBps: guideBps === undefined ? undefined : String(guideBps) })}`);
+    },
+    labourGuide: async () => gate(may.rosterRead, 'cannotRead') ?? call('GET', '/v1/hr/workforce/labour-cost-guide'),
+    setLabourGuide: async (percent) => {
+      const g = gate(may.setGuide, 'cannotSet'); if (g) return g;
+      const t = percent.trim().replace(/%$/, '').trim();
+      if (!/^\d{1,3}(\.\d{1,2})?$/.test(t)) return bad('badGuide');
+      const guideBps = Math.round(Number(t) * 100);
+      if (guideBps < 1 || guideBps > 10_000) return bad('badGuide');
+      return call('POST', '/v1/hr/workforce/labour-cost-guide', { guideBps });
     },
   };
 }

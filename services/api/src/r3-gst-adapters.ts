@@ -163,7 +163,7 @@ export function r3GstLedger(input: { readonly store: EventStore; readonly now: (
       const agg = await submissions.load(t, period);
       if (agg?.state !== 'filed') continue;
       const events = await payloads<Gstr1SubmissionEvent>(store, t, gstr1SubmissionStream(period), 'Gstr1SubmissionRecorded');
-      const filedAt = [...events].reverse().find((e) => e.kind === 'acknowledged' || (e.kind === 'reconciled' && e.resolvedState === 'filed'))?.at;
+      const filedAt = [...events].reverse().find((e) => e.kind === 'acknowledged' || e.kind === 'filedByHand' || (e.kind === 'reconciled' && e.resolvedState === 'filed'))?.at;
       out.push({ type: 'GSTR1', period, filedOn: filedAt === undefined ? '' : localDateOf(filedAt, tz), ...(agg.arn !== undefined ? { arn: agg.arn } : {}), source: 'gstr1-submission' });
     }
     for (const f of await recordedFilings(t)) out.push({ type: f.type, period: f.period, filedOn: f.filedOn, arn: f.arn, source: 'recorded' });

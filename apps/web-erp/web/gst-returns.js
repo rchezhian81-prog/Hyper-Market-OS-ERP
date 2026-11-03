@@ -96,6 +96,8 @@ function rowNode(r) {
       label.append(span, box); wrap.append(label); fields[key] = box;
     };
     if (a.needs === 'reason') input('reason', 'reasonLabel');
+    // OB-683: the ARN the GST portal showed when the person uploaded the approved return by hand.
+    if (a.needs === 'arn') input('arn', 'arnRequired');
     if (a.needs === 'evidence') {
       const label = document.createElement('label'); label.className = 'do-field';
       const span = document.createElement('span'); span.textContent = t('resolvedLabel');
@@ -131,6 +133,8 @@ function rowNode(r) {
   if (r.preparedBy) { const s = document.createElement('span'); s.textContent = r.preparedBy; who.append(s); }
   if (r.approvedByName) { const s = document.createElement('span'); s.textContent = r.approvedByName; who.append(s); }
   li.append(who);
+  // OB-683: a return filed by hand on the portal says so, with the ARN and the name of the person who recorded it.
+  if (r.filedByHand) { const p = document.createElement('p'); p.className = 'filed-by-hand'; p.dataset.arn = r.filedByHand.arn; p.textContent = r.filedByHand.line; li.append(p); }
 
   if (r.detail) { const d = document.createElement('p'); d.className = 'detail'; d.textContent = r.detail; li.append(d); }
   return li;

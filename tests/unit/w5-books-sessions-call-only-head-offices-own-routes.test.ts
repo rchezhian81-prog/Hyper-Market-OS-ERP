@@ -317,3 +317,37 @@ describe('the browser wiring attaches each section to its own page only', () => 
     }
   });
 });
+
+// W5 · OB-686 (owner, 3 Nov 2026) · M22-FR-04 · M24-FR-04: the business-customer chasing steps are the owner's (no built-in
+// ₹500 or 7 / 60 / 90 days), and the probing views' 3 refusals say they are built-in, not yet set by the owner.
+describe('OB-686 · the owner\'s chasing steps and the built-in probing count', () => {
+  it('reads the steps; only the owner sets them — rupees and three rising whole days, all four together', async () => {
+    const ho = headOffice();
+    const owner = createB2BBooksSession({ viewer: { userId: 'u-owner', permissions: ['b2b.account.read', 'b2b.chasing.steps.set'] }, fetch: ho.fetch });
+    expect(owner.may.setSteps).toBe(true);
+    await owner.chasingSteps();
+    expect(await owner.setChasingSteps({ floorRupees: '500', reminderDays: '60', finalDays: '7', stopDays: '90' })).toEqual({ result: 'invalid', why: 'needSteps' });
+    expect(await owner.setChasingSteps({ floorRupees: '', reminderDays: '7', finalDays: '60', stopDays: '90' })).toEqual({ result: 'invalid', why: 'needSteps' });
+    expect(await owner.setChasingSteps({ floorRupees: '500', reminderDays: '0', finalDays: '60', stopDays: '90' })).toEqual({ result: 'invalid', why: 'needSteps' });
+    await owner.setChasingSteps({ floorRupees: '₹1,500.50', reminderDays: ' 10 ', finalDays: '30', stopDays: '45' });
+    expect(ho.calls.map((c) => [`${c.method} ${c.url}`, c.body])).toEqual([
+      ['GET /v1/b2b/collections/chasing-steps', undefined],
+      ['POST /v1/b2b/collections/chasing-steps', { minimumChaseMinor: 150_050, reminderAfterDays: 10, finalNoticeAfterDays: 30, stopSupplyAfterDays: 45 }],
+    ]);
+    allReal(ho.calls);
+    const acct = createB2BBooksSession({ viewer: { userId: 'u-acct', permissions: ['b2b.account.read', 'b2b.receivable.record'] }, fetch: ho.fetch });
+    expect(await acct.setChasingSteps({ floorRupees: '500', reminderDays: '7', finalDays: '60', stopDays: '90' })).toEqual({ result: 'invalid', why: 'cannotSetSteps' });
+    expect(ho.calls).toHaveLength(2);
+  });
+
+  it('says "not set by the owner" and the built-in 3 refusals in one wording, English and Tamil', () => {
+    expect(B2B_BOOKS_COPY.en.stepsNotSet).toMatch(/^Not set by the owner — no chasing step is given/);
+    expect(B2B_BOOKS_COPY.en.stepsNoStep).toBe('No step: the chasing steps are not set by the owner.');
+    for (const c of [B2B_BOOKS_COPY, SUPPLIER_PORTAL_WATCH_COPY]) {
+      expect(c.en.thresholdBuiltIn).toBe('Counted from {threshold} refusals — built-in, not yet set by the owner');
+      expect(c.ta.thresholdBuiltIn).toBe('{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை');
+    }
+    expect(Object.keys(B2B_BOOKS_COPY.ta).sort()).toEqual(Object.keys(B2B_BOOKS_COPY.en).sort());
+    expect(Object.keys(SUPPLIER_PORTAL_WATCH_COPY.ta).sort()).toEqual(Object.keys(SUPPLIER_PORTAL_WATCH_COPY.en).sort());
+  });
+});

@@ -12,7 +12,7 @@ import { STREAM } from '../../services/api/src/adapters';
 
 /**
  * **W5 — the GST and statutory tax desk, in a real browser, on the PRODUCTION API over real PostgreSQL** (route audit
- * section 2, bundle 2 · API-09 · M23 · A14 · A17 · A18 · A19 · A24 · OB-143 · OB-191 · OB-428 · OB-432 · OB-433 · §28 · §31).
+ * section 2, bundle 2 · API-09 · M23 · M23-FR-02 · OB-683 · A14 · A17 · A18 · A19 · A24 · OB-143 · OB-191 · OB-428 · OB-432 · OB-433 · §28 · §31).
  *
  * The fault first (route audit rows 166–167): the GST returns page used to queue `GstReturnActionRequested` in the browser,
  * and nothing — not the page, not the store computer's sync agent (it has no route for it) — ever sent it to head office,
@@ -122,6 +122,45 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
     } finally { await ctx.close(); }
     const approved = (await shop.cloud().request({ method: 'GET', path: '/v1/finance/gstr1/submission/052026', userId: OWNER })).body as { state: string; approvedBy: string };
     expect(approved).toMatchObject({ state: 'approved', approvedBy: OWNER });
+  }, 120_000);
+
+  it('OB-683 · M23-FR-02: the owner uploaded May on the portal by hand and records its ARN — refused in words when empty or malformed, then "Filed by hand on the portal"', async () => {
+    const ARN = 'AA330626012345X';
+    const ctx = await browser.newContext();
+    await shop.signIn(ctx, OWNER);
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const posts: string[] = [];
+    page.on('request', (r) => { if (r.method() === 'POST' && r.url().includes('/v1/finance/gstr1/submission/')) posts.push(new URL(r.url()).pathname); });
+    try {
+      await page.goto(`${shop.base}/gst-returns`, { waitUntil: 'load' });
+      const hand = page.locator('#rows li .do[data-act="fileByHand"]');
+      await hand.locator('button').waitFor({ timeout: 15_000 });
+      await expect.poll(() => hand.locator('button').isEnabled(), { timeout: 15_000 }).toBe(true);
+      // Nothing typed: refused on the page, nothing sent.
+      await hand.locator('button').click();
+      await expect.poll(() => textOf(page, '#act-result'), { timeout: 15_000 }).toBe('Type the acknowledgement number (ARN) the GST portal showed. Nothing was sent.');
+      // A malformed one: refused in words, nothing sent.
+      await hand.locator('input[name="arn"]').fill('SANDBOX-052026');
+      await hand.locator('button').click();
+      await expect.poll(() => textOf(page, '#act-result'), { timeout: 15_000 }).toMatch(/^That is not an ARN the GST portal gives\./);
+      expect(posts).toEqual([]);
+      // The portal's ARN, as he copied it (small letters, a space): recorded once at head office.
+      await page.locator('#rows li .do[data-act="fileByHand"] input[name="arn"]').fill('aa33 0626012345x');
+      await page.locator('#rows li .do[data-act="fileByHand"] button').click();
+      await expect.poll(() => textOf(page, '#act-result'), { timeout: 15_000 }).toBe('Recorded as filed by hand on the portal: 052026');
+      await expect.poll(() => textOf(page, '#rows li .status'), { timeout: 15_000 }).toBe('Filed by hand on the portal');
+      expect(posts).toEqual(['/v1/finance/gstr1/submission/052026/filed-by-hand']);
+      expect(await countOf(page, '#rows li .do[data-act="fileByHand"]')).toBe(0); // filed: nothing left to do
+      expect(errors).toEqual([]);
+      const filed = (await shop.cloud().request({ method: 'GET', path: '/v1/finance/gstr1/submission/052026', userId: OWNER })).body as { state: string; arn: string; filedByHand: { by: string; name: string } };
+      expect(filed).toMatchObject({ state: 'filed', arn: ARN, filedByHand: { by: OWNER } });
+      await expect.poll(() => textOf(page, '#rows li .filed-by-hand'), { timeout: 15_000 }).toBe(`Filed by hand on the portal · Portal reference ${ARN} · recorded by ${filed.filedByHand.name}`);
+      // After a reload it still says so — head office's record, not the page's.
+      await page.reload({ waitUntil: 'load' });
+      await expect.poll(() => textOf(page, '#rows li .filed-by-hand'), { timeout: 15_000 }).toContain(ARN);
+    } finally { await ctx.close(); }
   }, 120_000);
 
   it('rows 150, 155–158: Table 12 from the till, the GSTN file to upload by hand, and the owner\'s warning window', async () => {

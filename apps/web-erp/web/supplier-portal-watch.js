@@ -34,7 +34,7 @@ function paint() {
   }
   const pr = $('sp-probe-rows'); pr.replaceChildren();
   if (probing !== null) {
-    pr.append(node('li', { className: 'meta', textContent: w('threshold', { threshold: probing.threshold }) }));
+    pr.append(node('li', { className: 'meta', textContent: w(probing.builtIn === false ? 'threshold' : 'thresholdBuiltIn', { threshold: probing.threshold }) }));
     if (probing.probing.length === 0) pr.append(node('li', { textContent: w('noProbing', { threshold: probing.threshold }) }));
     for (const p of probing.probing) { const li = node('li', { textContent: `${w('probeRow', { user: p.userId, partner: p.partnerId, attempts: p.attempts })} — ${p.detail}` }); li.dataset.probe = p.userId; pr.append(li); }
   }

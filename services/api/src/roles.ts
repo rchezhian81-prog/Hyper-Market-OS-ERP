@@ -135,6 +135,9 @@ const BASE_ROLES: readonly Role[] = [
       // D03-FR-03 · OB-404: the owner sets how many days a supplier has to answer a rebate claim before it shows overdue
       // (his number; "not set" until he enters it).
       'purchase.rebate.terms.set',
+      // OB-686 (owner, 3 Nov 2026): the owner sets the business-customer chasing steps — the smallest amount worth chasing and
+      // the reminder / final-notice / stop-supply day counts (his numbers; "not set" until he enters them, no built-in).
+      'b2b.chasing.steps.set',
       // SP-7c (M06-FR-01 · M23-FR-01): the supplier master — propose / update, approve (a different person), the list, and
       // recording a payment a second person approved.
       'purchase.supplier.manage', 'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',
@@ -443,6 +446,8 @@ const BASE_ROLES: readonly Role[] = [
       'workforce.consent.self', 'workforce.attendance.mark',
       // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
       'workforce.standard.set', 'workforce.schedule.draft',
+      // OB-686 (owner, 3 Nov 2026): the owner sets the labour-cost guide (his number; no built-in 12% — "not set" until he does).
+      'workforce.labour.guide.set',
       // ── R3 Lane 4 — end
       // ── R3 follow-up (OB-193 to OB-200) — begin
       // OB-197 (C21): the OWNER alone records that he signed the fingerprint-attendance consent notice; until he has,

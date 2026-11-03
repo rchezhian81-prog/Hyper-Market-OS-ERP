@@ -14,8 +14,13 @@
 //
 // Writes gated `workforce.roster.manage`; reads `workforce.roster.read` (the same permission the stateless POST
 // labour-cost uses). Nothing is enforced here — it records the hours and reports the ratio.
+//
+// OB-686 (owner, 3 Nov 2026): the labour-cost GUIDE is the owner's setting (`GET/POST /v1/hr/workforce/labour-cost-guide`,
+// "not set" until he sets it; append-only, the newest applies). The old built-in 12% is gone: with no guide (neither his
+// setting nor one typed for a what-if) the cost and its share are shown and nothing is compared.
 
 import type { Route } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import { apiError, assertRecordBranchInScope, assertBranchInScope, scopeOf } from '../../kernel/src/index';
 import {
   labourCost,
@@ -35,7 +40,18 @@ export interface AttendanceStoreDeps {
   readonly attendance: (tenantId: string, date: string) => Promise<readonly AttendanceRecord[]> | readonly AttendanceRecord[];
   /** The stored staff (from the roster store), optionally one branch — for their hourly rate. */
   readonly employees: (tenantId: string, branchId?: string) => Promise<readonly Employee[]> | readonly Employee[];
+  /** OB-686: the owner's labour-cost guide (latest), or undefined when he has set none. */
+  readonly labourGuide?: (tenantId: string) => Promise<LabourGuideSetting | undefined> | LabourGuideSetting | undefined;
+  readonly recordLabourGuide?: (tenantId: string, setting: LabourGuideSetting) => Promise<void> | void;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
+}
+
+/** The owner's labour-cost guide, in basis points of sales (1,000 = 10%), with who set it and when. */
+export interface LabourGuideSetting {
+  readonly guideBps: number;
+  readonly setBy: string;
+  readonly setAt: string;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -119,14 +135,46 @@ export function attendanceStoreRoutes(deps: AttendanceStoreDeps): readonly Route
         const hours = (await deps.attendance(ctx.tenantId, date))
           .filter((r) => known.has(r.employeeId))
           .map((r) => ({ employeeId: r.employeeId, hours: r.hours }));
+        // A guide typed for a what-if wins; else the owner's own setting; else none — and then nothing is compared (OB-686).
+        const owners = guideBps === undefined ? await deps.labourGuide?.(ctx.tenantId) : undefined;
+        const guide = guideBps ?? owners?.guideBps;
         const view = labourCost({
           branchId,
           hours,
           employees,
           salesMinor,
-          ...(guideBps !== undefined ? { guideBps } : {}),
+          ...(guide !== undefined ? { guideBps: guide } : {}),
         });
-        return { status: 200, body: { ...view, date } };
+        return { status: 200, body: { ...view, date, guideFrom: guideBps !== undefined ? 'typed' : owners !== undefined ? 'owner' : 'not_set' } };
+      },
+    },
+    {
+      // OB-686: the owner's labour-cost guide — "not set" until he sets it.
+      api: 'API-11', method: 'GET', path: '/v1/hr/workforce/labour-cost-guide',
+      permission: 'workforce.roster.read',
+      handler: async (ctx) => {
+        const g = await deps.labourGuide?.(ctx.tenantId);
+        return { status: 200, body: g === undefined ? { state: 'not_set' } : { state: 'set', guide: g } };
+      },
+    },
+    {
+      // OB-686: the OWNER sets the labour-cost guide — { guideBps } (whole, 1 to 10,000). Append-only; the newest applies.
+      api: 'API-11', method: 'POST', path: '/v1/hr/workforce/labour-cost-guide',
+      permission: 'workforce.labour.guide.set', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isPosInt(b['guideBps']) || (b['guideBps'] as number) > 10_000) {
+          throw apiError(400, { code: 'not_readable_as_a_labour_guide', whatHappened: 'The labour-cost guide is { guideBps }: a whole number of basis points of sales, 1 to 10000 (1000 = 10%).', wasItSaved: 'not_saved', nextSafeAction: 'Send the owner\'s guide. Nothing was changed.' });
+        }
+        if (deps.recordLabourGuide === undefined) throw apiError(503, { code: 'labour_guide_not_kept', whatHappened: 'Head office has no durable store to keep the guide.', wasItSaved: 'not_saved', nextSafeAction: 'Try again when head office is running on its database.' });
+        const before = await deps.labourGuide?.(ctx.tenantId);
+        const setting: LabourGuideSetting = { guideBps: b['guideBps'] as number, setBy: ctx.userId, setAt: deps.now() };
+        await deps.recordLabourGuide(ctx.tenantId, setting);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'workforce.labour_guide.set', objectType: 'labour_cost_guide', objectId: ctx.tenantId, at: setting.setAt,
+          origin: { tenantId: ctx.tenantId, branchId: null }, before: before === undefined ? null : { guideBps: String(before.guideBps) }, after: { guideBps: String(setting.guideBps) }, correlationId: ctx.traceId,
+        });
+        return { status: 201, body: { state: 'set', guide: setting } };
       },
     },
   ];

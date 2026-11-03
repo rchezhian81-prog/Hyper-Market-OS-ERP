@@ -19,11 +19,16 @@
 // nothing. With head office out of reach nothing is approved and nothing is queued — the page says so. Filing to the
 // portal stays OFF (live filing is externally blocked; the sandbox would put a pretend acknowledgement on the shop's real
 // record), so "File" is shown switched off and is never sent. No AI is involved (hard rule #5).
+//
+// OB-683 (owner, 3 Nov 2026): an APPROVED return is uploaded on the GST portal by hand, and the person who uploaded it
+// records the portal's acknowledgement number (ARN) here (POST …/filed-by-hand). The ARN is checked against the portal's
+// own format before anything is sent (an empty or malformed one is refused in words); who recorded it is the session's and
+// the time head office's own. The return then shows "Filed by hand on the portal" with the ARN and the person's name.
 
 // Imported from the specific engine module, NOT the packages/finance barrel: the barrel re-exports the GSTN sandbox, which
 // uses `node:crypto` and would break the browser bundle.
 import {
-  queueCategory, isSubmissionException,
+  queueCategory, isSubmissionException, isGstPortalArn,
   type Gstr1SubmissionState, type Gstr1SubmissionQueueCategory,
 } from '../../../packages/finance/src/gstr1-submission';
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
@@ -40,6 +45,8 @@ export interface ReturnRow {
   /** Who prepared / approved it, when known (shown, never invented). */
   readonly previewedBy?: string;
   readonly approvedBy?: string;
+  /** OB-683: recorded filed by hand on the portal — by whom (their name, from head office) and head office's time. */
+  readonly filedByHand?: { readonly name: string; readonly at: string };
 }
 
 /** What the operator should do next about a return. `none` = filed or withdrawn, nothing needed. */
@@ -47,8 +54,8 @@ export type ReturnAction = 'none' | 'approve' | 'file' | 'wait' | 'refile' | 're
 export const RETURN_ACTIONS: readonly ReturnAction[] = ['none', 'approve', 'file', 'wait', 'refile', 'reconcile'];
 
 /** The governance acts a row can offer. `submit` is always shown switched off (live filing is blocked). */
-export type GstReturnCommandAction = 'approve' | 'submit' | 'cancel' | 'reconcile';
-export const GST_RETURN_COMMAND_ACTIONS: readonly GstReturnCommandAction[] = ['approve', 'submit', 'cancel', 'reconcile'];
+export type GstReturnCommandAction = 'approve' | 'submit' | 'fileByHand' | 'cancel' | 'reconcile';
+export const GST_RETURN_COMMAND_ACTIONS: readonly GstReturnCommandAction[] = ['approve', 'submit', 'fileByHand', 'cancel', 'reconcile'];
 
 /**
  * The acts offerable for a submission state — and ONLY these, as head office's state machine allows them. A PREPARED
@@ -59,7 +66,7 @@ export const GST_RETURN_COMMAND_ACTIONS: readonly GstReturnCommandAction[] = ['a
 export function commandActionsFor(state: Gstr1SubmissionState): readonly GstReturnCommandAction[] {
   switch (state) {
     case 'previewed': return ['approve', 'cancel'];
-    case 'approved': return ['submit', 'cancel'];
+    case 'approved': return ['submit', 'fileByHand', 'cancel'];
     case 'unknown': return ['reconcile'];
     case 'submitting': case 'filed': case 'failed': case 'cancelled': return [];
   }
@@ -97,7 +104,7 @@ export function headOfficeOverFetch(http: typeof globalThis.fetch): HeadOfficeCa
 
 /** Why an act was not sent — said before anything leaves the page. */
 export type ReturnActionRefusal = 'not_permitted' | 'not_actionable' | 'already_sending' | 'unknown_period' | 'self_approval'
-  | 'filing_off' | 'needs_reason' | 'needs_evidence' | 'not_live' | 'bad_period';
+  | 'filing_off' | 'needs_reason' | 'needs_evidence' | 'not_live' | 'bad_period' | 'needs_arn' | 'bad_arn';
 export type ReturnActionResult =
   | { readonly ok: true; readonly action: GstReturnCommandAction | 'preview'; readonly period: string; readonly state?: Gstr1SubmissionState }
   | { readonly ok: false; readonly reason: ReturnActionRefusal }
@@ -144,7 +151,8 @@ export type CopyKey =
   | 'title' | 'lead' | 'langName'
   | 'stPreviewed' | 'stApproved' | 'stSubmitting' | 'stFiled' | 'stFailed' | 'stUnknown' | 'stCancelled'
   | 'actNone' | 'actApprove' | 'actFile' | 'actWait' | 'actRefile' | 'actReconcile'
-  | 'btnApprove' | 'btnSubmit' | 'btnCancel' | 'btnReconcile' | 'btnPrepare'
+  | 'btnApprove' | 'btnSubmit' | 'btnCancel' | 'btnReconcile' | 'btnPrepare' | 'btnFileByHand'
+  | 'stFiledByHand' | 'arnRequired' | 'needArn' | 'badArn' | 'doneFileByHand' | 'filedByHandBy'
   | 'needsApproveRole' | 'needsSubmitRole' | 'needsPrepareRole' | 'youPrepared' | 'filingOff'
   | 'sending' | 'lostRetry' | 'notLive' | 'needReason' | 'needEvidence'
   | 'reasonLabel' | 'evidenceLabel' | 'arnOptional' | 'resolvedLabel' | 'resolvedFiled' | 'resolvedFailed'
@@ -160,9 +168,13 @@ export const GST_RETURNS_COPY: BilingualCopy<CopyKey> = {
     title: 'GST returns', langName: 'தமிழ்',
     lead: 'Every GSTR-1 filing period and what it needs next, read live from head office. The ones needing attention are first — a return the portal rejected, or one whose outcome is unknown and must be reconciled. A return is prepared by one person and approved by a different one; nothing is filed to the portal from here.',
     stPreviewed: 'Prepared — awaiting approval', stApproved: 'Approved — ready to file', stSubmitting: 'Being filed',
-    stFiled: 'Filed', stFailed: 'Rejected by the portal', stUnknown: 'Outcome unknown — reconcile', stCancelled: 'Withdrawn before filing',
-    actNone: 'Nothing — it is done', actApprove: 'A second person must approve it', actFile: 'File it to the portal',
+    stFiled: 'Filed', stFiledByHand: 'Filed by hand on the portal', stFailed: 'Rejected by the portal', stUnknown: 'Outcome unknown — reconcile', stCancelled: 'Withdrawn before filing',
+    actNone: 'Nothing — it is done', actApprove: 'A second person must approve it', actFile: 'Upload it on the GST portal yourself, then record the portal\'s ARN here',
     actWait: 'Wait — it is being filed', actRefile: 'Correct the figures and prepare it again', actReconcile: 'A person must reconcile it with evidence — do NOT assume it is filed',
+    btnFileByHand: 'Record it filed by hand (ARN)', arnRequired: 'Portal acknowledgement number (ARN)',
+    needArn: 'Type the acknowledgement number (ARN) the GST portal showed. Nothing was sent.',
+    badArn: 'That is not an ARN the GST portal gives. It is 15 characters: AA, the state code, the month and year, six digits and one check letter — e.g. AA330626012345X. Nothing was sent.',
+    doneFileByHand: 'Recorded as filed by hand on the portal', filedByHandBy: 'recorded by',
     btnApprove: 'Approve', btnSubmit: 'File to the portal', btnCancel: 'Withdraw', btnReconcile: 'Record what the portal shows', btnPrepare: 'Prepare for approval',
     needsApproveRole: 'Needs the approve-returns role', needsSubmitRole: 'Needs the file-returns role', needsPrepareRole: 'Needs the prepare-returns role',
     youPrepared: 'You prepared this — a different person must approve it',
@@ -191,9 +203,13 @@ export const GST_RETURNS_COPY: BilingualCopy<CopyKey> = {
     title: 'GST வருமானங்கள்', langName: 'English',
     lead: 'ஒவ்வொரு GSTR-1 தாக்கல் காலமும் அடுத்து என்ன தேவை என்பதும், தலைமை அலுவலகத்திலிருந்து நேரடியாக. கவனம் தேவைப்படுபவை முதலில் — போர்ட்டல் மறுத்த வருமானம், அல்லது முடிவு தெரியாத ஒன்று. ஒருவர் தயாரிக்கிறார், வேறொருவர் ஒப்புதல் அளிக்கிறார்; இங்கிருந்து போர்ட்டலில் எதுவும் தாக்கல் செய்யப்படாது.',
     stPreviewed: 'தயாரிக்கப்பட்டது — ஒப்புதலுக்குக் காத்திருக்கிறது', stApproved: 'ஒப்புதல் — தாக்கல் செய்யத் தயார்', stSubmitting: 'தாக்கல் செய்யப்படுகிறது',
-    stFiled: 'தாக்கல் செய்யப்பட்டது', stFailed: 'போர்ட்டல் மறுத்தது', stUnknown: 'முடிவு தெரியவில்லை — சரிபார்க்கவும்', stCancelled: 'தாக்கலுக்கு முன் திரும்பப்பெறப்பட்டது',
-    actNone: 'எதுவும் இல்லை — முடிந்தது', actApprove: 'இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்', actFile: 'போர்ட்டலில் தாக்கல் செய்யவும்',
+    stFiled: 'தாக்கல் செய்யப்பட்டது', stFiledByHand: 'போர்ட்டலில் கைமுறையாகத் தாக்கல் செய்யப்பட்டது', stFailed: 'போர்ட்டல் மறுத்தது', stUnknown: 'முடிவு தெரியவில்லை — சரிபார்க்கவும்', stCancelled: 'தாக்கலுக்கு முன் திரும்பப்பெறப்பட்டது',
+    actNone: 'எதுவும் இல்லை — முடிந்தது', actApprove: 'இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்', actFile: 'GST போர்ட்டலில் நீங்களே பதிவேற்றி, போர்ட்டலின் ARN-ஐ இங்கே பதிவு செய்யுங்கள்',
     actWait: 'காத்திருங்கள் — தாக்கல் செய்யப்படுகிறது', actRefile: 'எண்களைச் சரிசெய்து மீண்டும் தயாரிக்கவும்', actReconcile: 'ஒருவர் ஆதாரத்துடன் சரிபார்க்க வேண்டும் — தாக்கல் ஆனதாகக் கருத வேண்டாம்',
+    btnFileByHand: 'கைமுறையாகத் தாக்கல் செய்ததைப் பதிவு செய் (ARN)', arnRequired: 'போர்ட்டல் ஒப்புகை எண் (ARN)',
+    needArn: 'GST போர்ட்டல் காட்டிய ஒப்புகை எண்ணை (ARN) தட்டச்சு செய்யுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    badArn: 'இது GST போர்ட்டல் தரும் ARN அல்ல. அது 15 எழுத்துகள்: AA, மாநிலக் குறியீடு, மாதம் மற்றும் ஆண்டு, ஆறு இலக்கங்கள், ஒரு சரிபார்ப்பு எழுத்து — எ.கா. AA330626012345X. எதுவும் அனுப்பப்படவில்லை.',
+    doneFileByHand: 'போர்ட்டலில் கைமுறையாகத் தாக்கல் செய்யப்பட்டதாகப் பதிவு செய்யப்பட்டது', filedByHandBy: 'பதிவு செய்தவர்',
     btnApprove: 'ஒப்புதல்', btnSubmit: 'போர்ட்டலில் தாக்கல் செய்யவும்', btnCancel: 'திரும்பப்பெறு', btnReconcile: 'போர்ட்டல் காட்டுவதைப் பதிவு செய்', btnPrepare: 'ஒப்புதலுக்குத் தயாரி',
     needsApproveRole: 'ஒப்புதல் அளிக்கும் அனுமதி தேவை', needsSubmitRole: 'தாக்கல் செய்யும் அனுமதி தேவை', needsPrepareRole: 'தயாரிக்கும் அனுமதி தேவை',
     youPrepared: 'இதை நீங்கள் தயாரித்தீர்கள் — வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்',
@@ -234,7 +250,7 @@ export const ACTION_LABEL: Readonly<Record<ReturnAction, CopyKey>> = {
 };
 
 const BUTTON_LABEL: Readonly<Record<GstReturnCommandAction, CopyKey>> = {
-  approve: 'btnApprove', submit: 'btnSubmit', cancel: 'btnCancel', reconcile: 'btnReconcile',
+  approve: 'btnApprove', submit: 'btnSubmit', fileByHand: 'btnFileByHand', cancel: 'btnCancel', reconcile: 'btnReconcile',
 };
 
 /** The face (tone + icon) each lifecycle state wears — colour is never the only signal. */
@@ -260,6 +276,9 @@ export function recommendedAction(state: Gstr1SubmissionState): ReturnAction {
   }
 }
 
+/** The ARN as typed, without spaces and in capitals (the portal prints it so). */
+export const arnOf = (typed: string | undefined): string => (typed ?? '').replace(/\s+/g, '').toUpperCase();
+
 /** Where an act goes at head office, and what it carries. Pure — the session sends it. */
 export function returnActRequest(input: ReturnActInput): { readonly path: string; readonly body: Record<string, unknown> } {
   const base = `/v1/finance/gstr1/submission/${encodeURIComponent(input.period)}`;
@@ -271,6 +290,7 @@ export function returnActRequest(input: ReturnActInput): { readonly path: string
       body: { resolvedState: input.resolvedState, note: (input.note ?? '').trim(), ...((input.arn ?? '').trim() === '' ? {} : { arn: (input.arn ?? '').trim() }) },
     };
     case 'submit': return { path: `${base}/submit`, body: {} };
+    case 'fileByHand': return { path: `${base}/filed-by-hand`, body: { arn: arnOf(input.arn) } };
   }
 }
 
@@ -283,8 +303,8 @@ export interface PresentedReturnAction {
   readonly period: string;
   /** Whether THIS user may run it now (right role, not the maker for approve, live list, nothing on its way). */
   readonly enabled: boolean;
-  /** What the act needs typed first: nothing, a reason (withdraw) or evidence (reconcile). */
-  readonly needs: 'nothing' | 'reason' | 'evidence';
+  /** What the act needs typed first: nothing, a reason (withdraw), evidence (reconcile) or the portal's ARN (filed by hand). */
+  readonly needs: 'nothing' | 'reason' | 'evidence' | 'arn';
   /** A short bilingual note: needs-role, you-prepared-this, filing-off, sending, lost — never in the dark (P-08). */
   readonly note?: string;
 }
@@ -299,6 +319,8 @@ export interface PresentedReturn {
   readonly arn?: string;
   readonly preparedBy?: string;
   readonly approvedByName?: string;
+  /** OB-683: "Filed by hand on the portal · <ARN> · recorded by <name>" — present only for a return filed by hand. */
+  readonly filedByHand?: { readonly label: string; readonly arn: string; readonly name: string; readonly line: string };
   readonly detail: string;
   readonly actions: readonly PresentedReturnAction[];
 }
@@ -347,10 +369,13 @@ export function rowFromHeadOffice(raw: unknown): ReturnRow | undefined {
   if (!isObj(raw) || typeof raw['period'] !== 'string' || !STATES.includes(raw['state'] as Gstr1SubmissionState)) return undefined;
   const str = (k: string): string | undefined => (typeof raw[k] === 'string' && raw[k] !== '' ? raw[k] as string : undefined);
   const arn = str('arn'); const detail = str('detail'); const by = str('previewedBy'); const ok = str('approvedBy');
+  const hand = isObj(raw['filedByHand']) && typeof raw['filedByHand']['name'] === 'string' && typeof raw['filedByHand']['at'] === 'string'
+    ? { name: raw['filedByHand']['name'], at: raw['filedByHand']['at'] } : undefined;
   return {
     period: raw['period'], state: raw['state'] as Gstr1SubmissionState,
     ...(arn !== undefined ? { arn } : {}), ...(detail !== undefined ? { detail } : {}),
     ...(by !== undefined ? { previewedBy: by } : {}), ...(ok !== undefined ? { approvedBy: ok } : {}),
+    ...(hand !== undefined && raw['state'] === 'filed' ? { filedByHand: hand } : {}),
   };
 }
 
@@ -381,8 +406,8 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
   /** May THIS user run this act on this row? (The definite rules; head office re-checks every one.) */
   const maySelfRun = (action: GstReturnCommandAction, row: ReturnRow): { readonly ok: boolean; readonly why?: CopyKey; readonly refusal?: ReturnActionRefusal } => {
     if (action === 'submit') return { ok: false, why: 'filingOff', refusal: 'filing_off' };
-    if (config.userId === null) return { ok: false, why: action === 'reconcile' ? 'needsSubmitRole' : 'needsApproveRole', refusal: 'not_permitted' };
-    if (action === 'reconcile') return ports.maySubmit() ? { ok: true } : { ok: false, why: 'needsSubmitRole', refusal: 'not_permitted' };
+    if (config.userId === null) return { ok: false, why: action === 'reconcile' || action === 'fileByHand' ? 'needsSubmitRole' : 'needsApproveRole', refusal: 'not_permitted' };
+    if (action === 'reconcile' || action === 'fileByHand') return ports.maySubmit() ? { ok: true } : { ok: false, why: 'needsSubmitRole', refusal: 'not_permitted' };
     if (!ports.mayApprove()) return { ok: false, why: 'needsApproveRole', refusal: 'not_permitted' };
     if (action === 'approve' && row.previewedBy !== undefined && row.previewedBy === config.userId) return { ok: false, why: 'youPrepared', refusal: 'self_approval' };
     return { ok: true };
@@ -396,7 +421,7 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
       return {
         action, label: t(BUTTON_LABEL[action]), period: row.period,
         enabled: may.ok && isLive() && slot !== 'sending',
-        needs: action === 'cancel' ? 'reason' : action === 'reconcile' ? 'evidence' : 'nothing',
+        needs: action === 'cancel' ? 'reason' : action === 'reconcile' ? 'evidence' : action === 'fileByHand' ? 'arn' : 'nothing',
         ...(note !== undefined ? { note } : {}),
       };
     });
@@ -404,7 +429,7 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
   const present = (lang: Lang, row: ReturnRow): PresentedReturn => {
     const t = translator(GST_RETURNS_COPY, lang);
     const face = STATE_FACE[row.state];
-    const label = t(STATE_LABEL[row.state]);
+    const label = row.filedByHand !== undefined ? t('stFiledByHand') : t(STATE_LABEL[row.state]);
     const needsAttention = isSubmissionException(row.state);
     const action = recommendedAction(row.state);
     return {
@@ -417,6 +442,10 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
       ...(row.arn !== undefined ? { arn: row.arn } : {}),
       ...(row.previewedBy !== undefined ? { preparedBy: row.previewedBy } : {}),
       ...(row.approvedBy !== undefined ? { approvedByName: row.approvedBy } : {}),
+      ...(row.filedByHand !== undefined ? { filedByHand: {
+        label: t('stFiledByHand'), arn: row.arn ?? '', name: row.filedByHand.name,
+        line: `${t('stFiledByHand')} · ${t('arnLabel')} ${row.arn ?? ''} · ${t('filedByHandBy')} ${row.filedByHand.name}`,
+      } } : {}),
       detail: row.detail ?? '',
       actions: presentActions(t, row),
     };
@@ -509,6 +538,11 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
       // §31: no approval against a stale copy — only the live list may be acted on.
       if (!isLive() || ports.headOffice === undefined) return { ok: false, reason: 'not_live' };
       if (input.action === 'cancel' && (input.reason ?? '').trim() === '') return { ok: false, reason: 'needs_reason' };
+      if (input.action === 'fileByHand') {
+        const arn = arnOf(input.arn);
+        if (arn === '') return { ok: false, reason: 'needs_arn' };
+        if (!isGstPortalArn(arn)) return { ok: false, reason: 'bad_arn' };
+      }
       if (input.action === 'reconcile' && ((input.resolvedState !== 'filed' && input.resolvedState !== 'failed') || (input.note ?? '').trim() === '')) {
         return { ok: false, reason: 'needs_evidence' };
       }
@@ -533,7 +567,7 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
     resultWords: (lang, result) => {
       const t = translator(GST_RETURNS_COPY, lang);
       if (result.ok) {
-        const done: CopyKey = result.action === 'approve' ? 'doneApprove' : result.action === 'cancel' ? 'doneCancel' : result.action === 'reconcile' ? 'doneReconcile' : 'donePreview';
+        const done: CopyKey = result.action === 'approve' ? 'doneApprove' : result.action === 'cancel' ? 'doneCancel' : result.action === 'reconcile' ? 'doneReconcile' : result.action === 'fileByHand' ? 'doneFileByHand' : 'donePreview';
         return `${t(done)}: ${result.period}`;
       }
       switch (result.reason) {
@@ -543,6 +577,8 @@ export function createGstReturnsSession(config: GstReturnsConfig, ports: GstRetu
         case 'not_live': return t('notLive');
         case 'needs_reason': return t('needReason');
         case 'needs_evidence': return t('needEvidence');
+        case 'needs_arn': return t('needArn');
+        case 'bad_arn': return t('badArn');
         case 'self_approval': return t('youPrepared');
         case 'filing_off': return t('filingOff');
         case 'unknown_period': return t('unknownPeriod');

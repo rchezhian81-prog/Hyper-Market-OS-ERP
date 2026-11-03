@@ -158,6 +158,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
   'itc-review': { en: 'gst input tax credit 2b', ta: 'ஜிஎஸ்டி உள்ளீட்டு வரி' },
   'payroll': { en: 'salary wages pf esi pay', ta: 'சம்பளம்' },
+  'payroll-legal': { en: 'pf esi epf rate ceiling minimum wage overtime payslip particulars legal ca', ta: 'பிஎஃப் இஎஸ்ஐ குறைந்தபட்ச ஊதியம் சட்டம்' },
   'my-payslip': { en: 'salary pay slip wages', ta: 'சம்பளச் சீட்டு' },
   'ess': { en: 'leave attendance my details', ta: 'விடுப்பு வருகை' },
   'my-tasks': { en: 'jobs to do work', ta: 'என் வேலைகள்' },
@@ -416,6 +417,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the
   // server would refuse (owner directive; §27 least-privilege surfaces).
   { id: 'payroll', label: 'Payroll', labelTa: 'ஊதியப் பட்டியல்', path: '/payroll', requires: 'payroll.statutory.read', group: 'People' },
+  // OB-684 (owner, 3 Nov 2026): the CA's own way to the payroll LEGAL figures — gated on `payroll.legal.read` (which the CA
+  // holds), never `payroll.statutory.read` (anyone's pay). The page shows the legal figures only.
+  { id: 'payroll-legal', label: 'Payroll legal figures', labelTa: 'ஊதியச் சட்ட எண்கள்', path: '/payroll-legal', requires: 'payroll.legal.read', group: 'People' },
   // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
   // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
   { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Mine' },
