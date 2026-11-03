@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2183. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 99 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 98 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 2186. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 99 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 99 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 57 · INTEGRATION_TESTED 23 · PARTIALLY_WIRED 20 · WIRED 4.
 - Labels that do NOT hold: none.
 
@@ -128,8 +128,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | MG-07 | INTEGRATION_TESTED | 3 | 6 | 4 | 1 | 1 | · | · | ✓ an integration test cites it |
 | MG-08 | INTEGRATION_TESTED | 3 | 7 | 6 | 1 | 1 | · | · | ✓ an integration test cites it |
 | MG-09 | INTEGRATION_TESTED | 6 | 5 | 4 | 1 | 1 | · | · | ✓ an integration test cites it |
-| MG-10 | E2E_VERIFIED | 9 | 7 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| MG-11 | E2E_VERIFIED | 8 | 7 | 4 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| MG-10 | E2E_VERIFIED | 10 | 7 | 2 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| MG-11 | E2E_VERIFIED | 10 | 7 | 4 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | MG-12 | INTEGRATION_TESTED | 5 | 3 | 1 | 1 | 1 | · | · | ✓ an integration test cites it |
 
 ## The files behind the counts
@@ -237,7 +237,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **MG-07** — browser: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · real PostgreSQL: `history-and-open-orders-load.test.ts`, `opening-state-loads.test.ts`, `the-old-shop-arrives-whole.test.ts`, `the-whole-load-runs-from-one-command.test.ts`
 - **MG-08** — browser: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · real PostgreSQL: `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `history-and-open-orders-load.test.ts`, `opening-state-loads.test.ts`, `the-books-open-from-the-old-trial-balance.test.ts`, `the-old-shop-arrives-whole.test.ts`, `the-whole-load-runs-from-one-command.test.ts`
 - **MG-09** — browser: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · real PostgreSQL: `a-delta-lands-once.test.ts`, `a-sale-delta-lands-once.test.ts`, `migration-delta-books-day-and-rollback-limits.test.ts`, `the-old-shop-arrives-whole.test.ts`
-- **MG-10** — browser: `the-migration-screen-leaves-payments-out-in-the-mirror-pilot.e2e.ts`, `the-migration-screen-runs-a-parallel-day.e2e.ts` · real PostgreSQL: `migration-delta-books-day-and-rollback-limits.test.ts`, `the-old-shop-arrives-whole.test.ts`
-- **MG-11** — browser: `migration-decision-delivery.e2e.ts`, `the-box-migration-screen-shows-the-backup-and-rollback-limits.e2e.ts`, `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `migration-delta-books-day-and-rollback-limits.test.ts`, `the-old-shop-arrives-whole.test.ts`
+- **MG-10** — browser: `the-migration-screen-leaves-payments-out-in-the-mirror-pilot.e2e.ts`, `the-migration-screen-runs-a-parallel-day.e2e.ts`, `w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts` · connected: `w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts` · real PostgreSQL: `migration-delta-books-day-and-rollback-limits.test.ts`, `the-old-shop-arrives-whole.test.ts`
+- **MG-11** — browser: `migration-decision-delivery.e2e.ts`, `the-box-migration-screen-shows-the-backup-and-rollback-limits.e2e.ts`, `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts`, `w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts`, `w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `migration-delta-books-day-and-rollback-limits.test.ts`, `the-old-shop-arrives-whole.test.ts`
 - **MG-12** — browser: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · connected: `the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`
 

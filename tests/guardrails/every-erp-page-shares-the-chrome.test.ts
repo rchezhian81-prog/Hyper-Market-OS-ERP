@@ -300,6 +300,7 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'production-recipes.js': 'apps/web-erp/src/production-recipes-session.ts',
     // W3 (migration controls): the Old system checks page's words are in its tested session model.
     'old-system.js': 'apps/web-erp/src/old-system-session.ts',
+    'old-system-evidence.js': 'apps/web-erp/src/cutover-evidence-session.ts', // W5 (MG-10 · MG-11 · OD-05 · GT-02)
     'production-repack.js': 'apps/web-erp/src/production-repack-session.ts',
     // W4 (M11): the plan and trace sections and the Production costs page — their words are in their tested session models.
     'production-plan.js': 'apps/web-erp/src/production-plan-session.ts',

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2186,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 104,
     "browser": 104,
-    "connected": 98,
+    "connected": 99,
     "device": 0,
     "uat": 0
   },
@@ -6530,11 +6530,11 @@
       "id": "MG-10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 7,
         "realDb": 2,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -6548,7 +6548,8 @@
           "tests/unit/migration-parallel-run-route.test.ts",
           "tests/unit/migration-screen-route.test.ts",
           "tests/unit/paid-on-old-system-is-the-mirror-tender.test.ts",
-          "tests/unit/the-evening-check-compares-the-old-erp-with-the-new-till.test.ts"
+          "tests/unit/the-evening-check-compares-the-old-erp-with-the-new-till.test.ts",
+          "tests/unit/w5-the-cutover-evidence-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-parallel-day-cannot-be-signed-with-an-unexplained-difference.test.ts",
@@ -6565,24 +6566,27 @@
         ],
         "browser": [
           "tests/e2e/the-migration-screen-leaves-payments-out-in-the-mirror-pilot.e2e.ts",
-          "tests/e2e/the-migration-screen-runs-a-parallel-day.e2e.ts"
+          "tests/e2e/the-migration-screen-runs-a-parallel-day.e2e.ts",
+          "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "MG-11",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
+        "unit": 10,
         "integration": 7,
         "realDb": 4,
-        "browser": 3,
-        "connected": 1,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -6595,7 +6599,9 @@
           "tests/unit/migration-delta-books-and-limits.test.ts",
           "tests/unit/migration-feed-pull.test.ts",
           "tests/unit/migration-screen-route.test.ts",
-          "tests/unit/the-old-system-checks-session.test.ts"
+          "tests/unit/the-old-system-checks-session.test.ts",
+          "tests/unit/w5-the-cutover-evidence-session.test.ts",
+          "tests/unit/w5-the-owner-accepts-a-migration-exception-in-his-own-name.test.ts"
         ],
         "integration": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
@@ -6615,10 +6621,12 @@
         "browser": [
           "tests/e2e/migration-decision-delivery.e2e.ts",
           "tests/e2e/the-box-migration-screen-shows-the-backup-and-rollback-limits.e2e.ts",
-          "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts"
+          "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts",
+          "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts"
+          "tests/e2e/the-old-system-checks-page-runs-the-office-migration-steps.e2e.ts",
+          "tests/e2e/w5-the-old-system-checks-switch-over-evidence-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
