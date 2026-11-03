@@ -83,6 +83,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'issued', 'not_on_indent', 'indent_line_done', 'requester_cannot_issue', 'bin_has_none',
   // OB-288 lane 2 · WF-07 offline: a transfer SENT from this store, and one COUNTED IN at it, on the handheld
   'transfer_sent', 'transfer_counted_in', 'not_a_transfer_here', 'transfer_already_done', 'count_incomplete',
+  // W5 (M09-FR-03): a floor RETURN counted in at the back store — never by the person who sent it back (§28)
+  'return_accepted', 'returner_cannot_accept', 'not_a_return_here', 'return_already_done',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -294,6 +296,23 @@ export const TRANSFER_DISPATCH_RECORDED = 'TransferDispatchRecorded';
 export const TRANSFER_RECEIPT_RECORDED = 'TransferReceiptRecorded';
 export const transferDispatchKey = (transferId: string): string => `transfer-dispatch:${transferId}`;
 export const transferReceiptKey = (transferId: string): string => `transfer-receipt:${transferId}`;
+/** W5 (M09-FR-03): the event a floor RETURN counted in at the back store travels under — head office re-runs the indent and
+ *  transfer engines on it (the returner accepting their own return is refused) and moves the stock off the floor once. */
+export const FLOOR_INDENT_RETURN_ACCEPTED = 'FloorIndentReturnAccepted';
+export const indentReturnKey = (indentId: string, returnId: string): string => `indent-return:${indentId}:${returnId}`;
+
+/** W5 (M09-FR-03): a return the floor sent back on an indent, waiting at the back store, as head office last said (via the box). */
+export interface HeldIndentReturn {
+  readonly indentId: string;
+  readonly returnId: string;
+  /** Who sent it back — the person who may NOT accept it (§28). */
+  readonly returnedBy: string;
+  readonly reason: string;
+  readonly lines: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number; readonly uom: string }[];
+}
+/** A waiting return as the worklist shows it — marked when THIS handheld has already counted it in. */
+export interface IndentReturnRow extends HeldIndentReturn { readonly doneHere: boolean }
+export interface ReturnStepResult { readonly accepted: boolean; readonly returnId: string; readonly signal: FeedbackSignal }
 
 /** One transfer as the store computer last heard it from head office (`warehouseData.transfers`). */
 export interface HeldTransfer {
@@ -330,7 +349,7 @@ export interface TransferStepResult {
 }
 
 /** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
-export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment', 'issue', 'transfer_out', 'transfer_in'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment', 'issue', 'transfer_out', 'transfer_in', 'return_in'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /** "Delivery complete" (SP-6b): the GRN this handheld has been receiving, and the order it was delivered against when known. */
@@ -474,6 +493,8 @@ export interface WarehouseAssignment {
   readonly packedProductIds?: readonly string[];
   /** OB-288 lane 2 · WF-07 offline: the transfers to send from / count in at this store (absent or null: never told). */
   readonly transfers?: HeldTransfers | null;
+  /** W5 (M09-FR-03): the floor returns waiting at this back store (from head office's indent register via the box). Absent = none told. */
+  readonly indentReturns?: readonly HeldIndentReturn[];
   /**
    * Round B (screen gap audit 31 Oct 2026): each product's name as head office's store pack names it, so a worker reads
    * "Demo Ponni Rice 1kg", not "prod-rice". Absent (or a product missing from it): the code is shown, never a guess.
@@ -648,6 +669,45 @@ export class WarehouseSession {
     return { accepted: true, transferId: held.transferId, signal: signalFor(short > 0 ? 'warn' : 'accept', 'transfer_counted_in', `transfer ${held.transferId} counted in${short > 0 ? ` — ${short} fewer than were sent; head office books the shortfall` : ''}`) };
   }
 
+  /** W5 (M09-FR-03): the floor returns waiting at this back store — each marked once THIS handheld has counted it in. */
+  floorReturns(): readonly IndentReturnRow[] {
+    return (this.assignment.indentReturns ?? []).map((r) => ({ ...r, doneHere: this.outbox.find(indentReturnKey(r.indentId, r.returnId)) !== undefined }));
+  }
+
+  /**
+   * W5 (M09-FR-03): ACCEPT a floor return at the back store — what actually came back, one count per line the return carries
+   * (0 is a real count). The person who sent it back may not accept it (§28) — refused here, before anything is saved, and
+   * again by head office. Saved on this handheld in the signed-in worker's name; head office moves the stock off the floor
+   * and onto the back store once, and values any shortfall between what the floor said and what arrived.
+   */
+  acceptFloorReturn(input: { readonly indentId: string; readonly returnId: string; readonly counted: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number }[]; readonly at: string }): ReturnStepResult {
+    const held = (this.assignment.indentReturns ?? []).find((r) => r.indentId === input.indentId && r.returnId === input.returnId);
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject'): ReturnStepResult => ({ accepted: false, returnId: input.returnId, signal: signalFor(feedback, code, detail) });
+    if (held === undefined) return refused('not_a_return_here', `return ${input.returnId} is not one waiting at this back store, as the store computer last heard`);
+    const key = indentReturnKey(held.indentId, held.returnId);
+    if (this.outbox.find(key) !== undefined) return refused('return_already_done', `return ${held.returnId} has already been counted in on this handheld — counting again changes nothing`, 'warn');
+    if (held.returnedBy === this.assignment.workerId) return refused('returner_cannot_accept', `you sent return ${held.returnId} back — a different person must count it in (§28)`);
+    const barred = this.newWorkRefusal(() => false); // OB-521
+    if (barred !== undefined) return { accepted: false, returnId: input.returnId, signal: barred };
+    const lineKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
+    const counts = new Map<string, number>();
+    for (const c of input.counted) {
+      if (!Number.isSafeInteger(c.quantityMinor) || c.quantityMinor < 0) return refused('not_a_quantity', `${String(c.quantityMinor)} is not a count of ${c.productId}`);
+      counts.set(lineKey(c.productId, c.batchId), c.quantityMinor);
+    }
+    const missing = held.lines.filter((l) => !counts.has(lineKey(l.productId, l.batchId)));
+    if (missing.length > 0 || counts.size !== held.lines.length) {
+      return refused('count_incomplete', `every line of return ${held.returnId} needs its count — not counted: ${missing.map((l) => l.productId).join(', ') || 'a line it does not carry'}`);
+    }
+    const counted = held.lines.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: counts.get(lineKey(l.productId, l.batchId))! }));
+    this.outbox.enqueue(makeEvent({
+      id: key, type: FLOOR_INDENT_RETURN_ACCEPTED, occurredAt: input.at, idempotencyKey: key, source: this.assignment.assignmentId,
+      payload: { indentId: held.indentId, returnId: held.returnId, counted, acceptedBy: this.assignment.workerId, at: input.at, storeId: this.assignment.storeId, source: 'warehouse-handheld' },
+    }));
+    const short = held.lines.reduce((n, l) => n + Math.max(0, l.quantityMinor - counts.get(lineKey(l.productId, l.batchId))!), 0);
+    return { accepted: true, returnId: held.returnId, signal: signalFor(short > 0 ? 'warn' : 'accept', 'return_accepted', `return ${held.returnId} on ${held.indentId} counted in at the back store${short > 0 ? ` — ${short} fewer than the floor sent; head office books the shortfall` : ''}`) };
+  }
+
   /** A product's name as the store pack names it (Tamil where recorded, when asked for); its code when not known. */
   productName(productId: string, lang: 'en' | 'ta' = 'en'): string {
     const ta = lang === 'ta' ? this.assignment.productNamesTa?.[productId] : undefined;
@@ -742,6 +802,10 @@ export class WarehouseSession {
           const p = item.event.payload as { transferId: string };
           const t = this.assignment.transfers?.toSend.find((x) => x.transferId === p.transferId);
           return [{ kind: 'transfer_out', id: p.transferId, what: p.transferId, detail: t === undefined ? '' : `→ ${t.toLocationId} · ${t.lines.length}`, ...common, ...withReason }];
+        }
+        if (item.event.type === FLOOR_INDENT_RETURN_ACCEPTED) {
+          const p = item.event.payload as { indentId: string; returnId: string; counted: readonly { productId: string; quantityMinor: number }[] };
+          return [{ kind: 'return_in', id: p.returnId, what: `${p.indentId} · ${p.returnId}`, detail: p.counted.map((c) => `${this.productName(c.productId)} ${c.quantityMinor}`).join(' · '), ...common, ...withReason }];
         }
         if (item.event.type === TRANSFER_RECEIPT_RECORDED) {
           const p = item.event.payload as { transferId: string; counted: readonly { productId: string; quantityMinor: number }[] };

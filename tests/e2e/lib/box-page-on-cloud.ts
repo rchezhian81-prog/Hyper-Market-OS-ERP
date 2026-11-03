@@ -128,6 +128,8 @@ export async function startBoxPageOnCloud(input: {
   readonly link?: BoxLink;
   /** W4: open the box's device socket for the phones; `pins` are the people whose till PINs the box's administrator issues. */
   readonly phones?: { readonly pins: readonly string[] };
+  /** W5: more sections of the box's signed pack (a box-served page's own policy, e.g. `stockHealthPolicy`, `warehouse`). */
+  readonly pack?: Record<string, unknown>;
 }): Promise<BoxCloudShop> {
   if (DATABASE_URL === undefined) throw new Error('startBoxPageOnCloud needs DATABASE_URL');
   execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
@@ -164,6 +166,7 @@ export async function startBoxPageOnCloud(input: {
     if (!fromHeadOffice) await writeFile(packFile, JSON.stringify({
       version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: store, branchId: store },
       roles, roleAssignments: input.people.map((p) => ({ userId: p.userId, roleId: `r-${p.userId}`, branchScope: [store] })),
+      ...(input.pack ?? {}),
     }), 'utf8');
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenantId, PACK_SIGNING_KEY: key, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',

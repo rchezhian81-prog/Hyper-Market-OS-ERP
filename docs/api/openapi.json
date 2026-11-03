@@ -38188,6 +38188,108 @@
         }
       }
     },
+    "/v1/floor/indents/{indentId}/returns/{returnId}/accepted/synced": {
+      "post": {
+        "operationId": "postFloorIndentsByIndentIdReturnsByReturnIdAcceptedSynced",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.indent.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "indentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "returnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedReply200"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedReply202"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.indent.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/floor/indents/{indentId}/synced": {
       "post": {
         "operationId": "postFloorIndentsByIndentIdSynced",
@@ -191108,6 +191210,8 @@
             "items": {
               "type": "string",
               "enum": [
+                "acceptor_lacks_authority",
+                "acceptor_unknown",
                 "bin_disagrees",
                 "issuer_lacks_authority",
                 "issuer_unknown",
@@ -191560,6 +191664,8 @@
             "items": {
               "type": "string",
               "enum": [
+                "acceptor_lacks_authority",
+                "acceptor_unknown",
                 "bin_disagrees",
                 "issuer_lacks_authority",
                 "issuer_unknown",
@@ -191933,6 +192039,190 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/floor-indents.ts"
       },
+      "PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedReply200": {
+        "type": "object",
+        "required": [
+          "indentId",
+          "returnId",
+          "recorded",
+          "alreadyAccepted",
+          "return",
+          "indent"
+        ],
+        "properties": {
+          "indentId": {
+            "type": "string"
+          },
+          "returnId": {
+            "type": "string"
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          },
+          "return": {
+            "$ref": "#/components/schemas/IndentReturn"
+          },
+          "indent": {
+            "type": "object",
+            "additionalProperties": {
+              "x-untyped": "unknown"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/floor-indents-synced.ts"
+      },
+      "PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedReply202": {
+        "type": "object",
+        "required": [
+          "indentId",
+          "returnId",
+          "recorded",
+          "alreadyAccepted",
+          "flags",
+          "transferId",
+          "posted",
+          "discrepancies",
+          "indent"
+        ],
+        "properties": {
+          "indentId": {
+            "type": "string"
+          },
+          "returnId": {
+            "type": "string"
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "alreadyAccepted": {
+            "type": "boolean"
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "acceptor_lacks_authority",
+                "acceptor_unknown",
+                "bin_disagrees",
+                "issuer_lacks_authority",
+                "issuer_unknown",
+                "receiver_lacks_authority",
+                "receiver_unknown",
+                "requester_lacks_authority",
+                "requester_unknown"
+              ]
+            }
+          },
+          "transferId": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "discrepancies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferDiscrepancy"
+            }
+          },
+          "return": {
+            "$ref": "#/components/schemas/IndentReturn"
+          },
+          "indent": {
+            "type": "object",
+            "additionalProperties": {
+              "x-untyped": "unknown"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/floor-indents-synced.ts"
+      },
+      "PostFloorIndentsByIndentIdReturnsByReturnIdAcceptedSyncedRequest": {
+        "type": "object",
+        "required": [
+          "acceptedBy",
+          "at",
+          "counted"
+        ],
+        "properties": {
+          "acceptedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "counted": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "quantityMinor"
+              ],
+              "properties": {
+                "batchId": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "damagedMinor": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "quantityMinor": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "currency": {
+            "type": "string"
+          },
+          "indentId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "returnId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "source": {
+            "type": "string"
+          },
+          "storeId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/floor-indents-synced.ts"
+      },
       "PostFloorIndentsByIndentIdReturnsByReturnIdReply200": {
         "type": "object",
         "required": [
@@ -192090,6 +192380,8 @@
             "items": {
               "type": "string",
               "enum": [
+                "acceptor_lacks_authority",
+                "acceptor_unknown",
                 "bin_disagrees",
                 "issuer_lacks_authority",
                 "issuer_unknown",
@@ -285708,6 +286000,15 @@
             "items": {
               "$ref": "#/components/schemas/ShortfallLine"
             }
+          },
+          "governanceFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relayed": {
+            "$ref": "#/components/schemas/RelayedBy"
           }
         },
         "additionalProperties": true

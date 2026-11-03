@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1684 | 971 | 971 | 192 | 439 |
+| 13 | 1685 | 972 | 972 | 192 | 439 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -344,6 +344,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/floor/indents/:indentId/rejection` | `inventory.indent.approve` | core | yes |
 | POST | `/v1/floor/indents/:indentId/returns/:returnId` | `inventory.indent.request` | core | yes |
 | POST | `/v1/floor/indents/:indentId/returns/:returnId/accepted` | `inventory.movement.append` | core | yes |
+| POST | `/v1/floor/indents/:indentId/returns/:returnId/accepted/synced` | `inventory.indent.sync` | core | yes |
 | POST | `/v1/floor/indents/:indentId/synced` | `inventory.indent.sync` | core | yes |
 | GET | `/v1/inventory/adjustment-requests` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/adjustment-requests/:requestId/decide` | `inventory.adjustment.approve` | core | yes |

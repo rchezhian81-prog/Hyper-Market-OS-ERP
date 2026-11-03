@@ -177,6 +177,10 @@ const WORDS = {
     confirmSend: 'Send this transfer — the goods are loaded', countInLine: 'Count in', sentWas: 'sent',
     transfer_sent: 'Transfer sent', transfer_counted_in: 'Transfer counted in', not_a_transfer_here: 'Not a transfer for this store',
     transfer_already_done: 'Already done on this handheld — nothing changed', count_incomplete: 'Every line needs its count',
+    // W5 (M09-FR-03): floor returns counted in at the back store — never by the person who sent them back
+    returnsHeading: 'Returns from the floor to count in', returnFrom: 'sent back by', returnWhy: 'why', returnDoneHere: 'Counted in on this handheld',
+    countInReturn: 'Count in', floorSent: 'the floor sent',
+    return_accepted: 'Return counted in', returner_cannot_accept: 'You sent this back — another person must count it in', not_a_return_here: 'Not a return waiting here', return_already_done: 'Already counted in on this handheld — nothing changed',
   },
   ta: {
     app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
@@ -267,6 +271,9 @@ const WORDS = {
     confirmSend: 'இந்த மாற்றலை அனுப்பு — பொருட்கள் ஏற்றப்பட்டன', countInLine: 'எண்ணிப் பெறு', sentWas: 'அனுப்பியது',
     transfer_sent: 'மாற்றல் அனுப்பப்பட்டது', transfer_counted_in: 'மாற்றல் எண்ணிப் பெறப்பட்டது', not_a_transfer_here: 'இந்தக் கடைக்கான மாற்றல் அல்ல',
     transfer_already_done: 'இந்தக் கருவியில் ஏற்கெனவே செய்யப்பட்டது — எதுவும் மாறவில்லை', count_incomplete: 'ஒவ்வொரு வரிக்கும் எண்ணிக்கை தேவை',
+    returnsHeading: 'எண்ணிப் பெற வேண்டிய தளத் திருப்பங்கள்', returnFrom: 'திருப்பியவர்', returnWhy: 'ஏன்', returnDoneHere: 'இந்தக் கருவியில் எண்ணிப் பெறப்பட்டது',
+    countInReturn: 'எண்ணிப் பெறு', floorSent: 'தளம் அனுப்பியது',
+    return_accepted: 'திருப்பம் எண்ணிப் பெறப்பட்டது', returner_cannot_accept: 'இதை நீங்கள் திருப்பினீர்கள் — வேறொருவர் எண்ணிப் பெற வேண்டும்', not_a_return_here: 'இங்கே காத்திருக்கும் திருப்பம் அல்ல', return_already_done: 'இந்தக் கருவியில் ஏற்கெனவே எண்ணிப் பெறப்பட்டது — எதுவும் மாறவில்லை',
   },
 };
 let lang = 'en';
@@ -314,6 +321,7 @@ const KIND_WORDS = {
   adjustment: { en: 'Adjustment requested', ta: 'திருத்தக் கோரிக்கை' },
   transfer_out: { en: 'Transfer sent', ta: 'மாற்றல் அனுப்பப்பட்டது' },
   transfer_in: { en: 'Transfer counted in', ta: 'மாற்றல் எண்ணிப் பெறப்பட்டது' },
+  return_in: { en: 'Floor return counted in', ta: 'தளத் திருப்பம் எண்ணிப் பெறப்பட்டது' },
 };
 /** The reasons an adjustment may be raised for (`packages/adjustment` ADJUSTMENT_REASON_CODES) — the buttons on the adjust sheet. */
 const REASON_WORDS = {
@@ -643,7 +651,7 @@ function render() {
   // Where each accepted scan is — rendered BEFORE the worklists, because an emptied worklist returns early below and a
   // put-away that just emptied it must still show as "with the store computer".
   renderSent();
-  const transfersHeld = renderTransfers();
+  const transfersHeld = renderTransfers() + renderFloorReturns();
 
   // The pick list: the bin is the biggest thing on the row, because the bin is where the worker walks to.
   const pickHost = el('pick-lines');
@@ -835,6 +843,56 @@ async function startCountInTransfer(r) {
     counted.push({ productId: l.productId, batchId: l.batchId, quantityMinor: q });
   }
   const out = real.countInTransfer({ transferId: r.transferId, counted, at: new Date().toISOString() });
+  feltResult(out.signal);
+  render();
+  if (out.accepted) void syncToBox();
+}
+
+/**
+ * W5 (M09-FR-03): the floor RETURNS waiting at this back store, as head office last said. Tap one → the keypad once per line
+ * (0 is a real count) → counted in, saved on this handheld in the signed-in worker's name and handed to the store computer.
+ * The person who sent it back is refused here (§28) — and again by head office. Returns how many rows are shown.
+ */
+function renderFloorReturns() {
+  const rows = real && typeof real.floorReturns === 'function' ? real.floorReturns() : [];
+  say(el('ret-in-heading'), t('returnsHeading'), 'package-check');
+  el('ret-in-heading').dataset.count = String(rows.filter((r) => !r.doneHere).length);
+  el('ret-in-heading').hidden = rows.length === 0;
+  el('ret-in').replaceChildren(...rows.map((r) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'item return';
+    row.dataset.return = r.returnId;
+    const where = document.createElement('div');
+    where.className = 'where';
+    where.textContent = r.indentId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${r.lines.map((l) => nameOf(l.productId)).join(' · ')} · ${t('returnFrom')} ${r.returnedBy} · ${t('returnWhy')}: ${r.reason}`;
+    const qty = document.createElement('div');
+    qty.className = 'qty';
+    sayQty(qty, r.lines.reduce((n, l) => n + l.quantityMinor, 0), ` ${t('units')}`);
+    row.append(where, what, qty);
+    if (r.doneHere) {
+      const f = document.createElement('div');
+      f.className = 'flag done';
+      say(f, t('returnDoneHere'), 'circle-check');
+      row.append(f);
+      row.disabled = true;
+    }
+    row.addEventListener('click', () => { void startCountInReturn(r); });
+    return row;
+  }));
+  return rows.length;
+}
+async function startCountInReturn(r) {
+  const counted = [];
+  for (const l of r.lines) {
+    const q = await awaitQty(`${t('countInReturn')} — ${nameOf(l.productId)}${l.batchId ? ` · ${l.batchId}` : ''}`, `${r.indentId} · ${t('floorSent')} ${l.quantityMinor} ${l.uom}`, '0');
+    if (q === null) return;
+    counted.push({ productId: l.productId, batchId: l.batchId, quantityMinor: q });
+  }
+  const out = real.acceptFloorReturn({ indentId: r.indentId, returnId: r.returnId, counted, at: new Date().toISOString() });
   feltResult(out.signal);
   render();
   if (out.accepted) void syncToBox();

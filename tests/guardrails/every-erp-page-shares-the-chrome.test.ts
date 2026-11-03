@@ -336,6 +336,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'tally-files-ap.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
     // W4 (M07-FR-03 · WF-04): the Goods receipts decisions section's words are in its tested session model.
     'goods-receipt-decisions.js': 'apps/web-erp/src/goods-receipt-session.ts',
+    // W5 (store operations): the sections drawn on ten pages — their words are in their tested section models.
+    'w5-sections.js': 'apps/web-erp/src/w5-store-ops-sections.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

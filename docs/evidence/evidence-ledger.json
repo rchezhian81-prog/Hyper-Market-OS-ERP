@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2187,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -814,11 +814,11 @@
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 16,
-        "integration": 33,
+        "unit": 17,
+        "integration": 34,
         "realDb": 13,
-        "browser": 10,
-        "connected": 3,
+        "browser": 12,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -835,6 +835,7 @@
           "tests/unit/replenishment-session.test.ts",
           "tests/unit/replenishment.test.ts",
           "tests/unit/transfers-session.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts",
           "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
           "tests/unit/warehouse-handheld-issues-to-floor.test.ts",
           "tests/unit/warehouse-handheld-transfers.test.ts",
@@ -865,6 +866,7 @@
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/trusted-approvals.test.ts",
+          "tests/integration/w5-a-floor-return-is-counted-in-on-the-warehouse-handheld.test.ts",
           "tests/integration/warehouse-bins.test.ts",
           "tests/integration/warehouse-counts.test.ts",
           "tests/integration/warehouse-durability.test.ts",
@@ -897,6 +899,8 @@
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts",
+          "tests/e2e/w5-the-warehouse-handheld-counts-in-a-floor-return.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts",
@@ -906,7 +910,8 @@
         "connected": [
           "tests/e2e/count-plans-on-the-production-api.e2e.ts",
           "tests/e2e/reorder-settings-drive-the-proposal-and-raise-a-requisition-on-the-buying-page.e2e.ts",
-          "tests/e2e/transfers-on-the-production-api.e2e.ts"
+          "tests/e2e/transfers-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -918,11 +923,11 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 30,
+        "unit": 31,
         "integration": 34,
         "realDb": 11,
-        "browser": 10,
-        "connected": 2,
+        "browser": 11,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -957,7 +962,8 @@
           "tests/unit/the-pack-carries-the-expired-batches.test.ts",
           "tests/unit/the-release-screen-shows-the-samples-on-the-hold.test.ts",
           "tests/unit/the-served-till-receives-the-expired-batches-and-the-cess.test.ts",
-          "tests/unit/traceability.test.ts"
+          "tests/unit/traceability.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts"
         ],
         "integration": [
           "tests/integration/a-held-food-batch-is-sampled-and-released-at-the-store-offline.test.ts",
@@ -1018,11 +1024,13 @@
           "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
         "connected": [
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts"
+          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1034,11 +1042,11 @@
       "id": "M11",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 10,
+        "unit": 11,
         "integration": 9,
         "realDb": 4,
-        "browser": 7,
-        "connected": 2,
+        "browser": 8,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1053,7 +1061,8 @@
           "tests/unit/r4d-production-repack-session.test.ts",
           "tests/unit/the-box-works-from-what-it-holds.test.ts",
           "tests/unit/w3-production-departments-session.test.ts",
-          "tests/unit/w4-production-plan-trace-and-costs-sessions.test.ts"
+          "tests/unit/w4-production-plan-trace-and-costs-sessions.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts"
         ],
         "integration": [
           "tests/integration/a-counter-label-carries-its-marks-sizes-and-unit-price.test.ts",
@@ -1079,11 +1088,13 @@
           "tests/e2e/r4d-recipes-are-set-up-for-the-production-page.e2e.ts",
           "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts",
           "tests/e2e/w4-production-is-planned-costed-by-finance-and-traced-on-the-production-api.e2e.ts",
-          "tests/e2e/w4-production-plan-trace-and-costs-through-the-store-computer.e2e.ts"
+          "tests/e2e/w4-production-plan-trace-and-costs-through-the-store-computer.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts",
-          "tests/e2e/w4-production-is-planned-costed-by-finance-and-traced-on-the-production-api.e2e.ts"
+          "tests/e2e/w4-production-is-planned-costed-by-finance-and-traced-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1197,11 +1208,11 @@
       "id": "M13",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 27,
+        "unit": 28,
         "integration": 26,
         "realDb": 9,
-        "browser": 7,
-        "connected": 1,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1233,6 +1244,7 @@
           "tests/unit/reversal.test.ts",
           "tests/unit/sync-http-transport.test.ts",
           "tests/unit/the-served-till-receives-the-expired-batches-and-the-cess.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
@@ -1281,10 +1293,12 @@
           "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
           "tests/e2e/the-served-till-holds-an-expired-batch-coming-back.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
-          "tests/e2e/the-till-keys-a-bill-number-with-letters.e2e.ts"
+          "tests/e2e/the-till-keys-a-bill-number-with-letters.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts"
+          "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1383,11 +1397,11 @@
       "id": "M15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
+        "unit": 19,
         "integration": 18,
         "realDb": 6,
-        "browser": 8,
-        "connected": 1,
+        "browser": 9,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1410,7 +1424,8 @@
           "tests/unit/service-pos.test.ts",
           "tests/unit/settlement.test.ts",
           "tests/unit/stored-fraud-signals.test.ts",
-          "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts"
+          "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts"
         ],
         "integration": [
           "tests/integration/a-related-party-order-needs-the-owner.test.ts",
@@ -1448,10 +1463,12 @@
           "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
           "tests/e2e/the-served-till-keeps-void-evidence.e2e.ts",
           "tests/e2e/the-served-till-records-no-sale-and-price-override.e2e.ts",
-          "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts"
+          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2313,11 +2330,11 @@
       "id": "M26",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 13,
         "realDb": 6,
-        "browser": 6,
-        "connected": 3,
+        "browser": 7,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -2327,7 +2344,8 @@
           "tests/unit/facilities.test.ts",
           "tests/unit/lp-workforce-sessions.test.ts",
           "tests/unit/r4d-facilities-setup-session.test.ts",
-          "tests/unit/the-box-holds-the-help-library-and-the-rooms.test.ts"
+          "tests/unit/the-box-holds-the-help-library-and-the-rooms.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts"
         ],
         "integration": [
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
@@ -2358,12 +2376,14 @@
           "tests/e2e/help-readings-and-losses-are-saved-at-the-store-with-the-line-down.e2e.ts",
           "tests/e2e/r4d-facilities-set-up.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-a-staff-injury-is-recorded-and-closed-on-the-safety-incidents-page.e2e.ts"
+          "tests/e2e/w3-a-staff-injury-is-recorded-and-closed-on-the-safety-incidents-page.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-a-staff-injury-is-recorded-and-closed-on-the-safety-incidents-page.e2e.ts"
+          "tests/e2e/w3-a-staff-injury-is-recorded-and-closed-on-the-safety-incidents-page.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2441,11 +2461,11 @@
       "id": "M28",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 13,
         "realDb": 7,
-        "browser": 8,
-        "connected": 2,
+        "browser": 9,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2457,6 +2477,7 @@
           "tests/unit/lp-workforce-sessions.test.ts",
           "tests/unit/round-a-an-empty-page-never-says-all-clear.test.ts",
           "tests/unit/the-scrap-packaging-and-compare-screens-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/w5-store-ops-sections.test.ts",
           "tests/unit/waste-sustainability.test.ts",
           "tests/unit/waste.test.ts",
           "tests/unit/web-erp-shell.test.ts"
@@ -2493,11 +2514,13 @@
           "tests/e2e/the-scrap-and-packaging-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-scrap-page-says-why-the-manager-has-no-form.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts",
           "tests/e2e/write-off-capture-delivery.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-facilities-office-write-off-decisions-and-relabel-tasks-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w5-store-operations-on-the-store-computer-over-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

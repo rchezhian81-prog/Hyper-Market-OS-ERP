@@ -127,6 +127,7 @@ export const RELAYED_MOVEMENT_KINDS: Readonly<Record<string, { readonly person: 
   'POST /v1/inventory/counts/:countId/synced': { person: 'counterId', classify: fixed('count', 'a count') },
   'POST /v1/floor/indents/:indentId/issues/:issueId/synced': { person: 'issuedBy', classify: fixed('move_in_store', 'issuing stock from the back store to the floor') },
   'POST /v1/floor/indents/:indentId/issues/:issueId/receipt/synced': { person: 'receivedBy', classify: fixed('transfer', 'counting in stock issued to the floor') },
+  'POST /v1/floor/indents/:indentId/returns/:returnId/accepted/synced': { person: 'acceptedBy', classify: fixed('move_in_store', 'taking stock back from the floor') },
   'POST /v1/warehouse/transfers/:transferId/dispatch/synced': { person: 'dispatchedBy', classify: fixed('transfer', 'sending a transfer') },
   'POST /v1/warehouse/transfers/:transferId/receive/synced': { person: 'receivedBy', classify: fixed('transfer', 'receiving a transfer') },
   'POST /v1/inventory/write-off/:writeOffId/synced': { person: 'raisedBy', classify: fixed(null, 'a stock loss') },
