@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2188,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 104,
     "realDb": 104,
     "browser": 104,
-    "connected": 98,
+    "connected": 99,
     "device": 0,
     "uat": 0
   },
@@ -2876,11 +2876,11 @@
       "id": "M34",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 10,
-        "integration": 17,
+        "unit": 11,
+        "integration": 18,
         "realDb": 7,
-        "browser": 3,
-        "connected": 0,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2895,7 +2895,8 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-risk-acceptance-session.test.ts",
-          "tests/unit/legal-holds.test.ts"
+          "tests/unit/legal-holds.test.ts",
+          "tests/unit/w5-compliance-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-credit-customers-gstin-files-their-invoices-in-gstr1-b2b.test.ts",
@@ -2914,6 +2915,7 @@
           "tests/integration/risk-register.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/w2-space-setup-display-contracts-and-product-checks.test.ts",
+          "tests/integration/w5-the-licence-and-control-registers-are-readable.test.ts",
           "tests/security/personal-data-safeguards.test.ts"
         ],
         "realDb": [
@@ -2928,14 +2930,19 @@
         "browser": [
           "tests/e2e/r4c-the-audit-log-reads-the-stored-trail.e2e.ts",
           "tests/e2e/risk-acceptance-delivery.e2e.ts",
-          "tests/e2e/screens-open-offline.e2e.ts"
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/w5-licences-controls-and-findings-are-kept-on-screen.e2e.ts",
+          "tests/e2e/w5-the-audit-log-holds-plans-and-exports-evidence.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w5-licences-controls-and-findings-are-kept-on-screen.e2e.ts",
+          "tests/e2e/w5-the-audit-log-holds-plans-and-exports-evidence.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M35",
