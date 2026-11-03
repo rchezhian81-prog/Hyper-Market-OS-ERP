@@ -340,6 +340,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'compliance-registers.js': 'apps/web-erp/src/compliance-registers-session.ts',
     'epr-records.js': 'apps/web-erp/src/epr-records-session.ts',
     'audit-log-holds.js': 'apps/web-erp/src/legal-holds-session.ts',
+    // W5 (route audit bundle 2): the GST and tax desk's words are in its tested session model.
+    'gst-returns-desk.js': 'apps/web-erp/src/gst-desk-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

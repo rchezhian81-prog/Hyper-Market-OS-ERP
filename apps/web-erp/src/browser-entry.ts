@@ -25,6 +25,7 @@ import { wireLpWorkforcePages } from './lpw-browser-wiring';
 import { wireR7dPages } from './r7d-browser-wiring'; // Round 7 · OB-507 attendance, OB-502 food-handling check
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
 import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
+import { createGstDeskSession, gstDeskWords, gstDeskOutcomeWords, rupeesOf as gstDeskRupees, monthDates as gstDeskMonthDates, fyOfMonth as gstDeskFyOfMonth } from './gst-desk-session'; // W5 · the GST and statutory tax desk
 import { createContractExpirySession, contractExpiryWords, contractExpiryOutcomeWords, windowWords as contractWindowWords, dueWords as contractDueWords } from './contract-expiry-session'; // FG-4 · M04-FR-04 / M06-FR-03
 import { wireOwnerReportingPages } from './owner-reporting-browser-wiring'; // OB-288 lane 4 · P2
 import { wireSaasPages } from './saas-browser-wiring'; // OB-288 P4: Trial switches and shop account
@@ -144,7 +145,8 @@ import {
   createEssSession, type EssPorts, type EssSession, type EssRoster, type EssPayslip,
 } from './ess-session';
 import {
-  createGstReturnsSession, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
+  createGstReturnsSession, headOfficeOverFetch, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
+  type HeadOfficeCall,
 } from './gst-returns-session';
 import {
   createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
@@ -925,10 +927,18 @@ export interface GstReturnsData {
 const GST_RETURNS_READ_PERMISSION = 'finance.gstr.read';
 const GST_RETURNS_APPROVE_PERMISSION = 'finance.gstr.approve';
 const GST_RETURNS_SUBMIT_PERMISSION = 'finance.gstr.submit';
+const GST_RETURNS_PREPARE_PERMISSION = 'finance.gstr.generate';
 
+/**
+ * W5 (route audit rows 164–167): the screen reads and acts on head office directly (`headOffice`), under the signed-in
+ * person's own session. `earlier` is the browser queue an earlier version of this page wrote approve/file requests to —
+ * nothing ever sent them on. It is only COUNTED (said on the page so the person presses again), never sent and never
+ * deleted (hard rule #6).
+ */
 export function gstReturnsPortsFromData(
   data: GstReturnsData | undefined,
-  outbox: SyncOutbox = new SyncOutbox(),
+  headOffice?: HeadOfficeCall,
+  earlier?: SyncOutbox,
 ): GstReturnsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -937,19 +947,22 @@ export function gstReturnsPortsFromData(
     mayRead: () => held.has(GST_RETURNS_READ_PERMISSION),
     mayApprove: () => held.has(GST_RETURNS_APPROVE_PERMISSION),
     maySubmit: () => held.has(GST_RETURNS_SUBMIT_PERMISSION),
-    outbox: () => outbox,
+    mayPrepare: () => held.has(GST_RETURNS_PREPARE_PERMISSION),
+    ...(headOffice !== undefined ? { headOffice } : {}),
+    unsentEarlier: () => earlier?.pending().length ?? 0,
   };
 }
 
 /** Build the GST-returns screen, or `null` when the box carried no payload for it. */
 export function bootGstReturns(
   data: GstReturnsData | undefined,
-  outbox: SyncOutbox = new SyncOutbox(),
+  headOffice?: HeadOfficeCall,
+  earlier?: SyncOutbox,
 ): GstReturnsSession | null {
   if (data === undefined) return null;
   return createGstReturnsSession(
     { userId: data.userId === undefined ? null : data.userId },
-    gstReturnsPortsFromData(data, outbox),
+    gstReturnsPortsFromData(data, headOffice, earlier),
   );
 }
 
@@ -6727,13 +6740,17 @@ if (browserWindow !== undefined) {
   }
   const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
   if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
-  // The governance actions this screen commits queue in a DEVICE-backed outbox, so an approve/submit requested
-  // while the link is down survives the operator closing and reopening the tab before it syncs (P-01, §31).
-  const gstReturnsOutbox = browserWindow.gstReturnsOutbox ?? openGstReturnsOutbox();
-  const gstReturns = bootGstReturns(browserWindow.gstReturnsData, gstReturnsOutbox);
-  if (gstReturns !== null) {
-    browserWindow.gstReturnsSession = gstReturns;
-    browserWindow.gstReturnsOutbox = gstReturnsOutbox;
+  // W5 (route audit rows 164–167): the GSTR-1 maker-checker goes straight to head office under the person's own session
+  // (§31 "finance — generally online; no unsafe stale approval"). The old browser queue is only read, to say how many
+  // requests an earlier version left unsent there.
+  if (browserWindow.gstReturnsData !== undefined) {
+    const gstReturnsOutbox = browserWindow.gstReturnsOutbox ?? openGstReturnsOutbox();
+    const fetchFn = (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
+    const gstReturns = bootGstReturns(browserWindow.gstReturnsData, fetchFn === undefined ? undefined : headOfficeOverFetch(fetchFn.bind(globalThis)), gstReturnsOutbox);
+    if (gstReturns !== null) {
+      browserWindow.gstReturnsSession = gstReturns;
+      browserWindow.gstReturnsOutbox = gstReturnsOutbox;
+    }
   }
   const waste = bootWaste(browserWindow.wasteData);
   if (waste !== null) browserWindow.wasteSession = waste;
@@ -7492,6 +7509,16 @@ if (browserWindow !== undefined) {
   wireOwnerReportingPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // OB-288 lane 4 · P2 — owner alerts and schedules
   // OB-288 P4 (R8-9 · M36-FR-01 · C8 · C9): the Trial switches and shop account page — its session, in its own file.
   wireSaasPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // W5 (route audit bundle 2): the GST and statutory tax desk — GSTR-1 views and the GSTN file, the time-bar window, GSTR-9C
+  // reasons, reverse charge and TDS on the GST returns page; the ITC claim and reversals on the ITC page. Each page's viewer.
+  for (const [global, dataKey] of [['gstDesk', 'gstReturnsData'], ['itcDesk', 'itcReviewData']] as const) {
+    const viewer = (browserWindow as unknown as Record<string, unknown>)[dataKey];
+    if (viewer === undefined) continue;
+    (browserWindow as unknown as Record<string, unknown>)[global] = {
+      session: createGstDeskSession({ viewer: viewerIdentity(viewer) }),
+      words: gstDeskWords, outcomeWords: gstDeskOutcomeWords, rupees: gstDeskRupees, monthDates: gstDeskMonthDates, fyOfMonth: gstDeskFyOfMonth,
+    };
+  }
   // FG-4 · OB-386: free samples — recorded on the write-off capture screen (who is looking, from its data), checked on the ITC page.
   (browserWindow as unknown as Record<string, unknown>)['freeSample'] = {
     session: createFreeSampleSession(browserWindow.writeOffCaptureData === undefined ? {} : { viewer: viewerIdentity(browserWindow.writeOffCaptureData) ?? { permissions: [] } }),

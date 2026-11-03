@@ -158,8 +158,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-606: the office pages open on the shop\'s day
           const mmyyyy = `${day.lastMonth().slice(5, 7)}${day.lastMonth().slice(0, 4)}`;
           await holds(gst.page, 'period', mmyyyy);
           // And head office is asked for that month, not New York's last month.
-          await gst.page.waitForFunction(() => true);
-          expect(gst.asked.some((u) => u.includes(`/v1/finance/gstr3b/${mmyyyy}`))).toBe(true);
+          // (polled: the page now also reads the GSTR-1 list and the tax desk, so this read may land a moment later — W5)
+          await expect.poll(() => gst.asked.some((u) => u.includes(`/v1/finance/gstr3b/${mmyyyy}`)), { timeout: 15_000 }).toBe(true);
         } finally { await gst.close(); }
         const buying = await open('buying.html', at);
         try { await holds(buying.page, 'budget-period', day.thisMonth()); } finally { await buying.close(); }

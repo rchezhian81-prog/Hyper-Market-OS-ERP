@@ -82,12 +82,13 @@ describe('the GST-returns view defers to the model and uses no browser dialogs',
   });
 });
 
-describe('a governance action goes through the offline outbox, never a raw network call (P-01, hard rule #1)', () => {
+describe('a governance act goes to head office through the session, never from the shell (§28 · §31 · W5 route audit rows 161–167)', () => {
   const VIEW = readFileSync('apps/web-erp/web/gst-returns.js', 'utf8');
 
-  it('the shell fires NO raw network call — the button only commits an offline command', () => {
-    // The one permitted platform call is `navigator.serviceWorker.register('./sw.js')`; a call to the portal
-    // or the API from this screen would break hard rule #1 and bypass the durable, idempotent outbox.
+  it('the shell fires NO network call itself — the session asks head office under the person\'s own session', () => {
+    // The one permitted platform call is `navigator.serviceWorker.register('./sw.js')`. Every read and act lives in the
+    // tested session (gst-returns-session.ts), so the maker ≠ checker guards, the live-list rule (§31: no stale approval)
+    // and the once-only key cannot be skipped by the shell.
     expect(/\bfetch\s*\(/.test(VIEW), 'shell calls fetch directly').toBe(false);
     expect(/XMLHttpRequest/.test(VIEW), 'shell uses XMLHttpRequest').toBe(false);
     expect(/\.sendBeacon\s*\(/.test(VIEW), 'shell uses sendBeacon').toBe(false);
@@ -95,18 +96,23 @@ describe('a governance action goes through the offline outbox, never a raw netwo
     expect(/new\s+EventSource/.test(VIEW), 'shell opens an EventSource').toBe(false);
   });
 
-  it('a click hands the intent to the session, which enqueues the command — the shell never decides', () => {
+  it('a click hands the intent to the session, which re-checks and sends it — the shell never decides', () => {
     expect(VIEW, 'button is not wired to the session').toMatch(/addEventListener\('click', \(\) => runAction/);
-    expect(VIEW, 'the action does not go through requestAction').toMatch(/real\.requestAction\s*\(/);
-    expect(VIEW).toMatch(/new Date\(\)\.toISOString\(\)/);
+    expect(VIEW, 'the act does not go through the session').toMatch(/real\.act\s*\(/);
+    expect(VIEW, 'the list is not read through the session').toMatch(/real\.load\(\)/);
   });
 
-  it('only a prepared or approved return offers a one-click button — a stuck one never does (rule #10)', () => {
-    // Bound in the model, not the view: even if the shell tried to draw one, the model offers no action here.
-    expect(commandActionsFor('previewed')).toEqual(['approve']);
-    expect(commandActionsFor('approved')).toEqual(['submit']);
+  it('the page no longer queues GstReturnActionRequested — the sync agent has no route for it, so it never arrived', () => {
+    const SESSION = readFileSync('apps/web-erp/src/gst-returns-session.ts', 'utf8');
+    expect(SESSION).not.toMatch(/makeEvent|\.enqueue\(/);
+  });
+
+  it('only the acts head office allows are offered — a stuck one is reconciled with evidence, never one-clicked (rule #10)', () => {
+    // Bound in the model, not the view.
+    expect(commandActionsFor('previewed')).toEqual(['approve', 'cancel']);
+    expect(commandActionsFor('approved')).toEqual(['submit', 'cancel']);
+    expect(commandActionsFor('unknown')).toEqual(['reconcile']);
     expect(commandActionsFor('failed')).toEqual([]);
-    expect(commandActionsFor('unknown')).toEqual([]);
     expect(commandActionsFor('filed')).toEqual([]);
   });
 });

@@ -117,6 +117,10 @@ export function returnAcceptedRoute(payload: Record<string, unknown>): string | 
  * clicked — breaking §28. They need a dedicated "apply a synced governance command" route that trusts the
  * relayed operator identity, which is a separate, security-reviewed increment. Until then they dead-letter
  * (visible, hard rule #6), which is the honest state — never silently applied as the wrong actor.
+ * W5 (route audit rows 166–167): the GST returns page no longer queues `GstReturnActionRequested` at all — §31 puts GST
+ * work under "finance — generally online; no unsafe stale approval", so its prepare / approve / withdraw / reconcile go
+ * straight to head office's maker-checker routes under the person's own session (apps/web-erp/src/gst-returns-session.ts),
+ * once each. It stays unrouted here on purpose: a stray one is still dead-lettered by name, never filed as the store.
  *
  * `ReturnAccepted` is the FIRST such synced-governance route to land (M13-FR-01): its record-and-flag cloud
  * route re-verifies the approver, so it is safe to relay. `commitReturn` at the edge enqueues it (Slice 2b).

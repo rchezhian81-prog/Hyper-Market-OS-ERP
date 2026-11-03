@@ -82,6 +82,9 @@ const ROUTES: Record<string, unknown> = {
   gstr9: { complete: false, dueDate: '2027-12-31', missing: [{ period: '082026', reason: 'not_filed' }] },
   gstr9c: { open: 0, dueDate: '2027-12-31' },
 };
+const GST_LIVE = [
+  { period: '082026', state: 'failed', detail: 'The portal rejected invoice B-2210.' }, { period: '062026', state: 'filed', arn: 'AA3306260012345', detail: 'filed' },
+];
 const GLOBALS: Record<string, Record<string, unknown>> = {
   'index.html': { sreNavigation: menu('dashboard'), managerData: MANAGER },
   'goods-receipt.html': { sreNavigation: menu('goods-receipt'), goodsReceiptData: { userId: 'u-mgr', permissions: ['inventory.availability.read'] } },
@@ -104,6 +107,9 @@ async function serve(): Promise<{ base: string; stop: () => Promise<void> }> {
       if (path.startsWith('/v1/inventory/goods-receipt')) { json(ROUTES['/v1/inventory/goods-receipt']); return; }
       if (ROUTES[path] !== undefined) { json(ROUTES[path]); return; }
       if (path.startsWith('/v1/finance/gstr3b/')) { json(ROUTES['gstr3b']); return; }
+      // W5: the GSTR-1 filing list is read live from head office — the same two periods the box copy carries.
+      if (path === '/v1/finance/gstr1/submissions') { json({ count: GST_LIVE.length, submissions: GST_LIVE }); return; }
+      if (path.startsWith('/v1/finance/gstr1/submission/')) { json(GST_LIVE.find((s) => path.endsWith(s.period))); return; }
       if (path.startsWith('/v1/finance/gstr9c/')) { json(ROUTES['gstr9c']); return; }
       if (path.startsWith('/v1/finance/gstr9/')) { json(ROUTES['gstr9']); return; }
       const file = path === '/' ? 'index.html' : path.replace(/^\//, '');
