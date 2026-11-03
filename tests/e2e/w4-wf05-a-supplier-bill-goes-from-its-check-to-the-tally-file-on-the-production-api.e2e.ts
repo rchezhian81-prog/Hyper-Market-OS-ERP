@@ -12,8 +12,10 @@ import type { RealCloud } from '../support/real-store';
  * **W4 · WF-05 "Capture/OCR/import → validate → PO-GRN-invoice match → discrepancy → approval → AP/Tally" — ONE connected
  * browser run of the after-match steps, on the PRODUCTION API over real PostgreSQL.** Synthetic data only.
  *
- * A delivery of an order comes one dal short and with both oil tins damaged (a second person decided they go back to the
- * supplier — a debit note). Through Chromium:
+ * A delivery of an order comes one dal short and with both oil tins damaged. Through Chromium:
+ *   0. GOODS RECEIPTS (M07-FR-03 · WF-04, W4) — the person who received the delivery is shown that a different person
+ *      decides its held oil, and is offered no decision; a second store manager sends the oil back to the supplier on the
+ *      page, with a reason (that return is the supplier's debit note);
  *   1. SUPPLIER BILLS — the br-1 store manager hands in the paper bill's scan (no reading engine: it waits to be typed),
  *      types it from the paper and asks a second person to check it; nothing is on the register yet;
  *   2. APPROVALS — the accountant checks it on HIS Approvals page (`supplier_invoice_check`) and approves it;
@@ -47,6 +49,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-05 — 
         { path: '/approvals', html: 'approvals.html', dataGlobal: 'approvalsData' },
         { path: '/day-book', html: 'day-book.html', dataGlobal: 'dayBookData' },
         { path: '/tally-files', html: 'tally-files.html', dataGlobal: 'tallyFilesData' },
+        { path: '/goods-receipt', html: 'goods-receipt.html', dataGlobal: 'goodsReceiptData' },
       ],
       seed: async (c) => {
         await c.grant(ACCT, 'accountant', undefined, 'all');
@@ -62,7 +65,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-05 — 
           { productId: 'RICE', orderedQty: 10, unitCost: unit(5_000) }, { productId: 'DAL', orderedQty: 4, unitCost: unit(10_000) }, { productId: 'OIL', orderedQty: 2, unitCost: unit(15_000) },
         ] }, 'po-1', SEED_BUYER);
         await as(c, '/v1/purchase/orders/po-1/approval', { reason: 'weekly order' }, 'po-1-ok');
-        // The delivery: one dal short; both oil tins damaged, and a second person sends them back (the debit note).
+        // The delivery: one dal short; both oil tins damaged (held at the door — decided on the Goods receipts page below).
         await as(c, '/v1/inventory/goods-receipt/grn-1', {
           warehouseId: 'br-1', receivedOnDate: '2026-10-20', currency: 'INR', poId: 'po-1',
           lines: [
@@ -71,7 +74,6 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-05 — 
             { lineId: 'L3', productId: 'OIL', orderedMinor: 2, countedMinor: 2, uom: 'ea', unitCost: unit(15_000), condition: 'damaged' },
           ],
         }, 'grn-1', RECV);
-        await as(c, '/v1/inventory/goods-receipt/grn-1/lines/L3/disposition', { disposition: 'return', reason: 'tins dented' }, 'disp', BOSS);
         // The accountant's posting rules (the suggested map, which carries the supplier-account rules).
         await as(c, '/v1/finance/posting-map', DEFAULT_RETAIL_POSTING_MAP, 'map', ACCT, 'PUT');
       },
@@ -100,8 +102,43 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-05 — 
   const api = (path: string, userId = OWNER) => shop.cloud().request({ method: 'GET', path, userId });
 
   it('typed, checked by a second person on the Approvals page, saved as checked, matched, its debit note issued, in the books and in the Tally file (WF-05)', async () => {
+    // ── 0. Goods receipts (M07-FR-03 · WF-04): the held oil is decided by a second person, on the page ────────────────
+    let s = await open(RECV, '/goods-receipt');
+    try {
+      await s.page.waitForSelector('#decide:not([hidden])', { timeout: 15_000 });
+      expect(s.writes, 'nothing is written on open').toEqual([]);
+      await s.page.click('#decide-show');
+      const mine = s.page.locator('#decide-rows li[data-grn="grn-1"]');
+      await mine.waitFor({ timeout: 15_000 });
+      expect(await mine.getAttribute('data-received-by-you')).toBe('true');
+      await says(s.page, '#decide-rows li[data-grn="grn-1"] .decide-yours', /^You received this delivery, so a different person decides it\.$/);
+      expect(await mine.locator('button').count(), 'the receiver is offered no decision').toBe(0);
+      expect(s.writes).toEqual([]);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    s = await open(BOSS, '/goods-receipt');
+    try {
+      await s.page.waitForSelector('#decide:not([hidden])', { timeout: 15_000 });
+      await s.page.click('#decide-show');
+      const row = s.page.locator('#decide-rows li[data-grn="grn-1"]');
+      await row.waitFor({ timeout: 15_000 });
+      expect(await row.locator('.decide-line[data-line="L3"]').innerText()).toMatch(/L3 · OIL — 2 ea held back/);
+      await row.locator('.decide-line[data-line="L3"] button.decide-return').click();
+      await says(s.page, '#decide-rows li[data-grn="grn-1"] .decide-status', /^Write the reason first\.$/);
+      await row.locator('input.decide-reason').fill('tins dented');
+      await row.locator('.decide-line[data-line="L3"] button.decide-return').click();
+      await says(s.page, '#decide-status', /^grn-1: Decided\.$/);
+      await says(s.page, '#decide-rows', /No delivery waits for a decision\./);
+      await s.page.click('#lang');
+      await says(s.page, '#decide-heading', /முடிவுக்குக் காத்திருக்கும் டெலிவரிகள்/);
+      expect(s.writes).toEqual(['POST /v1/inventory/goods-receipt/grn-1/lines/L3/disposition']);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    const grn = (await api('/v1/inventory/goods-receipt/grn-1')).body as { grn: { dispositions: { lineId: string; disposition: string; decidedBy: string; reason: string }[] } };
+    expect(grn.grn.dispositions).toEqual([expect.objectContaining({ lineId: 'L3', disposition: 'return', decidedBy: BOSS, reason: 'tins dented' })]);
+
     // ── 1. Supplier bills: the scan is handed in and typed; a second person's check is asked ─────────────────────────
-    let s = await open(MGR, '/supplier-bills');
+    s = await open(MGR, '/supplier-bills');
     try {
       await s.page.waitForSelector('#chk-section:not([hidden])', { timeout: 15_000 });
       expect(s.writes, 'nothing is written on open').toEqual([]);

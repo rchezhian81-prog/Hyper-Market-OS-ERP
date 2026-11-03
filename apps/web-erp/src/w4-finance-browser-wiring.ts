@@ -6,6 +6,7 @@ import {
   createBillCheckSession, createPayablesBooksSession, createApTallySession, supplierBooksWords, supplierBooksOutcomeWords, rupees,
 } from './supplier-bills-to-the-books-session';
 import { typedCaptureBody } from './supplier-bills-session';
+import { createReceiptDecisionsSession, receiptDecisionWords, receiptDecisionOutcomeWords } from './goods-receipt-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -18,6 +19,10 @@ export function wireW4Finance(win: Record<string, unknown>, viewerIdentity: (raw
   // WF-05 · M23-FR-01: Day book — supplier bills in the books.
   if (win['dayBookData'] !== undefined) {
     win['payablesBooks'] = { session: createPayablesBooksSession({ viewer: viewerIdentity(win['dayBookData']) }), ...common };
+  }
+  // M07-FR-03 · WF-04: Goods receipts — the decisions a delivery waits for (held lines, held excess), by a second person.
+  if (win['goodsReceiptData'] !== undefined) {
+    win['receiptDecisions'] = { session: createReceiptDecisionsSession({ viewer: viewerIdentity(win['goodsReceiptData']) }), words: receiptDecisionWords, outcomeWords: receiptDecisionOutcomeWords };
   }
   // WF-05 · M23-FR-04: Tally files — the month's supplier-bill file.
   if (win['tallyFilesData'] !== undefined) {

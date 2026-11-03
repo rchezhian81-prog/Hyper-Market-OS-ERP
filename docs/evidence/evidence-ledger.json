@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2162,
+  "testFiles": 2163,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "WIRED": 4
   },
   "totals": {
-    "unit": 98,
+    "unit": 99,
     "integration": 104,
     "realDb": 104,
     "browser": 102,
-    "connected": 91,
+    "connected": 92,
     "device": 0,
     "uat": 0
   },
@@ -612,11 +612,11 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 31,
         "realDb": 12,
-        "browser": 7,
-        "connected": 1,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -634,6 +634,7 @@
           "tests/unit/supplier-account-fold.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
+          "tests/unit/w4-m07-a-delivery-s-held-stock-is-decided-by-a-second-person.test.ts",
           "tests/unit/warehouse-handheld-receives-against-the-cached-asn.test.ts"
         ],
         "integration": [
@@ -689,11 +690,13 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts"
+          "tests/e2e/a-supplier-bill-with-freight-adds-up-and-matches.e2e.ts",
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4688,16 +4691,18 @@
       "id": "WF-04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 0,
+        "unit": 1,
         "integration": 9,
         "realDb": 3,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/w4-m07-a-delivery-s-held-stock-is-decided-by-a-second-person.test.ts"
+        ],
         "integration": [
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
@@ -4716,14 +4721,17 @@
         ],
         "browser": [
           "tests/e2e/goods-receipt-delivery.e2e.ts",
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/w4-wf05-a-supplier-bill-goes-from-its-check-to-the-tally-file-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-05",
