@@ -69856,7 +69856,7 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -218782,12 +218782,14 @@
       },
       "PostMigrationAcceptancesRequest": {
         "type": "object",
+        "required": [
+          "domain",
+          "reason"
+        ],
         "properties": {
           "acceptedBy": {
-            "type": "string"
-          },
-          "acceptedOn": {
-            "type": "string"
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
           },
           "domain": {
             "type": "string",
