@@ -85,6 +85,23 @@
         <ul class="rows" id="waves" hidden></ul>
       </section>
 
+      <!-- W4 · M19-FR-02: a packed order leaves with a manifest head office builds from what was packed; each crate sealed. -->
+      <section aria-labelledby="send-h">
+        <h3 id="send-h">Dispatch a packed order</h3>
+        <div class="row-form">
+          <label for="send-order"><span id="send-order-l">Order</span><input id="send-order" autocomplete="off" /></label>
+          <button id="show-pack" type="button"><span id="show-pack-text">Show its pack</span></button>
+          <button id="show-manifest" type="button" class="quiet"><span id="show-manifest-text">Show its manifest</span></button>
+        </div>
+        <p class="status" id="send-status" role="status" aria-live="polite"></p>
+        <div id="send-pack" hidden>
+          <ul class="rows" id="pack-lines"></ul>
+          <div class="row-form" id="crate-seals"></div>
+          <div class="row-form"><button id="dispatch-order" type="button"><span id="dispatch-order-text">Dispatch this order</span></button></div>
+        </div>
+        <ul class="rows" id="manifest" hidden></ul>
+      </section>
+
       <section aria-labelledby="routes-h">
         <h3 id="routes-h">Routes</h3>
         <label for="drivers"><span id="drivers-l">Drivers on shift</span><textarea id="drivers" autocomplete="off" placeholder="u-driver, 12, 09:00, 18:00"></textarea></label>

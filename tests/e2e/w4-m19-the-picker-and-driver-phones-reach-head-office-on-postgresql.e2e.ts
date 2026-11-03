@@ -21,7 +21,9 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  *   • M19-FR-02 — the dispatcher's wave (RICE ×2 ambient, MILK chilled) reaches the picker's phone from head office. The
  *     picker scans each bin and item, then PACKS the crate with its temperature and its tamper seal. The store computer
  *     carries it up; head office's wave register holds the pack (temperature, seal, no disagreement), each order's pack is
- *     folded from it, and the dispatch manifest built from that pack carries exactly what was packed;
+ *     folded from it. On the Dispatch page (served by the same store computer) each order is dispatched with the tamper
+ *     seal typed for its crate — a crate with no seal refused on the page, a manifest asked for too early refused in head
+ *     office's words — and the manifest head office builds from that pack carries exactly what was packed;
  *   • OB-676 · M19-FR-04 — the owner, on the Dispatch page (served by the same store computer), reads the driver cash limit
  *     "NOT CONFIRMED" with ₹100 only offered as a starting suggestion, and confirms ₹20. Head office's signed setup carries
  *     his confirmation down to the store computer;
@@ -175,14 +177,46 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
       const pack2 = (await ok(call('GET', '/v1/fulfilment/orders/ORD-2/pack'), 'pack ORD-2')) as { lines: { productId: string; packedMinor: number; crateId: string }[]; refused: unknown[] };
       expect(pack2.refused).toEqual([]);
       expect(pack2.lines.map((l) => [l.productId, l.packedMinor])).toEqual([['MILK', 1]]);
-      for (const [orderId, p] of [['ORD-1', pack1], ['ORD-2', pack2]] as const) {
-        const seals = Object.fromEntries([...new Set(p.lines.map((l) => l.crateId))].map((c) => [c, 'SEAL-W4-1']));
-        await ok(call('POST', `/v1/fulfilment/orders/${orderId}/dispatch`, { manifestId: `MF-${orderId}`, locationId: STORE, seals }), `dispatch ${orderId}`);
-        const manifest = (await ok(call('GET', `/v1/fulfilment/orders/${orderId}/manifest`), `manifest ${orderId}`)) as Record<string, unknown>;
-        expect(manifest).toMatchObject({ manifestId: `MF-${orderId}`, orderId, locationId: STORE });
-        expect(JSON.stringify(manifest)).toContain(orderId === 'ORD-1' ? 'RICE' : 'MILK');
-        expect(JSON.stringify(manifest)).not.toContain(orderId === 'ORD-1' ? 'MILK' : 'RICE');
-      }
+      // ── The dispatch office, on the Dispatch page the store computer serves: each order leaves with a manifest head
+      // office builds from what was packed; the tamper seal typed for each crate (W4: on the screen, not the API).
+      const d = await shop.open(OWNER, '/dispatch');
+      try {
+        expect(d.status).toBe(200);
+        await d.page.fill('#store', STORE);
+        for (const [orderId, product, other] of [['ORD-1', 'RICE', 'MILK'], ['ORD-2', 'MILK', 'RICE']] as const) {
+          await d.page.fill('#send-order', orderId);
+          // Not dispatched yet: head office has no manifest, and the page says so in head office's words.
+          await d.page.click('#show-manifest');
+          await d.page.locator('#send-status', { hasText: 'Head office refused:' }).waitFor({ timeout: 15_000 });
+          await d.page.click('#show-pack');
+          await d.page.locator(`#pack-lines li.row[data-line]`, { hasText: `(${product})` }).waitFor({ timeout: 15_000 });
+          expect(await d.page.locator('#pack-lines li.row').count()).toBe(1);
+          // A crate with no seal is refused on the page; nothing is asked.
+          const before = d.writes.length;
+          await d.page.click('#dispatch-order');
+          await d.page.locator('#send-status', { hasText: 'Type the tamper seal on every crate.' }).waitFor({ timeout: 15_000 });
+          expect(d.writes.length).toBe(before);
+          for (const input of await d.page.locator('#crate-seals input.seal').all()) await input.fill('SEAL-W4-1');
+          await d.page.click('#dispatch-order');
+          await d.page.locator('#send-status', { hasText: `✓ Dispatched — manifest MF-${orderId}` }).waitFor({ timeout: 15_000 });
+          const shown = d.page.locator(`#manifest[data-manifest="MF-${orderId}"]`);
+          await shown.waitFor({ timeout: 15_000 });
+          const words = await shown.innerText();
+          expect(words).toMatch(new RegExp(`Manifest MF-${orderId} · ${orderId} · 1 crates · .* · dispatched by ${OWNER}`));
+          expect(words).toContain(`(${product})`);
+          expect(words).not.toContain(`(${other})`);
+          expect(words).toMatch(/Seals: .+ → SEAL-W4-1/);
+          // Head office holds the manifest on PostgreSQL, built from the pack — exactly what was packed, sealed.
+          const manifest = (await ok(call('GET', `/v1/fulfilment/orders/${orderId}/manifest`), `manifest ${orderId}`)) as { manifestId: string; orderId: string; locationId: string; dispatchedBy: string; lines: { productId: string; quantityMinor: number }[]; seals: Record<string, string> };
+          expect(manifest).toMatchObject({ manifestId: `MF-${orderId}`, orderId, locationId: STORE, dispatchedBy: OWNER });
+          expect(manifest.lines.map((l) => [l.productId, l.quantityMinor])).toEqual([[product, orderId === 'ORD-1' ? 2 : 1]]);
+          expect(Object.values(manifest.seals)).toEqual(['SEAL-W4-1']);
+        }
+        expect(d.writes.filter((w) => w.endsWith('/dispatch'))).toEqual(['POST /v1/fulfilment/orders/ORD-1/dispatch', 'POST /v1/fulfilment/orders/ORD-2/dispatch']);
+        await d.page.click('#lang');
+        expect(await d.page.textContent('#send-h')).toBe('பேக் செய்த ஆர்டரை அனுப்பு');
+        expect(d.errors).toEqual([]);
+      } finally { await d.close(); }
       // The phone sees head office's word for its work once the box has it.
       await page.reload({ waitUntil: 'load' });
       await page.waitForSelector('#sent-work .sent[data-kind="pack"][data-id="W-1"][data-state="posted"]', { timeout: 30_000 });
