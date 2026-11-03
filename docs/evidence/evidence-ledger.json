@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2183,
+  "testFiles": 2186,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2217,11 +2217,11 @@
       "id": "M25",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 14,
+        "unit": 15,
         "integration": 27,
         "realDb": 12,
-        "browser": 12,
-        "connected": 2,
+        "browser": 13,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2239,6 +2239,7 @@
           "tests/unit/sync-http-transport.test.ts",
           "tests/unit/the-box-holds-the-help-library-and-the-rooms.test.ts",
           "tests/unit/the-findings-page-shows-what-head-office-found.test.ts",
+          "tests/unit/w5-people-sessions.test.ts",
           "tests/unit/workforce-enablement.test.ts",
           "tests/unit/workforce.test.ts"
         ],
@@ -2297,11 +2298,13 @@
           "tests/e2e/r9b-the-rota-shows-the-store-computers-copy-when-head-office-refuses-the-sign-in.e2e.ts",
           "tests/e2e/rostering-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
-          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts"
+          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-working-time-leave-registers-and-the-roster-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
-          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts"
+          "tests/e2e/the-people-and-loss-prevention-pages-on-the-production-api.e2e.ts",
+          "tests/e2e/w5-working-time-leave-registers-and-the-roster-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

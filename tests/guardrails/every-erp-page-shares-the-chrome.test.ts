@@ -336,6 +336,9 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'tally-files-ap.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
     // W4 (M07-FR-03 · WF-04): the Goods receipts decisions section's words are in its tested session model.
     'goods-receipt-decisions.js': 'apps/web-erp/src/goods-receipt-session.ts',
+    // W5: the people, payroll and HR register sections' words live in their tested sessions.
+    'payroll-statutory.js': 'apps/web-erp/src/payroll-statutory-session.ts', 'posh-register.js': 'apps/web-erp/src/posh-register-session.ts',
+    'settings-working-time.js': 'apps/web-erp/src/working-time-session.ts', 'staff-registers.js': 'apps/web-erp/src/working-time-session.ts', 'schedule-roster.js': 'apps/web-erp/src/working-time-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

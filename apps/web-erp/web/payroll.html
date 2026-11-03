@@ -60,6 +60,11 @@
       #banner[hidden] { display: none; } #banner.good { border-top-color: var(--ok); }
       #banner button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: var(--bg); font-weight: 700; justify-self: start; }
       .muted { color: var(--muted); font-size: 13px; }
+      #stat-checks { display: grid; gap: 12px; background: var(--panel); border-radius: 12px; padding: 14px; }
+      #stat-checks[hidden] { display: none; }
+      #stat-checks label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      #stat-checks label.row { display: flex; }
+      #stat-checks select { min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 15px; }
     </style>
   </head>
   <body>
@@ -143,6 +148,9 @@
       <div class="actions" id="reauth"></div>
       <div class="actions" id="actions"></div>
       <p class="muted" id="masked-note"></p>
+
+      <!-- W5 (C15 · C16 · C19 · OB-209): the statutory pay checks — compute and show only (payroll-statutory-session.ts). -->
+      <section id="stat-checks" hidden aria-label="Statutory pay checks"></section>
     </main>
 
     <div id="banner" hidden aria-live="assertive">
@@ -154,6 +162,7 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./payroll.js" type="module"></script>
+    <script src="./payroll-statutory.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

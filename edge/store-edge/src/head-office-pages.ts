@@ -17,7 +17,9 @@
 //     link (screen-server.ts), and each page says in its own words that head office cannot be reached — never a copy.
 //
 // The pilot holds stay where they are: payroll's approve, lock and bank file are refused by head office's hard switch
-// (OB-228 · OB-209) whatever page asks, and the box's payroll page is a READ-ONLY view (no state change is offered).
+// (OB-228 · OB-209) whatever page asks, and the box's payroll page offers no pay-run change: its live view only reads, and
+// its W5 statutory section (C15/C16/C19) only computes and records — the CA's figures, a payslip PREPARED for review and the
+// month's EPF/ESI totals; it never issues a payslip, approves, locks or builds a bank file.
 
 /** One page: the box's screen name (its path segment), the file in `apps/web-erp/web`, and the global its bundle reads. */
 export interface HeadOfficePage {
