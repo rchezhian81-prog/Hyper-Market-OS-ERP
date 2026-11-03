@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1683 | 971 | 971 | 192 | 438 |
+| 13 | 1684 | 971 | 971 | 192 | 439 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -471,6 +471,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/packaging/items/:packagingId/position` | `inventory.availability.read` | core | — |
 | POST | `/v1/pricing/markdown/propose` | `price.change.propose` | core | yes |
 | GET | `/v1/production/batches/:outputBatchId/inputs` | `production.read` | core | — |
+| GET | `/v1/production/costs` | `production.cost.read` | core | — |
 | POST | `/v1/production/costs/:productId` | `production.recipe.manage` | core | yes |
 | GET | `/v1/production/departments` | `production.read` | core | — |
 | POST | `/v1/production/departments/:departmentId` | `production.recipe.manage` | core | yes |

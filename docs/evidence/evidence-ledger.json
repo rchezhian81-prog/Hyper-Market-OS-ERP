@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2157,
+  "testFiles": 2160,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1028,11 +1028,11 @@
       "id": "M11",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 9,
+        "unit": 10,
         "integration": 9,
         "realDb": 4,
-        "browser": 5,
-        "connected": 1,
+        "browser": 7,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1046,7 +1046,8 @@
           "tests/unit/r4d-production-recipes-session.test.ts",
           "tests/unit/r4d-production-repack-session.test.ts",
           "tests/unit/the-box-works-from-what-it-holds.test.ts",
-          "tests/unit/w3-production-departments-session.test.ts"
+          "tests/unit/w3-production-departments-session.test.ts",
+          "tests/unit/w4-production-plan-trace-and-costs-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-counter-label-carries-its-marks-sizes-and-unit-price.test.ts",
@@ -1070,10 +1071,13 @@
           "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts",
           "tests/e2e/r4d-a-batch-is-repacked-on-the-production-page.e2e.ts",
           "tests/e2e/r4d-recipes-are-set-up-for-the-production-page.e2e.ts",
-          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts"
+          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-production-is-planned-costed-by-finance-and-traced-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-production-plan-trace-and-costs-through-the-store-computer.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts"
+          "tests/e2e/w3-production-from-a-new-shop-on-the-production-api.e2e.ts",
+          "tests/e2e/w4-production-is-planned-costed-by-finance-and-traced-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []

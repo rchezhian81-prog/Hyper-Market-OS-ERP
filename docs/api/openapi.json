@@ -93301,6 +93301,50 @@
         }
       }
     },
+    "/v1/production/costs": {
+      "get": {
+        "operationId": "getProductionCosts",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "production.cost.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetProductionCostsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"production.cost.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/production/costs/{productId}": {
       "post": {
         "operationId": "postProductionCostsByProductId",
@@ -155707,6 +155751,35 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/production-plan.ts"
+      },
+      "GetProductionCostsReply": {
+        "type": "object",
+        "required": [
+          "runs",
+          "withExceptions",
+          "notValued",
+          "asAt"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionCostView"
+            }
+          },
+          "withExceptions": {
+            "type": "number"
+          },
+          "notValued": {
+            "type": "number"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/production.ts"
       },
       "GetProductionDepartmentsReply": {
         "type": "object",
@@ -297735,6 +297808,127 @@
           },
           "unvaluedMinor": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProductionCostView": {
+        "type": "object",
+        "required": [
+          "runId",
+          "recipeId",
+          "departmentId",
+          "locationId",
+          "outputProductId",
+          "outputBatchId",
+          "outputQuantityMinor",
+          "outputUom",
+          "at",
+          "producedBy",
+          "currency",
+          "valued",
+          "inputCostMinor",
+          "unitCostPerWholeMinor",
+          "lines",
+          "notValuedBecause",
+          "yieldBp",
+          "yieldVerdict",
+          "exceptions",
+          "costBasis"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "recipeId": {
+            "type": "string"
+          },
+          "departmentId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "outputProductId": {
+            "type": "string"
+          },
+          "outputBatchId": {
+            "type": "string"
+          },
+          "outputQuantityMinor": {
+            "type": "number"
+          },
+          "outputUom": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "producedBy": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR",
+              "GBP",
+              "INR",
+              "USD"
+            ]
+          },
+          "valued": {
+            "type": "boolean"
+          },
+          "inputCostMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "unitCostPerWholeMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunCostLine"
+            }
+          },
+          "notValuedBecause": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "yieldBp": {
+            "type": "number"
+          },
+          "yieldVerdict": {
+            "type": "string"
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionException"
+            }
+          },
+          "costBasis": {
+            "type": "string",
+            "enum": [
+              "registered_cost",
+              "run_cost"
+            ]
           }
         },
         "additionalProperties": true

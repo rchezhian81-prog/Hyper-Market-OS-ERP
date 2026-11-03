@@ -668,6 +668,7 @@
     'settlement': 'banknote', // W3 — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
+    'production-costs': 'banknote', // W4 — an icon already in the set
     'data-requests': 'shield-check', // W3 — an icon already in the set
     'customer-value': 'chart-column', // W3 — an icon already in the set
     'message-queue': 'message-circle', // W3 — an icon already in the set
