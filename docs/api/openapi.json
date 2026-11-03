@@ -48534,6 +48534,100 @@
         }
       }
     },
+    "/v1/identity/chartered-accountant/grants/{changeId}": {
+      "post": {
+        "operationId": "postIdentityCharteredAccountantGrantsByChangeId",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.ca.grant.request",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityCharteredAccountantGrantsByChangeIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityCharteredAccountantGrantsByChangeIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityCharteredAccountantGrantsByChangeIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.ca.grant.request\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/identity/department-scopes": {
       "get": {
         "operationId": "getIdentityDepartmentScopes",
@@ -198674,6 +198768,95 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
+      },
+      "PostIdentityCharteredAccountantGrantsByChangeIdReply200": {
+        "type": "object",
+        "required": [
+          "changeId",
+          "userId",
+          "roleId",
+          "alreadyHeld"
+        ],
+        "properties": {
+          "changeId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "alreadyHeld": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/ca-role-grant.ts"
+      },
+      "PostIdentityCharteredAccountantGrantsByChangeIdReply201": {
+        "type": "object",
+        "required": [
+          "changeId",
+          "userId",
+          "roleId",
+          "branchScope",
+          "requestedBy",
+          "approvedBy"
+        ],
+        "properties": {
+          "changeId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "branchScope": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/ca-role-grant.ts"
+      },
+      "PostIdentityCharteredAccountantGrantsByChangeIdRequest": {
+        "type": "object",
+        "required": [
+          "approvalId",
+          "reason",
+          "userId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roleId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/ca-role-grant.ts"
       },
       "PostIdentityDepartmentScopesByUserIdByRoleIdReply": {
         "$ref": "#/components/schemas/DepartmentScopeRecord",

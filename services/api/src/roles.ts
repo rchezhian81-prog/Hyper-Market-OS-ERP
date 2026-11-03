@@ -407,6 +407,9 @@ const BASE_ROLES: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // OB-681 (owner, 3 Nov 2026): the owner ASKS to give the chartered accountant's role; the IT custodian approves it
+      // (services/identity/src/ca-role-grant.ts). The owner does not gain the CA's settings permissions.
+      'identity.ca.grant.request',
       // ── R3 lane 1 (GST liability and returns) ──
       // OB-143 "A": the owner alone switches reverse charge on; OB-149 "A": the owner alone switches the 30-day e-invoice
       // guard on; A19: the owner sets how many days before the 3-year bar he is warned. He reads, records and pays

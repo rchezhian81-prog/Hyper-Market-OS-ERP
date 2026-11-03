@@ -337,3 +337,23 @@ describe('the wiring: each page\'s viewer builds only that page\'s sections', ()
     expect(Object.keys(W5_PAGES)).toHaveLength(15);
   });
 });
+
+describe('OB-681 · OB-143: the Users page asks for the chartered accountant\'s role, and applies it once the IT custodian approves', () => {
+  it('asks with exactly the grant route\'s body plus its change id, lists only CA requests, and applies an approved one', async () => {
+    const r = recorder({ '/v1/approvals/requests': { body: { mine: [
+      { requestId: 'ap-9', kind: 'ca_role_grant', status: 'approved', decidedBy: 'u-siva', details: { userId: 'u-ca', reason: 'fills the lists', changeId: 'ca-1' } },
+      { requestId: 'ap-8', kind: 'posh_committee_change', status: 'approved', details: { action: 'add', userId: 'u-hr', reason: 'x', changeId: 'ic-1' } },
+    ] } } });
+    const c = s.createCaGrantSession({ viewer: who('identity.ca.grant.request'), fetch: r.fetch, newChangeId: () => 'ca-1' });
+    expect(await c.ask(' ', 'x')).toEqual({ result: 'invalid', why: 'needAll' });
+    expect(await c.ask('u-ca', ' ')).toEqual({ result: 'invalid', why: 'needReason' });
+    await c.ask(' u-ca ', ' fills the lists ');
+    expect(r.calls[0]).toMatchObject({ url: '/v1/approvals/requests', body: { kind: 'ca_role_grant', subjectRef: 'ca-1', details: { userId: 'u-ca', reason: 'fills the lists', changeId: 'ca-1' } } });
+    const asked = await c.asked();
+    if (asked.result !== 'ok') throw new Error('not ok');
+    expect(asked.value.map((a) => a.requestId)).toEqual(['ap-9']);
+    await c.apply(asked.value[0]!);
+    expect(r.calls.at(-1)).toMatchObject({ method: 'POST', url: '/v1/identity/chartered-accountant/grants/ca-1', body: { userId: 'u-ca', reason: 'fills the lists', approvalId: 'ap-9' } });
+    expect(s.createCaGrantSession({ viewer: who('identity.role.request') }).may.ask).toBe(false);
+  });
+});

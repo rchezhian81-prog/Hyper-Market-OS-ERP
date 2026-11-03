@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1684 | 971 | 971 | 192 | 439 |
+| 13 | 1685 | 972 | 972 | 192 | 440 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -48,6 +48,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/approvals/rules/:rule/rollback` | `approvals.rules.propose` | core | yes |
 | GET | `/v1/idempotency-conflicts` | `platform.health.read` | core | — |
 | GET | `/v1/identity/access-review` | `identity.access.review` | core | — |
+| POST | `/v1/identity/chartered-accountant/grants/:changeId` | `identity.ca.grant.request` | core | yes |
 | GET | `/v1/identity/department-scopes` | `identity.role.read` | core | — |
 | POST | `/v1/identity/department-scopes/:userId/:roleId` | `identity.role.request` | core | yes |
 | GET | `/v1/identity/grants` | `identity.role.request` | core | — |

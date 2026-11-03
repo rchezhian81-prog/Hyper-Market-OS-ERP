@@ -17,12 +17,15 @@ import { startW4Shop, openAs, says, type W4Shop } from './lib/w4-office-shop';
  *   • OB-165 · OB-167 — Users: an Internal Committee change asked by the owner, approved by the store manager, and
  *     applied by the owner (the route checks the second person's approval of exactly that change and a fresh two-step sign-in);
  *   • SEC-11 — Users: the owner signs a person out everywhere; the revocation is on the record;
+ *   • OB-681 · OB-143 — Users: the owner asks for the chartered accountant's role, the IT custodian (the named security
+ *     reviewer) approves it in his own session, the owner applies it; the CA holds the role, the owner gains none of its
+ *     settings permissions;
  *   • M33-FR-03 — Administration: the support-access review reads;
  *   • a cashier is told his role cannot see the registers; the sections read in Tamil.
  */
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
-const OWNER = 'u-owner'; const MGR = 'u-mgr'; const ACCT = 'u-acct'; const CASHIER = 'u-cashier'; const HR = 'u-hr';
+const OWNER = 'u-owner'; const MGR = 'u-mgr'; const ACCT = 'u-acct'; const CASHIER = 'u-cashier'; const HR = 'u-hr'; const SIVA = 'u-siva'; const CA = 'u-ca';
 const PAGES = {
   '/store-computers': { html: 'store-computers.html', dataGlobal: 'storeComputersData' },
   '/approvals': { html: 'approvals.html', dataGlobal: 'approvalsData' },
@@ -63,6 +66,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 access 
     await shop.ho().provisionRole(T, ACCT, 'accountant');
     await shop.ho().provisionRole(T, CASHIER, 'cashier', ['store-1']);
     await shop.ho().provisionRole(T, HR, 'cashier', ['store-1']);
+    await shop.ho().provisionRole(T, SIVA, 'security_reviewer');
     // Two changes to the escalation waits, each asked by the owner and approved by the accountant (versions 1 and 2).
     await changeWaits(45);
     await changeWaits(60);
@@ -204,6 +208,39 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 access 
     const roles = (await as(OWNER, 'GET', '/v1/identity/grants')).body as { grants?: { userId: string; roleId: string }[] };
     expect((roles.grants ?? []).some((g) => g.userId === HR && g.roleId === 'internal_committee'), 'u-hr is on the committee now').toBe(true);
   });
+
+  it('OB-681 · OB-143: on Users the owner asks for the chartered accountant\'s role, the IT custodian approves, the owner applies it', async () => {
+    const named = await as(OWNER, 'PUT', '/v1/compliance/security-reviewer', { userId: SIVA, displayName: 'Mr Sivakumar', reason: 'OB-405: the IT custodian' });
+    expect(named.status, JSON.stringify(named.body)).toBe(200);
+    let s = await openAs(shop, browser, OWNER, '/users');
+    try {
+      await says(s.page, '#w5-ca-h', /^Give the chartered accountant's role$/);
+      await s.page.fill('#w5-ca-who', CA);
+      await s.page.fill('#w5-ca-reason', 'the CA fills the reverse-charge and TDS lists');
+      await s.page.click('#w5-ca-ask');
+      await says(s.page, '#w5-ca-status', /^Asked\. The IT custodian approves it on the Approvals page\.$/);
+      await says(s.page, '#w5-ca-asked', /u-ca · Waiting for approval/);
+      expect(s.writes).toEqual(['POST /v1/approvals/requests']);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    const mine = (await as(OWNER, 'GET', '/v1/approvals/requests')).body as { mine: { requestId: string; kind: string }[] };
+    const ask = mine.mine.find((r) => r.kind === 'ca_role_grant')!;
+    expect((await as(MGR, 'POST', `/v1/approvals/requests/${ask.requestId}/decide`, { decision: 'approved', reason: 'x' })).status, 'a store manager cannot decide it').toBeGreaterThanOrEqual(400);
+    await decide(SIVA, ask.requestId);
+    s = await openAs(shop, browser, OWNER, '/users');
+    try {
+      await s.page.click('#w5-ca-show');
+      await says(s.page, '#w5-ca-asked', /u-ca · Approved — apply it now · u-siva/);
+      await s.page.click(`#w5-ca-apply-${ask.requestId}`);
+      await says(s.page, '#w5-ca-status', /^Applied\. They hold the chartered accountant's role now\.$/);
+      expect(s.writes).toEqual([expect.stringMatching(/^POST \/v1\/identity\/chartered-accountant\/grants\/ca-/)]);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    const ca = (await as(CA, 'GET', '/v1/identity/me')).body as { permissions: string[] };
+    expect(ca.permissions).toEqual(expect.arrayContaining(['finance.rcm.configure', 'finance.tds.configure', 'privacy.volume.threshold.set']));
+    const owner = (await as(OWNER, 'GET', '/v1/identity/me')).body as { permissions: string[] };
+    expect(owner.permissions.filter((p) => ['finance.rcm.configure', 'finance.tds.configure', 'privacy.volume.threshold.set'].includes(p))).toEqual([]);
+  }, 120_000);
 
   it('M33-FR-03: the support-access review reads on Administration', async () => {
     const s = await openAs(shop, browser, OWNER, '/admin');

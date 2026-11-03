@@ -66,6 +66,9 @@ const WORDS = {
     icWho: 'Member of staff (their user id)', icAction: 'Change', icAdd: 'Add to the committee', icRemove: 'Remove from the committee', icAsk: 'Ask a second person to approve',
     icAsked: 'Asked. A second person approves it on the Approvals page.', icAskedH: 'Committee changes you asked for', icApply: 'Apply the approved change', icApplied: 'Applied. The committee changed.',
     icAlready: 'Nothing changed: they are already on the committee.', icNotMember: 'Nothing changed: they are not on the committee.',
+    caH: 'Give the chartered accountant\'s role', caLead: 'The CA alone fills the reverse-charge and TDS lists and the customer-data threshold, so the owner cannot approve this role on his own. The owner asks here; the IT custodian (the named security reviewer) approves exactly that on the Approvals page in his own session; then the owner applies it here. The owner does not get those settings himself.',
+    caWho: 'The chartered accountant (their user id)', caAsk: 'Ask the IT custodian to approve', caAsked: 'Asked. The IT custodian approves it on the Approvals page.', caAskedH: 'CA role requests you asked for',
+    caApply: 'Apply the approved grant', caApplied: 'Applied. They hold the chartered accountant\'s role now.', caAlready: 'Nothing changed: they already hold the role.',
     revH: 'Sign someone out everywhere, now', revLead: 'Cuts off a person\'s sign-ins issued up to now (a lost phone, a leaver, a changed password), or one sign-in by its token id. Kept on the record; nothing is undone.',
     revTarget: 'Who', revUser: 'A person (every sign-in up to now)', revToken: 'One sign-in (its token id)', revId: 'User id or token id', revWhy: 'Why',
     rr_admin_revoked: 'Taken off by an administrator', rr_security: 'Security worry (lost or stolen)', rr_credential_change: 'Password or code changed', rr_signed_out: 'Signed out',
@@ -147,6 +150,9 @@ const WORDS = {
     icWho: 'பணியாளர் (அவரது பயனர் அடையாளம்)', icAction: 'மாற்றம்', icAdd: 'குழுவில் சேர்', icRemove: 'குழுவிலிருந்து நீக்கு', icAsk: 'இரண்டாம் நபரின் ஒப்புதலைக் கேள்',
     icAsked: 'கேட்கப்பட்டது. இரண்டாம் நபர் ஒப்புதல்கள் பக்கத்தில் அனுமதிப்பார்.', icAskedH: 'நீங்கள் கேட்ட குழு மாற்றங்கள்', icApply: 'ஒப்புதல் பெற்ற மாற்றத்தைச் செயல்படுத்து', icApplied: 'செயல்படுத்தப்பட்டது. குழு மாறியது.',
     icAlready: 'எதுவும் மாறவில்லை: அவர் ஏற்கனவே குழுவில் உள்ளார்.', icNotMember: 'எதுவும் மாறவில்லை: அவர் குழுவில் இல்லை.',
+    caH: 'பட்டயக் கணக்காளர் பங்கைக் கொடு', caLead: 'தலைகீழ் வரி, டிடிஎஸ் பட்டியல்களையும் வாடிக்கையாளர் தரவு வரம்பையும் பட்டயக் கணக்காளர் மட்டுமே நிரப்புகிறார், எனவே உரிமையாளர் தனியாக இந்தப் பங்கை அனுமதிக்க முடியாது. உரிமையாளர் இங்கே கேட்கிறார்; தகவல் தொழில்நுட்பப் பொறுப்பாளர் (பெயரிடப்பட்ட பாதுகாப்பு மதிப்பாய்வாளர்) தம் உள்நுழைவில் ஒப்புதல்கள் பக்கத்தில் அதையே அனுமதிக்கிறார்; பிறகு உரிமையாளர் இங்கே செயல்படுத்துகிறார். அந்த அமைப்புகள் உரிமையாளருக்குக் கிடைக்காது.',
+    caWho: 'பட்டயக் கணக்காளர் (அவரது பயனர் அடையாளம்)', caAsk: 'தகவல் தொழில்நுட்பப் பொறுப்பாளரின் ஒப்புதலைக் கேள்', caAsked: 'கேட்கப்பட்டது. தகவல் தொழில்நுட்பப் பொறுப்பாளர் ஒப்புதல்கள் பக்கத்தில் அனுமதிப்பார்.', caAskedH: 'நீங்கள் கேட்ட பட்டயக் கணக்காளர் பங்குக் கோரிக்கைகள்',
+    caApply: 'ஒப்புதல் பெற்ற வழங்கலைச் செயல்படுத்து', caApplied: 'செயல்படுத்தப்பட்டது. அவரிடம் இப்போது பட்டயக் கணக்காளர் பங்கு உள்ளது.', caAlready: 'எதுவும் மாறவில்லை: அவரிடம் ஏற்கனவே அந்தப் பங்கு உள்ளது.',
     revH: 'ஒருவரை எல்லா இடத்திலும் இப்போதே வெளியேற்று', revLead: 'இதுவரை வழங்கப்பட்ட ஒருவரின் உள்நுழைவுகளை (தொலைந்த கைப்பேசி, விலகியவர், மாற்றிய கடவுச்சொல்), அல்லது ஒரு உள்நுழைவை அதன் அடையாளத்தால் துண்டிக்கிறது. பதிவில் வைக்கப்படும்; எதுவும் திரும்பப் பெறப்படாது.',
     revTarget: 'யார்', revUser: 'ஒரு நபர் (இதுவரையிலான எல்லா உள்நுழைவும்)', revToken: 'ஒரு உள்நுழைவு (அதன் அடையாளம்)', revId: 'பயனர் அல்லது உள்நுழைவு அடையாளம்', revWhy: 'ஏன்',
     rr_admin_revoked: 'நிர்வாகி நீக்கினார்', rr_security: 'பாதுகாப்புக் கவலை (தொலைந்தது அல்லது திருடப்பட்டது)', rr_credential_change: 'கடவுச்சொல் அல்லது குறியீடு மாறியது', rr_signed_out: 'வெளியேறினார்',
@@ -397,6 +403,36 @@ export function createCommitteeChangeSession(input: { readonly viewer: Viewer; r
     },
     apply: async (a: CommitteeAsked): Promise<W5Outcome<{ alreadyMember?: boolean; notAMember?: boolean }>> => gate(P)
       ?? call('POST', `/v1/identity/internal-committee/changes/${enc(a.changeId)}`, { action: a.action, userId: a.userId, reason: a.reason, approvalId: a.requestId }),
+  };
+}
+
+// OB-681 · OB-143: the chartered accountant's role — the owner asks, the IT custodian approves, the owner applies.
+export interface CaGrantAsked { readonly requestId: string; readonly changeId: string; readonly status: string; readonly userId: string; readonly reason: string; readonly decidedBy?: string }
+
+export function createCaGrantSession(input: { readonly viewer: Viewer; readonly newChangeId?: () => string } & Ctx) {
+  const { call, may, gate } = base(input.viewer, input, 'ca-grant');
+  const P = 'identity.ca.grant.request';
+  const changeIdOf = input.newChangeId ?? (() => newId('ca'));
+  return {
+    may: { ask: may(P) },
+    ask: async (userId: string, reason: string): Promise<W5Outcome<{ requestId: string }>> => {
+      const no = gate(P); if (no !== undefined) return no;
+      if (blank(userId)) return invalid('needAll');
+      if (blank(reason)) return invalid('needReason');
+      const changeId = changeIdOf();
+      // The grant route's own body (without approvalId) plus its path id — what head office checks the approval against.
+      const details = { userId: userId.trim(), reason: reason.trim(), changeId };
+      return call('POST', '/v1/approvals/requests', { kind: 'ca_role_grant', subjectRef: changeId, details, valueMinor: null, summary: `Give ${userId.trim()} the chartered accountant's role`, reason: reason.trim() });
+    },
+    asked: async (): Promise<W5Outcome<readonly CaGrantAsked[]>> => {
+      const no = gate(P); if (no !== undefined) return no;
+      return map(await call<{ mine?: { requestId: string; kind: string; status: string; details?: Record<string, unknown>; decidedBy?: string }[] }>('GET', '/v1/approvals/requests'),
+        (b) => (b.mine ?? []).filter((r) => r.kind === 'ca_role_grant' && r.details !== undefined).map((r): CaGrantAsked => ({
+          requestId: r.requestId, status: r.status, changeId: String(r.details!['changeId'] ?? ''), userId: String(r.details!['userId'] ?? ''), reason: String(r.details!['reason'] ?? ''), ...(r.decidedBy === undefined ? {} : { decidedBy: r.decidedBy }),
+        })));
+    },
+    apply: async (a: CaGrantAsked): Promise<W5Outcome<{ alreadyHeld?: boolean }>> => gate(P)
+      ?? call('POST', `/v1/identity/chartered-accountant/grants/${enc(a.changeId)}`, { userId: a.userId, reason: a.reason, approvalId: a.requestId }),
   };
 }
 

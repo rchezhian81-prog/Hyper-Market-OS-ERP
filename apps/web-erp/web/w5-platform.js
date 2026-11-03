@@ -176,6 +176,36 @@ function committee(root) {
     }), el('h3', w('icAskedH')), button('w5-ic-show', w('show'), showAsked), asked);
   });
 }
+// OB-681 · OB-143: the chartered accountant's role — the owner asks, the IT custodian approves, the owner applies.
+function caGrant(root) {
+  const s = S.caGrant; if (s === undefined) return;
+  section(root, 'ca', (r, status) => {
+    r.append(el('h2', w('caH'), { id: 'w5-ca-h' }), el('p', w('caLead'), { class: 'lede' }));
+    if (!s.may.ask) { status.textContent = gateWords(false); return; }
+    const who = input('w5-ca-who'); const reason = input('w5-ca-reason'); const asked = el('ul', null, { id: 'w5-ca-asked' });
+    const showAsked = async () => {
+      const out = await s.asked();
+      if (out.result !== 'ok') { say(status, out, ''); return; }
+      asked.replaceChildren();
+      if (out.value.length === 0) asked.append(el('li', w('none'), { class: 'meta' }));
+      for (const a of out.value) {
+        const li = el('li', `${a.userId} · ${w(`st_${a.status}`)}${a.decidedBy === undefined ? '' : ` · ${a.decidedBy}`} · ${a.reason}`);
+        li.dataset.request = a.requestId;
+        if (a.status === 'approved') li.append(button(`w5-ca-apply-${a.requestId}`, w('caApply'), async () => {
+          const o = await s.apply(a);
+          if (o.result === 'ok') await showAsked();
+          say(status, o, o.result === 'ok' && o.value.alreadyHeld === true ? w('caAlready') : w('caApplied'));
+        }));
+        asked.append(li);
+      }
+    };
+    r.append(labelled(w('caWho'), who), labelled(w('reason'), reason), button('w5-ca-ask', w('caAsk'), async () => {
+      const o = await s.ask(who.value, reason.value);
+      if (o.result === 'ok') { who.value = ''; reason.value = ''; await showAsked(); }
+      say(status, o, w('caAsked'));
+    }), el('h3', w('caAskedH')), button('w5-ca-show', w('show'), showAsked), asked);
+  });
+}
 function revocations(root) {
   const s = S.revocations; if (s === undefined) return;
   section(root, 'rev', (r, status) => {
@@ -454,7 +484,7 @@ function importChecks(root) {
   });
 }
 
-const BUILDERS = { registers, aged, ruleHistory, effective, committee, revocations, fleetControl, licences, secrets, incidentAlert, serviceRequests, supportReview, reprint, scheduleRuns, drillAudits, legacy, importChecks };
+const BUILDERS = { registers, aged, ruleHistory, effective, committee, caGrant, revocations, fleetControl, licences, secrets, incidentAlert, serviceRequests, supportReview, reprint, scheduleRuns, drillAudits, legacy, importChecks };
 if (H !== null) {
   for (const root of document.querySelectorAll('[data-w5]')) { const b = BUILDERS[root.dataset.w5]; if (b !== undefined) b(root); }
   // The page's one language toggle sets <html lang>; every section repaints in it.

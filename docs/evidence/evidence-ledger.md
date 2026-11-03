@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2187. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 2188. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 99 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 99 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 57 · INTEGRATION_TESTED 23 · PARTIALLY_WIRED 20 · WIRED 4.
 - Labels that do NOT hold: none.
