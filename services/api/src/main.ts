@@ -308,8 +308,9 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
-import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter } from './r2-hr-adapters';
+import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter, caRoleGrantAdapter } from './r2-hr-adapters';
 import { committeeMembershipRoutes } from '../../identity/src/committee-membership';
+import { caRoleGrantRoutes } from '../../identity/src/ca-role-grant'; // OB-681: the chartered accountant's named grant path
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
@@ -780,6 +781,8 @@ export function buildSurface(deps: {
     // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member (that role only), a second person
     // confirms through the maker-checker engine, the change is audited, and the owner never holds the role.
     ...(store === undefined ? [] : committeeMembershipRoutes({ ...committeeMembershipAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
+    // OB-681 (owner, 3 Nov 2026): the owner asks, the IT custodian (the named security reviewer) approves — the CA role only.
+    ...(store === undefined ? [] : caRoleGrantRoutes({ ...caRoleGrantAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.

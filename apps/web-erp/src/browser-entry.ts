@@ -132,6 +132,7 @@ import { wireW4Production } from './w4-production-browser-wiring'; // W4 · M11 
 import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
 import { wireW4Finance } from './w4-finance-browser-wiring'; // W4 · WF-05: the bill's second check, debit notes, supplier bills in the books and for Tally
 import { wireW5People } from './w5-people-browser-wiring'; // W5 · payroll checks (compute and show), working time, HR registers, POSH register
+import { wireW5Platform } from './w5-platform-browser-wiring'; // W5: platform, access, approvals and data-import sections
 import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
 import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
 import { wireW5Compliance } from './w5-compliance-browser-wiring'; // W5 · EPR records, licences/controls/findings, legal holds and evidence pack
@@ -7562,6 +7563,7 @@ if (browserWindow !== undefined) {
   wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
   wireW4Finance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · WF-05 after-match steps
   wireW5People(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · people, payroll and HR registers
+  wireW5Platform(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5: platform, access, approvals and data import
   wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
   wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks
   wireW5Compliance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · compliance, risk, EPR and audit registers

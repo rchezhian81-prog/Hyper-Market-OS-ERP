@@ -137,6 +137,8 @@
         <ul class="rows" id="vx-rows" aria-labelledby="vx-h"></ul>
         <p class="vx-info" id="vx-info" hidden></p>
       </section>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="fleetControl" aria-live="polite"></section>
     </main>
 
     <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
@@ -154,6 +156,7 @@
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./w5-platform.js" type="module"></script>
     <script src="./fleet.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>

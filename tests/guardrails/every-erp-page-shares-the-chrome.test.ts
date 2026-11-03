@@ -356,6 +356,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'settings-working-time.js': 'apps/web-erp/src/working-time-session.ts', 'staff-registers.js': 'apps/web-erp/src/working-time-session.ts', 'schedule-roster.js': 'apps/web-erp/src/working-time-session.ts',
     // W5 (store operations): the sections drawn on ten pages — their words are in their tested section models.
     'w5-sections.js': 'apps/web-erp/src/w5-store-ops-sections.ts',
+    // W5: the platform, access, approvals and data-import sections' words are in their tested session model.
+    'w5-platform.js': 'apps/web-erp/src/w5-platform-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

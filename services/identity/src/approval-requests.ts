@@ -276,6 +276,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'posh_committee_change', label: 'Add or remove an Internal Committee member',
     makerPermission: 'posh.committee.manage', checkerPermission: 'identity.role.request', validForMinutes: 24 * 60,
   },
+  // OB-681 (owner, 3 Nov 2026, in writing): the OWNER asks to give the chartered accountant's role; the IT CUSTODIAN — the
+  // security reviewer named now under OB-330 / OB-405 — approves it in his own session, and only he may decide it.
+  ca_role_grant: {
+    kind: 'ca_role_grant', label: 'Give the chartered accountant\'s role (approved by the IT custodian)',
+    makerPermission: 'identity.ca.grant.request', checkerPermission: 'compliance.risk.read', validForMinutes: 24 * 60,
+    decidedOnlyBy: 'security_reviewer',
+  },
   // ── OB-288 lane 1 · P1 (identity, authority and configuration governance) — begin
   // OB-290/291/292: the owner's money limits, escalation waits and price-check size change only through a second person —
   // the OWNER approves (`approvals.rules.approve`); §28 "Store Manager … cannot modify … own approval limits".

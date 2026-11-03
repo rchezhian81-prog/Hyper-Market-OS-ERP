@@ -21,6 +21,8 @@ import { POSH_AUDIT_OBJECT, type PoshRegisterDeps } from '../../finance/src/posh
 import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter, effectiveGrants, rolesHeldNow, isPersonNow, outsideLoginOf, ROLE_GRANTED, ROLE_REVOKED } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
 import { COMMITTEE_ROLE_ID, type CommitteeMembershipDeps, type CommitteeChange } from '../../identity/src/committee-membership';
+import { CA_ROLE_ID, type CaRoleGrantDeps, type CaRoleGrant } from '../../identity/src/ca-role-grant';
+import { twoSignatureAdapter } from './gates-adapters'; // OB-681: the OB-330 security-reviewer register (the IT custodian)
 
 /** The C18 pack's own stream (settings, publications, leave). */
 const HR_COMPLIANCE = streamName(STREAM.workforce, 'hr-compliance');
@@ -146,6 +148,30 @@ export function committeeMembershipAdapter(input: { readonly store: EventStore; 
           payload: { userId: c.userId, roleId: COMMITTEE_ROLE_ID, branchScope: g.branchScope, provenance },
         }) }));
       if (entries.length > 0) await store.appendBatch(tenantId, entries);
+    },
+  };
+}
+
+/** OB-681 (owner, 3 Nov 2026): the chartered accountant's named grant path — the identity ledger, the custodian register. */
+export function caRoleGrantAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<CaRoleGrantDeps, 'recordAudit' | 'approvals'> {
+  const { store, now } = input;
+  const reviewers = twoSignatureAdapter({ store, now }).twoSignature;
+  return {
+    now,
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(store, tenantId, userId, now()),
+    roles: () => ROLE_CATALOGUE,
+    isPerson: (tenantId, userId) => isPersonNow(store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(store, tenantId, userId, now()),
+    securityReviewer: async (tenantId) => { const r = await reviewers.reviewer(tenantId); return r === undefined ? undefined : { userId: r.userId, displayName: r.displayName }; },
+    recordGrant: async (tenantId, g: CaRoleGrant) => {
+      await store.append(tenantId, STREAM.identity, makeEvent({
+        id: `grant-ca-${g.changeId}`, type: ROLE_GRANTED, occurredAt: g.at, idempotencyKey: `grant-${tenantId}-ca-${g.changeId}`, source: 'api/identity',
+        payload: {
+          userId: g.userId, roleId: CA_ROLE_ID, branchScope: 'all',
+          request: { grantId: `ca-${g.changeId}`, userId: g.userId, roleId: CA_ROLE_ID, branchScope: 'all', requestedBy: g.requestedBy, approvedBy: g.approvedBy, requestedAt: g.at },
+          provenance: { kind: 'ca_role_grant', decision: 'OB-681', changeId: g.changeId, requestedBy: g.requestedBy, approvedBy: g.approvedBy, reason: g.reason },
+        },
+      }));
     },
   };
 }
