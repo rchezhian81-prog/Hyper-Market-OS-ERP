@@ -1046,7 +1046,7 @@
         "unit": 10,
         "integration": 9,
         "realDb": 4,
-        "browser": 7,
+        "browser": 8,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1082,6 +1082,7 @@
           "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts"
         ],
         "browser": [
+          "tests/e2e/every-office-page-on-the-store-computer-says-when-head-office-is-down.e2e.ts",
           "tests/e2e/production-delivery.e2e.ts",
           "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts",
           "tests/e2e/r4d-a-batch-is-repacked-on-the-production-page.e2e.ts",
@@ -2955,7 +2956,7 @@
         "unit": 18,
         "integration": 39,
         "realDb": 31,
-        "browser": 7,
+        "browser": 8,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -3057,6 +3058,7 @@
         ],
         "browser": [
           "tests/e2e/a-sale-sent-by-the-store-computer-keeps-its-time.test.ts",
+          "tests/e2e/every-office-page-on-the-store-computer-says-when-head-office-is-down.e2e.ts",
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
           "tests/e2e/r4c-cert-in-and-capacity.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts",
