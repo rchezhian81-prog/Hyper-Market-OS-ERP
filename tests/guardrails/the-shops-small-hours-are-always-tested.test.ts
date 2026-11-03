@@ -38,6 +38,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts',
   // W3 · QG-04: the served till sells through a cloud outage — its price is dated the shop's today.
   'tests/e2e/qg04-the-served-till-sells-through-a-cloud-outage-and-syncs-once.e2e.ts',
+  // W4 · M20-FR-02: the customer's repeat order starts on the shop's today.
+  'tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts',
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')
