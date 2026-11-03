@@ -64,6 +64,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // Wave 3 (security, people and operations): emergency access, safety incidents, operational alerts, document retention,
   // sales commission.
   'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
+  // W4 (M35-FR-03): Failed jobs — the background jobs that failed, and send one round again.
+  'failed-jobs',
   // Wave 3 (OB-675 · QG-02): Training checks — the scored check per role.
   'training-checks',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
@@ -178,6 +180,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'emergency-access': 'emergencyAccessData',
   'safety-incidents': 'safetyIncidentsData',
   'ops-alerts': 'opsAlertsData',
+  'failed-jobs': 'failedJobsData',
   'document-retention': 'documentRetentionData',
   'sales-commission': 'salesCommissionData',
   'training-checks': 'trainingChecksData',

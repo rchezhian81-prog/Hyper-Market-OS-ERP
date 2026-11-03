@@ -307552,6 +307552,8 @@
           "resolved",
           "breached",
           "breachedValue",
+          "met",
+          "escalateNow",
           "firstResponseBreached",
           "csatHundredths",
           "responseRateBps",
@@ -307568,6 +307570,15 @@
             "type": "number"
           },
           "breachedValue": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "met": {
+            "type": "number"
+          },
+          "escalateNow": {
             "type": "array",
             "items": {
               "type": "string"

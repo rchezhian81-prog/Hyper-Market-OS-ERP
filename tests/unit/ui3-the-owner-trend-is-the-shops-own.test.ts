@@ -65,11 +65,12 @@ describe('the owner session hands the trend over as sent', () => {
   const config = { owner: { userId: 'owner', branchScope: 'all' as const, authorityLimit: null }, staleAfterSeconds: 900, acknowledgeStaleDecisions: true };
   it('returns the figures the store computer sent for the branch in view, and null for what it did not send', () => {
     const session = createOwnerSession(config, [
-      { ...base, takingsByHour: [{ hour: '18', bills: 2, takenMinor: 15_000 }], recentDays: [{ tradingDay: '2026-11-01', bills: 2, takenMinor: 15_000 }] },
+      { ...base, takingsByHour: [{ hour: '18', bills: 2, takenMinor: 15_000 }], recentDays: [{ tradingDay: '2026-11-01', bills: 2, takenMinor: 15_000 }], tradingDay: '2026-11-01' },
       { ...base, branchId: 'b2', name: 'Second' },
     ], () => '2026-11-01T12:05:00.000Z');
-    expect(session.trends()).toEqual({ byHour: [{ hour: '18', bills: 2, takenMinor: 15_000 }], recentDays: [{ tradingDay: '2026-11-01', bills: 2, takenMinor: 15_000 }] });
+    // W4 (P-02): "today" is the store computer's own trading day, as it sent it — not sent is null, never guessed.
+    expect(session.trends()).toEqual({ byHour: [{ hour: '18', bills: 2, takenMinor: 15_000 }], recentDays: [{ tradingDay: '2026-11-01', bills: 2, takenMinor: 15_000 }], today: '2026-11-01' });
     session.viewBranch('b2');
-    expect(session.trends()).toEqual({ byHour: null, recentDays: null });
+    expect(session.trends()).toEqual({ byHour: null, recentDays: null, today: null });
   });
 });

@@ -71,6 +71,12 @@ export interface BranchPayload {
   readonly takingsByHour?: readonly HourTakings[];
   /** UI-3: the last trading days this store computer holds (today included), oldest first — bills before refunds. */
   readonly recentDays?: readonly DayTakings[];
+  /**
+   * W4 (P-02): the trading day these figures are for, by the store computer's own rule (the shop's zone and day end). The
+   * phone calls this day "today" — it never works a date out again from a clock, which past a day end after midnight
+   * would name the next calendar day while the store computer's figures were still the day before.
+   */
+  readonly tradingDay?: string;
 }
 
 /** One hour of today's bills: `hour` is the shop's two-digit hour ("09"). */
@@ -82,6 +88,8 @@ export interface DayTakings { readonly tradingDay: string; readonly bills: numbe
 export interface OwnerTrends {
   readonly byHour: readonly HourTakings[] | null;
   readonly recentDays: readonly DayTakings[] | null;
+  /** W4 (P-02): the trading day the store computer counts as today — `null` when it did not say (nothing is guessed). */
+  readonly today: string | null;
 }
 
 export interface OwnerConfig {
@@ -371,7 +379,7 @@ export function createOwnerSession(
 
     trends: () => {
       const payload = payloadFor(current);
-      return { byHour: payload.takingsByHour ?? null, recentDays: payload.recentDays ?? null };
+      return { byHour: payload.takingsByHour ?? null, recentDays: payload.recentDays ?? null, today: typeof payload.tradingDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.tradingDay) ? payload.tradingDay : null };
     },
 
     drill: (kpi) => {

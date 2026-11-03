@@ -685,6 +685,7 @@
     'training-checks': 'badge-check', // Wave 3 · OB-675 — an icon already in the set
     'safety-incidents': 'shield-alert', // Wave 3 — an icon already in the set
     'ops-alerts': 'triangle-alert', // Wave 3 — an icon already in the set
+    'failed-jobs': 'history', // W4 — an icon already in the set
     'document-retention': 'files', // Wave 3 — an icon already in the set
     'sales-commission': 'percent', // Wave 3 — an icon already in the set
     'space-setup': 'boxes', // Wave 2 — an icon already in the set
