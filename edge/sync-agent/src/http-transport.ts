@@ -239,6 +239,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   FloorIndentRequested: '/v1/floor/indents/:indentId/synced',
   FloorIndentReceived: '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced',
   FloorIndentIssued: '/v1/floor/indents/:indentId/issues/:issueId/synced',
+  // W5 (M09-FR-03): a floor RETURN counted in on the warehouse handheld — the acceptor re-verified at head office, the stock
+  // moved off the floor and onto the back store once; a refusal (the returner accepting it, a product not on the return) is
+  // 4xx → dead-lettered here by name for a person. `indentId` / `returnId` are plain top-level payload fields.
+  FloorIndentReturnAccepted: '/v1/floor/indents/:indentId/returns/:returnId/accepted/synced',
   // SP-8c-ii (F08): the shelf count taken on the merchandising screen — `countId` is a plain top-level payload field. The
   // synced route re-verifies the COUNTER from their grants and judges the shelf against head office's own map; a count
   // against a shelf head office does not have is 422 → dead-lettered here by name for a person.

@@ -353,6 +353,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     // W5: the people, payroll and HR register sections' words live in their tested sessions.
     'payroll-statutory.js': 'apps/web-erp/src/payroll-statutory-session.ts', 'posh-register.js': 'apps/web-erp/src/posh-register-session.ts',
     'settings-working-time.js': 'apps/web-erp/src/working-time-session.ts', 'staff-registers.js': 'apps/web-erp/src/working-time-session.ts', 'schedule-roster.js': 'apps/web-erp/src/working-time-session.ts',
+    // W5 (store operations): the sections drawn on ten pages — their words are in their tested section models.
+    'w5-sections.js': 'apps/web-erp/src/w5-store-ops-sections.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
