@@ -41,6 +41,13 @@ const PINNED_SUITES: readonly string[] = [
   'tests/e2e/qg04-the-served-till-sells-through-a-cloud-outage-and-syncs-once.e2e.ts',
   // W4 · M20-FR-02: the customer's repeat order starts on the shop's today.
   'tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts',
+  // W5 · M34-FR-02: the hold, the keeping plan and the evidence pack run on the shop's today; M34-FR-03: the licence's days left.
+  'tests/e2e/w5-the-audit-log-holds-plans-and-exports-evidence.e2e.ts',
+  'tests/e2e/w5-licences-controls-and-findings-are-kept-on-screen.e2e.ts',
+  // W5 · M23/M22/M27/M24: the books and the commercial ledgers — the shop day's dunning date, receipts, tag window and payments.
+  'tests/e2e/w5-the-accountants-books-on-the-store-computer-over-postgresql.e2e.ts',
+  'tests/e2e/w5-concessions-buying-and-suppliers-on-the-store-computer-over-postgresql.e2e.ts',
+  'tests/e2e/w5-the-customer-app-names-a-nominee-and-tells-the-shop-what-it-could-not-find-on-postgresql.e2e.ts', // W5 · D02-FR-04 range-gap window
 ];
 
 const code = (file: string): string => readFileSync(file, 'utf8')

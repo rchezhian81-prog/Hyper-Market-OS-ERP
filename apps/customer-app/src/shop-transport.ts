@@ -89,7 +89,9 @@ export type ShopCommercePath =
   | `storefront/orders/${string}/delivery-code` | `storefront/orders/${string}/delivery-eta`
   | `me/referral${string}` | `storefront/scan-and-go${string}`
   // OB-352: a bill the till marked for delivery — I choose the address (one I saved) and the slot.
-  | `me/till-deliveries${string}`;
+  | `me/till-deliveries${string}`
+  // W5 · D02-FR-04 · OB-319: a search that found nothing — the words only, never who searched (the range-gap report reads it).
+  | 'catalogue/search-misses';
 
 export interface ShopCommerceRequest {
   readonly token: string;
@@ -116,8 +118,8 @@ export interface ShopMineRequest {
 export interface ShopPrivacyRequest {
   readonly token: string;
   readonly method: 'GET' | 'POST';
-  /** '' (read my position), '/consent', or '/requests/<id>'. */
-  readonly path: '' | '/consent' | `/requests/${string}`;
+  /** '' (read my position), '/consent', '/requests/<id>', or (W5 · C5) '/nominee' and '/nominee/withdrawal'. */
+  readonly path: '' | '/consent' | `/requests/${string}` | '/nominee' | '/nominee/withdrawal';
   readonly body?: unknown;
   readonly idempotencyKey?: string;
 }

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Licences, controls and findings</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Licences, controls and findings (W5 · M34-FR-03 · M34-FR-04 · OB-331 · hard rules #2, #6). A THIN CLIENT over head
+      office's compliance registers: licences and certificates with the named person who renews each, their evidence and the
+      ones with none (GET /v1/compliance/obligations, /alerts, /evidence-gaps; POST …/obligations/:id, …/evidence, …/close);
+      controls with their incidents, remediations and dated checks (GET /v1/compliance/control-register, /controls/health,
+      /remediations/overdue; POST …/controls/:id, …/incidents/:id, …/remediations/:id, …/attestations/:id); and the security
+      findings people raise (GET /v1/compliance/findings; POST …/findings/:id, …/owner, …/fixed). Nothing is deleted. Its
+      session is apps/web-erp/src/compliance-registers-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      form.row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; border-top: 1px solid var(--line); padding-top: 10px; }
+      form.row-form > label { flex: 1 1 200px; }
+      form.row-form > h4 { flex: 1 1 100%; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      ul.rows > li.tone-ok { border-left-color: var(--ok); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); } ul.rows > li.tone-error { border-left-color: var(--error); }
+      ul.sub { list-style: none; margin: 0; padding: 0 0 0 12px; display: grid; gap: 4px; font-size: 14px; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; font-weight: 600; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Licences, controls and findings</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Licences, controls and findings</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="lic-s" hidden aria-labelledby="lic-h">
+        <h3 id="lic-h" data-w="licencesH"></h3>
+        <p class="status" id="lic-status" role="status" aria-live="polite"></p>
+        <h4 data-w="alertsH"></h4>
+        <ul class="rows" id="lic-alerts"></ul>
+        <h4 data-w="gapsH"></h4>
+        <ul class="rows" id="lic-gaps"></ul>
+        <h4 data-w="registerH"></h4>
+        <ul class="rows" id="lic-list"></ul>
+        <form class="row-form" id="lic-form" hidden>
+          <h4 data-w="newH"></h4>
+          <label for="lic-which"><span data-w="which"></span><select id="lic-which"></select></label>
+          <label for="lic-kind"><span data-w="kind"></span><select id="lic-kind"></select></label>
+          <label for="lic-name"><span data-w="name"></span><input id="lic-name" autocomplete="off" /></label>
+          <label for="lic-authority"><span data-w="authorityL"></span><input id="lic-authority" autocomplete="off" /></label>
+          <label for="lic-reference"><span data-w="referenceL"></span><input id="lic-reference" autocomplete="off" /></label>
+          <label for="lic-from"><span data-w="validFrom"></span><input id="lic-from" type="date" /></label>
+          <label for="lic-expires"><span data-w="expiresOn"></span><input id="lic-expires" type="date" /></label>
+          <label for="lic-branch"><span data-w="store"></span><input id="lic-branch" autocomplete="off" /></label>
+          <label for="lic-person"><span data-w="personId"></span><input id="lic-person" autocomplete="off" /></label>
+          <label for="lic-person-name"><span data-w="personName"></span><input id="lic-person-name" autocomplete="off" /></label>
+          <label for="lic-escalate"><span data-w="escalatesTo"></span><input id="lic-escalate" autocomplete="off" /></label>
+          <button id="lic-go" type="submit" data-w="registerGo"></button>
+        </form>
+        <form class="row-form" id="ev-form" hidden>
+          <h4 data-w="evidenceH"></h4>
+          <label for="ev-which"><span data-w="which"></span><select id="ev-which"></select></label>
+          <label for="ev-ref"><span data-w="evidenceRef"></span><input id="ev-ref" autocomplete="off" /></label>
+          <label for="ev-what"><span data-w="evidenceWhat"></span><input id="ev-what" autocomplete="off" /></label>
+          <button id="ev-go" type="submit" data-w="evidenceGo"></button>
+        </form>
+        <form class="row-form" id="cl-form" hidden>
+          <h4 data-w="closeH"></h4>
+          <label for="cl-which"><span data-w="which"></span><select id="cl-which"></select></label>
+          <label for="cl-why"><span data-w="closeWhy"></span><input id="cl-why" autocomplete="off" /></label>
+          <button id="cl-go" type="submit" class="quiet" data-w="closeGo"></button>
+        </form>
+      </section>
+
+      <section id="ctl-s" hidden aria-labelledby="ctl-h">
+        <h3 id="ctl-h" data-w="controlsH"></h3>
+        <p class="meta" data-w="checkedFor"></p>
+        <p class="status" id="ctl-status" role="status" aria-live="polite"></p>
+        <h4 data-w="healthH"></h4>
+        <ul class="rows" id="ctl-list"></ul>
+        <h4 data-w="overdueH"></h4>
+        <ul class="rows" id="ctl-overdue"></ul>
+        <form class="row-form" id="ctl-form" hidden>
+          <h4 data-w="controlH"></h4>
+          <label for="ctl-which"><span data-w="which"></span><select id="ctl-which"></select></label>
+          <label for="ctl-title"><span data-w="controlTitle"></span><input id="ctl-title" autocomplete="off" /></label>
+          <label for="ctl-impl"><span data-w="controlImplements"></span><input id="ctl-impl" autocomplete="off" /></label>
+          <label for="ctl-owner"><span data-w="controlOwner"></span><input id="ctl-owner" autocomplete="off" /></label>
+          <button id="ctl-go" type="submit" data-w="controlGo"></button>
+        </form>
+        <form class="row-form" id="inc-form" hidden>
+          <h4 data-w="incidentH"></h4>
+          <label for="inc-title"><span data-w="incidentTitle"></span><input id="inc-title" autocomplete="off" /></label>
+          <label for="inc-sev"><span data-w="severity"></span><select id="inc-sev"></select></label>
+          <label for="inc-occ"><span data-w="occurredAt"></span><input id="inc-occ" type="datetime-local" /></label>
+          <label for="inc-det"><span data-w="detectedAt"></span><input id="inc-det" type="datetime-local" /></label>
+          <label for="inc-ctl"><span data-w="control"></span><select id="inc-ctl"></select></label>
+          <button id="inc-go" type="submit" data-w="incidentGo"></button>
+        </form>
+        <form class="row-form" id="rem-form" hidden>
+          <h4 data-w="remediationH"></h4>
+          <label for="rem-inc"><span data-w="incident"></span><select id="rem-inc"></select></label>
+          <label for="rem-action"><span data-w="action"></span><input id="rem-action" autocomplete="off" /></label>
+          <label for="rem-owner"><span data-w="remOwner"></span><input id="rem-owner" autocomplete="off" /></label>
+          <label for="rem-due"><span data-w="dueOn"></span><input id="rem-due" type="date" /></label>
+          <button id="rem-go" type="submit" data-w="remediationGo"></button>
+        </form>
+        <form class="row-form" id="att-form" hidden>
+          <h4 data-w="attestH"></h4>
+          <label for="att-ctl"><span data-w="control"></span><select id="att-ctl"></select></label>
+          <label for="att-stmt"><span data-w="statement"></span><input id="att-stmt" autocomplete="off" /></label>
+          <button id="att-go" type="submit" data-w="attestGo"></button>
+        </form>
+      </section>
+
+      <section id="fnd-s" hidden aria-labelledby="fnd-h">
+        <h3 id="fnd-h" data-w="findingsH"></h3>
+        <p class="meta" data-w="findingsLead"></p>
+        <p class="status" id="fnd-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="fnd-list"></ul>
+        <form class="row-form" id="fnd-form" hidden>
+          <h4 data-w="raiseH"></h4>
+          <label for="fnd-source"><span data-w="source"></span><select id="fnd-source"></select></label>
+          <label for="fnd-sev"><span data-w="severity"></span><select id="fnd-sev"></select></label>
+          <label for="fnd-title"><span data-w="findingTitle"></span><input id="fnd-title" autocomplete="off" /></label>
+          <label for="fnd-loc"><span data-w="location"></span><input id="fnd-loc" autocomplete="off" /></label>
+          <label for="fnd-owner"><span data-w="findingOwner"></span><input id="fnd-owner" autocomplete="off" /></label>
+          <button id="fnd-go" type="submit" data-w="raiseGo"></button>
+        </form>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./compliance-registers.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

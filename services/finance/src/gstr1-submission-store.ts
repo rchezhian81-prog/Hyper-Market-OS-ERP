@@ -9,6 +9,10 @@
 //   • POST …/gstr1/submission/:period/submit           — file the approved return. LIVE is off by default and
 //                                                        killable; the SANDBOX simulator runs otherwise.
 //   • POST …/gstr1/submission/:period/record-response  — apply a portal answer (the async/webhook path).
+//   • POST …/gstr1/submission/:period/filed-by-hand    — OB-683: the person who uploaded the APPROVED return on the GST
+//                                                        portal themselves records the portal's ARN. The person is the
+//                                                        session's (never the body's), the time head office's own; once
+//                                                        per period; nothing is sent to any portal.
 //   • GET  …/gstr1/submission/:period                  — the current folded state.
 //
 // NO live submission occurs until CA/legal + production credentials + owner GO: the live path is gated by
@@ -16,8 +20,9 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
-  evaluateGstr1SubmissionTransition, sandboxGstnProvider, queueCategory, isSubmissionException,
+  evaluateGstr1SubmissionTransition, sandboxGstnProvider, isGstPortalArn, queueCategory, isSubmissionException,
   type Gstr1SubmissionAggregate, type Gstr1SubmissionEvent, type GstnSubmitStatus, type GstnSubmitResult,
   type Gstr1SubmissionQueueCategory,
 } from '../../../packages/finance/src/index';
@@ -33,6 +38,9 @@ export interface Gstr1SubmissionStoreDeps {
   readonly append: (tenantId: string, period: string, event: Gstr1SubmissionEvent) => Promise<void> | void;
   /** The distinct filing periods that have a submission — the index the exception queue folds over. */
   readonly listPeriods: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  /** OB-683: the signed-in person's name in the staff register (absent: their user id is shown). */
+  readonly personName?: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -148,6 +156,47 @@ export function gstr1SubmissionRoutes(deps: Gstr1SubmissionStoreDeps): readonly 
               : { status: 'unknown', detail: typeof b['detail'] === 'string' ? (b['detail'] as string) : 'no clear answer from the portal' };
         await deps.append(ctx.tenantId, period, eventForResult(result, deps.now()));
         return { status: 200, body: { period, current: await deps.load(ctx.tenantId, period) } };
+      },
+    },
+    {
+      // OB-683 (owner, 3 Nov 2026): live filing is off, so an APPROVED return is uploaded on the GST portal by a person, and
+      // that person records the portal's acknowledgement number here. Body: { arn } — nothing else is read from it: WHO is
+      // the session's, WHEN is head office's own clock. Only an approved return; once per period (a second record is
+      // refused, and at the store it collapses onto the first). Nothing is sent to any portal from here.
+      api: 'API-09', method: 'POST', path: '/v1/finance/gstr1/submission/:period/filed-by-hand',
+      permission: 'finance.gstr.submit', idempotent: true,
+      handler: async (ctx) => {
+        const period = ctx.params['period'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!FP.test(period)) throw apiError(400, { code: 'submission_needs_period', whatHappened: 'The filing period in the path must be MMYYYY.', wasItSaved: 'not_saved', nextSafeAction: 'Call the route with the filing month as MMYYYY.' });
+        const arn = typeof b['arn'] === 'string' ? b['arn'].replace(/\s+/g, '').toUpperCase() : '';
+        if (arn === '') {
+          throw apiError(400, { code: 'arn_needed', whatHappened: 'Recording a return filed by hand needs the acknowledgement number (ARN) the GST portal showed when it was uploaded.', wasItSaved: 'not_saved', nextSafeAction: 'Copy the ARN from the portal\'s acknowledgement and send it as arn. Nothing was recorded.' });
+        }
+        if (!isGstPortalArn(arn)) {
+          throw apiError(400, { code: 'arn_malformed', whatHappened: `"${arn}" is not an acknowledgement number the GST portal gives: it is 15 characters — AA, the two-digit state code, the month and year (MMYY), six digits and one check character, e.g. AA330626012345X.`, wasItSaved: 'not_saved', nextSafeAction: 'Copy the ARN exactly as the portal shows it. Nothing was recorded.' });
+        }
+        const current = await deps.load(ctx.tenantId, period);
+        const decision = evaluateGstr1SubmissionTransition({ ...(current !== undefined ? { current } : {}), action: 'fileByHand', actor: ctx.userId, arn });
+        if (!decision.allowed) {
+          throw apiError(decision.refusal === 'already_filed' ? 409 : statusFor(decision.refusal), {
+            code: `submission_${decision.refusal}`, whatHappened: decision.reason, wasItSaved: 'not_saved',
+            nextSafeAction: decision.refusal === 'already_filed' ? 'Nothing to do — a filing is recorded once. A correction goes in a later return.' : 'Only a return a second person has approved can be recorded as filed by hand.',
+          });
+        }
+        const at = deps.now();
+        const byName = ((await deps.personName?.(ctx.tenantId, ctx.userId)) ?? '').trim() || ctx.userId;
+        await deps.append(ctx.tenantId, period, { kind: 'filedByHand', arn, by: ctx.userId, byName, at });
+        const after = await deps.load(ctx.tenantId, period);
+        // A race lost at the store: the period's one hand filing is someone else's — say so, never claim this one.
+        if (after?.filedByHand === undefined || after.filedByHand.at !== at || after.filedByHand.by !== ctx.userId) {
+          throw apiError(409, { code: 'submission_already_filed', whatHappened: `the ${period} return is already recorded as filed (${after?.arn ?? ''}) — a filing is recorded once`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to do. A correction goes in a later return.' });
+        }
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'gst.return.filed_by_hand', objectType: 'gst_return', objectId: `GSTR1:${period}`, at,
+          origin: { tenantId: ctx.tenantId, branchId: null }, before: { state: 'approved' }, after: { state: 'filed', arn, filedBy: byName }, correlationId: ctx.traceId,
+        });
+        return { status: 201, body: { period, current: after } };
       },
     },
     {

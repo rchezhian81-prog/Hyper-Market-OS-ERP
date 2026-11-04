@@ -266,12 +266,33 @@
         </div>
       </section>
 
+      <!-- W5 · M23-FR-01 · §28: record a payment made to a supplier — it RECORDS that money went, it never sends any; asked
+           here, approved by a different person who may pay suppliers on their Approvals page, then recorded here naming that
+           approval (apps/web-erp/src/supplier-payment-session.ts, window.supplierPayments, drawn by supplier-payments.js). -->
+      <section class="form" id="pay" hidden aria-labelledby="pay-h">
+        <h3 id="pay-h"></h3>
+        <p class="note" id="pay-lead"></p>
+        <div class="grid">
+          <div><label for="pay-supplier" id="l-pay-supplier"></label><input id="pay-supplier" type="text" autocomplete="off" /></div>
+          <div><label for="pay-amount" id="l-pay-amount"></label><input id="pay-amount" type="text" inputmode="decimal" autocomplete="off" /></div>
+          <div><label for="pay-on" id="l-pay-on"></label><input id="pay-on" type="date" /></div>
+          <div><label for="pay-method" id="l-pay-method"></label><select id="pay-method"></select></div>
+          <div><label for="pay-ref" id="l-pay-ref"></label><input id="pay-ref" type="text" autocomplete="off" /></div>
+        </div>
+        <button id="pay-ask" class="act" type="button"></button>
+        <p class="note" id="pay-status" role="status" aria-live="polite"></p>
+        <h4 id="pay-asks-h"></h4>
+        <button id="pay-asks-show" class="act" type="button"></button>
+        <ul class="docs" id="pay-asks"></ul>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./suppliers.js" type="module"></script>
+    <script src="./supplier-payments.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

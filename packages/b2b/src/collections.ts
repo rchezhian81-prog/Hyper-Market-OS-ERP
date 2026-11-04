@@ -299,6 +299,27 @@ export function allocatePayment(input: {
 
 export type DunningStep = 'none' | 'statement' | 'reminder' | 'final_notice' | 'stop_supply';
 
+/**
+ * The owner's chasing steps for business customers (OB-686, owner 3 Nov 2026: the programmers' ₹500 floor and 7 / 60 / 90
+ * days were REMOVED — "no reminder step until the owner types his own"). Below `minimumChaseMinor` an overdue amount goes on
+ * the next statement; past each day count the step escalates. Days are whole, above 0, and rise strictly.
+ */
+export interface DunningSteps {
+  readonly minimumChaseMinor: number;
+  readonly reminderAfterDays: number;
+  readonly finalNoticeAfterDays: number;
+  readonly stopSupplyAfterDays: number;
+}
+
+/** Why a set of chasing steps cannot be used, or undefined when it can. Pure. */
+export function dunningStepsProblem(s: Partial<Record<keyof DunningSteps, unknown>>): string | undefined {
+  const whole = (v: unknown, min: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min;
+  if (!whole(s.minimumChaseMinor, 0)) return 'the smallest amount worth chasing must be a whole number of paise, 0 or more';
+  if (!whole(s.reminderAfterDays, 1) || !whole(s.finalNoticeAfterDays, 1) || !whole(s.stopSupplyAfterDays, 1)) return 'each day count must be a whole number of days, more than 0';
+  if (!(s.reminderAfterDays < s.finalNoticeAfterDays && s.finalNoticeAfterDays < s.stopSupplyAfterDays)) return 'the days must rise: the reminder first, then the final notice, then stopping supply';
+  return undefined;
+}
+
 export interface DunningDecision {
   readonly customerId: string;
   readonly step: DunningStep;
@@ -319,16 +340,12 @@ export interface DunningDecision {
  */
 export function decideDunning(input: {
   readonly ageing: AgeingReport;
-  /** Per-tenant thresholds in days overdue. */
-  readonly reminderAfterDays?: number;
-  readonly finalNoticeAfterDays?: number;
-  readonly stopSupplyAfterDays?: number;
-  /** Below this, chasing costs more than the debt. Per-tenant. Default ₹500. */
-  readonly minimumChaseMinor?: number;
+  /** The OWNER's chasing steps (OB-686) — required: there is no built-in floor or day count any more. */
+  readonly steps: DunningSteps;
 }): DunningDecision {
   const chaseable = input.ageing.items.filter((i) => !i.disputed && i.daysOverdue > 0);
   const worstDaysOverdue = chaseable.reduce((w, i) => Math.max(w, i.daysOverdue), 0);
-  const minimum = input.minimumChaseMinor ?? 50_000;
+  const minimum = input.steps.minimumChaseMinor;
   const base = {
     customerId: input.ageing.customerId,
     chaseableMinor: input.ageing.chaseableMinor,
@@ -355,9 +372,9 @@ export function decideDunning(input: {
     };
   }
 
-  const stopAfter = input.stopSupplyAfterDays ?? 90;
-  const finalAfter = input.finalNoticeAfterDays ?? 60;
-  const remindAfter = input.reminderAfterDays ?? 7;
+  const stopAfter = input.steps.stopSupplyAfterDays;
+  const finalAfter = input.steps.finalNoticeAfterDays;
+  const remindAfter = input.steps.reminderAfterDays;
 
   if (worstDaysOverdue > stopAfter) {
     return {

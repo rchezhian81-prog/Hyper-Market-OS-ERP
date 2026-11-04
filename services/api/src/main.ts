@@ -308,8 +308,9 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
-import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter } from './r2-hr-adapters';
+import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter, caRoleGrantAdapter } from './r2-hr-adapters';
 import { committeeMembershipRoutes } from '../../identity/src/committee-membership';
+import { caRoleGrantRoutes } from '../../identity/src/ca-role-grant'; // OB-681: the chartered accountant's named grant path
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
@@ -780,6 +781,8 @@ export function buildSurface(deps: {
     // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member (that role only), a second person
     // confirms through the maker-checker engine, the change is audited, and the owner never holds the role.
     ...(store === undefined ? [] : committeeMembershipRoutes({ ...committeeMembershipAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
+    // OB-681 (owner, 3 Nov 2026): the owner asks, the IT custodian (the named security reviewer) approves — the CA role only.
+    ...(store === undefined ? [] : caRoleGrantRoutes({ ...caRoleGrantAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
@@ -1675,7 +1678,7 @@ export function buildSurface(deps: {
     } : { ...b2bCustomerGstinAdapter({ store, now }), account: b2bCreditAdapter({ store, now }).account }),
     ...b2bCollectionsRoutes(store === undefined ? {
       invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
-    } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
+    } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // FUL-09: B2B invoices and collections reach the books, once, through the accountant's mapping.
     ...b2bPostingRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(tradingMonthIn(now())), appendJournal: () => {}, now,
@@ -1926,7 +1929,7 @@ export function buildSurface(deps: {
     // labourCost (REPORTED, never enforced — §29). Writes manage-gated; the day's sales figure is supplied.
     ...attendanceStoreRoutes(store === undefined ? {
       putAttendance: () => {}, attendance: () => [], employees: () => [], now,
-    } : attendanceStoreAdapter({ store, now })),
+    } : { ...attendanceStoreAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // R2 addendum C18: the TN Shops and Establishments working-time pack (limits are settings; publish enforces them;
     // the attendance, leave and holiday registers). C20: the Internal Committee complaints register and annual report.
     ...(store === undefined ? [] : hrComplianceRoutes(hrComplianceAdapter({ store, now }))),
@@ -1975,7 +1978,7 @@ export function buildSurface(deps: {
     // The LIVE portal path stays off-by-default + killable; the deterministic sandbox runs otherwise.
     ...gstr1SubmissionRoutes(store === undefined ? {
       load: () => undefined, append: () => {}, listPeriods: () => [], now,
-    } : gstr1SubmissionAdapter({ store, now })),
+    } : { ...gstr1SubmissionAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),

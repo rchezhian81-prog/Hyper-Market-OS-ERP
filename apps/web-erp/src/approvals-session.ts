@@ -115,7 +115,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindCustomerCreditNote' | 'kindCustomerDebitNote' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindCustomerCreditNote' | 'kindCustomerDebitNote' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'kindCaRoleGrant' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -180,6 +180,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindRegulatedProductPublish: 'Put an age-restricted or regulated product on sale',
     kindB2BContract: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
     kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
+    kindCaRoleGrant: 'Give the chartered accountant\'s role (approved by the IT custodian)',
     kindB2BCreditLimit: 'Set or change a business customer\'s credit limit (and payment terms)',
     kindCustomerCreditNote: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
     kindCustomerDebitNote: 'Issue a GST debit note to a business customer (more added to their tax invoice)',
@@ -267,6 +268,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindRegulatedProductPublish: 'வயது வரம்புள்ள அல்லது ஒழுங்குமுறைக்கு உட்பட்ட பொருளை விற்பனைக்கு வைத்தல்',
     kindB2BContract: 'வணிக வாடிக்கையாளரின் ஒப்பந்தத்தை அனுமதித்தல் (விலை, தேதிகள், கடன், நிபந்தனைகள்)',
     kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
+    kindCaRoleGrant: 'பட்டயக் கணக்காளருக்குத் தனி உள்நுழைவு வழங்குதல் (உரிமையாளர் கேட்க, IT பொறுப்பாளர் ஒப்புதல்)',
     kindB2BCreditLimit: 'வணிக வாடிக்கையாளரின் கடன் வரம்பை (மற்றும் கட்டண நிபந்தனைகளை) அமைத்தல் அல்லது மாற்றுதல்',
     kindCustomerCreditNote: 'வணிக வாடிக்கையாளருக்கு GST வரவுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலிலிருந்து திருப்பித் தரும் பணம்)',
     kindCustomerDebitNote: 'வணிக வாடிக்கையாளருக்கு GST பற்றுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலில் கூடுதலாகச் சேர்ப்பது)',
@@ -368,7 +370,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   // OB-503: an age-restricted or regulated product reaching the tills — a second person who approves catalogue changes.
   regulated_product_publish: 'kindRegulatedProductPublish',
   // OB-288 commercial desks (M22-FR-01): a B2B contract (a second contract manager approves); an order over the credit limit (the owner).
-  b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit',
+  b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit', ca_role_grant: 'kindCaRoleGrant',
   // M23-FR-02 · OB-678: a GST credit note to a business customer — a refund under the money limits.
   customer_credit_note: 'kindCustomerCreditNote',
   // OB-679: every debit note to a business customer — a second person approves, at any amount.

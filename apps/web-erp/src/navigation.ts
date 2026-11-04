@@ -158,6 +158,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'gst-reconciliation': { en: 'gst e-invoice irn e-way bill', ta: 'ஜிஎஸ்டி மின் விலைப்பட்டியல்' },
   'itc-review': { en: 'gst input tax credit 2b', ta: 'ஜிஎஸ்டி உள்ளீட்டு வரி' },
   'payroll': { en: 'salary wages pf esi pay', ta: 'சம்பளம்' },
+  'payroll-legal': { en: 'pf esi epf rate ceiling minimum wage overtime payslip particulars legal ca', ta: 'பிஎஃப் இஎஸ்ஐ குறைந்தபட்ச ஊதியம் சட்டம்' },
   'my-payslip': { en: 'salary pay slip wages', ta: 'சம்பளச் சீட்டு' },
   'ess': { en: 'leave attendance my details', ta: 'விடுப்பு வருகை' },
   'my-tasks': { en: 'jobs to do work', ta: 'என் வேலைகள்' },
@@ -213,6 +214,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'ops-alerts': { en: 'alert backup down offline escalation owner acknowledge', ta: 'எச்சரிக்கை காப்புப் பிரதி' },
   // W4 (M35-FR-03).
   'failed-jobs': { en: 'background job failed retry run again overnight error', ta: 'பணி தோல்வி மீண்டும்' },
+  // W5 (M34-FR-03 · M34-FR-04 · OB-331).
+  'compliance-registers': { en: 'licence certificate fssai expiry evidence inspector control incident remediation attestation pentest finding', ta: 'உரிமம் சான்றிதழ் கட்டுப்பாடு கண்டறிதல்' },
   'document-retention': { en: 'retention dispose disposal archive keep documents', ta: 'ஆவணம் காப்பு அகற்று' },
   'sales-commission': { en: 'commission salesperson rate incentive earned', ta: 'கமிஷன் விற்பனையாளர்' },
 });
@@ -414,6 +417,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the
   // server would refuse (owner directive; §27 least-privilege surfaces).
   { id: 'payroll', label: 'Payroll', labelTa: 'ஊதியப் பட்டியல்', path: '/payroll', requires: 'payroll.statutory.read', group: 'People' },
+  // OB-684 (owner, 3 Nov 2026): the CA's own way to the payroll LEGAL figures — gated on `payroll.legal.read` (which the CA
+  // holds), never `payroll.statutory.read` (anyone's pay). The page shows the legal figures only.
+  { id: 'payroll-legal', label: 'Payroll legal figures', labelTa: 'ஊதியச் சட்ட எண்கள்', path: '/payroll-legal', requires: 'payroll.legal.read', group: 'People' },
   // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
   // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
   { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Mine' },
@@ -632,6 +638,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Customers' },
   { id: 'cash-office', label: 'Cash over / short', labelTa: 'பணம் கூடுதல் / குறைவு', path: '/cash-office', requires: 'till.shift.read', group: 'Finance' },
   { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Operations' },
+  // W5 (M34-FR-03 · M34-FR-04 · OB-331): licences and certificates with their evidence and named person, controls with their
+  // incidents, remediations and dated checks, and the security findings people raise. A head-office page.
+  { id: 'compliance-registers', label: 'Licences, controls and findings', labelTa: 'உரிமங்கள், கட்டுப்பாடுகள், கண்டறிதல்கள்', path: '/compliance-registers', requires: 'compliance.obligation.read', alsoOpenedWith: ['compliance.risk.read', 'compliance.finding.read'], group: 'Operations' },
   // OB-288 gates lane (QG-12): every quality gate's GO / HOLD / REWORK for a release, decided by the owner with evidence.
   { id: 'gates', label: 'Quality gates', labelTa: 'தர வாயில்கள்', path: '/gates', requires: 'compliance.gate.read', group: 'Operations' },
   // OB-288 lane 1 · P1 (OB-290/291/292): the owner's money limits, escalation waits and price-check size — two people change them.

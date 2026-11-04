@@ -362,6 +362,8 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 /* Fields: one height, a 3:1 edge you can see, the focus halo above; a tick box takes the accent. */
 .sre-field { display: grid; gap: 6px; }
 .sre-field > label { color: var(--muted); font-size: 15px; font-weight: 500; }
+/* W5: the sections drawn by w5-platform.js (section.w5) and w5-sections.js (.w5-action) — every control a real target (§1, ≥ 44px). */
+.w5 button, .w5 select, .w5 input:not([type="checkbox"]):not([type="radio"]), .w5-action button, .w5-action select, .w5-action input:not([type="checkbox"]):not([type="radio"]) { min-height: var(--tap); }
 .sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
 .sre-input:hover, .sre-select:hover { border-color: var(--ink-2); }
 .sre-input:focus-visible, .sre-select:focus-visible { border-color: var(--accent); }

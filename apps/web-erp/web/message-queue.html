@@ -69,9 +69,12 @@
         <h3 id="pending-h"></h3>
         <ul class="rows history" id="pending"></ul>
       </section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="withdraw" id="desk-withdraw" hidden></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./message-queue.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

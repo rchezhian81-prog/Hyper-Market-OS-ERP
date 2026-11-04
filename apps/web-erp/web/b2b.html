@@ -193,11 +193,45 @@
         <div class="figs" id="cnr-figs"></div>
         <ul class="rows" id="cnr-missing"></ul>
       </section>
+
+      <!-- W5 · M22-FR-01/02/04 · M23: the next step in chasing (recommended — a person decides; nothing is sent), what the
+           customer is shown against the books, one order's chain from ordered to billed, and portal logins trying other
+           customers' data (apps/web-erp/src/b2b-books-session.ts, window.b2bBooks, drawn by b2b-books.js). Reads only. -->
+      <section id="bk" hidden aria-labelledby="bk-h">
+        <h3 id="bk-h"></h3>
+        <p class="meta" id="bk-lede"></p>
+        <div class="row-form">
+          <label for="bk-customer"><span id="bk-customer-l"></span><input id="bk-customer" autocomplete="off" /></label>
+          <label for="bk-asof"><span id="bk-asof-l"></span><input id="bk-asof" type="date" /></label>
+          <label for="bk-order"><span id="bk-order-l"></span><input id="bk-order" autocomplete="off" /></label>
+        </div>
+        <div class="actions">
+          <button id="bk-dunning" type="button" class="quiet"><span id="bk-dunning-text"></span></button>
+          <button id="bk-reconcile" type="button" class="quiet"><span id="bk-reconcile-text"></span></button>
+          <button id="bk-chain" type="button" class="quiet"><span id="bk-chain-text"></span></button>
+          <button id="bk-probing" type="button" class="quiet"><span id="bk-probing-text"></span></button>
+        </div>
+        <p class="status" id="bk-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="bk-figs"></div>
+        <ul class="rows" id="bk-rows"></ul>
+        <!-- OB-686: the owner's chasing steps — "not set" until he sets them; no step is given until then. -->
+        <h4 id="bk-steps-h"></h4>
+        <p class="meta" id="bk-steps-line" role="status" aria-live="polite"></p>
+        <div class="row-form" id="bk-steps-form" hidden>
+          <label for="bk-steps-floor"><span id="bk-steps-floor-l"></span><input id="bk-steps-floor" inputmode="decimal" autocomplete="off" /></label>
+          <label for="bk-steps-remind"><span id="bk-steps-remind-l"></span><input id="bk-steps-remind" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-final"><span id="bk-steps-final-l"></span><input id="bk-steps-final" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-stop"><span id="bk-steps-stop-l"></span><input id="bk-steps-stop" inputmode="numeric" autocomplete="off" /></label>
+          <button id="bk-steps-save" type="button"><span id="bk-steps-save-text"></span></button>
+        </div>
+        <p class="status" id="bk-steps-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./b2b.js" type="module"></script>
     <script src="./b2b-payments.js" type="module"></script>
     <script src="./b2b-notes.js" type="module"></script>
+    <script src="./b2b-books.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

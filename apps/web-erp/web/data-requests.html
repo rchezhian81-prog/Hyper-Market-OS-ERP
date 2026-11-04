@@ -70,9 +70,14 @@
         <p class="status" id="list-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="rows"></ul>
       </section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="nominee" id="desk-nominee" hidden></section>
+      <section data-desk="sealed" id="desk-sealed" hidden></section>
+      <section data-desk="processors" id="desk-processors" hidden></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./data-requests.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

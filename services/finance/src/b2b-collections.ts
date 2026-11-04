@@ -12,14 +12,18 @@
 //   • A DISPUTED invoice is outstanding but never chaseable — it belongs with a person, not a letter.
 //   • Dunning escalates statement → reminder → final notice → stop supply, and STOPPING SUPPLY is
 //     RECOMMENDED, never automatic (P-05, §28) — date arithmetic does not get to end a relationship.
+//   • OB-686 (owner, 3 Nov 2026): the chasing steps are the OWNER's — the smallest amount worth chasing and the three day
+//     counts (GET/POST /v1/b2b/collections/chasing-steps). The programmers' ₹500 and 7 / 60 / 90 days are gone: until he
+//     sets his own, the dunning read says "not set by the owner" and gives NO step.
 //
 // The rules are the pure `ageReceivables` / `allocatePayment` / `decideDunning` in `packages/b2b`.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
-  ageReceivables, allocatePayment, decideDunning, reconcileAr,
-  type Receivable, type PaymentAllocation,
+  ageReceivables, allocatePayment, decideDunning, reconcileAr, dunningStepsProblem,
+  type Receivable, type PaymentAllocation, type DunningSteps,
 } from '../../../packages/b2b/src/index';
 import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
@@ -38,7 +42,20 @@ export interface RecordedPayment {
   readonly allocations: readonly PaymentAllocation[];
 }
 
+/** The owner's chasing steps as recorded — who set them and when (append-only; the newest applies). */
+export interface ChasingStepsSetting extends DunningSteps {
+  readonly setBy: string;
+  readonly setAt: string;
+}
+
+/** What a reader is told when the owner has set no chasing steps. */
+export const CHASING_STEPS_NOT_SET = 'The chasing steps are not set by the owner — no reminder, final notice or stop-supply step is given until he sets the smallest amount worth chasing and the three day counts.';
+
 export interface B2BCollectionsDeps {
+  /** OB-686: the owner's chasing steps (latest), or undefined when he has set none. */
+  readonly chasingSteps?: (tenantId: string) => Promise<ChasingStepsSetting | undefined> | ChasingStepsSetting | undefined;
+  readonly recordChasingSteps?: (tenantId: string, setting: ChasingStepsSetting) => Promise<void> | void;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** R1c (M01-FR-02): the shop's calendar — "today" is the shop's date, never the UTC one. */
   readonly calendar?: ShopCalendarOf;
   /** Invoices with `settledMinor` PROJECTED from the recorded allocations — never stored (#2). */
@@ -147,7 +164,51 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
         const invoices = await deps.invoices(ctx.tenantId, customerId);
         if (invoices.length === 0) throw notFound(`b2b customer ${customerId} receivables`);
         const ageing = ageReceivables({ customerId, invoices, asAt });
-        return { status: 200, body: decideDunning({ ageing }) };
+        const steps = await deps.chasingSteps?.(ctx.tenantId);
+        if (steps === undefined) {
+          // OB-686: no built-in step. The facts are shown; the step is the owner's to set.
+          const worstDaysOverdue = ageing.items.filter((i) => !i.disputed && i.daysOverdue > 0).reduce((w, i) => Math.max(w, i.daysOverdue), 0);
+          return { status: 200, body: { customerId, stepsSet: false, chaseableMinor: ageing.chaseableMinor, worstDaysOverdue, needsHuman: false, detail: CHASING_STEPS_NOT_SET } };
+        }
+        return { status: 200, body: { ...decideDunning({ ageing, steps }), stepsSet: true, steps: { minimumChaseMinor: steps.minimumChaseMinor, reminderAfterDays: steps.reminderAfterDays, finalNoticeAfterDays: steps.finalNoticeAfterDays, stopSupplyAfterDays: steps.stopSupplyAfterDays, setBy: steps.setBy, setAt: steps.setAt } } };
+      },
+    },
+    {
+      // OB-686: the owner's chasing steps — "not set" until he sets them. Read by anyone who may chase.
+      api: 'API-09', method: 'GET', path: '/v1/b2b/collections/chasing-steps',
+      permission: 'b2b.account.read',
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const steps = await deps.chasingSteps?.(ctx.tenantId);
+        return { status: 200, body: steps === undefined ? { state: 'not_set', say: CHASING_STEPS_NOT_SET } : { state: 'set', steps } };
+      },
+    },
+    {
+      // OB-686: the OWNER sets the chasing steps — { minimumChaseMinor, reminderAfterDays, finalNoticeAfterDays,
+      // stopSupplyAfterDays }, all four together. Append-only: every version stays on the ledger; the newest applies.
+      api: 'API-09', method: 'POST', path: '/v1/b2b/collections/chasing-steps',
+      permission: 'b2b.chasing.steps.set', idempotent: true,
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const problem = dunningStepsProblem(b);
+        if (problem !== undefined) {
+          throw apiError(400, { code: 'not_readable_as_chasing_steps', whatHappened: `The chasing steps need { minimumChaseMinor, reminderAfterDays, finalNoticeAfterDays, stopSupplyAfterDays }: ${problem}.`, wasItSaved: 'not_saved', nextSafeAction: 'Send all four of the owner\'s numbers. Nothing was changed.' });
+        }
+        if (deps.recordChasingSteps === undefined) throw apiError(503, { code: 'chasing_steps_not_kept', whatHappened: 'Head office has no durable store to keep the chasing steps.', wasItSaved: 'not_saved', nextSafeAction: 'Try again when head office is running on its database.' });
+        const before = await deps.chasingSteps?.(ctx.tenantId);
+        const setting: ChasingStepsSetting = {
+          minimumChaseMinor: b['minimumChaseMinor'] as number, reminderAfterDays: b['reminderAfterDays'] as number,
+          finalNoticeAfterDays: b['finalNoticeAfterDays'] as number, stopSupplyAfterDays: b['stopSupplyAfterDays'] as number,
+          setBy: ctx.userId, setAt: deps.now(),
+        };
+        await deps.recordChasingSteps(ctx.tenantId, setting);
+        const shown = (x: DunningSteps): Record<string, string> => ({ minimumChaseMinor: String(x.minimumChaseMinor), reminderAfterDays: String(x.reminderAfterDays), finalNoticeAfterDays: String(x.finalNoticeAfterDays), stopSupplyAfterDays: String(x.stopSupplyAfterDays) });
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'b2b.chasing_steps.set', objectType: 'b2b_chasing_steps', objectId: ctx.tenantId, at: setting.setAt,
+          origin: { tenantId: ctx.tenantId, branchId: null }, before: before === undefined ? null : shown(before), after: shown(setting), correlationId: ctx.traceId,
+        });
+        return { status: 201, body: { state: 'set', steps: setting } };
       },
     },
     {

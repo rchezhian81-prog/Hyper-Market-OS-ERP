@@ -59,7 +59,7 @@ import {
 } from './read-model';
 import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy, PackFloorIndent } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 import { permissionsOf } from './screen-navigation';
@@ -1282,7 +1282,30 @@ function indentLinesFor(input: ScreenInput): Record<string, unknown> {
         indentId: i.indentId, productId: l.productId, uom: typeof l.uom === 'string' ? l.uom : 'EA', outstandingMinor: l.outstandingMinor,
         requestedBy: i.requestedBy ?? '', toLocationId: i.toLocationId ?? '',
       })));
-  return { indentLines, indentsAsAt: feed.asAt };
+  return { indentLines, indentsAsAt: feed.asAt, ...indentReturnsOf(feed.indents, backStore) };
+}
+
+/**
+ * W5 (M09-FR-03): the floor RETURNS waiting at this back store — from the same register (each open indent carries its
+ * returns, whole, as head office sent them): every return still `requested`, with its lines and the unit each is counted
+ * in (the indent's own line). The handheld counts each in; the person who sent it back may not (§28). A return head office
+ * sent without lines is left out — the box derives, never invents.
+ */
+function indentReturnsOf(indents: readonly PackFloorIndent[], backStore: string | undefined): Record<string, unknown> {
+  const out = indents
+    .filter((i) => backStore === undefined || i.fromLocationId === undefined || i.fromLocationId === backStore)
+    .flatMap((i) => (Array.isArray(i['returns']) ? (i['returns'] as unknown[]) : [])
+      .filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object' && (r as Record<string, unknown>)['state'] === 'requested')
+      .filter((r) => typeof r['returnId'] === 'string' && Array.isArray(r['lines']) && (r['lines'] as unknown[]).length > 0)
+      .map((r) => ({
+        indentId: i.indentId, returnId: r['returnId'] as string,
+        returnedBy: typeof r['returnedBy'] === 'string' ? r['returnedBy'] : '', reason: typeof r['reason'] === 'string' ? r['reason'] : '',
+        lines: (r['lines'] as Record<string, unknown>[]).map((l) => ({
+          productId: String(l['productId']), batchId: typeof l['batchId'] === 'string' ? l['batchId'] : null, quantityMinor: typeof l['quantityMinor'] === 'number' ? l['quantityMinor'] : 0,
+          uom: i.totals?.lines?.find((t) => t.productId === l['productId'])?.uom ?? 'EA',
+        })),
+      })));
+  return out.length === 0 ? {} : { indentReturns: out };
 }
 
 /**
@@ -1298,6 +1321,10 @@ export function warehouseSupervisorPayload(input: ScreenInput): Record<string, u
   if (!input.pack.warehouse.known) return null;
   const w = input.pack.warehouse.value;
   return {
+    // W5 (M09-FR-01): who is looking — the signed-in person's own words fill `permissions` (asSignedInPerson), so the page's
+    // bin set-up and bin read are offered only to those head office will let do them. With nobody signed in, none.
+    permissions: [],
+    ...(w.supervisor === undefined ? {} : { userId: w.supervisor.userId }),
     storeId: w.storeId,
     bins: w.bins,
     ...(w.contents === undefined ? {} : { contents: w.contents }),

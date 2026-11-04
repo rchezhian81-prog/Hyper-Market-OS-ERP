@@ -23,7 +23,7 @@ const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('every page carries the one chrome', () => {
   it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief; R4 Lane 2: Online store, App content; R4 D-10: Supplier scorecard; R4 D-13: Shelf compliance by bay; OB-288 gates lane: Quality gates; Lane 2 P1: Recalls and trace; P3: Requisitions and quotes; OB-288 lane 1 · P1: Approval rules, Access review; OB-288 fulfilment & delivery: Dispatch; wave 3: Loyalty, Order refunds, Campaigns)', () => {
-    expect(PAGES.length).toBe(153); // W4 (2): + Production costs (M11-FR-02), Failed jobs (M35-FR-03). Wave 3 (20): + Training checks (QG-02 · OB-675); customers + Customer data requests, Customer value, Message queue, Compensation limits, Gift cards; security + Emergency access, Safety incidents, Operational alerts, Document retention, Sales commission; money + Card, UPI and bank; online + Online orders, Delivery area and slots; partners + Partner webhooks, Partners and sandboxes, Developer guide, Shelf labels and floor devices, Shop name and colours; + Old system checks; Round 4d: + Accounts and Tally names, Facilities set-up, Recipes; Wave 2: + Set up shelves and floor plan, Supplier display space, Store groups and seasons, Product checks; Round 4c's eight (Users & roles, Audit log, Staff list and shifts, Settings and their history, Committee: the annual report, Open and close branches, Do not contact, CERT-In reports and capacity); Round 4a: + Product details, Categories, Duplicates and merges, GST and cess rates, Price lists, Offer results; OB-609: + Bill findings and attendance flags; round 8: + Staff certificates; round 7: + Shelf tags, Quotations; round 6: + Scrap and recycling, Packaging and crates, Compare side by side; QG-02 · OB-404: + Supplier rebates; OB-391: − the retired erasure page; QG-02 lane 1 R4: + Dock diary, Standing orders, Supplier offer funding, Feature switches; OB-288 P5: + Tally files; P2: + Floor heat map; fulfilment & delivery: + Dispatch; wave 3: + Loyalty, Order refunds, Campaigns; LP/workforce: + Help, Training and adoption, Appointment letters, Related parties; commercial desks: + Business customers, Supplier submissions, Concessions; owner reporting: + Owner alerts; SaaS and rollout: + Trial switches
+    expect(PAGES.length).toBe(155); // W5 (2): + Licences, controls and findings (M34-FR-03/04 · OB-331), + Payroll legal figures (OB-684). W4 (2): + Production costs (M11-FR-02), Failed jobs (M35-FR-03). Wave 3 (20): + Training checks (QG-02 · OB-675); customers + Customer data requests, Customer value, Message queue, Compensation limits, Gift cards; security + Emergency access, Safety incidents, Operational alerts, Document retention, Sales commission; money + Card, UPI and bank; online + Online orders, Delivery area and slots; partners + Partner webhooks, Partners and sandboxes, Developer guide, Shelf labels and floor devices, Shop name and colours; + Old system checks; Round 4d: + Accounts and Tally names, Facilities set-up, Recipes; Wave 2: + Set up shelves and floor plan, Supplier display space, Store groups and seasons, Product checks; Round 4c's eight (Users & roles, Audit log, Staff list and shifts, Settings and their history, Committee: the annual report, Open and close branches, Do not contact, CERT-In reports and capacity); Round 4a: + Product details, Categories, Duplicates and merges, GST and cess rates, Price lists, Offer results; OB-609: + Bill findings and attendance flags; round 8: + Staff certificates; round 7: + Shelf tags, Quotations; round 6: + Scrap and recycling, Packaging and crates, Compare side by side; QG-02 · OB-404: + Supplier rebates; OB-391: − the retired erasure page; QG-02 lane 1 R4: + Dock diary, Standing orders, Supplier offer funding, Feature switches; OB-288 P5: + Tally files; P2: + Floor heat map; fulfilment & delivery: + Dispatch; wave 3: + Loyalty, Order refunds, Campaigns; LP/workforce: + Help, Training and adoption, Appointment letters, Related parties; commercial desks: + Business customers, Supplier submissions, Concessions; owner reporting: + Owner alerts; SaaS and rollout: + Trial switches
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -300,6 +300,7 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'production-recipes.js': 'apps/web-erp/src/production-recipes-session.ts',
     // W3 (migration controls): the Old system checks page's words are in its tested session model.
     'old-system.js': 'apps/web-erp/src/old-system-session.ts',
+    'old-system-evidence.js': 'apps/web-erp/src/cutover-evidence-session.ts', // W5 (MG-10 · MG-11 · OD-05 · GT-02)
     'production-repack.js': 'apps/web-erp/src/production-repack-session.ts',
     // W4 (M11): the plan and trace sections and the Production costs page — their words are in their tested session models.
     'production-plan.js': 'apps/web-erp/src/production-plan-session.ts',
@@ -319,6 +320,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'message-queue.js': 'apps/web-erp/src/message-queue-session.ts',
     'compensation-limits.js': 'apps/web-erp/src/compensation-limits-session.ts',
     'gift-cards.js': 'apps/web-erp/src/gift-cards-session.ts',
+    // W5 (route audit bundle 8): the sections on twelve customer, privacy, service and online-order pages.
+    'customer-desk-sections.js': 'apps/web-erp/src/customer-desk-sections-session.ts',
     // Wave 3 (security, people and operations): each new page's words are in its tested session model.
     'emergency-access.js': 'apps/web-erp/src/emergency-access-session.ts',
     'safety-incidents.js': 'apps/web-erp/src/safety-incidents-session.ts',
@@ -336,6 +339,27 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'tally-files-ap.js': 'apps/web-erp/src/supplier-bills-to-the-books-session.ts',
     // W4 (M07-FR-03 · WF-04): the Goods receipts decisions section's words are in its tested session model.
     'goods-receipt-decisions.js': 'apps/web-erp/src/goods-receipt-session.ts',
+    // W5 (compliance, risk, EPR and audit registers): each new page's and section's words are in its tested session model.
+    'compliance-registers.js': 'apps/web-erp/src/compliance-registers-session.ts',
+    'epr-records.js': 'apps/web-erp/src/epr-records-session.ts',
+    'audit-log-holds.js': 'apps/web-erp/src/legal-holds-session.ts',
+    // W5 (route audit bundle 2): the GST and tax desk's words are in its tested session model.
+    'gst-returns-desk.js': 'apps/web-erp/src/gst-desk-session.ts',
+    // W5 (books and commercial ledgers): each new section's words are in its tested session model.
+    'finance-close-books.js': 'apps/web-erp/src/books-postings-session.ts',
+    'posting-map-classes.js': 'apps/web-erp/src/account-classes-session.ts',
+    'b2b-books.js': 'apps/web-erp/src/b2b-books-session.ts',
+    'concession-tags.js': 'apps/web-erp/src/concession-tags-session.ts',
+    'buying-related-party.js': 'apps/web-erp/src/related-party-order-session.ts',
+    'supplier-payments.js': 'apps/web-erp/src/supplier-payment-session.ts',
+    'supplier-portal-watch.js': 'apps/web-erp/src/supplier-portal-watch-session.ts',
+    // W5: the people, payroll and HR register sections' words live in their tested sessions.
+    'payroll-statutory.js': 'apps/web-erp/src/payroll-statutory-session.ts', 'payroll-legal.js': 'apps/web-erp/src/payroll-statutory-session.ts', 'posh-register.js': 'apps/web-erp/src/posh-register-session.ts',
+    'settings-working-time.js': 'apps/web-erp/src/working-time-session.ts', 'staff-registers.js': 'apps/web-erp/src/working-time-session.ts', 'schedule-roster.js': 'apps/web-erp/src/working-time-session.ts',
+    // W5 (store operations): the sections drawn on ten pages — their words are in their tested section models.
+    'w5-sections.js': 'apps/web-erp/src/w5-store-ops-sections.ts',
+    // W5: the platform, access, approvals and data-import sections' words are in their tested session model.
+    'w5-platform.js': 'apps/web-erp/src/w5-platform-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

@@ -200,7 +200,9 @@ export function createApprovalRulesSession(input: { readonly viewer: ViewerIdent
       if (rules.result !== 'ok') return rules;
       const inbox = await call<{ mine: { requestId: string; kind: string; status: string; details: AskedChange['details']; decidedBy?: string; decisionReason?: string }[] }>('GET', '/v1/approvals/requests');
       const asked = inbox.result !== 'ok' ? [] : inbox.value.mine
-        .filter((r) => r.kind === 'approval_rule_change' && r.details !== undefined && typeof r.details.rule === 'string')
+        // W5 · M01-FR-03: a request to go back to an older version is the rule-history section's (it is applied by the
+        // rollback route, never by PUT), so it is not listed here.
+        .filter((r) => r.kind === 'approval_rule_change' && r.details !== undefined && typeof r.details.rule === 'string' && typeof (r.details as { toVersion?: unknown }).toVersion !== 'number')
         .map((r): AskedChange => ({ requestId: r.requestId, rule: r.details.rule, status: r.status, details: r.details, ...(r.decidedBy === undefined ? {} : { decidedBy: r.decidedBy }), ...(r.decisionReason === undefined ? {} : { decisionReason: r.decisionReason }) }));
       return { result: 'ok', value: { limits: rules.value.rules.limits, waits: rules.value.rules['escalation-waits'], priceCheck: rules.value.rules['price-check'], asked } };
     },

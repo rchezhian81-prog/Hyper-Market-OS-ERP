@@ -238,6 +238,64 @@ if (asked !== null && /^\d{4}-\d{2}$/.test(asked)) el('period').value = asked;
 paint();
 void refresh();
 
+// ── W5 (route audit rows 180–181 · A17): the claim GSTR-3B Table 4 takes, and the reversals (window.itcDesk makes the calls;
+//    every figure is head office's). The reversal form is offered only to a role that may act on ITC. ──
+const itcDesk = window.itcDesk ?? null;
+const dw = (k) => (itcDesk === null ? k : itcDesk.words(lang, k));
+let claimOut = null;
+const REV_RULES = ['rule_37', 'rule_42', 'rule_43', 'free_samples'];
+function paintItcDesk() {
+  if (itcDesk === null) { el('itc-desk').hidden = true; return; }
+  el('claim-h').textContent = dw('itcClaimH');
+  const line = el('claim-line');
+  if (claimOut === null) { line.textContent = ''; line.className = 'claim'; delete line.dataset.status; }
+  else if (claimOut.result !== 'ok') { line.className = 'claim tone-error'; line.textContent = itcDesk.outcomeWords(lang, claimOut); line.dataset.status = 'not_read'; }
+  else {
+    const c = claimOut.value.claim;
+    line.dataset.status = c.status;
+    if (c.status === 'reconciled') { line.className = 'claim'; line.textContent = `${dw('claimReconciled')}: ${rupees(taxOf(c))}`; }
+    else { line.className = 'claim tone-error'; line.textContent = `${dw('claimNot')}: ${c.reason ?? ''}`; }
+  }
+  const act = itcDesk.session.may.actItc;
+  for (const id of ['rev-h', 'rev-lead', 'rev-form']) el(id).hidden = !act;
+  el('rev-h').textContent = dw('reversalH'); el('rev-lead').textContent = dw('reversalLead');
+  for (const [id, key] of [['l-rev-rule', 'rule'], ['l-rev-source', 'sourceRef'], ['l-rev-reason', 'reason'], ['l-rev-igst', 'igst'], ['l-rev-cgst', 'cgst'], ['l-rev-sgst', 'sgst'], ['l-rev-cess', 'cess'], ['rev-save', 'recordReversal'], ['revs-h', 'reversalsH']]) el(id).textContent = dw(key);
+  const pick = el('rev-rule');
+  const chosen = pick.value;
+  pick.replaceChildren(...[['', '—'], ...REV_RULES.map((r) => [r, dw(r)])].map(([v, words]) => { const o = document.createElement('option'); o.value = v; o.textContent = words; return o; }));
+  pick.value = chosen;
+  const reversals = readFailed ? [] : review?.reversals ?? [];
+  const rows = el('rev-rows');
+  rows.replaceChildren(...(reversals.length === 0 ? [(() => { const li = document.createElement('li'); li.className = 'row'; li.textContent = dw('noReversals'); return li; })()]
+    : reversals.map((r) => {
+      const li = document.createElement('li'); li.className = 'row tone-idle'; li.dataset.reversal = r.reversalId; li.dataset.rule = r.rule;
+      li.textContent = `${dw(r.rule)} — ${r.sourceRef}: ${rupees(taxOf(r))} · ${r.reason} · ${t('by')} ${r.by}`;
+      return li;
+    })));
+}
+async function loadClaim() {
+  if (itcDesk === null || period() === '') { claimOut = null; paintItcDesk(); return; }
+  claimOut = await itcDesk.session.itcClaim(period());
+  paintItcDesk();
+}
+el('rev-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (itcDesk === null) return;
+  void (async () => {
+    el('rev-save').disabled = true;
+    const out = await itcDesk.session.itcReversal(period(), { rule: el('rev-rule').value, sourceRef: el('rev-source').value, reason: el('rev-reason').value, igst: el('rev-igst').value, cgst: el('rev-cgst').value, sgst: el('rev-sgst').value, cess: el('rev-cess').value });
+    el('rev-save').disabled = false;
+    const said = el('rev-said'); said.hidden = false;
+    said.className = `result tone-${out.result === 'ok' ? 'ok' : 'error'}`;
+    said.textContent = out.result === 'ok' ? `${dw('reversalSaved')}: ${out.value.reversal?.reversalId ?? ''}` : itcDesk.outcomeWords(lang, out);
+    if (out.result === 'ok') { await refresh(); await loadClaim(); }
+  })();
+});
+el('ask').addEventListener('submit', () => { void loadClaim(); });
+el('lang').addEventListener('click', () => { paintItcDesk(); });
+paintItcDesk();
+if (period() !== '') void loadClaim();
+
 // ── FG-4 · OB-386: free samples — the GST credit each one gave back, in the return it went into, for the accountant to
 //    check (window.freeSample makes the calls; head office's own sentence is shown, never a figure worked out here). ──
 const fsApi = window.freeSample ?? null;

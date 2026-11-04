@@ -47,7 +47,7 @@ import {
 } from '../../../packages/migration/src/history';
 import { reversalWindowOf, type CutoverGo } from './opening-reversal';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
+import { witnessRoutes, applicableSignatures, findingsDigest, ALL_DOMAINS, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
 import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
 import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
@@ -1204,7 +1204,18 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
       permission: 'migration.exception.accept', idempotent: true,
       handler: async (ctx) => {
         await assertSafeTarget(deps, ctx.tenantId);
-        const a = ctx.body as Acceptance;
+        // W5 · OD-05: head office takes WHO accepts from the session and WHEN from its own clock — never from the body.
+        // (Until W5 the body's `acceptedBy` was compared with the owner, so anybody holding the permission could type the
+        // owner's sign-in and the acceptance was recorded as his.)
+        const raw = (ctx.body !== null && typeof ctx.body === 'object' && !Array.isArray(ctx.body) ? ctx.body : {}) as Record<string, unknown>;
+        if (!(ALL_DOMAINS as readonly unknown[]).includes(raw['domain']) || typeof raw['reason'] !== 'string' || raw['reason'].trim() === '') {
+          throw apiError(400, {
+            code: 'not_readable_as_an_acceptance',
+            whatHappened: `An acceptance needs the kind of record it carries (domain: ${ALL_DOMAINS.join(', ')}) and the owner's reason, in his own words.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was accepted. Name the kind of record and say why it is carried on the old system\'s word.',
+          });
+        }
         const owner = await deps.ownerId(ctx.tenantId);
         if (owner === undefined) {
           throw apiError(409, {
@@ -1214,7 +1225,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
             nextSafeAction: 'Nothing was accepted. Record who the owner is first — until then a check that only the owner may accept has nothing to compare a caller with, and would pass for anybody.',
           });
         }
-        if (a?.acceptedBy !== owner) {
+        if (ctx.userId !== owner || (raw['acceptedBy'] !== undefined && raw['acceptedBy'] !== ctx.userId)) {
           throw apiError(403, {
             code: 'accepted_by_somebody_other_than_the_owner',
             whatHappened: 'Carrying a figure into the opening books on the old system\'s word alone is the owner\'s decision and nobody else\'s.',
@@ -1222,6 +1233,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
             nextSafeAction: 'Nothing was accepted. The owner records this one themselves, in their own words.',
           });
         }
+        const a: Acceptance = { domain: raw['domain'] as Acceptance['domain'], acceptedBy: ctx.userId, acceptedOn: deps.now(), reason: (raw['reason'] as string).trim() };
         await deps.recordAcceptance(ctx.tenantId, a);
         return { status: 201, body: a };
       },

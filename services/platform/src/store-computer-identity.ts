@@ -244,6 +244,7 @@ export const RELAY_RECORD_KEY: Readonly<Record<string, RelayRecordKey>> = Object
   '/v1/floor/indents/:indentId/synced': { family: 'floor-indent', param: 'indentId' },
   '/v1/floor/indents/:indentId/issues/:issueId/synced': { family: 'floor-indent', param: 'indentId' },
   '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced': { family: 'floor-indent', param: 'indentId' },
+  '/v1/floor/indents/:indentId/returns/:returnId/accepted/synced': { family: 'floor-indent', param: 'indentId' },
   '/v1/purchase/invoices/:invoiceId/synced': { family: 'supplier-invoice', param: 'invoiceId' },
   '/v1/loss-prevention/activity/:activityId/synced': { family: 'till-activity', param: 'activityId' },
   '/v1/migration/exceptions/:exceptionId/resolution/synced': { family: 'migration-exception', param: 'exceptionId', tenantWide: true },

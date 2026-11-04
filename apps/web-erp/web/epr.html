@@ -16,6 +16,10 @@
       registered recyclers, and every exception. A take-back is recorded here (POST …/take-backs/:id) and take-back stock
       is handed over here (POST …/take-back-stock/:id/out) — head office refuses a recycler with no registration number.
       The page decides nothing itself: a refusal is shown as head office said it. No prompt/confirm/alert; no timer.
+      W5 (OB-212): the records a person keeps (epr-records.js over apps/web-erp/src/epr-records-session.ts) — confirm an answer
+      with who confirmed it (POST …/epr/settings/:key), own-brand packaging and its register (POST/GET …/epr/own-brand),
+      recyclers (POST …/epr/recyclers/:id), the shop's own e-waste handover (POST …/epr/handovers/:id), bin counts (POST
+      …/epr/take-back-stock/counts/:id) and a disposed asset that was not e-waste (POST …/epr/assets/:id/not-e-waste).
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -98,10 +102,83 @@
         <label for="ho-note"><span id="l-note">Handover note number</span><input id="ho-note" type="text" autocomplete="off" /></label>
         <button class="act" id="handover-go" type="submit">Hand over</button>
       </form>
+
+      <!-- W5 (OB-212): the records a person keeps — answers confirmed, own-brand packaging, recyclers, the shop's own e-waste,
+           bin counts and assets that were not e-waste. Laid out by epr-records.js over window.eprRecords. -->
+      <p class="result" id="rec-result" role="status" aria-live="polite" hidden></p>
+      <p class="note" id="rec-state" hidden></p>
+      <div id="records" hidden>
+        <h3 data-w="confirmH"></h3>
+        <p class="note" data-w="confirmLead"></p>
+        <p class="note" id="confirm-none" data-w="cannotConfirm" hidden></p>
+        <form class="ask" id="confirm" hidden>
+          <label for="cf-key"><span data-w="setting"></span><select id="cf-key"></select></label>
+          <label for="cf-value"><span data-w="value"></span><input id="cf-value" type="text" autocomplete="off" /></label>
+          <label for="cf-by"><span data-w="confirmation"></span><input id="cf-by" type="text" autocomplete="off" /></label>
+          <button class="act" id="cf-go" type="submit" data-w="confirmGo"></button>
+        </form>
+
+        <h3 data-w="ownBrandH"></h3>
+        <p class="note" data-w="ownBrandLead"></p>
+        <form class="ask record-form" id="declare">
+          <label for="ob-product"><span data-w="product"></span><input id="ob-product" type="text" autocomplete="off" /></label>
+          <label for="ob-own"><span data-w="isOwnBrand"></span><select id="ob-own"><option value="yes" data-w="yes"></option><option value="no" data-w="no"></option></select></label>
+          <label for="ob-cat-1"><span data-w="category"></span><select id="ob-cat-1" class="ob-cat"></select></label>
+          <label for="ob-g-1"><span data-w="gramsPerUnit"></span><input id="ob-g-1" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="ob-d-1"><span data-w="part"></span><input id="ob-d-1" type="text" autocomplete="off" /></label>
+          <label for="ob-cat-2"><span data-w="category"></span><select id="ob-cat-2" class="ob-cat"></select></label>
+          <label for="ob-g-2"><span data-w="gramsPerUnit"></span><input id="ob-g-2" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="ob-d-2"><span data-w="part"></span><input id="ob-d-2" type="text" autocomplete="off" /></label>
+          <button class="act" id="ob-go" type="submit" data-w="declareGo"></button>
+        </form>
+        <p class="note" data-w="register"></p>
+        <ul class="rows" id="own-brand" aria-label="Own-brand register"></ul>
+
+        <h3 data-w="recyclerH"></h3>
+        <p class="note" data-w="recyclerLead"></p>
+        <form class="ask record-form" id="recycler">
+          <label for="rc-which"><span data-w="recycler"></span><select id="rc-which"></select></label>
+          <label for="rc-name"><span data-w="recyclerName"></span><input id="rc-name" type="text" autocomplete="off" /></label>
+          <label for="rc-number"><span data-w="registrationNumber"></span><input id="rc-number" type="text" autocomplete="off" /></label>
+          <button class="act" id="rc-go" type="submit" data-w="recyclerGo"></button>
+        </form>
+
+        <h3 data-w="shopH"></h3>
+        <p class="note" data-w="shopLead"></p>
+        <form class="ask record-form" id="shop">
+          <label for="sh-kind"><span data-w="kind"></span><select id="sh-kind" class="tb-kinds"></select></label>
+          <label for="sh-recycler"><span data-w="recycler"></span><select id="sh-recycler"></select></label>
+          <label for="sh-what"><span data-w="what"></span><input id="sh-what" type="text" autocomplete="off" /></label>
+          <label for="sh-weight"><span data-w="weight"></span><input id="sh-weight" type="number" min="1" step="1" inputmode="numeric" /></label>
+          <label for="sh-type"><span data-w="batteryType"></span><input id="sh-type" type="text" autocomplete="off" placeholder="lead-acid" /></label>
+          <label for="sh-asset"><span data-w="asset"></span><select id="sh-asset"></select></label>
+          <label for="sh-note"><span data-w="note"></span><input id="sh-note" type="text" autocomplete="off" /></label>
+          <button class="act" id="sh-go" type="submit" data-w="shopGo"></button>
+        </form>
+
+        <h3 data-w="countH"></h3>
+        <p class="note" data-w="countLead"></p>
+        <form class="ask record-form" id="count">
+          <label for="ct-kind"><span data-w="kind"></span><select id="ct-kind" class="tb-kinds"></select></label>
+          <label for="ct-type"><span data-w="batteryType"></span><input id="ct-type" type="text" autocomplete="off" placeholder="lead-acid" /></label>
+          <label for="ct-grams"><span data-w="counted"></span><input id="ct-grams" type="number" min="0" step="1" inputmode="numeric" /></label>
+          <button class="act" id="ct-go" type="submit" data-w="countGo"></button>
+        </form>
+
+        <h3 data-w="notEWasteH"></h3>
+        <p class="note" data-w="notEWasteLead"></p>
+        <p class="note" id="ne-none" data-w="noAssets" hidden></p>
+        <form class="ask record-form" id="not-e-waste">
+          <label for="ne-asset"><span data-w="asset"></span><select id="ne-asset"></select></label>
+          <label for="ne-why"><span data-w="why"></span><input id="ne-why" type="text" autocomplete="off" /></label>
+          <button class="act" id="ne-go" type="submit" data-w="notEWasteGo"></button>
+        </form>
+      </div>
     </main>
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./epr.js" type="module"></script>
+    <script src="./epr-records.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

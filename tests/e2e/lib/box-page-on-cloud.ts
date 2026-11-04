@@ -134,6 +134,8 @@ export async function startBoxPageOnCloud(input: {
    * with the same pack-signing key the cloud signs with, so it verifies that pack exactly as one it pulled.
    */
   readonly beforeBoxStarts?: (cloud: RealCloud, dataDir: string) => Promise<void>;
+  /** W5: more sections of the box's signed pack (a box-served page's own policy, e.g. `stockHealthPolicy`, `warehouse`). */
+  readonly pack?: Record<string, unknown>;
 }): Promise<BoxCloudShop> {
   if (DATABASE_URL === undefined) throw new Error('startBoxPageOnCloud needs DATABASE_URL');
   execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
@@ -170,6 +172,7 @@ export async function startBoxPageOnCloud(input: {
     if (!fromHeadOffice) await writeFile(packFile, JSON.stringify({
       version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: store, branchId: store },
       roles, roleAssignments: input.people.map((p) => ({ userId: p.userId, roleId: `r-${p.userId}`, branchScope: [store] })),
+      ...(input.pack ?? {}),
     }), 'utf8');
     if (input.beforeBoxStarts !== undefined) await input.beforeBoxStarts(cloud, dir);
     edge = (await startEdge({

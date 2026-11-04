@@ -111,9 +111,12 @@
         <h3 id="reversed-h">Merges undone</h3>
         <ul class="rows" id="reversed"></ul>
       </section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="views" id="desk-views" hidden></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./customers.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

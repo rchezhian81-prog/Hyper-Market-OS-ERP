@@ -225,3 +225,22 @@ describe('the stream, settlement marking and what settlement reads', () => {
     expect(latestTagVersions([...s.versions, ...s.versions])).toHaveLength(3); // versions fold, never double
   });
 });
+
+describe('W5 · M27-FR-03 · OB-606: a window of days is the SHOP\'s days, never the UTC date of the moment', () => {
+  it('a line rung at 01:00 in the shop (19:30 UTC the day before) is in the shop day\'s window — read, totalled and marked', async () => {
+    const { routes } = stub();
+    const before = NOW;
+    NOW = '2026-08-06T19:30:00.000Z'; // 7 Aug 01:00 in the shop (Asia/Kolkata); the UTC date is still 6 Aug
+    try {
+      await capture(routes, 'tag-night', line(), 'k-night');
+      const shopDay = (await read(routes, { from: '2026-08-07', to: '2026-08-07' })).body as ReadBody;
+      expect(shopDay.tags.map((t) => t.tagId)).toEqual(['tag-night']);
+      expect(shopDay.totals.tags).toBe(1);
+      const utcDay = (await read(routes, { from: '2026-08-06', to: '2026-08-06' })).body as ReadBody;
+      expect(utcDay.tags, 'the UTC date is not the shop\'s day').toEqual([]);
+      const marked = await routeFor(routes, 'POST', '/v1/concession/contracts/:contractId/tag-settlement')
+        .handler(ctx({ userId: 'u-mgr', body: { status: 'included_in_charge', from: '2026-08-07', to: '2026-08-07' } }));
+      expect((marked.body as { marked: number }).marked).toBe(1);
+    } finally { NOW = before; }
+  });
+});

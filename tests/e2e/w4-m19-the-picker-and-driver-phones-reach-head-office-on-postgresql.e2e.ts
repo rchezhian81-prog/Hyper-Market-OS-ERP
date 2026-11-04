@@ -103,7 +103,8 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
       },
     });
     // OB-26 "A": the store computer's first pull — its setup from head office, signed for this store.
-    expect((await shop.edge.refreshStorePack!()).status).toBe('updated');
+    // The box may already have pulled it on its own schedule: then head office only renews the signature.
+    expect(['updated', 'renewed']).toContain((await shop.edge.refreshStorePack!()).status);
   }, 300_000);
   afterAll(async () => { await shop?.stop(); });
 
@@ -240,7 +241,8 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
     await stateIs('confirmed');
     expect(await o.page.innerText('#tolerance-state')).toMatch(/₹20\.00 — Confirmed by the owner/);
     // Head office's signed setup carries his figure and his confirmation down to the store computer.
-    expect((await shop.edge.refreshStorePack!()).status).toBe('updated');
+    // The box may already have pulled it on its own schedule: then head office only renews the signature.
+    expect(['updated', 'renewed']).toContain((await shop.edge.refreshStorePack!()).status);
 
     // ── The driver's phone: the route head office handed him, from the store computer.
     const first = await enrolled('/driver/', 'hh-van', DRIVER, { latitude: DOOR_1.lat, longitude: DOOR_1.lon });

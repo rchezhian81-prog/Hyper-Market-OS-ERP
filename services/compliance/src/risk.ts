@@ -511,6 +511,28 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
       },
     },
     {
+      // W5 (M34-FR-04 "links controls ↔ incidents ↔ remediation"; risk/incident/attestation reports): the registers
+      // themselves — every control, every incident against it, every remediation and every attestation, as recorded. A
+      // read; nothing is folded away (an attestation is immutable and dated, a completed remediation stays listed).
+      api: 'API-11', method: 'GET', path: '/v1/compliance/control-register',
+      permission: 'compliance.risk.read',
+      handler: async (ctx) => {
+        const [controls, incidents, remediations, attestations] = await Promise.all([
+          deps.controls(ctx.tenantId), deps.incidents(ctx.tenantId), deps.remediations(ctx.tenantId), deps.attestations(ctx.tenantId),
+        ]);
+        const by = <T>(key: (x: T) => string) => (a: T, z: T) => key(a).localeCompare(key(z));
+        return {
+          status: 200,
+          body: {
+            controls: [...controls].sort(by((c: Control) => c.controlId)),
+            incidents: [...incidents].sort(by((i: Incident) => i.detectedAt)),
+            remediations: [...remediations].sort(by((r: Remediation) => r.dueOn)),
+            attestations: [...attestations].sort(by((a: Attestation) => a.attestedAt)),
+          },
+        };
+      },
+    },
+    {
       // The follow-through report: remediation past its due date and still not done. Query: asOf? (today).
       api: 'API-11', method: 'GET', path: '/v1/compliance/remediations/overdue',
       permission: 'compliance.risk.read',
