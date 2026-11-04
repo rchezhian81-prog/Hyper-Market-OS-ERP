@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { missingFields, requirementRecordsOf, readRequirementRecords, type RecordField, type RequirementRecord } from '../../packages/compliance/src/requirement-records';
 
 // QG-01 (roadmap §22 "No build without approved ID, rules, actors, errors, permissions and testable acceptance").
 //
@@ -22,16 +23,9 @@ import { join } from 'node:path';
 const ROOT = new URL('../../', import.meta.url).pathname;
 const DIR = join(ROOT, 'docs/requirements');
 
-type Field = 'actors' | 'rules' | 'errors' | 'permissions' | 'acceptance';
-const LABELS: Readonly<Record<Field, RegExp>> = {
-  actors: /\*\*Actors[^*\n]{0,40}:\*\*/i,
-  rules: /\*\*(?:Business rules|Rules)[^*\n]{0,40}:\*\*/i,
-  errors: /\*\*(?:Alternate \/ error flows|Alt\/error|Alt \/ error|Error flows?)[^*\n]{0,40}:\*\*/i,
-  permissions: /\*\*Permissions[^*\n]{0,40}:\*\*/i,
-  acceptance: /\*\*Acceptance(?: criteria)?[^*\n]{0,40}:\*\*/i,
-};
-/** Where a field's text ends: the next labelled field on the line, or the next bullet. */
-const NEXT_FIELD = /\*\*[^*\n]{1,60}:\*\*|\n\s*-\s+\*\*/;
+// W7: the check itself lives in packages/compliance/src/requirement-records.ts, so the CI's QG-01 reading that head office
+// shows on the Quality gates page (scripts/requirement-records-reading.mts) is exactly this guardrail's check.
+type Field = RecordField;
 
 /** QG-01's known gaps when this guardrail was written — the ratchet. It may only shrink. */
 const KNOWN_INCOMPLETE: Readonly<Record<string, readonly Field[]>> = Object.freeze({
@@ -39,32 +33,8 @@ const KNOWN_INCOMPLETE: Readonly<Record<string, readonly Field[]>> = Object.free
   // owner's written deferral of the missing field (CLAUDE.md "never silently drop a requirement").
 });
 
-interface RequirementRecord { readonly id: string; readonly file: string; readonly body: string }
-
-function records(): readonly RequirementRecord[] {
-  const out: RequirementRecord[] = [];
-  for (const file of readdirSync(DIR).filter((f) => /^M\d\d\.md$/.test(f)).sort()) {
-    const text = readFileSync(join(DIR, file), 'utf8');
-    for (const part of text.split(/^## (?=M\d\d-FR-\d\d)/m).slice(1)) {
-      const id = part.slice(0, 9);
-      out.push({ id, file, body: part.split(/^##? /m)[0]! });
-    }
-  }
-  return out;
-}
-
-/** The fields a record is missing — a label that is absent, or present with nothing after it. */
-function missingFields(body: string): readonly Field[] {
-  const missing: Field[] = [];
-  for (const [field, label] of Object.entries(LABELS) as [Field, RegExp][]) {
-    const m = label.exec(body);
-    if (m === null) { missing.push(field); continue; }
-    const rest = body.slice(m.index + m[0].length);
-    const end = NEXT_FIELD.exec(rest);
-    if ((end === null ? rest : rest.slice(0, end.index)).trim() === '') missing.push(field);
-  }
-  return missing;
-}
+const files = (): { name: string; text: string }[] => readdirSync(DIR).filter((n) => /^M\d\d\.md$/.test(n)).map((name) => ({ name, text: readFileSync(join(DIR, name), 'utf8') }));
+const records = (): readonly RequirementRecord[] => requirementRecordsOf(files());
 
 describe('QG-01 — every module requirement record has actors, rules, error flow, permissions and acceptance', () => {
   const all = records();
@@ -86,6 +56,13 @@ describe('QG-01 — every module requirement record has actors, rules, error flo
     expect(beyond.map(([id, m]) => `${id} is missing ${m.join(', ')}`), 'a requirement record must carry actors, rules, error flow, permissions and acceptance (QG-01)').toEqual([]);
     // The visible list: exactly what is still incomplete.
     expect(Object.keys(incomplete).sort()).toEqual(Object.keys(KNOWN_INCOMPLETE).filter((id) => id in incomplete).sort());
+  });
+
+  it('W7: the reading head office shows (scripts/requirement-records-reading.mts) is this same check, over the same files', () => {
+    const reading = readRequirementRecords(files());
+    expect(reading.readAll).toBe(true);
+    expect(reading.records).toBe(all.length);
+    expect(reading.incomplete.map((r) => r.id).sort()).toEqual(all.filter((r) => missingFields(r.body).length > 0).map((r) => r.id).sort());
   });
 
   it('a known gap that has been completed comes off the list (the ratchet only shrinks)', () => {

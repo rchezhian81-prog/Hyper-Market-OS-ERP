@@ -117,7 +117,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       expect(await s.page.locator('#counts [data-count="undecided"]').innerText()).toMatch(/Not decided: 12/);
       // OB-423: the QG-10 row lists EVERY attempt of every release, newest first, each an icon AND words, with its outcome,
       // box, run and attempt; read only with the register.
-      expect(s.reads.filter((r) => r.startsWith('GET /v1/compliance/'))).toEqual(['GET /v1/compliance/gate-register', 'GET /v1/compliance/gate-register/qg10-evidence', 'GET /v1/compliance/gate-evidence' /* W3: the outside evidence, read with the register */]);
+      expect(s.reads.filter((r) => r.startsWith('GET /v1/compliance/'))).toEqual(['GET /v1/compliance/gate-register', 'GET /v1/compliance/gate-register/qg10-evidence', 'GET /v1/compliance/gate-evidence' /* W3: the outside evidence, read with the register */, 'GET /v1/compliance/gate-register/qg01-reading' /* W7: the CI's QG-01 reading */]);
       const notes = row(s.page, 'QG-10').locator('#qg10-evidence ul.qg10-notes > li');
       await notes.nth(2).waitFor({ timeout: 15_000 });
       expect(await notes.count()).toBe(3);

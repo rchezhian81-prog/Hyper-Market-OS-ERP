@@ -46,6 +46,11 @@
       /* OB-423: the release script's QG-10 notes on the QG-10 row */
       .qg10 { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
       .qg10 h4 { margin: 0; font-size: 14px; }
+      /* W7 · QG-01: the CI's requirement-records reading on the QG-01 row. */
+      .qg01 { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+      .qg01 h4 { margin: 0; font-size: 14px; }
+      .qg01 p.tone-ok, .qg01 p.tone-error { margin: 0; border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
+      .qg01 p.tone-ok { border-left-color: var(--ok); } .qg01 p.tone-error { border-left-color: var(--error); }
       ul.qg10-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
       ul.qg10-notes > li { border-left: 4px solid var(--idle); padding: 4px 8px; font-size: 14px; }
       ul.qg10-notes > li.tone-ok { border-left-color: var(--ok); } ul.qg10-notes > li.tone-error { border-left-color: var(--error); }
