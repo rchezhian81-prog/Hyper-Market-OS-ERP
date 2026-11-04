@@ -54554,6 +54554,50 @@
         }
       }
     },
+    "/v1/integration/secrets/usage": {
+      "get": {
+        "operationId": "getIntegrationSecretsUsage",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.setup.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntegrationSecretsUsageReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.setup.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/integration/secrets/usage-signals": {
       "post": {
         "operationId": "postIntegrationSecretsUsageSignals",
@@ -140228,6 +140272,96 @@
           },
           "count": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/secrets.ts"
+      },
+      "GetIntegrationSecretsUsageReply": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "uses",
+          "count",
+          "lastRolledUpDay",
+          "findings",
+          "notJudged"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretUseSummary"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "lastRolledUpDay": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "baselineDay",
+                "identityId",
+                "api",
+                "signal",
+                "actionTaken"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "baselineDay": {
+                  "type": "string"
+                },
+                "identityId": {
+                  "type": "string"
+                },
+                "api": {
+                  "type": "string"
+                },
+                "signal": {
+                  "type": "string",
+                  "enum": [
+                    "error_surge",
+                    "new_caller",
+                    "silent",
+                    "spike"
+                  ]
+                },
+                "actionTaken": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "notJudged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true,
@@ -308504,6 +308638,66 @@
           },
           "detail": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SecretUseSummary": {
+        "type": "object",
+        "required": [
+          "credentialRef",
+          "callerId",
+          "api",
+          "calls",
+          "errors",
+          "daysUsed",
+          "lastUsedOn",
+          "byDay"
+        ],
+        "properties": {
+          "credentialRef": {
+            "type": "string"
+          },
+          "callerId": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "number"
+          },
+          "errors": {
+            "type": "number"
+          },
+          "daysUsed": {
+            "type": "number"
+          },
+          "lastUsedOn": {
+            "type": "string"
+          },
+          "byDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "calls",
+                "errors"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "calls": {
+                  "type": "number"
+                },
+                "errors": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
           }
         },
         "additionalProperties": true

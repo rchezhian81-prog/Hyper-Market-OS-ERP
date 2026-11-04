@@ -20,9 +20,10 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  reviewSecrets, rotateSecret, revokeSecret, findUsageSignals,
+  reviewSecrets, rotateSecret, revokeSecret,
   type SecretRef, type SecretKind, type UsageWindow,
 } from '../../../packages/integration/src/index';
+import { usageSignalsOf, summariseSecretUse, addDays, type SecretUseCount, type SecretUseDayRollup } from './secret-use';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
@@ -63,8 +64,19 @@ export interface SecretsDeps {
    * vault REFERENCE and state only (hard rule #4).
    */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * W6 · M32-FR-03 · OB-688: the durable daily count of each machine credential's use (references and numbers only), and the
+   * nightly roll-ups kept for each day. Optional — a bare deps stub omits it, and the use route then says it is not wired.
+   */
+  readonly usage?: {
+    readonly counts: (tenantId: string, from: string, to: string) => Promise<readonly SecretUseCount[]>;
+    readonly rollups: (tenantId: string) => Promise<readonly SecretUseDayRollup[]>;
+  };
   readonly now: () => string;
 }
+
+/** W6: how many shop days the Integration health page's use list covers (today and the 29 before it). */
+export const SECRET_USE_WINDOW_DAYS = 30;
 
 /** The audit before/after view of a secret — references and state only, NEVER a value (hard rule #4). */
 const secretState = (s: SecretRef): Record<string, string> => ({
@@ -124,12 +136,38 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
             nextSafeAction: 'Send the rolled-up current and baseline windows. This route reads and reports — it never blocks a caller.',
           });
         }
-        const findings = findUsageSignals({
+        const findings = usageSignalsOf({
           current, baseline,
           ...(isPosInt(b['spikeBps']) ? { spikeBps: b['spikeBps'] } : {}),
           ...(isPosInt(b['errorBps']) ? { errorBps: b['errorBps'] } : {}),
         });
         return { status: 200, body: { findings, count: findings.length, watched: current.length } };
+      },
+    },
+    {
+      // W6 · M32-FR-03 · OB-688: each machine credential's use over the last 30 shop days — per credential REFERENCE, caller
+      // and API, from head office's durable daily count — and the nightly roll-ups' findings. Numbers and references only:
+      // there is no value here to show. Registered before `/:secretId` (a GET, but kept beside its family).
+      api: 'API-11', method: 'GET', path: '/v1/integration/secrets/usage',
+      permission: 'platform.setup.read',
+      handler: async (ctx) => {
+        if (deps.usage === undefined) {
+          throw apiError(503, { code: 'secret_use_count_unavailable', whatHappened: 'The daily count of secret use is not wired on this head office.', wasItSaved: 'not_saved', nextSafeAction: 'Read it on the head office that keeps the count. Nothing was changed.' });
+        }
+        const to = await shopToday(deps, ctx.tenantId);
+        const from = addDays(to, -(SECRET_USE_WINDOW_DAYS - 1));
+        const uses = summariseSecretUse(await deps.usage.counts(ctx.tenantId, from, to), from, to);
+        const rollups = [...(await deps.usage.rollups(ctx.tenantId))].sort((a, b) => a.day.localeCompare(b.day));
+        const recent = rollups.filter((r) => r.day >= from);
+        return {
+          status: 200,
+          body: {
+            from, to, uses, count: uses.length,
+            lastRolledUpDay: rollups.at(-1)?.day ?? null,
+            findings: recent.flatMap((r) => r.findings.map((f) => ({ day: r.day, baselineDay: r.baselineDay, identityId: f.identityId, api: f.api, signal: f.signal, actionTaken: f.actionTaken }))),
+            notJudged: recent.filter((r) => !r.judged).map((r) => r.day),
+          },
+        };
       },
     },
     {

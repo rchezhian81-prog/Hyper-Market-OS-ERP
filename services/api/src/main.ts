@@ -385,6 +385,7 @@ import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPolicie
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
 import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-adapters'; // OB-288 lane 4 · P2 data in (OB-315) and out (M30-FR-02)
+import { secretUseCounter, secretUseReads, secretUseRollupSweep } from './w6-secret-use-adapters'; // W6 · M32-FR-03 · OB-688 — the durable daily secret-use count
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
@@ -1223,7 +1224,7 @@ export function buildSurface(deps: {
     // Managed secrets — register/rotate/revoke/review (M32-FR-03). References only, never a value.
     ...calendared(secretsRoutes)(store === undefined ? {
       secret: empty(undefined), all: empty([]), record: () => {}, now,
-    } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, usage: secretUseReads({ store }) }), // W6 · OB-688: each machine credential's daily use
     // Org hierarchy — nodes + GST register, validate/activate/scope (M01-FR-01).
     ...orgStructureRoutes(store === undefined ? {
       nodes: empty([]), registrations: empty([]), recordNode: () => {}, recordRegistration: () => {}, now,
@@ -2617,6 +2618,9 @@ export async function startApi(
   // served at /metricz. Provider-neutral (P-06) — a real log shipper or metrics/OTel exporter is a
   // change to these two lines, not to any handler.
   const metrics = new RequestMetrics();
+  // W6 · M32-FR-03 · OB-688: every machine credential's use, counted per caller, per API, per shop day and appended to the
+  // ledger every 10 s (references and numbers only — never a token or a value); the nightly roll-up judges each day.
+  const secretUse = secretUseCounter({ store, now, flushEveryMs: 10_000, say: (line) => { err(`${line}\n`); }, calendar: async (t: string) => { const d = new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))); return { timeZone: await d.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await d.value(t, SETTINGS.TRADING_DAY_CUTOFF) }; } });
   const observe = combineObservers(
     structuredLogger((line) => { out(`${line}\n`); }),
     metrics.record,
@@ -2714,6 +2718,7 @@ export async function startApi(
     // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
     // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
     signInLog: officeSignInLogAdapter({ store, log: err }),
+    credentialUse: secretUse.record,
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,
@@ -2817,6 +2822,7 @@ export async function startApi(
       saasRollout: saasRolloutSweep({ store, now, plans: PROPOSED_PLANS }), // OB-288 P4 — the hourly usage record (OB-321) and the customer-data volume watch (C9)
       contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       scaleStamp: scaleStampExpirySweep({ store, now, calendar: shopCalendar }), // Round 6 · B7 — a weighing-scale stamp due soon or lapsed
+      secretUse: secretUseRollupSweep({ store, now, calendar: shopCalendar }), // W6 · M32-FR-03 · OB-688 — each finished day's secret use judged once; alerts to the IT custodian
       say: (line) => { out(`${line}\n`); },
     }),
   });
@@ -2850,6 +2856,7 @@ export async function startApi(
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
+      await secretUse.stop(); // W6: the last tally is kept before the database closes
       await db.end();
     },
   };

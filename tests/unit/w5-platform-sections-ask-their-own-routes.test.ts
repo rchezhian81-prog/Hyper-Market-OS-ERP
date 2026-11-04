@@ -254,7 +254,8 @@ describe('M32-FR-03: secrets — which exist, their age and rotation state; NEVE
     if (rev.result !== 'ok') throw new Error('not ok');
     expect(rev.value.issues).toEqual([{ secretId: 'pay', finding: 'overdue_rotation', blocking: false, detail: 'card payments: rotation overdue by 30 days' }]);
     // The section offers no way to register, rotate or revoke: those are not in its session at all.
-    expect(Object.keys(sec)).toEqual(['may', 'inventory', 'review']);
+    // W6 · OB-688: the one addition is the read-only 30-day use list — still no register, rotate or revoke.
+    expect(Object.keys(sec)).toEqual(['may', 'inventory', 'review', 'usage']);
   });
 });
 

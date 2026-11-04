@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1693 | 976 | 976 | 194 | 442 |
+| 13 | 1694 | 976 | 976 | 194 | 442 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1537,6 +1537,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/integration/secrets/:secretId/revocation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/:secretId/rotation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/review` | `platform.setup.read` | core | yes |
+| GET | `/v1/integration/secrets/usage` | `platform.setup.read` | core | — |
 | POST | `/v1/integration/secrets/usage-signals` | `platform.setup.read` | core | yes |
 | POST | `/v1/integration/webhooks/:provider` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/webhooks/:provider/deliveries` | `platform.health.read` | core | — |
