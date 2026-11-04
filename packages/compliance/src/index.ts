@@ -17,3 +17,5 @@ export * from './gate-evidence';
 export * from './gate-readings';
 // W4 · QG-03: the branch-protection reading of main (CI reads it; not known holds the gate, never GO).
 export * from './branch-protection';
+// W7 · QG-01: the requirement-records reading (the CI guardrail's own check; not known holds the gate, never GO).
+export * from './requirement-records';

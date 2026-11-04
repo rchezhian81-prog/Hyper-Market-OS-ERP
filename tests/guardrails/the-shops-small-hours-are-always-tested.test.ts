@@ -23,6 +23,7 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 const PINNED_SUITES: readonly string[] = [
   'tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts',
   'tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts',
+  'tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts',
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
   'tests/integration/w4-the-owner-app-and-the-dashboard-agree-on-today.test.ts', // W4 · P-02
   'tests/integration/w3-failed-office-sign-ins-and-lockouts-are-kept-through-a-restart.test.ts', // W3 · D13-FR-06

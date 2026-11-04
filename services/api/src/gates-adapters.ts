@@ -12,10 +12,11 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers, qg03BranchProtectionBlockers,
+  blockedGates, findingBlocks, gateEvidenceBlockers, qg07Blockers, qg10Blockers, qg04SyncBlockers, qg03BranchProtectionBlockers, qg01RequirementRecordsBlockers,
   type SecurityFinding, type GateDecision, type GateBlocker, type GateEvidenceRecord,
 } from '../../../packages/compliance/src/index';
 import { gateEvidenceRoutes, type GateEvidenceDeps } from '../../compliance/src/gate-evidence';
+import { qg01ReadingRoutes } from '../../compliance/src/qg01-reading';
 import { qg10EvidenceAdapter } from './qg10-evidence-adapters';
 import { migrationControlTotalsOn, syncWatermarksAdapter } from './adapters';
 import { latestPerStore } from '../../platform/src/sync-watermarks';
@@ -103,7 +104,10 @@ export function gateEvidenceAdapter(input: { readonly store: EventStore; readonl
  *   QG-07  every one of the five domains' control totals recorded and signed;
  *   QG-10  each computer's newest release attempt verified (no note at all is a blocker too);
  *   QG-03  (W4) the CI's reading of main's branch protection: none on file, or a latest reading that could not see all of
- *          it, is NOT KNOWN and holds the gate (what a reading found missing is an open high finding, above).
+ *          it, is NOT KNOWN and holds the gate (what a reading found missing is an open high finding, above);
+ *   QG-01  (W7) the CI's reading of the requirement records (the guardrail's own check): none on file, or a latest reading
+ *          that could not read every record, is NOT KNOWN and holds the gate (a record missing a field is an open high
+ *          finding on QG-01, above).
  * Nothing on record is never a pass (P-08).
  */
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
@@ -118,11 +122,13 @@ export async function gateBlockersBeyondRisks(store: EventStore, now: () => stri
   const fromSync = qg04SyncBlockers([...latestPerStore(await syncWatermarksAdapter({ store }).records(tenantId)).values()]).map(asCheck);
   const fromTotals = qg07Blockers(await migrationControlTotalsOn(store, tenantId)).map(asCheck);
   const fromReleases = qg10Blockers(await qg10EvidenceAdapter({ store, now }).notes(tenantId)).map(asCheck);
-  const fromBranch = qg03BranchProtectionBlockers(await all<{ tool: string; scannedAt: string; complete: boolean; runId: string }>(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported')).map(asCheck);
+  const scans = await all<{ tool: string; scannedAt: string; complete: boolean; runId: string }>(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported');
+  const fromBranch = qg03BranchProtectionBlockers(scans).map(asCheck);
+  const fromRecords = qg01RequirementRecordsBlockers(scans).map(asCheck); // W7 · QG-01
   return [
     ...fromFindings, ...fromRecovery, ...await adoptionGateBlockers(store, now, tenantId), // QG-09 (OB-288 LP/workforce package)
     ...await qg02TrainingBlockers(store, now, tenantId), // W3 · OB-675: QG-02 training — the scored check per role
-    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases, ...fromBranch,
+    ...fromEvidence, ...fromSync, ...fromTotals, ...fromReleases, ...fromBranch, ...fromRecords,
   ];
 }
 
@@ -153,9 +159,12 @@ export function gatesRoutes(input: { readonly store: EventStore | undefined; rea
         throw apiError(503, { code: 'register_store_not_available', whatHappened: 'Head office is running without its durable store, so the findings and gate-decision registers cannot be read or written.', wasItSaved: 'not_saved', nextSafeAction: 'Start head office with its database. Nothing was read or saved.' });
       }),
     }) as T;
-    return [...findingsRoutes(absent<FindingsDeps>()), ...gateDecisionRoutes(absent<GateDecisionDeps>()), ...gateEvidenceRoutes(absent<GateEvidenceDeps>())];
+    const f = absent<FindingsDeps>();
+    return [...findingsRoutes(f), ...gateDecisionRoutes(absent<GateDecisionDeps>()), ...gateEvidenceRoutes(absent<GateEvidenceDeps>()), ...qg01ReadingRoutes({ now, scans: (t) => f.scans(t), findings: (t) => f.findings(t) })];
   }
-  return [...findingsRoutes(findingsAdapter({ store, now })), ...gateDecisionRoutes(gateDecisionAdapter({ store, now })), ...gateEvidenceRoutes(gateEvidenceAdapter({ store, now }))];
+  const findings = findingsAdapter({ store, now });
+  // W7 · QG-01: the requirement-records reading, read from the findings register the CI's reading is sent to.
+  return [...findingsRoutes(findings), ...gateDecisionRoutes(gateDecisionAdapter({ store, now })), ...gateEvidenceRoutes(gateEvidenceAdapter({ store, now })), ...qg01ReadingRoutes({ now, scans: findings.scans, findings: findings.findings })];
 }
 
 /**

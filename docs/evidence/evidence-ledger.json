@@ -5,15 +5,15 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2233,
+  "testFiles": 2240,
   "sessions": {
     "total": 0,
     "pass": 0,
     "onDevice": 0
   },
   "labels": {
-    "E2E_VERIFIED": 96,
-    "INTEGRATION_TESTED": 8
+    "E2E_VERIFIED": 101,
+    "INTEGRATION_TESTED": 3
   },
   "totals": {
     "unit": 100,
@@ -1835,13 +1835,13 @@
     },
     {
       "id": "M20",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 23,
         "integration": 21,
         "realDb": 10,
-        "browser": 11,
-        "connected": 6,
+        "browser": 12,
+        "connected": 7,
         "device": 0,
         "uat": 0
       },
@@ -1917,7 +1917,8 @@
           "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
           "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
           "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
-          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts",
+          "tests/e2e/w7-m20-the-customer-rates-what-she-bought-in-the-app-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts",
@@ -1925,13 +1926,14 @@
           "tests/e2e/w4-m20-the-customer-app-signs-in-orders-again-and-asks-for-erasure-on-postgresql.e2e.ts",
           "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
           "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
-          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts",
+          "tests/e2e/w7-m20-the-customer-rates-what-she-bought-in-the-app-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M21",
@@ -3208,13 +3210,13 @@
     },
     {
       "id": "M36",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 32,
         "realDb": 8,
-        "browser": 7,
-        "connected": 4,
+        "browser": 8,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -3236,7 +3238,8 @@
           "tests/unit/shop-realms.test.ts",
           "tests/unit/the-partner-sdk-keeps-its-promises.test.ts",
           "tests/unit/w3-the-developer-guide-is-generated-from-the-published-contract.test.ts",
-          "tests/unit/w3-the-shops-brand-is-signed-into-the-pack-and-printed-on-the-bill.test.ts"
+          "tests/unit/w3-the-shops-brand-is-signed-into-the-pack-and-printed-on-the-bill.test.ts",
+          "tests/unit/w7-the-shops-full-export-on-the-rollout-page.test.ts"
         ],
         "integration": [
           "tests/integration/a-partner-builds-against-the-sandbox-with-the-sdk.test.ts",
@@ -3289,19 +3292,21 @@
           "tests/e2e/w3-partners-sandboxes-and-the-developer-guide.e2e.ts",
           "tests/e2e/w3-the-shops-brand-is-set-and-rides-the-signed-pack.e2e.ts",
           "tests/e2e/w4-connected-m36-partners-and-the-developer-guide-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts"
+          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts",
+          "tests/e2e/w7-connected-m36-the-owner-downloads-the-shops-full-export-on-the-store-computer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/lib/box-page-on-cloud.ts",
           "tests/e2e/w3-connected-d12-trial-switches-and-the-shop-account-on-the-store-computer.e2e.ts",
           "tests/e2e/w4-connected-m36-partners-and-the-developer-guide-on-the-store-computer.e2e.ts",
-          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts"
+          "tests/e2e/w4-connected-m36-the-shops-brand-on-the-store-computer.e2e.ts",
+          "tests/e2e/w7-connected-m36-the-owner-downloads-the-shops-full-export-on-the-store-computer.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "D01",
@@ -3623,8 +3628,8 @@
         "unit": 7,
         "integration": 6,
         "realDb": 2,
-        "browser": 6,
-        "connected": 4,
+        "browser": 7,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -3656,13 +3661,15 @@
           "tests/e2e/the-served-till-charges-the-markdown.e2e.ts",
           "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
           "tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts",
-          "tests/e2e/w3-the-served-till-takes-a-coupon-and-a-gift-card-offline.e2e.ts"
+          "tests/e2e/w3-the-served-till-takes-a-coupon-and-a-gift-card-offline.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "connected": [
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
           "tests/e2e/the-served-till-charges-the-markdown.e2e.ts",
           "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
-          "tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts"
+          "tests/e2e/w3-a-shelf-walk-is-checked-on-the-production-api.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3949,25 +3956,25 @@
     },
     {
       "id": "D12",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
-        "integration": 5,
+        "unit": 3,
+        "integration": 4,
         "realDb": 2,
-        "browser": 1,
-        "connected": 1,
+        "browser": 2,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-admin-session.test.ts",
-          "tests/unit/r7a-client-version.test.ts"
+          "tests/unit/r7a-client-version.test.ts",
+          "tests/unit/w7-the-shops-full-export-on-the-rollout-page.test.ts"
         ],
         "integration": [
           "tests/integration/a-shop-account-closes-only-approved-with-its-export.test.ts",
           "tests/integration/branch-lifecycle.test.ts",
-          "tests/integration/tenant-export.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-shop-is-metered-for-information.test.ts"
         ],
@@ -3976,16 +3983,18 @@
           "tests/integration/the-shop-is-metered-for-information.test.ts"
         ],
         "browser": [
-          "tests/e2e/w3-connected-d12-trial-switches-and-the-shop-account-on-the-store-computer.e2e.ts"
+          "tests/e2e/w3-connected-d12-trial-switches-and-the-shop-account-on-the-store-computer.e2e.ts",
+          "tests/e2e/w7-connected-m36-the-owner-downloads-the-shops-full-export-on-the-store-computer.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/w3-connected-d12-trial-switches-and-the-shop-account-on-the-store-computer.e2e.ts"
+          "tests/e2e/w3-connected-d12-trial-switches-and-the-shop-account-on-the-store-computer.e2e.ts",
+          "tests/e2e/w7-connected-m36-the-owner-downloads-the-shops-full-export-on-the-store-computer.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "D13",
@@ -4231,7 +4240,7 @@
     },
     {
       "id": "A03",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
         "integration": 10,
@@ -4271,18 +4280,18 @@
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "browser": [
-          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/w3-a-markdown-from-the-expiry-page-goes-through-the-price-approval.e2e.ts",
-          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
+          "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A04",
@@ -4400,8 +4409,8 @@
         "unit": 7,
         "integration": 6,
         "realDb": 4,
-        "browser": 5,
-        "connected": 3,
+        "browser": 6,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4434,12 +4443,14 @@
           "tests/e2e/operations-dismiss-delivery.e2e.ts",
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
-          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "connected": [
           "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
-          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4499,8 +4510,8 @@
         "unit": 8,
         "integration": 8,
         "realDb": 4,
-        "browser": 7,
-        "connected": 4,
+        "browser": 8,
+        "connected": 5,
         "device": 0,
         "uat": 0
       },
@@ -4538,13 +4549,15 @@
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
-          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "connected": [
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
-          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts"
+          "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -4602,8 +4615,8 @@
         "unit": 13,
         "integration": 7,
         "realDb": 3,
-        "browser": 5,
-        "connected": 3,
+        "browser": 6,
+        "connected": 4,
         "device": 0,
         "uat": 0
       },
@@ -4641,12 +4654,14 @@
           "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts",
           "tests/e2e/workforce-dismiss-delivery.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
           "tests/e2e/w4-connected-a04-a-customer-searches-uses-a-saved-list-and-confirms-the-cart.e2e.ts",
+          "tests/e2e/w7-an-a03-markdown-draft-becomes-a-price-change-through-the-price-approval.e2e.ts",
           "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -5636,38 +5651,43 @@
     },
     {
       "id": "QG-01",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 1,
-        "integration": 2,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 1,
+        "unit": 2,
+        "integration": 3,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
-          "tests/unit/compliance-gate-decisions.test.ts"
+          "tests/unit/compliance-gate-decisions.test.ts",
+          "tests/unit/w7-qg01-requirement-records-reading.test.ts"
         ],
         "integration": [
           "tests/integration/risk-register.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w7-qg01-the-requirement-records-reading-holds-the-gate.test.ts"
         ],
         "realDb": [
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w7-qg01-the-requirement-records-reading-holds-the-gate.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts",
+          "tests/e2e/w7-qg01-the-requirement-records-reading-on-the-quality-gates-page.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts",
+          "tests/e2e/w7-qg01-the-requirement-records-reading-on-the-quality-gates-page.e2e.ts"
         ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "QG-02",
@@ -5734,11 +5754,11 @@
       "id": "QG-03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 4,
-        "integration": 2,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 1,
+        "unit": 5,
+        "integration": 3,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -5747,20 +5767,25 @@
           "tests/unit/a-cut-short-encryption-tag-is-refused.test.ts",
           "tests/unit/compliance-findings.test.ts",
           "tests/unit/compliance-gate-decisions.test.ts",
-          "tests/unit/w4-qg03-branch-protection-is-read-and-not-known-holds.test.ts"
+          "tests/unit/w4-qg03-branch-protection-is-read-and-not-known-holds.test.ts",
+          "tests/unit/w7-qg01-requirement-records-reading.test.ts"
         ],
         "integration": [
           "tests/integration/risk-register.test.ts",
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w7-qg01-the-requirement-records-reading-holds-the-gate.test.ts"
         ],
         "realDb": [
-          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts",
+          "tests/integration/w7-qg01-the-requirement-records-reading-holds-the-gate.test.ts"
         ],
         "browser": [
-          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts",
+          "tests/e2e/w7-qg01-the-requirement-records-reading-on-the-quality-gates-page.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts",
+          "tests/e2e/w7-qg01-the-requirement-records-reading-on-the-quality-gates-page.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -6134,7 +6159,7 @@
       "id": "QG-12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 3,
         "realDb": 3,
         "browser": 1,
@@ -6145,7 +6170,8 @@
       "files": {
         "unit": [
           "tests/unit/compliance-gate-decisions.test.ts",
-          "tests/unit/erp-gates-session.test.ts"
+          "tests/unit/erp-gates-session.test.ts",
+          "tests/unit/w7-qg01-requirement-records-reading.test.ts"
         ],
         "integration": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
