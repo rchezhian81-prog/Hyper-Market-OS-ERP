@@ -117,6 +117,16 @@ export interface AssignmentsDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** WF-16 (driver): an online return's stage and booked lines, or undefined when there is no such return. */
   readonly collectionOf?: (tenantId: string, returnId: string) => Promise<CollectionFacts | undefined> | CollectionFacts | undefined;
+  /**
+   * OB-687 · FUL-14: what the picker's phone is carried with a wave — the owner's wait for a customer's answer (null: not set),
+   * each ORDER's substitution rule (ask first / never / the shop may choose — never the customer themself), and head office's
+   * word on every swap put to the customer on the wave. Absent on a bare composition: the wave goes as before.
+   */
+  readonly substitutionsOf?: (tenantId: string, waveId: string, orderRefs: readonly string[]) => Promise<{
+    readonly waitMinutes: number | null;
+    readonly ruleOf: ReadonlyMap<string, 'ask_first' | 'never' | 'best_match'>;
+    readonly answers: readonly Record<string, unknown>[];
+  }>;
 }
 
 /** The permission a person must hold to be handed a wave (the crate's recorder) / a route (the door's recorder). */
@@ -213,13 +223,19 @@ export async function requireAuthority(deps: Pick<AssignmentsDeps, 'permissionsO
 
 /** The open assignments for a store as the box pulls them — the pack file's `wave` / `route` shapes, with who assigned them and when. */
 export async function openAssignments(deps: AssignmentsDeps, tenantId: string, storeId: string): Promise<{
-  readonly waves: readonly (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[];
+  readonly waves: readonly (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string; readonly substitutionWaitMinutes?: number | null; readonly substitutionAnswers?: readonly Record<string, unknown>[] })[];
   readonly routes: readonly (Omit<RouteAssignment, 'storeId' | 'digest' | 'at' | 'collections'> & { readonly assignedAt: string; readonly collections?: readonly OpenCollection[] })[];
 }> {
-  const waves: (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[] = [];
+  const waves: (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string; readonly substitutionWaitMinutes?: number | null; readonly substitutionAnswers?: readonly Record<string, unknown>[] })[] = [];
   for (const a of latestWaves(await deps.waveAssignments(tenantId, storeId))) {
     if (await deps.wavePacked(tenantId, a.waveId)) continue; // done: the crate is sealed and head office holds it
-    waves.push({ waveId: a.waveId, pickerId: a.pickerId, lines: a.lines, assignedBy: a.assignedBy, assignedAt: a.at });
+    // OB-687: the owner's wait, each line's customer rule and the answers on the wave travel with it to the picker's phone.
+    const subs = await deps.substitutionsOf?.(tenantId, a.waveId, a.lines.map((l) => l.orderRef));
+    const lines = subs === undefined ? a.lines : a.lines.map((l) => (subs.ruleOf.has(l.orderRef) ? { ...l, substitution: subs.ruleOf.get(l.orderRef)! } : l));
+    waves.push({
+      waveId: a.waveId, pickerId: a.pickerId, lines, assignedBy: a.assignedBy, assignedAt: a.at,
+      ...(subs === undefined ? {} : { substitutionWaitMinutes: subs.waitMinutes, substitutionAnswers: subs.answers }),
+    });
   }
   const routes: (Omit<RouteAssignment, 'storeId' | 'digest' | 'at' | 'collections'> & { readonly assignedAt: string; readonly collections?: readonly OpenCollection[] })[] = [];
   for (const a of latestRoutes(await deps.routeAssignments(tenantId, storeId))) {

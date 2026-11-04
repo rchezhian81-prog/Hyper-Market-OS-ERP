@@ -48,6 +48,8 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   FloorIndentReturnAccepted: 'acceptedBy',
   PickLineResolved: 'pickedBy',
   WavePacked: 'packedBy',
+  // OB-687: a swap put to the customer names the picker who asked.
+  SubstitutionProposed: 'proposedBy',
   DeliveryStopUpdated: 'driverId',
   RouteSettled: 'driverId',
   DriverCashHandedOver: 'driverId',

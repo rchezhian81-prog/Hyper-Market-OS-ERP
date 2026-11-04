@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2225,
+  "testFiles": 2229,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1732,11 +1732,11 @@
       "id": "M19",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 26,
-        "integration": 18,
-        "realDb": 6,
-        "browser": 14,
-        "connected": 6,
+        "unit": 28,
+        "integration": 19,
+        "realDb": 7,
+        "browser": 15,
+        "connected": 7,
         "device": 0,
         "uat": 0
       },
@@ -1767,7 +1767,9 @@
           "tests/unit/the-driver-captures-proof-at-the-door.test.ts",
           "tests/unit/w4-the-dispatch-page-dispatches-a-packed-order-and-shows-its-manifest.test.ts",
           "tests/unit/w4-the-picker-picks-a-head-office-line-whose-unit-is-spelled-each.test.ts",
-          "tests/unit/w5-customer-desk-sections-session.test.ts"
+          "tests/unit/w5-customer-desk-sections-session.test.ts",
+          "tests/unit/w6-a-swap-is-put-to-the-customer-on-the-picker-phone.test.ts",
+          "tests/unit/w6-the-customer-answers-a-swap-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1787,7 +1789,8 @@
           "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts",
           "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
-          "tests/integration/w4-a-store-computer-set-up-from-head-office-pulls-the-phones-work-on-its-first-day.test.ts"
+          "tests/integration/w4-a-store-computer-set-up-from-head-office-pulls-the-phones-work-on-its-first-day.test.ts",
+          "tests/integration/w6-a-swap-the-customer-answers-is-what-was-packed.test.ts"
         ],
         "realDb": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1795,7 +1798,8 @@
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/ob676-three-values-the-owner-confirms.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
-          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts"
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts",
+          "tests/integration/w6-a-swap-the-customer-answers-is-what-was-packed.test.ts"
         ],
         "browser": [
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
@@ -1811,7 +1815,8 @@
           "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
           "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
-          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/ob676-the-owner-confirms-the-driver-cash-limit-on-the-dispatch-page.e2e.ts",
@@ -1819,7 +1824,8 @@
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
           "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
-          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

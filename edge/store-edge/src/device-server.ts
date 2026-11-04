@@ -61,6 +61,12 @@ export const HANDHELD_SCREENS: readonly ScreenName[] = ['warehouse', 'picker', '
 export const DEVICE_COOKIE = 'sre_device';
 export const DEVICE_ENROL_ROUTE = '/device/enrol';
 export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
+/**
+ * OB-687: the picker's phone reads back head office's word on the swaps it put to customers — `?waveId=`. Served only to the
+ * person signed in on THIS phone for the picker's job; the box asks head office afresh first when it can, else answers with
+ * what it holds and how old that is (P-08). Never a customer's name or number — the order reference and the product only.
+ */
+export const PICKER_ANSWERS_ROUTE = '/lane/picker/substitution-answers';
 /** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
 export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
 export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
@@ -298,6 +304,11 @@ export function startDeviceServer(input: {
   readonly relayDeviceEvents: DeviceRelayHandler;
   readonly deviceEventStatus: DeviceStatusHandler;
   readonly syncStatus: () => LaneSyncStatus;
+  /**
+   * OB-687: head office's word on one wave's swaps, as this box holds it after asking afresh when it can. Absent → the route
+   * answers 404 and the phone keeps waiting until the owner's time runs out.
+   */
+  readonly pickerAnswers?: (waveId: string) => Promise<unknown>;
   /** Who is holding each phone (DF-3-c). Null → nobody can sign in, so nothing is served or taken (fail closed). */
   readonly operators: PhoneOperators | null;
   readonly now: () => string;
@@ -471,6 +482,16 @@ export function startDeviceServer(input: {
       }
       if (req.method === 'GET' && pathname === DEVICE_SYNC_STATUS_ROUTE) {
         sendJson(res, 200, input.syncStatus());
+        return;
+      }
+      if (req.method === 'GET' && pathname === PICKER_ANSWERS_ROUTE) {
+        // OB-687: only the picker signed in on THIS phone reads the answers on their wave.
+        if (holder === null || !holder.ok || holder.authority !== HANDHELD_AUTHORITY.picker) { sendJson(res, 401, { error: 'not_signed_in', detail: 'Sign in on this phone as the picker first.' }); return; }
+        const waveId = (url.searchParams.get('waveId') ?? '').trim();
+        if (waveId === '' || input.pickerAnswers === undefined) { sendJson(res, 404, { error: 'no_answers_here', detail: waveId === '' ? 'Say which wave: ?waveId=.' : 'This store computer does not carry swap answers.' }); return; }
+        const answer = await input.pickerAnswers(waveId);
+        if (answer === null || answer === undefined) { sendJson(res, 404, { error: 'wave_not_held', detail: `This store computer holds no wave ${waveId} from head office.` }); return; }
+        sendJson(res, 200, answer);
         return;
       }
 

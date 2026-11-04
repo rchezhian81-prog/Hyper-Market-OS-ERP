@@ -31,6 +31,7 @@ import { searchCatalogue, repeatOrder, type SavedList } from '../../../packages/
 import type { Slot, ServiceabilityPolicy } from '../../../packages/storefront/src/checkout';
 import type { ConsentState } from '../../../packages/customer/src/consent';
 import { PUBLISHED_RESPONSE_SLA_DAYS } from '../../../packages/customer/src/data-rights';
+import { swapsFromOrders, answerBody, answerKey, type MySwap } from './substitution-answers'; // OB-687
 import {
   newSession,
   setLine,
@@ -381,6 +382,10 @@ export interface OnlineShop {
   myRatings(): Promise<MineOutcome<unknown>>;
   returns(): Promise<MineOutcome<unknown>>;
   returnPolicy(): Promise<MineOutcome<unknown>>;
+  /** OB-687 · FUL-14: every swap the shop put to me on my orders, as the shop holds it (the product, its price, why). */
+  swaps(): Promise<MineOutcome<readonly MySwap[]>>;
+  /** OB-687: my yes or no to one swap — sent once (one key per order line and answer); the shop's own words on a refusal. */
+  answerSwap(swap: MySwap, yes: boolean): Promise<MineOutcome<unknown>>;
 }
 
 /** Why a call about my own records did not happen — the view words each one, in English and Tamil. */
@@ -735,6 +740,12 @@ export function bootShop(
       myRatings: async () => { const a = await mineCall({ method: 'GET', path: 'ratings' }); return a.ok ? { ok: true, value: a.body } : a; },
       returns: async () => { const a = await mineCall({ method: 'GET', path: 'online-returns' }); return a.ok ? { ok: true, value: a.body } : a; },
       returnPolicy: async () => { const a = await mineCall({ method: 'GET', path: 'return-policy' }); return a.ok ? { ok: true, value: a.body } : a; },
+      // OB-687: the swaps put to me, from my own orders; my answer through the shop's own route, once.
+      swaps: async () => { const a = await commerceCall({ method: 'GET', path: 'storefront/orders' }); return a.ok ? { ok: true, value: swapsFromOrders(a.body) } : a; },
+      answerSwap: async (swap, yes) => {
+        const a = await commerceCall({ method: 'POST', path: `storefront/orders/${encodeURIComponent(swap.orderId)}/substitutions/${encodeURIComponent(swap.lineId)}`, body: answerBody(swap, yes), idempotencyKey: answerKey(swap, yes) });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
     },
     // ── R4 Lane 2 (end) ──
 

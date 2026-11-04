@@ -1121,6 +1121,17 @@ export function shelfMapFor(input: ScreenInput): ShelfMap | null {
 }
 
 /**
+ * OB-687: what the store computer holds of head office's word on the swaps put to customers on one wave — the picker's phone
+ * reads it back (`GET /lane/picker/substitution-answers`). Null when the box holds no such wave from head office.
+ */
+export function pickerSubstitutionAnswers(input: ScreenInput, waveId: string): { readonly waveId: string; readonly waitMinutes: number | null; readonly answers: readonly object[] | null; readonly asAt: string; readonly receivedAt: string | null } | null {
+  const assigned = input.pack.assignments.known ? input.pack.assignments.value : null;
+  const wave = assigned?.waves.find((w) => w.waveId === waveId);
+  if (assigned === null || wave === undefined) return null;
+  return { waveId, waitMinutes: wave.substitutionWaitMinutes ?? null, answers: wave.substitutionAnswers ?? null, asAt: assigned.asAt, receivedAt: assigned.receivedAt ?? null };
+}
+
+/**
  * The picker's payload: the wave the cloud assigned, or nothing when none was.
  *
  * **The wave is put into shelf order here.** `ShelfMap.routeFor` has existed and been tested since
@@ -1161,7 +1172,16 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
     uom: l.uom,
     unitPrice: { minor: l.unitPriceMinor, currency: 'INR' },
     ...(handlingOf.has(l.productId) ? { handling: handlingOf.get(l.productId)! } : {}),
+    // OB-687 · FUL-14: the order's substitution rule (ask first / never / the shop may choose) — never the customer themself.
+    ...(l.substitution === undefined ? {} : { substitution: l.substitution }),
   }));
+  // OB-687: the owner's wait for a customer's answer (null: not set — the picker does not wait) and head office's word on each
+  // swap put to a customer. A hand-written wave carries neither: nothing is put to a customer from it.
+  const substitutions = {
+    substitutionWaitMinutes: wave.substitutionWaitMinutes ?? null,
+    substitutionAnswers: wave.substitutionAnswers ?? null, // null: head office said nothing about swaps on this wave (never an empty answer)
+    substitutionAsAt: handWritten === null && assigned !== null ? assigned.asAt : null,
+  };
 
   const map = shelfMapFor(input);
   if (map === null) {
@@ -1169,6 +1189,7 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
       waveId: wave.waveId,
       pickerId: wave.pickerId,
       ...source,
+      ...substitutions,
       lines,
       orderedBy: 'the order the list arrived in — this store has no shelf map',
       unmapped: [],
@@ -1180,6 +1201,7 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
     waveId: wave.waveId,
     pickerId: wave.pickerId,
     ...source,
+    ...substitutions,
     // The shelf address travels with the line, so the handheld can show where to go rather than
     // only which bin to scan. An unmapped line keeps its place at the end of the list and says so.
     lines: walk.lines.map((l) => {

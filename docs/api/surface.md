@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1693 | 976 | 976 | 194 | 442 |
+| 13 | 1698 | 979 | 979 | 194 | 443 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -848,6 +848,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/orders/:orderId/refunds/:refundId/outcome` | `order.refund.issue` | core | yes |
 | POST | `/v1/orders/:orderId/substitute` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/:orderId/substitution-preference` | `order.lifecycle.manage` | core | yes |
+| GET | `/v1/orders/:orderId/substitution-proposals` | `order.read` | core | — |
+| POST | `/v1/orders/:orderId/substitution-proposals/:lineId/answer` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/:orderId/transition` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/channel-reconcile` | `order.read` | core | yes |
 | GET | `/v1/orders/exception-queue-staffing` | `order.read` | core | — |
@@ -940,11 +942,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/fulfilment/orders/:orderId/pack` | `fulfilment.pack.record` | core | yes |
 | GET | `/v1/fulfilment/orders/:orderId/routing` | `order.read` | core | — |
 | GET | `/v1/fulfilment/orders/:orderId/settlement` | `fulfilment.pack.read` | core | — |
+| GET | `/v1/fulfilment/substitution-wait` | `order.read` | core | — |
+| POST | `/v1/fulfilment/substitution-wait` | `fulfilment.substitution_wait.set` | core | yes |
 | GET | `/v1/fulfilment/wave-board` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/wave-candidates` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/waves/:waveId` | `fulfilment.pack.read` | core | — |
 | POST | `/v1/fulfilment/waves/:waveId/assignment` | `fulfilment.wave.assign` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/build` | `fulfilment.wave.assign` | core | yes |
+| POST | `/v1/fulfilment/waves/:waveId/lines/:lineId/substitution-proposal/synced` | `fulfilment.pick.sync` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/lines/:lineId/synced` | `fulfilment.pick.sync` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/packed/synced` | `fulfilment.pick.sync` | core | yes |
 

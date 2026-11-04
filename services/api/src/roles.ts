@@ -185,6 +185,8 @@ const BASE_ROLES: readonly Role[] = [
       // rates, own-fleet rate); a manager approves an order held below the threshold; a second person approves a fleet settlement.
       'delivery.controls.set', 'delivery.contribution.approve', 'delivery.settlement.approve',
       // ── OB-288 fulfilment & delivery — end
+      // OB-687 (owner, 4 Nov 2026): how long the picker waits for a customer's yes or no to a swap — the owner's own number.
+      'fulfilment.substitution_wait.set',
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.

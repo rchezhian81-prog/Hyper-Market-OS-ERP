@@ -49,6 +49,8 @@ export const ASSIGNED_WORK_ROUTES: Readonly<Record<string, Read>> = Object.freez
   'POST /v1/fulfilment/orders/:orderId/dispatch': (ctx) => ({ word: PICK_WORD, what: 'order', id: param('orderId')(ctx) }),
   'POST /v1/fulfilment/waves/:waveId/lines/:lineId/synced': (ctx) => ({ word: PICK_WORD, person: str(bodyOf(ctx)['pickedBy']), what: 'wave', id: param('waveId')(ctx) }),
   'POST /v1/fulfilment/waves/:waveId/packed/synced': (ctx) => ({ word: PICK_WORD, person: str(bodyOf(ctx)['packedBy']), what: 'wave', id: param('waveId')(ctx) }),
+  // OB-687: a swap put to the customer — only by the picker the wave was handed to.
+  'POST /v1/fulfilment/waves/:waveId/lines/:lineId/substitution-proposal/synced': (ctx) => ({ word: PICK_WORD, person: str(bodyOf(ctx)['proposedBy']), what: 'wave', id: param('waveId')(ctx) }),
   // The driver's word.
   'POST /v1/delivery/attempts': (ctx) => ({ word: DRIVE_WORD, what: 'order', id: str(bodyOf(ctx)['orderId']) }),
   'POST /v1/delivery/orders/:orderId/transition': (ctx) => ({ word: DRIVE_WORD, what: 'order', id: param('orderId')(ctx) }),
