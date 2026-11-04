@@ -165,6 +165,31 @@ const SECTIONS = {
     }), st.node);
   } },
 
+  // Loyalty — W6 (M17-FR-02 · OB-221 · OB-356): a referral reward the shop owes, paid out (how, and the receipt or transfer
+  // number) or let lapse (why) by a person holding loyalty.referral.settle. Head office refuses one with nothing owed.
+  owed: { may: 'referral', build(sec) {
+    head(sec, 'owedH', 'owedLead');
+    const st = statusLine('cd-owed-status');
+    const out = resultArea('cd-owed-out', (rows) => [listOf('cd-owed-list', rows.map((r) => {
+      const who = r.side === null ? '' : ` · ${r.customerRef ?? ''} ${t(`side_${r.side}`)}`;
+      const row = li(`${r.referralId}${who} — ${api.rupees(r.outstandingMinor)} ${t('owes')}`, { referral: r.referralId });
+      const key = r.referralId.replace(/[^A-Za-z0-9_-]/g, '-');
+      const how = choose(`cd-owed-${key}-how`, 'how', api.payoutHows.map((k) => [k, `how_${k}`]));
+      const ref = field(`cd-owed-${key}-ref`, 'payRef'); const st2 = statusLine(`cd-owed-${key}-status`);
+      const why = field(`cd-owed-${key}-why`, 'lapseReason');
+      row.append(
+        form(`cd-owed-${key}-pay`, [how.label, ref.label], 'payOut', () => act(st2, () => s.payReferral(r.referralId, how.input.value, ref.input.value), () => void read('paidOut'))),
+        form(`cd-owed-${key}-lapse`, [why.label], 'lapse', () => act(st2, () => s.lapseReferral(r.referralId, why.input.value), () => void read('lapsed'))),
+        st2.node);
+      return row;
+    }), 'noOwed')]);
+    // A payment or lapse recorded re-reads the list (the settled reward leaves it) and says so on the section's own line; a
+    // refusal stays on the row's line.
+    const read = async (doneKey) => { const o = await s.owedReferrals(); if (o.result === 'ok') { out.paint(o.value); st.set(doneKey); } else st.set(o); };
+    const b = el('button', { type: 'button', id: 'cd-owed-go', key: 'owedShow' }); b.addEventListener('click', () => void act(st, () => s.owedReferrals(), out.paint));
+    sec.append(b, st.node, out.node);
+  } },
+
   // Message queue — withdraw an approved message template (PA-08 r6).
   withdraw: { may: 'templates', build(sec) {
     head(sec, 'withdrawH', 'withdrawLead');
