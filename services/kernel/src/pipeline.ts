@@ -298,6 +298,23 @@ export interface RequestObservation {
   readonly outcome: 'ok' | 'client_error' | 'server_error' | 'not_found';
 }
 
+/**
+ * W6 · M32-FR-03 · OB-688: one authenticated call, as the daily secret-use count sees it — WHO called (the signed caller id),
+ * WITH WHICH credential (its reference id: the signed token's own id, `jti` — never the token, never a key), WHICH API
+ * (the route's catalogue id), and whether head office refused it. The roles the caller holds come along so the counter can
+ * keep machine credentials only. Nothing here can hold a secret value: there is no field for one.
+ */
+export interface CredentialUse {
+  readonly tenantId: string;
+  readonly callerId: string;
+  /** The credential's reference id (the signed `jti`), or undefined when the token carries none. */
+  readonly credentialRef?: string;
+  readonly api: string;
+  readonly status: number;
+  readonly at: string;
+  readonly roleIds: readonly string[];
+}
+
 export interface KernelOptions {
   readonly router: Router;
   readonly authenticate: Authenticator;
@@ -359,6 +376,12 @@ export interface KernelOptions {
    * retries, so the conflict is never lost. Absent → only refused (a kernel test with no ledger).
    */
   readonly onIdempotencyConflict?: (conflict: IdempotencyConflict) => Promise<void>;
+  /**
+   * W6 · M32-FR-03 · OB-688: told once per AUTHENTICATED request on the way out (see `CredentialUse`) so head office keeps a
+   * durable daily count of each credential's use. Never awaited and never allowed to change the reply: a counter that
+   * throws is ignored here (the counter says its own failures). Absent → nothing is counted (a kernel test).
+   */
+  readonly credentialUse?: (use: CredentialUse) => void;
 }
 
 /** What the kernel hands `onIdempotencyConflict`: who sent which different content under a used key, on which route. */
@@ -425,6 +448,9 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   let auditPrincipal: Principal | undefined;
   let auditKey: string | undefined;
   let auditedMethod: Method = request.method;
+  // W6 · M32-FR-03: the matched route's API id and the caller's resolved grants, for the credential-use count.
+  let matchedApi: string | undefined;
+  let resolvedAccess: AccessControl | undefined;
 
   const writeAudit = async (status: number): Promise<void> => {
     if (opts.audit === undefined) return;
@@ -447,6 +473,16 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   // Emitted once per request on the way out, whichever way it went, and stamps the correlation id on
   // the reply. One place, so no exit can forget it — the same reason the audit is written here.
   const finish = (resp: HttpResponse): HttpResponse => {
+    if (opts.credentialUse !== undefined && auditPrincipal !== undefined && matchedApi !== undefined) {
+      try {
+        const p = auditPrincipal;
+        opts.credentialUse({
+          tenantId: p.tenantId, callerId: p.userId, ...(p.tokenId === undefined ? {} : { credentialRef: p.tokenId }),
+          api: matchedApi, status: resp.status, at: new Date(startedAt).toISOString(),
+          roleIds: resolvedAccess === undefined ? [] : [...new Set(resolvedAccess.assignmentsOf(p.userId).map((a) => a.roleId))],
+        });
+      } catch { /* the count is the counter's to report; it never changes the reply */ }
+    }
     opts.observe?.({
       traceId, correlationId: traceId, method: auditedMethod, path: request.path,
       route: matchedRoute, permission: auditPermission === '' ? undefined : auditPermission,
@@ -469,6 +505,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     if (matched === undefined) throw notFound(`${request.method} ${request.path}`);
     const { route, params } = matched;
     matchedRoute = route.path;
+    matchedApi = route.api;
     auditPermission = route.permission;
     auditedMethod = route.method;
 
@@ -538,6 +575,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     // used as-is. Resolve after authentication so the tenant comes from the signed principal, never
     // from anything the caller supplied. Default-deny survives either shape.
     const access = typeof opts.access === 'function' ? await opts.access(principal.tenantId) : opts.access;
+    resolvedAccess = access;
     if (!access.can({
       userId: principal.userId, permission: route.permission, branchId: principal.branchId,
     })) {

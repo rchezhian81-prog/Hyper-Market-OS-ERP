@@ -26,6 +26,8 @@ const PINNED_SUITES: readonly string[] = [
   'tests/integration/the-owners-takings-are-net-of-refunds.test.ts',
   'tests/integration/w4-the-owner-app-and-the-dashboard-agree-on-today.test.ts', // W4 · P-02
   'tests/integration/w3-failed-office-sign-ins-and-lockouts-are-kept-through-a-restart.test.ts', // W3 · D13-FR-06
+  'tests/integration/w6-secret-use-is-counted-and-judged-through-a-restart-on-postgresql.test.ts', // W6 · M32-FR-03 · OB-688
+  'tests/e2e/w6-secret-use-is-shown-and-abnormal-use-alerts-the-custodian-on-postgresql.e2e.ts', // W6 · M32-FR-03 · OB-688
   'tests/integration/price-list-effective-dating.test.ts',
   'tests/integration/a-price-set-just-after-the-shops-midnight-still-needs-a-second-person.test.ts',
   'tests/integration/a-rebate-claim-under-an-unapproved-scheme-warns-and-a-sent-claim-is-withdrawn-with-a-reason.test.ts',
