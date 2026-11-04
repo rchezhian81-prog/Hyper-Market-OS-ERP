@@ -499,6 +499,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node --experimental-strip-types scripts/branch-protection-reading.mts --out scan-reports/branch-protection.findings.json
 
+      # W7 · QG-01: read every module requirement record with the guardrail's own check (packages/compliance/src/
+      # requirement-records.ts) and send it with the findings below, so the Quality gates page shows the same check the
+      # build makes. A record missing a field holds QG-01 by name; no reading holds it as NOT KNOWN. It never fails the build
+      # (the guardrail does) and never passes the gate (the owner decides QG-01, QG-12).
+      - name: Requirement records, read as a QG-01 reading (the guardrail's own check)
+        if: always()
+        run: node --experimental-strip-types scripts/requirement-records-reading.mts --out scan-reports/requirement-records.findings.json
+
       - name: Keep every findings report (for the security register — POST /v1/compliance/finding-scans)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -14253,6 +14253,50 @@
         }
       }
     },
+    "/v1/compliance/gate-register/qg01-reading": {
+      "get": {
+        "operationId": "getComplianceGateRegisterQg01Reading",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "compliance.gate.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetComplianceGateRegisterQg01ReadingReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"compliance.gate.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/compliance/gate-register/qg10-evidence": {
       "get": {
         "operationId": "getComplianceGateRegisterQg10Evidence",
@@ -125022,6 +125066,102 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/compliance/src/gate-evidence.ts"
+      },
+      "GetComplianceGateRegisterQg01ReadingReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "standing",
+          "latest",
+          "failing",
+          "says",
+          "gate",
+          "passCondition"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "standing": {
+            "type": "string",
+            "enum": [
+              "check_clean",
+              "failing",
+              "not_known"
+            ]
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "runId",
+                  "scannedAt",
+                  "complete"
+                ],
+                "properties": {
+                  "runId": {
+                    "type": "string"
+                  },
+                  "scannedAt": {
+                    "type": "string"
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "incompleteBecause": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "failing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "findingId",
+                "title",
+                "location"
+              ],
+              "properties": {
+                "findingId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "says": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "passCondition": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/compliance/src/qg01-reading.ts"
       },
       "GetComplianceGateRegisterQg10EvidenceReply": {
         "type": "object",

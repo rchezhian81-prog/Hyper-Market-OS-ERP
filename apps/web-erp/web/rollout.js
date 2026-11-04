@@ -70,6 +70,8 @@ function paintWatch() {
 // OB-367: the closure screen — read only. Everything is sealed until the CA or the lawyer writes the retention schedule.
 function paintClosure() {
   const box = $('closure-figures'); box.replaceChildren();
+  // W7: a closed account is sealed (OB-367) — no export is offered on it.
+  $('ex-download').disabled = closure !== null && closure.state === 'closed';
   if (closure === null) return;
   const e = closure.latestExport;
   box.append(figure(t('closureState'), closure.state === 'closed' ? t('closed') : t('active')),
@@ -88,7 +90,7 @@ function paint() {
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['board-h', 'boardH'], ['rule', 'rule'], ['c-switch', 'colSwitch'], ['c-place', 'colPlace'], ['c-state', 'colState'], ['c-version', 'colVersion'], ['c-why', 'colWhy'], ['c-who', 'colWho'],
     ['change-h', 'changeH'], ['ch-key-l', 'key'], ['ch-branch-l', 'branch'], ['ch-lane-l', 'laneOpt'], ['ch-state-l', 'state'], ['ch-on', 'on'], ['ch-off', 'off'], ['ch-reason-l', 'reason'], ['ch-approval-l', 'approvalId'],
-    ['ch-preview-text', 'preview'], ['ch-ask-text', 'ask'], ['ch-save-text', 'save'], ['meter-h', 'meterH'], ['watch-h', 'watchH'], ['consent-h', 'consentH'], ['cs-download-text', 'download'], ['cs-file-l', 'importFile'], ['cs-import-text', 'bringIn'], ['closure-h', 'closureH'], ['closure-sealed-h', 'sealedH'], ['closure-law-h', 'lawKeeps']]) $(id).textContent = t(key);
+    ['ch-preview-text', 'preview'], ['ch-ask-text', 'ask'], ['ch-save-text', 'save'], ['meter-h', 'meterH'], ['watch-h', 'watchH'], ['consent-h', 'consentH'], ['cs-download-text', 'download'], ['cs-file-l', 'importFile'], ['cs-import-text', 'bringIn'], ['closure-h', 'closureH'], ['closure-sealed-h', 'sealedH'], ['closure-law-h', 'lawKeeps'], ['export-h', 'exportH'], ['export-lead', 'exportLead'], ['ex-download-text', 'exportDownload']]) $(id).textContent = t(key);
   paintBoard(); paintHistory(); paintMeter(); paintWatch(); paintClosure();
 }
 const change = () => ({ key: $('ch-key').value, branchId: $('ch-branch').value, laneId: $('ch-lane').value, enabled: $('ch-state').value === 'on', reason: $('ch-reason').value, approvalId: $('ch-approval').value });
@@ -97,7 +99,7 @@ async function loadMeter() { const o = await session.meter(); if (o.result === '
 async function loadWatch() { const o = await session.watch(); if (o.result === 'ok') watch = o.value; else say('w-status', o); paintWatch(); }
 async function loadClosure() { const o = await session.closure(); if (o.result === 'ok') closure = o.value; else say('cl-status', o); paintClosure(); }
 
-for (const [id, name] of [['ch-preview', 'search'], ['ch-ask', 'send'], ['ch-save', 'check'], ['cs-download', 'files'], ['cs-import', 'upload']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
+for (const [id, name] of [['ch-preview', 'search'], ['ch-ask', 'send'], ['ch-save', 'check'], ['cs-download', 'files'], ['cs-import', 'upload'], ['ex-download', 'files']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
@@ -123,7 +125,23 @@ else {
   }
   if (may.meter) { $('meter').hidden = false; void loadMeter(); }
   if (may.watch) { $('watch').hidden = false; void loadWatch(); }
-  if (may.closure) { $('closure').hidden = false; void loadClosure(); }
+  if (may.closure) {
+    $('closure').hidden = false; void loadClosure();
+    // W7 · M36-FR-03: the shop's full export — the file head office returned, saved exactly as it came (never re-written),
+    // then the closure readiness is read again so "Latest full export" shows the one just taken.
+    let lastExport = null;
+    $('ex-download').addEventListener('click', async () => {
+      const out = await session.fullExport(closure?.state);
+      if (out.result !== 'ok') { say('ex-status', out); return; }
+      lastExport = out.value;
+      const blob = new Blob([out.value.fileText], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = out.value.fileName; a.click(); URL.revokeObjectURL(a.href);
+      $('ex-status').textContent = api.exportWords(lang, out.value);
+      $('ex-status').dataset.complete = String(out.value.complete);
+      await loadClosure();
+    });
+    $('lang').addEventListener('click', () => { if (lastExport !== null) $('ex-status').textContent = api.exportWords(lang, lastExport); });
+  }
   if (may.consent) {
     $('consent').hidden = false;
     $('cs-download').addEventListener('click', async () => {

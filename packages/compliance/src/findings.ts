@@ -522,7 +522,10 @@ export function findingBlocks(findings: readonly SecurityFinding[]): readonly Fi
     if (f.status !== 'open' || !BLOCKING_FINDING_SEVERITIES.includes(f.severity)) continue;
     const owner = f.ownerUserId === undefined ? 'nobody owns it yet' : `${f.ownerUserId} owns it`;
     const reason = `open ${f.severity} finding "${f.title}" (${f.tool} ${f.ruleId} at ${f.location}) — ${owner}`;
-    const gates = f.source === 'repository' ? ['QG-03'] : SCANNER_SOURCES.includes(f.source) ? ['QG-03', 'QG-06'] : ['QG-06'];
+    // W7 · QG-01: the CI's reading of the requirement records (tool `requirement-records`, requirement-records.ts — the literal
+    // is repeated here because this file has no runtime imports) holds QG-01, not QG-03: a record missing a field is a
+    // requirements matter, not a review or scan one.
+    const gates = f.tool === 'requirement-records' ? ['QG-01'] : f.source === 'repository' ? ['QG-03'] : SCANNER_SOURCES.includes(f.source) ? ['QG-03', 'QG-06'] : ['QG-06'];
     for (const gate of gates) out.push({ gate, findingId: f.findingId, title: f.title, severity: f.severity, ...(f.ownerUserId === undefined ? {} : { ownerUserId: f.ownerUserId }), reason });
   }
   return out;

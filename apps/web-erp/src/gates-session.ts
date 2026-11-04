@@ -11,6 +11,7 @@
 
 import type { ViewerIdentity } from './browser-entry';
 import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
+import { shopDateTimeOf } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 export type GateDecisionKind = 'GO' | 'HOLD' | 'REWORK';
@@ -57,6 +58,14 @@ export const GATES_COPY = {
     qg10AllVerified: 'all five verified', qg10NotVerifiedK: 'not verified',
     qg10BoxK: 'box', qg10ByK: 'merged by', qg10RunK: 'run', qg10AtK: 'at', qg10DiffK: 'Difference',
     qg10AttemptK: 'attempt', qg10ByHand: 'by hand on this box,',
+    // W7 · QG-01: the CI's reading of the requirement records, on the QG-01 row.
+    qg01H: 'The requirement records, as the build checks them',
+    qg01Lead: 'The same check the build runs on every change: each of the 144 module requirements names its actors, rules, error flow, permissions and acceptance.',
+    qg01None: 'NOT KNOWN — no reading of the requirement records is on file.', qg01NotComplete: 'NOT KNOWN — the latest reading could not read every requirement record.',
+    qg01Failing: 'Requirement records missing a field:', qg01Clean: 'The latest reading found all 144 records complete.',
+    qg01NotPassed: 'This is evidence for the owner\'s QG-01 decision, not the decision — the gate is not passed until he records it with his signed review.',
+    qg01Holds: 'QG-01 holds until a complete reading finds nothing missing.', qg01Unread: 'The requirement-records reading could not be read — this is not the same as "none".',
+    qg01LatestK: 'Latest reading', qg01RunK: 'run', qg01CommitK: 'commit',
     c_health: 'health', c_smoke: 'smoke', c_reconciliation: 'reconciliation', c_monitoring: 'monitoring', c_rollback: 'rollback',
     o_deployed: 'deployed', o_rolled_back: 'rolled back', o_rolled_back_on_reconcile: 'rolled back — the books did not reconcile',
     o_rolled_back_in_canary_bake: 'rolled back — failed its canary watch', o_rollback_failed: 'rollback failed — a person was needed',
@@ -100,6 +109,13 @@ export const GATES_COPY = {
     qg10AllVerified: 'ஐந்தும் சரிபார்க்கப்பட்டன', qg10NotVerifiedK: 'சரிபார்க்கப்படாதவை',
     qg10BoxK: 'கணினி', qg10ByK: 'இணைத்தவர்', qg10RunK: 'ஓட்டம்', qg10AtK: 'நேரம்', qg10DiffK: 'வேறுபாடு',
     qg10AttemptK: 'முயற்சி', qg10ByHand: 'இந்தக் கணினியில் கையால்,',
+    qg01H: 'தேவைப் பதிவுகள், கட்டமைப்பு சரிபார்ப்பது போல',
+    qg01Lead: 'ஒவ்வொரு மாற்றத்திலும் கட்டமைப்பு செய்யும் அதே சரிபார்ப்பு: 144 தொகுதித் தேவைகள் ஒவ்வொன்றும் அதன் நபர்கள், விதிகள், பிழை வழி, அனுமதிகள் மற்றும் ஏற்பைக் குறிப்பிடுகிறது.',
+    qg01None: 'தெரியவில்லை — தேவைப் பதிவுகளின் எந்த வாசிப்பும் பதிவில் இல்லை.', qg01NotComplete: 'தெரியவில்லை — கடைசி வாசிப்பால் எல்லாத் தேவைப் பதிவுகளையும் படிக்க முடியவில்லை.',
+    qg01Failing: 'ஒரு புலம் விடுபட்ட தேவைப் பதிவுகள்:', qg01Clean: 'கடைசி வாசிப்பு 144 பதிவுகளும் முழுமையாக இருப்பதைக் கண்டது.',
+    qg01NotPassed: 'இது உரிமையாளரின் QG-01 முடிவுக்கான சான்று, முடிவு அல்ல — அவர் கையொப்பமிட்ட மதிப்பாய்வுடன் பதிவு செய்யும் வரை வாயில் கடக்கவில்லை.',
+    qg01Holds: 'முழுமையான வாசிப்பு எதுவும் விடுபடவில்லை என்று காணும் வரை QG-01 நிறுத்தி வைக்கப்படுகிறது.', qg01Unread: 'தேவைப் பதிவுகளின் வாசிப்பைப் படிக்க முடியவில்லை — இது "எதுவும் இல்லை" என்பதற்குச் சமம் அல்ல.',
+    qg01LatestK: 'கடைசி வாசிப்பு', qg01RunK: 'ஓட்டம்', qg01CommitK: 'பதிப்பு',
     c_health: 'நலம்', c_smoke: 'புகைச் சோதனை', c_reconciliation: 'கணக்குச் சரிபார்ப்பு', c_monitoring: 'கண்காணிப்பு', c_rollback: 'பின்வாங்கல்',
     o_deployed: 'நிறுவப்பட்டது', o_rolled_back: 'பின்வாங்கப்பட்டது', o_rolled_back_on_reconcile: 'பின்வாங்கப்பட்டது — கணக்குகள் பொருந்தவில்லை',
     o_rolled_back_in_canary_bake: 'பின்வாங்கப்பட்டது — முன்னோட்டக் கண்காணிப்பில் தோற்றது', o_rollback_failed: 'பின்வாங்கல் தோற்றது — ஒருவர் தேவைப்பட்டார்',
@@ -176,6 +192,28 @@ export function qg10NoteView(lang: Lang, n: Qg10NoteRead): { readonly icon: stri
   };
 }
 
+/** W7 · QG-01: the CI's reading of the requirement records, as head office answers it (GET /v1/compliance/gate-register/qg01-reading). */
+export interface Qg01ReadingRead {
+  readonly standing: 'not_known' | 'failing' | 'check_clean';
+  readonly latest: { readonly runId: string; readonly scannedAt: string; readonly complete: boolean; readonly commit?: string; readonly incompleteBecause?: readonly string[] } | null;
+  readonly failing: readonly { readonly findingId: string; readonly title: string; readonly location: string }[];
+}
+
+/**
+ * W7 · QG-01: the reading as the QG-01 row shows it — an icon AND words. No reading, or one that could not read every record,
+ * is NOT KNOWN (⚠, the gate holds); a record missing a field names it (⚠, the gate holds); a clean reading (✓) says it is
+ * evidence for the owner's decision — never that the gate is passed. A read that failed says so, never "nothing".
+ */
+export function qg01ReadingView(lang: Lang, out: Outcome<Qg01ReadingRead> | null): { readonly icon: string; readonly tone: 'ok' | 'error'; readonly state: string; readonly headline: string; readonly lines: readonly string[] } {
+  const w = (k: string) => gatesWords(lang, k);
+  if (out === null || out.result !== 'ok') return { icon: '⚠', tone: 'error', state: 'unread', headline: out === null ? w('qg01Unread') : `${w('qg01Unread')} ${gatesOutcomeWords(lang, out)}`, lines: [] };
+  const r = out.value;
+  const when = r.latest === null ? [] : [`${w('qg01LatestK')}: ${shopDateTimeOf(r.latest.scannedAt) || r.latest.scannedAt} · ${w('qg01RunK')}: ${r.latest.runId}${r.latest.commit === undefined ? '' : ` · ${w('qg01CommitK')}: ${r.latest.commit.slice(0, 12)}`}`];
+  if (r.standing === 'check_clean') return { icon: '✓', tone: 'ok', state: r.standing, headline: w('qg01Clean'), lines: [...when, w('qg01NotPassed')] };
+  if (r.standing === 'failing') return { icon: '⚠', tone: 'error', state: r.standing, headline: `${w('qg01Failing')} ${r.failing.length}`, lines: [...when, ...r.failing.map((f) => `${f.title} — ${f.location}`), w('qg01Holds')] };
+  return { icon: '⚠', tone: 'error', state: r.standing, headline: r.latest === null ? w('qg01None') : w('qg01NotComplete'), lines: [...when, ...(r.latest?.incompleteBecause ?? []), w('qg01Holds')] };
+}
+
 /** W3: the outside evidence kinds, in the register's order (packages/compliance GATE_EVIDENCE_SPECS). */
 export const OUTSIDE_KINDS = Object.freeze(['offline_72h_simulation', 'power_process_chaos', 'scan_to_line_p95', 'total_tender_p95', 'independent_pentest'] as const);
 export type OutsideKind = (typeof OUTSIDE_KINDS)[number];
@@ -206,6 +244,8 @@ export interface GatesSession {
   read(release: string): Promise<Outcome<GateRegisterRead>>;
   /** OB-423: every attempt's QG-10 note, newest first (a GET — the same read right as the register). */
   readEvidence(): Promise<Outcome<Qg10EvidenceRead>>;
+  /** W7 · QG-01: the CI's reading of the requirement records (a GET — the register's read right). */
+  readQg01(): Promise<Outcome<Qg01ReadingRead>>;
   decide(input: {
     readonly gate: string; readonly release: string; readonly decision: string;
     readonly evidenceLabel: string; readonly evidenceRef: string; readonly rationale: string;
@@ -237,6 +277,11 @@ export function createGatesSession(input: { readonly viewer: ViewerIdentity | un
       if (!named) return { result: 'invalid', why: 'nobody' };
       if (!may.read) return { result: 'invalid', why: 'cannotRead' };
       return call('GET', '/v1/compliance/gate-register/qg10-evidence');
+    },
+    readQg01: async () => {
+      if (!named) return { result: 'invalid', why: 'nobody' };
+      if (!may.read) return { result: 'invalid', why: 'cannotRead' };
+      return call('GET', '/v1/compliance/gate-register/qg01-reading');
     },
     decide: async (d) => {
       if (!named) return { result: 'invalid', why: 'nobody' };

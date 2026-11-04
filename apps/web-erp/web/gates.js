@@ -16,6 +16,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 let register = null;
 let evidence = null; // OB-423: the last read of the release script's QG-10 notes (an Outcome)
 let outside = null; // W3: the last read of the outside evidence (an Outcome)
+let qg01 = null; // W7: the last read of the CI's QG-01 requirement-records reading (an Outcome)
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show', 'search'], ['record', 'badge-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); }
@@ -65,6 +66,7 @@ function gateRow(g) {
     li.append(ul);
   }
   if (g.gate === 'QG-10') li.append(qg10Notes());
+  if (g.gate === 'QG-01') li.append(qg01Reading());
   return li;
 }
 
@@ -99,6 +101,22 @@ function qg10Notes() {
     ul.append(item);
   }
   box.append(ul);
+  return box;
+}
+
+// W7 · QG-01: the CI's reading of the requirement records — the build's own check — an icon AND words. Missing, not
+// complete or failing holds the gate; a clean reading is evidence for the owner's decision, never "passed".
+function qg01Reading() {
+  const box = document.createElement('div');
+  box.className = 'qg01';
+  box.id = 'qg01-reading';
+  box.append(text('h4', t('qg01H')), text('p', t('qg01Lead'), 'facts'));
+  const v = api.qg01View(lang, qg01);
+  box.dataset.qg01 = v.state;
+  const head = document.createElement('p');
+  head.className = `tone-${v.tone}`;
+  head.append(text('span', v.icon, 'icon'), ' ', text('span', v.headline, 'words'));
+  box.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
   return box;
 }
 
@@ -169,6 +187,7 @@ async function show() {
     register = out.value; $('page-status').className = 'status'; $('page-status').textContent = '';
     evidence = await session.readEvidence(); // OB-423: the QG-10 notes, read with the register (never on a timer)
     outside = await session.readOutside(); // W3: the outside evidence, read with the register
+    qg01 = await session.readQg01(); // W7: the CI's QG-01 reading, read with the register
   } else { say('page-status', out); }
   paint();
 }
