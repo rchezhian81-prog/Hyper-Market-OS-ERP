@@ -26,10 +26,32 @@ export interface AssignedWave {
     readonly requiredQty: number;
     readonly uom: string;
     readonly unitPriceMinor: number;
+    /** OB-687 · FUL-14: the order's substitution rule (ask first / never / the shop may choose). Absent: none on record. */
+    readonly substitution?: 'ask_first' | 'never' | 'best_match';
   }[];
   readonly assignedBy: string;
   readonly assignedAt: string;
+  /** OB-687: how long the picker waits for a customer's answer — the owner's number; null: not set (the picker does not wait). */
+  readonly substitutionWaitMinutes?: number | null;
+  /** OB-687: head office's word on each swap put to a customer on this wave. */
+  readonly substitutionAnswers?: readonly AssignedSubstitutionAnswer[];
 }
+
+/** OB-687: one swap put to a customer, and where head office says it stands — the picker packs by it. */
+export interface AssignedSubstitutionAnswer {
+  readonly proposalId: string;
+  readonly lineId: string;
+  readonly state: 'waiting' | 'yes' | 'no' | 'refused' | 'too_late' | 'closed';
+  readonly substituteProductId?: string;
+  readonly substituteName?: string;
+  readonly substituteUnitPriceMinor?: number | null;
+  readonly answerBy?: string;
+  readonly via?: 'app' | 'staff';
+  readonly reference?: string;
+  readonly reason?: string;
+}
+const ANSWER_STATES: readonly string[] = ['waiting', 'yes', 'no', 'refused', 'too_late', 'closed'];
+const LINE_RULES: readonly string[] = ['ask_first', 'never', 'best_match'];
 
 /** A route as head office hands it to a driver — the box's `PackRoute` shape, plus who assigned it and when. */
 export interface AssignedRoute {
@@ -80,6 +102,18 @@ export function readAssignmentsFeed(body: unknown): AssignmentsFeed | undefined 
     for (const l of w['lines']) {
       if (!isObj(l) || !isStr(l['lineId']) || !isStr(l['orderRef']) || !isStr(l['productId']) || !isStr(l['description']) || !isStr(l['bin'])
         || !isNonNegInt(l['requiredQty']) || !isStr(l['uom']) || !isNonNegInt(l['unitPriceMinor'])) return undefined;
+      if (l['substitution'] !== undefined && (typeof l['substitution'] !== 'string' || !LINE_RULES.includes(l['substitution']))) return undefined;
+    }
+    // OB-687: the owner's wait and the answers are strict too — the phone packs by them.
+    const wait = w['substitutionWaitMinutes'];
+    if (wait !== undefined && wait !== null && (!isNonNegInt(wait) || wait === 0)) return undefined;
+    if (w['substitutionAnswers'] !== undefined) {
+      if (!Array.isArray(w['substitutionAnswers'])) return undefined;
+      for (const a of w['substitutionAnswers']) {
+        if (!isObj(a) || !isStr(a['proposalId']) || !isStr(a['lineId']) || typeof a['state'] !== 'string' || !ANSWER_STATES.includes(a['state'])) return undefined;
+        const price = a['substituteUnitPriceMinor'];
+        if (price !== undefined && price !== null && !isNonNegInt(price)) return undefined;
+      }
     }
   }
   for (const r of body['routes']) {

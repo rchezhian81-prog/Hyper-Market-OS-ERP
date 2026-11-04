@@ -91,6 +91,15 @@ const WORDS = {
     secWhere: 'kept at', secMade: 'made', secRotated: 'last changed', secNever: 'never changed', secEvery: 'change every', secDays: 'days', secState: 'state',
     st_active: 'in use', st_rotating: 'being changed (old one still allowed)', st_revoked: 'revoked',
     secReview: 'Check the secrets now', secReviewH: 'What the check found', secClean: 'Nothing needs attention.', secBlocking: 'Blocking', secAttention: 'Needs attention',
+    // W6 · M32-FR-03 · OB-688 — each machine credential's use, from head office's daily count
+    secUseH: 'Use in the last 30 days', secUseLead: 'How many times each machine sign-in (the store computer, the backup job and the like) was used, by whom and on which part of the system, from head office\'s daily count. Only its reference is shown — never the secret itself. Each night head office compares a day with the same day a week before and sends anything unusual to the IT custodian.',
+    secUseNone: 'No use recorded in the last 30 days.', secCalls: 'calls', secRefused: 'refused or failed', secDaysUsed: 'days used', secLastUsed: 'last used',
+    secUseFor: 'use in the last 30 days', secNoUse: 'no use recorded in the last 30 days', secRef: 'reference', secBy: 'by', secOn: 'on',
+    secChecked: 'Last day checked', secNotChecked: 'No day has been checked yet.', secUnusualH: 'Unusual use found (sent to the IT custodian)', secUnusualNone: 'Nothing unusual found in the last 30 days.',
+    secNotJudged: 'Days not compared (no use was counted a week before them yet)',
+    // OB-689: what "unusual" means, and that its two limits are the code's until the owner sets his own (OB-686).
+    secRule: 'Unusual means more than 3 times the calls of the same day a week before, or more than 1 in 10 calls refused — built-in, not yet set by the owner.',
+    sig_spike: 'far more calls than the same day a week before', sig_error_surge: 'many calls refused or failed', sig_silent: 'stopped calling', sig_new_caller: 'called with no history',
     // Incidents — M35-FR-04 · M33-FR-04
     linkH: 'Link an alert to an incident', linkLead: 'When another alert belongs to an open incident, link it; its own facts then read into the incident\'s timeline.',
     linkIncident: 'Incident', linkAlert: 'Alert', linkGo: 'Link this alert', linked: 'Linked.', alreadyLinked: 'Already linked — nothing changed.', noOpen: 'No open incident.', noAlerts: 'No alert has been raised.',
@@ -172,6 +181,13 @@ const WORDS = {
     secWhere: 'வைக்கப்பட்ட இடம்', secMade: 'உருவானது', secRotated: 'கடைசியாக மாறியது', secNever: 'ஒருபோதும் மாறவில்லை', secEvery: 'மாற்ற வேண்டிய இடைவெளி', secDays: 'நாட்கள்', secState: 'நிலை',
     st_active: 'பயன்பாட்டில்', st_rotating: 'மாற்றப்படுகிறது (பழையதும் இன்னும் அனுமதி)', st_revoked: 'ரத்து செய்யப்பட்டது',
     secReview: 'ரகசியங்களை இப்போது சோதி', secReviewH: 'சோதனை கண்டது', secClean: 'கவனிக்க எதுவும் இல்லை.', secBlocking: 'தடுக்கிறது', secAttention: 'கவனம் தேவை',
+    secUseH: 'கடந்த 30 நாள் பயன்பாடு', secUseLead: 'ஒவ்வொரு இயந்திர உள்நுழைவும் (கடைக் கணினி, காப்புப் பணி போன்றவை) எத்தனை முறை, யாரால், அமைப்பின் எந்தப் பகுதியில் பயன்பட்டது — தலைமை அலுவலகத்தின் தினசரி எண்ணிக்கையிலிருந்து. அதன் குறிப்பு மட்டுமே காட்டப்படும் — ரகசியம் ஒருபோதும் இல்லை. ஒவ்வொரு இரவும் தலைமை அலுவலகம் ஒரு நாளை ஒரு வாரம் முந்தைய அதே நாளுடன் ஒப்பிட்டு, வழக்கத்துக்கு மாறானதை தகவல் தொழில்நுட்பப் பொறுப்பாளருக்கு அனுப்பும்.',
+    secUseNone: 'கடந்த 30 நாட்களில் எந்தப் பயன்பாடும் பதிவாகவில்லை.', secCalls: 'அழைப்புகள்', secRefused: 'மறுக்கப்பட்டவை அல்லது தோல்வியுற்றவை', secDaysUsed: 'பயன்பட்ட நாட்கள்', secLastUsed: 'கடைசியாகப் பயன்பட்டது',
+    secUseFor: 'கடந்த 30 நாள் பயன்பாடு', secNoUse: 'கடந்த 30 நாட்களில் பயன்பாடு பதிவாகவில்லை', secRef: 'குறிப்பு', secBy: 'பயன்படுத்தியவர்', secOn: 'பகுதி',
+    secChecked: 'கடைசியாகச் சோதித்த நாள்', secNotChecked: 'இன்னும் எந்த நாளும் சோதிக்கப்படவில்லை.', secUnusualH: 'வழக்கத்துக்கு மாறான பயன்பாடு (தகவல் தொழில்நுட்பப் பொறுப்பாளருக்கு அனுப்பப்பட்டது)', secUnusualNone: 'கடந்த 30 நாட்களில் வழக்கத்துக்கு மாறானது எதுவும் இல்லை.',
+    secNotJudged: 'ஒப்பிடப்படாத நாட்கள் (ஒரு வாரம் முன்பு இன்னும் எண்ணிக்கை தொடங்கவில்லை)',
+    secRule: 'வழக்கத்துக்கு மாறானது என்றால் ஒரு வாரம் முந்தைய அதே நாளை விட 3 மடங்குக்கு மேல் அழைப்புகள், அல்லது 10-இல் 1-க்கு மேல் மறுக்கப்பட்டவை — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
+    sig_spike: 'ஒரு வாரம் முந்தைய அதே நாளை விட மிக அதிக அழைப்புகள்', sig_error_surge: 'பல அழைப்புகள் மறுக்கப்பட்டன அல்லது தோல்வியுற்றன', sig_silent: 'அழைப்பது நின்றுவிட்டது', sig_new_caller: 'முன்வரலாறு இல்லாமல் அழைத்தது',
     linkH: 'ஒரு எச்சரிக்கையை ஒரு சம்பவத்துடன் இணை', linkLead: 'இன்னொரு எச்சரிக்கை திறந்த சம்பவத்தைச் சேர்ந்தால், இணையுங்கள்; அதன் உண்மைகள் சம்பவக் காலவரிசையில் சேரும்.',
     linkIncident: 'சம்பவம்', linkAlert: 'எச்சரிக்கை', linkGo: 'இந்த எச்சரிக்கையை இணை', linked: 'இணைக்கப்பட்டது.', alreadyLinked: 'ஏற்கனவே இணைக்கப்பட்டது — எதுவும் மாறவில்லை.', noOpen: 'திறந்த சம்பவம் இல்லை.', noAlerts: 'எந்த எச்சரிக்கையும் எழுப்பப்படவில்லை.',
     srH: 'அமைப்புக்கான சேவைக் கோரிக்கைகள்', srLead: 'அமைப்புக்கே தேவைப்படும் வேலை (வாடிக்கையாளர் புகார் அல்ல): எழுப்பி, ஒருவரிடம் கொடுத்து, செய்து, குறிப்புடன் தீர்க்கவும். திறந்தவை முதலில்.',
@@ -556,7 +572,41 @@ export function createSecretsSession(input: { readonly viewer: Viewer } & Ctx) {
     /** Head office's review on the shop's day — it reads, it never writes. */
     review: async (): Promise<W5Outcome<{ issues: readonly SecretIssueView[]; detail: string }>> => gate(R)
       ?? map(await call<{ issues?: SecretIssueView[]; detail?: string }>('POST', '/v1/integration/secrets/review', {}), (b) => ({ issues: (b.issues ?? []).map((i) => ({ secretId: i.secretId, finding: i.finding, blocking: i.blocking, detail: i.detail })), detail: b.detail ?? '' })),
+    /** W6 · M32-FR-03 · OB-688: each machine credential's use over the last 30 shop days, and what the nightly check found. */
+    usage: async (): Promise<W5Outcome<SecretUsageView>> => gate(R) ?? map(await call<Record<string, unknown>>('GET', '/v1/integration/secrets/usage'), secretUsageViewOf),
   };
+}
+
+/** W6: what the page may show of a credential's use — its REFERENCE, the caller, the API and counts. Nothing else is kept. */
+export interface SecretUseView { readonly credentialRef: string; readonly callerId: string; readonly api: string; readonly calls: number; readonly errors: number; readonly daysUsed: number; readonly lastUsedOn: string }
+export interface SecretUseFindingView { readonly day: string; readonly baselineDay: string; readonly identityId: string; readonly api: string; readonly signal: string }
+export interface SecretUsageView { readonly from: string; readonly to: string; readonly uses: readonly SecretUseView[]; readonly lastRolledUpDay: string | null; readonly findings: readonly SecretUseFindingView[]; readonly notJudged: readonly string[] }
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+export function secretUsageViewOf(raw: Record<string, unknown>): SecretUsageView {
+  const arr = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null) : []);
+  return {
+    from: str(raw['from']), to: str(raw['to']),
+    uses: arr(raw['uses']).map((u) => ({ credentialRef: str(u['credentialRef']), callerId: str(u['callerId']), api: str(u['api']), calls: num(u['calls']), errors: num(u['errors']), daysUsed: num(u['daysUsed']), lastUsedOn: str(u['lastUsedOn']) })),
+    lastRolledUpDay: typeof raw['lastRolledUpDay'] === 'string' ? raw['lastRolledUpDay'] : null,
+    findings: arr(raw['findings']).map((f) => ({ day: str(f['day']), baselineDay: str(f['baselineDay']), identityId: str(f['identityId']), api: str(f['api']), signal: str(f['signal']) })),
+    notJudged: Array.isArray(raw['notJudged']) ? raw['notJudged'].filter((d): d is string => typeof d === 'string') : [],
+  };
+}
+export function secretUseLine(lang: Lang, u: SecretUseView): string {
+  const w = (k: string) => w5Words(lang, k);
+  return `${w('secRef')} ${u.credentialRef} · ${w('secBy')} ${u.callerId} · ${w('secOn')} ${u.api} · ${u.calls} ${w('secCalls')} · ${u.errors} ${w('secRefused')} · ${u.daysUsed} ${w('secDaysUsed')} · ${w('secLastUsed')} ${u.lastUsedOn}`;
+}
+/** A registered secret's own 30-day use: the uses whose credential reference is that secret's id. */
+export function secretUseOf(lang: Lang, secretId: string, uses: readonly SecretUseView[]): string {
+  const w = (k: string) => w5Words(lang, k);
+  const mine = uses.filter((u) => u.credentialRef === secretId);
+  if (mine.length === 0) return w('secNoUse');
+  return `${w('secUseFor')}: ${mine.reduce((n, u) => n + u.calls, 0)} ${w('secCalls')}, ${mine.reduce((n, u) => n + u.errors, 0)} ${w('secRefused')}`;
+}
+export function secretUseFindingLine(lang: Lang, f: SecretUseFindingView): string {
+  const w = (k: string) => w5Words(lang, k);
+  return `${f.day} · ${f.identityId} · ${f.api} · ${w(`sig_${f.signal}`)} (${f.baselineDay})`;
 }
 export function secretLine(lang: Lang, s: SecretView): string {
   const w = (k: string) => w5Words(lang, k);

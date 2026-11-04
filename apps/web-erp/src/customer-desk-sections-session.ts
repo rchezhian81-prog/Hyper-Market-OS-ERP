@@ -11,6 +11,9 @@
 //   Incidents ............ a personal-data breach: what must be told, to whom, by when (C2 · DPDP s.8(6))
 //                                                                                       POST /v1/privacy/breach/assess
 //   Loyalty .............. a member leaves the programme at the desk (M16-FR-02)       POST /v1/loyalty/members/:ref/leave
+//                          W6: a referral reward owed, paid out or let lapse by a person (M17-FR-02 · OB-221 · OB-356)
+//                                                                                       GET  /v1/loyalty/referral-programme · GET /v1/finance/referral-liability
+//                                                                                       POST /v1/loyalty/referrals/:id/payout · …/expire
 //   Message queue ........ withdraw an approved message template (PA-08 r6)           POST /v1/notifications/templates/:id/withdrawal
 //   Campaigns ............ the campaign decision log (M21-FR-01 · P-08)               GET  /v1/service/campaigns/plans
 //   Trial switches ....... consent-manager records that could not be applied (OB-324) GET  /v1/privacy/consent-manager/exceptions
@@ -21,7 +24,11 @@
 //                                                                                       POST /v1/fulfilment/orders/:id/handback
 //   Delivery exceptions .. move an exception to another queue, with the reason (M19-FR-01)
 //   Online orders ........ the customer's substitution answer, told to staff (FUL-14); order notices (M20-FR-03); the refused-
-//                          access register (P-04)
+//                          access register (P-04); W6 · OB-687: the swaps the picker put to a customer, and the customer's yes or
+//                          no told to staff by phone (counts the same as the app's); how long the picker waits — the OWNER's number
+//                                                                                       GET  /v1/orders/:id/substitution-proposals
+//                                                                                       POST /v1/orders/:id/substitution-proposals/:line/answer
+//                                                                                       GET/POST /v1/fulfilment/substitution-wait
 //
 // Every rule is head office's: this session refuses only the cheap things before a request (nobody signed in, the role, an
 // empty box) and never writes on open. A number the owner has not entered is never invented here. Head office's own
@@ -70,6 +77,11 @@ export const DESK_COPY = {
     // Loyalty — leave
     leaveH: 'A member leaves the programme', leaveLead: 'When a member asks to stop, record it here. From then on their code earns nothing. Their points history is kept.',
     member: 'Member code', reason: 'Reason', leave: 'Record that they left', left: 'Recorded. The member has left; the code earns nothing from now on.', alreadyLeft: 'This member had already left.',
+    // Loyalty — referral rewards owed (W6)
+    owedH: 'Referral rewards still to pay', owedLead: 'A referral reward is money the shop owes the customer from the day it is earned. When you pay one — in cash, as store credit or by bank transfer — record how and the receipt or transfer number. A reward the customer will not take may be let lapse, with the reason. Each is kept; nothing is changed afterwards.',
+    owedShow: 'Show rewards still to pay', noOwed: 'No referral reward is waiting to be paid.', owes: 'owed', side_referrer: 'referred a friend', side_referred: 'was referred',
+    how: 'Paid by', how_cash: 'cash', how_store_credit: 'store credit', how_bank_transfer: 'bank transfer', payRef: 'Receipt, credit or transfer number', payOut: 'Record the payment', paidOut: 'Recorded as paid.',
+    lapseReason: 'Why it lapses', lapse: 'Let it lapse', lapsed: 'Recorded as lapsed.',
     // Message queue — withdraw a template
     withdrawH: 'Stop an approved message', withdrawLead: 'If the words of an approved message must not go out any more (a mistake, an offer taken back), stop it here. Nothing more is sent with it; messages still waiting with it are held back and kept, with your reason.',
     withdrawShow: 'Show the approved messages', noApproved: 'No approved message.', version: 'version', withdraw: 'Stop this message', withdrawnOk: 'Stopped. Nothing more goes out with it.',
@@ -109,6 +121,14 @@ export const DESK_COPY = {
     noticesShow: 'Show them', noNotices: 'No message about an order is due.', queued: 'on the queue', notQueued: 'NOT on the queue',
     refusalsH: 'Customers who asked for someone else\'s order', refusalsLead: 'Every time the app refused a customer who asked to see or order on another customer\'s order. A customer who tried more than one order is named first.',
     refusalsShow: 'Show the register', noRefusals: 'No customer has asked for another customer\'s order.', probing: 'Tried more than one order', orders: 'order(s)', a_read: 'tried to see', a_place: 'tried to order on',
+    // W6 · OB-687 — swaps put to the customer, and the owner's wait
+    swapsH: 'Swaps put to the customer', swapsLead: 'When the picker cannot find an item and the customer asked to be asked first, the picker offers a swap and the customer answers yes or no in the app. If the customer tells you by phone instead, record their answer here with how you reached them — it counts the same as the app.',
+    swapsShow: 'Show the swaps', noSwaps: 'No swap has been put to the customer on this order.', swapLine: 'Which swap', swapAnswer: 'They said', d_confirmed: 'yes — send the swap', d_declined: 'no — leave it out', swapRecord: 'Record their answer', swapRecorded: 'Recorded. The picker will be told through the store computer.',
+    for: 'for', each: 'each', answerBy: 'answer by', s_waiting: 'waiting for the customer', s_yes: 'the customer said YES', s_no: 'the customer said NO', s_refused: 'the shop\'s rules refuse it', s_too_late: 'no answer in time — packed short', s_closed: 'closed — the picker packed the line',
+    via_app: 'in the app', via_staff: 'told to staff', onOrder: 'put on the order', notOnOrder: 'NOT put on the order',
+    waitH: 'How long the picker waits for the customer', waitLead: 'The owner decides how many minutes the picker waits for a customer\'s yes or no to a swap. Until he sets it, the picker does not wait: the line goes short and the customer is not asked.',
+    waitShow: 'Show the wait', waitNotSet: 'NOT SET by the owner — the picker does not wait; a line whose customer asked first goes short.', waitIs: 'The picker waits', minutes: 'minute(s)', setByOwner: 'set by',
+    waitMinutes: 'Minutes to wait (1 to 240)', waitReason: 'Why (optional)', waitSave: 'Set the wait', waitSaved: 'Saved. The picker phones get it with their next wave.',
   },
   ta: {
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…', done: 'முடிந்தது.',
@@ -142,6 +162,10 @@ export const DESK_COPY = {
     st_done: 'முடிந்தது', st_due: 'செய்ய வேண்டியது', st_overdue: 'தாமதம்', immediately: 'உடனே', missing: 'இன்னும் இல்லாதவை', adviceOnly: 'இது செய்ய வேண்டியதை மட்டும் கணக்கிடுகிறது. ஒவ்வொரு அறிவிப்பையும் ஒருவர் அனுப்புவார்.',
     leaveH: 'உறுப்பினர் திட்டத்திலிருந்து விலகுகிறார்', leaveLead: 'ஒரு உறுப்பினர் நிறுத்தக் கேட்டால் இங்கே பதிவு செய்யுங்கள். அதன் பிறகு அவர்களின் குறியீடு எதையும் சம்பாதிக்காது. புள்ளி வரலாறு வைக்கப்படும்.',
     member: 'உறுப்பினர் குறியீடு', reason: 'காரணம்', leave: 'விலகியதாகப் பதிவு செய்', left: 'பதிவு செய்யப்பட்டது. உறுப்பினர் விலகினார்; இனி குறியீடு எதையும் சம்பாதிக்காது.', alreadyLeft: 'இந்த உறுப்பினர் ஏற்கனவே விலகிவிட்டார்.',
+    owedH: 'இன்னும் கொடுக்க வேண்டிய பரிந்துரைப் பரிசுகள்', owedLead: 'ஒரு பரிந்துரைப் பரிசு சம்பாதித்த நாளிலிருந்து கடை வாடிக்கையாளருக்குக் கொடுக்க வேண்டிய பணம். அதைக் கொடுக்கும்போது — ரொக்கம், கடை வரவு அல்லது வங்கிப் பரிமாற்றம் — எப்படி என்பதையும் ரசீது அல்லது பரிமாற்ற எண்ணையும் பதிவு செய்யுங்கள். வாடிக்கையாளர் ஏற்காத பரிசைக் காரணத்துடன் காலாவதியாக விடலாம். ஒவ்வொன்றும் வைக்கப்படும்; பின்னர் எதுவும் மாற்றப்படாது.',
+    owedShow: 'கொடுக்க வேண்டிய பரிசுகளைக் காட்டு', noOwed: 'கொடுக்கக் காத்திருக்கும் பரிந்துரைப் பரிசு எதுவும் இல்லை.', owes: 'கொடுக்க வேண்டியது', side_referrer: 'நண்பரைப் பரிந்துரைத்தவர்', side_referred: 'பரிந்துரைக்கப்பட்டவர்',
+    how: 'கொடுத்த விதம்', how_cash: 'ரொக்கம்', how_store_credit: 'கடை வரவு', how_bank_transfer: 'வங்கிப் பரிமாற்றம்', payRef: 'ரசீது, வரவு அல்லது பரிமாற்ற எண்', payOut: 'கொடுத்ததைப் பதிவு செய்', paidOut: 'கொடுத்ததாகப் பதிவு செய்யப்பட்டது.',
+    lapseReason: 'காலாவதியாகும் காரணம்', lapse: 'காலாவதியாக விடு', lapsed: 'காலாவதியானதாகப் பதிவு செய்யப்பட்டது.',
     withdrawH: 'ஒப்புதல் பெற்ற செய்தியை நிறுத்து', withdrawLead: 'ஒப்புதல் பெற்ற செய்தியின் வார்த்தைகள் இனி வெளியே போகக்கூடாது என்றால் (தவறு, திரும்பப் பெற்ற சலுகை), இங்கே நிறுத்துங்கள். அதைக் கொண்டு இனி எதுவும் அனுப்பப்படாது; காத்திருக்கும் செய்திகள் உங்கள் காரணத்துடன் நிறுத்தி வைக்கப்படும்.',
     withdrawShow: 'ஒப்புதல் பெற்ற செய்திகளைக் காட்டு', noApproved: 'ஒப்புதல் பெற்ற செய்தி இல்லை.', version: 'பதிப்பு', withdraw: 'இந்தச் செய்தியை நிறுத்து', withdrawnOk: 'நிறுத்தப்பட்டது. இனி அதைக் கொண்டு எதுவும் போகாது.',
     logH: 'பிரச்சார முடிவுப் பதிவு', logLead: 'திட்டமிட்ட ஒவ்வொரு பிரச்சாரமும்: யார் திட்டமிட்டார், எத்தனை பேரை அடையும், எத்தனை பேர் ஏன் விடப்பட்டனர். புதியது முதலில்.',
@@ -172,6 +196,13 @@ export const DESK_COPY = {
     noticesShow: 'அவற்றைக் காட்டு', noNotices: 'ஆர்டர் பற்றி எந்தச் செய்தியும் அனுப்ப வேண்டியதில்லை.', queued: 'வரிசையில் உள்ளது', notQueued: 'வரிசையில் இல்லை',
     refusalsH: 'வேறொருவரின் ஆர்டரைக் கேட்ட வாடிக்கையாளர்கள்', refusalsLead: 'வேறொரு வாடிக்கையாளரின் ஆர்டரைப் பார்க்க அல்லது அதில் ஆர்டர் செய்யக் கேட்ட வாடிக்கையாளரைச் செயலி மறுத்த ஒவ்வொரு முறையும். ஒன்றுக்கு மேற்பட்ட ஆர்டர்களை முயன்றவர் முதலில் பெயரிடப்படுவார்.',
     refusalsShow: 'பதிவேட்டைக் காட்டு', noRefusals: 'எந்த வாடிக்கையாளரும் வேறொருவரின் ஆர்டரைக் கேட்கவில்லை.', probing: 'ஒன்றுக்கு மேற்பட்ட ஆர்டர்களை முயன்றவர்', orders: 'ஆர்டர்(கள்)', a_read: 'பார்க்க முயன்றது', a_place: 'ஆர்டர் செய்ய முயன்றது',
+    swapsH: 'வாடிக்கையாளரிடம் கேட்ட மாற்றங்கள்', swapsLead: 'எடுப்பவரால் ஒரு பொருளைக் கண்டுபிடிக்க முடியாமல், வாடிக்கையாளர் முதலில் கேட்கச் சொல்லியிருந்தால், எடுப்பவர் ஒரு மாற்றை வழங்குகிறார்; வாடிக்கையாளர் செயலியில் ஆம் அல்லது இல்லை என்கிறார். அதற்குப் பதிலாக தொலைபேசியில் சொன்னால், எப்படித் தொடர்பு கொண்டீர்கள் என்பதுடன் இங்கே பதிவு செய்யுங்கள் — அது செயலியில் சொன்னதைப் போலவே கணக்கிடப்படும்.',
+    swapsShow: 'மாற்றங்களைக் காட்டு', noSwaps: 'இந்த ஆர்டரில் வாடிக்கையாளரிடம் எந்த மாற்றமும் கேட்கப்படவில்லை.', swapLine: 'எந்த மாற்றம்', swapAnswer: 'அவர்கள் சொன்னது', d_confirmed: 'ஆம் — மாற்றை அனுப்பு', d_declined: 'இல்லை — விட்டுவிடு', swapRecord: 'அவர்களின் பதிலைப் பதிவு செய்', swapRecorded: 'பதிவு செய்யப்பட்டது. கடை கணினி மூலம் எடுப்பவருக்குத் தெரிவிக்கப்படும்.',
+    for: 'இதற்குப் பதிலாக', each: 'ஒன்றுக்கு', answerBy: 'பதில் சொல்ல வேண்டிய நேரம்', s_waiting: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', s_yes: 'வாடிக்கையாளர் ஆம் என்றார்', s_no: 'வாடிக்கையாளர் இல்லை என்றார்', s_refused: 'கடையின் விதிகள் இதை மறுக்கின்றன', s_too_late: 'நேரத்திற்குள் பதில் இல்லை — குறைவாக பேக் செய்யப்பட்டது', s_closed: 'மூடப்பட்டது — எடுப்பவர் வரியை பேக் செய்துவிட்டார்',
+    via_app: 'செயலியில்', via_staff: 'பணியாளரிடம் சொன்னது', onOrder: 'ஆர்டரில் சேர்க்கப்பட்டது', notOnOrder: 'ஆர்டரில் சேர்க்கப்படவில்லை',
+    waitH: 'வாடிக்கையாளருக்காக எடுப்பவர் எவ்வளவு நேரம் காத்திருப்பார்', waitLead: 'ஒரு மாற்றத்திற்கு வாடிக்கையாளரின் ஆம் அல்லது இல்லை பதிலுக்கு எடுப்பவர் எத்தனை நிமிடம் காத்திருக்க வேண்டும் என்று உரிமையாளர் முடிவு செய்கிறார். அவர் அமைக்கும் வரை, எடுப்பவர் காத்திருக்க மாட்டார்: வரி குறைவாகும், வாடிக்கையாளரிடம் கேட்கப்படாது.',
+    waitShow: 'காத்திருப்பைக் காட்டு', waitNotSet: 'உரிமையாளர் அமைக்கவில்லை — எடுப்பவர் காத்திருக்க மாட்டார்; முதலில் கேட்கச் சொன்ன வாடிக்கையாளரின் வரி குறைவாகும்.', waitIs: 'எடுப்பவர் காத்திருப்பது', minutes: 'நிமிடம்', setByOwner: 'அமைத்தவர்',
+    waitMinutes: 'காத்திருக்கும் நிமிடங்கள் (1 முதல் 240)', waitReason: 'ஏன் (விருப்பம்)', waitSave: 'காத்திருப்பை அமை', waitSaved: 'சேமிக்கப்பட்டது. அடுத்த வேலையுடன் எடுப்பவர் தொலைபேசிகளுக்குக் கிடைக்கும்.',
   },
 } as const;
 
@@ -184,6 +215,8 @@ export const COMPENSATION_KINDS = ['goodwill_credit', 'refund', 'loyalty_points'
 export const EXCEPTION_QUEUES = ['fulfilment_supervisor', 'customer_service_desk', 'finance_recon_queue', 'duty_manager'] as const;
 export const SUB_PREFERENCES = ['contact_me', 'best_match', 'no_substitution'] as const;
 export const CONTACT_METHODS = ['phone', 'in_person', 'whatsapp', 'sms'] as const;
+/** W6 (M17-FR-02): how a referral reward was paid out — head office's own list (services/customer/src/offer-liability.ts). */
+export const PAYOUT_HOWS = ['cash', 'store_credit', 'bank_transfer'] as const;
 
 /** Rupees as typed ("150", "150.5", "150.50") → paise; undefined when it is not an amount. */
 export function paiseOf(text: string): number | undefined {
@@ -236,6 +269,19 @@ export interface DeliveryProof {
 }
 export interface PackLine { readonly lineId: string; readonly productId: string; readonly name: string; readonly packedMinor: number }
 export interface OrderNotice { readonly noticeId: string; readonly orderId: string; readonly customerRef: string; readonly kind: string; readonly outcome: 'queued' | 'not_queued'; readonly code?: string; readonly detail: string; readonly at: string }
+/** W6: one referral reward still owed, as head office's liability register holds it — and, where its programme names it, whose. */
+export interface OwedReferral { readonly referralId: string; readonly earnedMinor: number; readonly outstandingMinor: number; readonly side: 'referrer' | 'referred' | null; readonly customerRef: string | null }
+/** W6 · OB-687: one swap the picker put to a customer, as head office holds it, with where it stands. */
+export interface SwapProposal {
+  readonly proposalId: string; readonly lineId: string; readonly orderedName: string; readonly substituteProductId: string; readonly substituteName: string;
+  readonly substituteUnitPriceMinor: number | null; readonly state: 'waiting' | 'yes' | 'no' | 'refused' | 'too_late' | 'closed'; readonly answerBy: string | null;
+  readonly answeredVia?: 'app' | 'staff'; readonly contact?: { readonly method: string; readonly reference: string }; readonly refusedBecause?: string | null;
+  readonly settled?: { readonly packed: string; readonly decision: string | null; readonly onOrder: boolean; readonly refusal: { readonly code: string; readonly whatHappened: string } | null };
+}
+/** W6 · OB-687: the owner's wait, as head office holds it ("not set" until he sets it). */
+export interface SwapWait { readonly minutes: number | null; readonly state: 'set' | 'not_set'; readonly setBy: string | null; readonly setAt: string | null }
+export const SWAP_DECISIONS = ['confirmed', 'declined'] as const;
+
 export interface AccessRegister { readonly refusals: readonly { readonly customerRef: string; readonly orderId: string; readonly outcome: string; readonly action: string; readonly at: string }[]; readonly probing: readonly { readonly customerRef: string; readonly distinctOrders: number }[]; readonly detail: string }
 
 type Why = 'nobody' | 'cannot' | 'needCustomer' | 'needOrder' | 'needCase' | 'needReason' | 'needText' | 'needNumber' | 'needRupees' | 'needWhen' | 'needScore';
@@ -247,6 +293,9 @@ export const SECTION_WORDS = {
   templates: 'document.template.manage', campaignLog: 'customer.campaign.read', consentExceptions: 'customer.consent.write',
   caseRead: 'service.case.read', caseManage: 'service.case.manage', household: 'loyalty.value.read', proof: 'delivery.run.read',
   handback: 'fulfilment.pack.record', packRead: 'fulfilment.pack.read', reassign: 'order.exception.manage', subPref: 'order.lifecycle.manage', orderRead: 'order.read',
+  referral: 'loyalty.referral.settle',
+  // W6 · OB-687: the owner's own number — how long the picker waits for a customer's answer to a swap.
+  waitSet: 'fulfilment.substitution.wait.set',
 } as const;
 export type SectionKey = keyof typeof SECTION_WORDS;
 
@@ -261,6 +310,10 @@ export interface DeskSession {
   recordProcessor(i: { readonly vendorId: string; readonly vendorName: string; readonly categories: string; readonly purpose: string; readonly contractRef: string; readonly contractFrom: string; readonly contractUntil: string }): Done<unknown>;
   assessBreach(i: Readonly<Record<string, string>>, offsetMinutes?: number): Done<BreachPlan>;
   leave(memberRef: string, reason: string): Done<{ readonly memberRef: string; readonly alreadyLeft?: boolean }>;
+  /** W6: the referral rewards still owed (the programme read first, so a reward now due is given before the register is read). */
+  owedReferrals(): Done<readonly OwedReferral[]>;
+  payReferral(referralId: string, how: string, reference: string): Done<unknown>;
+  lapseReferral(referralId: string, reason: string): Done<unknown>;
   approvedTemplates(): Done<readonly TemplateRow[]>;
   withdrawTemplate(templateId: string, version: number, reason: string): Done<unknown>;
   campaignLog(): Done<readonly CampaignPlanRow[]>;
@@ -279,9 +332,18 @@ export interface DeskSession {
   recordPreference(orderId: string, i: { readonly preference: string; readonly method: string; readonly reference: string }): Done<unknown>;
   orderNotices(): Done<{ readonly notices: readonly OrderNotice[]; readonly notQueued: readonly OrderNotice[]; readonly detail: string }>;
   accessRefusals(): Done<AccessRegister>;
+  /** W6 · OB-687: the swaps put to the customer on one order. */
+  swapProposals(orderId: string): Done<readonly SwapProposal[]>;
+  /** W6 · OB-687: the customer's yes or no, told to staff — with how they were reached and the reference. */
+  answerSwap(orderId: string, lineId: string, i: { readonly decision: string; readonly method: string; readonly reference: string }): Done<unknown>;
+  swapWait(): Done<SwapWait>;
+  /** W6 · OB-687: the owner sets the wait — whole minutes, 1 to 240. */
+  setSwapWait(minutes: string, reason: string): Done<SwapWait>;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** W6 · OB-687: head office's wait read as it said it — a number, or "not set"; never a default. */
+const waitOf = (v: Partial<SwapWait>): SwapWait => ({ minutes: typeof v.minutes === 'number' ? v.minutes : null, state: v.state === 'set' ? 'set' : 'not_set', setBy: v.setBy ?? null, setAt: v.setAt ?? null });
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
 export function createDeskSession(input: {
@@ -344,6 +406,31 @@ export function createDeskSession(input: {
     },
     leave: async (ref, reason) => gate('leave') ?? need(ref, 'needCustomer') ?? need(reason, 'needReason')
       ?? call('POST', `/v1/loyalty/members/${enc(ref.trim())}/leave`, { reason: reason.trim() }),
+    owedReferrals: async () => {
+      const g = gate('referral'); if (g) return g;
+      // The staff-side programme read brings each referral up to date (a reward now due is given there) and names whose it is.
+      const programme = await call<{ referrals?: unknown[] }>('GET', '/v1/loyalty/referral-programme');
+      if (programme.result !== 'ok') return programme;
+      const whose = new Map<string, { side: 'referrer' | 'referred'; customerRef: string }>();
+      for (const r of arr<Record<string, unknown>>(programme.value.referrals)) {
+        for (const gr of arr<Record<string, unknown>>(isObj(r) ? r['grants'] : undefined)) {
+          if (isObj(gr) && typeof gr['referralId'] === 'string' && (gr['side'] === 'referrer' || gr['side'] === 'referred')) whose.set(gr['referralId'], { side: gr['side'], customerRef: String(gr['customerRef'] ?? '') });
+        }
+      }
+      return map(call<{ register?: { referrals?: unknown[] } }>('GET', '/v1/finance/referral-liability'), (v) => arr<Record<string, unknown>>(v.register?.referrals)
+        .filter((r) => isObj(r) && typeof r['referralId'] === 'string' && typeof r['outstandingMinor'] === 'number' && r['outstandingMinor'] > 0)
+        .map((r): OwedReferral => {
+          const id = r['referralId'] as string; const w = whose.get(id);
+          return { referralId: id, earnedMinor: Number(r['earnedMinor'] ?? 0), outstandingMinor: r['outstandingMinor'] as number, side: w?.side ?? null, customerRef: w === undefined || w.customerRef === '' ? null : w.customerRef };
+        }));
+    },
+    payReferral: async (id, how, reference) => {
+      const g = gate('referral') ?? need(id, 'needText') ?? need(reference, 'needText'); if (g) return g;
+      if (!(PAYOUT_HOWS as readonly string[]).includes(how)) return no('needText');
+      return call('POST', `/v1/loyalty/referrals/${enc(id.trim())}/payout`, { how, reference: reference.trim() });
+    },
+    lapseReferral: async (id, reason) => gate('referral') ?? need(id, 'needText') ?? need(reason, 'needReason')
+      ?? call('POST', `/v1/loyalty/referrals/${enc(id.trim())}/expire`, { reason: reason.trim() }),
     approvedTemplates: async () => gate('templates') ?? map(call<{ templates?: unknown[] }>('GET', '/v1/notifications/templates'), (v) => {
       // The latest state of each version: one approved and later withdrawn is not offered again.
       const latest = new Map<string, TemplateRow>();
@@ -394,5 +481,19 @@ export function createDeskSession(input: {
       (v) => ({ notices: arr<OrderNotice>(v.notices), notQueued: arr<OrderNotice>(v.notQueued), detail: typeof v.detail === 'string' ? v.detail : '' })),
     accessRefusals: async () => gate('orderRead') ?? map(call<{ refusals?: unknown[]; probing?: unknown[]; detail?: unknown }>('GET', '/v1/storefront/access-refusals'),
       (v) => ({ refusals: arr(v.refusals), probing: arr(v.probing), detail: typeof v.detail === 'string' ? v.detail : '' })),
+    swapProposals: async (orderId) => gate('orderRead') ?? need(orderId, 'needOrder')
+      ?? map(call<{ proposals?: unknown[] }>('GET', `/v1/orders/${enc(orderId.trim())}/substitution-proposals`), (v) => arr<SwapProposal>(v.proposals)),
+    answerSwap: async (orderId, lineId, i) => {
+      const g = gate('subPref') ?? need(orderId, 'needOrder') ?? need(lineId, 'needText') ?? need(i.reference, 'needText'); if (g) return g;
+      if (!(SWAP_DECISIONS as readonly string[]).includes(i.decision) || !(CONTACT_METHODS as readonly string[]).includes(i.method)) return no('needText');
+      return call('POST', `/v1/orders/${enc(orderId.trim())}/substitution-proposals/${enc(lineId.trim())}/answer`, { decision: i.decision, contact: { method: i.method, reference: i.reference.trim() } });
+    },
+    swapWait: async () => gate('orderRead') ?? map(call<SwapWait>('GET', '/v1/fulfilment/substitution-wait'), waitOf),
+    setSwapWait: async (minutes, reason) => {
+      const g = gate('waitSet'); if (g) return g;
+      // The owner's number: whole minutes, 1 to 240 (the picker's sign-in lasts four hours). Nothing is suggested.
+      if (!/^\d{1,3}$/.test(minutes.trim()) || Number(minutes) < 1 || Number(minutes) > 240) return no('needNumber');
+      return map(call<SwapWait>('POST', '/v1/fulfilment/substitution-wait', { minutes: Number(minutes), ...(reason.trim() === '' ? {} : { reason: reason.trim() }) }), waitOf);
+    },
   };
 }

@@ -39638,6 +39638,131 @@
         }
       }
     },
+    "/v1/fulfilment/substitution-wait": {
+      "get": {
+        "operationId": "getFulfilmentSubstitutionWait",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFulfilmentSubstitutionWaitReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postFulfilmentSubstitutionWait",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "fulfilment.substitution.wait.set",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFulfilmentSubstitutionWaitRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFulfilmentSubstitutionWaitReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFulfilmentSubstitutionWaitReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"fulfilment.substitution.wait.set\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/fulfilment/wave-board": {
       "get": {
         "operationId": "getFulfilmentWaveBoard",
@@ -39951,6 +40076,108 @@
           },
           "403": {
             "description": "Not \"fulfilment.wave.assign\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/fulfilment/waves/{waveId}/lines/{lineId}/substitution-proposal/synced": {
+      "post": {
+        "operationId": "postFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSynced",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "fulfilment.pick.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "waveId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedReply200"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedReply202"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"fulfilment.pick.sync\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -54547,6 +54774,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/integration/secrets/usage": {
+      "get": {
+        "operationId": "getIntegrationSecretsUsage",
+        "tags": [
+          "API-11 Platform"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "platform.setup.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntegrationSecretsUsageReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"platform.setup.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -79318,16 +79589,6 @@
         },
         "x-body-schema": "derived",
         "responses": {
-          "201": {
-            "description": "The reply, as the handler builds it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PostOrdersByOrderIdSubstituteReply"
-                }
-              }
-            }
-          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -79352,6 +79613,16 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOrdersByOrderIdSubstituteReply"
+                }
+              }
+            }
           }
         }
       }
@@ -79408,6 +79679,165 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostOrdersByOrderIdSubstitutionPreferenceReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.lifecycle.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/orders/{orderId}/substitution-proposals": {
+      "get": {
+        "operationId": "getOrdersByOrderIdSubstitutionProposals",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetOrdersByOrderIdSubstitutionProposalsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/orders/{orderId}/substitution-proposals/{lineId}/answer": {
+      "post": {
+        "operationId": "postOrdersByOrderIdSubstitutionProposalsByLineIdAnswer",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.lifecycle.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerReply201"
                 }
               }
             }
@@ -81116,7 +81546,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "platform.alert.manage",
+        "x-permission": "platform.alert.acknowledge",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -81170,7 +81600,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"platform.alert.manage\".",
+            "description": "Not \"platform.alert.acknowledge\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -112983,12 +113413,22 @@
         },
         "x-body-schema": "derived",
         "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply200"
+                }
+              }
+            }
+          },
           "201": {
             "description": "The reply, as the handler builds it.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply"
+                  "$ref": "#/components/schemas/PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply201"
                 }
               }
             }
@@ -135002,6 +135442,25 @@
                 },
                 "assignedAt": {
                   "type": "string"
+                },
+                "substitutionWaitMinutes": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "substitutionAnswers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "x-untyped": "unknown"
+                    }
+                  }
                 }
               },
               "additionalProperties": true
@@ -135134,6 +135593,72 @@
         "$ref": "#/components/schemas/FulfilmentSettlement",
         "x-body-schema": "derived",
         "x-derived-from": "services/fulfilment/src/order-fulfilment.ts"
+      },
+      "GetFulfilmentSubstitutionWaitReply": {
+        "type": "object",
+        "required": [
+          "maxMinutes",
+          "history",
+          "asAt",
+          "minutes",
+          "state",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "maxMinutes": {
+            "type": "number"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubstitutionWaitChange"
+            }
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_set",
+              "set"
+            ]
+          },
+          "setBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "setAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
       },
       "GetFulfilmentWaveBoardReply": {
         "type": "object",
@@ -140228,6 +140753,96 @@
           },
           "count": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/secrets.ts"
+      },
+      "GetIntegrationSecretsUsageReply": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "uses",
+          "count",
+          "lastRolledUpDay",
+          "findings",
+          "notJudged"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretUseSummary"
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "lastRolledUpDay": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "baselineDay",
+                "identityId",
+                "api",
+                "signal",
+                "actionTaken"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "baselineDay": {
+                  "type": "string"
+                },
+                "identityId": {
+                  "type": "string"
+                },
+                "api": {
+                  "type": "string"
+                },
+                "signal": {
+                  "type": "string",
+                  "enum": [
+                    "error_surge",
+                    "new_caller",
+                    "silent",
+                    "spike"
+                  ]
+                },
+                "actionTaken": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "notJudged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true,
@@ -150891,6 +151506,84 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/index.ts"
+      },
+      "GetOrdersByOrderIdSubstitutionProposalsReply": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "proposals",
+          "wait",
+          "asAt"
+        ],
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
+          },
+          "wait": {
+            "type": "object",
+            "required": [
+              "minutes",
+              "state",
+              "setBy",
+              "setAt"
+            ],
+            "properties": {
+              "minutes": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_set",
+                  "set"
+                ]
+              },
+              "setBy": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "setAt": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
       },
       "GetOrdersExceptionQueueStaffingReply": {
         "type": "object",
@@ -164841,6 +165534,7 @@
         "type": "object",
         "required": [
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -164860,6 +165554,15 @@
                 "type": "null"
               }
             ]
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
           },
           "orderId": {
             "type": "string"
@@ -164937,6 +165640,7 @@
               "type": "object",
               "required": [
                 "delivery",
+                "substitutions",
                 "orderId",
                 "locationId",
                 "lines",
@@ -164956,6 +165660,15 @@
                       "type": "null"
                     }
                   ]
+                },
+                "substitutions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "x-untyped": "unknown"
+                    }
+                  }
                 },
                 "orderId": {
                   "type": "string"
@@ -193925,6 +194638,147 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/fulfilment/src/packing.ts"
       },
+      "PostFulfilmentSubstitutionWaitReply200": {
+        "type": "object",
+        "required": [
+          "alreadySet",
+          "history",
+          "minutes",
+          "state",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "alreadySet": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubstitutionWaitChange"
+            }
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_set",
+              "set"
+            ]
+          },
+          "setBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "setAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostFulfilmentSubstitutionWaitReply201": {
+        "type": "object",
+        "required": [
+          "alreadySet",
+          "history",
+          "minutes",
+          "state",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "alreadySet": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubstitutionWaitChange"
+            }
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_set",
+              "set"
+            ]
+          },
+          "setBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "setAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostFulfilmentSubstitutionWaitRequest": {
+        "type": "object",
+        "required": [
+          "minutes"
+        ],
+        "properties": {
+          "minutes": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
       "PostFulfilmentWavesByWaveIdAssignmentReply200": {
         "type": "object",
         "required": [
@@ -194216,6 +195070,159 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/fulfilment/src/wave-builder.ts"
+      },
+      "PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedReply200": {
+        "type": "object",
+        "required": [
+          "proposalId",
+          "recorded",
+          "alreadyRecorded",
+          "eligibility",
+          "answerBy"
+        ],
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          },
+          "eligibility": {
+            "type": "string",
+            "enum": [
+              "auto_accept",
+              "needs_confirmation",
+              "refused"
+            ]
+          },
+          "answerBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedReply202": {
+        "type": "object",
+        "required": [
+          "proposalId",
+          "recorded",
+          "eligibility",
+          "answerBy",
+          "flags"
+        ],
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "eligibility": {
+            "type": "string",
+            "enum": [
+              "auto_accept",
+              "needs_confirmation",
+              "refused"
+            ]
+          },
+          "answerBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostFulfilmentWavesByWaveIdLinesByLineIdSubstitutionProposalSyncedRequest": {
+        "type": "object",
+        "required": [
+          "orderRef",
+          "orderedProductId",
+          "proposalId",
+          "proposedAt",
+          "quantity",
+          "substituteProductId",
+          "why"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "lineId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "orderRef": {
+            "type": "string"
+          },
+          "orderedProductId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "substituteProductId": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
+          },
+          "waveId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "why": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "out_of_stock"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
       },
       "PostFulfilmentWavesByWaveIdLinesByLineIdSyncedReply200": {
         "type": "object",
@@ -226084,94 +227091,9 @@
       },
       "PostOrdersByOrderIdSubstituteReply": {
         "type": "object",
-        "required": [
-          "orderId",
-          "lineId",
-          "outcome",
-          "pickProductId",
-          "pickQuantityMinor",
-          "chargeMinor",
-          "refundMinor",
-          "refundDue",
-          "tellTheCustomer"
-        ],
-        "properties": {
-          "tender": {
-            "type": "string",
-            "enum": [
-              "cod",
-              "pay_at_store",
-              "prepaid"
-            ]
-          },
-          "settlementKind": {
-            "type": "string",
-            "enum": [
-              "collect_less",
-              "collect_more",
-              "none",
-              "prepaid_additional_charge",
-              "prepaid_refund"
-            ]
-          },
-          "settlementMinor": {
-            "type": "number"
-          },
-          "aboveCap": {
-            "type": "boolean"
-          },
-          "eligibility": {
-            "type": "string",
-            "enum": [
-              "auto_accept",
-              "needs_confirmation",
-              "refused"
-            ]
-          },
-          "policyReason": {
-            "type": "string"
-          },
-          "orderId": {
-            "type": "string"
-          },
-          "lineId": {
-            "type": "string"
-          },
-          "outcome": {
-            "type": "string",
-            "enum": [
-              "not_confirmed",
-              "short_picked",
-              "substituted"
-            ]
-          },
-          "pickProductId": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "string"
-              }
-            ]
-          },
-          "pickQuantityMinor": {
-            "type": "number"
-          },
-          "chargeMinor": {
-            "type": "number"
-          },
-          "refundMinor": {
-            "type": "number"
-          },
-          "refundDue": {
-            "type": "boolean"
-          },
-          "tellTheCustomer": {
-            "type": "string"
-          }
+        "additionalProperties": {
+          "x-untyped": "unknown"
         },
-        "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/index.ts"
       },
@@ -226469,6 +227391,120 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/index.ts"
+      },
+      "PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerReply200": {
+        "type": "object",
+        "required": [
+          "alreadyAnswered",
+          "orderId",
+          "lineId",
+          "substituteProductId",
+          "decision",
+          "acceptsHigherPrice",
+          "given",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "alreadyAnswered": {
+            "type": "boolean"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "substituteProductId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "declined"
+            ]
+          },
+          "acceptsHigherPrice": {
+            "type": "boolean"
+          },
+          "given": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "staff_contact"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "object",
+            "required": [
+              "method",
+              "reference"
+            ],
+            "properties": {
+              "method": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerReply201": {
+        "$ref": "#/components/schemas/ConsentFact",
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
+      },
+      "PostOrdersByOrderIdSubstitutionProposalsByLineIdAnswerRequest": {
+        "type": "object",
+        "required": [
+          "contact",
+          "decision"
+        ],
+        "properties": {
+          "acceptsHigherPrice": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "contact": {
+            "type": "object",
+            "required": [
+              "method",
+              "reference"
+            ],
+            "properties": {
+              "method": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "declined"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/fulfilment/src/substitution-proposals.ts"
       },
       "PostOrdersByOrderIdTransitionReply": {
         "type": "object",
@@ -250317,6 +251353,7 @@
         "type": "object",
         "required": [
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -250336,6 +251373,15 @@
                 "type": "null"
               }
             ]
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
           },
           "orderId": {
             "type": "string"
@@ -250405,6 +251451,7 @@
         "type": "object",
         "required": [
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -250424,6 +251471,15 @@
                 "type": "null"
               }
             ]
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
           },
           "orderId": {
             "type": "string"
@@ -250494,6 +251550,7 @@
         "required": [
           "alreadyPaid",
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -250516,6 +251573,15 @@
                 "type": "null"
               }
             ]
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
           },
           "orderId": {
             "type": "string"
@@ -250586,6 +251652,7 @@
         "required": [
           "quote",
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -250703,6 +251770,15 @@
               }
             ]
           },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
+          },
           "orderId": {
             "type": "string"
           },
@@ -250797,6 +251873,7 @@
         "required": [
           "alreadyPlaced",
           "delivery",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -250819,6 +251896,15 @@
                 "type": "null"
               }
             ]
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
           },
           "orderId": {
             "type": "string"
@@ -250890,6 +251976,7 @@
           "delivery",
           "promise",
           "quote",
+          "substitutions",
           "orderId",
           "locationId",
           "lines",
@@ -251225,6 +252312,15 @@
               }
             ]
           },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "x-untyped": "unknown"
+              }
+            }
+          },
           "orderId": {
             "type": "string"
           },
@@ -251382,7 +252478,21 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/storefront.ts"
       },
-      "PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply": {
+      "PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply200": {
+        "type": "object",
+        "required": [
+          "alreadyAnswered"
+        ],
+        "properties": {
+          "alreadyAnswered": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/orders/src/storefront.ts"
+      },
+      "PostStorefrontOrdersByOrderIdSubstitutionsByLineIdReply201": {
         "$ref": "#/components/schemas/SubstitutionConsent",
         "x-body-schema": "derived",
         "x-derived-from": "services/orders/src/storefront.ts"
@@ -270302,6 +271412,70 @@
           },
           "deadLettered": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConsentFact": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "lineId",
+          "substituteProductId",
+          "decision",
+          "acceptsHigherPrice",
+          "given",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "substituteProductId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "declined"
+            ]
+          },
+          "acceptsHigherPrice": {
+            "type": "boolean"
+          },
+          "given": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "staff_contact"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "object",
+            "required": [
+              "method",
+              "reference"
+            ],
+            "properties": {
+              "method": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "at": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -308508,6 +309682,66 @@
         },
         "additionalProperties": true
       },
+      "SecretUseSummary": {
+        "type": "object",
+        "required": [
+          "credentialRef",
+          "callerId",
+          "api",
+          "calls",
+          "errors",
+          "daysUsed",
+          "lastUsedOn",
+          "byDay"
+        ],
+        "properties": {
+          "credentialRef": {
+            "type": "string"
+          },
+          "callerId": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "number"
+          },
+          "errors": {
+            "type": "number"
+          },
+          "daysUsed": {
+            "type": "number"
+          },
+          "lastUsedOn": {
+            "type": "string"
+          },
+          "byDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "calls",
+                "errors"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "calls": {
+                  "type": "number"
+                },
+                "errors": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "SecurityFinding": {
         "type": "object",
         "required": [
@@ -314367,6 +315601,41 @@
             "additionalProperties": true
           },
           "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SubstitutionWaitChange": {
+        "type": "object",
+        "required": [
+          "version",
+          "minutes",
+          "reason",
+          "setBy",
+          "setAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "minutes": {
+            "type": "number"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
             "type": "string"
           }
         },

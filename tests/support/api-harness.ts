@@ -8,6 +8,7 @@
 // a given user (auto-minting a token via the local IdP); `raw()` sends an explicit/no token for
 // auth-rejection tests.
 
+import { secretUseCounter, type SecretUseCounter } from '../../services/api/src/w6-secret-use-adapters';
 import { randomBytes } from 'node:crypto';
 import type { IdentityDirectory } from '../../services/identity/src/identity-directory';
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
@@ -107,6 +108,8 @@ export interface ApiHarness {
   provisionRole(tenantId: string, userId: string, roleId: string, branchScope?: readonly string[] | 'all'): Promise<void>;
   /** Turn an optional/paid feature on for a tenant, so routes tagged with it (M36-FR-01) are reachable. */
   enableFeature(tenantId: string, feature: string): Promise<void>;
+  /** W6 · M32-FR-03 · OB-688: the kernel's secret-use counter, composed as main.ts does it (no timer here: a test flushes). */
+  readonly secretUse: SecretUseCounter;
 }
 
 /**
@@ -172,6 +175,7 @@ export function apiHarness(opts: {
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
+  const secretUse = secretUseCounter({ store, now: opts.now ?? (() => new Date().toISOString()) });
   const kernel: Kernel = {
     router: built.router!,
     authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
@@ -189,6 +193,8 @@ export function apiHarness(opts: {
     // W3 · D13-FR-06: failed office sign-ins and lockouts kept on the shop's record, composed exactly as main.ts does it.
     ...(opts.authThrottle === undefined ? {} : { authThrottle: opts.authThrottle }),
     signInLog: officeSignInLogAdapter({ store }),
+    // W6 · M32-FR-03 · OB-688: each machine credential's use counted, as main.ts composes it.
+    credentialUse: secretUse.record,
     newTraceId: () => 'trace-e2e',
   };
 
@@ -225,5 +231,6 @@ export function apiHarness(opts: {
       await appendGrant(store, tenantId, userId, roleId, branchScope);
     },
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),
+    secretUse,
   };
 }

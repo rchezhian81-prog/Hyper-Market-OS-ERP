@@ -302,11 +302,24 @@ function secrets(root) {
     r.append(el('h2', w('secH'), { id: 'w5-sec-h' }), el('p', w('secLead'), { class: 'lede' }));
     if (!s.may.read) { status.textContent = gateWords(false); return; }
     const list = el('ul', null, { id: 'w5-sec-list' }); const found = el('ul', null, { id: 'w5-sec-review' });
+    // W6 · M32-FR-03 · OB-688: each machine credential's use over the last 30 days, and what the nightly check found.
+    const uses = el('ul', null, { id: 'w5-sec-use' }); const checked = el('p', null, { id: 'w5-sec-checked', class: 'meta' });
+    const unusual = el('ul', null, { id: 'w5-sec-unusual' });
     r.append(button('w5-sec-show', w('show'), async () => {
       status.textContent = w('reading');
-      const out = await s.inventory(); if (out.result !== 'ok') { say(status, out, ''); return; }
-      lines(list, out.value, (x) => H.secretLine(lang, x), (x) => x.secretId); status.textContent = '';
-    }), list, button('w5-sec-review-go', w('secReview'), async () => {
+      const [out, use] = await Promise.all([s.inventory(), s.usage()]);
+      if (out.result !== 'ok') { say(status, out, ''); return; }
+      if (use.result !== 'ok') { say(status, use, ''); return; }
+      lines(list, out.value, (x) => `${H.secretLine(lang, x)} · ${H.secretUseOf(lang, x.secretId, use.value.uses)}`, (x) => x.secretId);
+      uses.replaceChildren();
+      if (use.value.uses.length === 0) uses.append(el('li', w('secUseNone'), { class: 'meta' }));
+      for (const u of use.value.uses) { const li = el('li', H.secretUseLine(lang, u)); li.dataset.ref = u.credentialRef; li.dataset.caller = u.callerId; uses.append(li); }
+      checked.textContent = use.value.lastRolledUpDay === null ? w('secNotChecked') : `${w('secChecked')}: ${use.value.lastRolledUpDay}${use.value.notJudged.length === 0 ? '' : ` · ${w('secNotJudged')}: ${use.value.notJudged.join(', ')}`}`;
+      unusual.replaceChildren();
+      if (use.value.findings.length === 0) unusual.append(el('li', w('secUnusualNone'), { class: 'meta' }));
+      for (const f of use.value.findings) { const li = el('li', H.secretUseFindingLine(lang, f), { class: 'attention' }); li.dataset.signal = f.signal; unusual.append(li); }
+      status.textContent = '';
+    }), list, el('h3', w('secUseH'), { id: 'w5-sec-use-h' }), el('p', w('secUseLead'), { class: 'lede' }), uses, checked, el('h3', w('secUnusualH')), el('p', w('secRule'), { class: 'lede', id: 'w5-sec-rule' }), unusual, button('w5-sec-review-go', w('secReview'), async () => {
       const out = await s.review(); if (out.result !== 'ok') { say(status, out, ''); return; }
       found.replaceChildren(el('li', out.value.issues.length === 0 ? w('secClean') : out.value.detail, { class: 'meta' }));
       for (const i of out.value.issues) { const li = el('li', `${i.blocking ? w('secBlocking') : w('secAttention')} · ${i.secretId} — ${i.detail}`, { class: i.blocking ? 'attention' : '' }); li.dataset.finding = i.finding; found.append(li); }

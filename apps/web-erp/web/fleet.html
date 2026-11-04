@@ -24,7 +24,7 @@
       .sample[hidden],.stale[hidden],.nobody[hidden],.manage[hidden] { display:none; }
       main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
-      .tiles { display:flex; gap:12px; flex-wrap:wrap; }
+      .tiles { display:flex; gap:12px; flex-wrap:wrap; } .tiles[hidden], .vx-status[hidden] { display:none; }
       .tile { background:var(--panel); border-radius:12px; padding:10px 14px; min-width:110px; border-left:6px solid var(--idle); }
       .tile b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .tile span { color:var(--muted); font-size:13px; }
       .tile.attention { border-left-color:var(--degraded); } .tile.bad { border-left-color:var(--error); } .tile.good { border-left-color:var(--ok); }
@@ -42,7 +42,7 @@
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); } p.state[hidden] { display:none; }
       .pending { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
       .pending[hidden] { display:none; }
       .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
@@ -98,6 +98,9 @@
         <h2 id="title">Devices</h2>
         <p class="lead" id="lead"></p>
       </div>
+
+      <!-- W6 · M33-FR-04: where this fleet came from — head office's own answer, read as you; anything else is said, never an empty "all well". -->
+      <p class="vx-status tone-unknown" id="health" role="status" aria-live="polite" hidden><span class="icon" id="health-icon" aria-hidden="true">?</span><span id="health-text"></span></p>
 
       <div class="tiles" id="tiles" role="group" aria-label="Fleet at a glance"></div>
 

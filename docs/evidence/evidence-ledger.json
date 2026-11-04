@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2222,
+  "testFiles": 2233,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1583,11 +1583,11 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 19,
         "realDb": 6,
-        "browser": 10,
-        "connected": 2,
+        "browser": 11,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1605,6 +1605,7 @@
           "tests/unit/repeat-orders-session.test.ts",
           "tests/unit/till-side-the-tier-multiplier-rides-the-wallet-feed.test.ts",
           "tests/unit/w5-customer-desk-sections-session.test.ts",
+          "tests/unit/w6-the-loyalty-desk-pays-out-a-referral-reward.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
@@ -1646,11 +1647,13 @@
           "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
           "tests/e2e/w3-gift-cards-and-compensation-limits.e2e.ts",
           "tests/e2e/w3-month-end-shows-what-the-shop-owes-customers.e2e.ts",
-          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w3-connected-d07-a-gift-card-is-issued-and-spent-on-the-store-computer.e2e.ts",
-          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-customer-privacy-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1729,11 +1732,11 @@
       "id": "M19",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 26,
-        "integration": 18,
-        "realDb": 6,
-        "browser": 14,
-        "connected": 6,
+        "unit": 28,
+        "integration": 19,
+        "realDb": 7,
+        "browser": 15,
+        "connected": 7,
         "device": 0,
         "uat": 0
       },
@@ -1764,7 +1767,9 @@
           "tests/unit/the-driver-captures-proof-at-the-door.test.ts",
           "tests/unit/w4-the-dispatch-page-dispatches-a-packed-order-and-shows-its-manifest.test.ts",
           "tests/unit/w4-the-picker-picks-a-head-office-line-whose-unit-is-spelled-each.test.ts",
-          "tests/unit/w5-customer-desk-sections-session.test.ts"
+          "tests/unit/w5-customer-desk-sections-session.test.ts",
+          "tests/unit/w6-a-swap-is-put-to-the-customer-on-the-picker-phone.test.ts",
+          "tests/unit/w6-the-customer-answers-a-swap-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1784,7 +1789,8 @@
           "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts",
           "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
-          "tests/integration/w4-a-store-computer-set-up-from-head-office-pulls-the-phones-work-on-its-first-day.test.ts"
+          "tests/integration/w4-a-store-computer-set-up-from-head-office-pulls-the-phones-work-on-its-first-day.test.ts",
+          "tests/integration/w6-a-swap-the-customer-answers-is-what-was-packed.test.ts"
         ],
         "realDb": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1792,7 +1798,8 @@
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/ob676-three-values-the-owner-confirms.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
-          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts"
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts",
+          "tests/integration/w6-a-swap-the-customer-answers-is-what-was-packed.test.ts"
         ],
         "browser": [
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
@@ -1808,7 +1815,8 @@
           "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
           "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
-          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/ob676-the-owner-confirms-the-driver-cash-limit-on-the-dispatch-page.e2e.ts",
@@ -1816,7 +1824,8 @@
           "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
           "tests/e2e/w3-connected-d09-the-dispatch-page-runs-the-day-on-the-store-computer.e2e.ts",
           "tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts",
-          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts"
+          "tests/e2e/w5-cases-dispatch-and-online-orders-sections-on-the-production-api.e2e.ts",
+          "tests/e2e/w6-the-customer-answers-a-swap-the-picker-proposes-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2827,11 +2836,11 @@
       "id": "M32",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
-        "integration": 19,
-        "realDb": 8,
-        "browser": 4,
-        "connected": 2,
+        "unit": 13,
+        "integration": 20,
+        "realDb": 9,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2848,7 +2857,8 @@
           "tests/unit/integration-connector.test.ts",
           "tests/unit/integration-secrets.test.ts",
           "tests/unit/kernel-payment-data-residency.test.ts",
-          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts",
+          "tests/unit/w6-secret-use-is-counted-daily-and-judged-once.test.ts"
         ],
         "integration": [
           "tests/integration/connector-delivery.test.ts",
@@ -2869,6 +2879,7 @@
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
+          "tests/integration/w6-secret-use-is-counted-and-judged-through-a-restart-on-postgresql.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
@@ -2879,17 +2890,20 @@
           "tests/integration/payment-data-is-pinned-to-india.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/the-seams-hold.test.ts",
-          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
+          "tests/integration/w6-secret-use-is-counted-and-judged-through-a-restart-on-postgresql.test.ts"
         ],
         "browser": [
           "tests/e2e/integration-health-delivery.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
           "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-secret-use-is-shown-and-abnormal-use-alerts-the-custodian-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-secret-use-is-shown-and-abnormal-use-alerts-the-custodian-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2901,11 +2915,11 @@
       "id": "M33",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 24,
+        "unit": 25,
         "integration": 20,
         "realDb": 4,
-        "browser": 6,
-        "connected": 2,
+        "browser": 7,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2934,7 +2948,8 @@
           "tests/unit/tenant-setup-concurrency.test.ts",
           "tests/unit/tenant-setup.test.ts",
           "tests/unit/version-policy-projection.test.ts",
-          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts",
+          "tests/unit/w6-the-devices-page-reads-the-fleet-from-head-office.test.ts"
         ],
         "integration": [
           "tests/integration/background-jobs.test.ts",
@@ -2970,11 +2985,13 @@
           "tests/e2e/r4c-tills-and-devices-registers-a-till.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/w5-access-and-approvals-sections-on-postgresql.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-the-devices-page-reads-fleet-health-and-the-loyalty-desk-pays-a-referral-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

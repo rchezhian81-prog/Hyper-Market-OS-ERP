@@ -312,6 +312,11 @@
         <!-- OB-77: where the driver says my delivery is, and as of when — read back from the shop, never guessed. -->
         <button id="track-order" class="wide" type="button" hidden>Where is my order?</button>
         <p class="say" id="delivery-say" role="status" aria-live="polite" hidden></p>
+        <!-- OB-687 · FUL-14: a swap the shop put to me — the product offered, its price and why; I answer yes or no (online-store.js). -->
+        <h2 id="swaps-title">Swaps waiting for your answer</h2>
+        <p class="note" id="swaps-say" role="status" aria-live="polite"></p>
+        <div class="rows" id="swaps"></div>
+        <button id="swaps-check" class="wide" type="button">Check for swaps</button>
         <!-- OB-294 · D08-FR-05: head office's 4-digit code for MY order and the driver's last stop with an ETA — "not given yet"
              until head office gives them; asked on a tap, never on a timer. -->
         <button id="handover-show" class="wide" type="button" hidden>Show my delivery code and arrival time</button>

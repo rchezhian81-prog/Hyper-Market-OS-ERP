@@ -165,6 +165,31 @@ const SECTIONS = {
     }), st.node);
   } },
 
+  // Loyalty — W6 (M17-FR-02 · OB-221 · OB-356): a referral reward the shop owes, paid out (how, and the receipt or transfer
+  // number) or let lapse (why) by a person holding loyalty.referral.settle. Head office refuses one with nothing owed.
+  owed: { may: 'referral', build(sec) {
+    head(sec, 'owedH', 'owedLead');
+    const st = statusLine('cd-owed-status');
+    const out = resultArea('cd-owed-out', (rows) => [listOf('cd-owed-list', rows.map((r) => {
+      const who = r.side === null ? '' : ` · ${r.customerRef ?? ''} ${t(`side_${r.side}`)}`;
+      const row = li(`${r.referralId}${who} — ${api.rupees(r.outstandingMinor)} ${t('owes')}`, { referral: r.referralId });
+      const key = r.referralId.replace(/[^A-Za-z0-9_-]/g, '-');
+      const how = choose(`cd-owed-${key}-how`, 'how', api.payoutHows.map((k) => [k, `how_${k}`]));
+      const ref = field(`cd-owed-${key}-ref`, 'payRef'); const st2 = statusLine(`cd-owed-${key}-status`);
+      const why = field(`cd-owed-${key}-why`, 'lapseReason');
+      row.append(
+        form(`cd-owed-${key}-pay`, [how.label, ref.label], 'payOut', () => act(st2, () => s.payReferral(r.referralId, how.input.value, ref.input.value), () => void read('paidOut'))),
+        form(`cd-owed-${key}-lapse`, [why.label], 'lapse', () => act(st2, () => s.lapseReferral(r.referralId, why.input.value), () => void read('lapsed'))),
+        st2.node);
+      return row;
+    }), 'noOwed')]);
+    // A payment or lapse recorded re-reads the list (the settled reward leaves it) and says so on the section's own line; a
+    // refusal stays on the row's line.
+    const read = async (doneKey) => { const o = await s.owedReferrals(); if (o.result === 'ok') { out.paint(o.value); st.set(doneKey); } else st.set(o); };
+    const b = el('button', { type: 'button', id: 'cd-owed-go', key: 'owedShow' }); b.addEventListener('click', () => void act(st, () => s.owedReferrals(), out.paint));
+    sec.append(b, st.node, out.node);
+  } },
+
   // Message queue — withdraw an approved message template (PA-08 r6).
   withdraw: { may: 'templates', build(sec) {
     head(sec, 'withdrawH', 'withdrawLead');
@@ -312,6 +337,53 @@ const SECTIONS = {
       listOf('cd-notices-list', [...v.notQueued, ...v.notices.filter((n) => n.outcome === 'queued')].map((n) => li(`${n.orderId} · ${n.kind} · ${n.customerRef} — ${n.outcome === 'queued' ? t('queued') : `${t('notQueued')}: ${n.detail}`} · ${when(n.at)}`, { notice: n.noticeId, outcome: n.outcome })), 'noNotices')]);
     const b = el('button', { type: 'button', id: 'cd-notices-go', key: 'noticesShow' }); b.addEventListener('click', () => void act(st, () => s.orderNotices(), out.paint));
     sec.append(b, st.node, out.node);
+  } },
+
+  // W6 · OB-687 — the swaps the picker put to the customer on an order, and their yes or no told to staff by phone (it counts
+  // the same as the app's). The record form is offered only to a role head office lets record it.
+  'swap-answer': { may: 'orderRead', build(sec) {
+    head(sec, 'swapsH', 'swapsLead');
+    const o = field('cd-swap-order', 'orderNo'); const st = statusLine('cd-swap-status');
+    let shown = [];
+    const line = choose('cd-swap-line', 'swapLine', []);
+    const out = resultArea('cd-swap-out', (v) => [listOf('cd-swap-list', v.map((x) => li(
+      `${x.substituteName} ${t('for')} ${x.orderedName}${x.substituteUnitPriceMinor === null ? '' : ` · ${api.rupees(x.substituteUnitPriceMinor)} ${t('each')}`} — ${t(`s_${x.state}`)}`
+      + `${x.answeredVia ? ` (${t(`via_${x.answeredVia}`)}${x.contact ? `: ${x.contact.method} ${x.contact.reference}` : ''})` : ''}`
+      + `${x.answerBy && x.state === 'waiting' ? ` · ${t('answerBy')} ${when(x.answerBy)}` : ''}${x.refusedBecause ? ` · ${x.refusedBecause}` : ''}`
+      + `${x.settled ? ` · ${x.settled.onOrder ? t('onOrder') : t('notOnOrder')}${x.settled.refusal ? `: ${x.settled.refusal.whatHappened}` : ''}` : ''}`,
+      { line: x.lineId, state: x.state })), 'noSwaps')]);
+    const fill = (v) => {
+      shown = v;
+      line.input.replaceChildren(...v.filter((x) => x.state === 'waiting').map((x) => el('option', { value: x.lineId, text: `${x.substituteName} ${t('for')} ${x.orderedName}` })));
+      out.paint(v);
+    };
+    const showIt = () => act(st, () => s.swapProposals(o.input.value), fill);
+    sec.append(form('cd-swap-form', [o.label], 'swapsShow', showIt), st.node, out.node);
+    if (s.may.subPref) {
+      const d = choose('cd-swap-decision', 'swapAnswer', api.swapDecisions.map((k) => [k, `d_${k}`]));
+      const m = choose('cd-swap-method', 'method', api.contactMethods.map((k) => [k, `m_${k}`]));
+      const r = field('cd-swap-ref', 'contactRef'); const st2 = statusLine('cd-swap-answer-status');
+      sec.append(form('cd-swap-answer', [line.label, d.label, m.label, r.label], 'swapRecord', async () => {
+        const done = await act(st2, () => s.answerSwap(o.input.value, line.input.value, { decision: d.input.value, method: m.input.value, reference: r.input.value }), undefined, 'swapRecorded');
+        if (done.result === 'ok') { const again = await s.swapProposals(o.input.value); if (again.result === 'ok') fill(again.value); }
+      }), st2.node);
+    }
+    repaints.push(() => { if (shown.length > 0) fill(shown); });
+  } },
+
+  // W6 · OB-687 — how long the picker waits for a customer's answer: the OWNER's number, "not set" until he sets it.
+  'swap-wait': { may: 'orderRead', build(sec) {
+    head(sec, 'waitH', 'waitLead');
+    const st = statusLine('cd-wait-status');
+    const out = resultArea('cd-wait-out', (v) => [el('p', { id: 'cd-wait-now', class: v.state === 'set' ? 'meta' : 'meta warn', 'data-state': v.state,
+      text: v.state === 'set' ? `${t('waitIs')} ${v.minutes} ${t('minutes')} · ${t('setByOwner')} ${v.setBy ?? ''} · ${when(v.setAt)}` : t('waitNotSet') })]);
+    const b = el('button', { type: 'button', id: 'cd-wait-go', key: 'waitShow' }); b.addEventListener('click', () => void act(st, () => s.swapWait(), out.paint));
+    sec.append(b, st.node, out.node);
+    if (s.may.waitSet) {
+      const mi = field('cd-wait-minutes', 'waitMinutes', { type: 'text' }); mi.input.setAttribute('inputmode', 'numeric');
+      const re = field('cd-wait-reason', 'waitReason'); const st2 = statusLine('cd-wait-set-status');
+      sec.append(form('cd-wait-form', [mi.label, re.label], 'waitSave', () => act(st2, () => s.setSwapWait(mi.input.value, re.input.value), out.paint, 'waitSaved')), st2.node);
+    }
   } },
 
   // Online orders — the refused-access register (P-04 · hard rule #6).

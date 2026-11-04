@@ -3,7 +3,7 @@
 // is attached as `window.customerDesk` from the viewer the front door injected for THIS page (identity only). Nothing is read
 // or written here.
 
-import { createDeskSession, deskWords, deskOutcomeWords, NOMINEE_BASES, COMPENSATION_KINDS, EXCEPTION_QUEUES, SUB_PREFERENCES, CONTACT_METHODS } from './customer-desk-sections-session';
+import { createDeskSession, deskWords, deskOutcomeWords, NOMINEE_BASES, COMPENSATION_KINDS, EXCEPTION_QUEUES, SUB_PREFERENCES, CONTACT_METHODS, PAYOUT_HOWS, SWAP_DECISIONS } from './customer-desk-sections-session';
 import { shopMomentOf } from './findings-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
@@ -21,6 +21,6 @@ export function wireW5Customers(win: Record<string, unknown>, viewerIdentity: (r
   if (global === undefined) return;
   win['customerDesk'] = {
     session: createDeskSession({ viewer: viewerIdentity(win[global]) }), words: deskWords, outcomeWords: deskOutcomeWords, rupees, moment: shopMomentOf,
-    bases: NOMINEE_BASES, compensationKinds: COMPENSATION_KINDS, queues: EXCEPTION_QUEUES, preferences: SUB_PREFERENCES, contactMethods: CONTACT_METHODS,
+    bases: NOMINEE_BASES, compensationKinds: COMPENSATION_KINDS, queues: EXCEPTION_QUEUES, preferences: SUB_PREFERENCES, contactMethods: CONTACT_METHODS, payoutHows: PAYOUT_HOWS, swapDecisions: SWAP_DECISIONS,
   };
 }

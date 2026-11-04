@@ -91,7 +91,9 @@ export type ShopCommercePath =
   // OB-352: a bill the till marked for delivery — I choose the address (one I saved) and the slot.
   | `me/till-deliveries${string}`
   // W5 · D02-FR-04 · OB-319: a search that found nothing — the words only, never who searched (the range-gap report reads it).
-  | 'catalogue/search-misses';
+  | 'catalogue/search-misses'
+  // OB-687 · FUL-14: my own orders (each with any swap the shop put to me), and my yes or no to one of those swaps.
+  | 'storefront/orders' | `storefront/orders/${string}/substitutions/${string}`;
 
 export interface ShopCommerceRequest {
   readonly token: string;

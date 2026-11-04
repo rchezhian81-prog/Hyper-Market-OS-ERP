@@ -299,8 +299,10 @@ import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
 import { applyOrderFulfilment, orderFulfilmentRoutes } from '../../fulfilment/src/order-fulfilment';
 import { stockLossRoutes } from '../../finance/src/stock-losses';
 import { b2bPostingRoutes } from '../../finance/src/b2b-postings';
-import { syncedWaveRoutes } from '../../fulfilment/src/waves';
+import { syncedWaveRoutes, type WaveLineOutcome } from '../../fulfilment/src/waves';
 import { assignmentRoutes } from '../../fulfilment/src/assignments';
+import { substitutionProposalRoutes, customerProposalPort, settleOnPick, substitutionsForWave } from '../../fulfilment/src/substitution-proposals'; // OB-687
+import { substitutionProposalAdapter, bareProposalDeps } from './substitution-proposal-adapters'; // OB-687
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
@@ -385,6 +387,7 @@ import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPolicie
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
 import { dataInTemplates, dataInCommitDeps, dataOutDomains } from './data-in-adapters'; // OB-288 lane 4 · P2 data in (OB-315) and out (M30-FR-02)
+import { secretUseCounter, secretUseReads, secretUseRollupSweep } from './w6-secret-use-adapters'; // W6 · M32-FR-03 · OB-688 — the durable daily secret-use count
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
@@ -633,6 +636,10 @@ export function buildSurface(deps: {
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
+  // OB-687 (owner, 4 Nov 2026) · FUL-14 · M19-FR-02: a swap that needs the customer's yes is put to the customer by the
+  // picker's phone and answered in the app (or by staff, told by phone); the answer travels back to the picker on the wave.
+  const proposals = store === undefined ? undefined
+    : substitutionProposalAdapter({ store, now, orders: ordersDeps, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) });
   // SP-8 / SP-8b: one deps object for the floor indent chain — the direct routes and the relayed routes act on the same
   // records through the same engine.
   const floorIndentDeps = store === undefined ? {
@@ -1223,7 +1230,7 @@ export function buildSurface(deps: {
     // Managed secrets — register/rotate/revoke/review (M32-FR-03). References only, never a value.
     ...calendared(secretsRoutes)(store === undefined ? {
       secret: empty(undefined), all: empty([]), record: () => {}, now,
-    } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...secretsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, usage: secretUseReads({ store }) }), // W6 · OB-688: each machine credential's daily use
     // Org hierarchy — nodes + GST register, validate/activate/scope (M01-FR-01).
     ...orgStructureRoutes(store === undefined ? {
       nodes: empty([]), registrations: empty([]), recordNode: () => {}, recordRegistration: () => {}, now,
@@ -1503,6 +1510,7 @@ export function buildSurface(deps: {
       : queueStaffingAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     ...exceptionOwnershipRoutes(store === undefined ? ordersDeps : { ...ordersDeps, queueStaffing: queueStaffingOf({ store }) }),
     ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
+    ...substitutionProposalRoutes(proposals ?? bareProposalDeps(now)), // OB-687
     ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
@@ -1525,6 +1533,7 @@ export function buildSurface(deps: {
     })),
     ...storefrontRoutes({
       ...ordersDeps,
+      ...(proposals === undefined ? {} : { proposals: customerProposalPort(proposals) }), // OB-687: my swaps to answer
       // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
       ...(store === undefined ? {} : {
         unitPriceOf: async (t: string, productId: string) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.find((p) => p.productId === productId)?.unitPriceMinor,
@@ -1573,7 +1582,7 @@ export function buildSurface(deps: {
     // record-and-flag; nothing here moves stock.
     ...syncedWaveRoutes(store === undefined
       ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, productPacking: empty(undefined), orderPack: empty(undefined), recordOrderPack: () => {}, now }
-      : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(proposals === undefined ? {} : { afterLineOutcome: (t: string, o: WaveLineOutcome) => settleOnPick(proposals, t, o) }) }),
     // HA-1 (3 Oct 2026): head office ASSIGNS a wave to a picker and a route to a driver, per store; the box pulls the OPEN
     // ones under its own credential and serves them to the phones with "head office" named. The person assigned is re-verified
     // and refused by name when they may not do the work; finished work (packed / settled) cannot be reassigned.
@@ -1581,6 +1590,8 @@ export function buildSurface(deps: {
       ? { permissionsOfUser: empty(undefined), waveAssignments: empty([]), recordWaveAssignment: () => {}, routeAssignments: empty([]), recordRouteAssignment: () => {}, wavePacked: empty(false), routeSettled: empty(false), now }
       : {
         ...assignmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit,
+        // OB-687: the owner's wait, each order's substitution rule and head office's word on each swap ride with the wave.
+        ...(proposals === undefined ? {} : { substitutionsOf: (t: string, waveId: string, refs: readonly string[]) => substitutionsForWave(proposals, t, waveId, refs) }),
         // R4 gap lane "driver" (WF-16): a return collection on a route reads the return's own stage and booked lines.
         collectionOf: async (t: string, returnId: string) => {
           const v = await onlineReturnViewOf(store, t, returnId);
@@ -2617,6 +2628,9 @@ export async function startApi(
   // served at /metricz. Provider-neutral (P-06) — a real log shipper or metrics/OTel exporter is a
   // change to these two lines, not to any handler.
   const metrics = new RequestMetrics();
+  // W6 · M32-FR-03 · OB-688: every machine credential's use, counted per caller, per API, per shop day and appended to the
+  // ledger every 10 s (references and numbers only — never a token or a value); the nightly roll-up judges each day.
+  const secretUse = secretUseCounter({ store, now, flushEveryMs: 10_000, say: (line) => { err(`${line}\n`); }, calendar: async (t: string) => { const d = new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))); return { timeZone: await d.value(t, SETTINGS.STORE_TIME_ZONE), tradingDayCutoff: await d.value(t, SETTINGS.TRADING_DAY_CUTOFF) }; } });
   const observe = combineObservers(
     structuredLogger((line) => { out(`${line}\n`); }),
     metrics.record,
@@ -2714,6 +2728,7 @@ export async function startApi(
     // W3 · D13-FR-06: each failed office sign-in and each lockout it trips is KEPT, append-only on PostgreSQL on the shop's
     // own record (the lockout above stays in memory, for speed) — the security report counts them through a restart.
     signInLog: officeSignInLogAdapter({ store, log: err }),
+    credentialUse: secretUse.record,
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
     dependenciesReachable: reachable,
@@ -2817,6 +2832,7 @@ export async function startApi(
       saasRollout: saasRolloutSweep({ store, now, plans: PROPOSED_PLANS }), // OB-288 P4 — the hourly usage record (OB-321) and the customer-data volume watch (C9)
       contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       scaleStamp: scaleStampExpirySweep({ store, now, calendar: shopCalendar }), // Round 6 · B7 — a weighing-scale stamp due soon or lapsed
+      secretUse: secretUseRollupSweep({ store, now, calendar: shopCalendar }), // W6 · M32-FR-03 · OB-688 — each finished day's secret use judged once; alerts to the IT custodian
       say: (line) => { out(`${line}\n`); },
     }),
   });
@@ -2850,6 +2866,7 @@ export async function startApi(
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
+      await secretUse.stop(); // W6: the last tally is kept before the database closes
       await db.end();
     },
   };

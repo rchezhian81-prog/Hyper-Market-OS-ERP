@@ -82,6 +82,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // their grants and keeps a wave register; a payload it cannot read dead-letters visibly. Nothing here moves stock.
   PickLineResolved: { surfaces: ['picker'] },
   WavePacked: { surfaces: ['picker'] },
+  // OB-687 (owner, 4 Nov 2026) · FUL-14: a swap the picker PUT TO THE CUSTOMER on a line whose rule needs a yes. Head office keeps
+  // it once, re-verifies the picker and runs the shop's own substitution rules on it; the customer answers it in the app.
+  SubstitutionProposed: { surfaces: ['picker'] },
   // SP-3c-ii (F11's driver half): the DRIVER handheld's work over the same socket. A stop's outcome (departed, at the door,
   // delivered with proof KIND and the cash taken, partly delivered, failed with a reason, reattempted, returned), the route's
   // end-of-shift settlement and the counted cash handover. Head office re-verifies the DRIVER, maps a stop onto the order's

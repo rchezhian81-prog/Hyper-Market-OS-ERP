@@ -115,6 +115,20 @@ const WORDS = {
     manifestValue: 'Value', sampleWave: 'Sample wave — this is not real work.',
     tooMany: 'That is more than the order asked for.',
     substituteFirst: 'Mark the item unavailable first, then record the swap.',
+    // OB-687: a swap put to the customer, who answers in the app (or tells the shop by phone).
+    askWhy: 'Why are you offering a swap?',
+    askedCustomer: 'Asked the customer',
+    askedBody: 'Waiting up to {n} minute(s) for their yes or no — until {time}. Carry on with the other lines.',
+    noWaitTitle: 'This line goes short',
+    noWaitBody: 'The owner has not set how long to wait for a customer\'s answer, so the picker does not wait: this line goes short and the customer is not asked.',
+    waitingCustomer: 'Waiting for the customer until {time}',
+    saidYesTitle: 'The customer said yes',
+    saidYesBody: 'Put {sub} in the crate in place of {item}.',
+    saidNoTitle: 'The customer said no',
+    shortBody: '{item} goes short — nothing goes in the crate for it.',
+    refusedTitle: 'The shop\'s rules do not allow this swap',
+    timedOutTitle: 'No answer from the customer in time',
+    answersBack: 'Answers from customers',
   },
   ta: {
     updateApp: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
@@ -157,6 +171,19 @@ const WORDS = {
     manifestValue: 'மதிப்பு', sampleWave: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
     tooMany: 'ஆர்டரில் கேட்டதை விட இது அதிகம்.',
     substituteFirst: 'முதலில் பொருள் இல்லை என்று குறித்துவிட்டு, பிறகு மாற்றத்தைப் பதிவு செய்யவும்.',
+    askWhy: 'ஏன் மாற்றுப் பொருளை வழங்குகிறீர்கள்?',
+    askedCustomer: 'வாடிக்கையாளரிடம் கேட்கப்பட்டது',
+    askedBody: '{n} நிமிடம் வரை ({time} வரை) அவர்களின் ஆம் அல்லது இல்லை பதிலுக்குக் காத்திருக்கிறது. மற்ற வரிகளைத் தொடருங்கள்.',
+    noWaitTitle: 'இந்த வரி குறைவாகிறது',
+    noWaitBody: 'வாடிக்கையாளரின் பதிலுக்கு எவ்வளவு நேரம் காத்திருக்க வேண்டும் என்று உரிமையாளர் அமைக்கவில்லை, எனவே காத்திருக்க வேண்டாம்: இந்த வரி குறைவாகிறது, வாடிக்கையாளரிடம் கேட்கப்படாது.',
+    waitingCustomer: '{time} வரை வாடிக்கையாளருக்காகக் காத்திருக்கிறது',
+    saidYesTitle: 'வாடிக்கையாளர் ஆம் என்றார்',
+    saidYesBody: '{item} க்குப் பதிலாக {sub} ஐ கிரேட்டில் வையுங்கள்.',
+    saidNoTitle: 'வாடிக்கையாளர் இல்லை என்றார்',
+    shortBody: '{item} குறைவாகிறது — அதற்காக கிரேட்டில் எதுவும் வைக்க வேண்டாம்.',
+    refusedTitle: 'கடையின் விதிகள் இந்த மாற்றத்தை அனுமதிக்கவில்லை',
+    timedOutTitle: 'நேரத்திற்குள் வாடிக்கையாளரிடமிருந்து பதில் இல்லை',
+    answersBack: 'வாடிக்கையாளர்களின் பதில்கள்',
   },
 };
 let lang = 'en';
@@ -174,6 +201,7 @@ function versionRefused(e) {
 /** What a line's state is called, in both languages. Guarded against the model's own union. */
 const STATE_WORDS = {
   pending: { en: 'Not done yet', ta: 'இன்னும் முடியவில்லை' },
+  awaiting_customer: { en: 'Waiting for the customer', ta: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது' },
   picked: { en: 'Picked', ta: 'எடுக்கப்பட்டது' },
   short: { en: 'Short', ta: 'குறைவு' },
   substituted: { en: 'Swapped', ta: 'மாற்றப்பட்டது' },
@@ -186,7 +214,7 @@ const STATE_WORDS = {
  * has it (P-08). A guardrail binds these to the shared list.
  */
 /** The shape each line's state wears beside its words (OB-205). */
-const LINE_ICON = { pending: 'clock', picked: 'circle-check', short: 'triangle-alert', substituted: 'repeat', quality_failed: 'circle-alert' };
+const LINE_ICON = { pending: 'clock', awaiting_customer: 'calendar-clock', picked: 'circle-check', short: 'triangle-alert', substituted: 'repeat', quality_failed: 'circle-alert' };
 
 const SENT_STATE_WORDS = {
   saved_here: { en: 'Saved on this handheld — not yet with the store computer', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
@@ -231,6 +259,7 @@ const HANDLING_WORDS = {
 const KIND_WORDS = {
   line: { en: 'Line', ta: 'வரி' },
   pack: { en: 'Crate packed', ta: 'கிரேட் பேக் ஆனது' },
+  proposal: { en: 'Swap asked', ta: 'மாற்றம் கேட்கப்பட்டது' },
 };
 
 /**
@@ -504,7 +533,8 @@ async function syncToBox() {
   render();
 }
 // The slow timer does not keep asking a store computer that said "not allowed" — the person's next action asks once more.
-const syncTimer = setInterval(() => { if (notAllowed === null) void syncToBox(); }, 10_000);
+// OB-687: the same beat asks for the customers' answers while any line waits for one (and settles a line whose time ran out).
+const syncTimer = setInterval(() => { if (notAllowed === null) void syncToBox(); void readAnswers(); }, 10_000);
 // Verifier hh L3: when the sign-in ends the screen locks (the strip's script); this screen's timers stop with it.
 (window.phoneSignInOnLock = Array.isArray(window.phoneSignInOnLock) ? window.phoneSignInOnLock : []).push(() => clearInterval(syncTimer));
 
@@ -553,8 +583,15 @@ function render() {
     const state = document.createElement('span');
     state.className = 'state';
     say(state, words(STATE_WORDS, line.state), LINE_ICON[line.state] ?? 'clock');
+    // OB-687: a line put to the customer says until when the picker waits, at the shop's clock.
+    const waiting = document.createElement('span');
+    waiting.className = 'waiting-customer';
+    waiting.hidden = line.state !== 'awaiting_customer' || line.proposal === undefined;
+    if (!waiting.hidden) waiting.textContent = `${t('waitingCustomer').replace('{time}', shopTimeOf(line.proposal.answerBy))} · ${line.proposal.substituteProductId}`;
+    row.dataset.state = line.state;
+    row.dataset.line = line.lineId;
 
-    row.append(bin, what, handling, qty, state);
+    row.append(bin, what, handling, qty, state, waiting);
     row.addEventListener('click', () => { selectedLineId = line.lineId; startLine(line); });
     return row;
   }));
@@ -644,6 +681,8 @@ el('substitute').addEventListener('click', async () => {
 
 async function substituteLine(line) {
   if (line.state === 'picked' || line.state === 'substituted') { tell(t('read'), t('alreadyDone')); return; }
+  // OB-687: the customer asked to be asked first — the swap is PUT TO THEM; they answer in the app (or tell the shop).
+  if (line.substitution === 'ask_first' && typeof session.proposeSubstitute === 'function') { await proposeLine(line); return; }
 
   const substituteCode = await awaitScan(t('scanSubstitute'), t('pointAndPull'));
   if (substituteCode === null) return;
@@ -665,6 +704,55 @@ async function substituteLine(line) {
         ? t('substituteNeedsCustomer')
         : name === 'LineAlreadyResolvedError' ? t('substituteFirst')
           : String(e && e.message ? e.message : e));
+  }
+  render();
+}
+
+/**
+ * OB-687 · FUL-14: put a swap to the customer. Scan the item offered instead, say why (chosen, never typed) — and the phone
+ * queues it for the store computer. With no wait set by the owner, the picker does not wait: the line goes short now, said.
+ */
+async function proposeLine(line) {
+  if (line.state !== 'pending') { tell(t('read'), t('alreadyDone')); return; }
+  const substituteCode = await awaitScan(t('scanSubstitute'), t('pointAndPull'));
+  if (substituteCode === null) return;
+  const why = await ask({ title: t('askWhy'), mode: 'choice', options: PROBLEMS.filter((p) => p.kind === 'unavailable').map((p) => ({ value: p.code, label: t(p.word) })) });
+  if (why === null) return;
+  try {
+    const out = session.proposeSubstitute(line.lineId, substituteCode, why, window.pickerAnswers?.waitMinutes() ?? window.pickerData?.substitutionWaitMinutes ?? null);
+    if (out.outcome === 'short_no_wait') tell(t('noWaitTitle'), t('noWaitBody'));
+    else {
+      const minutes = Math.round((Date.parse(out.answerBy) - Date.parse(out.line.proposal.proposedAt)) / 60_000);
+      tell(t('askedCustomer'), t('askedBody').replace('{n}', String(minutes)).replace('{time}', shopTimeOf(out.answerBy)), true);
+    }
+    void syncToBox();
+  } catch (e) {
+    if (versionRefused(e)) { render(); return; }
+    tell(t('read'), e && e.name === 'LineAlreadyResolvedError' ? t('alreadyDone') : String(e && e.message ? e.message : e));
+  }
+  render();
+}
+
+/** OB-687: the customers' answers, read back through the store computer — each settled line said, in words. */
+function tellSettled(settled) {
+  if (settled.length === 0) return;
+  const one = (s) => {
+    const item = s.line.description;
+    if (s.outcome === 'swapped') return [t('saidYesTitle'), t('saidYesBody').replace('{sub}', s.substituteName ?? s.line.substituteProductId).replace('{item}', item), true];
+    const title = s.outcome === 'customer_said_no' ? t('saidNoTitle') : s.outcome === 'refused_by_rule' ? t('refusedTitle') : t('timedOutTitle');
+    return [title, t('shortBody').replace('{item}', item), false];
+  };
+  if (settled.length === 1) { const [title, body, good] = one(settled[0]); tell(title, body, good); return; }
+  tell(t('answersBack'), settled.map((s) => one(s).slice(0, 2).join(': ')).join(' · '), settled.every((s) => s.outcome === 'swapped'));
+}
+async function readAnswers() {
+  const reader = window.pickerAnswers;
+  if (!reader || typeof session.waitingForCustomer !== 'function' || session.waitingForCustomer().length === 0) return;
+  try {
+    const r = await reader.readNow();
+    if (r.settled.length > 0) { tellSettled(r.settled); void syncToBox(); }
+  } catch {
+    /* no word — the lines keep waiting until the owner's time runs out */
   }
   render();
 }

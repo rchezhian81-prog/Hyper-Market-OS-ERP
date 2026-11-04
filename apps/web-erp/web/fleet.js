@@ -66,6 +66,16 @@ function sampleSession() {
 
 const real = window.fleetSession;
 const session = real ?? sampleSession();
+// W6 · M33-FR-04: the fleet is head office's answer to this page's own read (window.fleetHealth, the bundled port — this file
+// never calls the network). Until it has answered, or when it cannot, the page says so and shows no counts: an empty list is
+// never "all well" (P-08).
+const healthPort = real === undefined ? undefined : window.fleetHealth;
+let healthRead = { state: 'not_read_yet' };
+const healthLine = () => (healthPort === undefined ? null : healthPort.line(lang, healthRead));
+function readHealth() {
+  if (healthPort === undefined) return;
+  healthPort.read().then((r) => { healthRead = r; paint(); }, () => { healthRead = { state: 'unreachable' }; paint(); });
+}
 const t = (key) => session.text(lang, key);
 let attentionOnly = false;
 const VIEW_WORDS = {
@@ -213,6 +223,15 @@ function paint() {
   el('filter').textContent = attentionOnly ? vw('filterAll') : vw('filterAttention');
   el('filter').setAttribute('aria-pressed', attentionOnly ? 'true' : 'false');
 
+  const hl = healthLine();
+  el('health').hidden = hl === null;
+  if (hl !== null) {
+    el('health').className = `vx-status tone-${hl.tone}`;
+    el('health-icon').textContent = hl.tone === 'ok' ? '✓' : '?';
+    el('health-text').textContent = hl.text;
+  }
+  const known = hl === null || hl.known;
+  el('tiles').hidden = !known;
   const s = view.summary;
   el('tiles').replaceChildren(
     tileNode(s.total, 'tileTotal', ''),
@@ -222,7 +241,7 @@ function paint() {
     tileNode(s.silent, 'tileSilent', 'attention'),
   );
 
-  el('attention-count').textContent = view.attentionCount === 0
+  el('attention-count').textContent = !known ? '' : view.attentionCount === 0
     ? t('allWell')
     : `${view.attentionCount} ${t('attentionLead')}`;
   el('attention-count').className = view.attentionCount === 0 ? 'count' : 'count attention';
@@ -254,7 +273,9 @@ function paint() {
   el('rows').replaceChildren(...shown.map(rowNode));
 
   const state = el('state');
-  if (shown.length === 0) {
+  if (shown.length === 0 && !known) {
+    state.hidden = true; // the health line above already says why the fleet is not known
+  } else if (shown.length === 0) {
     state.hidden = false;
     state.className = `state tone-${view.screenState.tone}`;
     el('state-icon').textContent = view.screenState.icon;
@@ -337,6 +358,7 @@ el('send').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
     paint(); // repaint: acknowledged/dead-lettered changes now show their new state on each device
+    readHealth(); // W6: and read head office's fleet again, so a change it accepted shows as it now stands
   }
 });
 
@@ -344,6 +366,7 @@ el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
 paintVx();
+readHealth();
 if (vxPort !== undefined) {
   vxPort.read().then((read) => { vxRead = read; paintVx(); }, () => { vxRead = { state: 'unreachable' }; paintVx(); });
 }

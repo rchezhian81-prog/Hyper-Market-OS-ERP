@@ -300,6 +300,7 @@ import {
 import type { DeviceChangeCommand } from './fleet-device-command';
 import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-delivery';
 import { fleetVersionExceptionsPort, type FleetVersionExceptionsPort } from './fleet-version-exceptions'; // R10-A · OB-540
+import { fleetHealthPort, type FleetHealthPort } from './fleet-health-read'; // W6 · M33-FR-04
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
@@ -4070,7 +4071,7 @@ export async function fetchWorkforceWorklist(): Promise<WorkforceWorklistData | 
 }
 
 /** What the box tells the device fleet-manager screen — who is looking and what they may do (M33-FR-02/04).
- *  The fleet itself is fetched from the cloud fleet-health call (wired next); the shell shows a sample
+ *  The fleet itself is fetched from the cloud fleet-health call by the page itself (W6, fleet-health-read.ts); off the store computer the shell shows a sample
  *  stand-in until then. `summary`/`devices` are carried when a later cloud→box sync provides them. */
 export interface FleetData {
   readonly userId?: string;
@@ -4089,10 +4090,12 @@ export function fleetPortsFromData(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
   deliveryPort?: FleetDeliveryPort,
+  /** W6 · M33-FR-04: the fleet head office answered on the page's last read, once there is one. */
+  live?: () => { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined,
 ): FleetPorts {
   const held = new Set(data?.permissions ?? []);
   return {
-    fleet: () => ({ summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] }),
+    fleet: () => live?.() ?? { summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] },
     // Default-deny: an absent permission list can read/manage nothing (the server would refuse it anyway).
     mayRead: () => held.has(FLEET_READ_PERMISSION),
     mayManage: () => held.has(FLEET_MANAGE_PERMISSION),
@@ -4106,11 +4109,12 @@ export function bootFleet(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
   deliveryPort?: FleetDeliveryPort,
+  live?: () => { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined,
 ): FleetSession | null {
   if (data === undefined) return null;
   return createFleetSession(
     { userId: data.userId === undefined ? null : data.userId },
-    fleetPortsFromData(data, outbox, deliveryPort),
+    fleetPortsFromData(data, outbox, deliveryPort, live),
   );
 }
 
@@ -5633,6 +5637,8 @@ interface ManagerWindow {
   fleetSession?: FleetSession;
   /** R10-A · OB-540: the Devices page's section on handheld work done on a withdrawn or too-old app version. */
   fleetVersionExceptions?: FleetVersionExceptionsPort;
+  /** W6 · M33-FR-04: head office's fleet health, read through the store computer as this person. */
+  fleetHealth?: FleetHealthPort;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
   fleetOutbox?: SyncOutbox;
   productPublishReviewData?: ProductPublishReviewData;
@@ -7268,14 +7274,21 @@ if (browserWindow !== undefined) {
     };
   }
   // The device fleet manager (M33-FR-02/04): boots only when the box carried who is looking. The fleet
-  // itself is fetched from the cloud fleet-health call (wired next); until then the shell shows a sample.
+  // itself is fetched from the cloud fleet-health call by the page as the person (W6); off the store computer the shell shows a sample.
   // Its register/block/retire actions commit to a device-backed outbox that survives a reload (§31); the
   // authenticated sync-drain delivery of those commands to the registry is the follow-up increment.
   const fleetOutbox = browserWindow.fleetOutbox ?? openFleetOutbox();
-  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox, openFleetDeliveryPort());
+  // W6 · M33-FR-04: the fleet itself is head office's answer to the page's own read (window.fleetHealth), as this person.
+  let liveFleet: { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined;
+  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox, openFleetDeliveryPort(), () => liveFleet);
   if (fleet !== null) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
+    browserWindow.fleetHealth = fleetHealthPort({
+      permissions: browserWindow.fleetData?.permissions,
+      ...(browserWindow.fleetData?.storeId === undefined ? {} : { storeId: browserWindow.fleetData.storeId }),
+      onRead: (f) => { liveFleet = f; },
+    });
     // R10-A · OB-540: head office's register of handheld work on a barred build, read through the store computer as this person.
     browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions, undefined, browserWindow.fleetData?.storeId);
   }
