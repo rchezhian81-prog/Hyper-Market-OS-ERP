@@ -186,7 +186,7 @@ const BASE_ROLES: readonly Role[] = [
       'delivery.controls.set', 'delivery.contribution.approve', 'delivery.settlement.approve',
       // ── OB-288 fulfilment & delivery — end
       // OB-687 (owner, 4 Nov 2026): how long the picker waits for a customer's yes or no to a swap — the owner's own number.
-      'fulfilment.substitution_wait.set',
+      'fulfilment.substitution.wait.set',
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
@@ -206,7 +206,7 @@ const BASE_ROLES: readonly Role[] = [
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
       'reporting.dashboard.read', 'reporting.report.read', 'reporting.consolidation.manage',
-      'platform.health.read', 'platform.alert.manage', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
+      'platform.health.read', 'platform.alert.manage', 'platform.alert.acknowledge', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write', 'org.template.pull',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',
       'platform.tenant.export', 'platform.branding.read', 'platform.branding.write',
@@ -573,7 +573,7 @@ const BASE_ROLES: readonly Role[] = [
       'scrap.review.read', 'waste.view', 'count.view', 'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read', 'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
       // D-8 (R2): complete the store tasks assigned to me, in my own sign-in.
       'workforce.task.complete.own',
-      'platform.health.read', 'platform.alert.manage', 'platform.device.manage',
+      'platform.health.read', 'platform.alert.manage', 'platform.alert.acknowledge', 'platform.device.manage',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
@@ -698,9 +698,13 @@ const BASE_ROLES: readonly Role[] = [
     // No business action: no price, refund, purchase, stock, cash or till code, no `compliance.risk.manage` (register or
     // accept a risk alone), no `compliance.reviewer.name` (the owner names the reviewer), and no grant or platform code. Under
     // OB-95 it counts as a business role (it is not platform administration), so it is never held with the IT role.
+    // OB-690 (owner, 4 Nov 2026): the reviewer reads the Operational alerts page and his alert inbox (`platform.health.read`,
+    // reads only) and ticks an alert as seen (`platform.alert.acknowledge`) — never raises, escalates or changes a rule.
     permissions: [
       'identity.self.read',
       'compliance.risk.read',
+      'platform.health.read',
+      'platform.alert.acknowledge',
     ],
   },
   {
@@ -805,7 +809,7 @@ const BASE_ROLES: readonly Role[] = [
       'platform.backup.record',
       'identity.self.read',
       'platform.health.read',
-      'platform.alert.manage',
+      'platform.alert.manage', 'platform.alert.acknowledge',
       'platform.device.manage',
       'platform.flag.read', 'platform.flag.write',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',

@@ -97,6 +97,8 @@ const WORDS = {
     secUseFor: 'use in the last 30 days', secNoUse: 'no use recorded in the last 30 days', secRef: 'reference', secBy: 'by', secOn: 'on',
     secChecked: 'Last day checked', secNotChecked: 'No day has been checked yet.', secUnusualH: 'Unusual use found (sent to the IT custodian)', secUnusualNone: 'Nothing unusual found in the last 30 days.',
     secNotJudged: 'Days not compared (no use was counted a week before them yet)',
+    // OB-689: what "unusual" means, and that its two limits are the code's until the owner sets his own (OB-686).
+    secRule: 'Unusual means more than 3 times the calls of the same day a week before, or more than 1 in 10 calls refused — built-in, not yet set by the owner.',
     sig_spike: 'far more calls than the same day a week before', sig_error_surge: 'many calls refused or failed', sig_silent: 'stopped calling', sig_new_caller: 'called with no history',
     // Incidents — M35-FR-04 · M33-FR-04
     linkH: 'Link an alert to an incident', linkLead: 'When another alert belongs to an open incident, link it; its own facts then read into the incident\'s timeline.',
@@ -184,6 +186,7 @@ const WORDS = {
     secUseFor: 'கடந்த 30 நாள் பயன்பாடு', secNoUse: 'கடந்த 30 நாட்களில் பயன்பாடு பதிவாகவில்லை', secRef: 'குறிப்பு', secBy: 'பயன்படுத்தியவர்', secOn: 'பகுதி',
     secChecked: 'கடைசியாகச் சோதித்த நாள்', secNotChecked: 'இன்னும் எந்த நாளும் சோதிக்கப்படவில்லை.', secUnusualH: 'வழக்கத்துக்கு மாறான பயன்பாடு (தகவல் தொழில்நுட்பப் பொறுப்பாளருக்கு அனுப்பப்பட்டது)', secUnusualNone: 'கடந்த 30 நாட்களில் வழக்கத்துக்கு மாறானது எதுவும் இல்லை.',
     secNotJudged: 'ஒப்பிடப்படாத நாட்கள் (ஒரு வாரம் முன்பு இன்னும் எண்ணிக்கை தொடங்கவில்லை)',
+    secRule: 'வழக்கத்துக்கு மாறானது என்றால் ஒரு வாரம் முந்தைய அதே நாளை விட 3 மடங்குக்கு மேல் அழைப்புகள், அல்லது 10-இல் 1-க்கு மேல் மறுக்கப்பட்டவை — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை.',
     sig_spike: 'ஒரு வாரம் முந்தைய அதே நாளை விட மிக அதிக அழைப்புகள்', sig_error_surge: 'பல அழைப்புகள் மறுக்கப்பட்டன அல்லது தோல்வியுற்றன', sig_silent: 'அழைப்பது நின்றுவிட்டது', sig_new_caller: 'முன்வரலாறு இல்லாமல் அழைத்தது',
     linkH: 'ஒரு எச்சரிக்கையை ஒரு சம்பவத்துடன் இணை', linkLead: 'இன்னொரு எச்சரிக்கை திறந்த சம்பவத்தைச் சேர்ந்தால், இணையுங்கள்; அதன் உண்மைகள் சம்பவக் காலவரிசையில் சேரும்.',
     linkIncident: 'சம்பவம்', linkAlert: 'எச்சரிக்கை', linkGo: 'இந்த எச்சரிக்கையை இணை', linked: 'இணைக்கப்பட்டது.', alreadyLinked: 'ஏற்கனவே இணைக்கப்பட்டது — எதுவும் மாறவில்லை.', noOpen: 'திறந்த சம்பவம் இல்லை.', noAlerts: 'எந்த எச்சரிக்கையும் எழுப்பப்படவில்லை.',

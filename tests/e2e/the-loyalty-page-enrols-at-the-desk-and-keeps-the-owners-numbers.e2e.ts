@@ -196,7 +196,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
       await page.fill('#find-mobile', '9840077701');
       // Find is a read: pressing it again changes nothing. It is pressed until the member shows, so a click that lands while the
       // page re-reads the person's permissions (main CI, 4 Nov) is not mistaken for a wrong answer.
-      await expect.poll(async () => { await page.click('#find'); return (await page.textContent('#found li.row strong')) ?? ''; }, { timeout: 15_000, intervals: [500, 1_000, 2_000] }).toContain('7701');
+      await expect.poll(async () => { await page.click('#find'); return (await page.textContent('#found li.row strong')) ?? ''; }, { timeout: 15_000, interval: 1_000 }).toContain('7701');
       expect(await page.isVisible('#confirm-phone')).toBe(false);
       await page.click('#lang');
       expect(await page.textContent('#confirm-h')).toBe('இந்த உறுப்பினரின் கைபேசி எண்ணை உறுதிசெய்');

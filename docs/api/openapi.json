@@ -39691,7 +39691,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "fulfilment.substitution_wait.set",
+        "x-permission": "fulfilment.substitution.wait.set",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -39745,7 +39745,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"fulfilment.substitution_wait.set\".",
+            "description": "Not \"fulfilment.substitution.wait.set\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -81546,7 +81546,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "platform.alert.manage",
+        "x-permission": "platform.alert.acknowledge",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -81600,7 +81600,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"platform.alert.manage\".",
+            "description": "Not \"platform.alert.acknowledge\".",
             "content": {
               "application/json": {
                 "schema": {

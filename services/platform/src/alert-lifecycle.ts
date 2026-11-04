@@ -276,7 +276,9 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
     {
       // ACKNOWLEDGE — a named person takes an open alert, stopping its escalation. 404 for an unknown alert.
       api: 'API-11', method: 'POST', path: '/v1/platform/alerts/:alertId/acknowledge',
-      permission: 'platform.alert.manage', idempotent: true,
+      // OB-690: ticking an alert as seen is its own narrow permission — the security reviewer may tick, never raise, escalate
+      // or change a rule (those stay `platform.alert.manage`).
+      permission: 'platform.alert.acknowledge', idempotent: true,
       handler: async (ctx) => {
         const alertId = ctx.params['alertId'] ?? '';
         const live = (await deps.alerts(ctx.tenantId)).find((a) => a.alert.alertId === alertId);

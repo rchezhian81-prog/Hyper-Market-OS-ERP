@@ -67,7 +67,7 @@ describe('W6 · OB-687 — where a swap put to the customer stands (head office)
   });
 
   it('the owner holds the wait\'s own permission; the store manager and the store computer do not', () => {
-    const holds = (role: string) => ROLE_CATALOGUE.find((r) => r.id === role)?.permissions.includes('fulfilment.substitution_wait.set') === true;
+    const holds = (role: string) => ROLE_CATALOGUE.find((r) => r.id === role)?.permissions.includes('fulfilment.substitution.wait.set') === true;
     expect(holds('owner')).toBe(true);
     expect(holds('store_manager')).toBe(false);
     expect(holds('store_computer')).toBe(false);
@@ -151,7 +151,7 @@ describe('W6 · OB-687 — the Online orders desk: the answer told to staff, and
     for (const bad of ['', '0', '241', '1.5', 'ten']) expect(await owner.setSwapWait(bad, '')).toEqual({ result: 'invalid', why: 'needNumber' });
     await owner.setSwapWait('15', ' busy evenings ');
     expect(f.sent.at(-1)).toEqual({ method: 'POST', path: '/v1/fulfilment/substitution-wait', body: { minutes: 15, reason: 'busy evenings' } });
-    const mgr = createDeskSession({ viewer: { userId: 'u-mgr', permissions: ALL.filter((p) => p !== 'fulfilment.substitution_wait.set') }, fetch: fake().fetch });
+    const mgr = createDeskSession({ viewer: { userId: 'u-mgr', permissions: ALL.filter((p) => p !== 'fulfilment.substitution.wait.set') }, fetch: fake().fetch });
     expect(mgr.may.waitSet).toBe(false);
     expect(await mgr.setSwapWait('15', '')).toEqual({ result: 'invalid', why: 'cannot' });
   });

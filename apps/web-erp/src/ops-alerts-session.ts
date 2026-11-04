@@ -123,7 +123,7 @@ export interface OpsAlertsSession {
 export function createOpsAlertsSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch }): OpsAlertsSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
-  const may = { named, read: named && held.has('platform.health.read'), manage: named && held.has('platform.alert.manage'), restore: named && held.has('backup.verify.read') };
+  const may = { named, read: named && held.has('platform.health.read'), manage: named && held.has('platform.alert.manage'), acknowledge: named && held.has('platform.alert.acknowledge'), restore: named && held.has('backup.verify.read') };
   const call = makeCaller({ keyPrefix: 'ops-alerts', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
   const no = (why: Why): { result: 'invalid'; why: Why } => ({ result: 'invalid', why });
   const gate = (need: 'read' | 'manage' | 'restore') => (!named ? no('nobody') : !may[need] ? no(need === 'read' ? 'cannotRead' : need === 'manage' ? 'cannotManage' : 'cannotRestore') : undefined);

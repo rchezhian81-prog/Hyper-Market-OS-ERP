@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1698 | 979 | 979 | 194 | 443 |
+| 13 | 1699 | 979 | 979 | 194 | 444 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -943,7 +943,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/fulfilment/orders/:orderId/routing` | `order.read` | core | — |
 | GET | `/v1/fulfilment/orders/:orderId/settlement` | `fulfilment.pack.read` | core | — |
 | GET | `/v1/fulfilment/substitution-wait` | `order.read` | core | — |
-| POST | `/v1/fulfilment/substitution-wait` | `fulfilment.substitution_wait.set` | core | yes |
+| POST | `/v1/fulfilment/substitution-wait` | `fulfilment.substitution.wait.set` | core | yes |
 | GET | `/v1/fulfilment/wave-board` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/wave-candidates` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/waves/:waveId` | `fulfilment.pack.read` | core | — |
@@ -1542,6 +1542,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/integration/secrets/:secretId/revocation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/:secretId/rotation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/review` | `platform.setup.read` | core | yes |
+| GET | `/v1/integration/secrets/usage` | `platform.setup.read` | core | — |
 | POST | `/v1/integration/secrets/usage-signals` | `platform.setup.read` | core | yes |
 | POST | `/v1/integration/webhooks/:provider` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/webhooks/:provider/deliveries` | `platform.health.read` | core | — |
@@ -1549,7 +1550,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/alert-rules` | `platform.health.read` | core | — |
 | PUT | `/v1/platform/alert-rules` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/alerts` | `platform.health.read` | core | — |
-| POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.acknowledge` | core | yes |
 | POST | `/v1/platform/alerts/escalate` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/alerts/inbox` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/raise` | `platform.alert.manage` | core | yes |

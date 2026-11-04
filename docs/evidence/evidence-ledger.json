@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2229,
+  "testFiles": 2233,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2836,11 +2836,11 @@
       "id": "M32",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
-        "integration": 19,
-        "realDb": 8,
-        "browser": 4,
-        "connected": 2,
+        "unit": 13,
+        "integration": 20,
+        "realDb": 9,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -2857,7 +2857,8 @@
           "tests/unit/integration-connector.test.ts",
           "tests/unit/integration-secrets.test.ts",
           "tests/unit/kernel-payment-data-residency.test.ts",
-          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts"
+          "tests/unit/w5-platform-sections-ask-their-own-routes.test.ts",
+          "tests/unit/w6-secret-use-is-counted-daily-and-judged-once.test.ts"
         ],
         "integration": [
           "tests/integration/connector-delivery.test.ts",
@@ -2878,6 +2879,7 @@
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
+          "tests/integration/w6-secret-use-is-counted-and-judged-through-a-restart-on-postgresql.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
@@ -2888,17 +2890,20 @@
           "tests/integration/payment-data-is-pinned-to-india.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/the-seams-hold.test.ts",
-          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
+          "tests/integration/w6-secret-use-is-counted-and-judged-through-a-restart-on-postgresql.test.ts"
         ],
         "browser": [
           "tests/e2e/integration-health-delivery.e2e.ts",
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
           "tests/e2e/w3-partner-webhooks-dead-letters-are-sent-again-and-kept.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-secret-use-is-shown-and-abnormal-use-alerts-the-custodian-on-postgresql.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts",
-          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts"
+          "tests/e2e/w5-platform-operations-sections-on-postgresql.e2e.ts",
+          "tests/e2e/w6-secret-use-is-shown-and-abnormal-use-alerts-the-custodian-on-postgresql.e2e.ts"
         ],
         "device": [],
         "uat": []

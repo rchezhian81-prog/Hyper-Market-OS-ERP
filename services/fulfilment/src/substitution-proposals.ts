@@ -45,7 +45,7 @@ export const PROPOSAL_STATES = Object.freeze(['waiting', 'yes', 'no', 'refused',
 export type ProposalState = (typeof PROPOSAL_STATES)[number];
 
 /** The permission the owner's wait is set under — its own (OB-687), never borrowed from another number. */
-export const SUBSTITUTION_WAIT_PERMISSION = 'fulfilment.substitution_wait.set';
+export const SUBSTITUTION_WAIT_PERMISSION = 'fulfilment.substitution.wait.set';
 /** Whole minutes, 1 to 240 — at most the picker's four-hour sign-in (OB-184); the owner chooses within it. */
 export const WAIT_MINUTES_MAX = 240;
 
@@ -521,7 +521,7 @@ export function substitutionProposalRoutes(deps: SubstitutionProposalDeps): read
         };
         await deps.recordWait(ctx.tenantId, c);
         await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'fulfilment.substitution_wait.set', objectType: 'substitution_wait', objectId: 'shop',
+          actorId: ctx.userId, action: 'fulfilment.substitution.wait.set', objectType: 'substitution_wait', objectId: 'shop',
           at: c.setAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: { minutes: before.minutes === null ? 'not set' : String(before.minutes) }, after: { minutes: String(minutes), version: String(c.version) },
           ...(c.reason === null ? {} : { reason: c.reason }), correlationId: 'substitution-wait',

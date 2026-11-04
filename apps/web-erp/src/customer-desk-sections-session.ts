@@ -295,7 +295,7 @@ export const SECTION_WORDS = {
   handback: 'fulfilment.pack.record', packRead: 'fulfilment.pack.read', reassign: 'order.exception.manage', subPref: 'order.lifecycle.manage', orderRead: 'order.read',
   referral: 'loyalty.referral.settle',
   // W6 · OB-687: the owner's own number — how long the picker waits for a customer's answer to a swap.
-  waitSet: 'fulfilment.substitution_wait.set',
+  waitSet: 'fulfilment.substitution.wait.set',
 } as const;
 export type SectionKey = keyof typeof SECTION_WORDS;
 

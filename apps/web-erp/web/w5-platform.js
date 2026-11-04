@@ -319,7 +319,7 @@ function secrets(root) {
       if (use.value.findings.length === 0) unusual.append(el('li', w('secUnusualNone'), { class: 'meta' }));
       for (const f of use.value.findings) { const li = el('li', H.secretUseFindingLine(lang, f), { class: 'attention' }); li.dataset.signal = f.signal; unusual.append(li); }
       status.textContent = '';
-    }), list, el('h3', w('secUseH'), { id: 'w5-sec-use-h' }), el('p', w('secUseLead'), { class: 'lede' }), uses, checked, el('h3', w('secUnusualH')), unusual, button('w5-sec-review-go', w('secReview'), async () => {
+    }), list, el('h3', w('secUseH'), { id: 'w5-sec-use-h' }), el('p', w('secUseLead'), { class: 'lede' }), uses, checked, el('h3', w('secUnusualH')), el('p', w('secRule'), { class: 'lede', id: 'w5-sec-rule' }), unusual, button('w5-sec-review-go', w('secReview'), async () => {
       const out = await s.review(); if (out.result !== 'ok') { say(status, out, ''); return; }
       found.replaceChildren(el('li', out.value.issues.length === 0 ? w('secClean') : out.value.detail, { class: 'meta' }));
       for (const i of out.value.issues) { const li = el('li', `${i.blocking ? w('secBlocking') : w('secAttention')} · ${i.secretId} — ${i.detail}`, { class: i.blocking ? 'attention' : '' }); li.dataset.finding = i.finding; found.append(li); }

@@ -6,7 +6,7 @@
 const $ = (id) => document.getElementById(id);
 const api = window.opsAlerts ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false, manage: false };
+const may = session?.may ?? { named: false, read: false, manage: false, acknowledge: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
@@ -20,7 +20,7 @@ function alertItem(a, withAck) {
   const li = document.createElement('li'); li.dataset.alert = a.alertId; li.dataset.state = a.state;
   li.append(text('h4', `${a.state === 'open' || a.state === 'escalated' ? '⚠' : '✓'} ${a.component} — ${t(`lv_${a.level}`)} · ${t(`st_${a.state}`)}`),
     text('p', `${a.detail} · ${t('owner')} ${a.ownerName} (${a.ownerUserId}) · ${t('answerBy')} ${when(a.ackDueBy)}${a.escalatedTo === undefined ? '' : ` · ${t('escalatedTo')} ${a.escalatedTo}`}${a.acknowledgedBy === undefined ? '' : ` · ${t('seenBy')} ${a.acknowledgedBy}`}`, 'meta'));
-  if (withAck && may.manage && (a.state === 'open' || a.state === 'escalated')) {
+  if (withAck && (may.acknowledge || may.manage) && (a.state === 'open' || a.state === 'escalated')) {
     const status = text('p', '', 'status'); status.setAttribute('role', 'status');
     const b = document.createElement('button'); b.type = 'button'; b.textContent = t('ack');
     b.addEventListener('click', async () => {
