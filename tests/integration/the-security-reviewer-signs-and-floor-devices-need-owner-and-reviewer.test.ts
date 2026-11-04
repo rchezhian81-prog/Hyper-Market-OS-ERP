@@ -40,7 +40,8 @@ describe.each(backings)('the security reviewer signs, and a floor device is swit
     await ok(call('POST', '/v1/org/nodes/B1', 'u-it', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1' }), 'branch');
 
     // ── OB-406: nobody holds the role by default; it is given by the normal maker-checker grant ──
-    expect(ROLE_CATALOGUE.find((r) => r.id === SECURITY_REVIEWER_ROLE_ID)?.permissions).toEqual(['identity.self.read', 'compliance.risk.read']);
+    // OB-690 (4 Nov 2026): + reading the Operational alerts page and ticking an alert as seen — still no business action.
+    expect(ROLE_CATALOGUE.find((r) => r.id === SECURITY_REVIEWER_ROLE_ID)?.permissions).toEqual(['identity.self.read', 'compliance.risk.read', 'platform.health.read', 'platform.alert.acknowledge']);
     const grant = (grantId: string, userId: string) => call('POST', '/v1/identity/grants', 'u-mgr', { grantId, userId, roleId: SECURITY_REVIEWER_ROLE_ID, branchScope: 'all', reason: 'OB-405: the interim named security reviewer' });
     expect((await grant('g-siva', 'u-siva')).status).toBe(202);
     expect((await call('POST', '/v1/identity/grants/g-siva/approve', 'u-mgr', {})).status).toBeGreaterThanOrEqual(400); // never the asker's own

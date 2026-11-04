@@ -88,6 +88,7 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     await page.click('#g-save');
     await says(page, '#record-status', /^This is a tax change/);
     await page.fill('#why', 'GST 2.0 slab (synthetic)');
+    await page.locator('#ask').waitFor({ state: 'visible', timeout: 30_000 }); // it appears once the refusal is drawn
     await page.click('#ask');
     await says(page, '#record-status', /^Asked\./);
     await accountantApproves('tax_rate_change', HSN);
@@ -97,6 +98,7 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     await page.fill('#c-from', '2026-12-01'); await page.fill('#c-adv', '0');
     await page.click('#c-save');
     await says(page, '#record-status', /^This is a tax change/);
+    await page.locator('#ask').waitFor({ state: 'visible', timeout: 30_000 }); // it appears once the refusal is drawn
     await page.click('#ask');
     await says(page, '#record-status', /^Asked\./);
     await accountantApproves('cess_rate_change', HSN);

@@ -250,6 +250,8 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(rec.apiCalls).toEqual([
         { method: 'POST', path: '/v1/storefront/cart/quote', auth: true },
         { method: 'POST', path: expect.stringMatching(/^\/v1\/storefront\/orders\/ORD-/), auth: true },
+        // OB-687 (W6): then the order view reads the customer's OWN orders for a swap waiting for their answer — a read.
+        { method: 'GET', path: '/v1/storefront/orders', auth: true },
       ]);
       // The cloud holds it FOR this customer, with the checkout's payment: 1 × ₹60 + ₹40 delivery.
       const orders = await ordersOf(h);
