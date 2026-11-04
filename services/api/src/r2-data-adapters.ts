@@ -108,6 +108,8 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/customer/src/matching.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'duplicate detection reads the candidates in the request and keeps only the match it proposes' },
   { file: 'packages/customer/src/child-data-guard.ts', field: 'dateOfBirth', whose: 'customer', protection: 'not_kept', evidence: 'the child-data check computes an age from it for one decision and keeps the decision only' },
   { file: 'services/orders/src/index.ts', field: 'contact', whose: 'customer', protection: 'not_personal', evidence: 'how staff reached the customer and a call-log or message id a person can check — a reference, not the number' },
+  // OB-687: the same consent shape, read by the swap proposals (the answer told to staff names how they were reached and a reference).
+  { file: 'services/fulfilment/src/substitution-proposals.ts', field: 'contact', whose: 'customer', protection: 'not_personal', evidence: 'how staff reached the customer and a call-log or message id a person can check — a reference, not the number' },
   { file: 'packages/migration/src/synthetic.ts', field: 'phone', whose: 'customer', protection: 'not_personal', evidence: 'the synthetic legacy dataset — invented numbers for rehearsals, no real person' },
   { file: 'packages/migration/src/loyalty-verification.ts', field: 'customerName', whose: 'customer', protection: 'not_kept', evidence: 'the loyalty witness reads balances in the request; the witness record keeps counts only' },
   // Staff and users

@@ -86,7 +86,21 @@ export interface StorefrontRouting {
   readonly keep: (tenantId: string, branchId: string | null, d: { readonly orderId: string; readonly customerRef: string; readonly method: FulfilmentMethod; readonly slotStartsAt: string | null; readonly result: RouteResult; readonly at: string }) => Promise<void>;
 }
 
+/**
+ * OB-687 · FUL-14: the swaps the picker put to the customer on an order (services/fulfilment/src/substitution-proposals.ts),
+ * read structurally so this file depends on no other service.
+ */
+export interface StorefrontProposalPort {
+  /** The proposals on my order, each with the product, the price, why, and where it stands. */
+  readonly forCustomer: (tenantId: string, orderId: string) => Promise<readonly Record<string, unknown>[]>;
+  /** Check an answer against the proposal on that line: none on it, the same answer already on record, or open to answer. Throws a refusal by name. */
+  readonly checkAnswer: (tenantId: string, orderId: string, lineId: string, substituteProductId: string, decision: 'confirmed' | 'declined') =>
+    Promise<{ readonly kind: 'none' } | { readonly kind: 'already'; readonly answer: unknown } | { readonly kind: 'open' }>;
+}
+
 export interface StorefrontDeps {
+  /** OB-687: the swaps put to the customer, and the check their answer goes through. Absent → answers are recorded as before. */
+  readonly proposals?: StorefrontProposalPort;
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
   readonly ordersForCustomer: (tenantId: string, customerRef: string) => Promise<readonly PlacedOrder[]> | readonly PlacedOrder[];
   /** The order as placed — who placed it included — for the scope decision. */
@@ -283,8 +297,11 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
     const state = await deps.orderState(tenantId, order.orderId);
     const { payment, refunds } = await money(tenantId, order.orderId);
     const delivery = await deliveryOf(tenantId, order.orderId);
+    // OB-687: a swap the picker put to me — the product, the price, why, and whether it waits for my yes or no.
+    const substitutions = deps.proposals === undefined ? [] : await deps.proposals.forCustomer(tenantId, order.orderId);
     return {
       delivery,
+      substitutions,
       orderId: order.orderId, locationId: order.locationId, lines: order.lines, placedAt: order.placedAt,
       state: state?.state ?? order.state,
       payment,
@@ -432,6 +449,10 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
             wasItSaved: 'not_saved', nextSafeAction: 'Answer again. Nothing was changed.',
           });
         }
+        // OB-687: a line the picker put a swap to me on — my answer is checked against it (the proposed product, still open,
+        // not yet answered, in time). The same answer twice is one answer; a different one is refused by name.
+        const checked = await deps.proposals?.checkAnswer(ctx.tenantId, orderId, lineId, b['substituteProductId'] as string, b['decision'] as 'confirmed' | 'declined');
+        if (checked?.kind === 'already') return { status: 200, body: { ...(checked.answer as Record<string, unknown>), alreadyAnswered: true } };
         const consent: SubstitutionConsent = {
           orderId, lineId, substituteProductId: b['substituteProductId'] as string, decision: b['decision'] as 'confirmed' | 'declined',
           acceptsHigherPrice: b['acceptsHigherPrice'] === true, given: 'customer', by: ctx.userId, at: deps.now(),

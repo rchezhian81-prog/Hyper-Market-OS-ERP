@@ -24,7 +24,11 @@
 //                                                                                       POST /v1/fulfilment/orders/:id/handback
 //   Delivery exceptions .. move an exception to another queue, with the reason (M19-FR-01)
 //   Online orders ........ the customer's substitution answer, told to staff (FUL-14); order notices (M20-FR-03); the refused-
-//                          access register (P-04)
+//                          access register (P-04); W6 · OB-687: the swaps the picker put to a customer, and the customer's yes or
+//                          no told to staff by phone (counts the same as the app's); how long the picker waits — the OWNER's number
+//                                                                                       GET  /v1/orders/:id/substitution-proposals
+//                                                                                       POST /v1/orders/:id/substitution-proposals/:line/answer
+//                                                                                       GET/POST /v1/fulfilment/substitution-wait
 //
 // Every rule is head office's: this session refuses only the cheap things before a request (nobody signed in, the role, an
 // empty box) and never writes on open. A number the owner has not entered is never invented here. Head office's own
@@ -117,6 +121,14 @@ export const DESK_COPY = {
     noticesShow: 'Show them', noNotices: 'No message about an order is due.', queued: 'on the queue', notQueued: 'NOT on the queue',
     refusalsH: 'Customers who asked for someone else\'s order', refusalsLead: 'Every time the app refused a customer who asked to see or order on another customer\'s order. A customer who tried more than one order is named first.',
     refusalsShow: 'Show the register', noRefusals: 'No customer has asked for another customer\'s order.', probing: 'Tried more than one order', orders: 'order(s)', a_read: 'tried to see', a_place: 'tried to order on',
+    // W6 · OB-687 — swaps put to the customer, and the owner's wait
+    swapsH: 'Swaps put to the customer', swapsLead: 'When the picker cannot find an item and the customer asked to be asked first, the picker offers a swap and the customer answers yes or no in the app. If the customer tells you by phone instead, record their answer here with how you reached them — it counts the same as the app.',
+    swapsShow: 'Show the swaps', noSwaps: 'No swap has been put to the customer on this order.', swapLine: 'Which swap', swapAnswer: 'They said', d_confirmed: 'yes — send the swap', d_declined: 'no — leave it out', swapRecord: 'Record their answer', swapRecorded: 'Recorded. The picker will be told through the store computer.',
+    for: 'for', each: 'each', answerBy: 'answer by', s_waiting: 'waiting for the customer', s_yes: 'the customer said YES', s_no: 'the customer said NO', s_refused: 'the shop\'s rules refuse it', s_too_late: 'no answer in time — packed short', s_closed: 'closed — the picker packed the line',
+    via_app: 'in the app', via_staff: 'told to staff', onOrder: 'put on the order', notOnOrder: 'NOT put on the order',
+    waitH: 'How long the picker waits for the customer', waitLead: 'The owner decides how many minutes the picker waits for a customer\'s yes or no to a swap. Until he sets it, the picker does not wait: the line goes short and the customer is not asked.',
+    waitShow: 'Show the wait', waitNotSet: 'NOT SET by the owner — the picker does not wait; a line whose customer asked first goes short.', waitIs: 'The picker waits', minutes: 'minute(s)', setByOwner: 'set by',
+    waitMinutes: 'Minutes to wait (1 to 240)', waitReason: 'Why (optional)', waitSave: 'Set the wait', waitSaved: 'Saved. The picker phones get it with their next wave.',
   },
   ta: {
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…', done: 'முடிந்தது.',
@@ -184,6 +196,13 @@ export const DESK_COPY = {
     noticesShow: 'அவற்றைக் காட்டு', noNotices: 'ஆர்டர் பற்றி எந்தச் செய்தியும் அனுப்ப வேண்டியதில்லை.', queued: 'வரிசையில் உள்ளது', notQueued: 'வரிசையில் இல்லை',
     refusalsH: 'வேறொருவரின் ஆர்டரைக் கேட்ட வாடிக்கையாளர்கள்', refusalsLead: 'வேறொரு வாடிக்கையாளரின் ஆர்டரைப் பார்க்க அல்லது அதில் ஆர்டர் செய்யக் கேட்ட வாடிக்கையாளரைச் செயலி மறுத்த ஒவ்வொரு முறையும். ஒன்றுக்கு மேற்பட்ட ஆர்டர்களை முயன்றவர் முதலில் பெயரிடப்படுவார்.',
     refusalsShow: 'பதிவேட்டைக் காட்டு', noRefusals: 'எந்த வாடிக்கையாளரும் வேறொருவரின் ஆர்டரைக் கேட்கவில்லை.', probing: 'ஒன்றுக்கு மேற்பட்ட ஆர்டர்களை முயன்றவர்', orders: 'ஆர்டர்(கள்)', a_read: 'பார்க்க முயன்றது', a_place: 'ஆர்டர் செய்ய முயன்றது',
+    swapsH: 'வாடிக்கையாளரிடம் கேட்ட மாற்றங்கள்', swapsLead: 'எடுப்பவரால் ஒரு பொருளைக் கண்டுபிடிக்க முடியாமல், வாடிக்கையாளர் முதலில் கேட்கச் சொல்லியிருந்தால், எடுப்பவர் ஒரு மாற்றை வழங்குகிறார்; வாடிக்கையாளர் செயலியில் ஆம் அல்லது இல்லை என்கிறார். அதற்குப் பதிலாக தொலைபேசியில் சொன்னால், எப்படித் தொடர்பு கொண்டீர்கள் என்பதுடன் இங்கே பதிவு செய்யுங்கள் — அது செயலியில் சொன்னதைப் போலவே கணக்கிடப்படும்.',
+    swapsShow: 'மாற்றங்களைக் காட்டு', noSwaps: 'இந்த ஆர்டரில் வாடிக்கையாளரிடம் எந்த மாற்றமும் கேட்கப்படவில்லை.', swapLine: 'எந்த மாற்றம்', swapAnswer: 'அவர்கள் சொன்னது', d_confirmed: 'ஆம் — மாற்றை அனுப்பு', d_declined: 'இல்லை — விட்டுவிடு', swapRecord: 'அவர்களின் பதிலைப் பதிவு செய்', swapRecorded: 'பதிவு செய்யப்பட்டது. கடை கணினி மூலம் எடுப்பவருக்குத் தெரிவிக்கப்படும்.',
+    for: 'இதற்குப் பதிலாக', each: 'ஒன்றுக்கு', answerBy: 'பதில் சொல்ல வேண்டிய நேரம்', s_waiting: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', s_yes: 'வாடிக்கையாளர் ஆம் என்றார்', s_no: 'வாடிக்கையாளர் இல்லை என்றார்', s_refused: 'கடையின் விதிகள் இதை மறுக்கின்றன', s_too_late: 'நேரத்திற்குள் பதில் இல்லை — குறைவாக பேக் செய்யப்பட்டது', s_closed: 'மூடப்பட்டது — எடுப்பவர் வரியை பேக் செய்துவிட்டார்',
+    via_app: 'செயலியில்', via_staff: 'பணியாளரிடம் சொன்னது', onOrder: 'ஆர்டரில் சேர்க்கப்பட்டது', notOnOrder: 'ஆர்டரில் சேர்க்கப்படவில்லை',
+    waitH: 'வாடிக்கையாளருக்காக எடுப்பவர் எவ்வளவு நேரம் காத்திருப்பார்', waitLead: 'ஒரு மாற்றத்திற்கு வாடிக்கையாளரின் ஆம் அல்லது இல்லை பதிலுக்கு எடுப்பவர் எத்தனை நிமிடம் காத்திருக்க வேண்டும் என்று உரிமையாளர் முடிவு செய்கிறார். அவர் அமைக்கும் வரை, எடுப்பவர் காத்திருக்க மாட்டார்: வரி குறைவாகும், வாடிக்கையாளரிடம் கேட்கப்படாது.',
+    waitShow: 'காத்திருப்பைக் காட்டு', waitNotSet: 'உரிமையாளர் அமைக்கவில்லை — எடுப்பவர் காத்திருக்க மாட்டார்; முதலில் கேட்கச் சொன்ன வாடிக்கையாளரின் வரி குறைவாகும்.', waitIs: 'எடுப்பவர் காத்திருப்பது', minutes: 'நிமிடம்', setByOwner: 'அமைத்தவர்',
+    waitMinutes: 'காத்திருக்கும் நிமிடங்கள் (1 முதல் 240)', waitReason: 'ஏன் (விருப்பம்)', waitSave: 'காத்திருப்பை அமை', waitSaved: 'சேமிக்கப்பட்டது. அடுத்த வேலையுடன் எடுப்பவர் தொலைபேசிகளுக்குக் கிடைக்கும்.',
   },
 } as const;
 
@@ -252,6 +271,17 @@ export interface PackLine { readonly lineId: string; readonly productId: string;
 export interface OrderNotice { readonly noticeId: string; readonly orderId: string; readonly customerRef: string; readonly kind: string; readonly outcome: 'queued' | 'not_queued'; readonly code?: string; readonly detail: string; readonly at: string }
 /** W6: one referral reward still owed, as head office's liability register holds it — and, where its programme names it, whose. */
 export interface OwedReferral { readonly referralId: string; readonly earnedMinor: number; readonly outstandingMinor: number; readonly side: 'referrer' | 'referred' | null; readonly customerRef: string | null }
+/** W6 · OB-687: one swap the picker put to a customer, as head office holds it, with where it stands. */
+export interface SwapProposal {
+  readonly proposalId: string; readonly lineId: string; readonly orderedName: string; readonly substituteProductId: string; readonly substituteName: string;
+  readonly substituteUnitPriceMinor: number | null; readonly state: 'waiting' | 'yes' | 'no' | 'refused' | 'too_late' | 'closed'; readonly answerBy: string | null;
+  readonly answeredVia?: 'app' | 'staff'; readonly contact?: { readonly method: string; readonly reference: string }; readonly refusedBecause?: string | null;
+  readonly settled?: { readonly packed: string; readonly decision: string | null; readonly onOrder: boolean; readonly refusal: { readonly code: string; readonly whatHappened: string } | null };
+}
+/** W6 · OB-687: the owner's wait, as head office holds it ("not set" until he sets it). */
+export interface SwapWait { readonly minutes: number | null; readonly state: 'set' | 'not_set'; readonly setBy: string | null; readonly setAt: string | null }
+export const SWAP_DECISIONS = ['confirmed', 'declined'] as const;
+
 export interface AccessRegister { readonly refusals: readonly { readonly customerRef: string; readonly orderId: string; readonly outcome: string; readonly action: string; readonly at: string }[]; readonly probing: readonly { readonly customerRef: string; readonly distinctOrders: number }[]; readonly detail: string }
 
 type Why = 'nobody' | 'cannot' | 'needCustomer' | 'needOrder' | 'needCase' | 'needReason' | 'needText' | 'needNumber' | 'needRupees' | 'needWhen' | 'needScore';
@@ -264,6 +294,8 @@ export const SECTION_WORDS = {
   caseRead: 'service.case.read', caseManage: 'service.case.manage', household: 'loyalty.value.read', proof: 'delivery.run.read',
   handback: 'fulfilment.pack.record', packRead: 'fulfilment.pack.read', reassign: 'order.exception.manage', subPref: 'order.lifecycle.manage', orderRead: 'order.read',
   referral: 'loyalty.referral.settle',
+  // W6 · OB-687: the owner's own number — how long the picker waits for a customer's answer to a swap.
+  waitSet: 'fulfilment.substitution_wait.set',
 } as const;
 export type SectionKey = keyof typeof SECTION_WORDS;
 
@@ -300,9 +332,18 @@ export interface DeskSession {
   recordPreference(orderId: string, i: { readonly preference: string; readonly method: string; readonly reference: string }): Done<unknown>;
   orderNotices(): Done<{ readonly notices: readonly OrderNotice[]; readonly notQueued: readonly OrderNotice[]; readonly detail: string }>;
   accessRefusals(): Done<AccessRegister>;
+  /** W6 · OB-687: the swaps put to the customer on one order. */
+  swapProposals(orderId: string): Done<readonly SwapProposal[]>;
+  /** W6 · OB-687: the customer's yes or no, told to staff — with how they were reached and the reference. */
+  answerSwap(orderId: string, lineId: string, i: { readonly decision: string; readonly method: string; readonly reference: string }): Done<unknown>;
+  swapWait(): Done<SwapWait>;
+  /** W6 · OB-687: the owner sets the wait — whole minutes, 1 to 240. */
+  setSwapWait(minutes: string, reason: string): Done<SwapWait>;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** W6 · OB-687: head office's wait read as it said it — a number, or "not set"; never a default. */
+const waitOf = (v: Partial<SwapWait>): SwapWait => ({ minutes: typeof v.minutes === 'number' ? v.minutes : null, state: v.state === 'set' ? 'set' : 'not_set', setBy: v.setBy ?? null, setAt: v.setAt ?? null });
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
 export function createDeskSession(input: {
@@ -440,5 +481,19 @@ export function createDeskSession(input: {
       (v) => ({ notices: arr<OrderNotice>(v.notices), notQueued: arr<OrderNotice>(v.notQueued), detail: typeof v.detail === 'string' ? v.detail : '' })),
     accessRefusals: async () => gate('orderRead') ?? map(call<{ refusals?: unknown[]; probing?: unknown[]; detail?: unknown }>('GET', '/v1/storefront/access-refusals'),
       (v) => ({ refusals: arr(v.refusals), probing: arr(v.probing), detail: typeof v.detail === 'string' ? v.detail : '' })),
+    swapProposals: async (orderId) => gate('orderRead') ?? need(orderId, 'needOrder')
+      ?? map(call<{ proposals?: unknown[] }>('GET', `/v1/orders/${enc(orderId.trim())}/substitution-proposals`), (v) => arr<SwapProposal>(v.proposals)),
+    answerSwap: async (orderId, lineId, i) => {
+      const g = gate('subPref') ?? need(orderId, 'needOrder') ?? need(lineId, 'needText') ?? need(i.reference, 'needText'); if (g) return g;
+      if (!(SWAP_DECISIONS as readonly string[]).includes(i.decision) || !(CONTACT_METHODS as readonly string[]).includes(i.method)) return no('needText');
+      return call('POST', `/v1/orders/${enc(orderId.trim())}/substitution-proposals/${enc(lineId.trim())}/answer`, { decision: i.decision, contact: { method: i.method, reference: i.reference.trim() } });
+    },
+    swapWait: async () => gate('orderRead') ?? map(call<SwapWait>('GET', '/v1/fulfilment/substitution-wait'), waitOf),
+    setSwapWait: async (minutes, reason) => {
+      const g = gate('waitSet'); if (g) return g;
+      // The owner's number: whole minutes, 1 to 240 (the picker's sign-in lasts four hours). Nothing is suggested.
+      if (!/^\d{1,3}$/.test(minutes.trim()) || Number(minutes) < 1 || Number(minutes) > 240) return no('needNumber');
+      return map(call<SwapWait>('POST', '/v1/fulfilment/substitution-wait', { minutes: Number(minutes), ...(reason.trim() === '' ? {} : { reason: reason.trim() }) }), waitOf);
+    },
   };
 }

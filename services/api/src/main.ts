@@ -299,8 +299,10 @@ import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
 import { applyOrderFulfilment, orderFulfilmentRoutes } from '../../fulfilment/src/order-fulfilment';
 import { stockLossRoutes } from '../../finance/src/stock-losses';
 import { b2bPostingRoutes } from '../../finance/src/b2b-postings';
-import { syncedWaveRoutes } from '../../fulfilment/src/waves';
+import { syncedWaveRoutes, type WaveLineOutcome } from '../../fulfilment/src/waves';
 import { assignmentRoutes } from '../../fulfilment/src/assignments';
+import { substitutionProposalRoutes, customerProposalPort, settleOnPick, substitutionsForWave } from '../../fulfilment/src/substitution-proposals'; // OB-687
+import { substitutionProposalAdapter, bareProposalDeps } from './substitution-proposal-adapters'; // OB-687
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
@@ -633,6 +635,10 @@ export function buildSurface(deps: {
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
   const auditTrail = store === undefined ? undefined : auditTrailAdapter({ store });
+  // OB-687 (owner, 4 Nov 2026) · FUL-14 · M19-FR-02: a swap that needs the customer's yes is put to the customer by the
+  // picker's phone and answered in the app (or by staff, told by phone); the answer travels back to the picker on the wave.
+  const proposals = store === undefined ? undefined
+    : substitutionProposalAdapter({ store, now, orders: ordersDeps, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) });
   // SP-8 / SP-8b: one deps object for the floor indent chain — the direct routes and the relayed routes act on the same
   // records through the same engine.
   const floorIndentDeps = store === undefined ? {
@@ -1503,6 +1509,7 @@ export function buildSurface(deps: {
       : queueStaffingAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     ...exceptionOwnershipRoutes(store === undefined ? ordersDeps : { ...ordersDeps, queueStaffing: queueStaffingOf({ store }) }),
     ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
+    ...substitutionProposalRoutes(proposals ?? bareProposalDeps(now)), // OB-687
     ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
@@ -1525,6 +1532,7 @@ export function buildSurface(deps: {
     })),
     ...storefrontRoutes({
       ...ordersDeps,
+      ...(proposals === undefined ? {} : { proposals: customerProposalPort(proposals) }), // OB-687: my swaps to answer
       // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
       ...(store === undefined ? {} : {
         unitPriceOf: async (t: string, productId: string) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.find((p) => p.productId === productId)?.unitPriceMinor,
@@ -1573,7 +1581,7 @@ export function buildSurface(deps: {
     // record-and-flag; nothing here moves stock.
     ...syncedWaveRoutes(store === undefined
       ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, productPacking: empty(undefined), orderPack: empty(undefined), recordOrderPack: () => {}, now }
-      : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(proposals === undefined ? {} : { afterLineOutcome: (t: string, o: WaveLineOutcome) => settleOnPick(proposals, t, o) }) }),
     // HA-1 (3 Oct 2026): head office ASSIGNS a wave to a picker and a route to a driver, per store; the box pulls the OPEN
     // ones under its own credential and serves them to the phones with "head office" named. The person assigned is re-verified
     // and refused by name when they may not do the work; finished work (packed / settled) cannot be reassigned.
@@ -1581,6 +1589,8 @@ export function buildSurface(deps: {
       ? { permissionsOfUser: empty(undefined), waveAssignments: empty([]), recordWaveAssignment: () => {}, routeAssignments: empty([]), recordRouteAssignment: () => {}, wavePacked: empty(false), routeSettled: empty(false), now }
       : {
         ...assignmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit,
+        // OB-687: the owner's wait, each order's substitution rule and head office's word on each swap ride with the wave.
+        ...(proposals === undefined ? {} : { substitutionsOf: (t: string, waveId: string, refs: readonly string[]) => substitutionsForWave(proposals, t, waveId, refs) }),
         // R4 gap lane "driver" (WF-16): a return collection on a route reads the return's own stage and booked lines.
         collectionOf: async (t: string, returnId: string) => {
           const v = await onlineReturnViewOf(store, t, returnId);

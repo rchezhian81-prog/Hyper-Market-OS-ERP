@@ -38,7 +38,7 @@ export interface PackReceiptNumbering {
 import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
-import type { AssignmentsFeed } from '../../sync-agent/src/assignments-feed';
+import type { AssignmentsFeed, AssignedSubstitutionAnswer } from '../../sync-agent/src/assignments-feed';
 import type { PublishedTemplatesFeed, PublishedTemplate } from '../../sync-agent/src/published-templates';
 
 export type Register<T> =
@@ -144,7 +144,13 @@ export interface PackWave {
     readonly requiredQty: number;
     readonly uom: string;
     readonly unitPriceMinor: number;
+    /** OB-687 · FUL-14: the order's substitution rule, as head office carried it (never on a hand-written wave). */
+    readonly substitution?: 'ask_first' | 'never' | 'best_match';
   }[];
+  /** OB-687: the owner's wait for a customer's answer (null: not set) — only on a wave head office assigned. */
+  readonly substitutionWaitMinutes?: number | null;
+  /** OB-687: head office's word on each swap put to a customer on this wave. */
+  readonly substitutionAnswers?: readonly AssignedSubstitutionAnswer[];
 }
 
 /**

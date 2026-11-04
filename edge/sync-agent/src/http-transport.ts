@@ -203,6 +203,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // cannot read is 400 → dead-lettered here by name for a person (hard rule #6). Nothing on these routes moves stock.
   PickLineResolved: '/v1/fulfilment/waves/:waveId/lines/:lineId/synced',
   WavePacked: '/v1/fulfilment/waves/:waveId/packed/synced',
+  // OB-687 (owner, 4 Nov 2026) · FUL-14: a swap the picker put to the customer — kept once at head office (keyed on the line and
+  // the substitute), the picker re-verified, the shop's rules run on it; a payload it cannot read, or a second swap asked on one
+  // line, is 4xx → dead-lettered here by name for a person. `waveId` / `lineId` are plain top-level payload fields.
+  SubstitutionProposed: '/v1/fulfilment/waves/:waveId/lines/:lineId/substitution-proposal/synced',
   // SP-3c-ii (F11's driver half · M19-FR-03/04 · M23): the DRIVER handheld's work, relayed by the box from its device socket.
   // A stop's outcome lands on head office's route register with the DRIVER re-verified and is mapped onto the ORDER's
   // delivery lifecycle through the same state machine the direct route runs (a step the order cannot take from where head

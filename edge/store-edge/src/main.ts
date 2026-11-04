@@ -119,7 +119,7 @@ import { withDeciderSeal } from './decision-seal';
 import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, pickerSubstitutionAnswers, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { judgeClientVersion, readPackVersionPolicy } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A)
@@ -2346,8 +2346,21 @@ export async function startEdge(
     for (const e of made.events) say(sayDeviceTlsEvent(e));
     return { dir: deviceTlsDir, addresses: where.addresses, material: made.tls };
   })();
+  // OB-687: the picker's phone reads back the answers on its wave — the box asks head office afresh first (at most every five
+  // seconds, whoever asks), set once the assignments pull below is composed.
+  let refreshAssignmentsForPhones: (() => Promise<unknown>) | null = null;
+  let lastAnswersRefreshAt = 0;
+  const pickerAnswers = async (waveId: string): Promise<unknown> => {
+    if (refreshAssignmentsForPhones !== null && Date.now() - lastAnswersRefreshAt >= 5_000) {
+      lastAnswersRefreshAt = Date.now();
+      await refreshAssignmentsForPhones().catch(() => undefined);
+    }
+    const held = pickerSubstitutionAnswers(snapshot(), waveId);
+    return held === null ? null : { ...held, boxNow: new Date().toISOString() };
+  };
   const devices = devicePort === undefined || enrolments === null || deviceTls === null ? null : await startDeviceServer({
     tls: deviceTls,
+    pickerAnswers,
     onTls: say,
     port: Number(devicePort),
     ...(deviceHost === undefined ? {} : { host: deviceHost }),
@@ -2911,6 +2924,7 @@ export async function startEdge(
     lastAssignmentsStatus = outcome.status;
     return outcome;
   };
+  refreshAssignmentsForPhones = refreshAssignmentsFeed; // OB-687: the picker's read-back asks afresh through the same pull
 
   // PF-09 step 3: the loyalty balances ride the same loop — taken when newer and this shop's, written to disk before they are
   // believed; on a failure the till keeps the copy this box holds and says how old it is.
