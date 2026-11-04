@@ -325,17 +325,17 @@
         <!-- W5 · M15-FR-03 · OB-301: an order with a related-party supplier is issued only after the owner approves it in
              writing — checked and approved here (apps/web-erp/src/related-party-order-session.ts, window.relatedPartyOrders,
              drawn by buying-related-party.js). Nothing is read on open. -->
-        <div id="rp" hidden>
-          <h3 id="rp-title">Related-party check</h3>
-          <p class="lead" id="rp-lead"></p>
-          <div class="field"><label for="rp-po" id="rp-po-label">Order number</label><input id="rp-po" type="text" autocomplete="off" /></div>
-          <button id="rp-check" class="wide" type="button">Check this order</button>
-          <p class="otb-status" id="rp-status" role="status" aria-live="polite"></p>
-          <div id="rp-approve" hidden>
-            <div class="field"><label for="rp-reason" id="rp-reason-label">The owner's written reason</label><input id="rp-reason" type="text" autocomplete="off" /></div>
-            <button id="rp-approve-go" class="primary wide" type="button">Approve as the owner</button>
+        <div id="rpo" hidden>
+          <h3 id="rpo-title">Related-party check</h3>
+          <p class="lead" id="rpo-lead"></p>
+          <div class="field"><label for="rpo-po" id="rpo-po-label">Order number</label><input id="rpo-po" type="text" autocomplete="off" /></div>
+          <button id="rpo-check" class="wide" type="button">Check this order</button>
+          <p class="otb-status" id="rpo-status" role="status" aria-live="polite"></p>
+          <div id="rpo-approve" hidden>
+            <div class="field"><label for="rpo-reason" id="rpo-reason-label">The owner's written reason</label><input id="rpo-reason" type="text" autocomplete="off" /></div>
+            <button id="rpo-approve-go" class="primary wide" type="button">Approve as the owner</button>
           </div>
-          <p class="otb-status" id="rp-approve-status" role="status" aria-live="polite"></p>
+          <p class="otb-status" id="rpo-approve-status" role="status" aria-live="polite"></p>
         </div>
       </section>
 

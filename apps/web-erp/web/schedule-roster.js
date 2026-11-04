@@ -69,7 +69,8 @@ function costNode() {
 }
 
 function guideNode() {
-  const line = guide === null ? '' : guide.state === 'set' ? t('guideOwnerSet').replace('{percent}', String(guide.guide.guideBps / 100)).replace('{who}', guide.guide.setBy) : t('guideOwnerNotSet');
+  // A read head office did not answer says so in words (P-08) — never an empty line.
+  const line = guide === null ? (guideOut === null || guideOut.result === 'ok' ? '' : api.outcomeWords(lang(), guideOut)) : guide.state === 'set' ? t('guideOwnerSet').replace('{percent}', String(guide.guide.guideBps / 100)).replace('{who}', guide.guide.setBy) : t('guideOwnerNotSet');
   const box = el('div', { id: 'lg-box' }, el('h3', { text: t('guideOwnerH') }), el('p', { cls: 'status', id: 'lg-line', 'data-state': guide?.state ?? '', text: line }));
   if (may.setGuide) box.append(el('div', { cls: 'form-row' }, field('lg-percent', t('guidePercent'), { inputmode: 'decimal' }), btn('lg-save', t('guideSave'), 'check')), statusLine('lg-status'));
   return box;
@@ -90,7 +91,8 @@ function paint() {
 }
 
 async function loadPubs() { const b = val('rc-branch'); if (b.trim() === '') return; const out = await session.publications(b); pubs = out.result === 'ok' ? out.value : null; }
-async function loadGuide() { const out = await session.labourGuide(); guide = out.result === 'ok' ? out.value : null; paint(); }
+let guideOut = null;
+async function loadGuide() { const out = await session.labourGuide(); guideOut = out; guide = out.result === 'ok' ? out.value : null; paint(); }
 async function loadStandards() { const out = await session.standards(); standards = out.result === 'ok' ? out.value : null; paint(); say('ls-status', out); }
 
 function wire() {

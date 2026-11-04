@@ -23,7 +23,7 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const DATABASE_URL = process.env['DATABASE_URL'];
 const OWNER = 'u-owner'; const CA = 'u-ca'; const IC = 'u-ic'; const MGR = 'u-mgr';
 const EMP = 'E-W5-1';
-const SECRET = 'SYNTHETIC CONFIDENTIAL WORDS 7731';
+const COMPLAINT_WORDS = 'SYNTHETIC CONFIDENTIAL WORDS 7731';
 
 describe.skipIf(!existsSync(CHROMIUM))('W5 pay checks and the committee register (PostgreSQL when set), in a real browser', () => {
   let browser: Browser;
@@ -122,11 +122,11 @@ describe.skipIf(!existsSync(CHROMIUM))('W5 pay checks and the committee register
       await ic.page.waitForSelector('#reg-body:not([hidden])');
       await ic.page.click('#reg-show');
       await says(ic.page, '#reg-rows', /No complaint is in the register\./);
-      await ic.page.fill('#rc-on', '2026-10-20'); await ic.page.fill('#rc-c', 'CMP-REF-A'); await ic.page.fill('#rc-r', 'RSP-REF-B'); await ic.page.fill('#rc-s', SECRET);
+      await ic.page.fill('#rc-on', '2026-10-20'); await ic.page.fill('#rc-c', 'CMP-REF-A'); await ic.page.fill('#rc-r', 'RSP-REF-B'); await ic.page.fill('#rc-s', COMPLAINT_WORDS);
       await ic.page.click('#rc-save');
       await says(ic.page, '#rc-status', /^Recorded in the register\. PC-[0-9A-F]{20}$/);
       const id = (await ic.page.getAttribute('#reg-rows li[data-complaint]', 'data-complaint'))!;
-      await says(ic.page, `#reg-rows li[data-complaint="${id}"]`, new RegExp(`${id} · Received.*${SECRET}`));
+      await says(ic.page, `#reg-rows li[data-complaint="${id}"]`, new RegExp(`${id} · Received.*${COMPLAINT_WORDS}`));
       await ic.page.selectOption(`#st-kind-${id}`, 'inquiry_started'); await ic.page.fill(`#st-on-${id}`, '2026-10-22');
       await ic.page.click(`#reg-rows li[data-complaint="${id}"] button`);
       await says(ic.page, `#reg-rows li[data-complaint="${id}"][data-status="under_inquiry"]`, /Under inquiry/);
@@ -149,7 +149,7 @@ describe.skipIf(!existsSync(CHROMIUM))('W5 pay checks and the committee register
       try {
         await says(s.page, '#reg-status', /^Only the Internal Committee may see the complaints register\.$/);
         expect(await s.page.isHidden('#reg-body')).toBe(true);
-        expect(await s.page.content()).not.toContain(SECRET);
+        expect(await s.page.content()).not.toContain(COMPLAINT_WORDS);
         expect(await s.page.content()).not.toContain('CMP-REF-A');
         expect(s.writes).toEqual([]);
         expect(s.errors).toEqual([]);

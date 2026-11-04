@@ -16,34 +16,34 @@ function say(id, text, cls = '') { const el = $(id); el.className = `otb-status 
 let last = null;
 
 function paint() {
-  for (const [id, k] of [['rp-title', 'rpH'], ['rp-lead', 'rpLede'], ['rp-po-label', 'po'], ['rp-check', 'check'], ['rp-reason-label', 'reason'], ['rp-approve-go', 'approve']]) $(id).textContent = w(k);
-  $('rp-approve').hidden = true;
+  for (const [id, k] of [['rpo-title', 'rpH'], ['rpo-lead', 'rpLede'], ['rpo-po-label', 'po'], ['rpo-check', 'check'], ['rpo-reason-label', 'reason'], ['rpo-approve-go', 'approve']]) $(id).textContent = w(k);
+  $('rpo-approve').hidden = true;
   if (last === null) return;
-  if (!last.needed) { say('rp-status', w('noMatch', { supplier: last.supplierId }), 'good'); return; }
+  if (!last.needed) { say('rpo-status', w('noMatch', { supplier: last.supplierId }), 'good'); return; }
   const lines = [w('match', { supplier: last.supplierId, facts: last.matchedOn ?? '' })];
   lines.push(last.approved && last.approval !== null ? w('approved', { who: last.approval.approvedBy, at: shopWhen(last.approval.at), reason: last.approval.reason }) : w('notApproved'));
-  say('rp-status', lines.join(' '), last.approved ? 'good' : 'err');
-  $('rp-approve').hidden = last.approved || !may.approve;
+  say('rpo-status', lines.join(' '), last.approved ? 'good' : 'err');
+  $('rpo-approve').hidden = last.approved || !may.approve;
 }
 
 async function check() {
-  const out = await session.check($('rp-po').value);
-  if (out.result !== 'ok') { last = null; paint(); say('rp-status', api.outcomeWords(lang(), out), 'err'); return; }
+  const out = await session.check($('rpo-po').value);
+  if (out.result !== 'ok') { last = null; paint(); say('rpo-status', api.outcomeWords(lang(), out), 'err'); return; }
   last = out.value; paint();
 }
 
 if (api !== null && may.read) {
-  $('rp').hidden = false;
+  $('rpo').hidden = false;
   paint();
   new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
-  $('rp-check').addEventListener('click', async () => { const b = $('rp-check'); b.disabled = true; try { say('rp-approve-status', ''); await check(); } finally { b.disabled = false; } });
-  $('rp-approve-go').addEventListener('click', async () => {
-    const b = $('rp-approve-go'); b.disabled = true;
+  $('rpo-check').addEventListener('click', async () => { const b = $('rpo-check'); b.disabled = true; try { say('rpo-approve-status', ''); await check(); } finally { b.disabled = false; } });
+  $('rpo-approve-go').addEventListener('click', async () => {
+    const b = $('rpo-approve-go'); b.disabled = true;
     try {
-      const out = await session.approve($('rp-po').value, $('rp-reason').value);
-      if (out.result !== 'ok') { say('rp-approve-status', api.outcomeWords(lang(), out), 'err'); return; }
+      const out = await session.approve($('rpo-po').value, $('rpo-reason').value);
+      if (out.result !== 'ok') { say('rpo-approve-status', api.outcomeWords(lang(), out), 'err'); return; }
       await check();
-      say('rp-approve-status', out.value.alreadyApproved ? w('alreadyApproved') : w('approvedNow'), 'good');
+      say('rpo-approve-status', out.value.alreadyApproved ? w('alreadyApproved') : w('approvedNow'), 'good');
     } finally { b.disabled = false; }
   });
 }

@@ -80,8 +80,9 @@ function wire() {
   });
 }
 
+// The language toggle works even when the page's words could not load (the page still switches, and says what it can).
+$('lang').addEventListener('click', () => { current = current === 'en' ? 'ta' : 'en'; document.documentElement.lang = current; if (api !== null) paint(); else $('lang').textContent = current === 'en' ? 'தமிழ்' : 'English'; });
 if (api !== null) {
-  $('lang').addEventListener('click', () => { current = current === 'en' ? 'ta' : 'en'; document.documentElement.lang = current; paint(); });
   if (may.named && may.legalRead) $('legal-figures').hidden = false;
   paint();
   if (may.named && may.legalRead) void loadLegal();

@@ -33,6 +33,8 @@
       label.check input { min-height: 0; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      /* A real target both ways even before its words load (§1, ≥ 44px). */
+      button, input:not([type="checkbox"]):not([type="radio"]), select { min-width: var(--tap); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 1 1 180px; }
@@ -293,69 +295,69 @@
         <p class="lead" id="ver-lead"></p>
         <h4 id="run-h"></h4>
         <div class="row-form">
-          <label for="run-id"><span data-e="runId"></span><input id="run-id" type="text" autocomplete="off" /></label>
-          <label for="run-operator"><span data-e="runOperator"></span><input id="run-operator" type="text" autocomplete="off" /></label>
-          <label for="run-sources"><span data-e="runSources"></span><input id="run-sources" type="text" autocomplete="off" /></label>
-          <label for="run-note"><span data-e="runNote"></span><input id="run-note" type="text" autocomplete="off" /></label>
+          <label for="run-id"><span data-e="runId">Run name</span><input id="run-id" type="text" autocomplete="off" /></label>
+          <label for="run-operator"><span data-e="runOperator">Who ran it (their sign-in)</span><input id="run-operator" type="text" autocomplete="off" /></label>
+          <label for="run-sources"><span data-e="runSources">Sources it took (comma between)</span><input id="run-sources" type="text" autocomplete="off" /></label>
+          <label for="run-note"><span data-e="runNote">Note</span><input id="run-note" type="text" autocomplete="off" /></label>
         </div>
-        <button id="run-record" type="button"><span data-e="runRecord"></span></button>
+        <button id="run-record" type="button"><span data-e="runRecord">Record who ran it</span></button>
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
 
         <h4 id="wit-h"></h4>
         <div class="row-form">
-          <label for="wit-which"><span data-e="witWhich"></span><select id="wit-which"></select></label>
-          <label for="wit-ref"><span data-e="evidenceRef"></span><input id="wit-ref" type="text" autocomplete="off" /></label>
+          <label for="wit-which"><span data-e="witWhich">Which witness</span><select id="wit-which"></select></label>
+          <label for="wit-ref"><span data-e="evidenceRef">Which document (its reference)</span><input id="wit-ref" type="text" autocomplete="off" /></label>
         </div>
         <div class="row-form" data-witness="count loyalty" hidden>
-          <label for="wit-plan"><span data-e="planId"></span><input id="wit-plan" type="text" autocomplete="off" /></label>
-          <label for="wit-planner"><span data-e="plannedBy"></span><input id="wit-planner" type="text" autocomplete="off" /></label>
-          <label for="wit-seed"><span data-e="seed"></span><input id="wit-seed" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="wit-plan"><span data-e="planId">Sample plan name</span><input id="wit-plan" type="text" autocomplete="off" /></label>
+          <label for="wit-planner"><span data-e="plannedBy">Who planned the sample (their sign-in)</span><input id="wit-planner" type="text" autocomplete="off" /></label>
+          <label for="wit-seed"><span data-e="seed">Sample number (seed)</span><input id="wit-seed" type="text" inputmode="numeric" autocomplete="off" /></label>
         </div>
         <div class="row-form" data-witness="suppliers" hidden>
-          <label for="wit-asked"><span data-e="suppliersAsked"></span><input id="wit-asked" type="text" autocomplete="off" /></label>
+          <label for="wit-asked"><span data-e="suppliersAsked">Suppliers asked for a statement (comma between)</span><input id="wit-asked" type="text" autocomplete="off" /></label>
         </div>
         <div class="row-form" data-witness="bank" hidden>
-          <label for="wit-pstart"><span data-e="periodStart"></span><input id="wit-pstart" type="date" /></label>
-          <label for="wit-pend"><span data-e="periodEnd"></span><input id="wit-pend" type="date" /></label>
-          <label for="wit-sfrom"><span data-e="stmtFrom"></span><input id="wit-sfrom" type="date" /></label>
-          <label for="wit-sto"><span data-e="stmtTo"></span><input id="wit-sto" type="date" /></label>
+          <label for="wit-pstart"><span data-e="periodStart">Takings from</span><input id="wit-pstart" type="date" /></label>
+          <label for="wit-pend"><span data-e="periodEnd">Takings to</span><input id="wit-pend" type="date" /></label>
+          <label for="wit-sfrom"><span data-e="stmtFrom">Statement period from (as printed)</span><input id="wit-sfrom" type="date" /></label>
+          <label for="wit-sto"><span data-e="stmtTo">Statement period to (as printed)</span><input id="wit-sto" type="date" /></label>
         </div>
         <div class="row-form" data-witness="tax" hidden>
-          <label for="wit-periods"><span data-e="periodsExpected"></span><input id="wit-periods" type="text" autocomplete="off" /></label>
+          <label for="wit-periods"><span data-e="periodsExpected">Months that must have a return (YYYY-MM, comma between)</span><input id="wit-periods" type="text" autocomplete="off" /></label>
         </div>
         <div class="row-form" data-witness="books" hidden>
-          <label for="wit-entity"><span data-e="entity"></span><input id="wit-entity" type="text" autocomplete="off" /></label>
-          <label for="wit-pe"><span data-e="periodEndAcc"></span><input id="wit-pe" type="date" /></label>
-          <label for="wit-prep"><span data-e="preparedBy"></span><input id="wit-prep" type="text" autocomplete="off" /></label>
-          <label for="wit-signed"><span data-e="signedOn"></span><input id="wit-signed" type="date" /></label>
-          <label for="wit-member"><span data-e="membership"></span><input id="wit-member" type="text" autocomplete="off" /></label>
-          <label for="wit-cutdate"><span data-e="cutoverDate"></span><input id="wit-cutdate" type="date" /></label>
+          <label for="wit-entity"><span data-e="entity">Whose accounts</span><input id="wit-entity" type="text" autocomplete="off" /></label>
+          <label for="wit-pe"><span data-e="periodEndAcc">Accounts drawn to</span><input id="wit-pe" type="date" /></label>
+          <label for="wit-prep"><span data-e="preparedBy">Prepared by</span><input id="wit-prep" type="text" autocomplete="off" /></label>
+          <label for="wit-signed"><span data-e="signedOn">Signed on</span><input id="wit-signed" type="date" /></label>
+          <label for="wit-member"><span data-e="membership">Membership number</span><input id="wit-member" type="text" autocomplete="off" /></label>
+          <label for="wit-cutdate"><span data-e="cutoverDate">Switch-over date</span><input id="wit-cutdate" type="date" /></label>
         </div>
         <div class="row-form" data-witness="loyalty" hidden>
-          <label for="wit-source"><span data-e="sampleSource"></span><select id="wit-source"></select></label>
-          <label for="wit-cost"><span data-e="pointCost"></span><input id="wit-cost" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="wit-source"><span data-e="sampleSource">How the sample was drawn</span><select id="wit-source"></select></label>
+          <label for="wit-cost"><span data-e="pointCost">What one point costs the shop (₹)</span><input id="wit-cost" type="text" inputmode="decimal" autocomplete="off" /></label>
         </div>
         <div class="row-form" id="wit-files"></div>
-        <button id="wit-record" type="button"><span data-e="recordWitness"></span></button>
+        <button id="wit-record" type="button"><span data-e="recordWitness">Give this evidence to head office</span></button>
         <p class="status" id="wit-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="wit-result"></ul>
 
         <h4 id="prog-h"></h4>
-        <button id="prog-show" type="button" class="quiet"><span data-e="showProgress"></span></button>
+        <button id="prog-show" type="button" class="quiet"><span data-e="showProgress">Show where they stand</span></button>
         <p class="status" id="prog-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="prog-list"></ul>
 
         <h4 id="vpage-h"></h4>
         <div class="row-form">
-          <button id="vpage-show" type="button" class="quiet"><span data-e="showPage"></span></button>
-          <a id="vpage-save" class="quiet-link" hidden><span data-e="savePage"></span></a>
-          <button id="vpage-print" type="button" class="quiet" hidden><span data-e="printPage"></span></button>
+          <button id="vpage-show" type="button" class="quiet"><span data-e="showPage">Show the page</span></button>
+          <a id="vpage-save" class="quiet-link" hidden><span data-e="savePage">Keep a copy (to print)</span></a>
+          <button id="vpage-print" type="button" class="quiet" hidden><span data-e="printPage">Print it</span></button>
         </div>
         <p class="status" id="vpage-status" role="status" aria-live="polite"></p>
         <pre class="kept-text" id="vpage-text" hidden></pre>
         <div class="row-form">
-          <label for="vpage-statement"><span data-e="signStatement"></span><input id="vpage-statement" type="text" autocomplete="off" /></label>
-          <button id="vpage-sign" type="button"><span data-e="signPage"></span></button>
+          <label for="vpage-statement"><span data-e="signStatement">What you checked, in your own words</span><input id="vpage-statement" type="text" autocomplete="off" /></label>
+          <button id="vpage-sign" type="button"><span data-e="signPage">Sign the page</span></button>
         </div>
         <p class="status" id="vsign-status" role="status" aria-live="polite"></p>
       </section>
@@ -365,10 +367,10 @@
         <h3 id="acc-h">The owner accepts a kind of record on the old system's word</h3>
         <p class="lead" id="acc-lead"></p>
         <div class="row-form">
-          <label for="acc-domain"><span data-e="accDomain"></span><select id="acc-domain"></select></label>
-          <label for="acc-reason"><span data-e="accReason"></span><input id="acc-reason" type="text" autocomplete="off" /></label>
+          <label for="acc-domain"><span data-e="accDomain">Which kind of record</span><select id="acc-domain"></select></label>
+          <label for="acc-reason"><span data-e="accReason">Why you accept it, in your own words</span><input id="acc-reason" type="text" autocomplete="off" /></label>
         </div>
-        <button id="acc-accept" type="button"><span data-e="accept"></span></button>
+        <button id="acc-accept" type="button"><span data-e="accept">Accept it, in my name</span></button>
         <p class="status" id="acc-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -377,14 +379,14 @@
         <h3 id="lim-h">The owner's going-back limits</h3>
         <p class="lead" id="lim-lead"></p>
         <div class="row-form">
-          <label for="lim-controlTotalDifferenceMinor"><span data-e="lim_controlTotalDifferenceMinor"></span><input id="lim-controlTotalDifferenceMinor" type="text" inputmode="decimal" autocomplete="off" /></label>
-          <label for="lim-edgeOutageMinutes"><span data-e="lim_edgeOutageMinutes"></span><input id="lim-edgeOutageMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
-          <label for="lim-windowMinutes"><span data-e="lim_windowMinutes"></span><input id="lim-windowMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
-          <label for="lim-backupMaxAgeHours"><span data-e="lim_backupMaxAgeHours"></span><input id="lim-backupMaxAgeHours" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="lim-controlTotalDifferenceMinor"><span data-e="lim_controlTotalDifferenceMinor">Largest money difference allowed on the night (₹)</span><input id="lim-controlTotalDifferenceMinor" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="lim-edgeOutageMinutes"><span data-e="lim_edgeOutageMinutes">Longest the store may be cut off from head office (minutes)</span><input id="lim-edgeOutageMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="lim-windowMinutes"><span data-e="lim_windowMinutes">How long the night may run after GO (minutes)</span><input id="lim-windowMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="lim-backupMaxAgeHours"><span data-e="lim_backupMaxAgeHours">How old the last good backup may be (hours)</span><input id="lim-backupMaxAgeHours" type="text" inputmode="numeric" autocomplete="off" /></label>
         </div>
         <div class="row-form">
-          <button id="lim-show" type="button" class="quiet"><span data-e="showLimits"></span></button>
-          <button id="lim-set" type="button"><span data-e="setLimits"></span></button>
+          <button id="lim-show" type="button" class="quiet"><span data-e="showLimits">Show the limits</span></button>
+          <button id="lim-set" type="button"><span data-e="setLimits">Save my limits</span></button>
         </div>
         <p class="status" id="lim-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="lim-list"></ul>
@@ -395,40 +397,40 @@
         <h3 id="books-h">Running both — the books side of a day</h3>
         <p class="lead" id="books-lead"></p>
         <div class="row-form">
-          <label for="books-date"><span data-e="booksDate"></span><input id="books-date" type="date" /></label>
-          <button id="books-show" type="button" class="quiet"><span data-e="showBooks"></span></button>
+          <label for="books-date"><span data-e="booksDate">Trading day</span><input id="books-date" type="date" /></label>
+          <button id="books-show" type="button" class="quiet"><span data-e="showBooks">Show the reports and the day</span></button>
         </div>
         <ul class="rows" id="books-held"></ul>
         <div class="row-form">
-          <label for="books-report"><span data-e="booksReport"></span><select id="books-report"></select></label>
-          <label for="books-order"><span data-e="booksDateOrder"></span><select id="books-order"></select></label>
-          <label for="books-file"><span data-e="booksFile"></span><input id="books-file" type="file" accept=".csv,text/csv" /></label>
+          <label for="books-report"><span data-e="booksReport">Which report</span><select id="books-report"></select></label>
+          <label for="books-order"><span data-e="booksDateOrder">Dates in the file are written</span><select id="books-order"></select></label>
+          <label for="books-file"><span data-e="booksFile">The report as the old ERP printed it (CSV)</span><input id="books-file" type="file" accept=".csv,text/csv" /></label>
         </div>
         <div class="row-form" id="books-columns"></div>
         <div class="row-form">
-          <button id="books-add" type="button" class="quiet"><span data-e="addReport"></span></button>
-          <button id="books-record" type="button"><span data-e="recordBooks"></span></button>
+          <button id="books-add" type="button" class="quiet"><span data-e="addReport">Add this report</span></button>
+          <button id="books-record" type="button"><span data-e="recordBooks">Record the books side of the day</span></button>
         </div>
         <ul class="rows" id="books-pending"></ul>
         <p class="status" id="books-status" role="status" aria-live="polite"></p>
 
         <h4 id="pdiff-h"></h4>
-        <button id="pdiff-show" type="button" class="quiet"><span data-e="showDiffs"></span></button>
+        <button id="pdiff-show" type="button" class="quiet"><span data-e="showDiffs">Show the open differences</span></button>
         <p class="status" id="pdiff-pos" role="status" aria-live="polite"></p>
         <ul class="rows" id="pdiff-list"></ul>
         <div class="row-form">
-          <label for="pdiff-which"><span data-e="diffWhich"></span><select id="pdiff-which"></select></label>
-          <label for="pdiff-explain"><span data-e="diffExplain"></span><input id="pdiff-explain" type="text" autocomplete="off" /></label>
-          <label for="pdiff-wrong"><span data-e="diffWrong"></span><select id="pdiff-wrong"></select></label>
+          <label for="pdiff-which"><span data-e="diffWhich">Which difference</span><select id="pdiff-which"></select></label>
+          <label for="pdiff-explain"><span data-e="diffExplain">What caused it (when known)</span><input id="pdiff-explain" type="text" autocomplete="off" /></label>
+          <label for="pdiff-wrong"><span data-e="diffWrong">Which system was wrong</span><select id="pdiff-wrong"></select></label>
         </div>
-        <button id="pdiff-own" type="button"><span data-e="ownDiff"></span></button>
+        <button id="pdiff-own" type="button"><span data-e="ownDiff">Own this difference</span></button>
         <p class="status" id="pdiff-status" role="status" aria-live="polite"></p>
 
         <h4 id="sheet-h"></h4>
         <div class="row-form">
-          <button id="sheet-show" type="button" class="quiet"><span data-e="showSheet"></span></button>
-          <a id="sheet-save" class="quiet-link" hidden><span data-e="saveSheet"></span></a>
-          <button id="sheet-print" type="button" class="quiet" hidden><span data-e="printSheet"></span></button>
+          <button id="sheet-show" type="button" class="quiet"><span data-e="showSheet">Show the sheet</span></button>
+          <a id="sheet-save" class="quiet-link" hidden><span data-e="saveSheet">Keep a copy (to print)</span></a>
+          <button id="sheet-print" type="button" class="quiet" hidden><span data-e="printSheet">Print it</span></button>
         </div>
         <p class="status" id="sheet-status" role="status" aria-live="polite"></p>
         <pre class="kept-text" id="sheet-text" hidden></pre>
@@ -439,22 +441,22 @@
         <h3 id="rb-h">Going back to the old system — confirm it and reconcile it</h3>
         <p class="lead" id="rb-lead"></p>
         <div class="row-form">
-          <label for="rb-cutover"><span data-e="rbCutover"></span><input id="rb-cutover" type="text" autocomplete="off" /></label>
-          <label for="rb-bill"><span data-e="rbBill"></span><input id="rb-bill" type="text" autocomplete="off" /></label>
-          <label for="rb-from"><span data-e="rbFrom"></span><input id="rb-from" type="datetime-local" step="1" /></label>
+          <label for="rb-cutover"><span data-e="rbCutover">Switch-over name</span><input id="rb-cutover" type="text" autocomplete="off" /></label>
+          <label for="rb-bill"><span data-e="rbBill">The old system's first bill number</span><input id="rb-bill" type="text" autocomplete="off" /></label>
+          <label for="rb-from"><span data-e="rbFrom">When the old system started taking sales (shop time)</span><input id="rb-from" type="datetime-local" step="1" /></label>
         </div>
-        <button id="rb-confirm" type="button"><span data-e="rbConfirm"></span></button>
+        <button id="rb-confirm" type="button"><span data-e="rbConfirm">Confirm going back</span></button>
         <p class="status" id="rb-confirm-status" role="status" aria-live="polite"></p>
         <div class="row-form">
-          <label for="rb-newfrom"><span data-e="rbNewFrom"></span><input id="rb-newfrom" type="datetime-local" step="1" /></label>
-          <label for="rb-count"><span data-e="rbCount"></span><input id="rb-count" type="text" inputmode="numeric" autocomplete="off" /></label>
-          <label for="rb-total"><span data-e="rbTotal"></span><input id="rb-total" type="text" inputmode="decimal" autocomplete="off" /></label>
-          <label for="rb-refunds"><span data-e="rbRefunds"></span><input id="rb-refunds" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
-          <label for="rb-refund-total"><span data-e="rbRefundTotal"></span><input id="rb-refund-total" type="text" inputmode="decimal" value="0" autocomplete="off" /></label>
-          <label for="rb-stock"><span data-e="f_rollback_stock"></span><input id="rb-stock" type="file" accept=".csv,text/csv" /></label>
-          <a id="rb-stock-template" class="quiet-link"><span data-e="template"></span></a>
+          <label for="rb-newfrom"><span data-e="rbNewFrom">When the new system started taking sales (shop time)</span><input id="rb-newfrom" type="datetime-local" step="1" /></label>
+          <label for="rb-count"><span data-e="rbCount">Bills carried back into the old system</span><input id="rb-count" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="rb-total"><span data-e="rbTotal">Their total (₹)</span><input id="rb-total" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="rb-refunds"><span data-e="rbRefunds">Refunds carried back</span><input id="rb-refunds" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
+          <label for="rb-refund-total"><span data-e="rbRefundTotal">Refunds total (₹)</span><input id="rb-refund-total" type="text" inputmode="decimal" value="0" autocomplete="off" /></label>
+          <label for="rb-stock"><span data-e="f_rollback_stock">Each product's stock movement in the old system (CSV)</span><input id="rb-stock" type="file" accept=".csv,text/csv" /></label>
+          <a id="rb-stock-template" class="quiet-link"><span data-e="template">Empty template</span></a>
         </div>
-        <button id="rb-reconcile" type="button"><span data-e="rbReconcile"></span></button>
+        <button id="rb-reconcile" type="button"><span data-e="rbReconcile">Reconcile the window</span></button>
         <p class="status" id="rb-rec-status" role="status" aria-live="polite"></p>
       </section>
     </main>
