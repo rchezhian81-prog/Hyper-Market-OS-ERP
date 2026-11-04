@@ -92,7 +92,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 platfor
       await s.page.fill('#w5-kill-version', '1.5.0'); await s.page.check('#w5-kill-confirm');
       await s.page.click('#w5-kill-go');
       await says(s.page, '#w5-fc-status', /^Head office refused: /);
-      expect(s.writes).toEqual(['POST /v1/platform/remote-sessions/rs-1/terminate', 'POST /v1/platform/version-policy', 'POST /v1/platform/version-policy/kill', 'POST /v1/platform/version-policy/kill']);
+      expect(s.writes.filter((w) => w !== 'POST /v1/platform/devices/fleet-health'), 'W6: the fleet-health read on the page records nothing').toEqual(['POST /v1/platform/remote-sessions/rs-1/terminate', 'POST /v1/platform/version-policy', 'POST /v1/platform/version-policy/kill', 'POST /v1/platform/version-policy/kill']);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     const policy = await as(OWNER, 'GET', '/v1/platform/version-policy') as { policy: { killedVersions?: string[] } };

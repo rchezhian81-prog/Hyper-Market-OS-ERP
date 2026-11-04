@@ -11,6 +11,9 @@
 //   Incidents ............ a personal-data breach: what must be told, to whom, by when (C2 · DPDP s.8(6))
 //                                                                                       POST /v1/privacy/breach/assess
 //   Loyalty .............. a member leaves the programme at the desk (M16-FR-02)       POST /v1/loyalty/members/:ref/leave
+//                          W6: a referral reward owed, paid out or let lapse by a person (M17-FR-02 · OB-221 · OB-356)
+//                                                                                       GET  /v1/loyalty/referral-programme · GET /v1/finance/referral-liability
+//                                                                                       POST /v1/loyalty/referrals/:id/payout · …/expire
 //   Message queue ........ withdraw an approved message template (PA-08 r6)           POST /v1/notifications/templates/:id/withdrawal
 //   Campaigns ............ the campaign decision log (M21-FR-01 · P-08)               GET  /v1/service/campaigns/plans
 //   Trial switches ....... consent-manager records that could not be applied (OB-324) GET  /v1/privacy/consent-manager/exceptions
@@ -70,6 +73,11 @@ export const DESK_COPY = {
     // Loyalty — leave
     leaveH: 'A member leaves the programme', leaveLead: 'When a member asks to stop, record it here. From then on their code earns nothing. Their points history is kept.',
     member: 'Member code', reason: 'Reason', leave: 'Record that they left', left: 'Recorded. The member has left; the code earns nothing from now on.', alreadyLeft: 'This member had already left.',
+    // Loyalty — referral rewards owed (W6)
+    owedH: 'Referral rewards still to pay', owedLead: 'A referral reward is money the shop owes the customer from the day it is earned. When you pay one — in cash, as store credit or by bank transfer — record how and the receipt or transfer number. A reward the customer will not take may be let lapse, with the reason. Each is kept; nothing is changed afterwards.',
+    owedShow: 'Show rewards still to pay', noOwed: 'No referral reward is waiting to be paid.', owes: 'owed', side_referrer: 'referred a friend', side_referred: 'was referred',
+    how: 'Paid by', how_cash: 'cash', how_store_credit: 'store credit', how_bank_transfer: 'bank transfer', payRef: 'Receipt, credit or transfer number', payOut: 'Record the payment', paidOut: 'Recorded as paid.',
+    lapseReason: 'Why it lapses', lapse: 'Let it lapse', lapsed: 'Recorded as lapsed.',
     // Message queue — withdraw a template
     withdrawH: 'Stop an approved message', withdrawLead: 'If the words of an approved message must not go out any more (a mistake, an offer taken back), stop it here. Nothing more is sent with it; messages still waiting with it are held back and kept, with your reason.',
     withdrawShow: 'Show the approved messages', noApproved: 'No approved message.', version: 'version', withdraw: 'Stop this message', withdrawnOk: 'Stopped. Nothing more goes out with it.',
@@ -142,6 +150,10 @@ export const DESK_COPY = {
     st_done: 'முடிந்தது', st_due: 'செய்ய வேண்டியது', st_overdue: 'தாமதம்', immediately: 'உடனே', missing: 'இன்னும் இல்லாதவை', adviceOnly: 'இது செய்ய வேண்டியதை மட்டும் கணக்கிடுகிறது. ஒவ்வொரு அறிவிப்பையும் ஒருவர் அனுப்புவார்.',
     leaveH: 'உறுப்பினர் திட்டத்திலிருந்து விலகுகிறார்', leaveLead: 'ஒரு உறுப்பினர் நிறுத்தக் கேட்டால் இங்கே பதிவு செய்யுங்கள். அதன் பிறகு அவர்களின் குறியீடு எதையும் சம்பாதிக்காது. புள்ளி வரலாறு வைக்கப்படும்.',
     member: 'உறுப்பினர் குறியீடு', reason: 'காரணம்', leave: 'விலகியதாகப் பதிவு செய்', left: 'பதிவு செய்யப்பட்டது. உறுப்பினர் விலகினார்; இனி குறியீடு எதையும் சம்பாதிக்காது.', alreadyLeft: 'இந்த உறுப்பினர் ஏற்கனவே விலகிவிட்டார்.',
+    owedH: 'இன்னும் கொடுக்க வேண்டிய பரிந்துரைப் பரிசுகள்', owedLead: 'ஒரு பரிந்துரைப் பரிசு சம்பாதித்த நாளிலிருந்து கடை வாடிக்கையாளருக்குக் கொடுக்க வேண்டிய பணம். அதைக் கொடுக்கும்போது — ரொக்கம், கடை வரவு அல்லது வங்கிப் பரிமாற்றம் — எப்படி என்பதையும் ரசீது அல்லது பரிமாற்ற எண்ணையும் பதிவு செய்யுங்கள். வாடிக்கையாளர் ஏற்காத பரிசைக் காரணத்துடன் காலாவதியாக விடலாம். ஒவ்வொன்றும் வைக்கப்படும்; பின்னர் எதுவும் மாற்றப்படாது.',
+    owedShow: 'கொடுக்க வேண்டிய பரிசுகளைக் காட்டு', noOwed: 'கொடுக்கக் காத்திருக்கும் பரிந்துரைப் பரிசு எதுவும் இல்லை.', owes: 'கொடுக்க வேண்டியது', side_referrer: 'நண்பரைப் பரிந்துரைத்தவர்', side_referred: 'பரிந்துரைக்கப்பட்டவர்',
+    how: 'கொடுத்த விதம்', how_cash: 'ரொக்கம்', how_store_credit: 'கடை வரவு', how_bank_transfer: 'வங்கிப் பரிமாற்றம்', payRef: 'ரசீது, வரவு அல்லது பரிமாற்ற எண்', payOut: 'கொடுத்ததைப் பதிவு செய்', paidOut: 'கொடுத்ததாகப் பதிவு செய்யப்பட்டது.',
+    lapseReason: 'காலாவதியாகும் காரணம்', lapse: 'காலாவதியாக விடு', lapsed: 'காலாவதியானதாகப் பதிவு செய்யப்பட்டது.',
     withdrawH: 'ஒப்புதல் பெற்ற செய்தியை நிறுத்து', withdrawLead: 'ஒப்புதல் பெற்ற செய்தியின் வார்த்தைகள் இனி வெளியே போகக்கூடாது என்றால் (தவறு, திரும்பப் பெற்ற சலுகை), இங்கே நிறுத்துங்கள். அதைக் கொண்டு இனி எதுவும் அனுப்பப்படாது; காத்திருக்கும் செய்திகள் உங்கள் காரணத்துடன் நிறுத்தி வைக்கப்படும்.',
     withdrawShow: 'ஒப்புதல் பெற்ற செய்திகளைக் காட்டு', noApproved: 'ஒப்புதல் பெற்ற செய்தி இல்லை.', version: 'பதிப்பு', withdraw: 'இந்தச் செய்தியை நிறுத்து', withdrawnOk: 'நிறுத்தப்பட்டது. இனி அதைக் கொண்டு எதுவும் போகாது.',
     logH: 'பிரச்சார முடிவுப் பதிவு', logLead: 'திட்டமிட்ட ஒவ்வொரு பிரச்சாரமும்: யார் திட்டமிட்டார், எத்தனை பேரை அடையும், எத்தனை பேர் ஏன் விடப்பட்டனர். புதியது முதலில்.',
@@ -184,6 +196,8 @@ export const COMPENSATION_KINDS = ['goodwill_credit', 'refund', 'loyalty_points'
 export const EXCEPTION_QUEUES = ['fulfilment_supervisor', 'customer_service_desk', 'finance_recon_queue', 'duty_manager'] as const;
 export const SUB_PREFERENCES = ['contact_me', 'best_match', 'no_substitution'] as const;
 export const CONTACT_METHODS = ['phone', 'in_person', 'whatsapp', 'sms'] as const;
+/** W6 (M17-FR-02): how a referral reward was paid out — head office's own list (services/customer/src/offer-liability.ts). */
+export const PAYOUT_HOWS = ['cash', 'store_credit', 'bank_transfer'] as const;
 
 /** Rupees as typed ("150", "150.5", "150.50") → paise; undefined when it is not an amount. */
 export function paiseOf(text: string): number | undefined {
@@ -236,6 +250,8 @@ export interface DeliveryProof {
 }
 export interface PackLine { readonly lineId: string; readonly productId: string; readonly name: string; readonly packedMinor: number }
 export interface OrderNotice { readonly noticeId: string; readonly orderId: string; readonly customerRef: string; readonly kind: string; readonly outcome: 'queued' | 'not_queued'; readonly code?: string; readonly detail: string; readonly at: string }
+/** W6: one referral reward still owed, as head office's liability register holds it — and, where its programme names it, whose. */
+export interface OwedReferral { readonly referralId: string; readonly earnedMinor: number; readonly outstandingMinor: number; readonly side: 'referrer' | 'referred' | null; readonly customerRef: string | null }
 export interface AccessRegister { readonly refusals: readonly { readonly customerRef: string; readonly orderId: string; readonly outcome: string; readonly action: string; readonly at: string }[]; readonly probing: readonly { readonly customerRef: string; readonly distinctOrders: number }[]; readonly detail: string }
 
 type Why = 'nobody' | 'cannot' | 'needCustomer' | 'needOrder' | 'needCase' | 'needReason' | 'needText' | 'needNumber' | 'needRupees' | 'needWhen' | 'needScore';
@@ -247,6 +263,7 @@ export const SECTION_WORDS = {
   templates: 'document.template.manage', campaignLog: 'customer.campaign.read', consentExceptions: 'customer.consent.write',
   caseRead: 'service.case.read', caseManage: 'service.case.manage', household: 'loyalty.value.read', proof: 'delivery.run.read',
   handback: 'fulfilment.pack.record', packRead: 'fulfilment.pack.read', reassign: 'order.exception.manage', subPref: 'order.lifecycle.manage', orderRead: 'order.read',
+  referral: 'loyalty.referral.settle',
 } as const;
 export type SectionKey = keyof typeof SECTION_WORDS;
 
@@ -261,6 +278,10 @@ export interface DeskSession {
   recordProcessor(i: { readonly vendorId: string; readonly vendorName: string; readonly categories: string; readonly purpose: string; readonly contractRef: string; readonly contractFrom: string; readonly contractUntil: string }): Done<unknown>;
   assessBreach(i: Readonly<Record<string, string>>, offsetMinutes?: number): Done<BreachPlan>;
   leave(memberRef: string, reason: string): Done<{ readonly memberRef: string; readonly alreadyLeft?: boolean }>;
+  /** W6: the referral rewards still owed (the programme read first, so a reward now due is given before the register is read). */
+  owedReferrals(): Done<readonly OwedReferral[]>;
+  payReferral(referralId: string, how: string, reference: string): Done<unknown>;
+  lapseReferral(referralId: string, reason: string): Done<unknown>;
   approvedTemplates(): Done<readonly TemplateRow[]>;
   withdrawTemplate(templateId: string, version: number, reason: string): Done<unknown>;
   campaignLog(): Done<readonly CampaignPlanRow[]>;
@@ -344,6 +365,31 @@ export function createDeskSession(input: {
     },
     leave: async (ref, reason) => gate('leave') ?? need(ref, 'needCustomer') ?? need(reason, 'needReason')
       ?? call('POST', `/v1/loyalty/members/${enc(ref.trim())}/leave`, { reason: reason.trim() }),
+    owedReferrals: async () => {
+      const g = gate('referral'); if (g) return g;
+      // The staff-side programme read brings each referral up to date (a reward now due is given there) and names whose it is.
+      const programme = await call<{ referrals?: unknown[] }>('GET', '/v1/loyalty/referral-programme');
+      if (programme.result !== 'ok') return programme;
+      const whose = new Map<string, { side: 'referrer' | 'referred'; customerRef: string }>();
+      for (const r of arr<Record<string, unknown>>(programme.value.referrals)) {
+        for (const gr of arr<Record<string, unknown>>(isObj(r) ? r['grants'] : undefined)) {
+          if (isObj(gr) && typeof gr['referralId'] === 'string' && (gr['side'] === 'referrer' || gr['side'] === 'referred')) whose.set(gr['referralId'], { side: gr['side'], customerRef: String(gr['customerRef'] ?? '') });
+        }
+      }
+      return map(call<{ register?: { referrals?: unknown[] } }>('GET', '/v1/finance/referral-liability'), (v) => arr<Record<string, unknown>>(v.register?.referrals)
+        .filter((r) => isObj(r) && typeof r['referralId'] === 'string' && typeof r['outstandingMinor'] === 'number' && r['outstandingMinor'] > 0)
+        .map((r): OwedReferral => {
+          const id = r['referralId'] as string; const w = whose.get(id);
+          return { referralId: id, earnedMinor: Number(r['earnedMinor'] ?? 0), outstandingMinor: r['outstandingMinor'] as number, side: w?.side ?? null, customerRef: w === undefined || w.customerRef === '' ? null : w.customerRef };
+        }));
+    },
+    payReferral: async (id, how, reference) => {
+      const g = gate('referral') ?? need(id, 'needText') ?? need(reference, 'needText'); if (g) return g;
+      if (!(PAYOUT_HOWS as readonly string[]).includes(how)) return no('needText');
+      return call('POST', `/v1/loyalty/referrals/${enc(id.trim())}/payout`, { how, reference: reference.trim() });
+    },
+    lapseReferral: async (id, reason) => gate('referral') ?? need(id, 'needText') ?? need(reason, 'needReason')
+      ?? call('POST', `/v1/loyalty/referrals/${enc(id.trim())}/expire`, { reason: reason.trim() }),
     approvedTemplates: async () => gate('templates') ?? map(call<{ templates?: unknown[] }>('GET', '/v1/notifications/templates'), (v) => {
       // The latest state of each version: one approved and later withdrawn is not offered again.
       const latest = new Map<string, TemplateRow>();
