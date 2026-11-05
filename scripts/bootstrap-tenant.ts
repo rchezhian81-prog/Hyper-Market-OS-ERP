@@ -44,7 +44,9 @@ async function main(): Promise<void> {
   if (existsSync(envFile)) env = parseEnvText(readFileSync(envFile, 'utf8'));
   else out(`Note: no env file at ${envFile} — MIGRATION_TARGET_KIND treated as unset (rehearsal).`);
 
-  const admins = (typeof flags['admin'] === 'string' ? flags['admin'].split(',') : [])
+  // Split on commas AND spaces (store PC, 5 Nov 2026): PowerShell reads an unquoted `a:x,b:y` as a list and hands it
+  // on as "a:x b:y" — which once came out as one person with the role "x b". A login and a role never hold a space.
+  const admins = (typeof flags['admin'] === 'string' ? flags['admin'].split(/[,\s]+/) : [])
     .map((s) => s.trim()).filter((s) => s !== '')
     .map((pair) => { const [userId = '', roleId = ''] = pair.split(':'); return { userId: userId.trim(), roleId: roleId.trim() }; });
 
