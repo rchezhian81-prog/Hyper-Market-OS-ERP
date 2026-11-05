@@ -529,9 +529,10 @@ workbook, on paper, which staff member holds `store-manager-01` and `accountant-
 If your chartered accountant also needs a login, that is `ca-01` (role `chartered_accountant`); add it the same way.
 
 1. First the **dry run** (it changes nothing). Your tenant id is the one you wrote in the workbook in Part 5. Type it as
-   one line, putting in your own values (for two people, put a comma between them after `--admin`, no spaces):
+   one line, putting in your own values (for two people, put a comma between them after `--admin`, no spaces, and keep
+   the quotes around the list — without them PowerShell splits the list itself):
    ```
-   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner owner-01 --admin accountant-01:accountant,store-manager-01:store_manager --operator "Your Name" --env-file F:\SRE-data\.env.real --dry-run
+   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner owner-01 --admin "accountant-01:accountant,store-manager-01:store_manager" --operator "Your Name" --env-file F:\SRE-data\.env.real --dry-run
    ```
    - **When it worked:** it lists each person and their role, then `DRY RUN — nothing was written.`
    - Read the list. If anything is wrong, fix the line and run the dry run again.
