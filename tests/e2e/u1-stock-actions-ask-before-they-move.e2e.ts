@@ -105,7 +105,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: stock-moving office actions ask the 
     const s = await open('/demand-events', '#save');
     const writes = writeCounter(s.page);
     await s.page.fill('#store', S1); await s.page.fill('#label', 'Pongal'); await s.page.selectOption('#kind', 'festival');
-    await s.page.fill('#ev-from', '2027-01-14'); await s.page.fill('#ev-to', '2027-01-15'); await s.page.fill('#effect', '1.5');
+    await s.page.fill('#ev-from', '14/01/2027'); await s.page.fill('#ev-to', '15/01/2027'); await s.page.fill('#effect', '1.5');
     await askedThenConfirmed(s.page, () => s.page.click('#save'), /Record Pongal \(Festival\), 2027-01-14 to 2027-01-15: orders will be proposed 50% higher for all products/, writes);
     await says(s.page, 'record-status', /Recorded/);
     expect(writes()).toBe(1);

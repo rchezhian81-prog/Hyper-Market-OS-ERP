@@ -40,6 +40,12 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -73,7 +79,7 @@
         <h3 id="quote-h">Record a supplier's quote</h3>
         <div class="form-row">
           <label for="quote-id"><span id="l-quote-id">Quote number</span><input id="quote-id" autocomplete="off" /></label>
-          <label for="quote-supplier"><span id="l-quote-supplier">Supplier code</span><input id="quote-supplier" autocomplete="off" /></label>
+          <label for="quote-supplier"><span id="l-quote-supplier">Supplier</span><input id="quote-supplier" autocomplete="off" /></label>
         </div>
         <div id="quote-lines" class="form-row"></div>
         <div class="form-row"><button id="record-quote" type="button" class="sre-btn">Record the quote</button></div>
@@ -85,7 +91,7 @@
         <h3 id="order-h">Raise the order from a quote</h3>
         <div class="form-row">
           <label for="order-quote"><span id="l-order-quote">Quote</span><select id="order-quote"></select></label>
-          <label for="order-store"><span id="l-order-store">Deliver to (store code)</span><input id="order-store" autocomplete="off" /></label>
+          <label for="order-store"><span id="l-order-store">Deliver to</span><input id="order-store" autocomplete="off" /></label>
           <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
           <button id="raise-order" type="button" class="sre-btn">Propose the order</button>
         </div>

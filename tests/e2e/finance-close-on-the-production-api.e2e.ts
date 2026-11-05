@@ -33,6 +33,8 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/day-book'
  * Synthetic data, a fresh tenant. Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['finance', 'close', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
@@ -249,7 +251,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
       // The freezer: ₹12,000, nothing left at the end, 12 months, in service mid-month.
       await s.page.click('#asset-add summary');
       for (const [id, v] of [['#a-id', 'FA-FRZ-1'], ['#a-name', 'Chest freezer'], ['#a-category', 'refrigeration'], ['#a-store', 'store-1'], ['#a-cost', '12000'], ['#a-salvage', '0'], ['#a-life', '12']] as const) await s.page.fill(id, v);
-      await s.page.fill('#a-in', `${PERIOD}-15`);
+      await s.page.fill('#a-in', ddmm(`${PERIOD}-15`));
       await s.page.click('#asset-add-go');
       await says(s.page, '#asset-add-status', /^Added — head office kept it\./);
       await s.page.fill('#a-cost', '15000');

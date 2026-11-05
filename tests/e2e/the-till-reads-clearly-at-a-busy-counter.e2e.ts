@@ -158,7 +158,7 @@ const BILL = String.raw`(() => [...document.querySelectorAll('#lines tr')].map((
   };
 }))()`;
 
-const ACTIONS = String.raw`(() => ['qty', 'void', 'hold', 'more', 'tender'].map((id) => {
+const ACTIONS = String.raw`(() => ['qty', 'void', 'hold', 'find', 'more', 'tender'].map((id) => {
   const b = document.getElementById(id); const r = b.getBoundingClientRect();
   return { id, words: b.textContent.trim(), top: Math.round(r.top), height: Math.round(r.height), width: Math.round(r.width), icon: b.querySelector('svg')?.getAttribute('data-icon') ?? null };
 }))()`;
@@ -240,10 +240,11 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the till reads clearly at a busy counter
 
         // 4. the actions
         const actions = await page.evaluate(ACTIONS) as { id: string; words: string; top: number; height: number; width: number; icon: string | null }[];
-        expect(actions.map((a) => a.words)).toEqual(lang === 'en' ? ['Qty', 'Void', 'Hold', 'More', 'Tender'] : ['எண்ணிக்கை', 'நீக்கு', 'நிறுத்து', 'மேலும்', 'பணம் பெறு']);
+        // U4: Find sits beside More — an item by a few letters of its name, for a torn label (§27 POS "product search").
+        expect(actions.map((a) => a.words)).toEqual(lang === 'en' ? ['Qty', 'Void', 'Hold', 'Find', 'More', 'Tender'] : ['எண்ணிக்கை', 'நீக்கு', 'நிறுத்து', 'தேடு', 'மேலும்', 'பணம் பெறு']);
         expect(new Set(actions.map((a) => a.top)).size, 'the actions sit in one row').toBe(1);
         for (const a of actions) { expect(a.height, `${a.id} is a 56px target`).toBeGreaterThanOrEqual(56); expect(a.icon, `${a.id} wears its mark`).not.toBeNull(); }
-        expect(actions[4]!.width, 'Tender is the widest').toBeGreaterThan(Math.max(...actions.slice(0, 4).map((a) => a.width)));
+        expect(actions[5]!.width, 'Tender is the widest').toBeGreaterThan(Math.max(...actions.slice(0, 5).map((a) => a.width)));
 
         // 6. nothing overflows, the audit is clean, nothing logged
         expect(await page.evaluate(OVERFLOWS)).toEqual([]);

@@ -74,7 +74,7 @@ const WORDS = {
     tempHint: 'Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager\'s check before they can be sold.',
     needTemp: 'The temperature must be a number of degrees, for example 3.5 or -18. Leave it empty for goods that are not chilled or frozen.',
     // B4 · OB-504: the month and year of manufacture on a packed product's pack.
-    mfgLabel: 'Month and year of manufacture (packed goods)', mfgHint: 'As printed on the pack, for example 2026-09. A packed product cannot be saved without it.',
+    mfgLabel: 'Month and year of manufacture (packed goods)', mfgHint: 'Pick the month printed on the pack. A packed product cannot be saved without it.',
     needMfg: 'Write the month of manufacture as year-month, for example 2026-09 (or a full date, 2026-09-14).',
     mfgRequired: 'This is a packed product: type the month and year of manufacture printed on the pack before adding it.',
     mfgWord: 'made',
@@ -159,7 +159,7 @@ const WORDS = {
     tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
     tempHint: 'பொருளை அளந்து அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18. இல்லையெனில் குளிர்/உறைந்த பொருட்கள் மேலாளர் சரிபார்க்கும் வரை விற்பனைக்கு வராது.',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும், உதாரணமாக 3.5 அல்லது -18. குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும்.',
-    mfgLabel: 'தயாரிப்பு மாதமும் ஆண்டும் (பொதி செய்த பொருட்கள்)', mfgHint: 'பொதியில் அச்சிட்டபடி, உதாரணமாக 2026-09. பொதி செய்த பொருளை இது இல்லாமல் சேமிக்க முடியாது.',
+    mfgLabel: 'தயாரிப்பு மாதமும் ஆண்டும் (பொதி செய்த பொருட்கள்)', mfgHint: 'பொதியில் அச்சிட்ட மாதத்தைத் தேர்ந்தெடுங்கள். பொதி செய்த பொருளை இது இல்லாமல் சேமிக்க முடியாது.',
     needMfg: 'தயாரிப்பு மாதத்தை ஆண்டு-மாதம் என எழுதவும், உதாரணமாக 2026-09 (அல்லது முழுத் தேதி, 2026-09-14).',
     mfgRequired: 'இது பொதி செய்த பொருள்: சேர்ப்பதற்கு முன் பொதியில் அச்சிட்ட தயாரிப்பு மாதத்தையும் ஆண்டையும் தட்டச்சு செய்யவும்.',
     mfgWord: 'தயாரிப்பு',
@@ -1611,3 +1611,18 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+// ── U2b (G14): the month of manufacture is picked from a list of the last 36 months (the shop's own clock says which month it is);
+// the typed box stays only where the shop's clock is unknown. The value is the same 'YYYY-MM' the receipt line always carried.
+(function mfgMonthList() {
+  const input = el('grn-mfg'); const today = window.sreShopDay?.today?.() ?? '';
+  if (!input || input.tagName !== 'INPUT' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return;
+  const names = { en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], ta: ['ஜன', 'பிப்', 'மார்', 'ஏப்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆக', 'செப்', 'அக்', 'நவ', 'டிச'] };
+  const sel = document.createElement('select'); sel.id = 'grn-mfg'; sel.setAttribute('aria-describedby', 'grn-mfg-hint');
+  const none = document.createElement('option'); none.value = ''; sel.append(none);
+  let y = Number(today.slice(0, 4)); let mo = Number(today.slice(5, 7));
+  for (let k = 0; k < 36; k += 1) { const o = document.createElement('option'); o.value = `${y}-${String(mo).padStart(2, '0')}`; o.dataset.y = String(y); o.dataset.m = String(mo); sel.append(o); mo -= 1; if (mo === 0) { mo = 12; y -= 1; } }
+  const paintMonths = () => { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; none.textContent = l === 'ta' ? '— மாதத்தைத் தேர்ந்தெடுங்கள் —' : '— pick the month —'; for (const o of sel.options) if (o.value !== '') o.textContent = `${names[l][Number(o.dataset.m) - 1]} ${o.dataset.y}`; };
+  paintMonths(); new MutationObserver(paintMonths).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  input.replaceWith(sel);
+})();

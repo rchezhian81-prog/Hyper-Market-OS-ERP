@@ -7,6 +7,25 @@
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const who = window.supplierBillsData && typeof window.supplierBillsData === 'object' ? window.supplierBillsData : null;
 const session = window.supplierBillsSession ?? null;
 
@@ -616,7 +635,8 @@ async function showAdvances() {
 function paintAdvances() {
   for (const [id, k] of [['adv-h', 'h'], ['adv-lede', 'lead'], ['adv-show', 'show'], ['adv-ask-h', 'askH'], ['l-adv-supplier', 'supplier'], ['l-adv-amount', 'amountRs'], ['l-adv-on', 'paidOnL'],
     ['l-adv-method', 'method'], ['adv-m-bank', 'm_bank_transfer'], ['adv-m-cheque', 'm_cheque'], ['adv-m-upi', 'm_upi'], ['adv-m-cash', 'm_cash'], ['l-adv-ref', 'reference'], ['l-adv-po', 'poId'],
-    ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH']]) $(id).textContent = at(k);
+    ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH']]) { const n = $(id); if (n) n.textContent = at(k); }
+  shopDate('adv-on', { en: adv === null ? 'Paid on' : adv.words('en', 'paidOnL'), ta: adv === null ? 'செலுத்திய நாள்' : adv.words('ta', 'paidOnL') });
   renderAdvances(); renderAsks();
 }
 
@@ -626,7 +646,7 @@ if (adv !== null && adv.session.may.read) {
   if (adv.session.may.pay) {
     $('adv-pay').hidden = false;
     $('adv-ask').addEventListener('click', async () => {
-      const out = await adv.session.askToPay({ supplierId: $('adv-supplier').value, amountRupees: $('adv-amount').value, paidOn: $('adv-on').value, method: $('adv-method').value, reference: $('adv-ref').value, poId: $('adv-po').value });
+      const out = await adv.session.askToPay({ supplierId: $('adv-supplier').value, amountRupees: $('adv-amount').value, paidOn: dateOf('adv-on'), method: $('adv-method').value, reference: $('adv-ref').value, poId: $('adv-po').value });
       advSay($('adv-ask-status'), out, 'askedNow');
       if (out.result === 'ok') await showAdvances();
     });
@@ -668,6 +688,7 @@ $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paint();
+  repaintShopDates();
 });
 
 if (who === null || session === null) {

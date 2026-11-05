@@ -5,6 +5,25 @@
 // back-test error, and the weather link — switched off. Nothing is written on open. Every word has a Tamil twin.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const api = window.demandEvents ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
@@ -82,7 +101,7 @@ const pct = (x) => `${(x * 100).toFixed(1)}%`;
 function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-store', 'store'], ['show', 'show'], ['record-h', 'recordH'], ['l-label', 'label'], ['l-kind', 'kind'], ['o-festival', 'festival'], ['o-local', 'local_event'],
-    ['l-ev-from', 'from'], ['l-ev-to', 'to'], ['l-effect', 'effect'], ['l-products', 'products'], ['save', 'save'], ['events-h', 'eventsH'], ['forecast-h', 'forecastH'], ['l-product', 'product'], ['forecast', 'forecast']]) $(id).textContent = t(k);
+    ['l-ev-from', 'from'], ['l-ev-to', 'to'], ['l-effect', 'effect'], ['l-products', 'products'], ['save', 'save'], ['events-h', 'eventsH'], ['forecast-h', 'forecastH'], ['l-product', 'product'], ['forecast', 'forecast']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('products-hint').textContent = t('allProductsHint'); $('add-product').textContent = t('addProduct');
   paintPickers(); paintPickedProducts(); paintEffectWords();
@@ -157,13 +176,13 @@ async function record(event) {
   const w = (l, k) => api.words(l, k);
   const effectWords = (l) => (pct === null ? $('effect').value : pct === 0 ? w(l, 'effectSame') : w(l, effect > 1 ? 'effectMore' : 'effectLess').replace('{pct}', String(pct)));
   const productsWords = (l) => (pickedProducts.length === 0 ? w(l, 'allProducts') : pickedProducts.map((p) => p.name).join(', '));
-  const sub = (l, key) => String(w(l, key)).replace('{label}', $('label').value.trim()).replace('{kind}', w(l, $('kind').value)).replace('{from}', $('ev-from').value).replace('{to}', $('ev-to').value).replace('{effect}', effectWords(l)).replace('{products}', productsWords(l)).replace('{store}', store());
+  const sub = (l, key) => String(w(l, key)).replace('{label}', $('label').value.trim()).replace('{kind}', w(l, $('kind').value)).replace('{from}', dateOf('ev-from')).replace('{to}', dateOf('ev-to')).replace('{effect}', effectWords(l)).replace('{products}', productsWords(l)).replace('{store}', store());
   // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
-  const complete = store().trim() !== '' && $('label').value.trim() !== '' && $('ev-from').value !== '' && $('ev-to').value !== '' && pct !== null;
+  const complete = store().trim() !== '' && $('label').value.trim() !== '' && dateOf('ev-from') !== '' && dateOf('ev-to') !== '' && pct !== null;
   const answer = !complete ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: w('en', 'confirmLabel'), ta: w('ta', 'confirmLabel') }, tone: 'primary' });
   if (answer === 'unavailable') { say('record-status', t('confirmUnavailable'), false); return; }
   if (answer === null) return;
-  const out = await session.record({ storeId: store(), label: $('label').value, kind: $('kind').value, from: $('ev-from').value, to: $('ev-to').value, effect: $('effect').value, products: $('products').value });
+  const out = await session.record({ storeId: store(), label: $('label').value, kind: $('kind').value, from: dateOf('ev-from'), to: dateOf('ev-to'), effect: $('effect').value, products: $('products').value });
   if (out.result === 'ok') { say('record-status', t('recorded'), true); pickedProducts = []; paintPickedProducts(); await show(); } else say('record-status', out, false);
 }
 async function withdraw(eventId, reason) {
@@ -180,7 +199,7 @@ async function showForecast(event) {
 $('ask').addEventListener('submit', (e) => { void show(e); });
 $('record').addEventListener('submit', (e) => { void record(e); });
 $('fc').addEventListener('submit', (e) => { void showForecast(e); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
 pickerBeside($('store'), 'store', 'whichStore');
 pickerBeside($('product'), 'product', 'whichProduct');
 $('add-product').addEventListener('click', async () => {
@@ -202,3 +221,5 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+
+if (api !== null) { shopDate('ev-from', { en: api.words('en', 'from'), ta: api.words('ta', 'from') }, { required: true }); shopDate('ev-to', { en: api.words('en', 'to'), ta: api.words('ta', 'to') }, { required: true }); }

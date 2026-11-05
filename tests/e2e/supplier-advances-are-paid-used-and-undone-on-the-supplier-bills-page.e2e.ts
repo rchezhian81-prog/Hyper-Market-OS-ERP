@@ -28,6 +28,8 @@ import { askedThenConfirmed } from './lib/confirm-sheet';
  * Synthetic data only. Without a browser binary it SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const KEY = ['supplier', 'advances', 'box', 'signing', 'key'].join('-').padEnd(48, '0');
 const TENANT = randomUUID();
@@ -116,7 +118,7 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
     await p.click('#adv-ask');
     await says(p, '#adv-ask-status', /^Fill in the supplier, an amount in rupees/);
     expect(payer.writes).toEqual([]);
-    await p.fill('#adv-on', TODAY); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-ref', 'NEFT-ADV-1'); await p.fill('#adv-po', 'po-a');
+    await p.fill('#adv-on', ddmm(TODAY)); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-ref', 'NEFT-ADV-1'); await p.fill('#adv-po', 'po-a');
     await p.click('#adv-ask');
     await says(p, '#adv-ask-status', /^Asked\. A different person who pays suppliers approves exactly this payment/);
     await p.waitForSelector('#adv-asks li[data-status="waiting"]');

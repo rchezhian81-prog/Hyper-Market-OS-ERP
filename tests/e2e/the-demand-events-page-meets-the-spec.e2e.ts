@@ -17,6 +17,8 @@ import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['events', 'e2e', 'key'].join('-').padEnd(48, '0');
@@ -75,8 +77,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await page.fill('#store', 'br-1');
       await page.fill('#label', 'Pongal');
       await page.selectOption('#kind', 'festival');
-      await page.fill('#ev-from', day(3));
-      await page.fill('#ev-to', day(4));
+      await page.fill('#ev-from', ddmm(day(3)));
+      await page.fill('#ev-to', ddmm(day(4)));
       await page.click('#save');
       await expect.poll(() => page.textContent('#record-status')).toMatch(/expected effect/);
       await page.fill('#effect', '1.5');

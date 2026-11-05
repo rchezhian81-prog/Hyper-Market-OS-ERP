@@ -4,6 +4,64 @@
 // screen for the box to carry (with the line down too). Every word has a Tamil twin; every button carries an icon.
 
 const $ = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// The signed-in person's own store filled in (changeable), its NAME said beside the field; nothing filled off the box.
+const ownStores = new Set();
+function ownStore(inputId) {
+  ownStores.add(inputId);
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = document.getElementById(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; (input.closest('.pick-row') ?? input).after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${u2bWord('yourStore')}`;
+}
+// the pickers' words and the shared fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); if (typeof repaintShopDates === 'function') repaintShopDates(); if (typeof ownStores !== 'undefined') for (const id of ownStores) ownStore(id); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.help ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, manage: false, contacts: false, drills: false, onBox: false };
@@ -23,6 +81,8 @@ function shopDate(id, words, opts = {}) {
   const typed = input.value.trim();
   const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
   const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
   (input.closest('label') ?? input).replaceWith(field);
   shopDates.set(id, words);
 }
@@ -83,6 +143,8 @@ function paintDrills() {
   const ul = $('drill-rows'); ul.replaceChildren();
   if (drills === null) return;
   for (const p of drills.procedures) { const li = text('li', `${pick(p.title, p.titleTa)}: ${t('lastHeld')} ${p.lastHeldOn ?? t('never')}`); li.dataset.drill = p.sopId; ul.append(li); }
+  // U2b: the procedure practised is picked from this list, never typed as an id
+  const list = $('d-sop-list'); if (list) list.replaceChildren(...drills.procedures.map((p) => { const o = document.createElement('option'); o.value = p.sopId; o.label = pick(p.title, p.titleTa); return o; }));
 }
 
 function paint() {
@@ -125,3 +187,15 @@ else {
 }
 // the chrome loads after this script: its shared date fields replace the plain ones once it is there
 document.addEventListener('sre:chrome', () => { shopDate('d-on', { en: wordsIn('en', 'heldOn'), ta: wordsIn('ta', 'heldOn') }); paint(); }, { once: true });
+
+// ── U2b (G5): pick by name, never type a code
+pickable('d-branch', 'store', 'pickStore');
+ownStore('d-branch');
+document.addEventListener('sre:chrome', () => ownStore('d-branch'), { once: true });
+pickable('d-who', 'person', 'pickPerson', { append: (input, id) => { const have = input.value.trim(); input.value = have === '' ? id : `${have.replace(/,\s*$/, '')}, ${id}`; } });
+// the roles a procedure is for, from the roles the store computer knows (the typed list stays the fallback)
+(function roleList() {
+  const list = $('w-roles-list'); const d = window.sreDirectory; if (!list || !d) return;
+  const roles = new Set([...(Array.isArray(d.people) ? d.people.map((p) => p.roleId) : []), ...(Array.isArray(d.me?.roleIds) ? d.me.roleIds : [])].filter((r) => typeof r === 'string' && r !== ''));
+  list.replaceChildren(...[...roles].map((r) => { const o = document.createElement('option'); o.value = r; return o; }));
+})();

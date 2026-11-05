@@ -29,6 +29,28 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+/** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
+function setShopDate(id, iso) { const n = document.getElementById(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; }
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 
 const money = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -627,11 +649,11 @@ function renderLimitForm() {
   const form = el('limit-form');
   form.hidden = view === null || !view.may.setBudget;
   if (form.hidden) return;
-  if (el('period').value === '') el('period').value = endOfShopMonth();
+  if (dateOf('period') === '') setShopDate('period', endOfShopMonth());
 }
 
 el('set-cap').addEventListener('click', () => {
-  const day = el('period').value;
+  const day = dateOf('period');
   // The end of the chosen day on the SHOP's clock (its zone, as the store computer told the page) — never this device's.
   const periodEnds = day === '' ? '' : (window.sreShopDay?.instantOfField(`${day}T23:59`) ?? '');
   const check = kit === undefined ? { ok: false, refusal: 'nobody_is_named_at_this_desk' } : kit.budget(viewer, { cap: el('cap').value, periodEnds });
@@ -841,3 +863,6 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+
+// ── U2b (G14): the day the limit runs until, on the shared dd/mm field
+shopDate('period', { en: WORDS.en.periodLabel, ta: WORDS.ta.periodLabel });

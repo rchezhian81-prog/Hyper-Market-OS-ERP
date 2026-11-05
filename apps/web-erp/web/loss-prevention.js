@@ -7,6 +7,68 @@
 // off. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+// the pickers' words and the shared fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); if (typeof repaintShopDates === 'function') repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 let lang = 'en';
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
@@ -165,6 +227,7 @@ function paint() {
     el('close-note').setAttribute('aria-label', t('noteLabel'));
     el('close-note').placeholder = t('notePlaceholder');
     el('close').textContent = t('closeBtn');
+    const caseList = el('case-list'); if (caseList) caseList.replaceChildren(...view.open.map((r) => { const o = document.createElement('option'); o.value = r.caseId; return o; }));
     el('close-case').replaceChildren(...view.open.map((r) => {
       const o = document.createElement('option'); o.value = r.caseId; o.textContent = `${r.summary} (${r.value})`; return o;
     }));
@@ -262,12 +325,14 @@ function paintTogether() {
   el('proposal').dataset.propose = String(v.proposal.propose);
   el('proposal').textContent = `${v.proposal.propose ? tw('proposed') : tw('notProposed')} ${v.proposal.propose ? v.proposal.summary : v.proposal.because}`;
   el('open-form').hidden = !v.proposal.propose || !together.session.may.manage;
+  // U2b: the new case's number is GIVEN by the page (the shop's day and the next free number), never invented at the desk
+  if (!el('open-form').hidden && el('open-case-id').value.trim() === '') el('open-case-id').value = proposeCaseId();
 }
 
 if (together !== null) {
   el('together-show').addEventListener('click', () => {
     void (async () => {
-      const out = await together.session.view(el('together-kind').value, el('together-id').value, el('together-from').value, el('together-to').value);
+      const out = await together.session.view(el('together-kind').value, el('together-id').value, dateOf('together-from'), dateOf('together-to'));
       togetherView = out.result === 'ok' ? out.value : null;
       el('together-status').textContent = out.result === 'ok' ? '' : together.outcomeWords(lang, out);
       paintTogether();
@@ -290,6 +355,20 @@ if (together !== null) {
   el('lang').addEventListener('click', () => { paintTogether(); });
 }
 paintTogether();
+// ── U2b (G5 · G14): pick by name, never type a code; dates as the shop writes them ────────────────────────────────
+function proposeCaseId() {
+  const day = (window.sreShopDay?.today?.() ?? '').replace(/-/g, '');
+  const n = (el('case-list')?.options.length ?? 0) + 1;
+  return day === '' ? '' : `LP-${day}-${String(n).padStart(3, '0')}`;
+}
+if (together !== null) {
+  const lpWords = (k) => ({ en: together.words('en', k), ta: together.words('ta', k) });
+  pickable('together-id', 'product', 'pickProduct', { kindOf: () => (el('together-kind').value === 'cashier' ? 'person' : 'product'), titleOf: () => (el('together-kind').value === 'cashier' ? 'pickPerson' : 'pickProduct') });
+  pickable('open-assignee', 'person', 'pickPerson');
+  pickable('cctv-by', 'person', 'pickPerson');
+  shopDate('together-from', lpWords('from'));
+  shopDate('together-to', lpWords('to'));
+}
 // ── R4 Lane 4 · D-21 — end
 
 if ('serviceWorker' in navigator) {

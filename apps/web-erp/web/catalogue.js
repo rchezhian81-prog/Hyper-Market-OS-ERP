@@ -32,6 +32,25 @@
 
 const el = (id) => document.getElementById(id);
 
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -890,7 +909,7 @@ el('mrp-replace-save').addEventListener('click', () => {
 function checkThePrice(quiet) {
   const sku = el('price-item').value.trim();
   const priceText = el('new-price').value.trim();
-  const from = el('price-from').value.trim();
+  const from = dateOf('price-from').trim();
   const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
   if (quiet && (sku === '' || priceText === '' || from === '' || view === undefined || !(toMinor(priceText) > 0))) {
     lastProposal = null;
@@ -915,7 +934,8 @@ function checkThePrice(quiet) {
 }
 el('check-price').addEventListener('click', () => { checkThePrice(false); });
 // OB-390: the check runs as the price is typed, so Save is the next act — no separate "Check" press needed.
-for (const id of ['new-price', 'price-from', 'price-item']) el(id).addEventListener('input', () => { checkThePrice(true); });
+// (delegated, so the shared date field that replaces `price-from` is heard too)
+document.addEventListener('input', (e) => { if (['new-price', 'price-from', 'price-item'].includes(e.target?.id)) checkThePrice(true); });
 
 function renderProposal(proposal, productId) {
   const box = el('price-verdict');
@@ -1351,7 +1371,7 @@ const RULE_FIELDS = [
 ];
 
 function renderRule() {
-  for (const [id, key] of RULE_FIELDS) el(id).textContent = t(key);
+  for (const [id, key] of RULE_FIELDS) { const n = el(id); if (n) n.textContent = t(key); } // the two day labels belong to the shared date field now
   const select = el('rule-kind');
   const was = select.value;
   select.replaceChildren(...Object.keys(OFFER_KIND_WORDS).map((kind) => {
@@ -1378,7 +1398,7 @@ function ruleSay(text, ok) { el('define-status').textContent = text; el('define-
 el('define-offer').addEventListener('click', () => busy('define-offer', async () => {
   const value = (id) => el(id).value;
   const outcome = await session.defineOffer({
-    promotionId: value('promo-id'), kind: value('rule-kind'), startsOn: value('rule-starts'), endsOn: value('rule-ends'),
+    promotionId: value('promo-id'), kind: value('rule-kind'), startsOn: dateOf('rule-starts'), endsOn: dateOf('rule-ends'),
     productIds: value('rule-products'), group: value('rule-group'), percent: value('rule-percent'), amountOff: value('rule-amount'),
     buyQty: value('rule-buy'), getQty: value('rule-get'), memberPrice: value('rule-member-price'),
     multibuyQty: value('rule-multi-qty'), multibuyPrice: value('rule-multi-price'),
@@ -1388,7 +1408,7 @@ el('define-offer').addEventListener('click', () => busy('define-offer', async ()
     minSpend: value('rule-min-spend'), coupon: value('rule-coupon'), memberOnly: el('rule-member-only').checked,
     exclusiveGroup: value('rule-exclusive'), maxApplications: value('rule-cap'),
   });
-  if (outcome.kind === 'defined') { ruleDefined = true; paintLaunchApproval(); ruleSay(`${t('ruleRecorded')} ${outcome.promotionId} · ${value('rule-starts')} – ${value('rule-ends')}`, true); }
+  if (outcome.kind === 'defined') { ruleDefined = true; paintLaunchApproval(); ruleSay(`${t('ruleRecorded')} ${outcome.promotionId} · ${dateOf('rule-starts')} – ${dateOf('rule-ends')}`, true); }
   else if (outcome.kind === 'invalid') ruleSay(words(OFFER_PROBLEM_WORDS, outcome.problem), false);
   else if (outcome.kind === 'refused') ruleSay(`${t('ruleRefused')} ${outcome.whatHappened === '' ? outcome.code : outcome.whatHappened}`, false);
   else if (outcome.kind === 'lost_link') ruleSay(t('ruleUnreachable'), false);
@@ -1637,7 +1657,7 @@ function paintChrome() {
   el('price-lead').textContent = t('priceLead');
   el('price-item-label').textContent = t('itemCode');
   el('new-price-label').textContent = t('newPrice');
-  el('price-from-label').textContent = t('startsOn');
+  if (el('price-from-label')) el('price-from-label').textContent = t('startsOn');
   el('check-price').textContent = t('checkPrice');
   el('promo-title').textContent = t('offer');
   el('promo-lead').textContent = t('offerLead');
@@ -1662,6 +1682,7 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintChrome();
+  repaintShopDates();
   renderItems();
   renderItem();
   if (lastProposal !== null) renderProposal(lastProposal, lastProposal.draft.productId);
@@ -1678,6 +1699,9 @@ el('sample').hidden = real !== undefined;
 el('price-from').value = today();
 el('rule-starts').value = today();
 el('rule-ends').value = today();
+shopDate('price-from', { en: WORDS.en.startsOn, ta: WORDS.ta.startsOn });
+shopDate('rule-starts', { en: WORDS.en.ruleStarts, ta: WORDS.ta.ruleStarts });
+shopDate('rule-ends', { en: WORDS.en.ruleEnds, ta: WORDS.ta.ruleEnds });
 paintChrome();
 renderItems();
 // Open the tab the menu asked for. The "Pricing" and "Promotions" menu items redirect here with

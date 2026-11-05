@@ -119,7 +119,7 @@ rather than 0, confirm before money moves, Tamil for every word) hold on only a 
 
 | Surface | Missing | Note |
 |---|---|---|
-| POS | Product search (by name or keyed barcode) | scan only today |
+| POS | Product search (by name or keyed barcode) | scan only at the audit; **built in U4 (4 Nov 2026)**: "Find" on the till bar, from the lane's own signed price list |
 | Store/Manager | Staff list and roster (Round 4c) | Rota shows gaps only |
 | Product | ESL (electronic shelf labels) | shelf tags print; no ESL screen or integration row |
 | Purchase | RFQ sent to suppliers; one supplier-claims screen for short/damaged deliveries | quotes are keyed in; claims are spread over goods receipt and rebates |

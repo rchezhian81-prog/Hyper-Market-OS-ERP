@@ -5,6 +5,45 @@
 // page shows exactly what it answered. No prompt/confirm/alert; nothing on a timer.
 
 const el = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 // U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
@@ -20,7 +59,7 @@ const refusalLine = (status, err) => {
 const WORDS = {
   en: {
     title: 'App content', langName: 'தமிழ்', lead: 'What the customer app shows and searches for a product. Each change is a new version and reaches the app on the next publish.',
-    product: 'Product id', show: 'Show', nameTa: 'Tamil name', descriptionEn: 'Description (English)', descriptionTa: 'Description (Tamil)', synonyms: 'Other words customers use (comma between)',
+    product: 'Product', show: 'Show', nameTa: 'Tamil name', descriptionEn: 'Description (English)', descriptionTa: 'Description (Tamil)', synonyms: 'Other words customers use (comma between)',
     reason: 'Why (needed)', save: 'Save as a new version', score: 'App content complete', missing: 'Missing:', nothingMissing: 'Nothing is missing.', record: 'Product record complete',
     reaches: 'Reaches the customer app on the next store publish.', hImage: 'Image', image: 'Photo (JPEG, PNG or WebP, at most 700 KB)', upload: 'Upload as a new version',
     noImage: 'No image — the app shows the product without one.', imageVersion: 'Image version', hHistory: 'Versions', version: 'Version', by: 'by',
@@ -30,7 +69,7 @@ const WORDS = {
   },
   ta: {
     title: 'செயலி உள்ளடக்கம்', langName: 'English', lead: 'ஒரு பொருளுக்காக வாடிக்கையாளர் செயலி காட்டுவதும் தேடுவதும். ஒவ்வொரு மாற்றமும் புதிய பதிப்பு; அடுத்த வெளியீட்டில் செயலியை அடையும்.',
-    product: 'பொருள் எண்', show: 'காட்டு', nameTa: 'தமிழ்ப் பெயர்', descriptionEn: 'விளக்கம் (ஆங்கிலம்)', descriptionTa: 'விளக்கம் (தமிழ்)', synonyms: 'வாடிக்கையாளர்கள் பயன்படுத்தும் மற்ற சொற்கள் (காற்புள்ளியால் பிரிக்கவும்)',
+    product: 'பொருள்', show: 'காட்டு', nameTa: 'தமிழ்ப் பெயர்', descriptionEn: 'விளக்கம் (ஆங்கிலம்)', descriptionTa: 'விளக்கம் (தமிழ்)', synonyms: 'வாடிக்கையாளர்கள் பயன்படுத்தும் மற்ற சொற்கள் (காற்புள்ளியால் பிரிக்கவும்)',
     reason: 'ஏன் (தேவை)', save: 'புதிய பதிப்பாகச் சேமி', score: 'செயலி உள்ளடக்கம் முழுமை', missing: 'இல்லாதவை:', nothingMissing: 'எதுவும் குறையவில்லை.', record: 'பொருள் பதிவு முழுமை',
     reaches: 'அடுத்த கடை வெளியீட்டில் வாடிக்கையாளர் செயலியை அடையும்.', hImage: 'படம்', image: 'புகைப்படம் (JPEG, PNG அல்லது WebP, அதிகபட்சம் 700 KB)', upload: 'புதிய பதிப்பாகப் பதிவேற்று',
     noImage: 'படம் இல்லை — செயலி படம் இல்லாமல் பொருளைக் காட்டும்.', imageVersion: 'படப் பதிப்பு', hHistory: 'பதிப்புகள்', version: 'பதிப்பு', by: 'செய்தவர்',
@@ -129,7 +168,7 @@ el('image-form').addEventListener('submit', async (event) => {
   await post(`/v1/catalogue/products/${encodeURIComponent(productId())}/images`, { mediaType: file.type, contentBase64: btoa(bin) }, 'image');
   await refresh();
 });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 const asked = new URLSearchParams(location.search).get('product');
 if (asked !== null && /^[A-Za-z0-9_-]{1,64}$/.test(asked)) el('product').value = asked;
 paint();
@@ -140,3 +179,5 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+pickable('product', 'product', 'pickProduct');

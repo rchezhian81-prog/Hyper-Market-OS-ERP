@@ -30,7 +30,7 @@ export interface CorrelationViewData {
 export const CORRELATION_COPY = {
   en: {
     heading: 'Seen together', lead: 'For one product or one cashier and a period: the till exceptions, the waste and shrink, and the count differences, side by side. It proposes a case — a person decides whether to open one.',
-    product: 'Product', cashier: 'Cashier', subjectKind: 'Look at', subjectId: 'Product code or cashier', from: 'From', to: 'To', show: 'Show together',
+    product: 'Product', cashier: 'Cashier', subjectKind: 'Look at', subjectId: 'Product or cashier', from: 'From', to: 'To', show: 'Show together',
     tillH: 'Till exceptions', shrinkH: 'Waste and shrink', countsH: 'Count differences', none: 'None in this period.',
     void: 'Void', no_sale: 'Drawer opened, no sale', price_override: 'Price override', refund: 'Refund',
     proposed: 'A case is proposed:', notProposed: 'No case proposed:', investigator: 'Investigator', caseId: 'Case number', open: 'Open this case',
@@ -41,7 +41,7 @@ export const CORRELATION_COPY = {
   },
   ta: {
     heading: 'ஒன்றாகக் காணப்பட்டவை', lead: 'ஒரு பொருள் அல்லது ஒரு காசாளர் மற்றும் ஒரு காலத்திற்கு: பில் இயந்திர விதிவிலக்குகள், வீண் மற்றும் இழப்பு, எண்ணிக்கை வேறுபாடுகள், பக்கம் பக்கமாக. இது ஒரு வழக்கைப் பரிந்துரைக்கிறது — திறப்பதா என்பதை ஒருவர் முடிவு செய்கிறார்.',
-    product: 'பொருள்', cashier: 'காசாளர்', subjectKind: 'பார்க்க', subjectId: 'பொருள் குறியீடு அல்லது காசாளர்', from: 'முதல்', to: 'வரை', show: 'ஒன்றாகக் காட்டு',
+    product: 'பொருள்', cashier: 'காசாளர்', subjectKind: 'பார்க்க', subjectId: 'பொருள் அல்லது காசாளர்', from: 'முதல்', to: 'வரை', show: 'ஒன்றாகக் காட்டு',
     tillH: 'பில் இயந்திர விதிவிலக்குகள்', shrinkH: 'வீண் மற்றும் இழப்பு', countsH: 'எண்ணிக்கை வேறுபாடுகள்', none: 'இந்தக் காலத்தில் எதுவும் இல்லை.',
     void: 'ரத்து', no_sale: 'விற்பனையின்றி பணப்பெட்டி திறப்பு', price_override: 'விலை மாற்றம்', refund: 'பணத் திருப்பம்',
     proposed: 'ஒரு வழக்கு பரிந்துரைக்கப்படுகிறது:', notProposed: 'வழக்கு பரிந்துரைக்கப்படவில்லை:', investigator: 'விசாரணையாளர்', caseId: 'வழக்கு எண்', open: 'இந்த வழக்கைத் திற',

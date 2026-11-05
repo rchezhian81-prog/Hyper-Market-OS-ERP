@@ -139,7 +139,8 @@ describe.skipIf(!HAVE_BROWSER)('the Offer tab defines the offer at head office, 
     expect(early.text).toBe('Not started — head office has no rule for this offer yet. Fill in “The offer’s rule” with the same name and press “Record this rule at head office” first. Nothing was started.');
     expect((await ho.request({ method: 'GET', path: '/v1/promotions/pongal-dal', userId: OWNER, tenantId: TENANT })).body).toMatchObject({ launched: false });
 
-    const today = await page.inputValue('#rule-starts');
+    // the shared date field shows dd/mm/yyyy; the page sends ISO, read back the same way
+    const today = await page.evaluate(() => (globalThis as unknown as { sreOffice: { dateValue(id: string): string | null } }).sreOffice.dateValue('rule-starts') ?? '');
     expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const said = await record(page, { products: 'p-dal, p-rice', percent: '10', coupon: 'PONGAL', exclusive: 'festival', cap: '2', memberOnly: true });
     expect(said).toBe(`Rule recorded at head office as a draft. It does nothing until you press “Start this offer”. pongal-dal · ${today} – ${today}`);

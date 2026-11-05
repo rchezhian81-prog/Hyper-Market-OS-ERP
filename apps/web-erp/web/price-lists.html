@@ -53,6 +53,9 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -86,11 +89,11 @@
         <h3 id="prices-h">Dated prices</h3>
         <p class="lead" id="prices-lead"></p>
         <div class="row">
-          <label for="p-product"><span id="l-p-product">Product id</span><input id="p-product" list="product-list" autocomplete="off" /></label>
+          <label for="p-product"><span id="l-p-product">Product</span><input id="p-product" list="product-list" autocomplete="off" /></label>
           <label for="p-scope"><span id="l-p-scope">Which price</span>
             <select id="p-scope"><option value="store" id="o-store">One store's shelf price</option><option value="zone" id="o-zone">A price zone</option><option value="channel" id="o-channel">A channel (app, delivery)</option><option value="customer" id="o-customer">One customer</option></select>
           </label>
-          <label for="p-ref"><span id="l-p-ref">Store, zone, channel or customer id</span><input id="p-ref" list="ref-list" autocomplete="off" /></label>
+          <label for="p-ref"><span id="l-p-ref">Store, zone, channel or customer</span><input id="p-ref" list="ref-list" autocomplete="off" /></label>
           <label for="p-from"><span id="l-p-from">From (date)</span><input id="p-from" type="date" /></label>
           <label for="p-to"><span id="l-p-to">Until (date, if it ends)</span><input id="p-to" type="date" /></label>
           <label for="p-price"><span id="l-p-price">Price (₹)</span><input id="p-price" inputmode="decimal" autocomplete="off" /></label>

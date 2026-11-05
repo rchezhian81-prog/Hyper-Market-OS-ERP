@@ -129,6 +129,8 @@ async function readClass(hsn) {
 }
 
 function paintList() {
+  // U2b (G5): the classes head office's products carry are offered on the HSN field — the code stays, it is the class
+  if (Array.isArray(classes)) $('hsn-list').replaceChildren(...classes.map((c) => Object.assign(document.createElement('option'), { value: c.hsn, label: `${c.hsn} · ${c.products} ${t('cProducts')}` })));
   const day = today();
   const tbody = $('rows'); tbody.replaceChildren();
   for (const k of classes ?? []) {

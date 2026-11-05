@@ -95,7 +95,7 @@
       <section id="raise" hidden aria-labelledby="raise-h">
         <h3 id="raise-h"></h3>
         <div class="row-form">
-          <label for="c-scheme"><span id="c-scheme-l"></span><input id="c-scheme" autocomplete="off" /></label>
+          <label for="c-scheme"><span id="c-scheme-l"></span><input id="c-scheme" autocomplete="off" list="scheme-list" /></label>
           <label for="c-amount"><span id="c-amount-l"></span><input id="c-amount" inputmode="decimal" autocomplete="off" /></label>
           <label for="c-note"><span id="c-note-l"></span><input id="c-note" autocomplete="off" maxlength="300" /></label>
         </div>
@@ -105,11 +105,11 @@
       <section id="receipt" hidden aria-labelledby="receipt-h">
         <h3 id="receipt-h"></h3>
         <div class="row-form">
-          <label for="m-scheme"><span id="m-scheme-l"></span><input id="m-scheme" autocomplete="off" /></label>
+          <label for="m-scheme"><span id="m-scheme-l"></span><input id="m-scheme" autocomplete="off" list="scheme-list" /></label>
           <label for="m-amount"><span id="m-amount-l"></span><input id="m-amount" inputmode="decimal" autocomplete="off" /></label>
-          <label for="m-on"><span id="m-on-l"></span><input id="m-on" inputmode="numeric" autocomplete="off" placeholder="2026-10-27" /></label>
+          <label for="m-on"><span id="m-on-l"></span><input id="m-on" inputmode="numeric" autocomplete="off" /></label>
           <label for="m-ref"><span id="m-ref-l"></span><input id="m-ref" autocomplete="off" /></label>
-          <label for="m-claim"><span id="m-claim-l"></span><input id="m-claim" autocomplete="off" /></label>
+          <label for="m-claim"><span id="m-claim-l"></span><input id="m-claim" autocomplete="off" list="claim-list" /></label>
         </div>
         <button id="m-record" type="button" class="sre-btn"><span id="m-record-text"></span></button>
         <p class="status" id="m-status" role="status" aria-live="polite"></p>
@@ -126,7 +126,9 @@
         </div>
         <p class="status" id="p-status" role="status" aria-live="polite"></p>
       </section>
-    </main>
+      <datalist id="scheme-list"></datalist>
+  <datalist id="claim-list"></datalist>
+</main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./rebates.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->

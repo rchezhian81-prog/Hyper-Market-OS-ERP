@@ -8,6 +8,45 @@
 // word has a Tamil twin; nothing is written on open.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 const who = window.priceListsData && typeof window.priceListsData === 'object' ? window.priceListsData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
@@ -34,8 +73,8 @@ const WORDS = {
     kSame: 'One price everywhere?', kPending: 'Switch requests waiting', kZoned: 'Stores in a price zone', yes: 'Yes — every channel charges the shelf price', no: 'No — {list} on',
     tabPrices: 'Dated prices', tabZones: 'Price zones', tabChannels: 'Channel prices',
     pricesLead: 'Choose the product, which price and from when, then read head office\'s figures. The price is saved only when head office accepts it; the till charges it from the next store pack on or after its date.',
-    product: 'Product id', scope: 'Which price', store: 'One store\'s shelf price', zone: 'A price zone', channel: 'A channel (app, delivery)', customer: 'One customer',
-    ref: 'Store, zone, channel or customer id', from: 'From (date)', to: 'Until (date, if it ends)', price: 'Price (₹)',
+    product: 'Product', scope: 'Which price', store: 'One store\'s shelf price', zone: 'A price zone', channel: 'A channel (app, delivery)', customer: 'One customer',
+    ref: 'Store, zone, channel or customer', from: 'From (date)', to: 'Until (date, if it ends)', price: 'Price (₹)',
     kMrp: 'MRP that day', kCost: 'Buying cost', kFloor: 'Margin floor', kNow: 'Price for this scope now', kSize: 'A second person checks a move of more than',
     readBasis: 'Read head office\'s figures', save: 'Save the price', why: 'Why (for the approver, if one is needed)', ask: 'Ask for approval',
     notKnown: 'Not known', notSet: 'not set', none: 'none yet', size: '{pct}% or ₹{amt}', stores: 'Judged at: {list}.',
@@ -43,7 +82,7 @@ const WORDS = {
     noCost: 'Head office knows no buying cost at {list} (nothing received at a cost yet), so the price cannot be checked against cost. It is not sent.',
     noFloor: 'No margin floor is set for {list} in the store rules, so the price cannot be checked against it. The owner sets it in Store setup first.',
     noStores: 'This scope reaches no store yet (a zone with no store in it).',
-    needAll: 'Choose the product, which price, the id and the date, and write the price.', needBasis: 'Read head office\'s figures first.', needWhy: 'Write the reason first.',
+    needAll: 'Choose the product, which price, who or where it is for, and the date, and write the price.', needBasis: 'Read head office\'s figures first.', needWhy: 'Write the reason first.',
     saved: 'Saved. {price} from {from} for {scope} {ref}.', savedWith: 'Saved with the approval of {by}.',
     needsApproval: 'This needs a second person: {why} Write why and press “Ask for approval”; once they approve it on their Approvals page, press “Save the price” again.',
     asked: 'Asked. It waits on the approver\'s Approvals page; nothing is saved until then.', waiting: 'Still waiting for the second person. Nothing was saved.', rejected: 'The second person rejected it: {why}',
@@ -65,8 +104,8 @@ const WORDS = {
     kSame: 'எல்லா இடத்திலும் ஒரே விலையா?', kPending: 'காத்திருக்கும் மாற்றக் கோரிக்கைகள்', kZoned: 'விலை மண்டலத்தில் உள்ள கடைகள்', yes: 'ஆம் — ஒவ்வொரு வழியும் அலமாரி விலையை வசூலிக்கிறது', no: 'இல்லை — {list} இயக்கத்தில்',
     tabPrices: 'தேதியிட்ட விலைகள்', tabZones: 'விலை மண்டலங்கள்', tabChannels: 'வழி விலைகள்',
     pricesLead: 'பொருள், எந்த விலை, எப்போதிலிருந்து என்பதைத் தேர்வு செய்து, தலைமை அலுவலக எண்களைப் படியுங்கள். தலைமை அலுவலகம் ஏற்றால் மட்டுமே விலை சேமிக்கப்படும்; அதன் தேதியிலோ பிறகோ வரும் அடுத்த கடைப் பொதியிலிருந்து கவுண்டர் அதை வசூலிக்கும்.',
-    product: 'பொருள் எண்', scope: 'எந்த விலை', store: 'ஒரு கடையின் அலமாரி விலை', zone: 'ஒரு விலை மண்டலம்', channel: 'ஒரு வழி (செயலி, டெலிவரி)', customer: 'ஒரு வாடிக்கையாளர்',
-    ref: 'கடை, மண்டலம், வழி அல்லது வாடிக்கையாளர் எண்', from: 'தொடங்கும் தேதி', to: 'முடியும் தேதி (முடிந்தால்)', price: 'விலை (₹)',
+    product: 'பொருள்', scope: 'எந்த விலை', store: 'ஒரு கடையின் அலமாரி விலை', zone: 'ஒரு விலை மண்டலம்', channel: 'ஒரு வழி (செயலி, டெலிவரி)', customer: 'ஒரு வாடிக்கையாளர்',
+    ref: 'கடை, மண்டலம், வழி அல்லது வாடிக்கையாளர்', from: 'தொடங்கும் தேதி', to: 'முடியும் தேதி (முடிந்தால்)', price: 'விலை (₹)',
     kMrp: 'அன்றைய MRP', kCost: 'வாங்கும் விலை', kFloor: 'லாப வரம்பு', kNow: 'இந்த வரம்பின் இப்போதைய விலை', kSize: 'இதைவிட அதிக மாற்றத்தை இரண்டாம் நபர் சரிபார்ப்பார்',
     readBasis: 'தலைமை அலுவலக எண்களைப் படி', save: 'விலையைச் சேமி', why: 'ஏன் (ஒப்புதலாளருக்கு, தேவைப்பட்டால்)', ask: 'ஒப்புதல் கேள்',
     notKnown: 'தெரியவில்லை', notSet: 'அமைக்கப்படவில்லை', none: 'இன்னும் இல்லை', size: '{pct}% அல்லது ₹{amt}', stores: 'மதிப்பிடப்பட்ட கடைகள்: {list}.',
@@ -74,7 +113,7 @@ const WORDS = {
     noCost: '{list}-இல் வாங்கும் விலை தலைமை அலுவலகத்திற்குத் தெரியாது (இன்னும் விலையுடன் எதுவும் பெறப்படவில்லை), எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. அனுப்பப்படவில்லை.',
     noFloor: 'கடை விதிகளில் {list}-க்கு லாப வரம்பு அமைக்கப்படவில்லை, எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. உரிமையாளர் முதலில் கடை அமைப்பில் அதை அமைக்கிறார்.',
     noStores: 'இந்த வரம்பு இன்னும் எந்தக் கடையையும் அடையவில்லை (கடை இல்லாத மண்டலம்).',
-    needAll: 'பொருள், எந்த விலை, எண், தேதி ஆகியவற்றைத் தேர்வு செய்து விலையை எழுதுங்கள்.', needBasis: 'முதலில் தலைமை அலுவலக எண்களைப் படியுங்கள்.', needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.',
+    needAll: 'பொருள், எந்த விலை, யாருக்கு அல்லது எங்கே, தேதி ஆகியவற்றைத் தேர்வு செய்து விலையை எழுதுங்கள்.', needBasis: 'முதலில் தலைமை அலுவலக எண்களைப் படியுங்கள்.', needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.',
     saved: 'சேமிக்கப்பட்டது. {from} முதல் {scope} {ref}-க்கு {price}.', savedWith: '{by} அவர்களின் ஒப்புதலுடன் சேமிக்கப்பட்டது.',
     needsApproval: 'இதற்கு இரண்டாம் நபர் தேவை: {why} ஏன் என்று எழுதி “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும் மீண்டும் “விலையைச் சேமி” அழுத்துங்கள்.',
     asked: 'கேட்கப்பட்டது. ஒப்புதலாளரின் ஒப்புதல்கள் பக்கத்தில் காத்திருக்கிறது; அதுவரை எதுவும் சேமிக்கப்படாது.', waiting: 'இரண்டாம் நபர் இன்னும் முடிவு செய்யவில்லை. எதுவும் சேமிக்கப்படவில்லை.', rejected: 'இரண்டாம் நபர் நிராகரித்தார்: {why}',
@@ -314,7 +353,7 @@ async function readBasis() {
   return true;
 }
 
-$('p-scope').addEventListener('change', paintRefs);
+$('p-scope').addEventListener('change', () => { paintRefs(); repaintPickers(); });
 for (const id of ['p-product', 'p-scope', 'p-ref', 'p-from', 'p-to', 'p-price']) $(id).addEventListener('change', () => { if (formKey() !== basisFor) { entryId = null; pending = null; $('ask').hidden = true; } });
 $('p-product').addEventListener('change', () => { void loadHistory(); });
 $('read-basis').addEventListener('click', () => { void readBasis(); });
@@ -377,7 +416,7 @@ $('d-run').addEventListener('click', async () => {
   $('differences').replaceChildren(...(lines.length === 0 ? [t('noDiff')] : lines).map((l) => Object.assign(document.createElement('li'), { textContent: l })));
 });
 for (const v of ['prices', 'zones', 'channels']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
 paint();
 if (named && !mayRead) tell($('page-status'), false, t('noRight'));
@@ -422,3 +461,7 @@ function whyDisabled(btn, why) {
 }
 // the chrome loads after this script: its shared date fields replace the plain ones once it is there
 document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('p-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+
+pickable('p-product', 'product', 'pickProduct');
+// a store price picks a store, a customer price a customer; a zone or a channel has no list to pick from (typed, as before)
+pickable('p-ref', () => ({ store: 'store', customer: 'customer' })[$('p-scope').value] ?? null, () => ($('p-scope').value === 'customer' ? 'pickCustomer' : 'pickStore'));

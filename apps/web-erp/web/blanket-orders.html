@@ -36,6 +36,9 @@
       [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -63,7 +66,7 @@
           <label for="p-supplier"><span id="p-supplier-l"></span><input id="p-supplier" autocomplete="off" /></label>
           <label for="p-ceiling"><span id="p-ceiling-l"></span><input id="p-ceiling" inputmode="decimal" autocomplete="off" /></label>
           <label for="p-from"><span id="p-from-l"></span><input id="p-from" inputmode="numeric" autocomplete="off" /></label>
-          <label for="p-to"><span id="p-to-l"></span><input id="p-to" inputmode="numeric" autocomplete="off" placeholder="2027-03-31" /></label>
+          <label for="p-to"><span id="p-to-l"></span><input id="p-to" inputmode="numeric" autocomplete="off" /></label>
           <label for="p-deliver"><span id="p-deliver-l"></span><input id="p-deliver" autocomplete="off" /></label>
         </div>
         <label for="p-lines"><span id="p-lines-l"></span><textarea id="p-lines" rows="4"></textarea></label>

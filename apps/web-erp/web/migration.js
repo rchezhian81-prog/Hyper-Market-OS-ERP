@@ -20,6 +20,28 @@
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+/** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
+function setShopDate(id, iso) { const n = document.getElementById(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; }
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 
 const money = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -809,7 +831,7 @@ el('day-import').addEventListener('change', async () => {
 });
 
 el('day-save').addEventListener('click', () => {
-  const outcome = session.enterDay({ businessDate: el('day-date').value, lines: linesFromForm() });
+  const outcome = session.enterDay({ businessDate: dateOf('day-date'), lines: linesFromForm() });
   // The rule's own sentence is English; in Tamil the screen's own words carry the refusal.
   if (!outcome.ok) { tell(t('notSaved'), `${t(`day_refusal_${outcome.refusal}`)}${lang === 'en' ? ` ${outcome.detail}` : ''}`); return; }
   enteredHere.add(outcome.day.businessDate);
@@ -820,7 +842,7 @@ el('day-save').addEventListener('click', () => {
 });
 
 el('day-sign').addEventListener('click', () => {
-  const outcome = session.signDay({ businessDate: el('day-date').value, statement: el('day-statement').value });
+  const outcome = session.signDay({ businessDate: dateOf('day-date'), statement: el('day-statement').value });
   if (!outcome.ok) {
     const named = outcome.unexplained.map((d) => `${t(`area_${d.area}`)} (${d.differenceId})`).join(', ');
     tell(t('cannotSign'), `${t(`day_refusal_${outcome.refusal}`)}${named === '' ? '' : ` — ${named}`}`);
@@ -831,10 +853,11 @@ el('day-sign').addEventListener('click', () => {
   tell(t('daySigned'), lang === 'en' ? outcome.detail : `${t('signedDay')} ${outcome.signature.signedBy}`, true);
   paintChrome();
 });
-el('day-date').addEventListener('change', () => { renderDay(); renderBills(); });
+// U2b: the shared date field replaces the input, so the listener is on the document (a 'change' bubbles from either input)
+document.addEventListener('change', (e) => { if (e.target && e.target.id === 'day-date') { renderDay(); renderBills(); } });
 
 function renderDay() {
-  const date = el('day-date').value;
+  const date = dateOf('day-date');
   const view = el('day-view');
   view.replaceChildren();
   if (date === '') return;
@@ -884,7 +907,7 @@ function renderBills() {
   if (box.hidden) return;
   el('bills-title').textContent = t('billsTitle');
   el('bills-lead').textContent = t('billsLead');
-  const day = el('day-date').value;
+  const day = dateOf('day-date');
   const bills = data.bills.filter((b) => b && b.tradingDay === day);
   const list = el('bills-list');
   if (bills.length === 0) { list.replaceChildren(emptyLine(t('billsNone')), ...(data.truncated ? [line(t('billsTruncated'))] : [])); return; }
@@ -912,7 +935,7 @@ function renderDays() {
     el(`day-${area}-name`).textContent = t(`area_${area}`);
   }
   for (const node of document.querySelectorAll('#day-areas [data-word]')) node.textContent = t(node.dataset.word);
-  if (el('day-date').value === '') el('day-date').value = today();
+  if (dateOf('day-date') === '') setShopDate('day-date', today());
   renderDay();
   renderBills();
   const list = el('days-list');
@@ -1458,7 +1481,7 @@ el('ec-load').addEventListener('click', async () => {
   const value = ecPaise(el('ec-tol-value').value);
   const tax = ecPaise(el('ec-tol-tax').value);
   if (Number.isNaN(value) || Number.isNaN(tax)) { tell(ec('notSaved'), ec('tolBad')); return; }
-  const out = await ecCall('load', { businessDate: el('ec-date').value, itemWise: ecState.files.item_wise.text, billWise: ecState.files.bill_wise.text, tolerance: { valueMinor: value, taxMinor: tax } });
+  const out = await ecCall('load', { businessDate: dateOf('ec-date'), itemWise: ecState.files.item_wise.text, billWise: ecState.files.bill_wise.text, tolerance: { valueMinor: value, taxMinor: tax } });
   if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
   ecState.day = out.day;
   ecPaintDay();
@@ -1598,14 +1621,14 @@ el('ec-reasons-save').addEventListener('click', async () => {
     .filter((r) => r.explanation !== '')
     .map((r) => ({ differenceId: r.differenceId, explanation: r.explanation, ...(r.side === '' ? {} : { wrongSide: r.side }) }));
   if (reasons.length === 0) { tell(ec('notSaved'), ec('noReasonTyped')); return; }
-  const out = await ecCall('reasons', { businessDate: el('ec-date').value, reasons });
+  const out = await ecCall('reasons', { businessDate: dateOf('ec-date'), reasons });
   if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
   ecState.day = out.day;
   ecPaintDay();
   tell(ec('reasonsSaved'), `${out.day.unexplained.length} ${ec('stillNeeds')}${out.relayed ? '' : ` · ${ec('relayLater')}`}`, out.day.unexplained.length === 0);
 });
 el('ec-sign').addEventListener('click', async () => {
-  const out = await ecCall('sign', { businessDate: el('ec-date').value, statement: el('ec-statement').value });
+  const out = await ecCall('sign', { businessDate: dateOf('ec-date'), statement: el('ec-statement').value });
   if (!out.ok) { ecTellRefusal(ec('cannotSign'), out); return; }
   el('ec-statement').value = '';
   ecState.day = out.day;
@@ -1628,15 +1651,16 @@ for (const kind of EC_KINDS) {
   });
 }
 async function ecLoadDay() {
-  const date = el('ec-date').value;
+  const date = dateOf('ec-date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ecState.day = undefined; ecPaintDay(); return; }
   const out = await ecCall(`day?date=${encodeURIComponent(date)}`);
   ecState.day = out.ok ? out.day : undefined;
   ecPaintDay();
 }
-el('ec-date').addEventListener('change', () => {
+document.addEventListener('change', (e) => {
+  if (!e.target || e.target.id !== 'ec-date') return;
   // The same day below, so the bill-wise list and the typed day follow it.
-  el('day-date').value = el('ec-date').value;
+  setShopDate('day-date', dateOf('ec-date'));
   renderDay();
   renderBills();
   void ecLoadDay();
@@ -1655,7 +1679,7 @@ function renderEvening() {
   labelled(el('ec-load'), 'git-compare-arrows', ec('load'));
   labelled(el('ec-reasons-save'), 'clipboard-check', ec('reasonsSave'));
   labelled(el('ec-sign'), 'badge-check', ec('sign'));
-  if (el('ec-date').value === '') el('ec-date').value = el('day-date').value || today();
+  if (dateOf('ec-date') === '') setShopDate('ec-date', dateOf('day-date') || today());
   if (ecState.mapping) ecOpenMapping(ecState.mapping);
   ecPaintFiles();
   ecPaintMappings();
@@ -1746,3 +1770,7 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+// ── U2b (G14): a date a shop person reads — the evening check's day and the parallel day on the shared dd/mm field
+shopDate('ec-date', { en: EC_WORDS.en.date, ta: EC_WORDS.ta.date });
+shopDate('day-date', { en: WORDS.en.dayDate, ta: WORDS.ta.dayDate });

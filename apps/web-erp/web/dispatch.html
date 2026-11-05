@@ -46,7 +46,10 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-    </style>
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -143,7 +146,7 @@
       <section aria-labelledby="settle-h">
         <h3 id="settle-h">Own-fleet settlement</h3>
         <div class="row-form">
-          <label for="settle-route"><span id="settle-route-l">Route</span><input id="settle-route" autocomplete="off" /></label>
+          <label for="settle-route"><span id="settle-route-l">Route</span><input id="settle-route" autocomplete="off" list="route-list" /><datalist id="route-list"></datalist></label>
           <button id="propose" type="button" class="sre-btn"><span id="propose-text">Propose the settlement</span></button>
           <button id="approve-settle" type="button" class="quiet sre-btn sre-btn-quiet"><span id="approve-settle-text">Approve the settlement</span></button>
         </div>

@@ -122,7 +122,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U1: money moves only after the confirm s
     await page.fill('#c-offer', 'OFF-1');
     await page.fill('#c-supplier', 'SUP-1');
     await page.fill('#c-amount', '12500');
-    await page.fill('#c-on', '2026-10-30');
+    await page.fill('#c-on', '30/10/2026'); // the shared date field: dd/mm/yyyy in, ISO sent
     await page.fill('#c-ref', 'UTR-1');
     await page.click('#c-record');
     await sheet(page);

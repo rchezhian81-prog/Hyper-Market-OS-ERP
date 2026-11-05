@@ -27,6 +27,8 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  * Synthetic data only.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['desks', 'e2e', 'key'].join('-').padEnd(48, '0');
@@ -101,7 +103,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await acct.page.waitForSelector('#customers:not([hidden])');
     await acct.page.fill('#c-id', 'SCHOOL'); await acct.page.click('#c-open');
     await acct.page.waitForSelector('#propose:not([hidden])');
-    await acct.page.fill('#k-id', 'K-1'); await acct.page.fill('#k-from', day(-1)); await acct.page.fill('#k-to', day(60));
+    await acct.page.fill('#k-id', 'K-1'); await acct.page.fill('#k-from', ddmm(day(-1))); await acct.page.fill('#k-to', ddmm(day(60)));
     await acct.page.fill('#k-prices', 'rice = 1200'); await acct.page.fill('#k-limit', '6000'); await acct.page.fill('#k-terms', '30');
     expect(await acct.page.locator('#k-save svg').count()).toBe(1);
     await acct.page.click('#k-save');
@@ -220,7 +222,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
     await mgr.page.selectOption('#rec-quote', { index: 1 });
     await mgr.page.selectOption('#rec-cadence', 'weekly');
     await mgr.page.fill('#rec-day', String(weekday));
-    await mgr.page.fill('#rec-start', today);
+    await mgr.page.fill('#rec-start', ddmm(today));
     await mgr.page.click('#rec-save');
     await waitText(mgr.page, '#rec-status', 'Saved.');
     await waitText(mgr.page, '#rec-rows', 'waiting for a second person to approve');
@@ -308,7 +310,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the commer
 
     const acct = await open('u-acct', '/concessions');
     await acct.page.waitForSelector('#contract:not([hidden])');
-    for (const [id, v] of [['#f-id', 'C-J'], ['#f-who', 'JEWEL'], ['#f-name', 'Jewellery counter'], ['#f-branch', 'br-1'], ['#f-start', day(-10)], ['#f-end', day(200)], ['#f-rent', '5000'], ['#f-deposit', '10000'], ['#f-ins', day(5)]] as const) await acct.page.fill(id, v);
+    for (const [id, v] of [['#f-id', 'C-J'], ['#f-who', 'JEWEL'], ['#f-name', 'Jewellery counter'], ['#f-branch', 'br-1'], ['#f-start', ddmm(day(-10))], ['#f-end', ddmm(day(200))], ['#f-rent', '5000'], ['#f-deposit', '10000'], ['#f-ins', ddmm(day(5))]] as const) await acct.page.fill(id, v);
     await acct.page.selectOption('#f-basis', 'fixed_rent');
     await acct.page.click('#f-save');
     await waitText(acct.page, '#c-rows li[data-contract="C-J"]', 'cannot take new sales');

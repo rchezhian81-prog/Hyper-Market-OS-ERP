@@ -48,6 +48,9 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -62,7 +65,7 @@
         <h2 id="page-h">Supplier scorecard</h2>
         <p class="muted" id="lead"></p>
         <form class="form-row" id="ask">
-          <label for="supplier"><span id="l-supplier">Supplier code</span><input id="supplier" autocomplete="off" /></label>
+          <label for="supplier"><span id="l-supplier">Supplier</span><input id="supplier" autocomplete="off" /></label>
           <label for="from"><span id="l-from">From</span><input id="from" type="date" /></label>
           <label for="to"><span id="l-to">To</span><input id="to" type="date" /></label>
           <button id="show" type="submit" class="sre-btn sre-btn-primary">Show the scorecard</button>

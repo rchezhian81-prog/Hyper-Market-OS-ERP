@@ -57,6 +57,9 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -77,7 +80,7 @@
           </div>
         </div>
         <form class="row" id="ask">
-          <label for="product"><span id="l-product">Product id</span><input id="product" list="product-list" autocomplete="off" required /></label>
+          <label for="product"><span id="l-product">Product</span><input id="product" list="product-list" autocomplete="off" required /></label>
           <button id="show" type="submit" class="sre-btn">Show</button>
         </form>
         <datalist id="product-list"></datalist>
@@ -108,7 +111,7 @@
           <label for="r-category"><span id="l-r-category">Category</span><select id="r-category"></select></label>
           <label for="r-brand"><span id="l-r-brand">Brand</span><input id="r-brand" autocomplete="off" /></label>
           <label for="r-manufacturer"><span id="l-r-manufacturer">Manufacturer</span><input id="r-manufacturer" autocomplete="off" /></label>
-          <label for="r-parent"><span id="l-r-parent">A variant of (parent product id)</span><input id="r-parent" list="product-list" autocomplete="off" /></label>
+          <label for="r-parent"><span id="l-r-parent">A variant of (the parent product)</span><input id="r-parent" list="product-list" autocomplete="off" /></label>
           <label for="r-taxClass"><span id="l-r-taxClass">Tax (HSN) class</span><input id="r-taxClass" inputmode="numeric" autocomplete="off" /></label>
           <label for="r-lifecycle"><span id="l-r-lifecycle">Lifecycle</span>
             <select id="r-lifecycle"><option value="draft" id="o-draft">Draft</option><option value="new" id="o-new">New</option><option value="active" id="o-active">Active</option><option value="clearance" id="o-clearance">Clearance</option><option value="discontinued" id="o-discontinued">Discontinued</option></select>

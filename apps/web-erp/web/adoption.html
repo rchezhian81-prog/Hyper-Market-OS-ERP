@@ -41,7 +41,10 @@
       [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-    </style>
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -72,7 +75,7 @@
         <h3 id="train-h"></h3>
         <div class="row-form" id="train-form">
           <label for="t-emp"><span id="t-emp-l"></span><input id="t-emp" autocomplete="off" /></label>
-          <label for="t-item"><span id="t-item-l"></span><input id="t-item" autocomplete="off" /></label>
+          <label for="t-item"><span id="t-item-l"></span><input id="t-item" autocomplete="off" list="t-item-list" /><datalist id="t-item-list"></datalist></label>
           <label for="t-due"><span id="t-due-l"></span><input id="t-due" type="date" /></label>
         </div>
         <button id="t-assign" type="button" class="sre-btn sre-btn-primary"><span id="t-assign-text"></span></button>

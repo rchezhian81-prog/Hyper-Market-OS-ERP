@@ -4,6 +4,25 @@
 // click), then reads again so what is shown is what head office kept. Nothing is written when the page opens.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const session = window.financeCloseSession ?? null;
 /** OB-567: closing and reopening the month — only on this page (tested in `month-close-session.ts`). */
 const month = window.monthCloseSession ?? null;
@@ -283,7 +302,7 @@ $('asset-add-go').addEventListener('click', () => busy($('asset-add-go'), async 
   const out = await session.addAsset({
     assetId: $('a-id').value, name: $('a-name').value, category: $('a-category').value, storeId: $('a-store').value,
     costMinor: kit.paiseOf($('a-cost').value) ?? NaN, salvageMinor: kit.paiseOf($('a-salvage').value) ?? NaN,
-    usefulLifeMonths: /^\d+$/.test($('a-life').value.trim()) ? Number($('a-life').value.trim()) : NaN, inServiceDate: $('a-in').value,
+    usefulLifeMonths: /^\d+$/.test($('a-life').value.trim()) ? Number($('a-life').value.trim()) : NaN, inServiceDate: dateOf('a-in'),
   });
   status('asset-add-status', out, w('assetAdded'));
   await loadAssets();
@@ -415,6 +434,7 @@ $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintWords();
+  repaintShopDates();
   $('pay-list').replaceChildren(); $('assets-list').replaceChildren(); // drawers are drawn again in the new language
   renderPayments(); renderPl(); renderStock(); renderBudget(); renderAssets();
   if (tab === 'month') void loadMonth();
@@ -432,3 +452,5 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+
+if (kit !== null) shopDate('a-in', { en: kit.closeWords('en')('inService'), ta: kit.closeWords('ta')('inService') });

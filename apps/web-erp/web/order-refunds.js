@@ -63,6 +63,7 @@ function paintPending() {
   $('pending').replaceChildren(
     ...pending.pendingRefunds.map((r) => {
       const li = document.createElement('li'); li.className = 'row tone-degraded'; li.dataset.refund = r.refundId; li.dataset.order = r.orderId;
+      orderOption(r.orderId); li.addEventListener('click', () => { $('order-id').value = r.orderId; });
       li.append(text('strong', `⏱ ${t('refundWaiting')} — ${r.orderId} · ${api.rupees(r.amountMinor)}`));
       li.append(text('span', `${t(`basis_${r.basis}`)} · ${r.reason}`, 'facts'));
       li.append(outcomeForm(r));
@@ -70,6 +71,7 @@ function paintPending() {
     }),
     ...pending.pendingPayments.map((p) => {
       const li = document.createElement('li'); li.className = 'row tone-degraded'; li.dataset.payment = p.orderId;
+      orderOption(p.orderId); li.addEventListener('click', () => { $('order-id').value = p.orderId; });
       li.append(text('strong', `⏱ ${t('paymentWaiting')} — ${p.orderId} · ${api.rupees(p.amountMinor)}`));
       if (p.reason) li.append(text('span', p.reason, 'facts'));
       return li;
@@ -171,4 +173,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+// ── U2b (G5): the order is taken from the list the page reads — a tap on a pending row fills the box, and the box offers the same numbers; a typed number stays possible
+function orderOption(orderId) {
+  const list = $('order-list'); if (!list || [...list.options].some((o) => o.value === orderId)) return;
+  const o = document.createElement('option'); o.value = orderId; list.append(o);
 }

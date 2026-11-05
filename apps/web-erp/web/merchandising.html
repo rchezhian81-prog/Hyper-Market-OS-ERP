@@ -123,6 +123,9 @@
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -162,7 +165,7 @@
             <select id="count-location"></select>
           </div>
           <div class="field">
-            <label for="count-product" id="count-product-label">Item code</label>
+            <label for="count-product" id="count-product-label">Item</label>
             <input id="count-product" type="text" autocomplete="off" />
           </div>
         </div>
@@ -207,7 +210,7 @@
 
         <div class="two">
           <div class="field">
-            <label for="drop-product" id="drop-product-label">Item code</label>
+            <label for="drop-product" id="drop-product-label">Item</label>
             <input id="drop-product" type="text" autocomplete="off" />
           </div>
           <div class="field">
@@ -216,7 +219,7 @@
           </div>
         </div>
         <div class="field">
-          <label for="drop-replacement" id="drop-replacement-label">Replaced by (item code)</label>
+          <label for="drop-replacement" id="drop-replacement-label">Replaced by</label>
           <input id="drop-replacement" type="text" autocomplete="off" />
         </div>
         <button id="drop-item" class="primary wide sre-btn sre-btn-primary" type="button">Take it out of the range</button>

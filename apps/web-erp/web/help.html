@@ -46,7 +46,10 @@
       [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-    </style>
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -84,7 +87,7 @@
           <label for="w-cat"><span id="w-cat-l"></span><select id="w-cat"><option value="procedure" id="w-cat-p"></option><option value="emergency" id="w-cat-e"></option></select></label>
           <label for="w-title"><span id="w-title-l"></span><input id="w-title" autocomplete="off" /></label>
           <label for="w-title-ta"><span id="w-title-ta-l"></span><input id="w-title-ta" autocomplete="off" lang="ta" /></label>
-          <label for="w-roles"><span id="w-roles-l"></span><input id="w-roles" autocomplete="off" /></label>
+          <label for="w-roles"><span id="w-roles-l"></span><input id="w-roles" autocomplete="off" list="w-roles-list" /><datalist id="w-roles-list"></datalist></label>
         </div>
         <label for="w-en"><span id="w-en-l"></span><textarea id="w-en"></textarea></label>
         <label for="w-ta"><span id="w-ta-l"></span><textarea id="w-ta" lang="ta"></textarea></label>
@@ -101,7 +104,7 @@
         <h3 id="drill-h"></h3>
         <ul class="rows" id="drill-rows"></ul>
         <div class="row-form">
-          <label for="d-sop"><span id="d-sop-l"></span><input id="d-sop" autocomplete="off" /></label>
+          <label for="d-sop"><span id="d-sop-l"></span><input id="d-sop" autocomplete="off" list="d-sop-list" /><datalist id="d-sop-list"></datalist></label>
           <label for="d-branch"><span id="d-branch-l"></span><input id="d-branch" autocomplete="off" /></label>
           <label for="d-on"><span id="d-on-l"></span><input id="d-on" type="date" /></label>
           <label for="d-who"><span id="d-who-l"></span><input id="d-who" autocomplete="off" /></label>

@@ -92,6 +92,9 @@ function paintRegister() {
   $('r-period').textContent = `${t('periodH')}: ${reg.answerPeriod.state === 'set' ? `${reg.answerPeriod.days} ${t('periodIs')}` : t('periodNotSet')}`;
   if (reg.schemes.length === 0) $('scheme-rows').append(text('li', `○ ${t('none')}`));
   for (const s of reg.schemes) $('scheme-rows').append(paintScheme(s));
+  // U2b (G5): the scheme and the claim are offered from the lists the page just read — the code stays typeable
+  $('scheme-list').replaceChildren(...reg.schemes.map((s) => Object.assign(document.createElement('option'), { value: s.schemeId, label: `${s.schemeId} · ${s.supplierId} · ${(s.rateBp / 100).toFixed(2)}%` })));
+  $('claim-list').replaceChildren(...reg.claims.map((c) => Object.assign(document.createElement('option'), { value: c.claimId, label: `${c.claimId} · ${c.schemeId} · ${c.supplierId}` })));
   $('claims-h').textContent = t('claimsH');
   if (reg.claims.length === 0) $('claim-rows').append(text('li', `○ ${t('noClaims')}`));
   for (const c of reg.claims) $('claim-rows').append(paintClaim(c));

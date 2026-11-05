@@ -5,6 +5,25 @@
 // Every word has a Tamil twin; every button carries an icon beside its word.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const api = window.b2bDesk ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, open: false, issue: false, readContracts: false, manageContracts: false, collect: false, readAccount: false, manageAccount: false, approveRecurring: false };
@@ -257,7 +276,7 @@ function paint() {
     ['quote-h', 'quoteH'], ['q-note', 'priceNote'], ['q-store-l', 'storeL'], ['q-days-l', 'validDays'], ['q-add-text', 'addLine'], ['q-issue-text', 'issueQuote'],
     ['docs-h', 'docsH'], ['o-h', 'ordersH'], ['collect-h', 'collectH'], ['pay-amount-l', 'receivedL'], ['pay-save-text', 'recordPayment'],
     ['gstin-h', 'gstinH'], ['gstin-note', 'gstinNote'], ['g-gstin-l', 'gstinL'], ['g-name-l', 'gstinNameL'], ['g-reason-l', 'gstinReasonL'], ['g-save-text', 'gstinSave'], ['g-remove-text', 'removeGstin'], ['g-remove-note', 'removeGstinNote'],
-    ['rec-h', 'recurringH'], ['rec-lead', 'recurringLead'], ['rec-quote-l', 'recFromL'], ['rec-cadence-l', 'cadenceL'], ['rec-cadence-weekly', 'weekly'], ['rec-cadence-monthly', 'monthly'], ['rec-day-l', 'dayOfL'], ['rec-start-l', 'startsOnL'], ['rec-sp-l', 'salespersonL'], ['rec-save-text', 'recPropose']]) $(id).textContent = t(key);
+    ['rec-h', 'recurringH'], ['rec-lead', 'recurringLead'], ['rec-quote-l', 'recFromL'], ['rec-cadence-l', 'cadenceL'], ['rec-cadence-weekly', 'weekly'], ['rec-cadence-monthly', 'monthly'], ['rec-day-l', 'dayOfL'], ['rec-start-l', 'startsOnL'], ['rec-sp-l', 'salespersonL'], ['rec-save-text', 'recPropose']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintDesk(); paintRequests(); paintCustomer(); paintQuoteLines(); paintRecurring();
 }
 
@@ -280,10 +299,10 @@ async function openCustomer(id) {
   await loadRecurring();
   void loadDesk();
 }
-const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: $('k-from').value, validTo: $('k-to').value, onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
+const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: dateOf('k-from'), validTo: dateOf('k-to'), onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
 
 for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check'], ['g-remove', 'trash'], ['rec-save', 'repeat']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
 else if (!may.open) { $('page-status').textContent = t('cannotRead'); }
@@ -314,9 +333,11 @@ else {
     if (out.result === 'ok') { $('g-reason').value = ''; await openCustomer(customerId); }
   });
   $('rec-save').addEventListener('click', async () => {
-    const out = await session.proposeRecurring({ customerId: customerId ?? '', quotationId: $('rec-quote').value, cadence: $('rec-cadence').value, dayOf: $('rec-day').value, startsOn: $('rec-start').value, salespersonId: $('rec-sp').value });
+    const out = await session.proposeRecurring({ customerId: customerId ?? '', quotationId: $('rec-quote').value, cadence: $('rec-cadence').value, dayOf: $('rec-day').value, startsOn: dateOf('rec-start'), salespersonId: $('rec-sp').value });
     say('rec-status', out);
     if (out.result === 'ok') { $('rec-day').value = ''; $('rec-sp').value = ''; await loadRecurring(); }
   });
   $('pay-save').addEventListener('click', async () => { const out = await session.recordPayment(customerId ?? '', $('pay-amount').value); say('pay-status', out); if (out.result === 'ok') await openCustomer(customerId); });
 }
+
+if (api !== null) { shopDate('k-from', { en: api.words('en', 'validFrom'), ta: api.words('ta', 'validFrom') }); shopDate('k-to', { en: api.words('en', 'validTo'), ta: api.words('ta', 'validTo') }); shopDate('rec-start', { en: api.words('en', 'startsOnL'), ta: api.words('ta', 'startsOnL') }); }

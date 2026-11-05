@@ -40,6 +40,8 @@ const BUYING = `${E2E}/open-to-buy-on-the-production-api.e2e.ts`;
 // QG-02 lane 1 R4: the browser tests that now count the actions that were "not yet counted".
 const WEIGHED = `${E2E}/f7-the-served-till-spreads-an-offer-by-what-each-line-charges.e2e.ts`;
 const REFUND = `${E2E}/the-served-till-takes-a-refund.e2e.ts`;
+/** U4 (4 Nov 2026): the till's second layer — Find an item, and the More list under headings. */
+const SECOND_LAYER = `${E2E}/u4-the-tills-second-layer.e2e.ts`;
 const OWNER = `${E2E}/the-owner-app-meets-its-interaction-budget.e2e.ts`;
 const AI = `${E2E}/the-ai-control-screen-reaches-head-office.e2e.ts`;
 const CATALOGUE = `${E2E}/catalogue-price-change-delivery.e2e.ts`;
@@ -59,6 +61,11 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'suspend', spec: 'pos-cashier.md', specWords: 'Suspend / recall', budget: 3, counted: { file: TILL, label: 'suspend' } },
   { action: 'recall', spec: 'pos-cashier.md', specWords: 'Suspend / recall', budget: 3, counted: { file: TILL, label: 'recall' } },
   { action: 'sign in for the shift', spec: 'pos-cashier.md', specWords: 'Sign in for the shift', budget: 3, counted: { file: TILL, label: 'sign in for the shift' } },
+  // U4 (UI/UX gap audit G18 / §27 POS "product search"): an item by a few letters of its name = Find → letters → row; and the
+  // More list under headings leaves Refund one tap from More (reach = 2). The float, a split and the close are MEASURED in the
+  // same file (8 · 11 · 7) as plain counts, not budgets: the spec's table gives them none, and they are said in STATUS.
+  { action: 'find an item', spec: 'pos-cashier.md', specWords: 'Product search', budget: 3, counted: { file: SECOND_LAYER, label: 'find an item: Find → letters → row' } },
+  { action: 'reach Refund from More', spec: 'pos-cashier.md', specWords: 'Return/exchange', budget: 2, counted: { file: SECOND_LAYER, label: 'reach Refund: More → Refund' } },
   { action: 'sell a weighed item', spec: 'pos-cashier.md', specWords: 'Sell a weighed item', budget: 3, counted: { file: WEIGHED, label: 'sell a weighed item' } },
   { action: 'go to tender', spec: 'pos-cashier.md', specWords: 'Go to tender', budget: 1, counted: { file: TILL, label: 'go to tender' } },
   // ── The refund screen (pos-refund.md) ──

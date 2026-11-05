@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2038,
+  "testFiles": 2043,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -5282,7 +5282,7 @@
         "unit": 6,
         "integration": 1,
         "realDb": 0,
-        "browser": 15,
+        "browser": 16,
         "connected": 4,
         "device": 0,
         "uat": 0
@@ -5315,7 +5315,8 @@
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
-          "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts"
+          "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts",
+          "tests/e2e/u4-the-tills-second-layer.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",

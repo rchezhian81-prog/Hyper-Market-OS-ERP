@@ -3,6 +3,25 @@
 // out what it is told. Nothing is read on open; every write is a click. Every word has a Tamil twin; every button its icon.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const api = window.promotionFunding ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, record: false, receipt: false };
@@ -17,7 +36,7 @@ let reg = null;
 // recorded, in whose name, and the person confirms. Go back sends nothing.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const REQ = { en: '(required)', ta: '(கட்டாயம்)' };
-const REQUIRED_FIELDS = ['a-offer-l', 'a-supplier-l', 'a-rate-l', 'c-offer-l', 'c-supplier-l', 'c-amount-l', 'c-on-l', 'c-ref-l'];
+const REQUIRED_FIELDS = ['a-offer-l', 'a-supplier-l', 'a-rate-l', 'c-offer-l', 'c-supplier-l', 'c-amount-l', 'c-ref-l']; // the day is the shared date field, which says "(required)" itself
 const CONFIRM = {
   en: { title: '{amount} received from supplier {supplier} for offer {offer} will be recorded', detail: 'Head office records the money against that offer\'s funding; the shop\'s margin on the offer changes with it. A wrong entry is corrected only by a new entry.', authority: 'In your name. Head office refuses it if your role may not record a receipt.', label: 'Record the receipt' },
   ta: { title: 'விநியோகஸ்தர் {supplier}-இடமிருந்து சலுகை {offer}-க்குப் பெற்ற {amount} பதிவு செய்யப்படும்', detail: 'தலைமை அலுவலகம் அந்தச் சலுகையின் நிதிக்கு எதிராகப் பணத்தைப் பதிவு செய்கிறது; சலுகையின் மீதான கடையின் லாபம் அதனுடன் மாறும். தவறான பதிவு புதிய பதிவால் மட்டுமே திருத்தப்படும்.', authority: 'உங்கள் பெயரில். உங்கள் பங்கு ரசீதைப் பதிவு செய்ய முடியாததாக இருந்தால் தலைமை அலுவலகம் மறுக்கும்.', label: 'ரசீதைப் பதிவு செய்' },
@@ -52,7 +71,7 @@ function paint() {
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['register-h', 'registerH'], ['r-show-text', 'show'], ['agree-h', 'agreeH'], ['a-offer-l', 'offerId'], ['a-supplier-l', 'supplierId'], ['a-rate-l', 'perUnit'], ['a-cap-l', 'capRs'],
     ['a-products-l', 'products'], ['a-approval-l', 'approvalId'], ['a-record-text', 'record'], ['receipt-h', 'receiptH'], ['c-offer-l', 'offerId'], ['c-supplier-l', 'supplierId'], ['c-amount-l', 'amount'],
-    ['c-on-l', 'receivedOn'], ['c-ref-l', 'reference'], ['c-record-text', 'recordReceipt']]) $(id).textContent = t(key);
+    ['c-on-l', 'receivedOn'], ['c-ref-l', 'reference'], ['c-record-text', 'recordReceipt']]) { const n = $(id); if (n) n.textContent = t(key); }
   for (const id of REQUIRED_FIELDS) $(id).textContent = `${$(id).textContent} ${REQ[lang]}`; // '(required)' said in words, never a lone star
   paintRegister();
 }
@@ -63,7 +82,7 @@ async function showRegister() {
 }
 
 for (const [id, name] of [['r-show', 'search'], ['a-record', 'check'], ['c-record', 'banknote']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read && !may.record) $('page-status').textContent = t('cannotRead');
@@ -81,9 +100,11 @@ else {
     $('receipt').hidden = false;
     $('c-record').addEventListener('click', async () => {
       if (!(await (await office()).confirm(receiptSheet())).ok) return;
-      const out = await session.receipt({ promotionId: $('c-offer').value, supplierId: $('c-supplier').value, amountRupees: $('c-amount').value, receivedOn: $('c-on').value, reference: $('c-ref').value });
+      const out = await session.receipt({ promotionId: $('c-offer').value, supplierId: $('c-supplier').value, amountRupees: $('c-amount').value, receivedOn: dateOf('c-on'), reference: $('c-ref').value });
       say('c-status', out);
       if (out.result === 'ok' && may.read) await showRegister();
     });
   }
 }
+
+if (api !== null) shopDate('c-on', { en: api.words('en', 'receivedOn'), ta: api.words('ta', 'receivedOn') }, { required: true });

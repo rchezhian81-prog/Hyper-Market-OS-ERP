@@ -52,7 +52,10 @@
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-    </style>
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <p class="stale" id="stale" hidden></p>
@@ -124,7 +127,7 @@
         </div>
         <div id="cctv-form" hidden>
           <h3 id="cctv-heading"></h3>
-          <div><label for="cctv-case" id="cctv-case-label"></label><input id="cctv-case" type="text" autocomplete="off" /></div>
+          <div><label for="cctv-case" id="cctv-case-label"></label><input id="cctv-case" type="text" autocomplete="off" list="case-list" /><datalist id="case-list"></datalist></div>
           <div><label for="cctv-camera" id="cctv-camera-label"></label><input id="cctv-camera" type="text" autocomplete="off" /></div>
           <div><label for="cctv-from" id="cctv-from-label"></label><input id="cctv-from" type="datetime-local" /></div>
           <div><label for="cctv-to" id="cctv-to-label"></label><input id="cctv-to" type="datetime-local" /></div>

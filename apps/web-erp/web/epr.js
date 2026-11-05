@@ -286,3 +286,15 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+
+// ── U2b (G14): the financial year is picked from a list (the shop's own clock says which year it is); the typed box stays only where the shop's clock is unknown
+(function fyList() {
+  const input = el('fy'); const today = window.sreShopDay?.today?.() ?? '';
+  if (!input || input.tagName !== 'INPUT' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return;
+  const y = Number(today.slice(0, 4)); const startYear = Number(today.slice(5, 7)) >= 4 ? y : y - 1;
+  const sel = document.createElement('select'); sel.id = 'fy'; sel.required = true; sel.className = input.className;
+  for (let k = 0; k < 5; k += 1) { const from = startYear - k; const o = document.createElement('option'); o.value = `${from}-${String((from + 1) % 100).padStart(2, '0')}`; o.textContent = `${from}–${from + 1}`; sel.append(o); }
+  if (input.value !== '' && ![...sel.options].some((o) => o.value === input.value)) { const o = document.createElement('option'); o.value = input.value; o.textContent = input.value; sel.prepend(o); }
+  sel.value = input.value !== '' ? input.value : sel.options[0].value;
+  input.replaceWith(sel);
+})();

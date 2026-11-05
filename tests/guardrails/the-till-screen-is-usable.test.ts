@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 
 const APP = readFileSync('apps/pos/web/app.js', 'utf8');
 const HTML = readFileSync('apps/pos/web/index.html', 'utf8');
+const ENTRY = readFileSync('apps/pos/src/browser-entry.ts', 'utf8');
 
 /** Comments discuss these on purpose, so only real code counts. */
 const code = (source: string): string => source
@@ -163,6 +164,57 @@ describe('OB-626 "A" (U1): money moves and a price cut are confirmed on screen, 
     const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
     const ta = APP.slice(APP.indexOf('  ta: {'));
     for (const key of ['goBack', 'confirmFloatTitle', 'confirmSafeTitle', 'confirmFloatWhat', 'confirmSafeWhat', 'confirmCashDetail', 'confirmCashWho', 'confirmFloat', 'confirmSafe', 'confirmCutTitle', 'confirmCutWhat', 'confirmCutFloor', 'confirmCutDetail', 'confirmCutWho', 'askManager']) {
+      expect(en, `${key} (en)`).toMatch(new RegExp(`\\b${key}: '`));
+      expect(ta, `${key} (ta)`).toMatch(new RegExp(`\\b${key}: '`));
+    }
+  });
+});
+
+/**
+ * U4 (UI/UX gap audit 1 Nov 2026, G18 and §27 POS "product search"): the till's second layer. The More list reads under plain
+ * headings (words, never a button — every choice stays one tap); an item can be found by a few letters of its name or a keyed
+ * code, from this lane's own snapshot, and a found row is rung through the ONE path a scan takes, so no gate is skipped.
+ */
+describe('U4: More under headings, and Find an item through the scan path', () => {
+  it('the More list is grouped under seven headings a cashier recognises, and a heading is words, never a button', () => {
+    for (const group of ['groupCash', 'groupReturns', 'groupBaskets', 'groupBills', 'groupLine', 'groupCustomer', 'groupTill']) {
+      expect(code(APP), `${group} is used on the More list`).toContain(`group: '${group}'`);
+    }
+    // The heading is a <p>, drawn inside choose() before the first option of each group — fewer than 24 choices, so every
+    // group stands open (the W1 rule); nothing becomes a second tap.
+    expect(code(APP)).toMatch(/const head = document\.createElement\('p'\);\s*head\.className = 'group-head';/);
+    expect(HTML).toContain('.group-head {');
+    expect(HTML).not.toMatch(/\.group-head \{[^}]*font-size:\s*1[0-1](?:\.\d+)?px/); // an uppercase label at --fs-label (12.5px), never smaller
+  });
+
+  it('Find sits on the bar with its mark; the find panel is the one #sheet in a "find" mode with no OK — a row is the answer', () => {
+    expect(HTML).toContain('<button id="find" type="button">Find</button>');
+    expect(HTML).toContain('id="finds"');
+    expect(code(APP)).toContain("['find', 'search']");
+    expect(code(APP)).toMatch(/async function findItem\(\)/);
+    expect(code(APP)).toMatch(/mode: 'find'/);
+    expect(code(APP)).toContain("el('sheet-ok').hidden = mode === 'find';");
+    expect(code(APP)).toContain("if (mode === 'text' || mode === 'find') el('entry-text').focus();");
+  });
+
+  it('a found row and a scanned code ring through ONE path (ringCode), so every gate applies the same way; the list comes from the lane\'s own snapshot', () => {
+    expect(code(APP)).toMatch(/function ringCode\(code, startedAt\) \{\s*if \(!session\.hasCatalogue\(\)\)/);
+    expect(code(APP)).toContain('ringCode(code, startedAt);'); // the scanner's Enter
+    expect(code(APP)).toContain('ringCode(String(code), null);'); // the found row
+    expect(code(APP)).toContain('session.scanBarcode(code);'); // inside ringCode — the till itself still prices nothing
+    expect(code(APP)).toContain('session.findItems(');
+    expect(ENTRY).toContain('const findItems = (query: string, limit = 20): readonly FoundItem[] =>');
+    expect(ENTRY).toMatch(/const snapshot = config\?\.catalogue;/); // the signed snapshot, no network
+    // The scanner-as-keyboard rule holds in the panel: a code of six digits or more, then Enter, rings as a scan; a lone match
+    // is picked; otherwise Enter does nothing — it never picks a guess.
+    expect(code(APP)).toMatch(/if \(sheetMode === 'find'\) \{\s*const typed = el\('entry-text'\)\.value\.trim\(\);\s*if \(\/\^\[0-9\]\{6,\}\$\/\.test\(typed\)\) \{ closeSheet\(typed\); return; \}/);
+    expect(code(APP)).toContain('if (found.length === 1) closeSheet(ringCodeOf(found[0]));');
+  });
+
+  it('every new word has its Tamil twin (named here so a rename cannot drop one)', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['find', 'findTitle', 'findHint', 'findNone', 'findMore', 'findKg', 'groupCash', 'groupReturns', 'groupBaskets', 'groupBills', 'groupLine', 'groupCustomer', 'groupTill']) {
       expect(en, `${key} (en)`).toMatch(new RegExp(`\\b${key}: '`));
       expect(ta, `${key} (ta)`).toMatch(new RegExp(`\\b${key}: '`));
     }

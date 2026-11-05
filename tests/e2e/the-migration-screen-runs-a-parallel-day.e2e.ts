@@ -6,6 +6,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { sliceTemplateCsv } from '../../packages/migration/src/slice-import';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **MG-10 on the migration screen, in a real browser, in English and in Tamil (cutover readiness · OB-239).**
@@ -109,7 +111,7 @@ describe.skipIf(!HAVE_BROWSER)('the migration screen runs a parallel-run day —
   const dismiss = async (page: Page) => { await page.click('#banner-ok'); };
   const fillDay = async (page: Page) => {
     await page.click('#tab-both');
-    await page.fill('#day-date', DAY);
+    await page.fill('#day-date', ddmm(DAY));
     const figures: [string, string, string][] = [
       ['sales_value', '100000.00', '100000.00'], ['sales_count', '412', '412'], ['stock_movement', '1830', '1830'],
       ['tax', '9100.50', '9100.50'], ['payments', '100000.00', '99500.00'], ['loyalty', '2400', '2400'],

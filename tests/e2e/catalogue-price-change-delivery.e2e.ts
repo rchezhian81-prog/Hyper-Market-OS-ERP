@@ -32,6 +32,8 @@ import {
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const HAVE_BROWSER = existsSync(CHROMIUM);
 
@@ -94,7 +96,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
   const checkPrice = async (page: Page, sku: string, rupees: string) => {
     await page.fill('#price-item', sku);
     await page.fill('#new-price', rupees);
-    await page.fill('#price-from', '2026-10-07');
+    await page.fill('#price-from', ddmm('2026-10-07'));
     await page.click('#check-price');
     await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
   };
@@ -137,7 +139,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(await page.inputValue('#price-item'), 'the form holds the item').toBe('SKU-DAL');
       expect(await hidden(page, 'price-limits'), 'its MRP and floor are shown before a price is typed').toBe(false);
       expect(await page.textContent('#mrp-value')).toBe('₹160.00');
-      await page.fill('#price-from', '2026-10-07'); // the default (today) made fixed for the test — a person does not type it
+      await page.fill('#price-from', ddmm('2026-10-07')); // the default (today) made fixed for the test — a person does not type it
       await taps.type('#new-price', '150'); // below MRP 160, above the 20% floor at cost 100
       await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
       expect(await hidden(page, 'price-approval'), 'a clean price shows no approval step').toBe(true);
@@ -174,7 +176,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       await page.click('#tab-items');
       await page.click('button.price-this[data-sku="SKU-DAL"]');
       await page.waitForSelector('#view-price:not([hidden])');
-      await page.fill('#price-from', '2026-10-07');
+      await page.fill('#price-from', ddmm('2026-10-07'));
       await page.fill('#new-price', '170'); // above the ₹160 MRP
       await page.waitForSelector('#price-verdict:not([hidden])');
       expect(await hidden(page, 'save-price'), 'no Save for a price over the MRP').toBe(true);
