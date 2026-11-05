@@ -12,6 +12,9 @@ pilot the **English sheets are the ones you print** (OB-261). The Tamil sheets a
 checked by a Tamil reader"; they are checked before the pilot grows beyond the first department. The till and the office
 screens themselves show English and Tamil, as built.
 
+> **A PC whose data disk is not F: (OB-691).** The store PC chosen on 5 Nov 2026 keeps the shop's data on **D:**. Wherever
+> this guide says `F:` — `F:\SRE-data`, `F:\DockerData`, `--data-drive F:` — type your own data disk's letter instead.
+
 > **How to read the marks in this guide.**
 > - **STOP AND ASK** — this step needs a name, a number or a choice only you can give. Nothing is invented for you. Write
 >   your answer in the workbook first; then type it.
@@ -86,7 +89,12 @@ screens themselves show English and Tamil, as built.
 Download each program **only from the site named here**. Never from a link in a message.
 
 1. **Docker Desktop** — on **docker.com**, choose **Download Docker Desktop → Windows**.
-   - Run the downloaded installer. When it asks, keep **"Use WSL 2 instead of Hyper-V"** ticked. Click OK, then **Close
+   - **Right-click** the downloaded installer → **Run as administrator**. If it offers a choice, pick **All-users
+     installation**: a per-user install cannot switch on Windows' "Virtual Machine Platform", and stops with "Installation
+     failed. One prerequisite is not fulfilled" (seen on the store PC, 5 Nov 2026). If it stopped that way anyway: open
+     PowerShell **as administrator**, type `wsl --install`, restart the computer, and run the installer again. A black
+     Ubuntu window may open at the end of `wsl --install` — type `exit`; nothing in this guide is ever typed there.
+   - When it asks, keep **"Use WSL 2 instead of Hyper-V"** ticked. Click OK, then **Close
      and restart** when it says so.
    - After the restart, open **Docker Desktop** from the Start menu. Accept its terms. If it asks you to sign in, choose
      **continue without signing in** (or skip).
@@ -109,9 +117,9 @@ Download each program **only from the site named here**. Never from a link in a 
    node --version
    ```
    - **When it worked:** it answers `v22.` and some more numbers.
-4. Still in PowerShell, install **pnpm**:
+4. Still in PowerShell, install **pnpm** — the exact version the system is tested with:
    ```
-   npm install -g pnpm
+   npm install -g pnpm@10.33.0
    ```
    - **If you see red text saying "running scripts is disabled on this system":** type this once, press Enter, and answer
      `Y`. It changes the setting for your own Windows account only:
@@ -123,7 +131,7 @@ Download each program **only from the site named here**. Never from a link in a 
      ```
      pnpm --version
      ```
-   - **When it worked:** it answers a number such as `10.33.0`. **Send:** a photo of the window showing the `node` and
+   - **When it worked:** it answers exactly `10.33.0`. **Send:** a photo of the window showing the `node` and
      `pnpm` answers.
 
 ## Part 3 — Get the code onto the computer

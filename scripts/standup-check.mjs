@@ -26,6 +26,7 @@
 // Usage:  node scripts/standup-check.mjs   (or: pnpm run standup:check)
 // Reads infra/compose/.env for ports and the edge sync setting; override with STANDUP_ENV_FILE.
 
+import { heldFetch } from './lib/held-fetch.mjs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -231,7 +232,7 @@ export function renderReport(results) {
 /** GET a URL and report {ok, status, body} without ever throwing (a dead endpoint is a result). */
 async function probe(url) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await heldFetch(url, {}, 5000);
     let body = null;
     try { body = await res.json(); } catch { /* not JSON (e.g. the HTML shell) — status is enough */ }
     return { ok: res.status >= 200 && res.status < 300, status: res.status, body };
