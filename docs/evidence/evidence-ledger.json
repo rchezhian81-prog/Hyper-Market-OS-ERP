@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2242,
+  "testFiles": 2243,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -31,7 +31,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 34,
-        "integration": 30,
+        "integration": 31,
         "realDb": 12,
         "browser": 14,
         "connected": 7,
@@ -100,6 +100,7 @@
           "tests/integration/stock-moves-only-at-a-registered-place.test.ts",
           "tests/integration/store-pack-policy.test.ts",
           "tests/integration/the-owner-does-head-offices-jobs-on-the-store-pc.test.ts",
+          "tests/integration/the-owner-sets-the-shop-up-and-the-accountant-approves.test.ts",
           "tests/integration/the-published-receipt-template-reaches-the-till-through-the-edge.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-box-dates-by-the-shops-zone-even-on-a-utc-machine.test.ts",

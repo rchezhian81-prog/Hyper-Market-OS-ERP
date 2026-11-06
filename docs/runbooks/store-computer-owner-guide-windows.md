@@ -577,10 +577,12 @@ PIN. You never type anybody else's PIN.
 
 1. In PowerShell in `C:\SRE`, type as one line, with your values:
    ```
-   pnpm run store-computer -- shop --as <setup-person-login> --approver owner-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
+   pnpm run store-computer -- shop --as owner-01 --approver accountant-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
    ```
-   - Two people: the person setting the shop up (`--as`, the computer administrator) asks for the store to be made
-     active, and you, the owner (`--approver`), approve it — a structural change always takes a second person (M01-FR-01).
+   - Two people (M01-FR-01): you, the owner (`--as`), set the shop up and ask for the store to be made active, and the
+     accountant (`--approver`) approves it with **their own** PIN — when the owner raises a structural change himself,
+     the store's accountant is the second person (OB-613). Have the accountant beside you. (A shop with a separate IT
+     person may use that person's `platform_admin` login for `--as` and `owner-01` for `--approver` instead.)
    - It says `This will, at head office on this computer` and lists five steps in plain words. **Read them.** Then
      `Type YES and press Enter to do this`. Type `YES` only if every word is right; anything else stops it and nothing
      is done.
