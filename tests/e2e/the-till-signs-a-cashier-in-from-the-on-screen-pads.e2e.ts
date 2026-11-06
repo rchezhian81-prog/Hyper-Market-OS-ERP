@@ -74,7 +74,7 @@ describe.skipIf(!HAVE_BROWSER)('the till signs a cashier in from the on-screen p
       if (wantLetters !== await page.isVisible('#letterpad')) await page.click('#pad-switch');
       const before = (await page.textContent('#entry')) ?? '';
       await page.click(`${wantLetters ? '#letterpad' : '#keypad'} button:text-is("${ch}")`);
-      await page.waitForFunction((want) => document.getElementById('entry')?.textContent === want, before + ch, { timeout: 5_000 });
+      await page.waitForFunction((want) => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('entry')?.textContent === want, before + ch, { timeout: 5_000 });
     }
     expect(await page.textContent('#entry')).toBe(CASHIER);
     await page.click('#sheet-ok');
