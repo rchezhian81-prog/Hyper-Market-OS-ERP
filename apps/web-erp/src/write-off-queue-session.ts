@@ -19,7 +19,7 @@ export const LOSS_TYPES = ['wastage', 'damage', 'expiry', 'donation', 'destructi
 export const WRITE_OFF_QUEUE_COPY = {
   en: {
     queueH: 'Line down? Save the loss on this screen', queueLead: 'Head office cannot be reached. Save the loss here; the store computer carries it to head office, which values it. A big loss waits there for a second person.',
-    // U1 · OB-691: the consequence-and-confirm sheet before a loss is saved on this screen for sending
+    // U1 · OB-694: the consequence-and-confirm sheet before a loss is saved on this screen for sending
     confirmTitle: 'Save a loss of {qty} of {product} on this screen, to be sent to head office',
     confirmDetail: 'It is sent as soon as head office can be reached and then falls off stock in the books, in your name; head office values it. A loss is never undone — a mistake is corrected by a new entry.',
     confirmAuthority: 'In your name. Head office re-checks it when it arrives and refuses it if your role may not record a loss.',

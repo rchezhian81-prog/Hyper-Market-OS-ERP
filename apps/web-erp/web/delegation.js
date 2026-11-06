@@ -208,7 +208,7 @@ $('lend').addEventListener('click', async () => {
   const capMinor = capText === '' ? null : paiseOf(capText);
   if (capMinor === undefined) { status.className = 'status err'; status.textContent = t('badCap'); return; }
   const cap = capMinor === null ? null : { minor: capMinor, currency: 'INR' };
-  // OB-691 A (U1): a privilege moves only through the shared confirm sheet — what will happen, in whose name, who may.
+  // OB-694 A (U1): a privilege moves only through the shared confirm sheet — what will happen, in whose name, who may.
   const kinds = subjectTypes.map((k) => t(k)).join(', ');
   const capWords = capMinor === null ? t('noCap') : `₹${(capMinor / 100).toFixed(2)}`;
   if (!window.sreOffice || typeof window.sreOffice.confirm !== 'function') { status.className = 'status err'; status.textContent = t('noChrome'); return; }

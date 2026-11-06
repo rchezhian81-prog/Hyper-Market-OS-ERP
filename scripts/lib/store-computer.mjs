@@ -37,6 +37,7 @@
 // argument array and no shell, so no value is ever interpolated into a command line. Everything that touches the world
 // (files, programs, the network, the clock, the CSPRNG) arrives in `deps`, so the tests drive it without Docker.
 
+import { heldFetch } from './held-fetch.mjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import * as nodeFs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -1471,7 +1472,8 @@ export function defaultDeps() {
     killProcess: (pid) => { try { process.kill(pid); } catch { /* already gone */ } },
     askSecret,
     diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
-    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(5_000) }),
+    // A timer that keeps Node running while it waits (heldFetch): AbortSignal.timeout's does not, and `up` crashed with exit 13.
+    fetch: (url) => heldFetch(url, {}, 5_000),
     portInUse,
     sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
     now: () => new Date(),

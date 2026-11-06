@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
       // ── start the recall ──
       await page.fill('#r-batch', 'B-77');
       await page.fill('#r-reason', 'supplier contamination notice SN-17');
-      // U1 · OB-691: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      // U1 · OB-694: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(page, () => page.click('#r-start'), /Recall batch B-77/, writeCounter(page));
       await page.locator('#result.tone-ok').waitFor({ timeout: 15_000 });
       const said = (await page.textContent('#result')) ?? '';

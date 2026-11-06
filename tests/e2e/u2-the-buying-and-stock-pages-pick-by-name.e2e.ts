@@ -189,7 +189,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U2: the buying and stock pages pick by n
     await page.fill('#ev-from', '20/11/2026'); // the shared date field (U2b): dd/mm/yyyy in, ISO sent
     await page.fill('#ev-to', '22/11/2026');
     await page.click('#save');
-    // OB-691: the sheet names the product by its NAME, then Confirm sends once
+    // OB-694: the sheet names the product by its NAME, then Confirm sends once
     expect(await sheetOpens(page)).toMatch(/Toor dal 1kg/);
     await confirmIt(page);
     await page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(s: string): { textContent: string } } }).document.querySelector('#record-status').textContent.trim() !== '');

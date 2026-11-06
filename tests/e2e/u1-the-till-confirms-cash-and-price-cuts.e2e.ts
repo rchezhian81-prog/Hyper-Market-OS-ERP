@@ -16,7 +16,7 @@ import { auditPage } from './lib/a11y-audit';
 import { Tally } from './lib/tally';
 
 /**
- * **OB-691 "A" (U1, 2 Nov 2026 · design system §1.3, §27.1): the till confirms before money moves or a price is cut.**
+ * **OB-694 "A" (U1, 2 Nov 2026 · design system §1.3, §27.1): the till confirms before money moves or a price is cut.**
  *
  * On the REAL till the REAL store computer serves, with no head office at all (P-01):
  *   • Take the float / Cash to safe: after the amount, a panel says what will be recorded ("₹2,000.00 will be recorded as
@@ -26,7 +26,7 @@ import { Tally } from './lib/tally';
  *     from and to, how much comes off the line and the percentage, and the lowest allowed price the till knows (OB-500);
  *     Go back leaves the price and asks no manager; "Ask the manager" goes on to the badge, PIN and reason as before.
  *   • Both languages; the audit on the open panel is clean; the focus lands on Go back.
- *   • The budgets, counted honestly: the float gains ONE tap (the confirm) by the owner's written decision OB-691 — the
+ *   • The budgets, counted honestly: the float gains ONE tap (the confirm) by the owner's written decision OB-694 — the
  *     documented exception to §1.1's three; every other till budget is unchanged (the-till-and-manager-meet-the-interaction-budget).
  */
 
@@ -84,7 +84,7 @@ const consequence = async (page: Page): Promise<{ title: string; what: string; d
     return { title: text('sheet-title'), what: text('consequence-what'), detail: text('consequence-detail'), who: text('consequence-who'), ok: text('sheet-ok'), cancel: text('sheet-cancel'), focused: d.activeElement?.id ?? '', okClass: d.getElementById('sheet-ok')?.className ?? '' };
   });
 
-describe.skipIf(!HAVE_BROWSER)('OB-691 A: the till confirms before money moves or a price is cut', () => {
+describe.skipIf(!HAVE_BROWSER)('OB-694 A: the till confirms before money moves or a price is cut', () => {
   let browser: Browser;
   const dirs: string[] = [];
   const stops: (() => Promise<void>)[] = [];
@@ -188,7 +188,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-691 A: the till confirms before money moves o
     expect((await consequence(page)).what).toBe('₹1,000.00 will be recorded as moved from this drawer to the safe.');
     await safe.tap('#sheet-ok');
     await refusalSays(page, '₹1,000.00');
-    // OB-691: the confirm is the one tap added to a cash movement — the amount itself is keyed, so the count is the digits plus
+    // OB-694: the confirm is the one tap added to a cash movement — the amount itself is keyed, so the count is the digits plus
     // More, the choice, OK and the verb. Written down here so nobody reads it as "≤ 3" (the float was never within three).
     expect(safe.reset(), 'cash to safe: More · choice · 4 digits · OK · confirm').toBe(8);
     const records = await cashRecords(edge);

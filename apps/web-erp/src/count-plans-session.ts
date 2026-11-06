@@ -93,7 +93,7 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     planned: 'Planned — not counting yet', counting: 'Counting — frozen', approved: 'Approved — corrections posted', cancelled: 'Cancelled — nothing posted',
     freezes: 'Frozen while counting:', freezesNothing: 'Freezes nothing.', byDefault: '(the owner\'s default, OB-59)', tillNever: 'Till sales and returns are never frozen.',
     open: 'Open the count (start the freeze)', approve: 'Approve and post', cancel: 'Cancel the count', reason: 'Reason', why: 'Why',
-    // U1 · OB-691: the consequence-and-confirm sheet before a count's corrections are posted
+    // U1 · OB-694: the consequence-and-confirm sheet before a count's corrections are posted
     confirmTitle: 'Approve count {plan} at {place}: {counted} of {products} products counted, loss {loss}, gain {gain}',
     confirmDetail: 'Stock is corrected to what was counted, as new movements in the books — nothing is overwritten. A big loss held by the rules waits for its own approval. The freeze on this place ends.',
     confirmAuthority: 'In your name as the approver — never the person who counted. Head office refuses it if your role may not approve, or if you counted a line yourself.',

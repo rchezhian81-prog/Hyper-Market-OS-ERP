@@ -246,7 +246,7 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       expect(rec.writes ?? []).toHaveLength(0);
 
       await page.fill('#return-reason', 'the supplier driver collected it, van KA-01');
-      // U1 · OB-691: the consequence-and-confirm sheet names the line; Go back sends nothing; Confirm sends once.
+      // U1 · OB-694: the consequence-and-confirm sheet names the line; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(page, () => page.click('#return'), /Send .*back to the supplier/, () => (rec.writes ?? []).length);
       await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).document.getElementById('result-text')?.textContent ?? '').includes('Recorded'), undefined, { timeout: 10_000 });
       expect(rec.writes).toEqual([{ path: '/v1/inventory/goods-receipt/g-held/lines/l2/returned', idempotencyKey: expect.any(String), body: { reason: 'the supplier driver collected it, van KA-01' } }]);
@@ -271,7 +271,7 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       await page.waitForSelector('#return-line option', { state: 'attached', timeout: 10_000 });
       await page.fill('#return-reason', 'collected by the driver');
       await page.click('#return');
-      await confirmIt(page); // U1 · OB-691: the sheet first; head office's refusal is then shown verbatim
+      await confirmIt(page); // U1 · OB-694: the sheet first; head office's refusal is then shown verbatim
       await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).document.getElementById('result-text')?.textContent ?? '').includes('Head office refused'), undefined, { timeout: 10_000 });
       const text = (await page.textContent('#result-text')) ?? '';
       expect(text).toContain('a second person must decide to return it');

@@ -25,7 +25,7 @@ function sampleSession() {
       yieldAsExpected: 'as expected', yieldLow: 'below standard', yieldHigh: 'above standard', yieldNotMeasured: 'not measured',
       exceptionWord: 'Exception', costUnknownWord: 'Cost not known', yieldOffWord: 'Yield off', awaitingWord: 'Awaiting',
       releaseBtn: 'Release for sale', holdBtn: 'Hold — check failed', releaseHint: 'Release makes the batch sellable in your name; hold keeps it in quarantine.',
-      // U1 · OB-691: the consequence-and-confirm sheet before a batch goes on sale
+      // U1 · OB-694: the consequence-and-confirm sheet before a batch goes on sale
       confirmReleaseTitle: 'Release batch {batch} of {product} ({qty}) for sale',
       confirmReleaseDetail: 'From the next store pack every till of this shop sells it. A released batch comes back off the shelf only through a recall, with evidence.',
       confirmReleaseAuthority: 'In your name as the quality-release person. Head office refuses it if the batch is expired, already decided, or your role may not release.',
@@ -297,7 +297,7 @@ el('label').addEventListener('click', () => {
   })();
 });
 
-// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -326,7 +326,7 @@ el('rows').addEventListener('click', (ev) => {
   const qcPassed = btn.classList.contains('release');
   void (async () => {
     if (qcPassed) {
-      // U1 · OB-691: the consequence-and-confirm sheet before a batch goes on sale — Go back sends nothing. A hold is
+      // U1 · OB-694: the consequence-and-confirm sheet before a batch goes on sale — Go back sends nothing. A hold is
       // the safe direction and needs no sheet.
       const row = session.view(lang).runs.find((r) => r.runId === runId);
       const sub = (l, key) => String(session.text(l, key)).replace('{batch}', row?.batchId ?? runId).replace('{product}', row?.productId ?? '').replace('{qty}', row?.quantity ?? '');

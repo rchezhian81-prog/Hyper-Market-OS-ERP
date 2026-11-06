@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 /**
- * **OB-691 (2 Nov 2026 · UI/UX gap audit G4 · design system §1.3 · §27.1): on the finance and customer pages, money moves
+ * **OB-694 (2 Nov 2026 · UI/UX gap audit G4 · design system §1.3 · §27.1): on the finance and customer pages, money moves
  * only after the shared confirm sheet; the page's one primary action is marked; no page paints every button in the accent.**
  *
  * The rendered proof (the sheet's figure, Go back sends nothing, Confirm sends once) is in
@@ -34,7 +34,7 @@ const ACTIONS: Record<string, [string, string][]> = {
 };
 const PAGES = ['day-book', 'finance-close', 'promotion-funding', 'cash-office', 'campaigns', 'online-store', 'order-refunds', 'service', 'b2b'];
 
-describe('money moves only after the confirm sheet (OB-691)', () => {
+describe('money moves only after the confirm sheet (OB-694)', () => {
   it('every money, stock or privilege write on these pages sits behind the sheet in its own handler', () => {
     const wrong: string[] = [];
     for (const [file, actions] of Object.entries(ACTIONS)) {
@@ -82,7 +82,7 @@ describe('money moves only after the confirm sheet (OB-691)', () => {
     }
   });
 
-  it('bites: before OB-691 the day book posted on the click alone', () => {
+  it('bites: before OB-694 the day book posted on the click alone', () => {
     const before = code(execFileSync('git', ['show', '7fb2406:apps/web-erp/web/day-book.js'], { encoding: 'utf8' }));
     const at = before.indexOf("el('post').addEventListener('click'");
     const body = before.slice(at, before.indexOf('session.post(', at));

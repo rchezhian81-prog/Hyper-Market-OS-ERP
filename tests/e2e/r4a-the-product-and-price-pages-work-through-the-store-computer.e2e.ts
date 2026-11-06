@@ -448,7 +448,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await o.page.click('#stop');
     await says(o.page, 'record-status', /^Write why first\.$/);
     await o.page.fill('#s-why', 'ended early (synthetic)');
-    // U1 · OB-691: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
+    // U1 · OB-694: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
     await askedThenConfirmed(o.page, () => o.page.click('#stop'), /Stop the offer rice-10 now/, writeCounter(o.page));
     await says(o.page, 'record-status', /^Stopped\./);
     await o.page.locator('#rows tr[data-id="rice-10"][data-status="stopped"]').waitFor();

@@ -221,7 +221,7 @@ export interface GoodsReceiptConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'confirmReturnTitle' | 'confirmReturnDetail' | 'confirmReturnAuthority' | 'confirmReturnLabel' | 'confirmUnavailable' // U1 · OB-691
+  | 'confirmReturnTitle' | 'confirmReturnDetail' | 'confirmReturnAuthority' | 'confirmReturnLabel' | 'confirmUnavailable' // U1 · OB-694
   | 'listHeading' | 'asOfLabel' | 'refresh'
   | 'sigNeedsApproval' | 'sigDiscrepancies' | 'sigClean'
   | 'needsApprovalBadge' | 'noPo'
@@ -273,7 +273,7 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     returnsHeading: 'Going back to the supplier', returnAwaiting: 'Waiting to go back to the supplier', returnGone: 'Gone back to the supplier',
     returnNeedsCount: 'Count it first — handheld scans may have put it on the shelf', returnChoiceLabel: 'Which held line went back',
     returnReasonLabel: 'How it went back', returnReasonPlaceholder: 'e.g. the supplier’s driver collected it, van KA-01', returnBtn: 'Record it as gone back',
-    // U1 · OB-691: the consequence-and-confirm sheet before a delivery line goes back to the supplier
+    // U1 · OB-694: the consequence-and-confirm sheet before a delivery line goes back to the supplier
     confirmReturnTitle: 'Send {line} back to the supplier',
     confirmReturnDetail: 'Stock falls by that line and the supplier is owed nothing for it; the bill is matched without it. A return cannot be taken back from this screen.',
     confirmReturnAuthority: 'In your name, with the words you gave on how it went back. Head office refuses it if the line is not waiting or your role may not return goods.',

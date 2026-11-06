@@ -24,6 +24,7 @@
 //
 // Never against a production box (MIGRATION_TARGET_KIND is read and obeyed, hard rule #7), never into the demo tenant (G4).
 
+import { heldFetch } from './lib/held-fetch.mjs';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -92,7 +93,7 @@ function ownerStepClientFor(env: Readonly<Record<string, string>>, api: string):
       const token = buildPersonToken({ sub: userId, tenantId, ttlSeconds: 300, authTimeSec: Math.floor(Date.parse(signedInAt) / 1000) }, policy, Date.now());
       let res: Response;
       try {
-        res = await fetch(`${base}${path}`, {
+        res = await heldFetch(`${base}${path}`, {
           method,
           headers: {
             authorization: `Bearer ${token}`,
@@ -100,8 +101,7 @@ function ownerStepClientFor(env: Readonly<Record<string, string>>, api: string):
             ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-          signal: AbortSignal.timeout(30_000),
-        });
+        }, 30_000);
       } catch (e) { out(`Could not reach ${base}: ${e instanceof Error ? e.message : String(e)}`); process.exit(2); }
       const text = await res.text();
       let parsed: unknown = text;

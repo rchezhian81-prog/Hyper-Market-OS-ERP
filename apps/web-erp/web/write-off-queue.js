@@ -44,7 +44,7 @@ const q = window.writeOffQueue ?? null;
 const dec = window.writeOffDecide ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const w = (k) => (q !== null ? q.text(lang(), k) : dec !== null ? dec.words(lang(), k) : k);
-// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -87,7 +87,7 @@ if (q !== null) {
   el('woq-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     void (async () => {
-    // U1 · OB-691: the consequence-and-confirm sheet before the loss is saved for sending — Go back saves nothing. An
+    // U1 · OB-694: the consequence-and-confirm sheet before the loss is saved for sending — Go back saves nothing. An
     // incomplete form skips the sheet and gets the queue's own words on what is missing (nothing is saved either way).
     const complete = ['woq-product', 'woq-location', 'woq-qty', 'woq-type', 'woq-reason'].every((id) => el(id).value.trim() !== '');
     const sub = (l, key) => String(q.text(l, key)).replace('{qty}', `${el('woq-qty').value} ${el('woq-uom').value}`.trim()).replace('{product}', el('woq-product').value);

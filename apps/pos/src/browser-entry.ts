@@ -311,7 +311,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
  * first price, quantity and unit the store computer needs to work the cut out itself; or why it cannot be lowered.
  */
 export type PriceChangeValue =
-  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-691: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
+  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-694: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
   | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */

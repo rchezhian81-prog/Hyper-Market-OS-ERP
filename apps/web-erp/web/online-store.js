@@ -202,7 +202,7 @@ el('details-form').addEventListener('submit', async (event) => {
   if (out.ok) for (const k of [...DETAIL_KEYS, 'reason']) el(`d-${k}`).value = '';
   await refresh();
 });
-// OB-691: the shop goes online only after the shared confirm sheet (the chrome's) says what goes live, in whose name, and
+// OB-694: the shop goes online only after the shared confirm sheet (the chrome's) says what goes live, in whose name, and
 // the person writes why and confirms. Go back sends nothing. The reason travels with the publication record.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const CONFIRM = {

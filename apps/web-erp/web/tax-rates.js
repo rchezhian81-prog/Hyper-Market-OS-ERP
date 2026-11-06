@@ -204,6 +204,10 @@ async function openClass(hsn) {
 /** Record one period; a change waiting on Finance is asked for EXACTLY what was sent. */
 async function record(kind, path, body, details, summary) {
   const st = $('record-status');
+  // The last answer never stands for this one: cleared the moment this record starts, so "Recorded." on screen is always
+  // THIS record's word (a stale one let the next change be typed while this one was still refreshing — and the refresh
+  // then hid that change's "Ask Finance to approve"; found by the browser suite, 6 Nov 2026).
+  st.className = 'status'; st.textContent = '';
   const found = await ownApproval(kind, open.hsn, details);
   if (found.waiting === true) { tell(st, false, t('waiting')); return; }
   const out = await call('POST', path, { ...body, ...(found.approvalId === undefined ? {} : { approvalId: found.approvalId }) });

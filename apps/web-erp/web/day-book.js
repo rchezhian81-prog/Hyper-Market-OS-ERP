@@ -199,7 +199,7 @@ function paintResult(presentation) {
 // The accountant's posting — a HUMAN write that runs ONLY on this explicit click, never on load. On success the
 // day is re-read (a GET) so the journals shown are the cloud's. The server needs a posting map and is idempotent
 // on the day; the screen never fakes a posting.
-// OB-691: before money moves, the shared confirm sheet (the chrome's) says what will be posted, in whose name, and asks
+// OB-694: before money moves, the shared confirm sheet (the chrome's) says what will be posted, in whose name, and asks
 // for the person's word. Go back sends nothing. A page that paints before the chrome waits for it.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const MONTHS = { en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'] };

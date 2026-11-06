@@ -124,7 +124,7 @@ const WORDS = {
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
     signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff ID',
-    signInHint: 'Scan your badge or key your staff ID, then OK. Next you key your till PIN.',
+    signInHint: 'Scan your badge or key your staff ID (tap abc for its letters), then OK. Next you key your till PIN.',
     // The till PIN (ADR-0020 · PF-02): checked by the store computer, never shown, never kept on this screen.
     noStoreBox: 'This till is not connected to its store computer, so nobody can sign in. Tell the manager.',
     pinTitle: 'Your till PIN', pinHint: 'Key your six-digit till PIN, then OK. It is never shown. Forgotten it? Ask the manager.',
@@ -192,7 +192,7 @@ const WORDS = {
     // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
     takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
     cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
-    // OB-691 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
+    // OB-694 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
     goBack: 'Go back', confirmFloatTitle: 'Record the float?', confirmSafeTitle: 'Record cash to the safe?',
     confirmFloatWhat: '{amount} will be recorded as float put into this drawer.', confirmSafeWhat: '{amount} will be recorded as moved from this drawer to the safe.',
     confirmCashDetail: 'The store computer records it before anything else happens; the cash office counts this shift against it. A wrong figure is corrected only by a second movement, never by changing this one.',
@@ -411,7 +411,7 @@ const WORDS = {
     scanSpeedUnknown: 'இன்னும் அளக்கப்படவில்லை',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
-    signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
+    signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். எழுத்துகளுக்கு abc ஐத் தொடவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
     noStoreBox: 'இந்தக் கல்லா அதன் கடை கணினியுடன் இணைக்கப்படவில்லை, எனவே யாரும் உள்நுழைய முடியாது. மேலாளரிடம் சொல்லுங்கள்.',
     pinTitle: 'உங்கள் கல்லா PIN', pinHint: 'ஆறு இலக்க கல்லா PIN-ஐ உள்ளிட்டு சரி அழுத்தவும். அது ஒருபோதும் காட்டப்படாது. மறந்துவிட்டீர்களா? மேலாளரிடம் கேளுங்கள்.',
     signInRefused: 'உள்நுழையவில்லை',
@@ -877,7 +877,7 @@ async function toggleSignIn() {
   if (by === 'verified_sign_in') {
     outcome = await session.signInAtTill({});
   } else {
-    const staffId = await askScanOrKey({ title: t('signInTitle'), hint: t('signInHint') });
+    const staffId = await askScanOrKey({ title: t('signInTitle'), hint: t('signInHint'), staffLetters: true });
     if (staffId === null || staffId === '' || staffId === '0') return;
     const pin = await ask({ title: t('pinTitle'), mode: 'number', hint: t('pinHint'), initial: '', mask: true });
     if (pin === null || pin === '') return;
@@ -1126,10 +1126,10 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  // OB-691 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
+  // OB-694 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
   el('consequence').hidden = mode !== 'confirm';
   if (mode === 'confirm' && consequence !== null) {
     el('consequence-what').textContent = consequence.what;
@@ -1139,17 +1139,21 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   el('sheet-ok').classList.toggle('danger', mode === 'confirm' && consequence !== null && consequence.tone === 'danger');
   // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
   // switch key flips between letters and digits. Both pads keep the till's full-size keys.
-  entryHasLetters = mode === 'number' && letters === true;
+  // A STAFF ID keyed by hand (store PC, 6 Nov 2026: the pilot cashier is `cashier-01`): the digits pad shows first (a
+  // badge number is digits), and the switch offers the letters in lower case, as logins are written.
+  entryHasLetters = mode === 'number' && (letters === true || staffLetters === true);
+  paintLetterpad(staffLetters === true);
   entryIsCode = code === true || barcode === true || entryHasLetters;
   entryMaxDigits = barcode === true ? BARCODE_DIGITS : CODE_DIGITS;
   entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
   paintEntry();
   el('entry').hidden = mode !== 'number';
-  el('keypad').hidden = mode !== 'number' || entryHasLetters;
-  el('letterpad').hidden = !entryHasLetters;
+  const lettersFirst = entryHasLetters && staffLetters !== true;
+  el('keypad').hidden = mode !== 'number' || lettersFirst;
+  el('letterpad').hidden = !lettersFirst;
   el('pad-switch').hidden = !entryHasLetters;
-  el('pad-switch').textContent = '123';
+  el('pad-switch').textContent = lettersFirst ? '123' : letterpadLower ? 'abc' : 'ABC';
   el('reasons').hidden = mode !== 'choice';
   // A typed answer with letters (OB-264: the old system's bill number) — a text field, from the keyboard or a scanner.
   sheetMode = mode;
@@ -1197,13 +1201,13 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
 
   el('sheet').hidden = false;
   if (mode === 'text' || mode === 'find') el('entry-text').focus();
-  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-691).
+  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-694).
   if (mode === 'confirm') el('sheet-cancel').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
 }
 
 /**
- * OB-691 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
+ * OB-694 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
  * Says what will happen (with the figure), what it means and in whose name; the only ways on are the verb or Go back.
  * Resolves `true` only when the verb was tapped. Nothing here sends anything — the caller sends only on `true`.
  */
@@ -1246,25 +1250,33 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
 
 // The letters pad for a bill number keyed by hand (A–Z and the "-" a bill number carries), and the switch between it and the
 // digits. Built once, the same full-size keys as the digits.
-el('letterpad').replaceChildren(...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '-', '⌫'].map((key) => {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = key;
-  button.addEventListener('click', () => { typeIntoEntry(key, key !== '⌫'); });
-  return button;
-}));
+// A staff ID's letters are lower case (logins are written so: cashier-01), a bill number's upper case.
+let letterpadLower = null;
+function paintLetterpad(lower) {
+  if (letterpadLower === lower) return;
+  letterpadLower = lower;
+  const letters = lower ? 'abcdefghijklmnopqrstuvwxyz' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  el('letterpad').replaceChildren(...[...letters, '-', '⌫'].map((key) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = key;
+    button.addEventListener('click', () => { typeIntoEntry(key, key !== '⌫'); });
+    return button;
+  }));
+}
+paintLetterpad(false);
 el('pad-switch').addEventListener('click', () => {
   const toDigits = el('keypad').hidden;
   el('keypad').hidden = !toDigits;
   el('letterpad').hidden = toDigits;
-  el('pad-switch').textContent = toDigits ? 'ABC' : '123';
+  el('pad-switch').textContent = toDigits ? (letterpadLower ? 'abc' : 'ABC') : '123';
 });
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
   closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
-// OB-691: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
+// OB-694: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
 // by Enter on the verb itself once a person has moved the focus to it on purpose.)
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && sheetMode === 'confirm' && !el('sheet').hidden) { event.preventDefault(); event.stopPropagation(); closeSheet(null); }
@@ -2526,7 +2538,7 @@ async function changeLinePrice() {
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
-  // OB-691 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
+  // OB-694 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
   // knows — so the person who keys their PIN next approves a figure they have read, not a request they have not seen.
   const lineFrom = value.fromUnitMinor * (value.quantityMinor || 1);
   const pct = lineFrom > 0 ? Math.round((value.reductionMinor / lineFrom) * 100) : 0;
@@ -2635,7 +2647,7 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
-  // OB-691 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
+  // OB-694 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
   const at = new Date().toISOString();
   const float = kind === 'float_issue';
   const confirmed = await confirmAction({
@@ -2665,7 +2677,7 @@ const takeCashToSafe = () => moveCashToBox('pickup', 'amountToSafe', 'movedToSaf
  * is SCOPED to this panel and removed when it closes, so it never leaks into the sale screen's global
  * scanner (which stays off while a panel is open).
  */
-function askScanOrKey({ title, hint = '', letters = false }) {
+function askScanOrKey({ title, hint = '', letters = false, staffLetters = false }) {
   // The button that opened this prompt must NOT keep focus: a scanner ends its code with Enter, and Enter on a focused
   // button is a click — the sign-in button would sign the cashier straight back out (found by the F09 browser test).
   if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
@@ -2690,7 +2702,7 @@ function askScanOrKey({ title, hint = '', letters = false }) {
     window.addEventListener('keydown', onKey, true);
     // The keypad sheet is the manual fallback; whichever answers first wins.
     // A bill number has letters in it (ZZBFPJ75-000001), so keying one by hand offers the letters pad too.
-    ask({ title, mode: 'number', hint, ...(letters ? { letters: true } : {}) }).then((typed) => finish(typed));
+    ask({ title, mode: 'number', hint, ...(letters ? { letters: true } : {}), ...(staffLetters ? { staffLetters: true } : {}) }).then((typed) => finish(typed));
   });
 }
 
@@ -2707,7 +2719,7 @@ function saidInLang(r) {
 
 async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFUND_REASONS, reasonTitle = 'refundApproveReason', priceCut }) {
   if (!session.approveAtTill) { tell(t('read'), t('noStoreBox'), STOP); return null; }
-  const by = await askScanOrKey({ title: t('refundManagerId'), hint });
+  const by = await askScanOrKey({ title: t('refundManagerId'), hint, staffLetters: true });
   if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
   const pin = await ask({ title: t('managerPinTitle'), mode: 'number', hint: t('managerPinHint'), initial: '', mask: true });
   if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager'), STOP); return null; }

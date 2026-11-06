@@ -13,6 +13,7 @@
 // (scripts/lib/owner-setup-pins.ts), mints that person's short-lived token AFTER their PIN matched, and speaks HTTP to this
 // copy's own API on loopback. Nothing it prints is a secret: never a PIN, never a token, never a key.
 
+import { heldFetch } from './lib/held-fetch.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runOwnerSetup, type SetupClient } from '../packages/migration/src/owner-steps-command';
@@ -51,7 +52,7 @@ async function main(): Promise<void> {
       const token = buildPersonToken({ sub: userId, tenantId, ttlSeconds: 300, authTimeSec: Math.floor(Date.parse(signedInAt) / 1000) }, idp.policy!, Date.now());
       let res: Response;
       try {
-        res = await fetch(`${base}${path}`, {
+        res = await heldFetch(`${base}${path}`, {
           method,
           headers: {
             authorization: `Bearer ${token}`,
@@ -59,8 +60,7 @@ async function main(): Promise<void> {
             ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-          signal: AbortSignal.timeout(30_000),
-        });
+        }, 30_000);
       } catch {
         return { status: 503, body: { error: { code: 'not_reachable', whatHappened: 'this copy of the system did not answer on this computer. Run: pnpm run store-computer -- up' } } };
       }

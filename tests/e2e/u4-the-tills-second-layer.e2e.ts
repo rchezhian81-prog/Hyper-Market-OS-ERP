@@ -24,7 +24,7 @@ import { Tally } from './lib/tally';
  *     out: Find → letters → row = 3; the row rings the item through the scan path, so a weighed item by its plain code is
  *     refused exactly as a scan is (OB-570); a scanner's code keyed into the box with Enter rings it; "nothing matches" is
  *     said; both languages; the audit is clean with the panel open and every row is a 56px target.
- *   • **The budgets nobody had counted**, honestly: the float = 8 (More · Take float · four keyed digits · OK · the OB-691
+ *   • **The budgets nobody had counted**, honestly: the float = 8 (More · Take float · four keyed digits · OK · the OB-694
  *     confirm); a split of ₹200 cash + UPI = 10 (Tender · Split · Cash · three digits · OK · UPI · the "up to" tap · the
  *     machine's answer; the no-member notice is one more, 11 in all) — the spec's 3 is for a single tender; close the till with
  *     four notes counted = 7 (More · Close till · four notes · Close till), one more per further note.
@@ -232,7 +232,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
     expect(errors).toEqual([]);
   }, 90_000);
 
-  it('the budgets nobody had counted: the float = 8 (four digits and the OB-691 confirm), a ₹200 cash + UPI split = 11 (the no-member notice is one), closing the till with four notes = 7', async () => {
+  it('the budgets nobody had counted: the float = 8 (four digits and the OB-694 confirm), a ₹200 cash + UPI split = 11 (the no-member notice is one), closing the till with four notes = 7', async () => {
     const edge = await box('budgets');
     const { page, errors } = await openTill(edge);
     const taps = new Tally(page);
@@ -241,7 +241,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
       for (const d of digits) await taps.tap(`#keypad button:text-is("${d}")`);
     };
 
-    // C1 — the float: More · Take float · 2 0 0 0 · OK · Record the float (the confirm the owner chose, OB-691).
+    // C1 — the float: More · Take float · 2 0 0 0 · OK · Record the float (the confirm the owner chose, OB-694).
     await taps.tap('#more');
     await panelTitled(page, 'More');
     await taps.tap('#pay-kinds button:text-is("Take float (open the till)")');

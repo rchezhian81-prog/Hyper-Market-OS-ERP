@@ -166,7 +166,7 @@ describe.skipIf(!HAVE_BROWSER)('help, readings and losses saved at the store wit
     await waitText(page, '#woq-result-text', 'choose the kind of loss and why');
     expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
     await page.selectOption('#woq-type', 'damage'); await page.selectOption('#woq-reason', 'damage');
-    // U1 · OB-691: the consequence-and-confirm sheet names the loss; Go back saves nothing; Confirm saves once.
+    // U1 · OB-694: the consequence-and-confirm sheet names the loss; Go back saves nothing; Confirm saves once.
     await askedThenConfirmed(page, () => page.click('#woq-save'), /Save a loss of 2 ea of MILK/, () => edge.deviceEventsOutbox.all().length);
     await page.waitForFunction(() => (globalThis as unknown as Win).writeOffQueue?.queue.items()[0]?.state === 'handed_to_box', undefined, { timeout: 20_000 });
     const records = await logged(edge);

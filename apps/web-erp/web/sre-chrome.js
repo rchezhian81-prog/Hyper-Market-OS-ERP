@@ -1352,7 +1352,7 @@
     if (drawerReturn && typeof drawerReturn.focus === 'function' && document.contains(drawerReturn)) drawerReturn.focus();
     drawerReturn = null;
   }
-  // ── The confirm sheet (OB-691, 2 Nov 2026 · design system §1.3 · §27.1): consequence, authority, then the person's
+  // ── The confirm sheet (OB-694, 2 Nov 2026 · design system §1.3 · §27.1): consequence, authority, then the person's
   // own word — BEFORE money, stock, a price or a privilege moves. `await sreOffice.confirm({ title, detail, authority,
   // confirmLabel, tone, reason? })` → `{ ok: true, reason? }` only on the confirm button; Go back, Escape, a tap on the
   // scrim, a second ask or leaving the page all answer `{ ok: false }`, and the page sends nothing on that. The safe

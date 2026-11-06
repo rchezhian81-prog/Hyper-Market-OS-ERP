@@ -90,7 +90,7 @@ export interface ProductionConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'confirmReleaseTitle' | 'confirmReleaseDetail' | 'confirmReleaseAuthority' | 'confirmReleaseLabel' | 'confirmUnavailable' // U1 · OB-691
+  | 'confirmReleaseTitle' | 'confirmReleaseDetail' | 'confirmReleaseAuthority' | 'confirmReleaseLabel' | 'confirmUnavailable' // U1 · OB-694
   | 'listHeading' | 'toReleaseCount' | 'allReleased' | 'notKnown'
   | 'productLabel' | 'batchLabel' | 'qtyLabel' | 'expiryLabel' | 'costLabel' | 'costNotKnown' | 'yieldLabel' | 'departmentLabel'
   | 'yieldAsExpected' | 'yieldLow' | 'yieldHigh' | 'yieldNotMeasured'
@@ -111,7 +111,7 @@ export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
     yieldAsExpected: 'as expected', yieldLow: 'below standard', yieldHigh: 'above standard', yieldNotMeasured: 'not measured',
     exceptionWord: 'Exception', costUnknownWord: 'Cost not known', yieldOffWord: 'Yield off', awaitingWord: 'Awaiting',
     releaseBtn: 'Release for sale', holdBtn: 'Hold — check failed', releaseHint: 'Release makes the batch sellable in your name; hold keeps it in quarantine.',
-    // U1 · OB-691: the consequence-and-confirm sheet before a batch goes on sale
+    // U1 · OB-694: the consequence-and-confirm sheet before a batch goes on sale
     confirmReleaseTitle: 'Release batch {batch} of {product} ({qty}) for sale',
     confirmReleaseDetail: 'From the next store pack every till of this shop sells it. A released batch comes back off the shelf only through a recall, with evidence.',
     confirmReleaseAuthority: 'In your name as the quality-release person. Head office refuses it if the batch is expired, already decided, or your role may not release.',

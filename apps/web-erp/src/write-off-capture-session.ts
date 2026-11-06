@@ -236,7 +236,7 @@ export interface LossRequestsView {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'confirmTitle' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel' | 'confirmUnavailable' // U1 · OB-691
+  | 'confirmTitle' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel' | 'confirmUnavailable' // U1 · OB-694
   | 'lossWastage' | 'lossDamage' | 'lossExpiry' | 'lossDonation' | 'lossDestruction'
   | 'productLabel' | 'locationLabel' | 'qtyLabel' | 'uomLabel' | 'valueLabel' | 'lossTypeLabel' | 'reasonLabel' | 'evidenceLabel'
   | 'recordBtn'
@@ -262,7 +262,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     productLabel: 'Which item', locationLabel: 'Where in the store', qtyLabel: 'How many', uomLabel: 'Unit',
     valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost', evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
-    // U1 · OB-691: the consequence-and-confirm sheet before a loss goes into the books
+    // U1 · OB-694: the consequence-and-confirm sheet before a loss goes into the books
     confirmTitle: 'Record a loss of {qty} of {product} worth {value}',
     confirmDetail: 'Stock falls by that much in the books, in your name. A big loss goes only with the approval named on this form. A loss is never undone — a mistake is corrected by a new entry.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not record a loss or the approval does not match.',

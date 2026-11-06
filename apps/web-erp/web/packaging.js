@@ -8,7 +8,7 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, move: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
-// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -115,7 +115,7 @@ else {
       $('i-status').textContent = api.outcomeWords(lang, out);
     });
     $('m-record').addEventListener('click', async () => {
-      // U1 · OB-691: the consequence-and-confirm sheet before the movement is recorded — Go back sends nothing.
+      // U1 · OB-694: the consequence-and-confirm sheet before the movement is recorded — Go back sends nothing.
       const kindWord = (l) => { const k = $('m-kind'); const opt = k.selectedOptions ? k.selectedOptions[0] : null; return l === lang && opt ? opt.textContent.trim() : (api.words(l, k.value) === k.value ? k.value : api.words(l, k.value)); };
       const sub = (l, key) => String(api.words(l, key)).replace('{qty}', $('m-qty').value).replace('{item}', $('m-item').value).replace('{kind}', kindWord(l)).replace('{branch}', $('m-branch').value);
       // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).

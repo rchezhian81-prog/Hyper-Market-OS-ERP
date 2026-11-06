@@ -152,7 +152,7 @@ function paintResult(presentation) {
 // The reviewer's sign-off — a HUMAN write that runs ONLY on this explicit click, never on load. On success the
 // worklist is re-read (a GET) so the signed-off row drops off. The server enforces §28 (reviewer ≠ cashier);
 // the screen refuses an own-drawer sign-off locally too and never sends a self-review.
-// OB-691: a drawer's over/short is signed off only after the shared confirm sheet (the chrome's) says which shift, what
+// OB-694: a drawer's over/short is signed off only after the shared confirm sheet (the chrome's) says which shift, what
 // finding, and in whose name — and the reviewer confirms. Go back sends nothing.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const CONFIRM = {
