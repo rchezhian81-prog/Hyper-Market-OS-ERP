@@ -124,6 +124,9 @@ export interface IndentReturn {
   readonly acceptedAt?: string;
   readonly received?: readonly ReceivedLine[];
   readonly shortfall?: readonly ShortfallLine[];
+  /** W5 (M09-FR-03): an acceptance counted on the warehouse handheld — what head office found about the person (§28), and the relay. */
+  readonly governanceFlags?: readonly string[];
+  readonly relayed?: RelayedBy;
 }
 
 export const INDENT_FLAGS = Object.freeze([
@@ -556,11 +559,17 @@ export function applyReturnAcceptance(indent: FloorIndent, returnId: string, acc
   readonly at: string;
   readonly received: readonly ReceivedLine[];
   readonly shortfall: readonly ShortfallLine[];
+  readonly governanceFlags?: readonly string[];
+  readonly relayed?: RelayedBy;
 }): FloorIndent {
   return {
     ...indent,
     returns: indent.returns.map((r) => (r.returnId === returnId
-      ? { ...r, state: 'accepted' as const, acceptedBy: acceptance.acceptedBy, acceptedAt: acceptance.at, received: acceptance.received, shortfall: acceptance.shortfall }
+      ? {
+        ...r, state: 'accepted' as const, acceptedBy: acceptance.acceptedBy, acceptedAt: acceptance.at, received: acceptance.received, shortfall: acceptance.shortfall,
+        ...(acceptance.governanceFlags === undefined ? {} : { governanceFlags: acceptance.governanceFlags }),
+        ...(acceptance.relayed === undefined ? {} : { relayed: acceptance.relayed }),
+      }
       : r)),
   };
 }

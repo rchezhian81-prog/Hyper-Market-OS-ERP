@@ -58,6 +58,11 @@ export interface DispatchBoardDeps {
   readonly settlement: (tenantId: string, routeId: string) => Promise<RouteSettlementRecord | undefined>;
   readonly handover: (tenantId: string, routeId: string) => Promise<CashHandoverRecord | undefined>;
   readonly recordOrderStop: (tenantId: string, s: OrderStop) => Promise<void>;
+  /**
+   * OB-676: the driver cash hand-over limit in force at the store and whether the owner has confirmed it — said on the
+   * board beside every cash difference ("not confirmed" until he does). Absent: the board says it was not told.
+   */
+  readonly handoverTolerance?: (tenantId: string, storeId: string) => Promise<{ readonly valueMinor: number | null; readonly state: 'confirmed' | 'not_confirmed' }>;
   /** Issue the order's delivery code if it has none (OB-294) — once, whoever asks first. */
   readonly issueCode: (tenantId: string, orderId: string) => Promise<void>;
   readonly imageCount: (tenantId: string, orderId: string) => Promise<number>;
@@ -318,7 +323,8 @@ export function dispatchBoardRoutes(deps: DispatchBoardDeps): readonly Route[] {
           });
         }
         const day = await dayOrders(deps, ctx.tenantId, storeId, runDate);
-        return { status: 200, body: { runDate, storeId, plan: plan === null ? null : { unplanned: plan.unplanned, distancesAre: plan.distancesAre, contributionFlags: plan.contributionFlags }, routes, held: day.held, asAt: deps.now() } };
+        const handoverTolerance = deps.handoverTolerance === undefined ? null : await deps.handoverTolerance(ctx.tenantId, storeId);
+        return { status: 200, body: { runDate, storeId, plan: plan === null ? null : { unplanned: plan.unplanned, distancesAre: plan.distancesAre, contributionFlags: plan.contributionFlags }, routes, held: day.held, handoverTolerance, asAt: deps.now() } };
       },
     },
   ];

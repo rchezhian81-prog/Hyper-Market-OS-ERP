@@ -107,6 +107,8 @@ export interface OtherGateBlocker {
   readonly kind: 'finding' | 'check';
   readonly ref: string;
   readonly reason: string;
+  /** W3: the releases it counts for (absent: every release). `can-pass` has no release, so it shows every blocker. */
+  readonly releases?: readonly string[];
 }
 
 // A stable digest so any real change to a risk is a new append-only fact, but an exact re-send collapses.
@@ -506,6 +508,28 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
         ]);
         const health = controlHealth({ controls, incidents, remediations, attestations, asOfDate, attestationValidDays });
         return { status: 200, body: { health, count: health.length, asOf: asOfDate, attestationValidDays, needingAttestation: health.filter((h) => h.needsAttestation).length } };
+      },
+    },
+    {
+      // W5 (M34-FR-04 "links controls ↔ incidents ↔ remediation"; risk/incident/attestation reports): the registers
+      // themselves — every control, every incident against it, every remediation and every attestation, as recorded. A
+      // read; nothing is folded away (an attestation is immutable and dated, a completed remediation stays listed).
+      api: 'API-11', method: 'GET', path: '/v1/compliance/control-register',
+      permission: 'compliance.risk.read',
+      handler: async (ctx) => {
+        const [controls, incidents, remediations, attestations] = await Promise.all([
+          deps.controls(ctx.tenantId), deps.incidents(ctx.tenantId), deps.remediations(ctx.tenantId), deps.attestations(ctx.tenantId),
+        ]);
+        const by = <T>(key: (x: T) => string) => (a: T, z: T) => key(a).localeCompare(key(z));
+        return {
+          status: 200,
+          body: {
+            controls: [...controls].sort(by((c: Control) => c.controlId)),
+            incidents: [...incidents].sort(by((i: Incident) => i.detectedAt)),
+            remediations: [...remediations].sort(by((r: Remediation) => r.dueOn)),
+            attestations: [...attestations].sort(by((a: Attestation) => a.attestedAt)),
+          },
+        };
       },
     },
     {

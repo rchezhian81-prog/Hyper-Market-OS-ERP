@@ -80,19 +80,41 @@ function rowNode(r) {
   guidance.textContent = r.actionLabel;
   action.append(guidance);
 
-  // The clickable governance buttons. The MODEL decides which rows offer one and whether it is enabled
-  // (right role, maker ≠ checker for approve) — this only draws the button and, on click, hands the intent
-  // back to the session, which enqueues an offline command. It never calls the portal from here. A stuck
-  // return carries no actions, so it gets no button — a person handles it (hard rule #10).
+  // The governance acts. The MODEL decides which rows offer one and whether it is enabled (right role, maker ≠ checker,
+  // a live list, nothing already on its way) — this only draws the button (with the reason or evidence fields an act
+  // needs) and, on click, hands the intent to the session, which sends it to head office ONCE. It never calls the
+  // portal. A rejected or in-flight return carries no act (hard rule #10).
   for (const a of r.actions ?? []) {
     const wrap = document.createElement('div');
     wrap.className = 'do';
+    wrap.dataset.act = a.action;
+    const fields = {};
+    const input = (key, labelKey) => {
+      const label = document.createElement('label'); label.className = 'do-field';
+      const span = document.createElement('span'); span.textContent = t(labelKey);
+      const box = document.createElement('input'); box.autocomplete = 'off'; box.name = key; box.disabled = !a.enabled;
+      label.append(span, box); wrap.append(label); fields[key] = box;
+    };
+    if (a.needs === 'reason') input('reason', 'reasonLabel');
+    // OB-683: the ARN the GST portal showed when the person uploaded the approved return by hand.
+    if (a.needs === 'arn') input('arn', 'arnRequired');
+    if (a.needs === 'evidence') {
+      const label = document.createElement('label'); label.className = 'do-field';
+      const span = document.createElement('span'); span.textContent = t('resolvedLabel');
+      const pick = document.createElement('select'); pick.name = 'resolvedState'; pick.disabled = !a.enabled;
+      for (const [value, key] of [['', 'resolvedLabel'], ['filed', 'resolvedFiled'], ['failed', 'resolvedFailed']]) {
+        const o = document.createElement('option'); o.value = value; o.textContent = value === '' ? '—' : t(key); pick.append(o);
+      }
+      label.append(span, pick); wrap.append(label); fields.resolvedState = pick;
+      input('note', 'evidenceLabel');
+      input('arn', 'arnOptional');
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'do-btn sre-btn';
     btn.textContent = a.label;
     btn.disabled = !a.enabled; whyDisabled(btn, a.enabled ? '' : 'role');
-    btn.addEventListener('click', () => runAction(a));
+    btn.addEventListener('click', () => runAction(a, fields, btn));
     wrap.append(btn);
     if (a.note) {
       const note = document.createElement('span');
@@ -111,20 +133,43 @@ function rowNode(r) {
   if (r.preparedBy) { const s = document.createElement('span'); s.textContent = r.preparedBy; who.append(s); }
   if (r.approvedByName) { const s = document.createElement('span'); s.textContent = r.approvedByName; who.append(s); }
   li.append(who);
+  // OB-683: a return filed by hand on the portal says so, with the ARN and the name of the person who recorded it.
+  if (r.filedByHand) { const p = document.createElement('p'); p.className = 'filed-by-hand'; p.dataset.arn = r.filedByHand.arn; p.textContent = r.filedByHand.line; li.append(p); }
 
   if (r.detail) { const d = document.createElement('p'); d.className = 'detail'; d.textContent = r.detail; li.append(d); }
   return li;
 }
 
+/** The answer to the last act, in the reader's language (head office's own sentence when it refused). */
+function tellResult(result) {
+  const line = el('act-result');
+  line.hidden = false;
+  line.className = `answer-line tone-${result.ok ? 'ok' : 'error'}`;
+  line.textContent = real.resultWords(lang, result);
+}
+
 /**
- * Ask the session to run a governance action. The session re-checks the guards (right role, maker ≠ checker)
- * and commits the command to the offline outbox — this file never touches the network (no fetch / XHR / portal
- * call). We supply the wall clock and repaint so the row shows its new "requested" state. Only the real session
- * can act; the sample stand-in offers no buttons.
+ * Ask the session to run a governance act. The session re-checks the guards (right role, maker ≠ checker, a live list,
+ * a reason or evidence typed) and sends it to head office once — this file never touches the network itself. Only the
+ * real session can act; the sample stand-in offers no buttons.
  */
-function runAction(a) {
-  if (!real || typeof real.requestAction !== 'function') return;
-  real.requestAction({ period: a.period, action: a.action, at: new Date().toISOString() });
+async function runAction(a, fields, btn) {
+  if (!real || typeof real.act !== 'function') return;
+  btn.disabled = true;
+  const value = (k) => (fields[k] === undefined ? undefined : fields[k].value);
+  const result = await real.act({ period: a.period, action: a.action, reason: value('reason'), resolvedState: value('resolvedState') || undefined, note: value('note'), arn: value('arn') });
+  tellResult(result);
+  paint();
+}
+
+/** The maker prepares a month for approval (head office records its own digest of the month's figures). */
+async function prepare(event) {
+  event.preventDefault();
+  if (!real || typeof real.prepare !== 'function') return;
+  el('prepare-btn').disabled = true;
+  const result = await real.prepare(el('prepare-period').value);
+  el('prepare-btn').disabled = false;
+  tellResult(result);
   paint();
 }
 
@@ -165,6 +210,20 @@ function paint() {
   nobody.hidden = !view.nobodyNamed;
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
 
+  // W5: where the list came from, said in words — live from head office, or the box's last copy (never acted on).
+  const live = el('live-line');
+  const liveWords = view.source === 'box' ? [t('fromBox'), view.liveProblem ?? ''].join(' ').trim() : view.liveProblem ?? '';
+  live.hidden = real === undefined || liveWords === '';
+  live.textContent = liveWords;
+  live.dataset.source = view.source ?? 'none';
+  const unsent = el('unsent-line');
+  unsent.hidden = view.unsentEarlier === undefined;
+  unsent.textContent = view.unsentEarlier ?? '';
+  // The maker's form: prepare a month for approval — offered to whoever head office lets prepare (OB-192: not the CA).
+  el('prepare').hidden = !view.mayPrepare;
+  el('prepare-label').textContent = t('periodLabel');
+  el('prepare-btn').textContent = t('btnPrepare');
+
   const shown = attentionOnly ? view.rows.filter((r) => r.needsAttention) : view.rows;
   el('rows').replaceChildren(...shown.map(rowNode));
 
@@ -185,7 +244,14 @@ el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; p
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
+el('prepare').addEventListener('submit', (event) => { void prepare(event); });
+if (window.sreShopDay !== undefined && el('prepare-period').value === '') {
+  const ym = window.sreShopDay.lastMonth(); // the shop's own calendar (OB-606), never this browser's zone
+  el('prepare-period').value = `${ym.slice(5, 7)}${ym.slice(0, 4)}`;
+}
 paint();
+// W5: the filing list is read live from head office (the session asks; this file never fetches itself).
+if (real !== undefined && typeof real.load === 'function') void real.load().then(paint);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

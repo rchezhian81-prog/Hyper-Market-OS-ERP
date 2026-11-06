@@ -46,10 +46,12 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter,
+  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter, replenishmentParametersAdapter,
 } from './adapters';
+import { parametersAt } from '../../inventory/src/replenishment-parameters'; // OB-630
 import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
+import { floorPlanSpaceSection } from './p2-catalogue-adapters';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
@@ -64,6 +66,7 @@ import { dsdCheckInAdapter } from './r3-ops-adapters';
 import { rosterPackSection, certificationsPackSection } from './r7d-workforce-adapters'; // Round 7 · OB-507 · OB-502
 import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
 import { catalogueMasterSections, expirySections, financeSections, gstReconciliationQueueSection } from './round-a-pack-sections'; // Round A
+import { couponPackSectionFor, giftCardPackSectionFor } from './till-vouchers-adapters'; // W3 · OB-673 · OB-677
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -118,6 +121,18 @@ export interface StorePackBuildInput {
    * reports can run (P-02). Absent → the section is left out and the page says it was not told (never an empty list).
    */
   readonly reportingRecords?: readonly string[];
+  /**
+   * W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: carry the shop's live coupons and its gift cards to the store computer, so
+   * the till honours a coupon and takes a gift card with the internet down; `giftCardOfflineCapMinor` is the owner's offline
+   * limit per till per card (the tenant setting, default ₹500). Absent → neither section is sent (the till says so).
+   */
+  readonly tillVouchers?: { readonly giftCardOfflineCapMinor: (tenantId: string) => Promise<number> };
+  /**
+   * OB-676 (owner, 2 Nov 2026): who confirmed the driver cash hand-over limit in force, and when — carried in the policies as
+   * `handoverToleranceConfirmed`, so the store computer and the driver's phone say, with no network, whether the owner has
+   * confirmed it. Absent, or undefined for a store, → left out, which every reader takes as "not confirmed".
+   */
+  readonly handoverToleranceConfirmation?: (tenantId: string, storeId: string) => Promise<{ readonly by: string; readonly at: string; readonly version: number } | undefined>;
 }
 
 /**
@@ -185,7 +200,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const staffPurchase = input.staffPurchase === undefined ? undefined : await input.staffPurchase(tenantId);
     // OB-375 · OB-378: the price kiosk's "stop quoting after" minutes and the self-checkout watch numbers.
     const floorDevices = input.floorDevices === undefined ? {} : await input.floorDevices(tenantId);
+    // OB-676: the owner's confirmation of the hand-over limit, only when he has confirmed the figure in force.
+    const toleranceConfirmed = input.handoverToleranceConfirmation === undefined ? undefined : await input.handoverToleranceConfirmation(tenantId, storeId);
     sections['policies'] = {
+      ...(toleranceConfirmed === undefined ? {} : { handoverToleranceConfirmed: toleranceConfirmed }),
       ...floorDevices,
       ...(staffPurchase === undefined ? {} : { staffPurchase }),
       ...(till.shopState === undefined ? {} : { shopState: till.shopState }),
@@ -447,7 +465,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   //   shelfCounts ← every shelf count taken;  backstock ← the stock ledger at the store's back store;
   //   assortment ← the store's effective-dated range decisions;  displayContracts / fundingReceivedMinor ← the supplier
   //   display contracts for this store and what FINANCE has received against each (display-funding journals).
-  // Not sent (no register yet — the screen names the gap): space areas and sales / margin by area.
+  // Wave 2: space areas and sales / margin by area ← the store's floor plan in force and this shop month's banked sales
+  // (the Floor heat map's own fold); left out when the store has no floor plan (the screen then names the gap).
   const shelf = planogramStoreAdapter({ store, now });
   const map = await shelf.shelfMap(tenantId, storeId);
   if (map !== undefined) sections['shelfLocations'] = map.locations;
@@ -481,6 +500,13 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['displayContracts'] = contracts;
     const received = await displayFundingAdapter({ store, now }).fundingReceived(tenantId);
     sections['fundingReceivedMinor'] = Object.fromEntries(contracts.map((c) => [c.contractId, received[c.contractId]?.minor ?? 0]));
+  }
+
+  const space = await floorPlanSpaceSection({ store, now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }, tenantId, storeId);
+  if (space !== undefined) {
+    sections['spaceAreas'] = space.spaceAreas;
+    sections['salesByAreaMinor'] = space.salesByAreaMinor;
+    sections['marginByAreaMinor'] = space.marginByAreaMinor;
   }
 
   // OB-288 P4 (R8-9 · OB-316): the rollout switches — always sent once wired, so a till tells "nothing on" from "not told".
@@ -519,5 +545,15 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // GST return month (the shop's calendar), never the whole history.
   const gstMonth = tradingMonthIn(now(), packCalendar);
   sections['gstReconciliationQueue'] = await gstReconciliationQueueSection({ store, now }, tenantId, [gstMonth, monthBefore(gstMonth)]);
+  // OB-630 (owner, 1 Nov 2026): this store's reorder settings — each product's settings in force with every earlier
+  // version (who, when, why), read from head office's own register (M09-FR-02) — so the Buying page's Reorder tab shows
+  // the box's copy, said as a copy and how old, when head office cannot be reached (P-01 · P-08). Always sent for the
+  // store: an empty list is head office's own answer "none kept yet"; a box on an older pack says it was not told.
+  sections['reorderSettings'] = { storeId, products: parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId) }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
+  // W3 · OB-673 · OB-677: the coupons and gift cards the till judges offline (till-vouchers-adapters.ts) — no build time inside.
+  if (input.tillVouchers !== undefined) {
+    sections['coupons'] = await couponPackSectionFor({ store, now }, tenantId, shopZone);
+    sections['giftCards'] = await giftCardPackSectionFor({ store, now }, tenantId, await input.tillVouchers.giftCardOfflineCapMinor(tenantId));
+  }
   return sections;
 }

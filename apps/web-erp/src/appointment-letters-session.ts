@@ -15,7 +15,7 @@ export const LETTERS_COPY = {
     fields: 'Fields a letter fills: {{employerName}} {{employeeName}} {{employeeId}} {{roles}} {{branch}} {{effectiveFrom}} {{hourlyRate}} {{issuedOn}}',
     bodyEn: 'Words (English)', bodyTa: 'Words (Tamil)', saveWording: 'Save the words',
     makeH: 'Make a letter', employee: 'Staff member', effectiveFrom: 'Takes effect from', make: 'Make the letter',
-    listH: 'Letters made', none: 'No letter has been made yet.', awaiting: 'waiting for the signed copy', signedKept: 'Signed copy kept', notSigned: 'Signed copy not kept yet', effective: 'from', issuedBy: 'made by',
+    listH: 'Letters made', none: 'No letter has been made yet.', awaiting: 'waiting for the signed copy', signedKept: 'Signed copy kept', notSigned: 'Signed copy not kept yet', effective: 'from', issuedBy: 'made by', showScans: 'See the signed copies', viewScan: 'Look at this copy', keptBy: 'kept by', scanAlt: 'Photo of the signed appointment letter', noScans: 'No signed copy is kept yet.', fingerprint: 'fingerprint',
     show: 'Show the letter', scan: 'Photo of the signed copy', keep: 'Keep the signed copy', pickFirst: 'Choose the photo first.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role does not make appointment letters.',
     saved: 'Saved.', needFields: 'Fill in every field first — English and Tamil both.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
@@ -26,7 +26,7 @@ export const LETTERS_COPY = {
     fields: 'கடிதம் நிரப்பும் இடங்கள்: {{employerName}} {{employeeName}} {{employeeId}} {{roles}} {{branch}} {{effectiveFrom}} {{hourlyRate}} {{issuedOn}}',
     bodyEn: 'சொற்கள் (ஆங்கிலம்)', bodyTa: 'சொற்கள் (தமிழ்)', saveWording: 'சொற்களைச் சேமி',
     makeH: 'கடிதம் உருவாக்கு', employee: 'பணியாளர்', effectiveFrom: 'நடைமுறைக்கு வரும் நாள்', make: 'கடிதத்தை உருவாக்கு',
-    listH: 'உருவாக்கிய கடிதங்கள்', none: 'இன்னும் கடிதம் உருவாக்கப்படவில்லை.', awaiting: 'கையெழுத்து நகலுக்குக் காத்திருக்கிறது', signedKept: 'கையெழுத்து நகல் வைக்கப்பட்டது', notSigned: 'கையெழுத்து நகல் இன்னும் இல்லை', effective: 'முதல்', issuedBy: 'உருவாக்கியவர்',
+    listH: 'உருவாக்கிய கடிதங்கள்', none: 'இன்னும் கடிதம் உருவாக்கப்படவில்லை.', awaiting: 'கையெழுத்து நகலுக்குக் காத்திருக்கிறது', signedKept: 'கையெழுத்து நகல் வைக்கப்பட்டது', notSigned: 'கையெழுத்து நகல் இன்னும் இல்லை', effective: 'முதல்', issuedBy: 'உருவாக்கியவர்', showScans: 'கையெழுத்து நகல்களைப் பார்', viewScan: 'இந்த நகலைப் பார்', keptBy: 'வைத்தவர்', scanAlt: 'கையெழுத்திட்ட நியமனக் கடிதத்தின் படம்', noScans: 'இன்னும் கையெழுத்து நகல் வைக்கப்படவில்லை.', fingerprint: 'கைரேகைக் குறியீடு',
     show: 'கடிதத்தைக் காட்டு', scan: 'கையெழுத்திட்ட நகலின் படம்', keep: 'கையெழுத்து நகலை வை', pickFirst: 'முதலில் படத்தைத் தேர்ந்தெடுக்கவும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பணி நியமனக் கடிதங்களை உருவாக்குவதில்லை.',
     saved: 'சேமிக்கப்பட்டது.', needFields: 'முதலில் எல்லா இடங்களையும் நிரப்பவும் — ஆங்கிலம் மற்றும் தமிழ் இரண்டும்.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
@@ -40,13 +40,20 @@ export const lettersOutcomeWords = (lang: Lang, out: Outcome<unknown>): string =
 export interface LetterRow { readonly letterId: string; readonly employeeId: string; readonly effectiveFrom: string; readonly wordingVersion: number; readonly issuedBy: string; readonly issuedAt: string; readonly signedCopyKept: boolean; readonly scans: number }
 export interface Letter { readonly letterId: string; readonly employeeId: string; readonly textEn: string; readonly textTa: string; readonly effectiveFrom: string; readonly wordingVersion: number }
 
+/** One kept photo of a signed copy (no bytes): its id, type, size and fingerprint, who kept it and when. */
+export interface SignedScanRow { readonly scanId: string; readonly mediaType: string; readonly bytes: number; readonly sha256: string; readonly keptBy: string; readonly keptAt: string }
+/** W5 · OB-323: the media types a kept scan may be shown as (the route accepts only these). */
+export const SCAN_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
 export interface AppointmentLettersSession {
   readonly may: { readonly named: boolean; readonly open: boolean; readonly wording: boolean };
   wording(): Promise<Outcome<{ readonly set: boolean; readonly wording?: { readonly version: number; readonly bodyEn: string; readonly bodyTa: string; readonly setBy: string; readonly setAt: string } }>>;
   setWording(bodyEn: string, bodyTa: string): Promise<Outcome<unknown, 'needFields'>>;
   make(employeeId: string, effectiveFrom: string): Promise<Outcome<{ readonly letter: Letter }, 'needFields'>>;
   letters(): Promise<Outcome<{ readonly letters: readonly LetterRow[]; readonly awaitingSignedCopy: number }>>;
-  letter(letterId: string): Promise<Outcome<{ readonly letter: Letter }>>;
+  letter(letterId: string): Promise<Outcome<{ readonly letter: Letter; readonly scans?: readonly SignedScanRow[] }>>;
+  /** W5 · OB-323: one kept signed copy, with its bytes, to look at (`GET …/signed-scan/:scanId`). Read-only. */
+  signedScan(letterId: string, scanId: string): Promise<Outcome<{ readonly scan: SignedScanRow; readonly contentBase64: string }>>;
   keepSignedCopy(letterId: string, scan: { readonly mediaType: string; readonly contentBase64: string; readonly sha256: string } | null): Promise<Outcome<unknown, 'pickFirst'>>;
 }
 
@@ -68,6 +75,7 @@ export function createAppointmentLettersSession(input: { readonly viewer: { read
     },
     letters: () => call('GET', '/v1/hr/workforce/appointment-letters'),
     letter: (letterId) => call('GET', `/v1/hr/workforce/appointment-letters/${encodeURIComponent(letterId)}`),
+    signedScan: (letterId, scanId) => call('GET', `/v1/hr/workforce/appointment-letters/${encodeURIComponent(letterId)}/signed-scan/${encodeURIComponent(scanId)}`),
     keepSignedCopy: async (letterId, scan) => {
       if (scan === null) return { result: 'invalid', why: 'pickFirst' };
       return call('POST', `/v1/hr/workforce/appointment-letters/${encodeURIComponent(letterId)}/signed-scan`, scan);

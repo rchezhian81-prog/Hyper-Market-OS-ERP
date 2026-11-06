@@ -54,7 +54,7 @@ function sayAction(node, text, icon, waitsFor) {
   why.textContent = waitsFor;
   node.append(why);
 }
-/** A quantity: the number on its own, big, then its words — `12 units · EA` stays exactly that text. */
+/** A quantity: the number on its own, big, then its words — `12 units` stays exactly that text. */
 function sayQty(node, n, rest) {
   const big = document.createElement('span');
   big.className = 'n';
@@ -107,6 +107,8 @@ const WORDS = {
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
+    // UI-2: the header names the job, not a code; the worker's code and the assignment sit under it, said as what they are.
+    screenTitle: 'Stock room work', staffWord: 'Staff', jobWord: 'Job',
     waiting: 'waiting to sync', allSent: 'everything sent',
     // where each accepted scan has got to (SP-3a): the list under the work, and the badge's first line
     sentHeading: 'Sent from this handheld', nothingSent: 'nothing sent yet',
@@ -175,6 +177,10 @@ const WORDS = {
     confirmSend: 'Send this transfer — the goods are loaded', countInLine: 'Count in', sentWas: 'sent',
     transfer_sent: 'Transfer sent', transfer_counted_in: 'Transfer counted in', not_a_transfer_here: 'Not a transfer for this store',
     transfer_already_done: 'Already done on this handheld — nothing changed', count_incomplete: 'Every line needs its count',
+    // W5 (M09-FR-03): floor returns counted in at the back store — never by the person who sent them back
+    returnsHeading: 'Returns from the floor to count in', returnFrom: 'sent back by', returnWhy: 'why', returnDoneHere: 'Counted in on this handheld',
+    countInReturn: 'Count in', floorSent: 'the floor sent',
+    return_accepted: 'Return counted in', returner_cannot_accept: 'You sent this back — another person must count it in', not_a_return_here: 'Not a return waiting here', return_already_done: 'Already counted in on this handheld — nothing changed',
   },
   ta: {
     app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
@@ -200,6 +206,7 @@ const WORDS = {
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
+    screenTitle: 'ஸ்டாக் அறை வேலை', staffWord: 'ஊழியர்', jobWord: 'பணி',
     waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     sentHeading: 'இந்தக் கருவியிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     stepSelect: 'அடுக்க ஒரு பொருளைத் தொடவும், அல்லது வரவு பெறவும்',
@@ -264,6 +271,9 @@ const WORDS = {
     confirmSend: 'இந்த மாற்றலை அனுப்பு — பொருட்கள் ஏற்றப்பட்டன', countInLine: 'எண்ணிப் பெறு', sentWas: 'அனுப்பியது',
     transfer_sent: 'மாற்றல் அனுப்பப்பட்டது', transfer_counted_in: 'மாற்றல் எண்ணிப் பெறப்பட்டது', not_a_transfer_here: 'இந்தக் கடைக்கான மாற்றல் அல்ல',
     transfer_already_done: 'இந்தக் கருவியில் ஏற்கெனவே செய்யப்பட்டது — எதுவும் மாறவில்லை', count_incomplete: 'ஒவ்வொரு வரிக்கும் எண்ணிக்கை தேவை',
+    returnsHeading: 'எண்ணிப் பெற வேண்டிய தளத் திருப்பங்கள்', returnFrom: 'திருப்பியவர்', returnWhy: 'ஏன்', returnDoneHere: 'இந்தக் கருவியில் எண்ணிப் பெறப்பட்டது',
+    countInReturn: 'எண்ணிப் பெறு', floorSent: 'தளம் அனுப்பியது',
+    return_accepted: 'திருப்பம் எண்ணிப் பெறப்பட்டது', returner_cannot_accept: 'இதை நீங்கள் திருப்பினீர்கள் — வேறொருவர் எண்ணிப் பெற வேண்டும்', not_a_return_here: 'இங்கே காத்திருக்கும் திருப்பம் அல்ல', return_already_done: 'இந்தக் கருவியில் ஏற்கெனவே எண்ணிப் பெறப்பட்டது — எதுவும் மாறவில்லை',
   },
 };
 let lang = 'en';
@@ -311,6 +321,7 @@ const KIND_WORDS = {
   adjustment: { en: 'Adjustment requested', ta: 'திருத்தக் கோரிக்கை' },
   transfer_out: { en: 'Transfer sent', ta: 'மாற்றல் அனுப்பப்பட்டது' },
   transfer_in: { en: 'Transfer counted in', ta: 'மாற்றல் எண்ணிப் பெறப்பட்டது' },
+  return_in: { en: 'Floor return counted in', ta: 'தளத் திருப்பம் எண்ணிப் பெறப்பட்டது' },
 };
 /** The reasons an adjustment may be raised for (`packages/adjustment` ADJUSTMENT_REASON_CODES) — the buttons on the adjust sheet. */
 const REASON_WORDS = {
@@ -333,7 +344,16 @@ const grnId = (data && data.grnId) || 'GRN';
 const nameOf = (productId) => (real && typeof real.productName === 'function' ? real.productName(productId, lang) : productId);
 function sayAmount(node, quantityMinor, uom, tail = '') {
   const q = real && typeof real.quantityText === 'function' ? real.quantityText(quantityMinor, uom) : { amount: String(quantityMinor), unit: null };
-  sayQty(node, q.amount, q.unit === null ? ` ${t('units')} · ${uom}${tail}` : ` ${q.unit}${tail}`);
+  // UI-2: a count of pieces reads "12 units" — the code "EA" says nothing more to a person. A unit this handheld does not
+  // know keeps its code beside the word ("4 units · CASE"), because then the code is the only thing that says what it is.
+  const plainCount = q.unit === null && String(uom).trim().toLowerCase() === 'ea';
+  sayQty(node, q.amount, q.unit !== null ? ` ${q.unit}${tail}` : plainCount ? ` ${t('units')}${tail}` : ` ${t('units')} · ${uom}${tail}`);
+}
+/** UI-2: the header — the job in words, then the worker's code and the assignment, each named. */
+function paintHeader() {
+  el('who').firstChild.textContent = `${t('screenTitle')} `; // the space keeps the heading two phrases to a screen reader
+  const parts = [data && data.workerId ? `${t('staffWord')} ${data.workerId}` : null, data && data.assignmentId ? `${t('jobWord')} ${data.assignmentId}` : null].filter((x) => x !== null);
+  el('assignment').textContent = parts.join(' · ');
 }
 
 let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
@@ -573,6 +593,7 @@ const nextId = (prefix) => `${prefix}-${Date.now()}-${seq++}`;
 
 // ── Render ────────────────────────────────────────────────────────────────
 function render() {
+  paintHeader();
   const lines = real && typeof real.pickLines === 'function' ? real.pickLines() : [];
   const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
   const issues = real && typeof real.indentLines === 'function' ? real.indentLines() : [];
@@ -632,7 +653,7 @@ function render() {
   // Where each accepted scan is — rendered BEFORE the worklists, because an emptied worklist returns early below and a
   // put-away that just emptied it must still show as "with the store computer".
   renderSent();
-  const transfersHeld = renderTransfers();
+  const transfersHeld = renderTransfers() + renderFloorReturns();
 
   // The pick list: the bin is the biggest thing on the row, because the bin is where the worker walks to.
   const pickHost = el('pick-lines');
@@ -824,6 +845,56 @@ async function startCountInTransfer(r) {
     counted.push({ productId: l.productId, batchId: l.batchId, quantityMinor: q });
   }
   const out = real.countInTransfer({ transferId: r.transferId, counted, at: new Date().toISOString() });
+  feltResult(out.signal);
+  render();
+  if (out.accepted) void syncToBox();
+}
+
+/**
+ * W5 (M09-FR-03): the floor RETURNS waiting at this back store, as head office last said. Tap one → the keypad once per line
+ * (0 is a real count) → counted in, saved on this handheld in the signed-in worker's name and handed to the store computer.
+ * The person who sent it back is refused here (§28) — and again by head office. Returns how many rows are shown.
+ */
+function renderFloorReturns() {
+  const rows = real && typeof real.floorReturns === 'function' ? real.floorReturns() : [];
+  say(el('ret-in-heading'), t('returnsHeading'), 'package-check');
+  el('ret-in-heading').dataset.count = String(rows.filter((r) => !r.doneHere).length);
+  el('ret-in-heading').hidden = rows.length === 0;
+  el('ret-in').replaceChildren(...rows.map((r) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'item return';
+    row.dataset.return = r.returnId;
+    const where = document.createElement('div');
+    where.className = 'where';
+    where.textContent = r.indentId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${r.lines.map((l) => nameOf(l.productId)).join(' · ')} · ${t('returnFrom')} ${r.returnedBy} · ${t('returnWhy')}: ${r.reason}`;
+    const qty = document.createElement('div');
+    qty.className = 'qty';
+    sayQty(qty, r.lines.reduce((n, l) => n + l.quantityMinor, 0), ` ${t('units')}`);
+    row.append(where, what, qty);
+    if (r.doneHere) {
+      const f = document.createElement('div');
+      f.className = 'flag done';
+      say(f, t('returnDoneHere'), 'circle-check');
+      row.append(f);
+      row.disabled = true;
+    }
+    row.addEventListener('click', () => { void startCountInReturn(r); });
+    return row;
+  }));
+  return rows.length;
+}
+async function startCountInReturn(r) {
+  const counted = [];
+  for (const l of r.lines) {
+    const q = await awaitQty(`${t('countInReturn')} — ${nameOf(l.productId)}${l.batchId ? ` · ${l.batchId}` : ''}`, `${r.indentId} · ${t('floorSent')} ${l.quantityMinor} ${l.uom}`, '0');
+    if (q === null) return;
+    counted.push({ productId: l.productId, batchId: l.batchId, quantityMinor: q });
+  }
+  const out = real.acceptFloorReturn({ indentId: r.indentId, returnId: r.returnId, counted, at: new Date().toISOString() });
   feltResult(out.signal);
   render();
   if (out.accepted) void syncToBox();
@@ -1552,8 +1623,7 @@ const badgeTimer = setInterval(() => { void refreshBadge(); }, 10_000);
 window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
-el('who').firstChild.textContent = (data && data.workerId) || '—';
-el('assignment').textContent = (data && data.assignmentId) || '';
+paintHeader();
 // U0 (P-08): the box injects `shopTimeZone` on every screen it serves — a bare shell with that global and no session is a
 // real store computer with nothing assigned (the list then says "no warehouse work yet"); the sample stays off the box.
 const servedByBox = window.shopTimeZone !== undefined;

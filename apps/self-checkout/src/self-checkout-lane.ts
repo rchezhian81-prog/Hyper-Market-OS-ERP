@@ -27,6 +27,7 @@
 //
 // Pure model over ports: no DOM, no fetch. The browser entry hands it the till engine the box served.
 
+import { operatorLabel } from '../../pos/src/operator-label'; // OB-638
 import { assessSelfCheckout, type ScannedLine, type SelfCheckoutPolicy, type InterventionKind } from '../../../packages/self-checkout/src/self-checkout';
 import {
   DECISIONS_FOR, type LaneInterventionKind, type LaneInterventionOutcome, type SettledIntervention, type SelfCheckoutBasketEvidence,
@@ -110,6 +111,8 @@ export interface LaneView {
   /** Why customers cannot use the lane now, when they cannot. */
   readonly closed: Words | null;
   readonly attendant: string | null;
+  /** OB-638: the attendant as the screen names them — "Ravi (u-ravi)"; the code alone when no name is known. */
+  readonly attendantShown: string | null;
   readonly lines: readonly { readonly lineId: string; readonly description: string; readonly qtyText: string; readonly amountMinor: number }[];
   readonly totalMinor: number;
   /** One neutral line for the customer: what to do now. */
@@ -200,6 +203,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
   let receipt: { number: string; basketRecorded: boolean } | null = null;
   let notice: Words | null = null;
   let attendant: string | null = null;
+  let attendantShown: string | null = null; // OB-638: words only — `attendant` (the code) is what the records carry
 
   const closedWhy = (): Words | null => {
     if (!config.switchOn) return WORDS.switchedOff;
@@ -246,6 +250,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
     const r = await till.signInAtTill({ staffId: staffId.trim(), pin });
     if (!r.signedIn) return { ok: false, answer: { ok: false, words: WORDS.attendantRefused, refusedBecause: r.refusedBecause ?? 'not_signed_in', detail: r.laneMessage } };
     attendant = r.userId;
+    attendantShown = operatorLabel(r.userId, r.displayName) ?? r.userId;
     return { ok: true, userId: r.userId };
   };
 
@@ -279,7 +284,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
           : notice !== null ? notice
             : list.find((i) => i.blocking)?.customerMessage ?? (activeLines().length > 0 ? WORDS.readyToPay : WORDS.scanItems);
       return {
-        open: closed === null, closed, attendant,
+        open: closed === null, closed, attendant, attendantShown,
         lines: activeLines().map((l) => ({ lineId: l.lineId, description: l.description, qtyText: l.qtyText, amountMinor: l.amountMinor })),
         totalMinor: till.payableMinor(),
         customerNow: closed ?? customerNow,
@@ -307,6 +312,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
     async closeLane() {
       await till.signOutAtTill();
       attendant = null;
+      attendantShown = null;
       return { ok: true, words: WORDS.notOpened };
     },
 

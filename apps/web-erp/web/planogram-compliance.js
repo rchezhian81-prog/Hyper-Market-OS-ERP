@@ -96,6 +96,8 @@ async function keep() {
 $('ask').addEventListener('submit', (e) => { void show(e); });
 $('keep').addEventListener('click', () => { void keep(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+// Wave 2: the box names its own store, so the page starts on it (head office still answers only what the person may see).
+if (typeof window.planogramBaysData?.storeId === 'string' && $('store').value === '') $('store').value = window.planogramBaysData.storeId;
 paint();
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 

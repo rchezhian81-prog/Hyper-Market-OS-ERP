@@ -10,7 +10,9 @@
 // only WHO is looking (`window.b2bData` = the authenticated portal login's userId + permissions, injected by the
 // cloud session), and the four feeds it shows are read LIVE from the cloud, each scoped to the caller's OWN
 // customer id ON THE SERVER (the browser cannot ask for another customer — there is no customer id to send).
-// All four are GETs; this surface writes nothing (M22-FR-04 · §35 · P-04).
+// All four are GETs. W3 (M22-FR-04): the customer's own writes — ask for a quote, place an order from its own quotation,
+// tell the shop it sent a transfer — live in their own tested session (b2b-portal-ordering-session.ts, `window.b2bOrdering`)
+// and run only on the customer's click; nothing is written on open (§35 · P-04).
 //
 // ── Refusals are answers, not blanks (P-08) ──────────────────────────────────
 //
@@ -29,6 +31,7 @@ import {
   type B2BPortalSession, type B2BPortalData, type B2BPortalPorts, type B2BFeed, type FeedRefusal,
   type B2BAccountView, type B2BInvoiceView, type B2BStatementView, type B2BDocumentView, type B2BDocumentKind, type AgeBucket,
 } from './b2b-portal-session';
+import { createB2BOrderingSession, b2bOrderingWords, b2bOrderingOutcomeWords } from './b2b-portal-ordering-session';
 
 export interface B2BScreenData {
   readonly userId?: string;
@@ -42,6 +45,8 @@ interface B2BWindow {
     refresh(): Promise<B2BPortalData | null>;
     present(data: B2BPortalData): B2BPortalSession;
   };
+  /** W3 · M22-FR-04: asking for a quote, placing an order from a quotation, telling the shop a transfer was sent. */
+  b2bOrdering?: { session: ReturnType<typeof createB2BOrderingSession>; words: typeof b2bOrderingWords; outcomeWords: typeof b2bOrderingOutcomeWords };
 }
 
 const SELF_PERMISSION = 'b2b.portal.self';
@@ -155,6 +160,8 @@ export function attachB2BPortal(win: B2BWindow): void {
   const session = bootB2BPortal(data, EMPTY);
   if (session === null) return;
   win.b2bPortalSession = session;
+  // W3 · M22-FR-04: the customer's own writes, each a click on its own sign-in (b2b-portal-ordering-session.ts).
+  win.b2bOrdering = { session: createB2BOrderingSession({ viewer: data === undefined ? undefined : { ...(data.userId === undefined ? {} : { userId: data.userId }), permissions: data.permissions ?? [] } }), words: b2bOrderingWords, outcomeWords: b2bOrderingOutcomeWords };
   win.b2bPortal = {
     refresh: fetchB2BPortal,
     present: (folded) => createB2BPortalSession(

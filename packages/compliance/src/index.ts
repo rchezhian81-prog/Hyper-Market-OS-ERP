@@ -11,3 +11,11 @@ export * from './findings';
 export * from './gate-decisions';
 // OB-423 · QG-10: the release script's per-release evidence line, as head office's gate register reads and keeps it.
 export * from './qg10-evidence';
+// W3 · QG-04 / QG-05 / QG-06: the outside evidence register (72-hour run, chaos test, p95 on certified hardware, pen test).
+export * from './gate-evidence';
+// W3 · QG-04 / QG-07 / QG-10: the machine readings of head office's own records, as gate blockers.
+export * from './gate-readings';
+// W4 · QG-03: the branch-protection reading of main (CI reads it; not known holds the gate, never GO).
+export * from './branch-protection';
+// W7 · QG-01: the requirement-records reading (the CI guardrail's own check; not known holds the gate, never GO).
+export * from './requirement-records';

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Facilities set-up</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Facilities set-up (Round 4d · M26-FR-01/02/03 · D-6). A THIN CLIENT over head office's facilities engines: the asset
+      register and service log with the spare parts each service used (GET /v1/facilities/office, POST …/assets/:id,
+      POST …/assets/:id/services/:id), the spare-parts register (GET/POST /v1/facilities/spares…), the monitored rooms'
+      ranges (POST /v1/facilities/equipment/:id/range), the maintenance and compliance schedules (GET/POST
+      /v1/facilities/schedules…) and the food-safety checks (GET …/food-safety/status, POST …/food-safety/checks/:id). Its
+      session is apps/web-erp/src/facilities-setup-session.ts. Nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      form.grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; }
+      form.grid > button { grid-column: 1 / -1; }
+      fieldset.fits { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: grid; gap: 4px; grid-column: 1 / -1; }
+      fieldset.fits label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; overflow-wrap: anywhere; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Facilities set-up</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Facilities set-up</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <div id="cards"></div>
+      </section>
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-assets" type="button" aria-current="page">Assets</button>
+        <button id="tab-spares" type="button">Spare parts</button>
+        <button id="tab-rooms" type="button">Monitored rooms</button>
+        <button id="tab-schedules" type="button">Schedules</button>
+        <button id="tab-checks" type="button">Food-safety checks</button>
+      </nav>
+      <section id="view-assets" aria-labelledby="assets-h">
+        <h3 id="assets-h"></h3>
+        <div id="assets-register"></div>
+        <h4 id="asset-form-h"></h4>
+        <form id="asset-form" class="grid" novalidate></form>
+        <p class="status" id="asset-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="view-spares" hidden aria-labelledby="spares-h">
+        <h3 id="spares-h"></h3>
+        <div id="spares-register"></div>
+        <h4 id="spare-form-h"></h4>
+        <form id="spare-form" class="grid" novalidate></form>
+        <p class="status" id="spare-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="view-rooms" hidden aria-labelledby="rooms-h">
+        <h3 id="rooms-h"></h3>
+        <div id="rooms-register"></div>
+        <h4 id="room-form-h"></h4>
+        <form id="room-form" class="grid" novalidate></form>
+        <p class="status" id="room-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="view-schedules" hidden aria-labelledby="schedules-h">
+        <h3 id="schedules-h"></h3>
+        <div id="schedules-register"></div>
+        <h4 id="schedule-form-h"></h4>
+        <form id="schedule-form" class="grid" novalidate></form>
+        <p class="status" id="schedule-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="view-checks" hidden aria-labelledby="checks-h">
+        <h3 id="checks-h"></h3>
+        <div id="checks-register"></div>
+        <h4 id="check-form-h"></h4>
+        <form id="check-form" class="grid" novalidate></form>
+        <p class="status" id="check-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./facilities-setup.js" type="module"></script>
+    <!-- W5 (store operations): the sections head office answers on this page — apps/web-erp/src/w5-store-ops-sections.ts, drawn by w5-sections.js. -->
+    <script src="./w5-sections.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

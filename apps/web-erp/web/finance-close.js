@@ -196,7 +196,7 @@ async function loadStock() {
   renderStock();
 }
 
-// OB-626: before money or stock moves, the shared confirm sheet (the chrome's) says what will happen in the person's own
+// OB-691: before money or stock moves, the shared confirm sheet (the chrome's) says what will happen in the person's own
 // words and asks for their word. Go back sends nothing. The words live here, in both languages, filled with the month.
 const officeWithSheet = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
@@ -394,7 +394,8 @@ $('reopen').addEventListener('click', () => busy($('reopen'), async () => {
 
 // ── The frame ───────────────────────────────────────────────────────────────────────────────────────────────
 
-const TABS = ['payments', 'pl', 'stock', 'plan', 'month'];
+// W5: 'books' and 'ca' are drawn by finance-close-books.js (their own session; each read is a click there).
+const TABS = ['payments', 'pl', 'stock', 'plan', 'month', 'owed', 'books', 'ca'];
 async function show(name) {
   tab = name;
   for (const t of TABS) { $(`view-${t}`).hidden = t !== name; $(`tab-${t}`).setAttribute('aria-current', t === name ? 'page' : 'false'); }
@@ -404,6 +405,7 @@ async function show(name) {
   if (name === 'stock') await loadStock();
   if (name === 'plan') { await loadBudget(); await loadAssets(); }
   if (name === 'month') { note('month-status', ''); await loadMonth(); }
+  if (name === 'owed') await loadOwed();
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => { void show(t); });
 $('period').addEventListener('change', () => { cache = { ...cache, pl: null, stock: null, budget: null }; monthState = null; reopenAskedFor = null; $('budget-lines').replaceChildren(); void show(tab); });
@@ -438,7 +440,52 @@ $('lang').addEventListener('click', () => {
   $('pay-list').replaceChildren(); $('assets-list').replaceChildren(); // drawers are drawn again in the new language
   renderPayments(); renderPl(); renderStock(); renderBudget(); renderAssets();
   if (tab === 'month') void loadMonth();
+  paintOwedWords(); renderOwed();
 });
+
+// ── W3 (D10-FR-04): what the shop owes customers ────────────────────────────────────────────────────────────
+const owedApi = window.liabilities ?? null;
+const ow = (k, fill) => (owedApi === null ? k : owedApi.words(lang, k, fill));
+let owed = null;
+function paintOwedWords() {
+  if (owedApi === null) { $('tab-owed').hidden = true; return; }
+  for (const [id, k] of [['tab-owed', 'tab'], ['owed-h', 'heading'], ['owed-lede', 'lede'], ['owed-show', 'show'], ['owed-post', 'post']]) $(id).textContent = ow(k);
+}
+function renderOwed() {
+  const tiles = $('owed-tiles'); const list = $('owed-list'); tiles.replaceChildren(); list.replaceChildren();
+  if (owed === null) return;
+  const { loyalty, referral } = owed;
+  const line = (key, title, heldText, booksText, diffMinor, agrees, extra) => {
+    const li = node('li', { className: agrees ? '' : 'flagged' }); li.dataset.owed = key;
+    li.append(node('div', { className: 'head' }, node('strong', { textContent: title }), node('span', { className: 'amt', textContent: agrees ? ow('agrees') : ow('differs') })));
+    li.append(node('p', { className: 'facts', textContent: `${ow('held')}: ${heldText} · ${ow('books')}: ${booksText} · ${ow('difference')}: ${diffMinor === null ? ow('notKnown') : inr(diffMinor)}` }));
+    for (const x of extra) li.append(node('p', { className: 'facts', textContent: x }));
+    list.append(li);
+  };
+  tiles.append(tile(inr(loyalty.points.heldValueMinor), ow('loyaltyH'), 'points'), tile(inr(loyalty.storeCredit.heldMinor), ow('creditH'), 'credit'),
+    tile(inr(referral.register.outstandingMinor), ow('referralH'), 'referral'));
+  line('points', ow('loyaltyH'), `${ow('points', { points: loyalty.points.outstandingPoints, value: inr(loyalty.points.pointValuePaise) })} = ${inr(loyalty.points.heldValueMinor)}`, inr(loyalty.points.postedMinor), loyalty.points.differenceMinor, loyalty.points.reconciles, [`${ow('account')}: ${loyalty.points.account}`]);
+  line('credit', ow('creditH'), inr(loyalty.storeCredit.heldMinor), inr(loyalty.storeCredit.postedMinor), loyalty.storeCredit.differenceMinor, loyalty.storeCredit.reconciles, [`${ow('account')}: ${loyalty.storeCredit.account}`]);
+  line('referral', ow('referralH'), `${ow('owed')} ${inr(referral.register.outstandingMinor)}`, referral.booksMinor === null ? ow('notKnown') : inr(referral.booksMinor), referral.differenceMinor, referral.reconciles,
+    [referral.account === null ? ow('notMapped') : `${ow('account')}: ${referral.account}`, ...(referral.unposted.length > 0 ? [ow('unposted', { count: referral.unposted.length })] : []), ...(referral.exception !== null && referral.account !== null ? [referral.exception.detail] : []), `${ow('coupons')}: ${referral.coupons.detail}`]);
+}
+async function loadOwed() {
+  if (owedApi === null) return;
+  note('owed-status', ow('reading'));
+  const out = await owedApi.session.read();
+  if (out.result !== 'ok') { owed = null; renderOwed(); note('owed-status', owedApi.outcomeWords(lang, out), 'err'); return; }
+  owed = out.value; note('owed-status', ''); renderOwed();
+}
+$('owed-show').addEventListener('click', () => { void loadOwed(); });
+$('owed-post').addEventListener('click', () => busy($('owed-post'), async () => {
+  const out = await owedApi.session.postReferrals();
+  if (out.result !== 'ok') { note('owed-status', owedApi.outcomeWords(lang, out), 'err'); return; }
+  const said = [out.value.posted.length > 0 ? ow('posted', { count: out.value.posted.length }) : ow('nothingToPost'), ...out.value.exceptions.map((x) => ow('notPosted', { kind: x.kind, reason: x.reason }))].join(' ');
+  await loadOwed();
+  note('owed-status', said, out.value.exceptions.length > 0 ? 'err' : 'good');
+}));
+paintOwedWords();
+if (owedApi !== null && owedApi.session.may.post) $('owed-post').hidden = false;
 
 paintWords();
 if (session !== null) {

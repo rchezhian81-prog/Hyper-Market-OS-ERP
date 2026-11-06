@@ -24,10 +24,8 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
   products: 'three menu items (Products, Pricing, Promotions) open the one "Products and prices" page on its tabs',
   pricing: 'see products',
   promotions: 'see products',
-  users: 'three menu items (Users & roles, Outside access, Records kept) open the one "Admin and security" page on its tabs',
+  users: 'two menu items (Users & roles, Outside access) open the one "Admin and security" page on its tabs',
   'support-access': 'see users',
-  audit: 'see users',
-  settings: 'Settings opens the Store setup page on its settings tab',
   reconciliation: 'Reconciliation opens the Month-end page on its payments tab',
   'warehouse-supervisor': 'the heading is the warehouse\'s own name from the store computer ("—" until told)',
 };

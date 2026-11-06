@@ -30,7 +30,7 @@ export const SUPPLIER_ADVANCES_COPY = {
     askedNow: 'Asked. A different person who pays suppliers approves exactly this payment on the Approvals page; then record it below.',
     approvedH: 'Payments you asked for', st_waiting: 'Waiting for a second person', st_approved: 'Approved — record it once paid', st_rejected: 'Rejected', st_expired: 'Approval ran out — ask again', st_used: 'Recorded',
     record: 'Record this payment', recordedNow: 'Recorded — one journal in the books, with who approved it.', already: 'Already recorded — nothing changed.',
-    // U1 · OB-626: the consequence-and-confirm sheet before an advance payment is recorded
+    // U1 · OB-691: the consequence-and-confirm sheet before an advance payment is recorded
     confirmTitle: 'Record {amount} paid to supplier {supplier} as an advance ({method} {reference})',
     confirmDetail: 'The money is in the books from now and is set against this supplier\'s next bills. An advance already used is undone only line by line, with a reason.',
     confirmAuthority: 'In your name; a second person approved this payment. Head office refuses it if the approval does not match these figures.',

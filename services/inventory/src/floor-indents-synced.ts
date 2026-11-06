@@ -27,7 +27,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, type Transfer } from '../../../packages/warehouse/src/transfers';
-import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indentTotals, type FloorIndent, type RelayedBy } from '../../../packages/warehouse/src/indents';
+import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indentTotals, planReturnAcceptance, returnTransfer, applyReturnAcceptance, type FloorIndent, type RelayedBy } from '../../../packages/warehouse/src/indents';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
 import { assertIndentInScope } from './floor-indents';
@@ -41,6 +41,8 @@ export const INDENT_SYNC_FLAGS = Object.freeze([
   'requester_unknown', 'requester_lacks_authority',
   'issuer_unknown', 'issuer_lacks_authority',
   'receiver_unknown', 'receiver_lacks_authority',
+  // W5 (M09-FR-03): the back-store person who counted a floor RETURN in on the warehouse handheld.
+  'acceptor_unknown', 'acceptor_lacks_authority',
   // SP-8c: the handheld named a back-store bin head office does not know or whose contents cannot cover the issue — the
   // location-level stock is the truth (it left the back store once); the bin disagreement is said, not forced.
   'bin_disagrees',
@@ -254,6 +256,68 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
             correlationId: indentId,
           });
           return { status: 202, body: { indentId, issueId, recorded: true, alreadyReceived: false, flags, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, writeOffs: hold.writeOffs, indent: presentIndent(next) } };
+        } catch (e) { return refusedBy(e); }
+      },
+    },
+    {
+      // W5 (M09-FR-03): the back store ACCEPTS a floor return, counted in on the warehouse handheld (`FloorIndentReturnAccepted`):
+      // { indentId, returnId, counted [{ productId, batchId?, quantityMinor }], acceptedBy, at, storeId?, source? }. The SAME
+      // engines as the direct acceptance: the indent engine refuses the person who sent the stock back accepting it (§28), a
+      // product that was not on the return and an acceptance already made; the transfer engine moves the stock off the floor
+      // and onto the back store in ONE write, against head office's own floor stock (an over-draw is refused); a shortfall
+      // between what the floor said and what arrived is valued. The ACCEPTOR is re-verified from their own grants and a
+      // breach is flagged on the record. Idempotent per returnId: the same acceptance again is 200; a refusal is 4xx and the
+      // box keeps it, visible, for a person (hard rules #6 #10).
+      api: 'API-04', method: 'POST', path: '/v1/floor/indents/:indentId/returns/:returnId/accepted/synced',
+      permission: 'inventory.indent.sync', idempotent: true,
+      handler: async (ctx) => {
+        const indentId = (ctx.params['indentId'] ?? '').trim();
+        const returnId = (ctx.params['returnId'] ?? '').trim();
+        const b = isObj(ctx.body) ? ctx.body : {};
+        const counted = readCounted(b['counted']);
+        if (indentId === '' || returnId === '' || b['indentId'] !== indentId || b['returnId'] !== returnId || counted === undefined || !isStr(b['acceptedBy']) || !isIso(b['at'])
+          || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_return_acceptance',
+            whatHappened: 'This payload could not be read as a floor return counted in on the handheld — it needs the indentId and returnId matching the path, counted [{ productId, batchId?, quantityMinor }], the acceptedBy and when it was counted.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
+        if (indent === undefined) throw notFound(`floor indent ${indentId}`);
+        const ret = indent.returns.find((r) => r.returnId === returnId);
+        if (ret === undefined) throw notFound(`return ${returnId} on floor indent ${indentId}`);
+        if (ret.state === 'accepted') return { status: 200, body: { indentId, returnId, recorded: true, alreadyAccepted: true, return: ret, indent: presentIndent(indent) } };
+        const acceptedBy = b['acceptedBy'];
+        const at = b['at'];
+        const flags = await verify(deps, ctx.tenantId, acceptedBy, MOVE_PERMISSION, 'acceptor_unknown', 'acceptor_lacks_authority');
+        const relayed = relayOf(ctx, b);
+        const currency = (b['currency'] as CurrencyCode | undefined) ?? 'INR';
+        try {
+          planReturnAcceptance({ indent, returnId, acceptedBy, counted });
+          const unitCostsMinor = await costsFor(ctx.tenantId, indent.toLocationId, [...new Set(ret.lines.map((l) => l.productId))]);
+          const proposed = returnTransfer(indent, ret, unitCostsMinor, currency);
+          const available = await deps.availableAt(ctx.tenantId, indent.toLocationId, proposed.lines);
+          const dispatched = dispatchTransfer({ transfer: proposed, approval: { subjectRef: proposed.transferId, status: 'approved', decidedBy: acceptedBy }, available, at });
+          const withCosts: Transfer = { ...dispatched.transfer, lineCostsMinor: proposed.lines.map((l) => unitCostsMinor[l.productId] ?? null) };
+          const received = receiveTransfer({ transfer: withCosts, counted, receivedBy: acceptedBy, at, currency });
+          const posted = [...dispatchPostings(withCosts, dispatched.movements, acceptedBy), ...receivePostings(received.transfer, received.movements, acceptedBy)];
+          const next = applyReturnAcceptance(indent, returnId, { acceptedBy, at, received: receivedOf(received.movements, received.transfer), shortfall: shortfallOf(received.discrepancies), governanceFlags: flags, relayed });
+          await deps.recordReturnAccepted(ctx.tenantId, next, received.transfer, dispatched.movements, received.movements, received.discrepancies, posted);
+          await audit(ctx.tenantId, {
+            actorId: acceptedBy, action: 'floor_indent.return.accept', objectType: 'floor_indent', objectId: indentId, at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+            before: { returnId, returnedBy: ret.returnedBy },
+            after: {
+              receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), posted: posted.map((m) => m.movementId).join(','),
+              relayedBy: ctx.userId, source: relayed.source, storeId: relayed.storeId ?? '', flags: flags.join(','),
+            },
+            correlationId: indentId,
+          });
+          return {
+            status: 202,
+            body: { indentId, returnId, recorded: true, alreadyAccepted: false, flags, transferId: received.transfer.transferId, posted: posted.map((m) => m.movementId), discrepancies: received.discrepancies, return: next.returns.find((r) => r.returnId === returnId), indent: presentIndent(next) },
+          };
         } catch (e) { return refusedBy(e); }
       },
     },

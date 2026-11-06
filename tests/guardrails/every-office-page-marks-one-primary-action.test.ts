@@ -48,6 +48,17 @@ const NO_PRIMARY: Readonly<Record<string, string>> = {
   'related-parties': 'four equal registers (parties, staff, accounts, do-not-contact), each with its own Save',
   'payroll-payslip': 'the person\'s own payslip: the script draws its one export button per payslip shown',
   checklist: 'one "Sign and submit" per checklist, drawn by the script per list',
+  // Pages main built after the audit (Round 4c/4d, W2–W7), judged at the merge of 5 Nov 2026:
+  branches: 'one Save per branch row, drawn by the script',
+  'compliance-registers': 'eight equal registers (licences, evidence, claims, controls, incidents, remediation, attendance, findings), each with its own Show',
+  'developer-docs': 'read-only developer documentation',
+  'document-retention': 'one Dispose per retention rule row, drawn by the script',
+  'failed-jobs': 'one Retry per failed job row, drawn by the script',
+  'old-system': 'the migration workbench: twenty steps on one page, each with its own action; none is the page\'s one job',
+  'payroll-legal': 'read-only legal payroll figures for the CA',
+  'production-costs': 'read-only cost view',
+  settings: 'one Save per setting row, drawn by the script',
+  'training-checks': 'one check per row, drawn by the script; Refresh is quiet',
 };
 
 const code = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
@@ -65,7 +76,7 @@ export function tonePaintedButtonRules(css: string): string[] {
     const sel = m[1]!.trim(); const dec = m[2]!;
     if (!/button|\.primary|\.act\b|\.do\b/.test(sel)) continue;
     if (/\.banner|danger|aria-pressed|\.chip|act-block|act-retire|act-reinstate|\.sre-/.test(sel)) continue;
-    if (/background(?:-color)?\s*:[^;]*var\(--(accent|ok|info)\b/.test(dec)) found.push(sel.replace(/\s+/g, ' '));
+    if (/background(?:-color)?\s*:[^;]*var\(--(accent|ok|good|info)\b/.test(dec)) found.push(sel.replace(/\s+/g, ' '));
   }
   return found;
 }

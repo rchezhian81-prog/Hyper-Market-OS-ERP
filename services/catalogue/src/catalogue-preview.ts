@@ -19,7 +19,7 @@ import { apiError } from '../../kernel/src/index';
 import {
   buildCatalogueSnapshot, type MasterProduct, type BuildSnapshotResult,
 } from '../../../packages/catalogue/src/snapshot-builder';
-import type { CatalogueBarcode, EmbeddedBarcodeRule, ProductStatus } from '../../../packages/catalogue/src/catalogue';
+import type { CatalogueBarcode, EmbeddedBarcodeRule, PackBranding, ProductStatus } from '../../../packages/catalogue/src/catalogue';
 import { mrpOn, isTobacco, warningStanding, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -78,6 +78,8 @@ export interface CataloguePreviewDeps {
    * up offline. Absent or none → the pack carries no rules, exactly as before.
    */
   readonly embeddedRules?: (tenantId: string) => Promise<readonly EmbeddedBarcodeRule[]> | readonly EmbeddedBarcodeRule[];
+  /** W3 · M36-FR-02 (OB-321): the shop's own brand — name, logo, colours — to sign into the pack. Absent/undefined = none. */
+  readonly branding?: (tenantId: string) => Promise<PackBranding | undefined> | PackBranding | undefined;
   readonly now: () => string;
 }
 
@@ -291,7 +293,10 @@ export async function assembleCatalogueSnapshot(
   const rules = [...(deps.embeddedRules === undefined ? [] : await deps.embeddedRules(opts.tenantId))]
     .sort((a, b) => (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
   const withRules = rules.length === 0 ? withBundles : { ...withBundles, snapshot: { ...withBundles.snapshot, embeddedRules: rules } };
-  return notSold.length === 0 ? withRules : { ...withRules, notSold };
+  // W3 · M36-FR-02: the shop's own name, logo and colours ride the signed pack, so the till prints them with no network.
+  const brand = deps.branding === undefined ? undefined : await deps.branding(opts.tenantId);
+  const withBrand = brand === undefined || Object.keys(brand).length === 0 ? withRules : { ...withRules, snapshot: { ...withRules.snapshot, branding: brand } };
+  return notSold.length === 0 ? withBrand : { ...withBrand, notSold };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {

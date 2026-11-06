@@ -117,7 +117,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       expect(await s.page.locator('#counts [data-count="undecided"]').innerText()).toMatch(/Not decided: 12/);
       // OB-423: the QG-10 row lists EVERY attempt of every release, newest first, each an icon AND words, with its outcome,
       // box, run and attempt; read only with the register.
-      expect(s.reads.filter((r) => r.startsWith('GET /v1/compliance/'))).toEqual(['GET /v1/compliance/gate-register', 'GET /v1/compliance/gate-register/qg10-evidence']);
+      expect(s.reads.filter((r) => r.startsWith('GET /v1/compliance/'))).toEqual(['GET /v1/compliance/gate-register', 'GET /v1/compliance/gate-register/qg10-evidence', 'GET /v1/compliance/gate-evidence' /* W3: the outside evidence, read with the register */, 'GET /v1/compliance/gate-register/qg01-reading' /* W7: the CI's QG-01 reading */]);
       const notes = row(s.page, 'QG-10').locator('#qg10-evidence ul.qg10-notes > li');
       await notes.nth(2).waitFor({ timeout: 15_000 });
       expect(await notes.count()).toBe(3);
@@ -152,7 +152,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       await s.page.fill('#rationale', 'trying to pass it');
       await s.page.click('#record');
       await s.page.waitForFunction(() => /QG-06 cannot be GO while/.test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById('decide-status')?.textContent ?? ''), undefined, { timeout: 15_000 });
-      expect(await s.page.textContent('#decide-status')).toMatch(/^Head office refused: QG-06 cannot be GO while 1 thing\(s\) block it: open high finding/);
+      expect(await s.page.textContent('#decide-status')).toMatch(/^Head office refused: QG-06 cannot be GO while 2 thing\(s\) block it: open high finding[^;]*; Independent penetration test: nothing on file/ /* W3: the pen test counts for R5 */);
       expect((await shop.cloud().request({ method: 'GET', path: '/v1/compliance/gate-decisions/QG-06/R5', userId: OWNER })).body).toMatchObject({ count: 0 });
 
       // No evidence → refused on the screen, nothing sent.

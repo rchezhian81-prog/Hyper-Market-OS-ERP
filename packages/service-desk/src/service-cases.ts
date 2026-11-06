@@ -417,6 +417,10 @@ export interface ServiceReport {
   readonly resolved: number;
   readonly breached: number;
   readonly breachedValue: readonly string[];
+  /** W4 · M21-FR-04: cases resolved within their resolution target. */
+  readonly met: number;
+  /** W4 · M21-FR-04: the open cases past their target that must be escalated now — a breach nobody owns is not hidden. */
+  readonly escalateNow: readonly string[];
   /** Cases where nobody replied in time — counted separately from slow resolution. */
   readonly firstResponseBreached: number;
   /** Average CSAT in hundredths, exact integer arithmetic. */
@@ -456,6 +460,8 @@ export function serviceReport(input: {
     resolved,
     breached: breached.length,
     breachedValue: breached.map((b) => b.caseId),
+    met: input.slaViews.filter((v) => v.status === 'met').length,
+    escalateNow: input.slaViews.filter((v) => v.shouldEscalate).map((v) => v.caseId),
     firstResponseBreached,
     csatHundredths,
     responseRateBps,

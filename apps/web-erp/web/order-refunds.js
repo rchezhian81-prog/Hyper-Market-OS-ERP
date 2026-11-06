@@ -127,7 +127,7 @@ async function ask() {
   $('approval-id').value = out.value.requestId;
   good('refund-status', `${t('asked')} ${out.value.requestId}. ${t('askedNext')}`);
 }
-// OB-626: an order refund is issued only after the shared confirm sheet (the chrome's) says the amount, the order, the basis
+// OB-691: an order refund is issued only after the shared confirm sheet (the chrome's) says the amount, the order, the basis
 // and in whose name — and the person confirms. Go back sends nothing.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const CONFIRM = {

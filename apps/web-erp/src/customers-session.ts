@@ -26,6 +26,8 @@ export interface RecordView {
   readonly purchases?: { readonly count: number; readonly grossMinor: number };
   readonly netSpendMinor?: number;
   readonly lastPurchaseAt?: string | null;
+  /** M16-FR-01 (W3): the household this record is linked to and who else is in it; null when it is in none. */
+  readonly household?: { readonly householdId: string; readonly members: readonly string[] } | null;
   readonly serviceHistory?: { readonly read: true; readonly say: string; readonly complaints: { readonly count: number; readonly open: number; readonly recent: readonly CaseLine[] }; readonly otherCases: { readonly count: number; readonly open: number; readonly recent: readonly CaseLine[] } } | { readonly read: false; readonly say: string };
 }
 export interface DuplicateView { readonly matches: readonly { readonly customerIds: readonly [string, string]; readonly matchedOn: string; readonly confidence: string; readonly disposition: 'merge_candidate' | 'review' }[] }
@@ -51,6 +53,10 @@ export const CUSTOMERS_COPY = {
     colCustomer: 'Customer code', colSegment: 'Segment', colBills: 'Bills', colLastBill: 'Last bill', registerLabel: 'Customers and their segments',
     emptyCustomers: 'No customer yet', emptyCustomersDetail: 'No bill in this shop has a customer code on it yet, so there is nobody to list. This is not the same as "no problems".',
     recordFromRow: 'Open the full record', segmentCount: 'customers',
+    householdH: 'Household', noHousehold: 'Not linked to a household.', inHousehold: 'In household', householdMembers: 'members',
+    householdId: 'Household name or code', link: 'Link to this household', unlink: 'Take out of the household', linked: 'Linked. Each member keeps their own points and credit (OB-43).', unlinked: 'Taken out of the household; the earlier link stays on record.',
+    needHousehold: 'Type the household name or code. Nothing was sent.', cannotLink: 'Your role cannot change a household.',
+    historyH: 'Identity history', noHistory: 'This record has never been merged.', merge_proposed: 'proposed', merge_inforce: 'in force', merge_reversed: 'undone',
     by: 'by', into: 'into', segment_new: 'new', segment_regular: 'regular', segment_loyal: 'loyal', segment_lapsing: 'lapsing', segment_lapsed: 'lapsed', segment_insufficient_history: 'too little history', segment_not_profiled: 'not profiled',
   },
   ta: {
@@ -72,6 +78,10 @@ export const CUSTOMERS_COPY = {
     colCustomer: 'வாடிக்கையாளர் குறியீடு', colSegment: 'பிரிவு', colBills: 'பில்கள்', colLastBill: 'கடைசி பில்', registerLabel: 'வாடிக்கையாளர்களும் அவர்களின் பிரிவுகளும்',
     emptyCustomers: 'இன்னும் வாடிக்கையாளர் இல்லை', emptyCustomersDetail: 'இந்தக் கடையின் எந்த பில்லிலும் இன்னும் வாடிக்கையாளர் குறியீடு இல்லை, எனவே பட்டியலிட யாரும் இல்லை. இது "பிரச்சினை இல்லை" என்பதற்குச் சமம் அல்ல.',
     recordFromRow: 'முழுப் பதிவைத் திற', segmentCount: 'வாடிக்கையாளர்கள்',
+    householdH: 'குடும்பம்', noHousehold: 'எந்தக் குடும்பத்துடனும் இணைக்கப்படவில்லை.', inHousehold: 'குடும்பத்தில்', householdMembers: 'உறுப்பினர்கள்',
+    householdId: 'குடும்பப் பெயர் அல்லது குறியீடு', link: 'இந்தக் குடும்பத்துடன் இணை', unlink: 'குடும்பத்திலிருந்து நீக்கு', linked: 'இணைக்கப்பட்டது. ஒவ்வொரு உறுப்பினரும் தங்கள் சொந்தப் புள்ளிகளையும் வரவையும் வைத்திருப்பார்கள் (OB-43).', unlinked: 'குடும்பத்திலிருந்து நீக்கப்பட்டது; முந்தைய இணைப்பு பதிவில் உள்ளது.',
+    needHousehold: 'குடும்பப் பெயர் அல்லது குறியீட்டைத் தட்டச்சு செய்யுங்கள். எதுவும் அனுப்பப்படவில்லை.', cannotLink: 'உங்கள் பங்கு குடும்பத்தை மாற்ற முடியாது.',
+    historyH: 'அடையாள வரலாறு', noHistory: 'இந்தப் பதிவு ஒருபோதும் இணைக்கப்படவில்லை.', merge_proposed: 'முன்மொழியப்பட்டது', merge_inforce: 'நடைமுறையில்', merge_reversed: 'திரும்பப் பெறப்பட்டது',
     by: 'செய்தவர்', into: 'இதில்', segment_new: 'புதியவர்', segment_regular: 'வழக்கமானவர்', segment_loyal: 'விசுவாசமானவர்', segment_lapsing: 'விலகிச் செல்பவர்', segment_lapsed: 'விலகியவர்', segment_insufficient_history: 'போதிய வரலாறு இல்லை', segment_not_profiled: 'பகுப்பாய்வு செய்யப்படவில்லை',
   },
 } as const;
@@ -100,6 +110,12 @@ export interface CustomersSession {
   undo(mergeId: string, reason: string): Promise<Outcome<MergeRow>>;
   /** M16-FR-04: one customer's record, with the desk's complaints — GET /v1/customers/:ref/profile (every look recorded). */
   record(customerRef: string): Promise<Outcome<RecordView>>;
+  /** M16-FR-01 (W3): link the record to a household — POST /v1/customers/:ref/household { householdId } (a new fact). */
+  linkHousehold(customerRef: string, householdId: string): Promise<Outcome<unknown>>;
+  /** M16-FR-01 (W3): take it out of its household — { unlink: true }; the earlier link stays on record. */
+  unlinkHousehold(customerRef: string): Promise<Outcome<unknown>>;
+  /** M16-FR-01 (W3): every merge this record took part in — GET /v1/customers/:ref/identity-history. */
+  identityHistory(customerRef: string): Promise<Outcome<{ readonly merges: readonly (MergeRow & { readonly inForce: boolean })[] }>>;
 }
 
 export function createCustomersSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): CustomersSession {
@@ -130,6 +146,20 @@ export function createCustomersSession(input: { readonly viewer: ViewerIdentity 
     record: async (customerRef) => {
       const g = guard(may.record, 'cannotRecord'); if (g) return g;
       return customerRef.trim() === '' ? { result: 'invalid', why: 'needRef' } : call('GET', `/v1/customers/${enc(customerRef.trim())}/profile`);
+    },
+    linkHousehold: async (customerRef, householdId) => {
+      const g = guard(may.propose, 'cannotLink'); if (g) return g;
+      if (customerRef.trim() === '') return { result: 'invalid', why: 'needRef' };
+      if (householdId.trim() === '') return { result: 'invalid', why: 'needHousehold' };
+      return call('POST', `/v1/customers/${enc(customerRef.trim())}/household`, { householdId: householdId.trim() });
+    },
+    unlinkHousehold: async (customerRef) => {
+      const g = guard(may.propose, 'cannotLink'); if (g) return g;
+      return customerRef.trim() === '' ? { result: 'invalid', why: 'needRef' } : call('POST', `/v1/customers/${enc(customerRef.trim())}/household`, { unlink: true });
+    },
+    identityHistory: async (customerRef) => {
+      const g = guard(may.record, 'cannotRecord'); if (g) return g;
+      return customerRef.trim() === '' ? { result: 'invalid', why: 'needRef' } : call('GET', `/v1/customers/${enc(customerRef.trim())}/identity-history`);
     },
   };
 }

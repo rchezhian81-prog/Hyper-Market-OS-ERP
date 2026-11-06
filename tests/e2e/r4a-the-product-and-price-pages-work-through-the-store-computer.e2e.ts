@@ -159,18 +159,27 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     expect(status).toBe(200);
     await says(page, 'v-state', /^On sale$/);
     await page.fill('#r-manufacturer', 'Synthetic Mills');
+    await page.click('#save');
+    await says(page, 'record-status', /^Saved\.$/);
+    // Owner 2A: the safety, label and nutrition facts of a published product save on their own route, with a reason.
     await page.fill('#s-storage', 'Cool and dry');
     await page.fill('#s-ingredients', 'Split pigeon peas');
     for (const [k, v] of [['energyKcal', '343'], ['proteinG', '22'], ['carbohydrateG', '63'], ['totalSugarsG', '3'], ['addedSugarsG', '0'], ['totalFatG', '1.5'], ['saturatedFatG', '0.3'], ['transFatG', '0'], ['cholesterolMg', '0'], ['sodiumMg', '17']]) await page.fill(`#n-${k}`, v!);
     await page.click('#save');
-    await says(page, 'record-status', /^Saved\.$/);
+    await says(page, 'record-status', /^You changed the safety, label or nutrition facts: save them with/);
+    await page.click('#save-safety');
+    await says(page, 'safety-status', /^Write the reason first\.$/);
+    await page.fill('#s-why', 'label read off the pack (synthetic)');
+    await page.click('#save-safety');
+    await says(page, 'safety-status', /^Saved — version \d+\.$/);
     const held = ((await req('GET', '/v1/catalogue/products/DAL')).body as { product: { manufacturer: string; safety: { storageConditions: string; ingredients: string; nutrition: { proteinG: number }; allergens: string[] } } }).product;
     expect(held).toMatchObject({ manufacturer: 'Synthetic Mills', safety: { storageConditions: 'Cool and dry', ingredients: 'Split pigeon peas', nutrition: { proteinG: 22 }, allergens: [] } });
 
     // A nutrition panel that does not add up is refused in head office's words.
     await page.fill('#n-totalSugarsG', '99');
-    await page.click('#save');
-    await says(page, 'record-status', /Head office refused: .*the total sugars cannot be more than the carbohydrate/);
+    await page.fill('#s-why', 'correcting the panel (synthetic)');
+    await page.click('#save-safety');
+    await says(page, 'safety-status', /Head office refused: .*the total sugars cannot be more than the carbohydrate/);
     await page.fill('#n-totalSugarsG', '3');
 
     await page.click('#tab-codes');
@@ -229,6 +238,45 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     // The accountant holds no catalogue read: the store computer does not give her the page.
     expect((await open(ACCOUNTANT, '/product-details/')).status).toBe(403);
   }, 180_000);
+
+  it('Product details (owner 2A): two people open the same product; the first saves its safety facts, the second is told plainly in English and Tamil and nothing is overwritten', async () => {
+    const a = await open(OWNER, '/product-details/?product=RICE');
+    const b = await open(OWNER2, '/product-details/?product=RICE');
+    for (const p of [a.page, b.page]) await says(p, 'v-state', /^On sale$/);
+    const before = (await req('GET', '/v1/catalogue/products/RICE')).body as { version: number };
+
+    await a.page.fill('#s-storage', 'Store below 25 °C');
+    await a.page.fill('#s-why', 'pack reprint (synthetic)');
+    await a.page.click('#save-safety');
+    await says(a.page, 'safety-status', new RegExp(`^Saved — version ${before.version + 1}\\.$`));
+
+    await b.page.fill('#s-ingredients', 'Rice, nothing else');
+    await b.page.fill('#s-why', 'my own edit (synthetic)');
+    await b.page.click('#save-safety');
+    await says(b.page, 'safety-status', /^Someone else saved this product after you opened it\. Nothing of yours was saved\. Press “Reload”/);
+    expect(await b.page.isVisible('#safety-reload')).toBe(true);
+    await b.page.click('#lang');
+    await says(b.page, 'safety-status', /^நீங்கள் திறந்த பிறகு வேறொருவர் இந்தப் பொருளைச் சேமித்துவிட்டார்/);
+    await says(b.page, 'safety-reload', /^மீண்டும் ஏற்று$/);
+    await b.page.click('#lang');
+
+    // Head office kept the first person's change and none of the second's.
+    const held = (await req('GET', '/v1/catalogue/products/RICE')).body as { version: number; product: { safety: { storageConditions?: string; ingredients?: string } } };
+    expect(held.version).toBe(before.version + 1);
+    expect(held.product.safety.storageConditions).toBe('Store below 25 °C');
+    expect(held.product.safety.ingredients).toBeUndefined();
+
+    // Reload shows what head office holds now; the second person's change made again then lands, keeping the first's.
+    await b.page.click('#safety-reload');
+    await b.page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { value: string } | null } }).document.getElementById('s-storage')?.value === 'Store below 25 °C');
+    expect(await b.page.isVisible('#safety-reload')).toBe(false);
+    await b.page.fill('#s-ingredients', 'Rice, nothing else');
+    await b.page.fill('#s-why', 'my own edit, after reloading (synthetic)');
+    await b.page.click('#save-safety');
+    await says(b.page, 'safety-status', new RegExp(`^Saved — version ${before.version + 2}\\.$`));
+    expect(((await req('GET', '/v1/catalogue/products/RICE')).body as { product: { safety: Record<string, unknown> } }).product.safety).toMatchObject({ storageConditions: 'Store below 25 °C', ingredients: 'Rice, nothing else' });
+    expect([...a.errors, ...b.errors]).toEqual([]);
+  }, 120_000);
 
   it('Categories: a manager\'s proposal waits for the owner and is then saved; the report by category rolls a variant up', async () => {
     const { page, errors } = await open(MANAGER, '/product-categories/');
@@ -400,7 +448,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await o.page.click('#stop');
     await says(o.page, 'record-status', /^Write why first\.$/);
     await o.page.fill('#s-why', 'ended early (synthetic)');
-    // U1 · OB-626: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
+    // U1 · OB-691: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
     await askedThenConfirmed(o.page, () => o.page.click('#stop'), /Stop the offer rice-10 now/, writeCounter(o.page));
     await says(o.page, 'record-status', /^Stopped\./);
     await o.page.locator('#rows tr[data-id="rice-10"][data-status="stopped"]').waitFor();

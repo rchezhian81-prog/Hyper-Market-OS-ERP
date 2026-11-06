@@ -233,7 +233,7 @@ every part works with no internet — P-01). A page that paints before the chrom
 | **Summary cards** | `sreOffice.cards(host, [{ label, value, note, tone, href, icon }])` | The label, the figure exactly as the page read it, a note. `value` null is **"Not known"** — never 0. Tone is a coloured edge AND the words (never colour alone). |
 | **Status chip** | `sreOffice.chip(tone, label)` | The tone's shape from the one icon set and its words (`ok`, `pending`, `degraded`, `error`, `idle`, `unknown`). |
 | **Form field** | `sreOffice.field({ id, label, type, required, hint, options })`, `sreOffice.check(form)` | A visible label that is the field's name; "(required)" said in words (not a lone star); a hint under it; a message beside the field in plain words when it is wrong ("Fill in "Customer code"."); the first wrong field takes the focus; nothing is sent until every field is right. |
-| **Confirm sheet** (U1, OB-626, 2 Nov 2026) | `sreOffice.confirm({ title, detail, authority, confirmLabel, tone, reason? })` → `{ ok, reason? }` | Before money, stock, a price or a privilege moves: one modal sheet that says what will happen (with the figure and its unit), the consequence and how it is undone, in whose name and who approves afterwards, and a button with the action's own verb (never "OK"). Focus lands on **Go back**; Escape, the scrim, a second ask and leaving the page answer Go back; Enter in a field never confirms; a required reason is refused blank beside the field; `tone: 'danger'` for the irreversible (a recall, a write-off, lending authority). English and Tamil, repainted live; never a browser dialog; works with no internet. A second person's PIN or signature stays and comes after it. Every money, stock, price and privilege action in the office goes through it (`tests/guardrails/money-moves-only-after-the-confirm-sheet.test.ts`); the till has the same step in its own panel. |
+| **Confirm sheet** (U1, OB-691, 2 Nov 2026) | `sreOffice.confirm({ title, detail, authority, confirmLabel, tone, reason? })` → `{ ok, reason? }` | Before money, stock, a price or a privilege moves: one modal sheet that says what will happen (with the figure and its unit), the consequence and how it is undone, in whose name and who approves afterwards, and a button with the action's own verb (never "OK"). Focus lands on **Go back**; Escape, the scrim, a second ask and leaving the page answer Go back; Enter in a field never confirms; a required reason is refused blank beside the field; `tone: 'danger'` for the irreversible (a recall, a write-off, lending authority). English and Tamil, repainted live; never a browser dialog; works with no internet. A second person's PIN or signature stays and comes after it. Every money, stock, price and privilege action in the office goes through it (`tests/guardrails/money-moves-only-after-the-confirm-sheet.test.ts`); the till has the same step in its own panel. |
 | **Picker** (U2, 2 Nov 2026) | `sreOffice.pick({ kind, title, scope?, filter?, allowCode? })` → `{ ok, id, name, code?, item }`; `sreOffice.pickField({ id, label, kind, required, … })`, `pickedValue(id)`, `setPicked(id, …)` | A product, supplier, person, place, store, customer or approval is picked by its NAME: a modal sheet with the search box focused, a few letters of the name (or a code, or a barcode) find it, 44px rows, at most 50 with "N more — type more letters", the last ten picks offered first. The pack's people and places come from the store computer, so they work with head office down (P-01); products, suppliers, customers and approvals come from head office in the person's own session. A list the person may not read is said, never blank, and with `allowCode` the sheet offers "Type the code instead" — never a dead end (P-08). The pick field shows "name (code)", keeps the id hidden, says "(required)" in words. No office page asks a shop person to type an id or a code where a list exists (`tests/guardrails/the-chrome-carries-the-picker-and-the-date-field.test.ts`). |
 | **Date field** (U2) | `sreOffice.dateField({ id, label, required, min?, max?, hint? })`, `dateValue(id)` → ISO, `dateWords(iso)`, `parseShopDate(text)` | A date is written as the shop writes it, dd/mm/yyyy, with the hint "Day / month / year, for example 31/10/2026" and a numeric keypad; an impossible day (31/02) and a day outside `min`/`max` are refused beside the field in words; the page gets ISO; `dateWords` reads "31 Oct 2026" / "31 அக் 2026". Never a native browser date widget (whose order follows the browser, not the shop) and never a typed "YYYY-MM-DD". The month lengths are calendar arithmetic, never the device clock (`no-shop-date-is-read-from-the-utc-date`). |
 | **Directory: names for ids** (U2) | `window.sreDirectory` (from the store computer's signed pack); `sreOffice.nameOf(kind, id)`; `sreOffice.me()` | The store computer tells every office page who and where: the store and its name, the time zone, the person signed in (name, roles, permissions), the store's people and places. A page shows a NAME wherever it held an id ("Kavitha Rajan", "SRE Hyper Market", "India time (Kolkata)"), the id itself when no name is known, never blank and never invented; the header's "who" is the person's name on every page; the person's own store is filled in wherever a page asked for a store. Read defensively: an older or thin pack never fails a page. |
@@ -265,6 +265,69 @@ with the audit in §5.1.
   English and Tamil: "salary", "shortage", "GST", "காலாவதி") or its workspace's name; it says how many screens match;
   Enter opens the first.
 - **Breadcrumbs**: "Workspace › the workspace › the screen", read off the rail.
+
+### 4.3 The till, the handhelds and the kiosks (UI-2, 1 November 2026) — implemented
+The owner said (1 Nov 2026) "UI/UX also very poor" and chose the till and the handhelds as one area. These are the
+patterns the device screens now share, in the OB-13 look (no new colour, no new icon). The look is in the shared
+foundation `packages/ui/web/sre-foundation.css` (copied to every app by `node scripts/sync-ui-foundation.mjs`); each
+screen keeps its own small script. Nothing here moves (§3.4 rule 5), no word is colour alone, nothing a person must read
+is under 14px, every word is in English and Tamil, and none of it changes a price, a tax, a payment or a sale's path.
+
+| Part | Class | Rules |
+| --- | --- | --- |
+| **Scan line** | `.sre-scan-ready` with `.sre-scan-say`, `.sre-scan-code`, `.sre-scan-last`; `data-state="ready" \| "reading"` | Sits over the bill and never leaves it. Says "Ready to scan" in words; shows the digits a scanner or a keyboard has typed since the last Enter (the panel turns mint AND the words change to "Typed so far — press Enter…"); Backspace takes a digit back, Esc clears; names the last item a scan added as the bill now holds it ("Last added: Toor dal 1kg · 3 · ₹435.00"). A wedge scanner types into the page, never a field, so this is words on a panel, not an input. Its one button, **Type a barcode**, opens the screen's own keypad (14 digits) and sends the code down exactly the scan's path. |
+| **Customer figure** | `.sre-figure-xl` | A price or an amount to pay read from two metres: 48–104px, tabular figures, never wraps. The largest thing on a kiosk. |
+| **Customer card** | `.sre-kiosk-card` (`data-tone="warn"` for a refusal), `.sre-kiosk-name`, `.sre-kiosk-note` | One plain answer on a white panel: the name large, the figure, the note under it. A refusal is the same card in amber with the words as the message. The sentence the model wrote is kept whole for a screen reader; only its parts are laid out. |
+
+**Where they are used (UI-2):**
+- **The till** (`apps/pos/web`): the scan line over the bill; the bill's lines at 20px; the number of lines under "Total
+  to pay"; a code the price list does not hold says what happened, that nothing was added and what to do next ("Not in
+  the price list … Scan it again, or type the number under the barcode. If it is still not found, put the item aside and
+  call the manager."). Hold/Recall and Tender stay one tap; the five actions, the strip and the total are unchanged. A
+  scan still makes no network call and is drawn before the key handler returns (measured < 300 ms, §32).
+- **The price kiosk** (`apps/price-kiosk/web`): the answer on the customer card — name, price as the customer figure,
+  "Offers are applied at the till" under it; a refusal on the amber card.
+- **Self-checkout** (`apps/self-checkout/web`) and **the queue till** (`apps/queue-pos/web`): the amount to pay is the
+  largest figure; each line's quantity is said in words ("Quantity 2"); the self-checkout's screen-reader names are in
+  Tamil too.
+- **Who is signed in (OB-638, owner's option A, 1 Nov 2026):** the till header, the self-checkout lane's "Opened by" and
+  the queue till say the person's NAME with the staff code beside it — "Signed in: Ravi (u-ravi)" — using the name the
+  store computer gave at sign-in (`apps/pos/src/operator-label.ts`, the till session's `operatorShown()`, the lane's
+  `attendantShown`). With no name known, the code alone. Words only: every record still carries the code.
+- **The handhelds** keep their task-first layouts (§3.2): the warehouse header names the job ("Stock room work") with the
+  staff code and the job under it, each said as what it is; a count of pieces reads "12 units" (the code "EA" is gone; a
+  unit the handheld does not know keeps its code beside the word). Their sync badge stays in the header, always seen.
+
+**Proof:** `tests/e2e/ui2-the-till-reads-at-arms-length-and-is-always-ready-to-scan.e2e.ts` and
+`tests/e2e/ui2-the-handhelds-and-kiosks-read-at-a-glance.e2e.ts` — real Chromium, the till at 1366 and 1024, the
+handhelds and the queue till at 360px, the kiosks at their own screens, English and Tamil: no sideways scroll, every
+control at the screen's own target (56px on the till, the handhelds and the self-checkout lane, 64px on the price kiosk;
+never under 44px), the §5.1 audit clean.
+
+### 4.4 Charts (UI-3, 1 November 2026) — implemented
+The owner said (1 Nov 2026) the owner app and the reports were hard to read. Where a figure over time or a comparison is
+the point, a page may draw it as a simple chart — and only through the one chart code, so every chart reads the same way.
+
+| Rule | How |
+| --- | --- |
+| **One drawing, no library, no network (P-01)** | `packages/ui/src/charts.ts` draws inline SVG. Each app's own bundle puts it on the page as `window.sreCharts` (`attachCharts`), and every service worker already precaches the bundle, so a chart opens with the line down like the figures beside it. No screen loads a chart library or any script from the internet. |
+| **Call** | `sreCharts.draw(host, { id, kind, title, covers, labelHeading, valueHeading, rows, empty }, lang)`. `kind: 'bars'` is a comparison (one row each, in the order the page gives — largest first for a ranking); `kind: 'columns'` is a figure over time, in time order. Each row: `{ key, label, value, text, mark }`. Words are a string or `{ en, ta }`. |
+| **Honest** | Bars are measured from zero against the largest magnitude; no trimmed axis, no 3-D. A value the page was not given (`null`) is drawn as **"Not known"** with no bar — never a bar of nought — and the chart says how many rows have no figure. A value below zero is drawn as a dashed outline and keeps its minus sign in the words. The chart never formats a figure: the page passes `text` (₹ and paise as it already writes them), so a chart and the page cannot disagree. An empty chart says nothing was read — it is never an all-clear (P-08). |
+| **Says its source** | `covers` is required: the dates, the store or branches, and when the figures were read (at the shop's clock, OB-607). A guardrail fails a page that draws a chart without it. |
+| **Colour is never the only signal** | One series, so colour carries no meaning. A bar chart prints every figure beside its bar; a column chart labels the tallest column and any marked one ("today") in words, and the rest are in the table. |
+| **A table behind every chart** | The picture is `aria-hidden`; the same rows, from the same model, are a real `<table>` with a caption that a screen reader reads. One button ("Show the figures as a table" / "Show the chart", `aria-pressed`) shows the table in place of the picture. |
+| **Light and dark** | Only foundation tokens: `--accent` bars on a `--panel-2` track, `--muted` words, `--warn` for "Not known", `--error` outline for a value below zero (`.sre-chart-*` in `sre-foundation.css`). Pairs proved AA in both sets in `tests/unit/ui-charts.test.ts`. |
+| **Phone** | Bar rows stack label / figure over a full-width bar under 520px; a column chart labels every column up to 12 and every k-th beyond (24 hours fit a 360px phone). No sideways scroll. |
+
+**Where they are used first (UI-3):** the owner app (today by the shop's hour, the last trading days the store computer
+holds, how today was paid), Reports (sales by hour, today against the last days, sales by cashier, how people paid,
+what is selling by department — drawn from each report's own rows), Compare side by side (head office's ranking), the
+Company report (branches side by side), Waste analytics (write-offs and waste records by the shop's day, from head
+office's `GET /v1/waste/analytics/by-day`, OB-641). Compare side by side, the Company report, Waste analytics, Bill
+findings, Owner alerts and Bought together also use the §4.1 cards, registers and states, each with a source line
+(what it covers, when head office answered). A register's parts never widen a phone page (`.sre-datatable > *`). **Proof:** `tests/unit/ui-charts.test.ts`,
+`tests/guardrails/every-chart-is-drawn-by-the-one-chart-code.test.ts`,
+`tests/e2e/ui3-the-owner-app-and-reports-read-at-a-glance.e2e.ts` (360px and 1280px, light and dark, English and Tamil).
 
 ## 5. Accessibility (NFR-07)
 - Target **WCAG 2.2 AA** for customer/web surfaces; keyboard, touch and high-contrast paths for staff surfaces.

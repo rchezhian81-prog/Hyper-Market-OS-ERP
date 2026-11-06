@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Accounts and Tally names</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Accounts and Tally names (Round 4d · M23-FR-01 · AVR-09). A THIN CLIENT over head office's two maps: the posting map
+      (GET/PUT /v1/finance/posting-map — which account each figure of each kind of posting goes to) and the Tally ledger
+      names (GET/POST /v1/finance/tally/ledger-names — what each account is called in Tally). Both versioned and
+      append-only, saved with the version they were edited from (a newer one saved meanwhile is refused by name). Its
+      session is apps/web-erp/src/posting-map-session.ts. Nothing is written on open; nothing is filled in for the accountant.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      details > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Accounts and Tally names</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Accounts and Tally names</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <div id="cards"></div>
+      </section>
+      <section id="map" hidden aria-labelledby="map-h">
+        <h3 id="map-h"></h3>
+        <div id="map-register"></div>
+      </section>
+      <section id="draft" hidden aria-labelledby="draft-h">
+        <h3 id="draft-h"></h3>
+        <p class="meta" id="draft-summary"></p>
+        <ul class="rows" id="draft-kinds"></ul>
+        <button id="adopt-all" class="quiet sre-btn sre-btn-quiet" type="button"><span id="adopt-all-text"></span></button>
+        <form id="draft-form" novalidate>
+          <div id="draft-note"></div>
+          <button id="save-map" type="submit" class="sre-btn sre-btn-primary"><span id="save-map-text"></span></button>
+        </form>
+        <p class="status" id="map-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="names" hidden aria-labelledby="names-h">
+        <h3 id="names-h"></h3>
+        <div id="names-register"></div>
+        <form id="names-form" novalidate>
+          <div id="names-company"></div>
+          <details id="voucher-types"><summary id="voucher-h"></summary><div id="voucher-fields"></div></details>
+          <div id="names-note"></div>
+          <button id="save-names" class="quiet sre-btn sre-btn-quiet" type="submit"><span id="save-names-text"></span></button>
+        </form>
+        <p class="status" id="names-status" role="status" aria-live="polite"></p>
+      </section>
+      <!-- W5 (M23-FR-01 · WF-18): the account classes the profit and loss, trial balance and centres read — set by the
+           accountant; head office's suggested set is only shown (apps/web-erp/src/account-classes-session.ts,
+           window.accountClasses, drawn by posting-map-classes.js). Nothing is read on open. -->
+      <section id="classes" hidden aria-labelledby="classes-h">
+        <h3 id="classes-h"></h3>
+        <p class="meta" id="classes-lede"></p>
+        <button id="classes-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="classes-show-text"></span></button>
+        <p class="status" id="classes-state" role="status" aria-live="polite"></p>
+        <ul class="rows" id="classes-rows"></ul>
+        <div id="classes-add" hidden>
+          <label for="classes-new"><span id="classes-new-l"></span><input id="classes-new" autocomplete="off" /></label>
+          <button id="classes-add-go" type="button" class="quiet sre-btn sre-btn-quiet"><span id="classes-add-text"></span></button>
+        </div>
+        <button id="classes-save" type="button" hidden class="sre-btn"><span id="classes-save-text"></span></button>
+        <p class="status" id="classes-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="history" hidden aria-labelledby="history-h">
+        <h3 id="history-h"></h3>
+        <h4 id="map-history-h"></h4>
+        <ul class="rows" id="map-history"></ul>
+        <h4 id="names-history-h"></h4>
+        <ul class="rows" id="names-history"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./posting-map.js" type="module"></script>
+    <script src="./posting-map-classes.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

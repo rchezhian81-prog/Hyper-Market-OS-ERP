@@ -97,6 +97,25 @@
         <ul class="rows" id="vmi-q-rows"></ul>
       </section>
 
+      <!-- W5 · M24-FR-02/03/04: a supplier's papers on the day and its statement as the portal shows it (a disputed line
+           kept apart), and portal logins trying other suppliers' data (apps/web-erp/src/supplier-portal-watch-session.ts,
+           window.supplierPortalWatch, drawn by supplier-portal-watch.js). Reads only; nothing is read on open. -->
+      <section id="sp" hidden aria-labelledby="sp-h">
+        <h3 id="sp-h"></h3>
+        <p class="lead" id="sp-lead"></p>
+        <div class="row-form">
+          <label for="sp-partner"><span id="sp-partner-l"></span><input id="sp-partner" autocomplete="off" /></label>
+          <label for="sp-asof"><span id="sp-asof-l"></span><input id="sp-asof" type="date" /></label>
+        </div>
+        <button id="sp-papers" type="button" class="quiet"><span id="sp-papers-text"></span></button>
+        <button id="sp-statement" type="button" class="quiet"><span id="sp-statement-text"></span></button>
+        <p class="status" id="sp-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="sp-rows"></ul>
+        <h3 id="sp-probe-h"></h3>
+        <button id="sp-probe" type="button" class="quiet"><span id="sp-probe-text"></span></button>
+        <ul class="rows" id="sp-probe-rows"></ul>
+      </section>
+
       <section id="decided" hidden aria-labelledby="decided-h">
         <h3 id="decided-h"></h3>
         <ul class="rows" id="dc-rows"></ul>
@@ -104,6 +123,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./supplier-submissions.js" type="module"></script>
+    <script src="./supplier-portal-watch.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

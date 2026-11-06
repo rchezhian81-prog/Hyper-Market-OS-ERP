@@ -14,7 +14,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  decideGate, gateRegister, summariseGateRegister, undecidedGateBlockers, assertGate, assertRelease, RELEASES,
+  decideGate, gateRegister, summariseGateRegister, undecidedGateBlockers, assertGate, assertRelease, RELEASES, blockersForRelease,
   UnknownGateError, UnknownReleaseError, DecisionNotReadableError, GoWhileBlockedError,
   type GateDecision, type GateBlocker,
 } from '../../../packages/compliance/src/index';
@@ -47,8 +47,9 @@ function gateAndRelease(params: Readonly<Record<string, string>>): { gate: strin
 }
 
 export function gateDecisionRoutes(deps: GateDecisionDeps): readonly Route[] {
+  // W3: a blocker scoped to some releases (the penetration test, from R4) counts only for those.
   const allBlockers = async (tenantId: string, release: string, decisions: readonly GateDecision[]): Promise<readonly GateBlocker[]> =>
-    [...await deps.blockers(tenantId), ...undecidedGateBlockers(decisions, release)];
+    [...blockersForRelease(await deps.blockers(tenantId), release), ...undecidedGateBlockers(decisions, release)];
 
   return [
     {

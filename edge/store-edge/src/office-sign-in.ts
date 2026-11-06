@@ -37,8 +37,14 @@ export const OFFICE_LANE = 'office-screens';
  * The roles that open office screens. A cashier, the store computer and every outside party do not (OB-259). OB-406 (owner,
  * 27 Oct 2026): the named security reviewer's own role opens them too — only so they can reach the Risk acceptance screen
  * and sign; every screen still checks its own permission, so that role opens that screen (and the approvals inbox) only.
+ * OB-622 (owner, 1 Nov 2026): the four roadmap §28 buying and stock roles open them too — the purchasing, receiving and
+ * warehouse pages are their work (OB-615). Each screen still checks its own permission. The Picker and the Delivery driver
+ * (OB-571) work on their handhelds only, so they do not open office screens.
  */
-export const OFFICE_ROLE_IDS: readonly string[] = Object.freeze(['owner', 'store_manager', 'accountant', 'chartered_accountant', 'security_reviewer']);
+export const OFFICE_ROLE_IDS: readonly string[] = Object.freeze([
+  'owner', 'store_manager', 'accountant', 'chartered_accountant', 'security_reviewer',
+  'purchase_user', 'purchase_approver', 'receiver_qc', 'warehouse_user',
+]);
 /** Every person holds this; the PIN check needs a permission to ask for, and the office rule is the role list above. */
 const ANY_PERSON = 'identity.self.read';
 

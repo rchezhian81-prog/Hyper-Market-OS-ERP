@@ -36,27 +36,27 @@ export interface HeatMapRead {
 
 export const HEAT_MAP_COPY = {
   en: {
-    lang: 'தமிழ்', title: 'Floor heat map',
+    lang: 'தமிழ்', title: 'Which areas earn most',
     lead: 'Each shelf area on the shop floor, coloured by what it earns per square foot — from the bills, the buying cost and the shelf plans head office holds. Darker earns more. Nothing here is typed.',
-    store: 'Store', yourStore: 'your store', from: 'From', to: 'To', sales: 'Sales per sq ft', margin: 'Margin per sq ft', show: 'Show the heat map',
+    store: 'Store', yourStore: 'your store', from: 'From', to: 'To', sales: 'Sales per sq ft', margin: 'Margin per sq ft', show: 'Show which areas earn most',
     area: 'Area', sqft: 'Sq ft', perSqFt: 'per sq ft', heat: 'Heat', note: 'Note', earned: 'Taken', marginK: 'Margin',
     notKnown: 'Not known', marginNotKnown: 'Margin not known — no buying cost for', noSpace: 'No floor space recorded', nothingSold: 'Nothing sold here',
     underperforming: 'Earns less than its share of space', offPlan: 'Sold but not on the floor plan', offPlanNone: 'Every product sold has a place on the floor plan.',
     legendLow: 'Earns least', legendHigh: 'Earns most', legendUnknown: 'Not known', plan: 'Floor plan version', asAt: 'As at', mapLabel: 'The shop floor, seen from above; the entrance is at the bottom.',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read space performance.',
-    needStore: 'Type the store first.', needDates: 'Choose the first and the last day.', noPlan: 'This store has no floor plan yet — the merchandiser draws one first.',
+    needStore: 'Type the store first.', needDates: 'Choose the first and the last day.', noPlan: 'This store has no floor plan yet. Set one up on the page "Set up shelves and floor plan" (Shelves & shop floor), then press Show again.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.',
   },
   ta: {
-    lang: 'English', title: 'தள வெப்ப வரைபடம்',
+    lang: 'English', title: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன',
     lead: 'கடைத் தளத்தின் ஒவ்வொரு அலமாரிப் பகுதியும், சதுர அடிக்கு அது ஈட்டுவதைப் பொறுத்து வண்ணமிடப்பட்டுள்ளது — தலைமை அலுவலகத்தின் பில்கள், கொள்முதல் விலை மற்றும் அலமாரித் திட்டங்களிலிருந்து. அடர்ந்த வண்ணம் அதிகம் ஈட்டுகிறது. இங்கு எதுவும் தட்டச்சு செய்யப்படவில்லை.',
-    store: 'கடை', yourStore: 'உங்கள் கடை', from: 'முதல்', to: 'வரை', sales: 'சதுர அடிக்கு விற்பனை', margin: 'சதுர அடிக்கு லாபம்', show: 'வெப்ப வரைபடத்தைக் காட்டு',
+    store: 'கடை', yourStore: 'உங்கள் கடை', from: 'முதல்', to: 'வரை', sales: 'சதுர அடிக்கு விற்பனை', margin: 'சதுர அடிக்கு லாபம்', show: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன என்று காட்டு',
     area: 'பகுதி', sqft: 'சதுர அடி', perSqFt: 'சதுர அடிக்கு', heat: 'வெப்பம்', note: 'குறிப்பு', earned: 'வசூல்', marginK: 'லாபம்',
     notKnown: 'தெரியவில்லை', marginNotKnown: 'லாபம் தெரியவில்லை — கொள்முதல் விலை இல்லை:', noSpace: 'தள இடம் பதிவு செய்யப்படவில்லை', nothingSold: 'இங்கு எதுவும் விற்கப்படவில்லை',
     underperforming: 'இடத்தின் பங்கை விடக் குறைவாக ஈட்டுகிறது', offPlan: 'விற்கப்பட்டது, ஆனால் தளத் திட்டத்தில் இல்லை', offPlanNone: 'விற்கப்பட்ட ஒவ்வொரு பொருளுக்கும் தளத் திட்டத்தில் இடம் உள்ளது.',
     legendLow: 'குறைவாக ஈட்டுகிறது', legendHigh: 'அதிகம் ஈட்டுகிறது', legendUnknown: 'தெரியவில்லை', plan: 'தளத் திட்டப் பதிப்பு', asAt: 'நிலவரம்', mapLabel: 'மேலிருந்து பார்க்கும் கடைத் தளம்; நுழைவாயில் கீழே உள்ளது.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு இட செயல்திறனைப் படிக்க முடியாது.',
-    needStore: 'முதலில் கடையைத் தட்டச்சு செய்யவும்.', needDates: 'முதல் மற்றும் கடைசி நாளைத் தேர்ந்தெடுக்கவும்.', noPlan: 'இந்தக் கடைக்கு இன்னும் தளத் திட்டம் இல்லை — வணிகப் பொறுப்பாளர் முதலில் வரைய வேண்டும்.',
+    needStore: 'முதலில் கடையைத் தட்டச்சு செய்யவும்.', needDates: 'முதல் மற்றும் கடைசி நாளைத் தேர்ந்தெடுக்கவும்.', noPlan: 'இந்தக் கடைக்கு இன்னும் தளத் திட்டம் இல்லை. "அலமாரிகளையும் தளத் திட்டத்தையும் அமை" பக்கத்தில் (அலமாரிகளும் கடைத் தளமும்) ஒன்றை அமைத்து, பிறகு மீண்டும் காட்டு என்பதை அழுத்துங்கள்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை.',
   },
 } as const;

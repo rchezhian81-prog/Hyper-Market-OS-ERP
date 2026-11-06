@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Gift cards</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Gift cards (W3 · D07-FR-04). A THIN CLIENT over head office's stored-value routes: look up a card (GET
+      /v1/stored-value/instruments/:id), issue one (POST /v1/stored-value/instruments) and take a payment from one (POST
+      …/:id/redeem) — never below zero, never after expiry, never the same payment twice. Its session is
+      apps/web-erp/src/gift-cards-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.history > li { border-left-color: var(--idle); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Gift cards</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Gift cards</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="look" hidden aria-labelledby="look-h">
+        <h3 id="look-h"></h3>
+        <form class="row-form" id="look-form">
+          <label for="l-card"><span id="l-card-l"></span><input id="l-card" autocomplete="off" /></label>
+          <button id="l-look" type="submit" class="sre-btn"><span id="l-look-text"></span></button>
+        </form>
+        <p class="status" id="look-status" role="status" aria-live="polite"></p>
+        <div id="card"></div>
+      </section>
+      <section id="redeem" hidden aria-labelledby="redeem-h">
+        <h3 id="redeem-h"></h3>
+        <form class="row-form" id="redeem-form">
+          <label for="d-card"><span id="d-card-l"></span><input id="d-card" autocomplete="off" /></label>
+          <label for="d-amount"><span id="d-amount-l"></span><input id="d-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="d-channel"><span id="d-channel-l"></span><select id="d-channel"></select></label>
+          <button id="d-redeem" type="submit" class="sre-btn"><span id="d-redeem-text"></span></button>
+        </form>
+        <p class="status" id="redeem-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="issue" hidden aria-labelledby="issue-h">
+        <h3 id="issue-h"></h3>
+        <form class="row-form" id="issue-form">
+          <label for="i-card"><span id="i-card-l"></span><input id="i-card" autocomplete="off" /></label>
+          <label for="i-owner"><span id="i-owner-l"></span><input id="i-owner" autocomplete="off" /></label>
+          <label for="i-value"><span id="i-value-l"></span><input id="i-value" inputmode="decimal" autocomplete="off" /></label>
+          <label for="i-expires"><span id="i-expires-l"></span><input id="i-expires" type="date" /></label>
+          <button id="i-issue" type="submit" class="sre-btn sre-btn-primary"><span id="i-issue-text"></span></button>
+        </form>
+        <p class="status" id="issue-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./gift-cards.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

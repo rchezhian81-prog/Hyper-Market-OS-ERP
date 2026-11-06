@@ -34,6 +34,10 @@ const W = {
     rateTitle: 'Rate what you bought', rateNone: 'Rate products once your order has reached you.', rated: 'Thank you — your stars are saved.',
     substitutesIf: 'If it runs out, the shop may offer instead:', noSubstitutes: 'The shop has set nothing to offer in its place.',
     signIn: 'Please sign in first.', offline: 'Not saved — no connection. Please try again.', refused: 'The shop did not accept this:', busy: 'The shop could not answer just now. Please try again.',
+    // OB-687: a swap the shop put to me.
+    swapsTitle: 'Swaps waiting for your answer', swapsCheck: 'Check for swaps', noSwaps: 'Nothing is waiting for your answer.',
+    swapOffer: 'We could not supply {ordered}. We can send {sub} instead, at {price} each.', swapUntil: 'Please answer by {time}.',
+    swapYes: 'Yes, send {sub}', swapNo: 'No, leave it out', swapSaidYes: 'Thank you — we will send {sub}.', swapSaidNo: 'Thank you — we will leave it out and you will not be charged for it.',
   },
   ta: {
     dutiesTitle: 'பணம் செலுத்தும் முன்', signInForDuties: 'பணம் செலுத்தும் முன் கடை காட்ட வேண்டிய ஒவ்வொரு விவரத்தையும் பார்க்க உள்நுழையுங்கள்.',
@@ -53,6 +57,9 @@ const W = {
     rateTitle: 'நீங்கள் வாங்கியதை மதிப்பிடுங்கள்', rateNone: 'உங்கள் ஆர்டர் வந்த பிறகு பொருட்களை மதிப்பிடலாம்.', rated: 'நன்றி — உங்கள் நட்சத்திரங்கள் சேமிக்கப்பட்டன.',
     substitutesIf: 'தீர்ந்துவிட்டால், கடை இதற்குப் பதிலாக வழங்கக்கூடியவை:', noSubstitutes: 'இதற்குப் பதிலாக வழங்க கடை எதையும் அமைக்கவில்லை.',
     signIn: 'முதலில் உள்நுழையுங்கள்.', offline: 'சேமிக்கப்படவில்லை — இணைப்பு இல்லை. மீண்டும் முயலுங்கள்.', refused: 'கடை இதை ஏற்கவில்லை:', busy: 'கடையால் இப்போது பதில் அளிக்க முடியவில்லை. மீண்டும் முயலுங்கள்.',
+    swapsTitle: 'உங்கள் பதிலுக்குக் காத்திருக்கும் மாற்றங்கள்', swapsCheck: 'மாற்றங்களைப் பார்', noSwaps: 'உங்கள் பதிலுக்கு எதுவும் காத்திருக்கவில்லை.',
+    swapOffer: '{ordered} ஐ எங்களால் தர முடியவில்லை. அதற்குப் பதிலாக {sub} ஐ ஒன்றுக்கு {price} விலையில் அனுப்பலாம்.', swapUntil: '{time} க்குள் பதில் சொல்லுங்கள்.',
+    swapYes: 'ஆம், {sub} அனுப்புங்கள்', swapNo: 'இல்லை, அதை விட்டுவிடுங்கள்', swapSaidYes: 'நன்றி — {sub} ஐ அனுப்புவோம்.', swapSaidNo: 'நன்றி — அதை விட்டுவிடுவோம், அதற்குக் கட்டணம் இல்லை.',
   },
 };
 const t = (k) => W[lang()][k] ?? W.en[k] ?? k;
@@ -252,6 +259,54 @@ function renderRateLines(productIds, mine = new Map()) {
   }));
 }
 
+// ── OB-687 · FUL-14: a swap the shop put to me — the product, its price, why; I answer yes or no ─────────────────────
+
+let swaps = null; // the shop's last answer, repainted in the other language without asking again
+let swapSaid = null; // [key, sub] — what the last tap was answered with
+const shopWhenOf = (iso) => (iso ? (window.sreShopDay?.dateTimeOf(iso) ?? iso) : '');
+function paintSwaps() {
+  const box = el('swaps');
+  if (!box) return;
+  el('swaps-title').textContent = t('swapsTitle');
+  el('swaps-check').textContent = t('swapsCheck');
+  el('swaps-check').hidden = !signedIn();
+  if (!signedIn()) { box.replaceChildren(); el('swaps-say').textContent = ''; return; }
+  if (swaps === null) { box.replaceChildren(); el('swaps-say').textContent = swapSaid === null ? '' : t(swapSaid[0]).replace('{sub}', swapSaid[1]); return; }
+  if (!swaps.ok) { box.replaceChildren(); el('swaps-say').textContent = refusalWords(swaps); return; }
+  const waiting = swaps.value.filter((s) => s.state === 'waiting' && s.substituteUnitPriceMinor !== null);
+  el('swaps-say').textContent = swapSaid !== null ? t(swapSaid[0]).replace('{sub}', swapSaid[1]) : waiting.length === 0 ? t('noSwaps') : '';
+  box.replaceChildren(...waiting.map((s) => {
+    const row = document.createElement('div');
+    row.className = 'row swap';
+    row.dataset.order = s.orderId;
+    row.dataset.line = s.lineId;
+    const offer = document.createElement('p'); offer.className = 'name';
+    offer.textContent = t('swapOffer').replace('{ordered}', s.orderedName).replace('{sub}', s.substituteName).replace('{price}', inr(s.substituteUnitPriceMinor));
+    const why = document.createElement('p'); why.className = 'note why'; why.textContent = s.whySay[lang()] || s.whySay.en;
+    const until = document.createElement('p'); until.className = 'note until'; until.textContent = s.answerBy ? t('swapUntil').replace('{time}', shopWhenOf(s.answerBy)) : '';
+    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'primary wide swap-yes'; yes.textContent = t('swapYes').replace('{sub}', s.substituteName);
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'wide swap-no'; no.textContent = t('swapNo');
+    const answer = async (isYes) => {
+      yes.disabled = true; no.disabled = true;
+      const out = await shopNow().online.answerSwap(s, isYes);
+      if (out.ok) swapSaid = [isYes ? 'swapSaidYes' : 'swapSaidNo', s.substituteName];
+      else { swapSaid = null; el('swaps-say').textContent = refusalWords(out); }
+      if (out.ok) await loadSwaps(); else { yes.disabled = false; no.disabled = false; }
+    };
+    yes.addEventListener('click', () => { void answer(true); });
+    no.addEventListener('click', () => { void answer(false); });
+    row.append(offer, why, until, yes, no);
+    return row;
+  }));
+}
+async function loadSwaps() {
+  if (!signedIn() || typeof shopNow().online.swaps !== 'function') { swaps = null; paintSwaps(); return; }
+  el('swaps-say').textContent = t('loading');
+  swaps = await shopNow().online.swaps();
+  paintSwaps();
+}
+el('swaps-check')?.addEventListener('click', () => { swapSaid = null; void loadSwaps(); });
+
 // ── The hooks app.js calls, and the words that change with the language ────────────────────────────────────────────
 
 function paintLegal() {
@@ -264,7 +319,7 @@ window.shopR4 = {
   render: (view) => {
     paintLegal();
     if (view === 'basket') { renderDuties(); if (signedIn()) void loadListing().then(renderDuties); }
-    if (view === 'order') void renderReturns();
+    if (view === 'order') { void renderReturns(); void loadSwaps(); }
     if (view === 'privacy') void renderReceipts();
   },
   signedIn: async () => { await loadListing(); renderDuties(); },

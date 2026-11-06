@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Online orders</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Online orders (W3 · M18-FR-01/02/04 · D05-FR-03 · §28 · P-08 · hard rules #2, #10). A THIN CLIENT over head office's
+      GET /v1/orders/:orderId (+ /backorders, /refunds), POST /v1/orders/:orderId/transition, POST /v1/orders/:orderId/backorder,
+      GET /v1/orders/refunds/pending, POST /v1/orders/:orderId/payment/resolution, GET /v1/orders/reservations,
+      POST /v1/orders/channel-reconcile, GET /v1/inventory/online-availability and POST /v1/inventory/online-buffer. Its
+      session is apps/web-erp/src/online-orders-session.ts. Nothing is read or written on open; a step head office does not
+      allow is refused by name and nothing changes.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, textarea, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      textarea { min-height: 96px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error, var(--degraded)); }
+      .facts { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
+      .steps { display: flex; gap: 8px; flex-wrap: wrap; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Online orders</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Online orders</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="order-h">
+        <h3 id="order-h">One order</h3>
+        <div class="row-form">
+          <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
+          <button id="show-order" type="button" class="sre-btn sre-btn-primary"><span id="show-order-text">Show the order</span></button>
+        </div>
+        <p class="status" id="order-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="order"></ul>
+      </section>
+      <section aria-labelledby="pay-h">
+        <h3 id="pay-h">Payments waiting for the bank</h3>
+        <div><button id="show-pay" type="button" class="sre-btn"><span id="show-pay-text">Show what is waiting</span></button></div>
+        <p class="status" id="pay-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="pay"></ul>
+      </section>
+      <section aria-labelledby="res-h">
+        <h3 id="res-h">Stock held for online orders</h3>
+        <div class="row-form">
+          <label for="res-store"><span id="l-res-store">Store</span><input id="res-store" autocomplete="off" /></label>
+          <button id="show-res" type="button" class="sre-btn"><span id="show-res-text">Show the stock held</span></button>
+        </div>
+        <p class="status" id="res-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="res"></ul>
+      </section>
+      <section aria-labelledby="buf-h">
+        <h3 id="buf-h">Stock the app keeps back for the store</h3>
+        <p class="lead" id="buf-lead"></p>
+        <div class="row-form">
+          <label for="buf-store"><span id="l-buf-store">Store</span><input id="buf-store" autocomplete="off" /></label>
+          <button id="show-avail" type="button" class="sre-btn"><span id="show-avail-text">Show what the app may promise</span></button>
+        </div>
+        <ul class="rows" id="avail"></ul>
+        <div class="row-form">
+          <label for="buf-product"><span id="l-buf-product">Product</span><input id="buf-product" autocomplete="off" /></label>
+          <label for="buf-units"><span id="l-buf-units">How many to keep back</span><input id="buf-units" inputmode="numeric" autocomplete="off" /></label>
+          <label for="buf-reason"><span id="l-buf-reason">Why</span><input id="buf-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="set-buffer" type="button" class="sre-btn"><span id="set-buffer-text">Save the buffer</span></button>
+        </div>
+        <p class="status" id="buf-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="rec-h">
+        <h3 id="rec-h">Compare a channel's orders with ours</h3>
+        <label for="rec-channel"><span id="l-rec-channel">Channel name</span><input id="rec-channel" autocomplete="off" /></label>
+        <label for="rec-theirs"><span id="l-rec-theirs">The channel's list</span><textarea id="rec-theirs" autocomplete="off"></textarea></label>
+        <label for="rec-ours"><span id="l-rec-ours">Our list</span><textarea id="rec-ours" autocomplete="off"></textarea></label>
+        <div><button id="compare" type="button" class="sre-btn"><span id="compare-text">Compare</span></button></div>
+        <p class="status" id="rec-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rec"></ul>
+      </section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="sub-pref" id="desk-sub-pref" hidden></section>
+      <section data-desk="notices" id="desk-notices" hidden></section>
+      <section data-desk="refusals" id="desk-refusals" hidden></section>
+      <!-- W6 · OB-687: the swaps the picker put to a customer (their yes or no told to staff counts the same as the app's), and how long the picker waits — the owner's number. -->
+      <section data-desk="swap-answer" id="desk-swap-answer" hidden></section>
+      <section data-desk="swap-wait" id="desk-swap-wait" hidden></section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./online-orders.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

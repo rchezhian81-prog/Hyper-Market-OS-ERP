@@ -11,13 +11,15 @@
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
-import { InMemoryEventStore } from '../../../packages/persistence/src/event-store';
+import { InMemoryEventStore, ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import type { PostingMap } from '../../../packages/finance/src/posting';
 import type { GlJournal } from '../../../packages/tally-export/src/index';
 import { gstAccountsOf } from '../../../packages/tally-export/src/index';
 import type { CentreAttribution, LedgerJournal } from '../../../packages/finance/src/trial-balance';
-import { STREAM, streamName, financeAdapter, orgStructureAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter, categoryRegisterAdapter, productMasterAdapter, averageBuyingCosts, gstReturnsAdapter, B2B_OUTWARD_HELD, type B2BInvoiceNotOnReturn } from './adapters';
+import { concessionInvoiceRoutes, type ConcessionInvoiceDeps, type ConcessionInvoice, type ConcessionSettlementJournal } from '../../finance/src/concession-invoices';
+import type { ConcessionGstTreatment } from '../../../packages/concession/src/index';
+import { STREAM, streamName, financeAdapter, orgStructureAdapter, concessionAdapter, storeOfLocationResolver, alertLifecycleAdapter, effectiveGrants, rebatesAdapter, payablesAdapter, supplierMasterAdapter, approvalRequestsAdapter, periodBooksAdapter, categoryRegisterAdapter, productMasterAdapter, averageBuyingCosts, gstReturnsAdapter, B2B_OUTWARD_HELD, type B2BInvoiceNotOnReturn } from './adapters';
 import { DEPARTMENT_LINKS_STREAM } from './p1-identity-adapters';
 import { currentLinks, type DepartmentLinkRecord } from '../../platform/src/org-departments';
 import { departmentOfCategory } from '../../../packages/org/src/departments';
@@ -429,6 +431,46 @@ export async function advanceApplicationsAgainstPayables(input: Base, tenantId: 
   };
 }
 
+// ── Round 4d · M27-FR-03 — concession invoices and the settlement in the books ──────────────────────────────────────
+
+const CONCESSION_GST_STREAM = streamName(STREAM.finance, 'concession-gst-treatment');
+const CONCESSION_INVOICES_STREAM = streamName(STREAM.finance, 'concession-invoices');
+const CONCESSION_SERIES_GUARD = 'concession-invoice-series';
+
+export function concessionInvoiceAdapter(input: Base): ConcessionInvoiceDeps {
+  const { store, now } = input;
+  const fin = financeAdapter(input);
+  const concessions = concessionAdapter({ store, now });
+  const invoices = (t: string) => payloads<ConcessionInvoice>(store, t, CONCESSION_INVOICES_STREAM, 'ConcessionInvoiceIssued');
+  return {
+    now, periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal,
+    contract: (t, id) => concessions.contract(t, id), sales: (t, id) => concessions.sales(t, id),
+    postingMap: (t) => postingMapOf(store, t),
+    gstTreatment: async (t) => (await payloads<ConcessionGstTreatment>(store, t, CONCESSION_GST_STREAM, 'ConcessionGstTreatmentSet')).at(-1),
+    recordGstTreatment: (t, g) => put(store, t, CONCESSION_GST_STREAM, 'ConcessionGstTreatmentSet', `concession-gst-v${g.version}`, g.setAt, g),
+    invoices,
+    // The series' guard is read before the series: two issues at once cannot take one number, and none is skipped.
+    issueInvoice: async (t, build) => {
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await store.guardVersion(t, CONCESSION_SERIES_GUARD);
+        const issued = await invoices(t);
+        const invoice = build(issued);
+        try {
+          await store.appendBatch(t, [{ stream: CONCESSION_INVOICES_STREAM, event: makeEvent({
+            id: `concession-invoice-${invoice.invoiceId}`, type: 'ConcessionInvoiceIssued', occurredAt: invoice.issuedAt,
+            idempotencyKey: `concession-invoice-${t}-${invoice.invoiceId}`, source: 'api/finance', payload: invoice as unknown as Record<string, unknown>,
+          }) }], { guard: { key: CONCESSION_SERIES_GUARD, expectedVersion: version } });
+          return invoice;
+        } catch (e) {
+          if (!(e instanceof ConcurrencyConflictError) || attempt >= 8) throw e;
+        }
+      }
+    },
+    settlementJournals: async (t) => (await allJournals<JournalEntry & Partial<ConcessionSettlementJournal>>(store, t)).filter((j): j is ConcessionSettlementJournal => j.concessionSettlement !== undefined),
+    approvals: approvalRequestsAdapter(input),
+  };
+}
+
 // ── the entry point ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every route of this package on head office's surface. With no store, an in-memory one (the bare surface the guardrails build). */
@@ -439,6 +481,7 @@ export function financeBridgeRoutes(input: { readonly store: EventStore | undefi
     ...ledgerReportRoutes(ledgerReportAdapter(base)),
     ...supplierAdvanceRoutes(supplierAdvanceAdapter(base)),
     ...rebateAccrualRoutes(rebateAccrualAdapter(base)),
+    ...concessionInvoiceRoutes(concessionInvoiceAdapter(base)), // Round 4d · M27-FR-03
   ];
 }
 

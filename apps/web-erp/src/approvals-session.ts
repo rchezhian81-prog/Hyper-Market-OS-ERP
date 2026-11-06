@@ -109,13 +109,13 @@ export type CopyKey =
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
   | 'kindDataImport' | 'kindDataImportRollback' | 'kindCategoryDefine' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor' | 'kindQuotationFloorNotKnown' | 'kindQuotationFloorNotKnownOwnerQuoted' | 'kindQuotationBelowFloorOwnerQuoted'
-  | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
+  | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit' | 'kindConcessionInvoice'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindRebateClaim' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindRoleScopeChange' | 'kindTaxRateChange' | 'kindCessRateChange' | 'kindPromotionFunding' | 'kindHsnClassChange' | 'kindMrpReplacement' | 'kindRegulatedProductPublish' | 'kindB2BContract' | 'kindB2BCreditOverride' | 'kindB2BCreditLimit' | 'kindCustomerCreditNote' | 'kindCustomerDebitNote' | 'kindTenantClosure' | 'kindFloorDeviceReview' | 'kindCaRoleGrant' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -155,7 +155,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindQuotationFloorNotKnownOwnerQuoted: 'The owner quotes a customer a price on a product whose lowest price is not known (accountant approves)', // R10-A · OB-542
     kindQuotationBelowFloorOwnerQuoted: 'The owner quotes a customer below the margin floor (accountant approves)', // R11-A · OB-602
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
-    kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
+    kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit', kindConcessionInvoice: 'Issue a concession invoice and settle the period',
     kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
     kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
@@ -180,7 +180,10 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindRegulatedProductPublish: 'Put an age-restricted or regulated product on sale',
     kindB2BContract: 'Approve a business customer\'s contract (prices, dates, credit and terms)',
     kindB2BCreditOverride: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
+    kindCaRoleGrant: 'Give the chartered accountant\'s role (approved by the IT custodian)',
     kindB2BCreditLimit: 'Set or change a business customer\'s credit limit (and payment terms)',
+    kindCustomerCreditNote: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
+    kindCustomerDebitNote: 'Issue a GST debit note to a business customer (more added to their tax invoice)',
     kindTenantClosure: 'Close this shop\'s account (access ends; the law\'s records and the audit are kept)', // OB-288 P4
     kindFloorDeviceReview: 'Sign as the security reviewer: switch on cameras, shelf labels, RFID or sensors', // OB-407
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
@@ -241,7 +244,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindQuotationFloorNotKnownOwnerQuoted: 'குறைந்தபட்ச விலை தெரியாத பொருளுக்கு உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R10-A · OB-542
     kindQuotationBelowFloorOwnerQuoted: 'லாப வரம்புக்குக் கீழே உரிமையாளரே வாடிக்கையாளருக்குச் சொன்ன விலை (கணக்காளர் அனுமதிப்பார்)', // R11-A · OB-602
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
-    kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
+    kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்', kindConcessionInvoice: 'சலுகை விலைப்பட்டியலை வெளியிட்டு காலத்தைத் தீர்த்தல்',
     kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
     kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
@@ -265,7 +268,10 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindRegulatedProductPublish: 'வயது வரம்புள்ள அல்லது ஒழுங்குமுறைக்கு உட்பட்ட பொருளை விற்பனைக்கு வைத்தல்',
     kindB2BContract: 'வணிக வாடிக்கையாளரின் ஒப்பந்தத்தை அனுமதித்தல் (விலை, தேதிகள், கடன், நிபந்தனைகள்)',
     kindB2BCreditOverride: 'வாடிக்கையாளரின் கடன் வரம்பை (அல்லது முடிந்த ஒப்பந்தத்தை) மீறி வணிக ஆர்டரை அனுமதித்தல்',
+    kindCaRoleGrant: 'பட்டயக் கணக்காளருக்குத் தனி உள்நுழைவு வழங்குதல் (உரிமையாளர் கேட்க, IT பொறுப்பாளர் ஒப்புதல்)',
     kindB2BCreditLimit: 'வணிக வாடிக்கையாளரின் கடன் வரம்பை (மற்றும் கட்டண நிபந்தனைகளை) அமைத்தல் அல்லது மாற்றுதல்',
+    kindCustomerCreditNote: 'வணிக வாடிக்கையாளருக்கு GST வரவுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலிலிருந்து திருப்பித் தரும் பணம்)',
+    kindCustomerDebitNote: 'வணிக வாடிக்கையாளருக்கு GST பற்றுக் குறிப்பு வழங்குதல் (வரி விலைப்பட்டியலில் கூடுதலாகச் சேர்ப்பது)',
     kindTenantClosure: 'இந்தக் கடையின் கணக்கை மூடுதல் (அணுகல் முடியும்; சட்டம் கேட்கும் பதிவுகளும் தணிக்கையும் வைக்கப்படும்)', // OB-288 P4
     kindFloorDeviceReview: 'பாதுகாப்புச் சரிபார்ப்பாளராகக் கையொப்பமிடுதல்: கேமரா, அலமாரி விலைச் சீட்டு, RFID அல்லது உணரிகளை இயக்குதல்', // OB-407
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
@@ -331,6 +337,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   period_reopen: 'kindPeriodReopen',
   concession_contract: 'kindConcessionContract',
   concession_deposit_forfeit: 'kindConcessionDepositForfeit',
+  concession_invoice: 'kindConcessionInvoice', // Round 4d · M27-FR-03
   stock_write_off: 'kindStockWriteOff',
   stock_adjustment_up: 'kindStockAdjustmentUp',
   order_refund: 'kindOrderRefund',
@@ -363,7 +370,11 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   // OB-503: an age-restricted or regulated product reaching the tills — a second person who approves catalogue changes.
   regulated_product_publish: 'kindRegulatedProductPublish',
   // OB-288 commercial desks (M22-FR-01): a B2B contract (a second contract manager approves); an order over the credit limit (the owner).
-  b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit',
+  b2b_contract: 'kindB2BContract', b2b_credit_override: 'kindB2BCreditOverride', b2b_credit_limit: 'kindB2BCreditLimit', ca_role_grant: 'kindCaRoleGrant',
+  // M23-FR-02 · OB-678: a GST credit note to a business customer — a refund under the money limits.
+  customer_credit_note: 'kindCustomerCreditNote',
+  // OB-679: every debit note to a business customer — a second person approves, at any amount.
+  customer_debit_note: 'kindCustomerDebitNote',
   // OB-288 P4 (M36-FR-03): closing the shop's account — IT asks, the owner approves.
   tenant_closure: 'kindTenantClosure',
   // OB-407: the named security reviewer's signature on switching on a floor device (cameras, shelf labels, RFID, sensors).

@@ -31,18 +31,45 @@ const t = (k) => WORDS[lang][k];
 const kiosk = window.kiosk;
 let last = null;
 
+/**
+ * UI-2: the model's sentence laid out for a customer a step away — "Ponni rice 1kg: ₹70.00. Offers are applied at the
+ * till." becomes the name large, the price the largest thing on the screen, and the note under it. The sentence is kept
+ * WHOLE (the joins ride along for a screen reader), so what the kiosk says never changes; a sentence the layout does not
+ * recognise is shown as it is.
+ */
+function paintAnswer(node, sentence, priceMinor) {
+  const price = typeof priceMinor === 'number' ? `₹${(priceMinor / 100).toFixed(2)}` : null;
+  const at = price === null ? -1 : sentence.indexOf(price);
+  const stop = at < 0 ? -1 : sentence.indexOf('. ', at + price.length);
+  const nameEnd = at < 0 ? -1 : sentence.lastIndexOf(': ', at);
+  if (at < 0 || stop < 0 || nameEnd < 0) { node.textContent = sentence; return; }
+  const part = (cls, text) => { const span = document.createElement('span'); span.className = cls; span.textContent = text; return span; };
+  const figure = part('sre-figure-xl', price);
+  const per = sentence.slice(at + price.length, stop);
+  if (per.trim() !== '') figure.append(part('per', per));
+  node.replaceChildren(
+    part('sre-kiosk-name', sentence.slice(0, nameEnd)), part('sr-only', ': '),
+    figure,
+    part('sr-only', '. '), part('sre-kiosk-note', sentence.slice(stop + 2)),
+  );
+}
+
 function render() {
   el('title').textContent = t('title');
   el('ask-words').textContent = t('ask');
-  if (kiosk === undefined) { el('answer').textContent = t('noBundle'); el('answer').className = 'answer refused'; return; }
+  if (kiosk === undefined) { el('answer').textContent = t('noBundle'); el('answer').className = 'answer refused'; el('card').hidden = false; el('card').dataset.tone = 'warn'; return; }
   el('limit').textContent = kiosk.staleAfter === null ? t('limitNotSet') : t('limitSet').replace('{m}', String(kiosk.staleAfter));
   if (last === null) {
     el('answer').textContent = '';
     el('age-words').textContent = lang === 'ta' ? kiosk.age().ta : kiosk.age().en;
     return;
   }
-  el('answer').textContent = lang === 'ta' ? last.words.ta : last.words.en;
+  const sentence = lang === 'ta' ? last.words.ta : last.words.en;
+  if (last.outcome === 'quoted') paintAnswer(el('answer'), sentence, last.priceMinor); else el('answer').textContent = sentence;
   el('answer').className = last.outcome === 'quoted' ? 'answer quoted' : 'answer refused';
+  // A refusal is the same card in amber — the words are the signal; the tone only backs them.
+  el('card').hidden = false;
+  if (last.outcome === 'quoted') delete el('card').dataset.tone; else el('card').dataset.tone = 'warn';
   el('age-words').textContent = lang === 'ta' ? last.age.ta : last.age.en;
 }
 
@@ -52,7 +79,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const code = buffer.trim();
     buffer = '';
-    if (code !== '') { last = kiosk.lookup(code); render(); }
+    // UI-2: a scanner ends every code with Enter, and Enter on a FOCUSED button presses it — the language button a
+    // customer last touched would flip the language on the next scan. The Enter belongs to the scan (as at the till).
+    if (code !== '') { e.preventDefault(); last = kiosk.lookup(code); render(); }
     return;
   }
   if (e.key.length === 1) buffer += e.key;

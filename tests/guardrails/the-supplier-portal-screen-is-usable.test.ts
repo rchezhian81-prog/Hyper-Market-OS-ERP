@@ -11,8 +11,10 @@ import { bilingualGaps } from '../../packages/ui/src/index';
 // with ONE exception the owner decided in writing (OB-362, 24–25 Oct 2026): the "Delivery update" form, for the
 // supplier's own open orders only, which sends the existing `delivery_status` submission — and ONE more (OB-389, 26 Oct
 // 2026): the vendor-managed-inventory "Top-up proposal" form, for the supplier's own VMI items only, which sends a
-// replenishment proposal that waits for a buyer. The guardrail allows exactly those two writes, from the bundle, and
-// nothing else.
+// replenishment proposal that waits for a buyer. OB-624 (owner, 1 Nov 2026, in writing: "allow both" — widening OB-362
+// and OB-389): an "Invoice" form and a "Delivery note (ASN)" form, each sending the existing `invoice` / `asn` submission,
+// which counts only once a buyer accepts it. The guardrail allows exactly those FOUR writes, from the bundle, and nothing
+// else.
 // These are static checks on the shipped view + shell — that it reads from the tested session (never
 // re-deciding), issues NO write verb, shows every state as a word+icon (never colour alone), and is offered in
 // both languages. They cannot prove the screen is good — a real supplier does that — only that the deliberate
@@ -69,24 +71,38 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(VIEW).toMatch(/session\.view\(/);
   });
 
-  it('the view itself issues NO write verb — the two writes (OB-362, OB-389) go through the bundle', () => {
+  it('the view itself issues NO write verb — the four writes (OB-362, OB-389, OB-624) go through the bundle', () => {
     const writes = VIEW.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
     expect(writes).toEqual([]);
     expect(VIEW).toMatch(/supplierPortal\.sendDeliveryUpdate|api\.sendDeliveryUpdate/);
     expect(VIEW).toMatch(/api\.sendTopUpProposal/);
+    expect(VIEW).toMatch(/api\.sendInvoice\(/);
+    expect(VIEW).toMatch(/api\.sendAsn\(/);
     expect(VIEW).not.toMatch(/\bfetch\s*\(/);
   });
 
-  it('OB-362 + OB-389: the bundle makes exactly TWO writes — the delivery_status submission and the VMI top-up proposal, each to the supplier\'s own route', () => {
+  it('OB-362 + OB-389 + OB-624: the bundle makes exactly FOUR writes — the delivery_status submission, the VMI top-up proposal, the invoice and the delivery note (ASN), each to the supplier\'s own route', () => {
     const writes = ENTRY.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
-    expect(writes).toEqual(["method: 'POST'", "method: 'POST'"]);
+    expect(writes).toEqual(["method: 'POST'", "method: 'POST'", "method: 'POST'", "method: 'POST'"]);
     const posts: string[] = [];
     for (let at = ENTRY.indexOf("method: 'POST'"); at >= 0; at = ENTRY.indexOf("method: 'POST'", at + 1)) posts.push(ENTRY.slice(Math.max(0, at - 1500), at + 600));
     // OB-362: to the supplier's OWN submissions route (no partner id in it), with the kind fixed, after the tested check.
-    const delivery = posts.find((p) => p.includes("'/v1/supplier-portal/me/submissions'"));
+    const delivery = posts.find((p) => p.includes("kind: 'delivery_status'"));
     expect(delivery, 'the delivery update write').toBeDefined();
     expect(delivery).toContain("kind: 'delivery_status'");
+    expect(delivery).toContain("'/v1/supplier-portal/me/submissions'");
     expect(delivery).toMatch(/readDeliveryUpdate\(input, feed\)/);
+    // OB-624: the invoice and the delivery note — to the SAME own submissions route, the kind fixed, after the tested check;
+    // neither names a supplier or a partner (the partner is the login's binding).
+    const invoice = posts.find((p) => p.includes("kind: 'invoice'"));
+    expect(invoice, 'the invoice write').toBeDefined();
+    expect(invoice).toContain("'/v1/supplier-portal/me/submissions'");
+    expect(invoice).toMatch(/readInvoiceSubmission\(input, feed, maySubmit\)/);
+    const asn = posts.find((p) => p.includes("kind: 'asn'"));
+    expect(asn, 'the delivery note write').toBeDefined();
+    expect(asn).toContain("'/v1/supplier-portal/me/submissions'");
+    expect(asn).toMatch(/readAsnSubmission\(input, feed, maySubmit, /);
+    for (const p of [invoice!, asn!]) expect(p.slice(p.indexOf('body: JSON.stringify'))).not.toMatch(/supplierId|partnerId/);
     // OB-389: to the supplier's OWN VMI proposal route (no partner id), after the tested check against the room.
     const topUp = posts.find((p) => p.includes('/v1/supplier-portal/me/vmi/proposals/'));
     expect(topUp, 'the VMI top-up proposal write').toBeDefined();
@@ -150,6 +166,18 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(HTML).toMatch(/id="du-send"[^>]*>\s*<span id="du-send-text">/);
     expect(VIEW).toMatch(/icon\('truck'\)/);
     expect((HTML.match(/<form\b/g) ?? []).length).toBe(0); // no <form> element posts anything by itself
+  });
+
+  it('OB-624: the shell carries the invoice and delivery-note forms, with a label for every field and an icon beside each button\'s word', () => {
+    for (const id of ['inv-order', 'inv-no', 'inv-total', 'asn-order', 'asn-no', 'asn-expected']) expect(HTML, id).toMatch(new RegExp(`<label for="${id}">`));
+    expect(HTML).toMatch(/id="inv-send"[^>]*>\s*<span id="inv-send-text">/);
+    expect(HTML).toMatch(/id="asn-send"[^>]*>\s*<span id="asn-send-text">/);
+    expect(HTML).toMatch(/id="asn-expected" type="datetime-local"/);
+    expect(VIEW).toMatch(/icon\('receipt-text'\)/);
+    expect(VIEW).toMatch(/icon\('clipboard-list'\)/);
+    // Each line's field sits inside its own label (the line editor builds them with the same label → input shape).
+    expect(VIEW).toMatch(/label\.htmlFor = id;/);
+    expect(VIEW).toMatch(/label\.append\(lw, input\)/);
   });
 
   it('never asks its questions with a browser dialog', () => {

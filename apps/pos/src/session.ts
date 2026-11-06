@@ -14,6 +14,7 @@ import { rate, type Rate } from '../../../packages/contracts/src/rate';
 import type { ConnectionState } from '../../../packages/contracts/src/enums';
 import { priceLine, sumLines, splitInclusive, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
 import { bestPrice, promotionProductIds, type Promotion, type BasketLine, type PromotionResult } from '../../../packages/promotions/src/promotions';
+import { redeemCoupon, type Coupon, type Redemption, type RedeemResult } from '../../../packages/loyalty/src/coupons';
 import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
 import { lineBundleOf, type BundleDefinition, type LineBundle } from '../../../packages/product/src/bundles';
 import { settle, type Tender, type Settlement } from '../../../packages/tender/src/tender';
@@ -22,9 +23,11 @@ import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
+import { maskVoucherCode } from '../../../packages/loyalty/src/till-vouchers';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
@@ -53,7 +56,8 @@ export interface PosSessionConfig {
   readonly tradingDayCutoff?: string;
   /**
    * R1 (M01-FR-02): the shop's IANA time zone, from the store pack through the box. The till dates by it, not by the zone
-   * the device happens to be set to. Absent (a page from an older box): this device's own wall clock, as before.
+   * the device happens to be set to. Absent (a page from an older box, or a test): the shop's default zone — the same default the
+   * box uses when the pack names none, and the zone the slip's time is already printed in — never the device's own zone (W3).
    */
   readonly timeZone?: string;
   readonly currency: CurrencyCode;
@@ -378,14 +382,29 @@ export interface CommittedBill {
   /** A7: the bill's compensation cess (net + GST + cess = total). Absent when no line carries one. */
   readonly cessMinor?: number;
   readonly totalMinor: number;
-  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string }[];
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string; readonly reference?: string }[];
+  /** W3 · OB-673: the coupon this bill honoured and what it took off (already inside the lines). */
+  readonly coupons?: readonly { readonly code: string; readonly discountMinor: number }[];
   /** OB-271: in real trading, the Rule 46 tax invoice this sale was checked against before the disk — what prints. */
   readonly taxInvoice?: TaxInvoiceDocument;
+}
+
+/** W3 · OB-673: a coupon as the store computer's copy gives it to the till (`couponForTill`, packages/loyalty/src/till-vouchers.ts). */
+export interface TillCoupon {
+  readonly code: string;
+  readonly coupon: Coupon;
+  readonly knownRedemptions: readonly Redemption[];
+  readonly customerRef?: string;
+  readonly customerSegments: readonly string[];
+  readonly cacheAgeMinutes: number;
+  readonly staleAfterMinutes: number;
 }
 
 export interface BasketTotals extends BillTotals {
   /** Promotion discount applied to the basket, on top of any line discounts. */
   readonly promotionDiscount: Money;
+  /** W3 · OB-673: what the coupon on this bill takes off (zero when none applies). In `payable` already. */
+  readonly couponDiscount?: Money;
   /** total − promotionDiscount (what the customer pays) — in real trading, less what OB-279/OB-285 take off (never more). */
   readonly payable: Money;
   readonly lineCount: number;
@@ -698,6 +717,12 @@ export class PosSession {
   /** The loyalty member's mobile number for THIS bill (PF-09 step 2 · OB-28 "1"). Held in memory only and handed to the
    *  store computer with the sale, which turns it into the member code before anything is written — never on a disk here. */
   private loyaltyMobile: string | undefined;
+  /**
+   * W3 · D06-FR-03 · OB-673: the coupon on THIS bill, as the store computer's copy gave it (no network). Judged against the
+   * basket every time the total is read; when it applies, its discount is spread over the lines it may reach (never a carry
+   * bag or tobacco) so the lines still add to what the customer pays and GST is taken from the reduced price (s.15(3)).
+   */
+  private couponOnBill: TillCoupon | undefined;
   /** This basket's own reference (audit PF-06): the bill a card/UPI attempt is recorded against, until the next sale. */
   private billRefValue: string | undefined;
   /** OB-352: how the last saved delivery bill gets its address and slot, and its slip. */
@@ -1135,7 +1160,7 @@ export class PosSession {
    * clock cannot be read; the scan then cannot judge the date and does not guess.
    */
   laneToday(): string | undefined {
-    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00'), this.config.timeZone); } catch { return undefined; }
+    try { return tradingDateOf(this.nowIso(), makeTradingDayRule('00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone); } catch { return undefined; }
   }
 
   /** The lane's own clock now, as ISO UTC (the fixed instant `setNow` gave, else the lane's clock, else the machine's). */
@@ -1150,7 +1175,7 @@ export class PosSession {
    */
   private gateContext(atIsoUtc: string, exceptLineId?: string): TillGateContext {
     let today: string | undefined;
-    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00'), this.config.timeZone); } catch { today = undefined; }
+    try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone); } catch { today = undefined; }
     const sold = new Set<string>([...(this.config.soldHuids?.() ?? []), ...this.huidsSoldHere]);
     for (const l of this.activeLines()) {
       if (l.lineId === exceptLineId) continue;
@@ -1234,7 +1259,7 @@ export class PosSession {
    * going out against the credit for the goods coming back with the same arithmetic the sale record will carry.
    */
   replacementLines(): readonly { readonly productId: string; readonly uom: string; readonly quantityMinor: number; readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly discountMinor?: number }[] {
-    const perLineDiscount = this.promotionDiscountByLine();
+    const perLineDiscount = this.offerDiscountByLine();
     return this.activeLines().map((l) => {
       const discountMinor = perLineDiscount.get(l.lineId) ?? 0;
       return {
@@ -1251,7 +1276,8 @@ export class PosSession {
     const currency = this.config.currency;
     const bill = sumLines(this.pricedLines(), currency);
     const promotionDiscount = this.promotionDiscount();
-    const goods = Math.max(0, bill.total.minor - promotionDiscount.minor);
+    const couponMinor = this.couponDiscountMinor();
+    const goods = Math.max(0, bill.total.minor - promotionDiscount.minor - couponMinor);
     // OB-279 · A10: in real trading the bill's CGST and SGST are each rounded to the rupee and the bill's total is the
     // rounded total — OB-285: never above the lines' exact MRP-based total — so the customer is asked for exactly what the
     // tax invoice will say, and never more than the goods. Off real trading: nothing changed.
@@ -1264,6 +1290,7 @@ export class PosSession {
     return {
       ...bill,
       promotionDiscount,
+      ...(this.couponOnBill === undefined ? {} : { couponDiscount: money(couponMinor, currency) }),
       payable: money(goods + (roundOff ?? 0), currency),
       lineCount: this.activeLines().length,
       ...(roundOff === undefined ? {} : { roundOffMinor: roundOff }),
@@ -1331,6 +1358,83 @@ export class PosSession {
     return map;
   }
 
+  /**
+   * W3 · OB-673: the promotion discount AND the coupon's share, per line — what each line actually comes off by. Every
+   * consumer of "what the line charges" reads this, so the coupon reaches the record, the tax split and the checks alike.
+   */
+  private offerDiscountByLine(): ReadonlyMap<string, number> {
+    const promo = this.promotionDiscountByLine();
+    const coupon = this.couponShareByLine();
+    if (coupon.size === 0) return promo; // no coupon: exactly the promotions engine's attribution
+    const map = new Map<string, number>();
+    for (const l of this.activeLines()) map.set(l.lineId, (promo.get(l.lineId) ?? 0) + (coupon.get(l.lineId) ?? 0));
+    return map;
+  }
+
+  /** The lines a coupon may reach: never a carry bag (OB-173) and never tobacco (COTPA s.5), as for every offer. */
+  private couponLines(): readonly { readonly lineId: string; readonly valueMinor: number }[] {
+    const promo = this.promotionDiscountByLine();
+    return this.activeLines()
+      .filter((l) => { const f = tillRuleFlagsOf(this.flagsOf(l)); return f.carryBag !== true && f.tobacco !== true; })
+      .map((l) => ({ lineId: l.lineId, valueMinor: Math.max(0, this.priceOf(l).total.minor - (promo.get(l.lineId) ?? 0)) }));
+  }
+
+  /** The coupon engine's answer for this basket now, or null when no coupon is on the bill. Pure; no network. */
+  couponAnswer(): RedeemResult | null {
+    const c = this.couponOnBill;
+    if (c === undefined) return null;
+    const basketMinor = this.couponLines().reduce((n, l) => n + l.valueMinor, 0);
+    const at = this.nowRef ?? this.config.clock?.() ?? new Date().toISOString();
+    return redeemCoupon({
+      coupon: c.coupon,
+      redemption: { redemptionId: 'this-bill', code: c.coupon.code, saleId: 'this-bill', at, ...(c.customerRef === undefined ? {} : { customerRef: c.customerRef }) },
+      knownRedemptions: c.knownRedemptions, basketMinor, customerSegments: c.customerSegments,
+      cacheAgeMinutes: c.cacheAgeMinutes, staleAfterMinutes: c.staleAfterMinutes,
+    });
+  }
+
+  private couponDiscountMinor(): number {
+    const a = this.couponAnswer();
+    return a === null || !a.redeemed ? 0 : a.discountMinor;
+  }
+
+  /** The coupon's discount spread over the lines it may reach, by value — whole paise, the remainder to the largest lines. */
+  private couponShareByLine(): ReadonlyMap<string, number> {
+    const out = new Map<string, number>();
+    const d = this.couponDiscountMinor();
+    if (d <= 0) return out;
+    const lines = this.couponLines().filter((l) => l.valueMinor > 0);
+    const base = lines.reduce((n, l) => n + l.valueMinor, 0);
+    if (base <= 0) return out;
+    let given = 0;
+    for (const l of lines) { const share = Math.floor((d * l.valueMinor) / base); out.set(l.lineId, share); given += share; }
+    for (const l of [...lines].sort((a, b) => b.valueMinor - a.valueMinor)) {
+      if (given >= d) break;
+      const room = l.valueMinor - (out.get(l.lineId) ?? 0);
+      const add = Math.min(room, d - given);
+      out.set(l.lineId, (out.get(l.lineId) ?? 0) + add);
+      given += add;
+    }
+    return out;
+  }
+
+  /**
+   * W3 · D06-FR-03 · OB-673: put a coupon on this bill (as the store computer's copy gave it), or take it off with `null`.
+   * Answers the engine's verdict for the basket now — a refusal in the coupon engine's words, and the coupon stays off.
+   */
+  setCoupon(c: TillCoupon | null): RedeemResult | null {
+    this.notWhileAwaiting();
+    if (c === null) { this.couponOnBill = undefined; return null; }
+    const before = this.couponOnBill;
+    this.couponOnBill = c;
+    const answer = this.couponAnswer();
+    if (answer === null || !answer.redeemed) this.couponOnBill = before;
+    return answer;
+  }
+
+  /** The coupon on this bill (its code), or null. */
+  couponCode(): string | null { return this.couponOnBill?.code ?? null; }
+
   /** Set the evaluation instant used for effective-dated promotions. */
   /** A cashier signs in with their staff code (SP-4b · F09). Every sale from here names them. */
   signIn(cashierId: string): void {
@@ -1355,12 +1459,12 @@ export class PosSession {
   }
 
   /**
-   * The trading day a moment belongs to — per this shop's cut-off, in this machine's wall clock (M01-FR-02), or the
+   * The trading day a moment belongs to — per this shop's cut-off, on the shop's clock (its zone, else the shop default; M01-FR-02), or the
    * fixed day the session was built with. Worked out at COMMIT, so a till left open past the cut-off dates the next
    * sale to the new day rather than the one the page was opened on (F09).
    */
   tradingDayFor(atIsoUtc: string): string {
-    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'), this.config.timeZone);
+    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'), this.config.timeZone ?? DEFAULT_SHOP_CALENDAR.timeZone);
   }
 
   setNow(atIsoUtc: string): void {
@@ -1432,7 +1536,7 @@ export class PosSession {
     const gate = this.gateContext(committedAt);
     // NEW-1 (B19): each line judged as CHARGED — after the promotion discount attributed to it — so an offer cannot give a
     // carry bag away free.
-    const discountByLine = this.promotionDiscountByLine();
+    const discountByLine = this.offerDiscountByLine();
     const refused = active.flatMap((l) => this.lineRefusals(l, committedAt, this.priceOf(l).total.minor - (discountByLine.get(l.lineId) ?? 0)));
     if (refused.length > 0) throw new TillRuleRefusedError(refused, 'Do not take payment. ');
     // A TOBACCO line needs 18 even when it was rung before the pack said so, or recalled from a held basket (B14).
@@ -1473,7 +1577,7 @@ export class PosSession {
     // is spread by value — the promotions engine decides which, per line. Each line's total is then the
     // post-discount amount actually charged, so the line totals sum to what the customer paid and the GST is
     // pulled from the correct reduced value.
-    const perLineDiscount = this.promotionDiscountByLine();
+    const perLineDiscount = this.offerDiscountByLine(); // W3 · OB-673: the coupon's share too
     const recordLines = active.map((l) => {
       const lineTotalMinor = this.priceOf(l).total.minor;
       const flags = tillRuleFlagsOf(this.flagsOf(l));
@@ -1623,6 +1727,9 @@ export class PosSession {
     //
     // These are not new facts. `totals()` already knows all three; they were being computed,
     // used to take the money, and then dropped on the floor.
+    const couponVerdict = this.couponAnswer();
+    const couponsOnRecord = this.couponOnBill !== undefined && couponVerdict !== null && couponVerdict.redeemed
+      ? [{ code: this.couponOnBill.coupon.code, discountMinor: couponVerdict.discountMinor }] : [];
     const record = JSON.stringify({
       ...input,
       lines: recordLines, // the cloud sees the rich lines (prices + frozen HSN/rate); commitSale keeps the ledger shape
@@ -1642,6 +1749,9 @@ export class PosSession {
       ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
       // B8: every answer to the pack-date question on this bill, "out of date — not sold" included.
       ...(this.packDateLog.length === 0 ? {} : { packDateAnswers: this.packDateLog.slice() }),
+      // W3 · D06-FR-03 · OB-673: the coupon this bill honoured — its discount is already inside the lines; head office records
+      // the use once and raises a use past its limit as an exception (never refusing the sale).
+      ...(couponsOnRecord.length === 0 ? {} : { coupons: couponsOnRecord }),
       // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).
       ...(this.loyaltyMobile === undefined || this.config.guestSalesOnly === true ? {} : { customerMobile: this.loyaltyMobile }),
       // OB-299: paid in full here and to be DELIVERED — the fee line (by product) and what it charged. Head office books it as
@@ -1684,7 +1794,9 @@ export class PosSession {
         })),
         taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
         netMinor: inside.net, taxMinor: inside.tax, ...(inside.cess === 0 ? {} : { cessMinor: inside.cess }), totalMinor: totals.payable.minor,
-        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+        // OB-677: a gift card is shown by its last four only — never its whole code (like every instrument reference).
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }), ...(t.giftCard === undefined ? {} : { reference: maskVoucherCode(t.giftCard.code) }) })),
+        ...(couponsOnRecord.length === 0 ? {} : { coupons: couponsOnRecord }),
         ...(taxInvoice === undefined ? {} : { taxInvoice }),
       });
       // OB-352: a delivery bill's slip — the job head office books from it, and which path gives its address and slot.
@@ -1826,11 +1938,13 @@ export class PosSession {
    */
   setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string } {
     this.notWhileAwaiting();
-    if (raw === null) { this.loyaltyMobile = undefined; return { ok: true }; }
+    // OB-673: a coupon was checked for the customer named then — a different customer means it is checked again.
+    if (raw === null) { this.loyaltyMobile = undefined; this.couponOnBill = undefined; return { ok: true }; }
     // OB-252: refused in words — the number is not even read.
     if (this.config.guestSalesOnly === true) return { ok: false, laneMessage: GUEST_SALES_ONLY_WORDS };
     const mobile = normaliseMobile(raw);
     if (mobile === undefined) return { ok: false, laneMessage: 'That is not a 10-digit mobile number. Ask the customer again, or skip — the sale goes ahead without points.' };
+    if (mobile !== this.loyaltyMobile) this.couponOnBill = undefined;
     this.loyaltyMobile = mobile;
     return { ok: true, last4: mobile.slice(-4) };
   }
@@ -1853,6 +1967,8 @@ export class PosSession {
     this.notWhileAwaiting();
     // A new basket is a new customer: no member carries over (PF-09).
     this.loyaltyMobile = undefined;
+    // Nor a coupon (OB-673).
+    this.couponOnBill = undefined;
     this.billRefValue = undefined;
     this.lines.length = 0;
     this.seq = 0;

@@ -60,6 +60,8 @@ export interface GateBlocker {
   /** The risk id, finding id or check name. */
   readonly ref: string;
   readonly reason: string;
+  /** W3: the releases this blocker counts for (absent: every release) — e.g. the penetration test from R4 (§35.1). */
+  readonly releases?: readonly string[];
 }
 
 export interface GateDecision {

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,14 @@ import { makeEvent, type DomainEvent } from '../../packages/contracts/src/event'
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { addDays, rosterWeekStartOf } from '../../packages/workforce/src/working-time';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop. The marks are made
+// hours before "now", so the shop's midnight falls between them EVERY run: the across-midnight rule (attendance-pairing.ts)
+// is proved each time, instead of only when CI happens to run between 03:00 and 04:00 shop time.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
+
 
 /**
  * **Round 7 · OB-507 and OB-502 — THE PROOF on the REAL store computer (`startEdge`) and the REAL head office (the API
@@ -157,7 +165,8 @@ describe.each(backings)('OB-507 · OB-502: the roster and the certificates ride 
     // A second device's copy naming the SAME mark id with different facts — a conflict head office must refuse by name.
     const conflict = mark('M-1', 'out', outAt, 'attendance:M-1-from-another-screen');
     // A second "in" with no "out" between — booked, but flagged.
-    const twice = mark('M-3', 'in', new Date(Date.now() - 3 * 3_600_000).toISOString());
+    const twiceAt = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    const twice = mark('M-3', 'in', twiceAt);
     expect((await hand(box, [conflict, twice])).map((a) => a.status)).toEqual(['accepted', 'accepted']);
     expect((await box.syncOnce!()).sent).toBe(0);
     expect(c.net.posts).toBe(0);
@@ -198,9 +207,23 @@ describe.each(backings)('OB-507 · OB-502: the roster and the certificates ride 
     const day = shopDateIn(inAt);
     const booked = (await c.ok(c.call('GET', '/v1/hr/workforce/attendance-marks', 'u-mgr', undefined, { date: day }), 'marks')).body as { marks: { markId: string; kind: string; recordedBy: string; relayed?: { relayedBy: string }; exceptions?: string[] }[]; withExceptions: number };
     const rani = booked.marks.filter((m) => ['M-1', 'M-2', 'M-3'].includes(m.markId));
-    expect(rani.map((m) => m.markId).sort()).toEqual(day === shopDateIn(outAt) ? ['M-1', 'M-2', 'M-3'] : ['M-1', 'M-3']); // each ONCE
+    // Each mark is booked on ITS OWN shop day: when the shop's midnight falls inside these four hours, M-2 (a minute ago) and
+    // M-3 (three hours ago) can be on the next day from M-1 (four hours ago) — so the day's list is worked out mark by mark.
+    const onDay = [['M-1', inAt], ['M-2', outAt], ['M-3', twiceAt]].filter(([, at]) => shopDateIn(at!) === day).map(([id]) => id!);
+    expect(rani.map((m) => m.markId).sort()).toEqual(onDay); // each ONCE
     expect(rani.find((m) => m.markId === 'M-1')).toMatchObject({ kind: 'in', recordedBy: 'E-RANI', relayed: { relayedBy: 'u-box' } });
-    expect(rani.find((m) => m.markId === 'M-3')?.exceptions).toEqual(['repeats_the_last_mark']);
+    // M-3 is read on its own day, wherever midnight fell, and booked once. On M-1's day it is a second "in" with no "out"
+    // between (`repeats_the_last_mark`). Past the shop's midnight, with no night shift on Rani's roster, M-1's "in" is not
+    // carried over (attendance-pairing.ts): M-1 is flagged "in, never out" on its day and M-3 opens the new day unflagged.
+    const m3Day = shopDateIn(twiceAt);
+    const m3Book = m3Day === day ? booked : (await c.ok(c.call('GET', '/v1/hr/workforce/attendance-marks', 'u-mgr', undefined, { date: m3Day }), 'marks M-3')).body as typeof booked;
+    expect(m3Book.marks.filter((m) => m.markId === 'M-3')).toHaveLength(1);
+    if (m3Day === day) {
+      expect(rani.find((m) => m.markId === 'M-3')?.exceptions).toEqual(['repeats_the_last_mark']);
+    } else {
+      expect(m3Book.marks.find((m) => m.markId === 'M-3')?.exceptions ?? []).toEqual([]);
+      expect(rani.find((m) => m.markId === 'M-1')?.exceptions).toEqual(['in_without_out']);
+    }
     expect(booked.withExceptions).toBeGreaterThanOrEqual(1);
 
     // Another restart after posting: nothing sent twice; the refusal is kept, visible.

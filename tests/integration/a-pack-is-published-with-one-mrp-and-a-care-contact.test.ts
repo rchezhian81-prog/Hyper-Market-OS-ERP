@@ -35,13 +35,13 @@ describe.each(backings)('a pack is published with one MRP and its consumer-care 
 
     // B4: no consumer-care contact — refused, nothing stored.
     const noCare = { ...DETERGENT.safety, consumerCareContact: undefined };
-    const refusedCare = await publish('p-det', { ...DETERGENT, safety: noCare });
+    const refusedCare = await publish('p-det', { ...DETERGENT, lifecycle: 'new', safety: noCare }); // sent to go on sale (a draft would be kept, W4)
     expect(refusedCare.status).toBe(422);
     expect(code(refusedCare)).toBe('product_not_publishable');
     expect(JSON.stringify(refusedCare.body)).toContain('no consumer-care contact');
     // B4: a packed non-food with no country of origin — refused too.
     const noOrigin = { ...DETERGENT.safety, countryOfOrigin: undefined };
-    expect(JSON.stringify((await publish('p-det', { ...DETERGENT, safety: noOrigin })).body)).toContain('no country of origin');
+    expect(JSON.stringify((await publish('p-det', { ...DETERGENT, lifecycle: 'new', safety: noOrigin })).body)).toContain('no country of origin');
     expect((await req('GET', '/v1/catalogue/products/p-det')).status).toBe(404);
 
     // B2: two different MRPs from the same date in one record — refused by name.

@@ -19,7 +19,7 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['campaigns', 'e2e', 'key'].join('-').padEnd(48, '0');
 const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
 
-/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-691: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');
@@ -109,6 +109,15 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Campai
       await page.locator('#status-out li[data-campaign="diwali-2026"]').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#status-out .total-queued')).toBe('queued: 1');
       expect(await page.textContent('#status-out .total-pending')).toBe('waiting: 1');
+      // Round 4d (M21-FR-02): the results are worked out by head office from the sends — the one message is still waiting
+      // for the provider, so nobody is counted as reached, and with no comparison customers it says it proves nothing.
+      await page.fill('#results-id', 'diwali-2026');
+      await page.click('#show-results');
+      await page.locator('#results-cards [data-campaign="diwali-2026"]').waitFor({ timeout: 15_000 });
+      const res = (await page.textContent('#results-cards')) ?? '';
+      expect(res).toMatch(/reached\s*0/);
+      expect(res).toContain('not reached: 1');
+      expect(res).toContain('no comparison customers — this is activity, not proof the campaign worked');
 
       // Journeys: off until switched on; switching needs a reason.
       await page.click('#show-journeys');

@@ -8,10 +8,10 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { parseTrivyJson, parseSemgrepJson, type FindingObservation } from '../../packages/compliance/src/index';
+import { parseTrivyJson, parseSemgrepJson, readBranchProtection, branchProtectionReport, type FindingObservation } from '../../packages/compliance/src/index';
 
 /**
- * QG-03 · QG-06 · QG-08 · QG-12 (roadmap §22, §32, §35, §36; OB-288 gates lane), on the real API — in memory and (with
+ * QG-03 (W4: the branch-protection reading) · QG-06 · QG-08 · QG-12 (roadmap §22, §32, §35, §36; OB-288 gates lane), on the real API — in memory and (with
  * DATABASE_URL) on real PostgreSQL, with a cold restart:
  *   • a scanner run imported through the API becomes findings; an open critical/high blocks QG-06 (and QG-03); a
  *     scanner finding cannot be closed by hand; a clean COMPLETE run closes it; a run is imported once, never older;
@@ -110,7 +110,8 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
     expect(codeOf(await decide('QG-06', 'GO'))).toBe('go_refused_while_blocked');
     const canPass = (await ok(call(h, 'GET', '/v1/compliance/gates/QG-06/can-pass', OWNER), 'can-pass')).body as { canPass: boolean; alsoBlockedBy: { kind: string }[] };
     expect(canPass.canPass).toBe(false);
-    expect(canPass.alsoBlockedBy.map((b) => b.kind)).toEqual(['finding']);
+    // The finding, and (W3) the independent penetration test not yet on file (§22 QG-06 · §35.1 — counted from R4).
+    expect(canPass.alsoBlockedBy.map((b) => `${b.kind} ${(b as { ref?: string }).ref ?? ''}`)).toEqual([expect.stringMatching(/^finding /), 'check evidence:independent_pentest']);
     expect((await decide('QG-06', 'HOLD', MGR)).status).toBe(403);
     expect(codeOf(await decide('QG-06', 'HOLD', OWNER, []))).toBe('gate_decision_not_readable'); // no evidence, no decision
     expect((await ok(decide('QG-06', 'HOLD'), 'hold')).body).toMatchObject({ decision: { decision: 'HOLD', decidedBy: OWNER } });
@@ -123,6 +124,8 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
     // ── 3 · The image is rebuilt; a COMPLETE scan no longer sees the critical → it is fixed, QG-06 may now be GO.
     const clean = await ok(call(h, 'POST', '/v1/compliance/finding-scans', MGR, { report: report(obs.filter((o) => o.severity !== 'critical'), 'ci-102', '2026-10-24T08:00:00.000Z') }), 'clean');
     expect(clean.body).toMatchObject({ scan: { fixed: 1, stillOpen: 1 } });
+    // W3: the independent penetration test is on file too (otherwise QG-06 stays blocked for R5 — missing is never passed).
+    await ok(call(h, 'POST', '/v1/compliance/gate-evidence/pt-2026-10', OWNER, { kind: 'independent_pentest', result: 'passed', where: 'Synthetic Security Ltd (independent)', reportRef: 'pentest/2026-10.pdf', testedOn: '2026-10-24', statement: 'report received; its findings are on the register' }), 'pentest on file');
     expect((await ok(call(h, 'GET', '/v1/compliance/gates/QG-06/can-pass', OWNER), 'can-pass 2')).body).toMatchObject({ canPass: true });
 
     // A risk registered against QG-06 blocks the GO too, by name.
@@ -168,7 +171,17 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
 
     // ── 7 · A later finding turns an earlier GO into GO_NOW_BLOCKED — never quietly still GO (P-08).
     await ok(decide('QG-03', 'HOLD'), 'qg03 hold first');
-    // (QG-03 is blocked only by scanner findings; none critical/high is open now, so GO is allowed.)
+    // W4 · QG-03: with no reading of main's branch protection on file, QG-03 is NOT KNOWN and GO is refused (P-08).
+    expect((await gateOf('QG-03')).blockers.map((b) => b.ref)).toContain('branch-protection:no-reading');
+    expect(codeOf(await decide('QG-03', 'GO'))).toBe('go_refused_while_blocked');
+    // The CI reads main as fully protected (a complete reading, nothing missing) — the not-known hold lifts.
+    const checks = ['Type check, lint, tests, secret & dependency scan'];
+    const protectedReading = readBranchProtection({
+      branch: 'main', requiredChecks: checks, rules: { status: 200, body: [] },
+      classic: { status: 200, body: { required_pull_request_reviews: { require_code_owner_reviews: true }, required_status_checks: { strict: true, contexts: checks }, enforce_admins: { enabled: true } } },
+    });
+    await ok(call(h, 'POST', '/v1/compliance/finding-scans', MGR, { report: branchProtectionReport(protectedReading, { runId: 'gh-bp-1', scannedAt: '2026-10-24T08:00:00.000Z', repository: 'synthetic/repo' }) }), 'branch protection');
+    // (QG-03 is now blocked only by scanner findings; none critical/high is open now, so GO is allowed.)
     await ok(decide('QG-03', 'GO'), 'qg03 go');
     expect(await gateOf('QG-03')).toMatchObject({ state: 'GO', decision: 'GO' });
     const semgrep = parseSemgrepJson({ results: [{ check_id: 'js.xss', path: 'apps/x.ts', start: { line: 4 }, extra: { message: 'xss', severity: 'ERROR' } }] }).observations;
@@ -184,6 +197,6 @@ describe.each(backings)('scanner findings and gate decisions are recorded — on
     expect(await gateOf('QG-03', restarted)).toMatchObject({ state: 'GO_NOW_BLOCKED' });
     const after = (await ok(call(restarted, 'GET', '/v1/compliance/findings', OWNER), 'list after')).body as FList;
     expect(after.findings.find((f) => f.ruleId === 'CVE-2026-1111')).toMatchObject({ status: 'fixed', ownerUserId: 'u-dev' });
-    expect(((await ok(call(restarted, 'GET', '/v1/compliance/finding-scans', OWNER), 'scans')).body as { count: number }).count).toBe(4);
+    expect(((await ok(call(restarted, 'GET', '/v1/compliance/finding-scans', OWNER), 'scans')).body as { count: number }).count).toBe(5);
   }, 120_000);
 });

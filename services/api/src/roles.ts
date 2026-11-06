@@ -11,6 +11,7 @@
 
 import type { Role } from '../../../packages/rbac/src/rbac';
 import { PLATFORM_ADMIN_ROLE_ID } from '../../identity/src/separation-of-duties';
+import type { RoleAwaitingOwnerApproval, WaitingPermission } from '../../identity/src/roles-awaiting-approval';
 
 /**
  * Which role carries the owner's authority.
@@ -84,7 +85,8 @@ export const SECURITY_REVIEWER_ROLE_ID = 'security_reviewer';
  */
 export { PLATFORM_ADMIN_ROLE_ID, isPlatformAdministrationRole } from '../../identity/src/separation-of-duties';
 
-export const ROLE_CATALOGUE: readonly Role[] = [
+/** The roles written before Round 4c; the live catalogue (`ROLE_CATALOGUE`, below) adds the roadmap §28 roles to them. */
+const BASE_ROLES: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
     name: 'Owner',
@@ -113,7 +115,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
       // SP-8 (F08): the floor indent chain — raise, approve / reject and read the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
-      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
+      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read', 'production.cost.read',
       'concession.tag.sync',
       // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
       'approvals.decision.sync',
@@ -133,6 +135,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D03-FR-03 · OB-404: the owner sets how many days a supplier has to answer a rebate claim before it shows overdue
       // (his number; "not set" until he enters it).
       'purchase.rebate.terms.set',
+      // OB-686 (owner, 3 Nov 2026): the owner sets the business-customer chasing steps — the smallest amount worth chasing and
+      // the reminder / final-notice / stop-supply day counts (his numbers; "not set" until he enters them, no built-in).
+      'b2b.chasing.steps.set',
       // SP-7c (M06-FR-01 · M23-FR-01): the supplier master — propose / update, approve (a different person), the list, and
       // recording a payment a second person approved.
       'purchase.supplier.manage', 'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',
@@ -163,8 +168,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.campaign.policy',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a refund under
+      // the money limits (OB-290) — this is the authority to APPROVE one (store manager up to his refund limit, owner unlimited).
+      'finance.creditnote.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
       'order.exception.work', 'order.exception.manage',
+      // OB-676 (owner, 2 Nov 2026): the owner sets and confirms which roles staff each delivery-exception queue.
+      'order.exception.staffing.set',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
@@ -175,6 +185,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // rates, own-fleet rate); a manager approves an order held below the threshold; a second person approves a fleet settlement.
       'delivery.controls.set', 'delivery.contribution.approve', 'delivery.settlement.approve',
       // ── OB-288 fulfilment & delivery — end
+      // OB-687 (owner, 4 Nov 2026): how long the picker waits for a customer's yes or no to a swap — the owner's own number.
+      'fulfilment.substitution.wait.set',
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
@@ -194,7 +206,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
       'reporting.dashboard.read', 'reporting.report.read', 'reporting.consolidation.manage',
-      'platform.health.read', 'platform.alert.manage', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
+      'platform.health.read', 'platform.alert.manage', 'platform.alert.acknowledge', 'platform.device.manage', 'platform.flag.read', 'platform.flag.write',
       'platform.setup.read', 'platform.setup.write', 'org.template.pull',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',
       'platform.tenant.export', 'platform.branding.read', 'platform.branding.write',
@@ -239,6 +251,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── Round 4c · OB-613 — begin: held ONLY so the owner may grant the accountant role (no-escalation rule). He never
+      // approves with them: they count only for a request HE raised, and only from a holder of the accountant role.
+      'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // OB-679: likewise held only so the owner may grant it; it counts only for a credit note HE raised, from the accountant.
+      'finance.creditnote.ownerrequest.approve',
+      // ── Round 4c · OB-613 — end
       // ── OB-288 P4 (multi-tenant SaaS and rollout) — begin
       // M36-FR-01 · OB-321: read the shop's usage meter (for information). M36-FR-03: APPROVE the shop's account closure the IT
       // administrator asked for (never his own). C8 · OB-324: export the consent record and import a consent manager's.
@@ -394,6 +412,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // OB-681 (owner, 3 Nov 2026): the owner ASKS to give the chartered accountant's role; the IT custodian approves it
+      // (services/identity/src/ca-role-grant.ts). The owner does not gain the CA's settings permissions.
+      'identity.ca.grant.request',
       // ── R3 lane 1 (GST liability and returns) ──
       // OB-143 "A": the owner alone switches reverse charge on; OB-149 "A": the owner alone switches the 30-day e-invoice
       // guard on; A19: the owner sets how many days before the 3-year bar he is warned. He reads, records and pays
@@ -427,6 +448,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'workforce.consent.self', 'workforce.attendance.mark',
       // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
       'workforce.standard.set', 'workforce.schedule.draft',
+      // OB-686 (owner, 3 Nov 2026): the owner sets the labour-cost guide (his number; no built-in 12% — "not set" until he does).
+      'workforce.labour.guide.set',
       // ── R3 Lane 4 — end
       // ── R3 follow-up (OB-193 to OB-200) — begin
       // OB-197 (C21): the OWNER alone records that he signed the fingerprint-attendance consent notice; until he has,
@@ -519,7 +542,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.online.buffer.set',
       // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
-      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
+      'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read', 'production.cost.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read',
@@ -531,6 +554,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.campaign.send', 'customer.campaign.read',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
+      // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a refund under
+      // the money limits (OB-290) — this is the authority to APPROVE one (store manager up to his refund limit, owner unlimited).
+      'finance.creditnote.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
       'order.exception.work', 'order.exception.manage',
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
@@ -547,7 +573,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'scrap.review.read', 'waste.view', 'count.view', 'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read', 'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
       // D-8 (R2): complete the store tasks assigned to me, in my own sign-in.
       'workforce.task.complete.own',
-      'platform.health.read', 'platform.alert.manage', 'platform.device.manage',
+      'platform.health.read', 'platform.alert.manage', 'platform.alert.acknowledge', 'platform.device.manage',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
@@ -672,9 +698,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // No business action: no price, refund, purchase, stock, cash or till code, no `compliance.risk.manage` (register or
     // accept a risk alone), no `compliance.reviewer.name` (the owner names the reviewer), and no grant or platform code. Under
     // OB-95 it counts as a business role (it is not platform administration), so it is never held with the IT role.
+    // OB-690 (owner, 4 Nov 2026): the reviewer reads the Operational alerts page and his alert inbox (`platform.health.read`,
+    // reads only) and ticks an alert as seen (`platform.alert.acknowledge`) — never raises, escalates or changes a rule.
     permissions: [
       'identity.self.read',
       'compliance.risk.read',
+      'platform.health.read',
+      'platform.alert.acknowledge',
     ],
   },
   {
@@ -737,6 +767,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'customer.consent.read', 'loyalty.points.read', 'loyalty.points.write',
       'loyalty.value.issue', 'loyalty.value.redeem', 'loyalty.value.read',
       'loyalty.coupon.redeem', 'loyalty.coupon.read',
+      // ── Round 4c · OB-560 (owner, 31 Oct 2026, option A) — begin: the cashier enrols a customer at the till's counter (the
+      // Loyalty page: the customer's own consent, their number checked on their own phone). Enrolling grants no points,
+      // no price and no money; leaving the programme stays the customer's own choice, recorded by the same word.
+      'loyalty.member.enrol',
+      // ── Round 4c · OB-560 — end
       // M19-FR-01 / Item 2: the service desk works the customer-service exception queue (a short-picked line —
       // the customer got less than they ordered). Which queues a role staffs is decided in
       // services/orders/src/exception-ownership.ts; this only opens the door, and never to reassign or sweep.
@@ -774,7 +809,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.backup.record',
       'identity.self.read',
       'platform.health.read',
-      'platform.alert.manage',
+      'platform.alert.manage', 'platform.alert.acknowledge',
       'platform.device.manage',
       'platform.flag.read', 'platform.flag.write',
       'platform.support.request', 'platform.support.grant', 'platform.support.read',
@@ -876,6 +911,19 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OWNER himself makes. Only that kind: anyone else's below-floor quotation still needs the owner (`price.change.approve`).
       'pos.quotation.belowfloor.ownerquote.approve',
       // ── R11-A · OB-602 — end
+      // ── Round 4c · OB-613 (owner, 31 Oct 2026) — begin: the accountant is the second approver when the OWNER himself asks
+      // to change the business structure, move a till's bill numbers to a replacement store computer, or change an
+      // approval rule (never a change to the accountant's own limits). Only those owner-raised requests: anyone else's
+      // still needs the owner.
+      'org.structure.ownerrequest.approve', 'store.computer.replace.ownerrequest.approve', 'approvals.rules.ownerrequest.approve',
+      // OB-679 (owner, 2 Nov 2026, in writing): the accountant approves a GST credit note the OWNER raised, at any amount.
+      'finance.creditnote.ownerrequest.approve',
+      // ── Round 4c · OB-613 — end
+      // ── W4 · M11-FR-02 §28 "costing reviewed by Finance" — begin: the accountant READS what each production run's output
+      // cost and its yield exceptions (GET /v1/production/costs). Its own narrow word: no production board, plan, recipe,
+      // run, release or cost registration comes with it.
+      'production.cost.read',
+      // ── W4 · M11-FR-02 — end
     ],
   },
   {
@@ -973,6 +1021,19 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'b2b.portal.self',
+    ],
+  },
+  {
+    id: 'concessionaire',
+    name: 'Concessionaire (counter login)',
+    // M27-FR-02 "only the concessionaire accesses it" · OB-676 "A" (owner, 2 Nov 2026, in writing) — the FOURTH role held by
+    // a party outside the business: a concessionaire trading a counter inside the store, signed in to see its OWN counter's
+    // sales, stock and invoices. As narrow as the supplier's: `concession.portal.self` is a READ of the caller's own rows,
+    // scoped server-side from its approved outside-login invite (the routes never trust a concessionaire id in the
+    // request). None of the `concession.*` staff codes — it cannot record a sale, change a contract or issue an invoice.
+    permissions: [
+      'identity.self.read',
+      'concession.portal.self',
     ],
   },
   {
@@ -1100,3 +1161,188 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
 ];
+
+
+// ── Round 4c · OB-615 → OB-622 / OB-623 / OB-571 (wave 2) — begin ─────────────────────────────────────────────────────
+// The roadmap §28 roles for buying, stock and online orders, each written with exactly the roadmap's SCOPE, MAY and MUST
+// NOT, every permission word with the reason it is there, and the words deliberately LEFT OUT with theirs.
+//
+//   • OB-615 (owner, 31 Oct 2026): the four buying and stock roles were written down and held back until the owner had read
+//     their permissions. OB-622 (owner, 1 Nov 2026, in writing): "all four approved as shown" — they are LIVE: they can be
+//     given on Users & roles through the normal maker-checker grant. The Purchase approver has NO money limit until the
+//     owner sets one on the Approval rules page: its row is absent from the limits in force, so `authorityOf` says
+//     "not set" and the purchase-order routes approve no money for it (packages/approvals/src/authority-rules.ts).
+//   • OB-623 (owner, 1 Nov 2026, in writing): the Receiver/QC and the Warehouse user hold the stock-movement word, but each
+//     may post ONLY its own kinds of movement — judged on head office's server for every route that word opens
+//     (services/api/src/w2-movement-jobs.ts). The owner and the store manager keep what they have.
+//   • OB-571 (owner, 31 Oct 2026, in writing — "A"): the roadmap's Picker/Delivery row (§28: assigned orders;
+//     pick/pack/deliver/proof/COD; cannot change catalogue price or reroute without policy) as a Picker role and a Delivery
+//     role, so a picker and a driver can each use their own handheld. Each holds the ONE word its phone's job needs — the
+//     word the phone sign-in asks for and head office re-checks on every record (edge/store-edge/src/handheld-sign-in.ts).
+//
+// Every word here is one a route already checks; nothing new is invented. The words every member of staff holds for
+// themselves (their own sign-in, their own payslip and rota) are the first two of each role.
+
+const selfService: readonly WaitingPermission[] = [
+  { permission: 'identity.self.read', why: 'Sign in and see what they themselves may do.' },
+  { permission: 'payroll.ess.self', why: 'See their own payslip and their own rota — the same as every member of staff.' },
+];
+
+/** A roadmap §28 role, written in full — what the Users & roles page and the owner read; the catalogue carries its words. */
+export interface Section28Role extends RoleAwaitingOwnerApproval {
+  /** The owner's written decision that made the role live. */
+  readonly liveBy: string;
+}
+
+const section28Role = (r: Omit<Section28Role, 'permissions'>): Section28Role =>
+  Object.freeze({ ...r, permissions: Object.freeze(r.words.map((w) => w.permission)) });
+
+export const PURCHASE_USER_ROLE_ID = 'purchase_user';
+export const PURCHASE_APPROVER_ROLE_ID = 'purchase_approver';
+export const RECEIVER_QC_ROLE_ID = 'receiver_qc';
+export const WAREHOUSE_USER_ROLE_ID = 'warehouse_user';
+export const PICKER_ROLE_ID = 'picker';
+export const DELIVERY_ROLE_ID = 'delivery_driver';
+
+export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
+  section28Role({
+    id: PURCHASE_USER_ROLE_ID, name: 'Purchase user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
+    roadmap: { scope: 'Assigned suppliers/categories', may: 'Requisition/RFQ/PO draft', mustNot: 'Cannot receive, match and pay same transaction' },
+    limitedBy: ['suppliers', 'categories'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores, to say which store an order is for.' },
+      { permission: 'catalogue.pack.read', why: 'See the products, to put them on a requisition or a draft order.' },
+      { permission: 'supplier.view', why: 'See the supplier list, to choose who to ask.' },
+      { permission: 'purchase.commitment.read', why: 'See the requisitions, the quotes side by side, and the orders already placed (read only).' },
+      { permission: 'purchase.order.propose', why: 'Raise a requisition, record a supplier\'s quote (RFQ) and draft a purchase order — every draft still needs a Purchase approver; and change the reorder settings (owner, 1 Nov 2026).' },
+    ],
+    withheld: [
+      { permission: 'purchase.supplier.manage', why: 'Adding or editing a supplier stays with the store manager (owner, 1 Nov 2026).' },
+      { permission: 'purchase.order.approve', why: 'Approving an order is the Purchase approver\'s.' },
+      { permission: 'purchase.order.receive', why: 'MUST NOT receive the same order — receiving is the Receiver/QC\'s.' },
+      { permission: 'purchase.invoice.capture', why: 'MUST NOT match the same order — entering a supplier bill is kept apart.' },
+      { permission: 'purchase.invoice.match', why: 'MUST NOT match the same order — matching a bill is Finance\'s.' },
+      { permission: 'purchase.supplier.pay', why: 'MUST NOT pay the same order — paying a supplier is Finance\'s.' },
+    ],
+    // Answered by the owner, 1 Nov 2026: no supplier.manage (the manager keeps adding and editing suppliers); reorder settings yes.
+    questions: [],
+  }),
+  section28Role({
+    id: PURCHASE_APPROVER_ROLE_ID, name: 'Purchase approver', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
+    roadmap: { scope: 'Configured limits', may: 'PO/contract/rate approval', mustNot: 'Cannot approve own supplier/bank creation' },
+    limitedBy: ['money limit'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores an order is for.' },
+      { permission: 'catalogue.pack.read', why: 'See the products on an order before approving it.' },
+      { permission: 'supplier.view', why: 'See the supplier an order or contract is with.' },
+      { permission: 'purchase.commitment.read', why: 'See the orders, quotes, contracts and what is already committed (read only).' },
+      { permission: 'purchase.order.approve', why: 'Approve, issue or cancel a purchase order (and a standing order) — up to the money limit the owner sets for this role on the Approval rules page; until he sets one it is "not set" and approves no money.' },
+      { permission: 'purchase.supplier.approve', why: 'One permission for supplier deals (owner, 1 Nov 2026): approve a supplier contract and its rates, a rebate scheme and its claims, a supplier\'s offer funding, a new supplier and a change of where a supplier is paid — never one they created or asked for themselves (head office refuses that by name).' },
+    ],
+    withheld: [
+      { permission: 'purchase.order.propose', why: 'Drafting the order is the Purchase user\'s: one person drafts, another approves.' },
+      { permission: 'purchase.supplier.manage', why: 'MUST NOT approve their own supplier creation — so they do not create suppliers.' },
+      { permission: 'purchase.supplier.bank', why: 'MUST NOT approve their own bank change — so they do not enter bank details.' },
+      { permission: 'purchase.supplier.pay', why: 'Paying is Finance\'s, not the approver\'s.' },
+    ],
+    // Answered by the owner, 1 Nov 2026: keep purchase.supplier.approve as one permission for supplier deals.
+    questions: [],
+  }),
+  section28Role({
+    id: RECEIVER_QC_ROLE_ID, name: 'Receiver / QC', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
+    roadmap: { scope: 'Assigned locations', may: 'Receive/count/QC/quarantine', mustNot: 'Cannot change PO price or approve supplier payment' },
+    limitedBy: ['locations'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores and their receiving places.' },
+      { permission: 'catalogue.pack.read', why: 'See the products arriving.' },
+      { permission: 'supplier.view', why: 'See who the delivery is from.' },
+      { permission: 'purchase.commitment.read', why: 'See the order a delivery is against and the deliveries still due (read only — no price is changed here).' },
+      { permission: 'purchase.order.receive', why: 'Record the goods received against a purchase order.' },
+      { permission: 'inventory.dsd.checkin', why: 'Check in a direct delivery at the door (no cash is paid).' },
+      { permission: 'inventory.goodsreceipt.read', why: 'Open the goods-receipt list.' },
+      { permission: 'inventory.availability.read', why: 'See stock and the count sheets.' },
+      { permission: 'inventory.movement.append', why: 'Only its own kinds of stock movement (OB-623): book a delivery at the receiving door, record and complete a goods receipt, and enter a count. Any other kind is refused by head office by name; a count difference above the limit still waits for a second person.' },
+      { permission: 'quality.hold.manage', why: 'Put a batch in quarantine and record the quality samples taken from it.' },
+      { permission: 'quality.coldchain.assess', why: 'Check the cold chain of a chilled or frozen delivery.' },
+      { permission: 'quality.lottrace.read', why: 'Trace which batches came in on which delivery.' },
+    ],
+    withheld: [
+      { permission: 'purchase.order.propose', why: 'MUST NOT change an order\'s price — amending an order is the Purchase user\'s.' },
+      { permission: 'purchase.order.approve', why: 'MUST NOT change an order\'s price — approving an order is the Purchase approver\'s.' },
+      { permission: 'purchase.supplier.pay', why: 'MUST NOT approve a supplier payment.' },
+      { permission: 'purchase.invoice.match', why: 'Matching the bill to what was received is Finance\'s — never the person who received it.' },
+      { permission: 'inventory.adjustment.approve', why: 'A count difference is approved by another person, never the counter.' },
+      { permission: 'quality.hold.release', why: 'Releasing a batch from quarantine for sale stays with the store manager (owner, 1 Nov 2026).' },
+    ],
+    questions: [],
+  }),
+  section28Role({
+    id: WAREHOUSE_USER_ROLE_ID, name: 'Warehouse user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
+    roadmap: { scope: 'Assigned locations', may: 'Put-away/pick/transfer/count', mustNot: 'Cannot self-approve material variances' },
+    limitedBy: ['locations'],
+    words: [
+      ...selfService,
+      { permission: 'org.branch.read', why: 'See the stores and their warehouse places.' },
+      { permission: 'catalogue.pack.read', why: 'See the products being moved.' },
+      { permission: 'inventory.availability.read', why: 'See the bins, the put-away suggestions, the transfers and the count sheets.' },
+      { permission: 'inventory.movement.append', why: 'Only its own kinds of stock movement (OB-623): put away, move between bins, pick and put back; issue stock from the back store to the floor and take the floor\'s returns back; send and receive a transfer; and enter a count — on the warehouse handheld or the office page. Any other kind is refused by head office by name.' },
+    ],
+    withheld: [
+      { permission: 'inventory.adjustment.approve', why: 'MUST NOT self-approve a material variance: a count difference or a transfer shortfall is approved by another person.' },
+      { permission: 'inventory.count.plan', why: 'Planning a count and naming the cause of a difference is the store manager\'s.' },
+    ],
+    questions: [],
+  }),
+  section28Role({
+    id: PICKER_ROLE_ID, name: 'Picker', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
+    limitedBy: ['assigned work'],
+    words: [
+      ...selfService,
+      { permission: 'fulfilment.pack.record', why: 'Pick and pack the online orders on the waves handed to them, on the picker handheld: each line picked, short, swapped for the shop\'s approved substitute or failed on quality, at the price the shop set; then the order packed with its temperature and seal evidence. Head office takes it only for a wave assigned to them.' },
+    ],
+    withheld: [
+      { permission: 'fulfilment.wave.assign', why: 'Building waves and handing them out is the store manager\'s — a picker works only what is assigned to them.' },
+      { permission: 'order.lifecycle.manage', why: 'Changing an order or a customer\'s substitution choice is the desk\'s; the picker records only what the shop\'s rules allow at the shelf.' },
+      { permission: 'price.change.propose', why: 'MUST NOT change a catalogue price.' },
+      { permission: 'delivery.dispatch.manage', why: 'MUST NOT reroute: planning and reassigning routes is the store manager\'s.' },
+      { permission: 'delivery.attempt.record', why: 'Delivering is the Delivery role\'s; a person who does both jobs is given both roles.' },
+    ],
+    questions: [],
+  }),
+  section28Role({
+    id: DELIVERY_ROLE_ID, name: 'Delivery driver', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
+    limitedBy: ['assigned work'],
+    words: [
+      ...selfService,
+      { permission: 'delivery.attempt.record', why: 'Deliver the orders on the route handed to them, on the delivery handheld: each stop departed, at the door, delivered with proof (a photo or the customer\'s signature), partly delivered, or failed with a reason; the cash on delivery taken; the end-of-shift settlement and the cash counted in. Head office takes it only for a route assigned to them.' },
+    ],
+    withheld: [
+      { permission: 'delivery.dispatch.manage', why: 'MUST NOT reroute without policy: planning, assigning and reassigning routes is the store manager\'s.' },
+      { permission: 'delivery.settlement.approve', why: 'Approving a route\'s settlement is another person\'s, never the driver\'s.' },
+      { permission: 'order.payment.record', why: 'Cash on delivery is recorded on the stop and counted in at the handover; recording a payment on an order is the desk\'s.' },
+      { permission: 'price.change.propose', why: 'MUST NOT change a catalogue price.' },
+      { permission: 'online.return.collect', why: 'Collecting an online return at the door is not in §28\'s "Pick/pack/deliver/proof/COD" — left with the store manager until the owner decides.' },
+      { permission: 'fulfilment.pack.record', why: 'Picking and packing is the Picker role\'s; a person who does both jobs is given both roles.' },
+    ],
+    questions: ['A route can carry an online return to collect at the door (WF-16), which needs online.return.collect. §28\'s Picker/Delivery row says "Pick/pack/deliver/proof/COD". Add it to the Delivery driver (so a route with a collection can go to a driver), or leave collections with the store manager?'],
+  }),
+]);
+
+/** The live catalogue head office enforces and every store setup carries: the roles above plus the §28 roles' words. */
+export const ROLE_CATALOGUE: readonly Role[] = Object.freeze([
+  ...BASE_ROLES,
+  ...SECTION_28_ROLES.map((r): Role => Object.freeze({ id: r.id, name: r.name, permissions: r.permissions })),
+]);
+
+/**
+ * Roles written down but waiting for the owner's approval before anybody may hold one (OB-615) — none now: OB-622 approved
+ * all four as shown. The refusal stays wired (services/identity/src/roles-awaiting-approval.ts) for the next role written
+ * from the roadmap, so a role is never live before the owner has read it.
+ */
+export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[] = Object.freeze([]);
+// ── Round 4c · OB-615 → OB-622 / OB-623 / OB-571 — end

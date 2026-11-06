@@ -7,6 +7,87 @@
   },
   "defaultContentType": "application/json",
   "channels": {
+    "events.AIKillSwitchActivated": {
+      "address": "events/AIKillSwitchActivated",
+      "description": "AIKillSwitchActivated — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "AIKillSwitchActivated": {
+          "$ref": "#/components/messages/event.AIKillSwitchActivated"
+        }
+      }
+    },
+    "events.AIRecommendationApproved": {
+      "address": "events/AIRecommendationApproved",
+      "description": "AIRecommendationApproved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "AIRecommendationApproved": {
+          "$ref": "#/components/messages/event.AIRecommendationApproved"
+        }
+      }
+    },
+    "events.AIRecommendationCreated": {
+      "address": "events/AIRecommendationCreated",
+      "description": "AIRecommendationCreated — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "AIRecommendationCreated": {
+          "$ref": "#/components/messages/event.AIRecommendationCreated"
+        }
+      }
+    },
+    "events.AIRecommendationRejected": {
+      "address": "events/AIRecommendationRejected",
+      "description": "AIRecommendationRejected — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "AIRecommendationRejected": {
+          "$ref": "#/components/messages/event.AIRecommendationRejected"
+        }
+      }
+    },
+    "events.AIToolCallBlocked": {
+      "address": "events/AIToolCallBlocked",
+      "description": "AIToolCallBlocked — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "AIToolCallBlocked": {
+          "$ref": "#/components/messages/event.AIToolCallBlocked"
+        }
+      }
+    },
+    "events.BackupFailed": {
+      "address": "events/BackupFailed",
+      "description": "BackupFailed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "BackupFailed": {
+          "$ref": "#/components/messages/event.BackupFailed"
+        }
+      }
+    },
+    "events.BackupVerified": {
+      "address": "events/BackupVerified",
+      "description": "BackupVerified — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "BackupVerified": {
+          "$ref": "#/components/messages/event.BackupVerified"
+        }
+      }
+    },
+    "events.BatchQuarantined": {
+      "address": "events/BatchQuarantined",
+      "description": "BatchQuarantined — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "BatchQuarantined": {
+          "$ref": "#/components/messages/event.BatchQuarantined"
+        }
+      }
+    },
+    "events.BatchRecalled": {
+      "address": "events/BatchRecalled",
+      "description": "BatchRecalled — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "BatchRecalled": {
+          "$ref": "#/components/messages/event.BatchRecalled"
+        }
+      }
+    },
     "events.CashMovement": {
       "address": "events/CashMovement",
       "description": "CashMovement — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
@@ -25,12 +106,39 @@
         }
       }
     },
+    "events.ConsentGranted": {
+      "address": "events/ConsentGranted",
+      "description": "ConsentGranted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ConsentGranted": {
+          "$ref": "#/components/messages/event.ConsentGranted"
+        }
+      }
+    },
+    "events.ConsentWithdrawn": {
+      "address": "events/ConsentWithdrawn",
+      "description": "ConsentWithdrawn — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ConsentWithdrawn": {
+          "$ref": "#/components/messages/event.ConsentWithdrawn"
+        }
+      }
+    },
     "events.GoodsReceived": {
       "address": "events/GoodsReceived",
       "description": "GoodsReceived — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
       "messages": {
         "GoodsReceived": {
           "$ref": "#/components/messages/event.GoodsReceived"
+        }
+      }
+    },
+    "events.GoodsRejected": {
+      "address": "events/GoodsRejected",
+      "description": "GoodsRejected — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "GoodsRejected": {
+          "$ref": "#/components/messages/event.GoodsRejected"
         }
       }
     },
@@ -43,12 +151,66 @@
         }
       }
     },
+    "events.InventoryCounted": {
+      "address": "events/InventoryCounted",
+      "description": "InventoryCounted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "InventoryCounted": {
+          "$ref": "#/components/messages/event.InventoryCounted"
+        }
+      }
+    },
     "events.InventoryMoved": {
       "address": "events/InventoryMoved",
       "description": "InventoryMoved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1). Also published to partners (webhooks.InventoryMoved).",
       "messages": {
         "InventoryMoved": {
           "$ref": "#/components/messages/event.InventoryMoved"
+        }
+      }
+    },
+    "events.InventoryReleased": {
+      "address": "events/InventoryReleased",
+      "description": "InventoryReleased — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "InventoryReleased": {
+          "$ref": "#/components/messages/event.InventoryReleased"
+        }
+      }
+    },
+    "events.InventoryReserved": {
+      "address": "events/InventoryReserved",
+      "description": "InventoryReserved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "InventoryReserved": {
+          "$ref": "#/components/messages/event.InventoryReserved"
+        }
+      }
+    },
+    "events.LoyaltyEarned": {
+      "address": "events/LoyaltyEarned",
+      "description": "LoyaltyEarned — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "LoyaltyEarned": {
+          "$ref": "#/components/messages/event.LoyaltyEarned"
+        }
+      }
+    },
+    "events.LoyaltyRedeemed": {
+      "address": "events/LoyaltyRedeemed",
+      "description": "LoyaltyRedeemed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "LoyaltyRedeemed": {
+          "$ref": "#/components/messages/event.LoyaltyRedeemed"
+        }
+      }
+    },
+    "events.LoyaltyReversed": {
+      "address": "events/LoyaltyReversed",
+      "description": "LoyaltyReversed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "LoyaltyReversed": {
+          "$ref": "#/components/messages/event.LoyaltyReversed"
         }
       }
     },
@@ -67,6 +229,78 @@
       "messages": {
         "MigrationTotalSigned": {
           "$ref": "#/components/messages/event.MigrationTotalSigned"
+        }
+      }
+    },
+    "events.OrderAllocated": {
+      "address": "events/OrderAllocated",
+      "description": "OrderAllocated — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderAllocated": {
+          "$ref": "#/components/messages/event.OrderAllocated"
+        }
+      }
+    },
+    "events.OrderCancelled": {
+      "address": "events/OrderCancelled",
+      "description": "OrderCancelled — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderCancelled": {
+          "$ref": "#/components/messages/event.OrderCancelled"
+        }
+      }
+    },
+    "events.OrderDelivered": {
+      "address": "events/OrderDelivered",
+      "description": "OrderDelivered — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderDelivered": {
+          "$ref": "#/components/messages/event.OrderDelivered"
+        }
+      }
+    },
+    "events.OrderDispatched": {
+      "address": "events/OrderDispatched",
+      "description": "OrderDispatched — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderDispatched": {
+          "$ref": "#/components/messages/event.OrderDispatched"
+        }
+      }
+    },
+    "events.OrderPacked": {
+      "address": "events/OrderPacked",
+      "description": "OrderPacked — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderPacked": {
+          "$ref": "#/components/messages/event.OrderPacked"
+        }
+      }
+    },
+    "events.OrderPicked": {
+      "address": "events/OrderPicked",
+      "description": "OrderPicked — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderPicked": {
+          "$ref": "#/components/messages/event.OrderPicked"
+        }
+      }
+    },
+    "events.OrderPlaced": {
+      "address": "events/OrderPlaced",
+      "description": "OrderPlaced — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderPlaced": {
+          "$ref": "#/components/messages/event.OrderPlaced"
+        }
+      }
+    },
+    "events.OrderReturned": {
+      "address": "events/OrderReturned",
+      "description": "OrderReturned — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "OrderReturned": {
+          "$ref": "#/components/messages/event.OrderReturned"
         }
       }
     },
@@ -94,6 +328,69 @@
       "messages": {
         "PointsMovement": {
           "$ref": "#/components/messages/event.PointsMovement"
+        }
+      }
+    },
+    "events.PriceActivated": {
+      "address": "events/PriceActivated",
+      "description": "PriceActivated — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PriceActivated": {
+          "$ref": "#/components/messages/event.PriceActivated"
+        }
+      }
+    },
+    "events.PriceRolledBack": {
+      "address": "events/PriceRolledBack",
+      "description": "PriceRolledBack — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PriceRolledBack": {
+          "$ref": "#/components/messages/event.PriceRolledBack"
+        }
+      }
+    },
+    "events.ProductApproved": {
+      "address": "events/ProductApproved",
+      "description": "ProductApproved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ProductApproved": {
+          "$ref": "#/components/messages/event.ProductApproved"
+        }
+      }
+    },
+    "events.ProductPublished": {
+      "address": "events/ProductPublished",
+      "description": "ProductPublished — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ProductPublished": {
+          "$ref": "#/components/messages/event.ProductPublished"
+        }
+      }
+    },
+    "events.PromotionActivated": {
+      "address": "events/PromotionActivated",
+      "description": "PromotionActivated — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PromotionActivated": {
+          "$ref": "#/components/messages/event.PromotionActivated"
+        }
+      }
+    },
+    "events.PromotionStopped": {
+      "address": "events/PromotionStopped",
+      "description": "PromotionStopped — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PromotionStopped": {
+          "$ref": "#/components/messages/event.PromotionStopped"
+        }
+      }
+    },
+    "events.PurchaseOrderApproved": {
+      "address": "events/PurchaseOrderApproved",
+      "description": "PurchaseOrderApproved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PurchaseOrderApproved": {
+          "$ref": "#/components/messages/event.PurchaseOrderApproved"
         }
       }
     },
@@ -160,6 +457,15 @@
         }
       }
     },
+    "events.SecurityIncidentRaised": {
+      "address": "events/SecurityIncidentRaised",
+      "description": "SecurityIncidentRaised — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "SecurityIncidentRaised": {
+          "$ref": "#/components/messages/event.SecurityIncidentRaised"
+        }
+      }
+    },
     "events.StockReserved": {
       "address": "events/StockReserved",
       "description": "StockReserved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
@@ -184,6 +490,42 @@
       "messages": {
         "StoreDayReopened": {
           "$ref": "#/components/messages/event.StoreDayReopened"
+        }
+      }
+    },
+    "events.SupplierInvoiceException": {
+      "address": "events/SupplierInvoiceException",
+      "description": "SupplierInvoiceException — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "SupplierInvoiceException": {
+          "$ref": "#/components/messages/event.SupplierInvoiceException"
+        }
+      }
+    },
+    "events.SupplierInvoiceMatched": {
+      "address": "events/SupplierInvoiceMatched",
+      "description": "SupplierInvoiceMatched — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "SupplierInvoiceMatched": {
+          "$ref": "#/components/messages/event.SupplierInvoiceMatched"
+        }
+      }
+    },
+    "events.SyncDelayed": {
+      "address": "events/SyncDelayed",
+      "description": "SyncDelayed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "SyncDelayed": {
+          "$ref": "#/components/messages/event.SyncDelayed"
+        }
+      }
+    },
+    "events.SyncRecovered": {
+      "address": "events/SyncRecovered",
+      "description": "SyncRecovered — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "SyncRecovered": {
+          "$ref": "#/components/messages/event.SyncRecovered"
         }
       }
     },
@@ -262,6 +604,105 @@
     }
   },
   "operations": {
+    "publish.AIKillSwitchActivated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.AIKillSwitchActivated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.AIKillSwitchActivated/messages/AIKillSwitchActivated"
+        }
+      ]
+    },
+    "publish.AIRecommendationApproved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.AIRecommendationApproved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.AIRecommendationApproved/messages/AIRecommendationApproved"
+        }
+      ]
+    },
+    "publish.AIRecommendationCreated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.AIRecommendationCreated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.AIRecommendationCreated/messages/AIRecommendationCreated"
+        }
+      ]
+    },
+    "publish.AIRecommendationRejected": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.AIRecommendationRejected"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.AIRecommendationRejected/messages/AIRecommendationRejected"
+        }
+      ]
+    },
+    "publish.AIToolCallBlocked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.AIToolCallBlocked"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.AIToolCallBlocked/messages/AIToolCallBlocked"
+        }
+      ]
+    },
+    "publish.BackupFailed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.BackupFailed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.BackupFailed/messages/BackupFailed"
+        }
+      ]
+    },
+    "publish.BackupVerified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.BackupVerified"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.BackupVerified/messages/BackupVerified"
+        }
+      ]
+    },
+    "publish.BatchQuarantined": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.BatchQuarantined"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.BatchQuarantined/messages/BatchQuarantined"
+        }
+      ]
+    },
+    "publish.BatchRecalled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.BatchRecalled"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.BatchRecalled/messages/BatchRecalled"
+        }
+      ]
+    },
     "publish.CashMovement": {
       "action": "send",
       "channel": {
@@ -284,6 +725,28 @@
         }
       ]
     },
+    "publish.ConsentGranted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ConsentGranted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ConsentGranted/messages/ConsentGranted"
+        }
+      ]
+    },
+    "publish.ConsentWithdrawn": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ConsentWithdrawn"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ConsentWithdrawn/messages/ConsentWithdrawn"
+        }
+      ]
+    },
     "publish.GoodsReceived": {
       "action": "send",
       "channel": {
@@ -292,6 +755,17 @@
       "messages": [
         {
           "$ref": "#/channels/events.GoodsReceived/messages/GoodsReceived"
+        }
+      ]
+    },
+    "publish.GoodsRejected": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.GoodsRejected"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.GoodsRejected/messages/GoodsRejected"
         }
       ]
     },
@@ -306,6 +780,17 @@
         }
       ]
     },
+    "publish.InventoryCounted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.InventoryCounted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.InventoryCounted/messages/InventoryCounted"
+        }
+      ]
+    },
     "publish.InventoryMoved": {
       "action": "send",
       "channel": {
@@ -314,6 +799,61 @@
       "messages": [
         {
           "$ref": "#/channels/events.InventoryMoved/messages/InventoryMoved"
+        }
+      ]
+    },
+    "publish.InventoryReleased": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.InventoryReleased"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.InventoryReleased/messages/InventoryReleased"
+        }
+      ]
+    },
+    "publish.InventoryReserved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.InventoryReserved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.InventoryReserved/messages/InventoryReserved"
+        }
+      ]
+    },
+    "publish.LoyaltyEarned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.LoyaltyEarned"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.LoyaltyEarned/messages/LoyaltyEarned"
+        }
+      ]
+    },
+    "publish.LoyaltyRedeemed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.LoyaltyRedeemed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.LoyaltyRedeemed/messages/LoyaltyRedeemed"
+        }
+      ]
+    },
+    "publish.LoyaltyReversed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.LoyaltyReversed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.LoyaltyReversed/messages/LoyaltyReversed"
         }
       ]
     },
@@ -336,6 +876,94 @@
       "messages": [
         {
           "$ref": "#/channels/events.MigrationTotalSigned/messages/MigrationTotalSigned"
+        }
+      ]
+    },
+    "publish.OrderAllocated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderAllocated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderAllocated/messages/OrderAllocated"
+        }
+      ]
+    },
+    "publish.OrderCancelled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderCancelled"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderCancelled/messages/OrderCancelled"
+        }
+      ]
+    },
+    "publish.OrderDelivered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderDelivered"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderDelivered/messages/OrderDelivered"
+        }
+      ]
+    },
+    "publish.OrderDispatched": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderDispatched"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderDispatched/messages/OrderDispatched"
+        }
+      ]
+    },
+    "publish.OrderPacked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderPacked"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderPacked/messages/OrderPacked"
+        }
+      ]
+    },
+    "publish.OrderPicked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderPicked"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderPicked/messages/OrderPicked"
+        }
+      ]
+    },
+    "publish.OrderPlaced": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderPlaced"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderPlaced/messages/OrderPlaced"
+        }
+      ]
+    },
+    "publish.OrderReturned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.OrderReturned"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.OrderReturned/messages/OrderReturned"
         }
       ]
     },
@@ -369,6 +997,83 @@
       "messages": [
         {
           "$ref": "#/channels/events.PointsMovement/messages/PointsMovement"
+        }
+      ]
+    },
+    "publish.PriceActivated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PriceActivated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PriceActivated/messages/PriceActivated"
+        }
+      ]
+    },
+    "publish.PriceRolledBack": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PriceRolledBack"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PriceRolledBack/messages/PriceRolledBack"
+        }
+      ]
+    },
+    "publish.ProductApproved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ProductApproved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ProductApproved/messages/ProductApproved"
+        }
+      ]
+    },
+    "publish.ProductPublished": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ProductPublished"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ProductPublished/messages/ProductPublished"
+        }
+      ]
+    },
+    "publish.PromotionActivated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PromotionActivated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PromotionActivated/messages/PromotionActivated"
+        }
+      ]
+    },
+    "publish.PromotionStopped": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PromotionStopped"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PromotionStopped/messages/PromotionStopped"
+        }
+      ]
+    },
+    "publish.PurchaseOrderApproved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PurchaseOrderApproved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PurchaseOrderApproved/messages/PurchaseOrderApproved"
         }
       ]
     },
@@ -449,6 +1154,17 @@
         }
       ]
     },
+    "publish.SecurityIncidentRaised": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SecurityIncidentRaised"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SecurityIncidentRaised/messages/SecurityIncidentRaised"
+        }
+      ]
+    },
     "publish.StockReserved": {
       "action": "send",
       "channel": {
@@ -479,6 +1195,50 @@
       "messages": [
         {
           "$ref": "#/channels/events.StoreDayReopened/messages/StoreDayReopened"
+        }
+      ]
+    },
+    "publish.SupplierInvoiceException": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SupplierInvoiceException"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SupplierInvoiceException/messages/SupplierInvoiceException"
+        }
+      ]
+    },
+    "publish.SupplierInvoiceMatched": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SupplierInvoiceMatched"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SupplierInvoiceMatched/messages/SupplierInvoiceMatched"
+        }
+      ]
+    },
+    "publish.SyncDelayed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SyncDelayed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SyncDelayed/messages/SyncDelayed"
+        }
+      ]
+    },
+    "publish.SyncRecovered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SyncRecovered"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SyncRecovered/messages/SyncRecovered"
         }
       ]
     },
@@ -562,6 +1322,222 @@
   },
   "components": {
     "messages": {
+      "event.AIKillSwitchActivated": {
+        "name": "AIKillSwitchActivated",
+        "title": "AIKillSwitchActivated",
+        "contentType": "application/json",
+        "summary": "The AIKillSwitchActivated domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "AIKillSwitchActivated"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/AIKillSwitchActivatedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.AIRecommendationApproved": {
+        "name": "AIRecommendationApproved",
+        "title": "AIRecommendationApproved",
+        "contentType": "application/json",
+        "summary": "The AIRecommendationApproved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "AIRecommendationApproved"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/AIRecommendationApprovedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.AIRecommendationCreated": {
+        "name": "AIRecommendationCreated",
+        "title": "AIRecommendationCreated",
+        "contentType": "application/json",
+        "summary": "The AIRecommendationCreated domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "AIRecommendationCreated"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/AIRecommendationCreatedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.AIRecommendationRejected": {
+        "name": "AIRecommendationRejected",
+        "title": "AIRecommendationRejected",
+        "contentType": "application/json",
+        "summary": "The AIRecommendationRejected domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "AIRecommendationRejected"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/AIRecommendationRejectedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.AIToolCallBlocked": {
+        "name": "AIToolCallBlocked",
+        "title": "AIToolCallBlocked",
+        "contentType": "application/json",
+        "summary": "The AIToolCallBlocked domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "AIToolCallBlocked"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/AIToolCallBlockedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.BackupFailed": {
+        "name": "BackupFailed",
+        "title": "BackupFailed",
+        "contentType": "application/json",
+        "summary": "The BackupFailed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "BackupFailed"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/BackupFailedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.BackupVerified": {
+        "name": "BackupVerified",
+        "title": "BackupVerified",
+        "contentType": "application/json",
+        "summary": "The BackupVerified domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "BackupVerified"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/BackupVerifiedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.BatchQuarantined": {
+        "name": "BatchQuarantined",
+        "title": "BatchQuarantined",
+        "contentType": "application/json",
+        "summary": "The BatchQuarantined domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "BatchQuarantined"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/BatchQuarantinedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.BatchRecalled": {
+        "name": "BatchRecalled",
+        "title": "BatchRecalled",
+        "contentType": "application/json",
+        "summary": "The BatchRecalled domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "BatchRecalled"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/BatchRecalledPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
       "event.CashMovement": {
         "name": "CashMovement",
         "title": "CashMovement",
@@ -610,6 +1586,54 @@
           ]
         }
       },
+      "event.ConsentGranted": {
+        "name": "ConsentGranted",
+        "title": "ConsentGranted",
+        "contentType": "application/json",
+        "summary": "The ConsentGranted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ConsentGranted"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/ConsentGrantedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ConsentWithdrawn": {
+        "name": "ConsentWithdrawn",
+        "title": "ConsentWithdrawn",
+        "contentType": "application/json",
+        "summary": "The ConsentWithdrawn domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ConsentWithdrawn"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/ConsentWithdrawnPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
       "event.GoodsReceived": {
         "name": "GoodsReceived",
         "title": "GoodsReceived",
@@ -628,6 +1652,30 @@
                 },
                 "payload": {
                   "$ref": "#/components/schemas/GoodsReceivedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.GoodsRejected": {
+        "name": "GoodsRejected",
+        "title": "GoodsRejected",
+        "contentType": "application/json",
+        "summary": "The GoodsRejected domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "GoodsRejected"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/GoodsRejectedPayload"
                 }
               }
             }
@@ -658,6 +1706,30 @@
           ]
         }
       },
+      "event.InventoryCounted": {
+        "name": "InventoryCounted",
+        "title": "InventoryCounted",
+        "contentType": "application/json",
+        "summary": "The InventoryCounted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "InventoryCounted"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/InventoryCountedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
       "event.InventoryMoved": {
         "name": "InventoryMoved",
         "title": "InventoryMoved",
@@ -676,6 +1748,126 @@
                 },
                 "payload": {
                   "$ref": "#/components/schemas/InventoryMovedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.InventoryReleased": {
+        "name": "InventoryReleased",
+        "title": "InventoryReleased",
+        "contentType": "application/json",
+        "summary": "The InventoryReleased domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "InventoryReleased"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/InventoryReleasedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.InventoryReserved": {
+        "name": "InventoryReserved",
+        "title": "InventoryReserved",
+        "contentType": "application/json",
+        "summary": "The InventoryReserved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "InventoryReserved"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/InventoryReservedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.LoyaltyEarned": {
+        "name": "LoyaltyEarned",
+        "title": "LoyaltyEarned",
+        "contentType": "application/json",
+        "summary": "The LoyaltyEarned domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "LoyaltyEarned"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/LoyaltyEarnedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.LoyaltyRedeemed": {
+        "name": "LoyaltyRedeemed",
+        "title": "LoyaltyRedeemed",
+        "contentType": "application/json",
+        "summary": "The LoyaltyRedeemed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "LoyaltyRedeemed"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/LoyaltyRedeemedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.LoyaltyReversed": {
+        "name": "LoyaltyReversed",
+        "title": "LoyaltyReversed",
+        "contentType": "application/json",
+        "summary": "The LoyaltyReversed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "LoyaltyReversed"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/LoyaltyReversedPayload"
                 }
               }
             }
@@ -724,6 +1916,198 @@
                 },
                 "payload": {
                   "$ref": "#/components/schemas/MigrationTotalSignedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderAllocated": {
+        "name": "OrderAllocated",
+        "title": "OrderAllocated",
+        "contentType": "application/json",
+        "summary": "The OrderAllocated domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderAllocated"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderAllocatedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderCancelled": {
+        "name": "OrderCancelled",
+        "title": "OrderCancelled",
+        "contentType": "application/json",
+        "summary": "The OrderCancelled domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderCancelled"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderCancelledPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderDelivered": {
+        "name": "OrderDelivered",
+        "title": "OrderDelivered",
+        "contentType": "application/json",
+        "summary": "The OrderDelivered domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderDelivered"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderDeliveredPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderDispatched": {
+        "name": "OrderDispatched",
+        "title": "OrderDispatched",
+        "contentType": "application/json",
+        "summary": "The OrderDispatched domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderDispatched"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderDispatchedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderPacked": {
+        "name": "OrderPacked",
+        "title": "OrderPacked",
+        "contentType": "application/json",
+        "summary": "The OrderPacked domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderPacked"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderPackedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderPicked": {
+        "name": "OrderPicked",
+        "title": "OrderPicked",
+        "contentType": "application/json",
+        "summary": "The OrderPicked domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderPicked"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderPickedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderPlaced": {
+        "name": "OrderPlaced",
+        "title": "OrderPlaced",
+        "contentType": "application/json",
+        "summary": "The OrderPlaced domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderPlaced"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderPlacedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.OrderReturned": {
+        "name": "OrderReturned",
+        "title": "OrderReturned",
+        "contentType": "application/json",
+        "summary": "The OrderReturned domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "OrderReturned"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/OrderReturnedPayload"
                 }
               }
             }
@@ -796,6 +2180,174 @@
                 },
                 "payload": {
                   "$ref": "#/components/schemas/PointsMovementPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PriceActivated": {
+        "name": "PriceActivated",
+        "title": "PriceActivated",
+        "contentType": "application/json",
+        "summary": "The PriceActivated domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PriceActivated"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/PriceActivatedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PriceRolledBack": {
+        "name": "PriceRolledBack",
+        "title": "PriceRolledBack",
+        "contentType": "application/json",
+        "summary": "The PriceRolledBack domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PriceRolledBack"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/PriceRolledBackPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ProductApproved": {
+        "name": "ProductApproved",
+        "title": "ProductApproved",
+        "contentType": "application/json",
+        "summary": "The ProductApproved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ProductApproved"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/ProductApprovedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ProductPublished": {
+        "name": "ProductPublished",
+        "title": "ProductPublished",
+        "contentType": "application/json",
+        "summary": "The ProductPublished domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ProductPublished"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/ProductPublishedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PromotionActivated": {
+        "name": "PromotionActivated",
+        "title": "PromotionActivated",
+        "contentType": "application/json",
+        "summary": "The PromotionActivated domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PromotionActivated"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/PromotionActivatedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PromotionStopped": {
+        "name": "PromotionStopped",
+        "title": "PromotionStopped",
+        "contentType": "application/json",
+        "summary": "The PromotionStopped domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PromotionStopped"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/PromotionStoppedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PurchaseOrderApproved": {
+        "name": "PurchaseOrderApproved",
+        "title": "PurchaseOrderApproved",
+        "contentType": "application/json",
+        "summary": "The PurchaseOrderApproved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PurchaseOrderApproved"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/PurchaseOrderApprovedPayload"
                 }
               }
             }
@@ -970,6 +2522,30 @@
           ]
         }
       },
+      "event.SecurityIncidentRaised": {
+        "name": "SecurityIncidentRaised",
+        "title": "SecurityIncidentRaised",
+        "contentType": "application/json",
+        "summary": "The SecurityIncidentRaised domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SecurityIncidentRaised"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/SecurityIncidentRaisedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
       "event.StockReserved": {
         "name": "StockReserved",
         "title": "StockReserved",
@@ -1036,6 +2612,102 @@
                 },
                 "payload": {
                   "$ref": "#/components/schemas/StoreDayReopenedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.SupplierInvoiceException": {
+        "name": "SupplierInvoiceException",
+        "title": "SupplierInvoiceException",
+        "contentType": "application/json",
+        "summary": "The SupplierInvoiceException domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SupplierInvoiceException"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/SupplierInvoiceExceptionPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.SupplierInvoiceMatched": {
+        "name": "SupplierInvoiceMatched",
+        "title": "SupplierInvoiceMatched",
+        "contentType": "application/json",
+        "summary": "The SupplierInvoiceMatched domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SupplierInvoiceMatched"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/SupplierInvoiceMatchedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.SyncDelayed": {
+        "name": "SyncDelayed",
+        "title": "SyncDelayed",
+        "contentType": "application/json",
+        "summary": "The SyncDelayed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SyncDelayed"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/SyncDelayedPayload"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.SyncRecovered": {
+        "name": "SyncRecovered",
+        "title": "SyncRecovered",
+        "contentType": "application/json",
+        "summary": "The SyncRecovered domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SyncRecovered"
+                },
+                "payload": {
+                  "$ref": "#/components/schemas/SyncRecoveredPayload"
                 }
               }
             }
@@ -1409,6 +3081,54 @@
           }
         }
       },
+      "AIKillSwitchActivatedPayload": {
+        "$ref": "#/components/schemas/KillSwitch",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/ai-governance-stores.ts"
+        ]
+      },
+      "AIRecommendationApprovedPayload": {
+        "$ref": "#/components/schemas/ProposalOutcome",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/ai-governance-stores.ts"
+        ]
+      },
+      "AIRecommendationCreatedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a AIRecommendationCreated event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "AIRecommendationRejectedPayload": {
+        "$ref": "#/components/schemas/ProposalOutcome",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/ai-governance-stores.ts"
+        ]
+      },
+      "AIToolCallBlockedPayload": {
+        "$ref": "#/components/schemas/AiToolCallBlocked",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/ai-governance-stores.ts"
+        ]
+      },
+      "BackupFailedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a BackupFailed event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "BackupVerifiedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a BackupVerified event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "BatchQuarantinedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a BatchQuarantined event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "BatchRecalledPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a BatchRecalled event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
       "CashMovementPayload": {
         "anyOf": [
           {
@@ -1481,6 +3201,14 @@
           "edge/store-edge/src/index.ts",
           "edge/store-edge/src/main.ts"
         ]
+      },
+      "ConsentGrantedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a ConsentGranted event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "ConsentWithdrawnPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a ConsentWithdrawn event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "GoodsReceivedPayload": {
         "anyOf": [
@@ -1596,6 +3324,10 @@
           "services/api/src/adapters.ts"
         ]
       },
+      "GoodsRejectedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a GoodsRejected event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
       "InventoryAdjustedPayload": {
         "type": "object",
         "required": [
@@ -1641,6 +3373,10 @@
         "x-derived-from": [
           "packages/adjustment/src/adjustment.ts"
         ]
+      },
+      "InventoryCountedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a InventoryCounted event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "InventoryMovedPayload": {
         "anyOf": [
@@ -1732,6 +3468,26 @@
           "services/api/src/data-in-adapters.ts"
         ]
       },
+      "InventoryReleasedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a InventoryReleased event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "InventoryReservedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a InventoryReserved event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "LoyaltyEarnedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a LoyaltyEarned event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "LoyaltyRedeemedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a LoyaltyRedeemed event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "LoyaltyReversedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a LoyaltyReversed event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
       "MigrationExceptionResolvedPayload": {
         "type": "object",
         "required": [
@@ -1771,6 +3527,53 @@
         "x-derived-from": [
           "services/api/src/adapters.ts"
         ]
+      },
+      "OrderAllocatedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a OrderAllocated event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "OrderCancelledPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a OrderCancelled event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "OrderDeliveredPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a OrderDelivered event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "OrderDispatchedPayload": {
+        "type": "object",
+        "additionalProperties": {
+          "x-untyped": "unknown"
+        },
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "OrderPackedPayload": {
+        "type": "object",
+        "additionalProperties": {
+          "x-untyped": "unknown"
+        },
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "OrderPickedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a OrderPicked event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "OrderPlacedPayload": {
+        "$ref": "#/components/schemas/PlacedOrder",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "OrderReturnedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a OrderReturned event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "PeriodClosedPayload": {
         "type": "object",
@@ -1886,6 +3689,194 @@
           "services/api/src/adapters.ts",
           "services/api/src/data-in-adapters.ts"
         ]
+      },
+      "PriceActivatedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a PriceActivated event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "PriceRolledBackPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a PriceRolledBack event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "ProductApprovedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a ProductApproved event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "ProductPublishedPayload": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ProductRecord"
+          },
+          {
+            "type": "object",
+            "required": [
+              "lifecycle",
+              "productId",
+              "tenantId",
+              "sku",
+              "name",
+              "primaryCategoryId",
+              "baseUom",
+              "taxClass"
+            ],
+            "properties": {
+              "lifecycle": {
+                "type": "string",
+                "const": "discontinued"
+              },
+              "productId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "sku": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "brand": {
+                "type": "string"
+              },
+              "manufacturer": {
+                "type": "string"
+              },
+              "primaryCategoryId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "parentProductId": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "baseUom": {
+                "type": "string"
+              },
+              "taxClass": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "mrpHistory": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "value",
+                    "effectiveFrom"
+                  ],
+                  "properties": {
+                    "value": {
+                      "$ref": "#/components/schemas/Money.code"
+                    },
+                    "effectiveFrom": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "mrpReplacements": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MrpReplacement"
+                }
+              },
+              "attributes": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "safety": {
+                "$ref": "#/components/schemas/SafetyContent"
+              },
+              "recallBlocked": {
+                "type": "boolean"
+              },
+              "handling": {
+                "type": "string",
+                "enum": [
+                  "ambient",
+                  "chilled",
+                  "fragile",
+                  "frozen",
+                  "hazardous",
+                  "raw_meat",
+                  "ready_to_eat"
+                ]
+              },
+              "coldChain": {
+                "$ref": "#/components/schemas/ColdChainLimits"
+              },
+              "appContent": {
+                "$ref": "#/components/schemas/AppContent"
+              },
+              "tobaccoWarning": {
+                "$ref": "#/components/schemas/TobaccoWarningRecord"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "PromotionActivatedPayload": {
+        "type": "object",
+        "required": [
+          "promotionId"
+        ],
+        "properties": {
+          "promotionId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "PromotionStoppedPayload": {
+        "type": "object",
+        "required": [
+          "promotionId"
+        ],
+        "properties": {
+          "promotionId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/adapters.ts"
+        ]
+      },
+      "PurchaseOrderApprovedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a PurchaseOrderApproved event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "ReconciliationExceptionRaisedPayload": {
         "type": "object",
@@ -2098,6 +4089,7 @@
                   "cash",
                   "exchange",
                   "exchange_credit",
+                  "gift_card",
                   "loyalty_points",
                   "paid_on_old_erp",
                   "split",
@@ -2165,6 +4157,10 @@
           "edge/store-edge/src/main.ts",
           "services/api/src/adapters.ts"
         ]
+      },
+      "SecurityIncidentRaisedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a SecurityIncidentRaised event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "StockReservedPayload": {
         "type": "object",
@@ -2434,6 +4430,22 @@
           "services/api/src/adapters.ts"
         ]
       },
+      "SupplierInvoiceExceptionPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a SupplierInvoiceException event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "SupplierInvoiceMatchedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a SupplierInvoiceMatched event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "SyncDelayedPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a SyncDelayed event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
+      "SyncRecoveredPayload": {
+        "x-payload-schema": "not published",
+        "description": "No code builds a SyncRecovered event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+      },
       "TaskCompletedPayload": {
         "anyOf": [
           {
@@ -2538,6 +4550,73 @@
           "packages/till/src/till.ts",
           "services/api/src/adapters.ts"
         ]
+      },
+      "AiToolCallBlocked": {
+        "type": "object",
+        "required": [
+          "callId",
+          "agent",
+          "tool",
+          "forbidden",
+          "at"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "A01",
+              "A02",
+              "A03",
+              "A04",
+              "A05",
+              "A06",
+              "A07",
+              "A08",
+              "A09",
+              "A10"
+            ]
+          },
+          "tool": {
+            "type": "string"
+          },
+          "forbidden": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AppContent": {
+        "type": "object",
+        "properties": {
+          "nameTa": {
+            "type": "string"
+          },
+          "descriptionEn": {
+            "type": "string"
+          },
+          "descriptionTa": {
+            "type": "string"
+          },
+          "synonyms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
       },
       "AsnCheck": {
         "type": "object",
@@ -3339,6 +5418,18 @@
         },
         "additionalProperties": true
       },
+      "ColdChainLimits": {
+        "type": "object",
+        "properties": {
+          "minTenthsC": {
+            "type": "number"
+          },
+          "maxTenthsC": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "CostNotKnownLine": {
         "type": "object",
         "required": [
@@ -3659,6 +5750,7 @@
               "card",
               "cash",
               "exchange_credit",
+              "gift_card",
               "loyalty_points",
               "paid_on_old_erp",
               "split",
@@ -3681,6 +5773,7 @@
                     "card",
                     "cash",
                     "exchange_credit",
+                    "gift_card",
                     "loyalty_points",
                     "paid_on_old_erp",
                     "split",
@@ -3870,6 +5963,25 @@
           "tenders"
         ],
         "properties": {
+          "coupons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "discountMinor"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "discountMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "delivery": {
             "type": "object",
             "required": [
@@ -4239,6 +6351,79 @@
               }
             },
             "additionalProperties": true
+          },
+          "giftCard": {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "capturedOffline": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "KillSwitch": {
+        "type": "object",
+        "required": [
+          "switchId",
+          "tenantId",
+          "scope",
+          "reason",
+          "activatedBy",
+          "activatedAt"
+        ],
+        "properties": {
+          "switchId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all_ai",
+              "customer_facing",
+              "single_agent"
+            ]
+          },
+          "agentId": {
+            "type": "string",
+            "enum": [
+              "A01",
+              "A02",
+              "A03",
+              "A04",
+              "A05",
+              "A06",
+              "A07",
+              "A08",
+              "A09",
+              "A10"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "activatedBy": {
+            "type": "string"
+          },
+          "activatedAt": {
+            "type": "string"
+          },
+          "liftedBy": {
+            "type": "string"
+          },
+          "liftedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -4516,6 +6701,121 @@
         },
         "additionalProperties": true
       },
+      "MrpReplacement": {
+        "type": "object",
+        "required": [
+          "effectiveFrom",
+          "replaced",
+          "replacedBy",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "approvalId",
+          "at"
+        ],
+        "properties": {
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "replaced": {
+            "$ref": "#/components/schemas/Money.code"
+          },
+          "replacedBy": {
+            "$ref": "#/components/schemas/Money.code"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "NutritionFacts": {
+        "type": "object",
+        "required": [
+          "basis",
+          "energyKcal",
+          "proteinG",
+          "carbohydrateG",
+          "totalSugarsG",
+          "addedSugarsG",
+          "totalFatG",
+          "saturatedFatG",
+          "transFatG",
+          "cholesterolMg",
+          "sodiumMg"
+        ],
+        "properties": {
+          "basis": {
+            "type": "string",
+            "enum": [
+              "per_100g",
+              "per_100ml"
+            ]
+          },
+          "energyKcal": {
+            "type": "number"
+          },
+          "proteinG": {
+            "type": "number"
+          },
+          "carbohydrateG": {
+            "type": "number"
+          },
+          "totalSugarsG": {
+            "type": "number"
+          },
+          "addedSugarsG": {
+            "type": "number"
+          },
+          "totalFatG": {
+            "type": "number"
+          },
+          "saturatedFatG": {
+            "type": "number"
+          },
+          "transFatG": {
+            "type": "number"
+          },
+          "cholesterolMg": {
+            "type": "number"
+          },
+          "sodiumMg": {
+            "type": "number"
+          },
+          "servingSize": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OrderLine": {
+        "type": "object",
+        "required": [
+          "productId",
+          "quantityMinor"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "quantityMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
       "OrderLineCost": {
         "type": "object",
         "required": [
@@ -4599,6 +6899,249 @@
               "asked",
               "no_answer"
             ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "PlacedOrder": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "locationId",
+          "lines",
+          "state",
+          "placedAt"
+        ],
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "collected",
+              "confirmed",
+              "delivered",
+              "dispatched",
+              "packed",
+              "picking",
+              "placed",
+              "returned"
+            ]
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "fulfilment": {
+            "type": "string",
+            "enum": [
+              "delivery",
+              "pickup"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProductRecord": {
+        "type": "object",
+        "required": [
+          "productId",
+          "tenantId",
+          "sku",
+          "name",
+          "primaryCategoryId",
+          "baseUom",
+          "taxClass",
+          "lifecycle"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "brand": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "primaryCategoryId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "parentProductId": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "baseUom": {
+            "type": "string"
+          },
+          "taxClass": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "mrpHistory": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "value",
+                "effectiveFrom"
+              ],
+              "properties": {
+                "value": {
+                  "$ref": "#/components/schemas/Money.code"
+                },
+                "effectiveFrom": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "mrpReplacements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MrpReplacement"
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "safety": {
+            "$ref": "#/components/schemas/SafetyContent"
+          },
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "active",
+              "clearance",
+              "discontinued",
+              "draft",
+              "new"
+            ]
+          },
+          "recallBlocked": {
+            "type": "boolean"
+          },
+          "handling": {
+            "type": "string",
+            "enum": [
+              "ambient",
+              "chilled",
+              "fragile",
+              "frozen",
+              "hazardous",
+              "raw_meat",
+              "ready_to_eat"
+            ]
+          },
+          "coldChain": {
+            "$ref": "#/components/schemas/ColdChainLimits"
+          },
+          "appContent": {
+            "$ref": "#/components/schemas/AppContent"
+          },
+          "tobaccoWarning": {
+            "$ref": "#/components/schemas/TobaccoWarningRecord"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProposalOutcome": {
+        "type": "object",
+        "required": [
+          "proposalId",
+          "agent",
+          "decision",
+          "by",
+          "at",
+          "wouldRequire",
+          "committedAnything"
+        ],
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "A01",
+              "A02",
+              "A03",
+              "A04",
+              "A05",
+              "A06",
+              "A07",
+              "A08",
+              "A09",
+              "A10"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "wouldRequire": {
+            "type": "string"
+          },
+          "committedAnything": {
+            "type": "boolean",
+            "const": false
           }
         },
         "additionalProperties": true
@@ -4890,6 +7433,115 @@
         },
         "additionalProperties": true
       },
+      "SafetyContent": {
+        "type": "object",
+        "properties": {
+          "ingredients": {
+            "type": "string"
+          },
+          "allergens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "countryOfOrigin": {
+            "type": "string"
+          },
+          "storageConditions": {
+            "type": "string"
+          },
+          "netQuantity": {
+            "type": "string"
+          },
+          "packerDetails": {
+            "type": "string"
+          },
+          "consumerCareContact": {
+            "type": "string"
+          },
+          "minimumAge": {
+            "type": "number"
+          },
+          "tobacco": {
+            "type": "boolean"
+          },
+          "packMinimumMinor": {
+            "type": "number"
+          },
+          "carryBag": {
+            "type": "boolean"
+          },
+          "plasticMaterial": {
+            "type": "string",
+            "enum": [
+              "cloth",
+              "compostable",
+              "paper",
+              "plastic"
+            ]
+          },
+          "plasticThicknessMicrons": {
+            "type": "number"
+          },
+          "bannedSingleUsePlastic": {
+            "type": "boolean"
+          },
+          "gold": {
+            "type": "boolean"
+          },
+          "huid": {
+            "type": "string"
+          },
+          "bisControlled": {
+            "type": "boolean"
+          },
+          "bisLicenceNo": {
+            "type": "string"
+          },
+          "bisLicenceValidUntil": {
+            "type": "string"
+          },
+          "perishable": {
+            "type": "boolean"
+          },
+          "liquor": {
+            "type": "boolean"
+          },
+          "medicine": {
+            "type": "boolean"
+          },
+          "packedBySre": {
+            "type": "boolean"
+          },
+          "nutrition": {
+            "$ref": "#/components/schemas/NutritionFacts"
+          }
+        },
+        "additionalProperties": true
+      },
+      "TobaccoWarningRecord": {
+        "type": "object",
+        "required": [
+          "images",
+          "confirmations"
+        ],
+        "properties": {
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarningImage"
+            }
+          },
+          "confirmations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarningConfirmation"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
       "TotalSignature": {
         "type": "object",
         "required": [
@@ -4909,6 +7561,70 @@
             "type": "string"
           },
           "statement": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "WarningConfirmation": {
+        "type": "object",
+        "required": [
+          "imageId",
+          "confirmedBy",
+          "confirmedByName",
+          "confirmedAt",
+          "evidenceRef"
+        ],
+        "properties": {
+          "imageId": {
+            "type": "string"
+          },
+          "confirmedBy": {
+            "type": "string"
+          },
+          "confirmedByName": {
+            "type": "string"
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "evidenceRef": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "WarningImage": {
+        "type": "object",
+        "required": [
+          "imageId",
+          "effectiveFrom",
+          "notifiedOn",
+          "reference",
+          "evidenceRef",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "imageId": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "notifiedOn": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "evidenceRef": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
             "type": "string"
           }
         },

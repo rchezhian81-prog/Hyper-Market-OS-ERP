@@ -22,11 +22,13 @@
 
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 /** What kind of check raised the finding. The first six are CI scanners (§35); the last two are people. */
-export type FindingSource = 'sast' | 'container' | 'iac' | 'dast' | 'dependency' | 'secret' | 'pentest' | 'review';
+export type FindingSource = 'sast' | 'container' | 'iac' | 'dast' | 'dependency' | 'secret' | 'repository' | 'pentest' | 'review';
 export type FindingStatus = 'open' | 'fixed';
 
 export const FINDING_SEVERITIES: readonly FindingSeverity[] = Object.freeze(['critical', 'high', 'medium', 'low', 'info']);
-export const SCANNER_SOURCES: readonly FindingSource[] = Object.freeze(['sast', 'container', 'iac', 'dast', 'dependency', 'secret']);
+// W4 · QG-03: `repository` is the CI's reading of the repository's own settings (branch protection on main) — a machine
+// reading like a scanner's, closed only by a later complete reading, and a QG-03 matter only (it is not a security finding).
+export const SCANNER_SOURCES: readonly FindingSource[] = Object.freeze(['sast', 'container', 'iac', 'dast', 'dependency', 'secret', 'repository']);
 export const PERSON_SOURCES: readonly FindingSource[] = Object.freeze(['pentest', 'review']);
 /** §22 QG-06 / §35.1: these severities block a gate while open. */
 export const BLOCKING_FINDING_SEVERITIES: readonly FindingSeverity[] = Object.freeze(['critical', 'high']);
@@ -520,7 +522,10 @@ export function findingBlocks(findings: readonly SecurityFinding[]): readonly Fi
     if (f.status !== 'open' || !BLOCKING_FINDING_SEVERITIES.includes(f.severity)) continue;
     const owner = f.ownerUserId === undefined ? 'nobody owns it yet' : `${f.ownerUserId} owns it`;
     const reason = `open ${f.severity} finding "${f.title}" (${f.tool} ${f.ruleId} at ${f.location}) — ${owner}`;
-    const gates = SCANNER_SOURCES.includes(f.source) ? ['QG-03', 'QG-06'] : ['QG-06'];
+    // W7 · QG-01: the CI's reading of the requirement records (tool `requirement-records`, requirement-records.ts — the literal
+    // is repeated here because this file has no runtime imports) holds QG-01, not QG-03: a record missing a field is a
+    // requirements matter, not a review or scan one.
+    const gates = f.tool === 'requirement-records' ? ['QG-01'] : f.source === 'repository' ? ['QG-03'] : SCANNER_SOURCES.includes(f.source) ? ['QG-03', 'QG-06'] : ['QG-06'];
     for (const gate of gates) out.push({ gate, findingId: f.findingId, title: f.title, severity: f.severity, ...(f.ownerUserId === undefined ? {} : { ownerUserId: f.ownerUserId }), reason });
   }
   return out;

@@ -77,6 +77,27 @@
       <ul class="rows" id="rows" aria-label="GSTR-2B lines"></ul>
       <h3 id="missing-heading"></h3>
       <ul class="rows" id="missing-rows" aria-label="Bills missing from the GSTR-2B"></ul>
+      <!-- W5 (route audit rows 180–181 · A17): what GSTR-3B Table 4 claims for the month (GET /v1/finance/itc/:month/claim),
+           and a Rule 37 / 42 / 43 or free-sample reversal recorded as its own compensating record (POST …/reversals/:id). -->
+      <section id="itc-desk" aria-labelledby="claim-h">
+        <h3 id="claim-h"></h3>
+        <p class="claim" id="claim-line" role="status"></p>
+        <h3 id="rev-h"></h3>
+        <p class="lead" id="rev-lead"></p>
+        <form class="ask" id="rev-form">
+          <label for="rev-rule"><span id="l-rev-rule"></span><select id="rev-rule"></select></label>
+          <label for="rev-source"><span id="l-rev-source"></span><input id="rev-source" autocomplete="off" /></label>
+          <label for="rev-reason"><span id="l-rev-reason"></span><input id="rev-reason" autocomplete="off" /></label>
+          <label for="rev-igst"><span id="l-rev-igst"></span><input id="rev-igst" inputmode="decimal" autocomplete="off" /></label>
+          <label for="rev-cgst"><span id="l-rev-cgst"></span><input id="rev-cgst" inputmode="decimal" autocomplete="off" /></label>
+          <label for="rev-sgst"><span id="l-rev-sgst"></span><input id="rev-sgst" inputmode="decimal" autocomplete="off" /></label>
+          <label for="rev-cess"><span id="l-rev-cess"></span><input id="rev-cess" inputmode="decimal" autocomplete="off" /></label>
+          <button class="act" id="rev-save" type="submit"></button>
+        </form>
+        <p class="result" id="rev-said" role="status" aria-live="polite" hidden></p>
+        <h3 id="revs-h"></h3>
+        <ul class="rows" id="rev-rows" aria-label="Input tax credit reversals this month"></ul>
+      </section>
       <!-- FG-4 · OB-386: the month's free samples — the credit given back as the system worked it out, for the accountant to check. -->
       <h3 id="fs-heading"></h3>
       <p class="lead" id="fs-lead"></p>

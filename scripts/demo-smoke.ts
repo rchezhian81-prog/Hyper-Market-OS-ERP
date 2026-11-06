@@ -324,7 +324,8 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       must(pulled.status === 'updated', `the pull said ${pulled.status}: ${pulled.staffMessage}`);
       const served = await servedTillCatalogue(edge);
       must(served !== undefined && served.source === 'head_office' && served.products.some((p) => p.productId === PRODUCT), 'the served till is not built from head office\'s pack');
-      till = bootPos({ laneId: LANE, catalogue: served!, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+      // The shop's zone, as the store computer tells every till page it serves — never the till's own fallback.
+      till = bootPos({ laneId: LANE, catalogue: served!, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', timeZone: zone });
       return `pack version ${pulled.heldVersion ?? '?'} pulled; the till prices from head office`;
     });
     await step('the cashier takes the float and SELLS one by barcode; the sale is on the box\'s disk, then banks, and the shelf falls by ONE', async () => {

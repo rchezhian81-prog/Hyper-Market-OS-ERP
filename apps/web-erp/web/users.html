@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Users &amp; roles</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Users & roles (Round 4c · M02-FR-01/02/04 · §28 · OB-615 · OB-15-c). A THIN CLIENT over head office's identity routes:
+      who holds which role (GET /v1/identity/grants), give a role (POST /v1/identity/grants, approved by the owner at
+      …/approve), take one back or record a leaver (an access_change approval, then POST /v1/access/lifecycle/:id), limit a
+      role to departments, suppliers, categories or locations (an approval, then the scope route), the four roles waiting for
+      the owner (OB-615), and the platform administrator's sign-ins. Its session is apps/web-erp/src/users-session.ts. No
+      prompt/confirm/alert; nothing on a timer; nothing written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      ul.rows > li.tone-degraded { border-left-color: var(--degraded); } ul.rows > li.tone-ok { border-left-color: var(--ok); }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .why { margin: 0; padding-left: 18px; font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Users &amp; roles</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Users &amp; roles</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <button id="reload" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="reload-text"></span></button>
+      </section>
+      <section id="pending" hidden aria-labelledby="pending-h">
+        <h3 id="pending-h"></h3>
+        <p class="meta" id="pending-lead"></p>
+        <p class="status" id="pending-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="pending-rows"></ul>
+      </section>
+      <section id="holders" hidden aria-labelledby="holders-h">
+        <h3 id="holders-h"></h3>
+        <p class="meta" id="holders-lead"></p>
+        <p class="status" id="holders-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="holder-rows"></ul>
+      </section>
+      <section id="give" hidden aria-labelledby="give-h">
+        <h3 id="give-h"></h3>
+        <p class="meta" id="give-lead"></p>
+        <form class="row-form" id="give-form">
+          <label for="g-person"><span id="g-person-l"></span><input id="g-person" autocomplete="off" /></label>
+          <label for="g-role"><span id="g-role-l"></span><select id="g-role"></select></label>
+          <label for="g-stores"><span id="g-stores-l"></span><input id="g-stores" autocomplete="off" /></label>
+          <label for="g-reason"><span id="g-reason-l"></span><input id="g-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="g-ask" type="submit" class="sre-btn sre-btn-primary"><span id="g-ask-text"></span></button>
+        </form>
+        <p class="status" id="give-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="limit" hidden aria-labelledby="limit-h">
+        <h3 id="limit-h"></h3>
+        <p class="meta" id="limit-lead"></p>
+        <form class="row-form" id="limit-form">
+          <label for="l-person"><span id="l-person-l"></span><input id="l-person" autocomplete="off" /></label>
+          <label for="l-role"><span id="l-role-l"></span><select id="l-role"></select></label>
+          <label for="l-dimension"><span id="l-dimension-l"></span><select id="l-dimension"></select></label>
+          <label for="l-values"><span id="l-values-l"></span><input id="l-values" autocomplete="off" /></label>
+          <label for="l-reason"><span id="l-reason-l"></span><input id="l-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="l-ask" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="l-ask-text"></span></button>
+        </form>
+        <p class="status" id="limit-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="mine" hidden aria-labelledby="mine-h">
+        <h3 id="mine-h"></h3>
+        <p class="meta" id="mine-lead"></p>
+        <p class="status" id="mine-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="mine-rows"></ul>
+      </section>
+      <section id="waiting" hidden aria-labelledby="waiting-h">
+        <h3 id="waiting-h"></h3>
+        <p class="meta" id="waiting-lead"></p>
+        <ul class="rows" id="waiting-rows"></ul>
+      </section>
+      <section id="signins" hidden aria-labelledby="signins-h">
+        <h3 id="signins-h"></h3>
+        <p class="meta" id="signins-lead"></p>
+        <p class="status" id="signins-source" role="status" aria-live="polite"></p>
+        <form class="row-form" id="signin-form">
+          <label for="s-name"><span id="s-name-l"></span><input id="s-name" autocomplete="off" maxlength="80" /></label>
+          <label for="s-signin"><span id="s-signin-l"></span><input id="s-signin" autocomplete="off" maxlength="40" /></label>
+          <button id="s-issue" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="s-issue-text"></span></button>
+        </form>
+        <p class="status" id="signins-status" role="status" aria-live="polite"></p>
+        <div id="handover" hidden>
+          <p id="handover-words"></p>
+          <p><strong id="handover-password"></strong></p>
+          <button id="handed" type="button" class="quiet sre-btn sre-btn-quiet"><span id="handed-text"></span></button>
+        </div>
+        <ul class="rows" id="signin-rows"></ul>
+      </section>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="committee" aria-live="polite"></section>
+      <section class="w5" data-w5="caGrant" aria-live="polite"></section>
+      <section class="w5" data-w5="revocations" aria-live="polite"></section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./w5-platform.js" type="module"></script>
+    <script src="./users.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

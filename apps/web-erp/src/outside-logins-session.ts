@@ -16,13 +16,14 @@ import { isGenericName, SIGN_IN_NAME, PRODUCT_ID, tidyPersonName, readablePerson
 import { shopTime, type LostLink, type Refused } from './approvals-session';
 import type { Lang } from '../../../packages/ui/src/index';
 
-export type OutsideKind = 'b2b_customer' | 'customer' | 'supplier';
-export const OUTSIDE_KINDS: readonly OutsideKind[] = ['b2b_customer', 'customer', 'supplier'];
+// OB-676 (owner, 2 Nov 2026): a concessionaire's own counter login is the fourth kind (M27-FR-02), managed by those who manage concessions.
+export type OutsideKind = 'b2b_customer' | 'customer' | 'supplier' | 'concessionaire';
+export const OUTSIDE_KINDS: readonly OutsideKind[] = ['b2b_customer', 'customer', 'supplier', 'concessionaire'];
 /** The right head office asks for each kind — the one that manages that party. */
 export const OUTSIDE_KIND_PERMISSION: Readonly<Record<OutsideKind, string>> = {
-  b2b_customer: 'b2b.account.manage', customer: 'customer.identity.manage', supplier: 'supplier.portal.manage',
+  b2b_customer: 'b2b.account.manage', customer: 'customer.identity.manage', supplier: 'supplier.portal.manage', concessionaire: 'concession.contract.manage',
 };
-export const OUTSIDE_KIND_SEGMENT: Readonly<Record<OutsideKind, string>> = { b2b_customer: 'b2b-accounts', customer: 'customers', supplier: 'suppliers' };
+export const OUTSIDE_KIND_SEGMENT: Readonly<Record<OutsideKind, string>> = { b2b_customer: 'b2b-accounts', customer: 'customers', supplier: 'suppliers', concessionaire: 'concessionaires' };
 export const B2B_PORTAL_GRANTS = ['view_invoices', 'view_statement', 'place_order', 'make_payment'] as const;
 
 export type OutsideState = 'invited' | 'approved' | 'rejected' | 'revoked';
@@ -52,12 +53,12 @@ const COPY = {
   en: {
     title: 'Logins for customers and suppliers',
     lead: 'A business customer, an app customer or a supplier gets its own login, bound to its own record — it sees its own account and nothing else. One person invites; a different person approves.',
-    kindLabel: 'Who the login is for', partyLabel: 'Their record (account, customer or supplier code)', userLabel: 'Login id', nameLabel: 'The person’s full name',
+    kindLabel: 'Who the login is for', partyLabel: 'Their record (account, customer, supplier or concessionaire code)', userLabel: 'Login id', nameLabel: 'The person’s full name',
     userHint: 'For an app customer the login id is the customer’s own code. Lower case, 3 to 64 letters or digits.',
     grantsLabel: 'What a business customer may use',
     inviteBtn: 'Invite', approveBtn: 'Approve', revokeBtn: 'Revoke', signInBtn: 'Give the sign-in', handedOverBtn: 'I have handed it over',
     reasonLabel: 'Why', signInLabel: 'Sign-in name',
-    kind_b2b_customer: 'Business customer', kind_customer: 'App customer', kind_supplier: 'Supplier',
+    kind_b2b_customer: 'Business customer', kind_customer: 'App customer', kind_supplier: 'Supplier', kind_concessionaire: 'Concessionaire (their own counter)',
     grant_view_invoices: 'see invoices', grant_view_statement: 'see the statement and balance', grant_place_order: 'place orders', grant_make_payment: 'make payments',
     state_invited: 'waiting for a second person to approve', state_approved: 'approved — can sign in to its own record', state_rejected: 'rejected', state_revoked: 'revoked — cannot sign in',
     invitedBy: 'invited by', approvedBy: 'approved by', rejectedBy: 'rejected by', revokedBy: 'revoked by',
@@ -77,12 +78,12 @@ const COPY = {
   ta: {
     title: 'வாடிக்கையாளர்கள், சப்ளையர்களுக்கான உள்நுழைவுகள்',
     lead: 'வணிக வாடிக்கையாளர், செயலி வாடிக்கையாளர் அல்லது சப்ளையருக்கு அவருக்கே உரிய உள்நுழைவு, அவரது சொந்தப் பதிவுடன் இணைக்கப்படும் — அவர் தனது கணக்கை மட்டுமே பார்ப்பார். ஒருவர் அழைக்கிறார்; வேறொருவர் அனுமதிக்கிறார்.',
-    kindLabel: 'உள்நுழைவு யாருக்கு', partyLabel: 'அவர்களின் பதிவு (கணக்கு, வாடிக்கையாளர் அல்லது சப்ளையர் குறியீடு)', userLabel: 'உள்நுழைவு அடையாளம்', nameLabel: 'நபரின் முழுப் பெயர்',
+    kindLabel: 'உள்நுழைவு யாருக்கு', partyLabel: 'அவர்களின் பதிவு (கணக்கு, வாடிக்கையாளர், சப்ளையர் அல்லது கவுண்டர் உரிமையாளர் குறியீடு)', userLabel: 'உள்நுழைவு அடையாளம்', nameLabel: 'நபரின் முழுப் பெயர்',
     userHint: 'செயலி வாடிக்கையாளருக்கு உள்நுழைவு அடையாளம் அவரது சொந்த வாடிக்கையாளர் குறியீடு. சிறிய எழுத்துகள், 3 முதல் 64 எழுத்துகள் அல்லது எண்கள்.',
     grantsLabel: 'வணிக வாடிக்கையாளர் பயன்படுத்தக்கூடியவை',
     inviteBtn: 'அழை', approveBtn: 'அனுமதி', revokeBtn: 'திரும்பப் பெறு', signInBtn: 'உள்நுழைவு கொடு', handedOverBtn: 'நான் ஒப்படைத்துவிட்டேன்',
     reasonLabel: 'ஏன்', signInLabel: 'உள்நுழைவுப் பெயர்',
-    kind_b2b_customer: 'வணிக வாடிக்கையாளர்', kind_customer: 'செயலி வாடிக்கையாளர்', kind_supplier: 'சப்ளையர்',
+    kind_b2b_customer: 'வணிக வாடிக்கையாளர்', kind_customer: 'செயலி வாடிக்கையாளர்', kind_supplier: 'சப்ளையர்', kind_concessionaire: 'கவுண்டர் உரிமையாளர் (அவரது சொந்தக் கவுண்டர்)',
     grant_view_invoices: 'விலைப்பட்டியல்களைப் பார்க்க', grant_view_statement: 'அறிக்கையையும் இருப்பையும் பார்க்க', grant_place_order: 'ஆர்டர் செய்ய', grant_make_payment: 'பணம் செலுத்த',
     state_invited: 'இரண்டாவது நபரின் அனுமதிக்காகக் காத்திருக்கிறது', state_approved: 'அனுமதிக்கப்பட்டது — தனது பதிவில் உள்நுழையலாம்', state_rejected: 'நிராகரிக்கப்பட்டது', state_revoked: 'திரும்பப் பெறப்பட்டது — உள்நுழைய முடியாது',
     invitedBy: 'அழைத்தவர்', approvedBy: 'அனுமதித்தவர்', rejectedBy: 'நிராகரித்தவர்', revokedBy: 'திரும்பப் பெற்றவர்',

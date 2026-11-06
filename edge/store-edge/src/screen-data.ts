@@ -59,7 +59,7 @@ import {
 } from './read-model';
 import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy, PackFloorIndent } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 import { permissionsOf } from './screen-navigation';
@@ -69,7 +69,7 @@ import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
-import { packTimeZone, packTradingDay } from './shop-zone';
+import { packCalendarDate, packTimeZone, packTradingDay, packWallClock } from './shop-zone';
 import { toCloudReturn } from './cloud-return';
 import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -185,6 +185,18 @@ function privacySlaOf(packed: unknown): { readonly privacySlaDays: number; reado
   return fixed.flag === null ? { privacySlaDays: fixed.days } : { privacySlaDays: fixed.days, privacySlaFlag: fixed.flag, packedPrivacySlaDays: fixed.storedDays };
 }
 
+/**
+ * W3 · M36-FR-02 (OB-321): the shop's own brand — name, logo, colours — as the SIGNED catalogue pack this box holds carries
+ * it, for every screen this box serves (`window.sreBrand`): the office chrome shows the name and colour, the till prints the
+ * name on the bill. Read from the box's own copy, never a network call; undefined when the pack carries no brand (the
+ * screens then keep their own neutral words, never another shop's).
+ */
+export function screenBrand(input: ScreenInput): Record<string, unknown> | undefined {
+  const b = input.cataloguePack?.snapshot.branding;
+  if (b === undefined) return undefined;
+  return { ...b, packVersion: input.cataloguePack!.snapshot.version };
+}
+
 export function catalogueFreshness(input: ScreenInput): Record<string, unknown> {
   const pack = input.cataloguePack;
   if (pack === undefined) {
@@ -260,6 +272,8 @@ export interface TillCatalogue {
   readonly promotions?: SignedPack['snapshot']['promotions'];
   /** OB-306: the own-barcode bundles head office signed into the pack — the till explodes a bundle sale into its components. */
   readonly bundles?: SignedPack['snapshot']['bundles'];
+  /** W3 · M36-FR-02: the shop's own name, logo and colours head office signed into the pack — the bill prints the name. */
+  readonly branding?: SignedPack['snapshot']['branding'];
 }
 
 /**
@@ -296,6 +310,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       ...(snapshot.embeddedRules === undefined ? {} : { embeddedRules: snapshot.embeddedRules }),
       ...(snapshot.promotions === undefined ? {} : { promotions: snapshot.promotions }),
       ...(snapshot.bundles === undefined ? {} : { bundles: snapshot.bundles }),
+      ...(snapshot.branding === undefined ? {} : { branding: snapshot.branding }),
       products: snapshot.products.map((p) => ({
         productId: p.productId,
         sku: p.sku,
@@ -501,6 +516,8 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     ...(till.promotions === undefined ? {} : { promotions: till.promotions }),
     // OB-306: the bundle definitions ride through as signed, so the till explodes a bundle line offline.
     ...(till.bundles === undefined ? {} : { bundles: till.bundles }),
+    // W3 · M36-FR-02: the shop's own name, logo and colours, as head office signed them — the bill prints the name offline.
+    ...(till.branding === undefined ? {} : { branding: till.branding }),
     products,
     barcodes,
     // Named, never silently dropped: a product missing from the till is a product nobody can sell.
@@ -927,15 +944,53 @@ export function receivingChecklistFor(input: ScreenInput): Record<string, unknow
  * missing cost price is exactly the person reading it.
  */
 /** Round 4: today's bills that `costTheDay` could not cost — their count, takings and tender mix (each payment by its own kind). */
-function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): { bills: number; takenMinor: number; tenderMix: Record<string, number> } {
-  const out = { bills: 0, takenMinor: 0, tenderMix: {} as Record<string, number> };
+function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): { bills: number; takenMinor: number; tenderMix: Record<string, number>; lines: { id: string; amountMinor: number; tender: string }[] } {
+  const out = { bills: 0, takenMinor: 0, tenderMix: {} as Record<string, number>, lines: [] as { id: string; amountMinor: number; tender: string }[] };
   for (const sale of sales) {
     if (costed.has(sale.id)) continue;
     out.bills += 1;
     out.takenMinor += sale.total ?? 0;
+    // OB-640: each such bill by itself, so the owner's "Taken today" drill lists every bill behind the figure.
+    out.lines.push({ id: sale.id, amountMinor: sale.total ?? 0, tender: tenderPartsOf(sale)[0]?.kind ?? 'unknown' });
     for (const part of tenderPartsOf(sale)) out.tenderMix[part.kind] = (out.tenderMix[part.kind] ?? 0) + part.amountMinor;
   }
   return out;
+}
+
+/**
+ * UI-3: today's bills by the hour they were rung, at the SHOP's clock (the pack's zone — never UTC, never this machine's),
+ * for the owner's hourly chart. The money is each bill's own total — the same figure the takings add up — before refunds:
+ * a refund is taken off the day, not off an hour, and the phone says so beside the chart. Only hours with a bill appear;
+ * a bill with no recorded time is not placed in any hour (it is still in the day's takings).
+ */
+export function takingsByHourOf(pack: Parameters<typeof packWallClock>[0], sales: readonly LoggedSale[]): { hour: string; bills: number; takenMinor: number }[] {
+  const byHour = new Map<string, { bills: number; takenMinor: number; first: number }>();
+  for (const sale of sales) {
+    const at = sale.committedAt === undefined ? Number.NaN : Date.parse(sale.committedAt);
+    if (Number.isNaN(at)) continue;
+    const hour = packWallClock(pack, sale.committedAt!).slice(11, 13);
+    const held = byHour.get(hour) ?? { bills: 0, takenMinor: 0, first: at };
+    byHour.set(hour, { bills: held.bills + 1, takenMinor: held.takenMinor + (sale.total ?? 0), first: Math.min(held.first, at) });
+  }
+  // In the order the day ran (a trading day past midnight puts 00:00 after 23:00), not in the order of the digits.
+  return [...byHour.entries()].sort((a, b) => a[1].first - b[1].first).map(([hour, v]) => ({ hour, bills: v.bills, takenMinor: v.takenMinor }));
+}
+
+/**
+ * UI-3: the last seven trading days this box holds (today included), oldest first, each day's bills and their totals —
+ * the reporting page's own day rule (`tradingDaysHeld`, each sale's own trading day), before refunds. Only days the box
+ * holds: a day it does not hold is absent, never a day of nought.
+ */
+export function recentDaysOf(sales: readonly LoggedSale[], days = 7): { tradingDay: string; bills: number; takenMinor: number }[] {
+  const held = tradingDaysHeld(sales).slice(0, days);
+  const per = new Map<string, { bills: number; takenMinor: number }>(held.map((d) => [d, { bills: 0, takenMinor: 0 }]));
+  for (const sale of sales) {
+    const day = sale.tradingDay === undefined ? undefined : per.get(sale.tradingDay);
+    if (day === undefined) continue;
+    day.bills += 1;
+    day.takenMinor += sale.total ?? 0;
+  }
+  return [...held].reverse().map((tradingDay) => ({ tradingDay, ...per.get(tradingDay)! }));
 }
 
 /**
@@ -945,8 +1000,8 @@ function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): 
  * back), so the owner's "Today" and the day book cannot disagree. Dated by the shop's own trading day of when it was
  * taken (the pack's cut-off), the rule the till's card day uses.
  */
-export function refundsOn(input: ScreenInput): { count: number; refundedMinor: number; tenderMix: Record<string, number> } {
-  const out = { count: 0, refundedMinor: 0, tenderMix: {} as Record<string, number> };
+export function refundsOn(input: ScreenInput): { count: number; refundedMinor: number; tenderMix: Record<string, number>; lines: { id: string; amountMinor: number; tender: string }[] } {
+  const out = { count: 0, refundedMinor: 0, tenderMix: {} as Record<string, number>, lines: [] as { id: string; amountMinor: number; tender: string }[] };
   // No returns log told, or no calendar to date them by: nothing is taken off (and nothing is made up).
   if (!input.pack.policies.known || input.returns === undefined) return out;
   for (const record of input.returns) {
@@ -964,6 +1019,8 @@ export function refundsOn(input: ScreenInput): { count: number; refundedMinor: n
     for (const leg of refundLegs(asBooked)) {
       out.refundedMinor += leg.amountMinor;
       out.tenderMix[leg.kind] = (out.tenderMix[leg.kind] ?? 0) + leg.amountMinor;
+      // OB-640: each refund leg by itself, so the owner's "Taken today" drill can take it off, line by line.
+      out.lines.push({ id: ret.returnId, amountMinor: leg.amountMinor, tender: leg.kind });
     }
   }
   return out;
@@ -998,12 +1055,18 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       // this branch last synced, a box with no line would report nothing and the owner would see
       // "never synced" about the shop that has been trading all day in front of him.
       lastSyncedAt: input.now,
+      // W4 (P-02): the trading day these figures are for — this box's own rule (the shop's zone and day end from the signed
+      // pack), the same day head office's dashboard counts. The phone marks "today" by it, never by working a date out again.
+      tradingDay: input.tradingDay,
       sales: day.facts,
       // Round 4 (P-08): the bills that could not be costed, with what they took and how it was paid — the owner app
       // shows the takings and says the margin is not known, instead of "no sales".
       uncosted: uncostedOf(today.sales, new Set(day.facts.map((f) => f.saleId))),
       // Round B: today's refunds, by the day book's own rule — the owner's takings are counted net of them.
       refunds: refundsOn(input),
+      // UI-3: the owner's trend charts — today by the shop's hour, and the last days this box holds (before refunds).
+      takingsByHour: takingsByHourOf(input.pack, today.sales),
+      recentDays: recentDaysOf(input.sales),
       exceptions,
       // Out of every day's figures, so it is named where the owner will see it rather than
       // becoming an unexplained difference against the till roll.
@@ -1058,6 +1121,17 @@ export function shelfMapFor(input: ScreenInput): ShelfMap | null {
 }
 
 /**
+ * OB-687: what the store computer holds of head office's word on the swaps put to customers on one wave — the picker's phone
+ * reads it back (`GET /lane/picker/substitution-answers`). Null when the box holds no such wave from head office.
+ */
+export function pickerSubstitutionAnswers(input: ScreenInput, waveId: string): { readonly waveId: string; readonly waitMinutes: number | null; readonly answers: readonly object[] | null; readonly asAt: string; readonly receivedAt: string | null } | null {
+  const assigned = input.pack.assignments.known ? input.pack.assignments.value : null;
+  const wave = assigned?.waves.find((w) => w.waveId === waveId);
+  if (assigned === null || wave === undefined) return null;
+  return { waveId, waitMinutes: wave.substitutionWaitMinutes ?? null, answers: wave.substitutionAnswers ?? null, asAt: assigned.asAt, receivedAt: assigned.receivedAt ?? null };
+}
+
+/**
  * The picker's payload: the wave the cloud assigned, or nothing when none was.
  *
  * **The wave is put into shelf order here.** `ShelfMap.routeFor` has existed and been tested since
@@ -1098,7 +1172,16 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
     uom: l.uom,
     unitPrice: { minor: l.unitPriceMinor, currency: 'INR' },
     ...(handlingOf.has(l.productId) ? { handling: handlingOf.get(l.productId)! } : {}),
+    // OB-687 · FUL-14: the order's substitution rule (ask first / never / the shop may choose) — never the customer themself.
+    ...(l.substitution === undefined ? {} : { substitution: l.substitution }),
   }));
+  // OB-687: the owner's wait for a customer's answer (null: not set — the picker does not wait) and head office's word on each
+  // swap put to a customer. A hand-written wave carries neither: nothing is put to a customer from it.
+  const substitutions = {
+    substitutionWaitMinutes: wave.substitutionWaitMinutes ?? null,
+    substitutionAnswers: wave.substitutionAnswers ?? null, // null: head office said nothing about swaps on this wave (never an empty answer)
+    substitutionAsAt: handWritten === null && assigned !== null ? assigned.asAt : null,
+  };
 
   const map = shelfMapFor(input);
   if (map === null) {
@@ -1106,6 +1189,7 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
       waveId: wave.waveId,
       pickerId: wave.pickerId,
       ...source,
+      ...substitutions,
       lines,
       orderedBy: 'the order the list arrived in — this store has no shelf map',
       unmapped: [],
@@ -1117,6 +1201,7 @@ export function pickerPayload(input: ScreenInput, pickerId?: string): Record<str
     waveId: wave.waveId,
     pickerId: wave.pickerId,
     ...source,
+    ...substitutions,
     // The shelf address travels with the line, so the handheld can show where to go rather than
     // only which bin to scan. An unmapped line keeps its place at the end of the list and says so.
     lines: walk.lines.map((l) => {
@@ -1219,7 +1304,30 @@ function indentLinesFor(input: ScreenInput): Record<string, unknown> {
         indentId: i.indentId, productId: l.productId, uom: typeof l.uom === 'string' ? l.uom : 'EA', outstandingMinor: l.outstandingMinor,
         requestedBy: i.requestedBy ?? '', toLocationId: i.toLocationId ?? '',
       })));
-  return { indentLines, indentsAsAt: feed.asAt };
+  return { indentLines, indentsAsAt: feed.asAt, ...indentReturnsOf(feed.indents, backStore) };
+}
+
+/**
+ * W5 (M09-FR-03): the floor RETURNS waiting at this back store — from the same register (each open indent carries its
+ * returns, whole, as head office sent them): every return still `requested`, with its lines and the unit each is counted
+ * in (the indent's own line). The handheld counts each in; the person who sent it back may not (§28). A return head office
+ * sent without lines is left out — the box derives, never invents.
+ */
+function indentReturnsOf(indents: readonly PackFloorIndent[], backStore: string | undefined): Record<string, unknown> {
+  const out = indents
+    .filter((i) => backStore === undefined || i.fromLocationId === undefined || i.fromLocationId === backStore)
+    .flatMap((i) => (Array.isArray(i['returns']) ? (i['returns'] as unknown[]) : [])
+      .filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object' && (r as Record<string, unknown>)['state'] === 'requested')
+      .filter((r) => typeof r['returnId'] === 'string' && Array.isArray(r['lines']) && (r['lines'] as unknown[]).length > 0)
+      .map((r) => ({
+        indentId: i.indentId, returnId: r['returnId'] as string,
+        returnedBy: typeof r['returnedBy'] === 'string' ? r['returnedBy'] : '', reason: typeof r['reason'] === 'string' ? r['reason'] : '',
+        lines: (r['lines'] as Record<string, unknown>[]).map((l) => ({
+          productId: String(l['productId']), batchId: typeof l['batchId'] === 'string' ? l['batchId'] : null, quantityMinor: typeof l['quantityMinor'] === 'number' ? l['quantityMinor'] : 0,
+          uom: i.totals?.lines?.find((t) => t.productId === l['productId'])?.uom ?? 'EA',
+        })),
+      })));
+  return out.length === 0 ? {} : { indentReturns: out };
 }
 
 /**
@@ -1235,6 +1343,10 @@ export function warehouseSupervisorPayload(input: ScreenInput): Record<string, u
   if (!input.pack.warehouse.known) return null;
   const w = input.pack.warehouse.value;
   return {
+    // W5 (M09-FR-01): who is looking — the signed-in person's own words fill `permissions` (asSignedInPerson), so the page's
+    // bin set-up and bin read are offered only to those head office will let do them. With nobody signed in, none.
+    permissions: [],
+    ...(w.supervisor === undefined ? {} : { userId: w.supervisor.userId }),
     storeId: w.storeId,
     bins: w.bins,
     ...(w.contents === undefined ? {} : { contents: w.contents }),
@@ -1306,7 +1418,8 @@ export function dispatchPlanFor(input: ScreenInput): DispatchPlan | null {
  */
 export function driverPayload(input: ScreenInput, driverId?: string): Record<string, unknown> | null {
   const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
-  const tolerance = policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor };
+  // OB-676: the limit AND whether the owner confirmed it — the phone says "not confirmed" beside a cash difference until he has.
+  const tolerance = policies === undefined ? {} : { handoverToleranceMinor: policies.handoverToleranceMinor, handoverToleranceConfirmed: policies.handoverToleranceConfirmed !== undefined };
 
   if (input.pack.route.known && input.pack.route.value !== null) {
     const route = input.pack.route.value;
@@ -1553,6 +1666,12 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
       }),
     );
   }
+  // OB-630: the reorder settings as head office last sent them, and when this box received that copy — the Reorder tab
+  // shows them ONLY when head office cannot be reached, said as "copy from <time>" (P-08), never as current.
+  if (input.pack.reorderSettings.known) {
+    payload['reorderSettings'] = input.pack.reorderSettings.value;
+    payload['reorderSettingsReceivedAt'] = input.pack.receivedAt;
+  }
 
   return payload;
 }
@@ -1569,6 +1688,12 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
  * floor check passes loudly and wrongly at the moment somebody is relying on it — the screen turns
  * an absent cost into a refusal that needs an approver, which is the honest answer.
  */
+/** The shop's calendar date at the box's clock (`now`) — the day "today's price" is decided by; the trading day when the
+ *  clock cannot be read (nothing is made up). */
+function priceDayOf(input: ScreenInput): string {
+  return Number.isNaN(Date.parse(input.now)) ? input.tradingDay : packCalendarDate(input.pack, input.now);
+}
+
 export function cataloguePayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.pricingPolicy.known) return null;
   const policy = input.pack.pricingPolicy.value;
@@ -1576,10 +1701,13 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   const payload: Record<string, unknown> = {
     userId: policy.userId,
     storeId: input.pack.policies.known ? input.pack.policies.value.storeId : 'store-1',
-    // The shop's own trading day, not the browser's clock. A device whose date is a day out would
+    // The shop's own date, not the browser's clock. A device whose date is a day out would
     // otherwise activate tomorrow's price today. OB-403 "A": while this box's clock is 5+ minutes out, the day stays the
     // one the clock was last trusted on, so a price dated later is held (listed in `activationHold`), never made today's.
-    today: input.activationHold?.priceDay ?? input.tradingDay,
+    // The shop's CALENDAR date (its zone's midnight), not the trading day: a price "from 2 Nov" is in force from the shop's
+    // midnight (R1c) and head office refuses one dated before the shop's calendar today, so with a 02:00 cut-off the trading
+    // day said "1 Nov" from 00:00 to 02:00 and the screen showed "No price set" beside the price the till was charging.
+    today: input.activationHold?.priceDay ?? priceDayOf(input),
     ...(input.activationHold?.held === true ? { activationHold: input.activationHold } : {}),
     marginFloorBps: policy.marginFloorBps,
     // The setter is removed here rather than trusted to leave themselves alone (§28). The session

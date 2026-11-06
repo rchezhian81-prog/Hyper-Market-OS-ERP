@@ -16,6 +16,7 @@
 // its source (M29-FR-02).
 
 import { salesSummary, freshness, type SaleFact, type SalesSummary, type Freshness } from '../../../packages/reporting/src/index';
+import { averageBasketMinor } from '../../../packages/reporting/src/sales-summary'; // OB-640
 import type { LpException, Severity, SignalKind } from '../../../packages/loss-prevention/src/index';
 
 /** An approval waiting on the owner (from the maker-checker engine, M02). */
@@ -64,13 +65,16 @@ export interface BuildBriefInput {
    * Round 4 (P-08): today's bills the store computer could NOT cost (a product with no cost in its setup) — their takings
    * are real and are shown; only their margin is not known. Absent / zero bills = every bill was costed.
    */
-  readonly uncosted?: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>> };
+  readonly uncosted?: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>>; readonly lines?: readonly TakingsLine[] };
   /**
    * Round B: today's refunds (and exchange credits) as the store computer counted them by the day book's own rule — how
    * many, how much left the shop, by which tender. The takings are net of them. Absent = none told.
    */
-  readonly refunds?: { readonly count: number; readonly refundedMinor: number; readonly tenderMix: Readonly<Record<string, number>> };
+  readonly refunds?: { readonly count: number; readonly refundedMinor: number; readonly tenderMix: Readonly<Record<string, number>>; readonly lines?: readonly TakingsLine[] };
 }
+
+/** OB-640: one bill the store computer could not cost, or one refund — so the takings drill can list every one. */
+export interface TakingsLine { readonly id: string; readonly amountMinor: number; readonly tender: string }
 
 export interface OwnerBrief {
   readonly asOf: string;
@@ -90,6 +94,8 @@ export interface OwnerBrief {
     /** Round B: today's refunds — how many and how much — taken off the takings above. */
     readonly refunds: number;
     readonly refundedMinor: number;
+    /** OB-640: the takings ÷ every bill (`null` when there is no bill) — the owner's average basket. */
+    readonly averageBasketMinor: number | null;
   };
   /** How current the numbers are — always shown, never implied (P-08). */
   readonly freshness: Freshness;
@@ -207,7 +213,10 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
     marginUnknownBills: unc?.bills ?? 0,
     refunds: refunds?.count ?? 0,
     refundedMinor: refunds?.refundedMinor ?? 0,
+    averageBasketMinor: 0 as number | null,
   };
+  // OB-640: the average basket is the takings over EVERY bill — the same two figures the tiles show.
+  takings.averageBasketMinor = averageBasketMinor(takings.takenMinor, takings.bills);
   const plural = (n: number): string => `${n} bill${n === 1 ? '' : 's'}`;
   // Round 4 (P-08): a bill whose margin cannot be worked out is still a sale — its takings are said, and so is the fact
   // that its margin is not known. Never "No sales recorded" while the till took money.
@@ -223,7 +232,7 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
         : `${plural(kpis.basketCount)} today, ` +
           `${rupees(kpis.grossSalesMinor)} taken, ` +
           `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
-          `average basket ${rupees(kpis.avgBasketMinor)}.` +
+          `average basket ${rupees(takings.averageBasketMinor ?? 0)}.` +
           (unc === undefined ? '' : ` Also ${plural(unc.bills)} (${rupees(unc.takenMinor)}) whose margin is not known — products with no cost.`) +
           refundNote + staleNote;
 

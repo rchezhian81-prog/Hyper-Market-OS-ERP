@@ -107,7 +107,7 @@ export function filingRegisterRoutes(deps: FilingRegisterDeps): readonly Route[]
         }
         if (type === 'GSTR1') {
           const state = await deps.gstr1State(ctx.tenantId, period);
-          if (state !== 'not_started') throw apiError(409, { code: 'gstr1_filed_through_this_system', whatHappened: `GSTR-1 for ${period} is in this system's submission store (${state}) — its filing is recorded there, not typed here`, wasItSaved: 'not_saved', nextSafeAction: 'Use the GSTR-1 submission (approve → file), or reconcile it there with evidence.' });
+          if (state !== 'not_started') throw apiError(409, { code: 'gstr1_filed_through_this_system', whatHappened: `GSTR-1 for ${period} is in this system's submission store (${state}) — its filing is recorded there, not typed here`, wasItSaved: 'not_saved', nextSafeAction: 'Use the GSTR-1 submission: once approved and uploaded on the portal by hand, record its ARN there (POST /v1/finance/gstr1/submission/:period/filed-by-hand, OB-683); or reconcile it there with evidence.' });
         }
         if (type === 'GSTR3B' && !(await deps.gstr3bLocked(ctx.tenantId, period))) {
           throw apiError(409, { code: 'gstr3b_not_locked_to_gstr1', whatHappened: `GSTR-3B for ${period} cannot be recorded filed before its outward liability is locked to the filed GSTR-1 (A16)`, wasItSaved: 'not_saved', nextSafeAction: 'File GSTR-1, lock GSTR-3B to it, then record GSTR-3B filed.' });

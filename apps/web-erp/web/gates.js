@@ -15,6 +15,8 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let register = null;
 let evidence = null; // OB-423: the last read of the release script's QG-10 notes (an Outcome)
+let outside = null; // W3: the last read of the outside evidence (an Outcome)
+let qg01 = null; // W7: the last read of the CI's QG-01 requirement-records reading (an Outcome)
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show', 'search'], ['record', 'badge-check']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); }
@@ -64,6 +66,7 @@ function gateRow(g) {
     li.append(ul);
   }
   if (g.gate === 'QG-10') li.append(qg10Notes());
+  if (g.gate === 'QG-01') li.append(qg01Reading());
   return li;
 }
 
@@ -101,6 +104,52 @@ function qg10Notes() {
   return box;
 }
 
+// W7 · QG-01: the CI's reading of the requirement records — the build's own check — an icon AND words. Missing, not
+// complete or failing holds the gate; a clean reading is evidence for the owner's decision, never "passed".
+function qg01Reading() {
+  const box = document.createElement('div');
+  box.className = 'qg01';
+  box.id = 'qg01-reading';
+  box.append(text('h4', t('qg01H')), text('p', t('qg01Lead'), 'facts'));
+  const v = api.qg01View(lang, qg01);
+  box.dataset.qg01 = v.state;
+  const head = document.createElement('p');
+  head.className = `tone-${v.tone}`;
+  head.append(text('span', v.icon, 'icon'), ' ', text('span', v.headline, 'words'));
+  box.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
+  return box;
+}
+
+// W3 · QG-04 / QG-05 / QG-06: each outside test's standing — an icon AND words; nothing on file is never a pass.
+function paintOutside() {
+  const kindSel = $('outside-kind');
+  const chosen = kindSel.value;
+  kindSel.replaceChildren(text('option', ''), ...(api?.outsideKinds ?? []).map((k) => { const o = text('option', t(`ev_${k}`)); o.value = k; return o; }));
+  kindSel.firstChild.value = '';
+  kindSel.value = chosen;
+  const timing = (api?.outsideTimings ?? []).includes(kindSel.value);
+  $('outside-ms-wrap').hidden = !timing;
+  $('outside-result-wrap').hidden = timing;
+  $('outside-opt-passed').textContent = t('outsidePassed');
+  $('outside-opt-failed').textContent = t('outsideFailed');
+  const ul = $('outside-list');
+  if (outside === null || outside.result !== 'ok') {
+    const li = text('li', outside === null ? t('outsideUnread') : `${t('outsideUnread')} ${api.outcomeWords(lang, outside)}`, 'status err');
+    li.dataset.outside = 'unread';
+    ul.replaceChildren(li);
+    return;
+  }
+  ul.replaceChildren(...outside.value.kinds.map((k) => {
+    const v = api.outsideView(lang, k);
+    const li = document.createElement('li');
+    li.className = `tone-${v.tone}`;
+    li.dataset.kind = k.kind;
+    li.dataset.standing = k.standing;
+    li.append(text('span', v.icon, 'icon'), ' ', text('span', v.words, 'words'));
+    return li;
+  }));
+}
+
 function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['release-label', 'releaseLabel'], ['show-text', 'show'], ['summary-h', 'summaryH'], ['gates-h', 'gatesH'], ['decide-h', 'decideH'], ['gate-label', 'gateLabel'], ['decision-label', 'decisionLabel'], ['evidence-label-label', 'evidenceLabelLabel'], ['evidence-ref-label', 'evidenceRefLabel'], ['reason-label', 'reasonLabel'], ['record-text', 'record']]) $(id).textContent = t(k);
@@ -115,7 +164,12 @@ function paint() {
   $('decide-section').hidden = !shown;
   $('decide-form').hidden = !may.decide;
   $('decide-not').textContent = may.decide ? '' : t('decideNot');
+  for (const [id, k] of [['outside-h', 'outsideH'], ['outside-lead', 'outsideLead'], ['outside-kind-label', 'outsideKindLabel'], ['outside-result-label', 'outsideResultLabel'], ['outside-ms-label', 'outsideMsLabel'], ['outside-on-label', 'outsideOnLabel'], ['outside-where-label', 'outsideWhereLabel'], ['outside-ref-label', 'outsideRefLabel'], ['outside-statement-label', 'outsideStatementLabel'], ['outside-record-text', 'outsideRecord']]) $(id).textContent = t(k);
+  $('outside-section').hidden = !shown;
+  $('outside-form').hidden = !may.decide;
+  $('outside-not').textContent = may.decide ? '' : t('outsideNot');
   if (!shown) return;
+  paintOutside();
   const s = register.summary;
   $('counts').replaceChildren(...[['undecidedK', s.undecided, 'undecided'], ['goK', s.go, 'GO'], ['holdK', s.hold, 'HOLD'], ['reworkK', s.rework, 'REWORK'], ['blockedK', s.goNowBlocked, 'GO_NOW_BLOCKED']].map(([k, n, st]) => {
     const box = document.createElement('div');
@@ -132,6 +186,8 @@ async function show() {
   if (out.result === 'ok') {
     register = out.value; $('page-status').className = 'status'; $('page-status').textContent = '';
     evidence = await session.readEvidence(); // OB-423: the QG-10 notes, read with the register (never on a timer)
+    outside = await session.readOutside(); // W3: the outside evidence, read with the register
+    qg01 = await session.readQg01(); // W7: the CI's QG-01 reading, read with the register
   } else { say('page-status', out); }
   paint();
 }
@@ -148,7 +204,20 @@ async function record() {
   await show();
 }
 
+async function recordOutside() {
+  const out = await session.recordOutside({
+    kind: $('outside-kind').value, result: $('outside-result').value, measuredMs: $('outside-ms').value, where: $('outside-where').value,
+    reportRef: $('outside-ref').value, testedOn: $('outside-on').value, statement: $('outside-statement').value,
+  });
+  if (out.result !== 'ok') { say('outside-status', out); return; }
+  $('outside-status').className = 'status good';
+  $('outside-status').textContent = `✓ ${t('outsideRecorded')}`;
+  await show();
+}
+
 $('show').addEventListener('click', () => { void show(); });
+$('outside-record').addEventListener('click', () => { void recordOutside(); });
+$('outside-kind').addEventListener('change', () => { if (register !== null) paintOutside(); });
 $('record').addEventListener('click', () => { void record(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();

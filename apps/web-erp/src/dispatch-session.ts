@@ -40,12 +40,38 @@ export interface BoardRoute {
   readonly stops: readonly BoardStop[]; readonly flags: readonly string[];
   readonly cash: { readonly fromStops: { readonly expectedMinor: number; readonly collectedMinor: number; readonly cashHeldMinor: number }; readonly settlement: unknown; readonly handover: { readonly countedMinor: number; readonly varianceMinor: number; readonly material: boolean } | null };
 }
-export interface Board { readonly runDate: string; readonly routes: readonly BoardRoute[]; readonly held: readonly { readonly orderId: string; readonly standing: string }[]; readonly plan: { readonly unplanned: Plan['unplanned'] } | null }
+/** OB-676: the driver cash hand-over limit in force at the store, and whether the owner has confirmed it. */
+export interface ToleranceOnBoard { readonly valueMinor: number | null; readonly state: 'confirmed' | 'not_confirmed' }
+export interface Board { readonly runDate: string; readonly routes: readonly BoardRoute[]; readonly held: readonly { readonly orderId: string; readonly standing: string }[]; readonly plan: { readonly unplanned: Plan['unplanned'] } | null; readonly handoverTolerance?: ToleranceOnBoard | null }
+/** OB-676: one confirmation the owner made, as head office keeps it. */
+export interface ToleranceConfirmation { readonly version: number; readonly valueMinor: number; readonly previousMinor: number | null; readonly kind: 'as_suggested' | 'changed'; readonly reason: string | null; readonly by: string; readonly at: string }
+/** OB-676: `GET /v1/delivery/handover-tolerance?storeId=`. */
+export interface HandoverTolerance {
+  readonly storeId: string; readonly valueMinor: number | null; readonly suggestedMinor: number; readonly state: 'confirmed' | 'not_confirmed';
+  readonly confirmed: { readonly version: number; readonly valueMinor: number; readonly by: string; readonly at: string } | null;
+  readonly changedSinceConfirmed: boolean; readonly history: readonly ToleranceConfirmation[];
+}
 export interface ControlNumber { readonly key: string; readonly value: unknown; readonly state: 'set' | 'default' | 'not_set'; readonly words: { readonly en: string; readonly ta: string }; readonly setBy?: string; readonly decidedBy?: string }
 export interface Controls { readonly numbers: readonly ControlNumber[]; readonly notSet: readonly string[] }
 export interface ContributionRow { readonly orderId: string; readonly standing: string; readonly gate: { readonly detail: string; readonly assessment: { readonly contributionMinor: number } | null; readonly missing: readonly string[] } }
 export interface ContributionRead { readonly thresholdMinor: number | null; readonly thresholdState: 'set' | 'not_set'; readonly orders: readonly ContributionRow[] }
 export interface Settlement { readonly routeId: string; readonly stage: string; readonly proposed: { readonly amountMinor: number; readonly drops: number; readonly by: string } | null; readonly approved: { readonly by: string } | null; readonly paidMinor: number; readonly differenceMinor: number | null; readonly books: string }
+
+/** W4 · M19-FR-02: an order's pack as head office recorded it — what can be sent, each line in its crate, the refusals listed. */
+export interface OrderPack {
+  readonly orderId: string; readonly packed: boolean; readonly outcome: string; readonly totalMinor: number; readonly detail: string;
+  readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly name: string; readonly packedMinor: number; readonly shortMinor: number; readonly finalPriceMinor: number; readonly handling: string; readonly crateId: string }[];
+  readonly refused: readonly { readonly lineId: string; readonly reason: string; readonly detail: string }[];
+}
+/** W4 · M19-FR-02: the dispatch manifest — built by head office FROM the recorded pack, never from the order. */
+export interface OrderManifest {
+  readonly manifestId: string; readonly orderId: string; readonly locationId: string; readonly crates: readonly string[]; readonly totalMinor: number;
+  readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly name: string; readonly quantityMinor: number; readonly crateId: string; readonly handling: string }[];
+  readonly temperatureReadings: readonly { readonly lineId: string; readonly tenthsC: number }[];
+  readonly seals: Readonly<Record<string, string>>; readonly dispatchedAt: string; readonly dispatchedBy: string; readonly detail: string;
+}
+/** The manifest number the page asks for an order: one per order (the route is idempotent, so asking again is the same manifest). */
+export const manifestIdFor = (orderId: string): string => `MF-${orderId.trim()}`;
 
 export const DISPATCH_COPY = {
   en: {
@@ -78,8 +104,21 @@ export const DISPATCH_COPY = {
     approve: 'Approve', decline: 'Decline', decisionL: 'Reason', decided: 'Recorded:',
     st_held: 'Held — needs a manager', st_declined: 'Declined', st_approved: 'Approved', st_clear: 'Clear', st_flag_only: 'Flag only', st_not_assessed: 'Not assessed',
     controlsH: 'The owner’s numbers', showControls: 'Show the numbers', save: 'Save', saved: 'Saved.', needNumber: 'Enter a whole number.',
+    // OB-676: the driver cash hand-over limit, offered as a starting suggestion and "not confirmed" until the owner confirms it.
+    toleranceH: 'Driver cash hand-over limit', showTolerance: 'Show the limit', toleranceL: 'Limit (₹)', confirmTolerance: 'Confirm this limit',
+    toleranceReasonL: 'Note (optional)', toleranceInForce: 'In force at this store:', toleranceSuggested: 'Starting suggestion:', toleranceNoSettings: 'this store has no settings yet',
+    tol_confirmed: 'Confirmed by the owner', tol_not_confirmed: 'NOT CONFIRMED by the owner — drivers and the store computer keep using it until he confirms or changes it',
+    tolChangedSince: 'It was changed after the owner last confirmed it.', tolConfirmedBy: 'confirmed by', tolHistoryH: 'Every confirmation', tolKind_as_suggested: 'confirmed as it stood', tolKind_changed: 'changed from',
+    tolOnBoard: 'Cash-difference limit for drivers:', tolOnBoardNotTold: 'Cash-difference limit for drivers: head office did not say.',
+    tolNotConfirmedShort: 'not confirmed by the owner', needRupees: 'Enter the limit in rupees, above zero (e.g. 100 or 100.50).', confirmed: 'Confirmed:',
     settleH: 'Own-fleet settlement', routeIdL: 'Route', propose: 'Propose the settlement', approveSettle: 'Approve the settlement', paid: 'Record the payment',
     amountL: 'Amount paid (₹)', voucherL: 'Voucher', stage: 'Stage', drops: 'drops', settleBooks: 'Books',
+    // W4 · M19-FR-02: dispatch a packed order with a manifest built from what was packed; seal each crate; show the manifest.
+    sendH: 'Dispatch a packed order', orderL: 'Order', showPack: 'Show its pack', dispatchOrder: 'Dispatch this order', showManifest: 'Show its manifest',
+    needOrder: 'Say which order.', needSeals: 'Type the tamper seal on every crate.', cannotPack: 'Your role cannot read packs and manifests.',
+    cannotSend: 'Your role cannot dispatch orders.', crateK: 'Crate', sealL: 'Tamper seal', packedK: 'packed', refusedLineK: 'Not packed',
+    customerToldL: 'The customer has been told', dispatchedK: 'Dispatched — manifest', manifestK: 'Manifest', cratesK: 'crates', sealsK: 'Seals', tempK: 'Cold-chain readings',
+    dispatchedByK: 'dispatched by',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read deliveries.', cannotWave: 'Your role cannot build waves.',
     cannotDispatch: 'Your role cannot plan or hand out routes.', cannotDecide: 'Your role cannot decide on held orders.', cannotSet: 'Only the owner enters these numbers.',
     cannotApprove: 'Your role cannot approve settlements.',
@@ -114,8 +153,19 @@ export const DISPATCH_COPY = {
     approve: 'அனுமதி', decline: 'மறு', decisionL: 'காரணம்', decided: 'பதிவானது:',
     st_held: 'நிறுத்தப்பட்டது — மேலாளர் தேவை', st_declined: 'மறுக்கப்பட்டது', st_approved: 'அனுமதிக்கப்பட்டது', st_clear: 'சரி', st_flag_only: 'கொடி மட்டும்', st_not_assessed: 'மதிப்பிடப்படவில்லை',
     controlsH: 'உரிமையாளரின் எண்கள்', showControls: 'எண்களைக் காட்டு', save: 'சேமி', saved: 'சேமிக்கப்பட்டது.', needNumber: 'முழு எண்ணை உள்ளிடுங்கள்.',
+    toleranceH: 'டிரைவர் பண ஒப்படைப்பு வரம்பு', showTolerance: 'வரம்பைக் காட்டு', toleranceL: 'வரம்பு (₹)', confirmTolerance: 'இந்த வரம்பை உறுதிசெய்',
+    toleranceReasonL: 'குறிப்பு (விருப்பம்)', toleranceInForce: 'இந்தக் கடையில் நடைமுறையில்:', toleranceSuggested: 'தொடக்கப் பரிந்துரை:', toleranceNoSettings: 'இந்தக் கடைக்கு இன்னும் அமைப்புகள் இல்லை',
+    tol_confirmed: 'உரிமையாளர் உறுதிசெய்தார்', tol_not_confirmed: 'உரிமையாளர் உறுதிசெய்யவில்லை — அவர் உறுதிசெய்யும் அல்லது மாற்றும் வரை டிரைவர்களும் கடை கணினியும் இதையே பயன்படுத்துவார்கள்',
+    tolChangedSince: 'உரிமையாளர் கடைசியாக உறுதிசெய்த பின் இது மாற்றப்பட்டது.', tolConfirmedBy: 'உறுதிசெய்தவர்', tolHistoryH: 'ஒவ்வொரு உறுதிப்படுத்தலும்', tolKind_as_suggested: 'இருந்தபடியே உறுதிசெய்யப்பட்டது', tolKind_changed: 'இதிலிருந்து மாற்றப்பட்டது',
+    tolOnBoard: 'டிரைவர்களுக்கான பண வித்தியாச வரம்பு:', tolOnBoardNotTold: 'டிரைவர்களுக்கான பண வித்தியாச வரம்பு: தலைமை அலுவலகம் சொல்லவில்லை.',
+    tolNotConfirmedShort: 'உரிமையாளர் உறுதிசெய்யவில்லை', needRupees: 'வரம்பை ரூபாயில், பூஜ்ஜியத்திற்கு மேல் உள்ளிடுங்கள் (எ.கா. 100 அல்லது 100.50).', confirmed: 'உறுதிசெய்யப்பட்டது:',
     settleH: 'சொந்த வாகனக் கணக்குத் தீர்வு', routeIdL: 'வழி', propose: 'தீர்வை முன்மொழி', approveSettle: 'தீர்வை அனுமதி', paid: 'செலுத்தியதைப் பதிவு செய்',
     amountL: 'செலுத்திய தொகை (₹)', voucherL: 'வவுச்சர்', stage: 'நிலை', drops: 'டெலிவரிகள்', settleBooks: 'கணக்கேடுகள்',
+    sendH: 'பேக் செய்த ஆர்டரை அனுப்பு', orderL: 'ஆர்டர்', showPack: 'அதன் பேக்கைக் காட்டு', dispatchOrder: 'இந்த ஆர்டரை அனுப்பு', showManifest: 'அதன் பட்டியலைக் காட்டு',
+    needOrder: 'எந்த ஆர்டர் என்று சொல்லுங்கள்.', needSeals: 'ஒவ்வொரு பெட்டியின் முத்திரையையும் உள்ளிடுங்கள்.', cannotPack: 'உங்கள் பங்கு பேக்குகளையும் பட்டியல்களையும் படிக்க முடியாது.',
+    cannotSend: 'உங்கள் பங்கு ஆர்டர்களை அனுப்ப முடியாது.', crateK: 'பெட்டி', sealL: 'முத்திரை', packedK: 'பேக் செய்யப்பட்டது', refusedLineK: 'பேக் செய்யப்படவில்லை',
+    customerToldL: 'வாடிக்கையாளரிடம் சொல்லப்பட்டது', dispatchedK: 'அனுப்பப்பட்டது — பட்டியல்', manifestK: 'பட்டியல்', cratesK: 'பெட்டிகள்', sealsK: 'முத்திரைகள்', tempK: 'குளிர்ச் சங்கிலி அளவீடுகள்',
+    dispatchedByK: 'அனுப்பியவர்',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு டெலிவரிகளைப் படிக்க முடியாது.', cannotWave: 'உங்கள் பங்கு அலைகளை உருவாக்க முடியாது.',
     cannotDispatch: 'உங்கள் பங்கு வழிகளைத் திட்டமிடவோ கொடுக்கவோ முடியாது.', cannotDecide: 'உங்கள் பங்கு நிறுத்திய ஆர்டர்களில் முடிவெடுக்க முடியாது.', cannotSet: 'இந்த எண்களை உரிமையாளர் மட்டுமே உள்ளிடுவார்.',
     cannotApprove: 'உங்கள் பங்கு தீர்வுகளை அனுமதிக்க முடியாது.',
@@ -138,6 +188,22 @@ export function rupees(minor: number): string {
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Whole paise from rupees as typed ("100", "100.5", "100.50"); undefined when it cannot be read. */
+export function paiseOf(rupeesText: string): number | undefined {
+  const m = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(rupeesText.trim().replace(/^₹/, ''));
+  return m === null ? undefined : Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
+}
+
+/**
+ * OB-676: the words beside a cash difference — the limit it was judged against, and "not confirmed by the owner" until he
+ * has confirmed it. Empty when the owner has confirmed it (nothing more to say); said, not hidden, when head office did not say.
+ */
+export function toleranceNote(lang: Lang, t: ToleranceOnBoard | null | undefined): string {
+  if (t === null || t === undefined) return dispatchWords(lang, 'tolOnBoardNotTold');
+  if (t.state === 'confirmed') return '';
+  return `${dispatchWords(lang, 'tolOnBoard')} ${t.valueMinor === null ? '—' : rupees(t.valueMinor)} — ${dispatchWords(lang, 'tolNotConfirmedShort')}`;
+}
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
@@ -158,7 +224,7 @@ export function readDrivers(text: string, runDate: string, offsetMinutes: number
 }
 
 export interface DispatchSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean; readonly readPacks: boolean; readonly sendOrders: boolean };
   candidates(storeId: string): Promise<Outcome<Candidates>>;
   buildWave(input: { readonly waveId: string; readonly storeId: string; readonly pickerId: string; readonly orderIds: readonly string[] }): Promise<Outcome<WaveBuilt>>;
   waves(storeId: string): Promise<Outcome<{ readonly waves: readonly WaveRow[] }>>;
@@ -170,10 +236,24 @@ export interface DispatchSession {
   decide(orderId: string, decision: 'approve' | 'decline', reason: string): Promise<Outcome<{ readonly standing: string }>>;
   controls(): Promise<Outcome<Controls>>;
   setNumber(key: string, value: string): Promise<Outcome<Controls>>;
+  /** OB-676: the store's driver cash hand-over limit — in force, the suggestion, and whether the owner confirmed it. */
+  tolerance(storeId: string): Promise<Outcome<HandoverTolerance>>;
+  /** OB-676: the owner confirms a limit (in rupees as typed) — the suggestion as it stands, or a new figure. */
+  confirmTolerance(storeId: string, rupeesText: string, note: string): Promise<Outcome<HandoverTolerance>>;
   settlement(routeId: string): Promise<Outcome<Settlement>>;
   propose(routeId: string): Promise<Outcome<Settlement>>;
   approveSettlement(routeId: string): Promise<Outcome<Settlement>>;
   recordPaid(routeId: string, rupeesText: string, voucherRef: string): Promise<Outcome<Settlement>>;
+  /** W4 · M19-FR-02: the order's pack head office recorded (`GET /v1/fulfilment/orders/:id/pack`, fulfilment.pack.read). */
+  orderPack(orderId: string): Promise<Outcome<OrderPack>>;
+  /**
+   * W4 · M19-FR-02: dispatch the order (`POST /v1/fulfilment/orders/:id/dispatch`, fulfilment.pack.record) from the store,
+   * with the tamper seal typed for every crate and the short or refused lines the customer has been told about. Head office
+   * builds the manifest from the recorded pack and refuses an unsealed crate or an untold line in its own words.
+   */
+  dispatchOrder(input: { readonly orderId: string; readonly storeId: string; readonly seals: Readonly<Record<string, string>>; readonly resolvedLineIds?: readonly string[] }): Promise<Outcome<{ readonly dispatched: boolean; readonly outcome: string; readonly detail: string; readonly manifest?: OrderManifest }>>;
+  /** W4 · M19-FR-02: the dispatch manifest (`GET /v1/fulfilment/orders/:id/manifest`, fulfilment.pack.read). */
+  manifest(orderId: string): Promise<Outcome<OrderManifest>>;
 }
 
 export function createDispatchSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): DispatchSession {
@@ -183,7 +263,10 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
   const may = {
     named, read: has('delivery.run.read'), waves: has('fulfilment.wave.assign'), dispatch: has('delivery.dispatch.manage'),
     decide: has('delivery.contribution.approve'), setNumbers: has('delivery.controls.set'), approveSettlement: has('delivery.settlement.approve'),
+    // W4 · M19-FR-02: each route's own word — reading a pack or a manifest, and dispatching an order.
+    readPacks: has('fulfilment.pack.read'), sendOrders: has('fulfilment.pack.record'),
   };
+  const orderOk = (o: string): Outcome<never> | undefined => (o.trim() === '' ? { result: 'invalid', why: 'needOrder' } : undefined);
   const call = makeCaller({ ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }), keyPrefix: 'dispatch' });
   const gate = (allowed: boolean, why: string): Outcome<never> | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !allowed ? { result: 'invalid', why } : undefined);
   const enc = encodeURIComponent;
@@ -241,6 +324,13 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
       if (!/^\d+$/.test(v)) return { result: 'invalid', why: 'needNumber' };
       return call<Controls>('POST', '/v1/delivery/controls', { [key]: Number(v) });
     },
+    tolerance: async (storeId) => gate(may.read, 'cannotRead') ?? storeOk(storeId) ?? call<HandoverTolerance>('GET', `/v1/delivery/handover-tolerance?storeId=${enc(storeId.trim())}`),
+    confirmTolerance: async (storeId, rupeesText, note) => {
+      const g = gate(may.setNumbers, 'cannotSet') ?? storeOk(storeId); if (g !== undefined) return g;
+      const minor = paiseOf(rupeesText);
+      if (minor === undefined || minor <= 0) return { result: 'invalid', why: 'needRupees' };
+      return call<HandoverTolerance>('POST', `/v1/delivery/handover-tolerance/${enc(storeId.trim())}`, { valueMinor: minor, ...(note.trim() === '' ? {} : { reason: note.trim() }) });
+    },
     settlement: async (routeId) => gate(may.read, 'cannotRead') ?? call<Settlement>('GET', `/v1/delivery/fleet-settlements/${enc(routeId)}`),
     propose: async (routeId) => gate(may.dispatch, 'cannotDispatch') ?? call<Settlement>('POST', `/v1/delivery/fleet-settlements/${enc(routeId)}`, {}),
     approveSettlement: async (routeId) => gate(may.approveSettlement, 'cannotApprove') ?? call<Settlement>('POST', `/v1/delivery/fleet-settlements/${enc(routeId)}/approve`, {}),
@@ -251,5 +341,15 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
       const minor = Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
       return call<Settlement>('POST', `/v1/delivery/fleet-settlements/${enc(routeId)}/paid`, { amountMinor: minor, voucherRef: voucherRef.trim() });
     },
+    orderPack: async (orderId) => gate(may.readPacks, 'cannotPack') ?? orderOk(orderId) ?? call<OrderPack>('GET', `/v1/fulfilment/orders/${enc(orderId.trim())}/pack`),
+    dispatchOrder: async (i) => {
+      const g = gate(may.sendOrders, 'cannotSend') ?? orderOk(i.orderId) ?? storeOk(i.storeId); if (g !== undefined) return g;
+      const seals = Object.fromEntries(Object.entries(i.seals).map(([crate, seal]) => [crate, seal.trim()]));
+      if (Object.keys(seals).length === 0 || Object.values(seals).some((v) => v === '')) return { result: 'invalid', why: 'needSeals' };
+      return call('POST', `/v1/fulfilment/orders/${enc(i.orderId.trim())}/dispatch`, {
+        manifestId: manifestIdFor(i.orderId), locationId: i.storeId.trim(), seals, ...(i.resolvedLineIds === undefined || i.resolvedLineIds.length === 0 ? {} : { resolvedLineIds: [...i.resolvedLineIds] }),
+      });
+    },
+    manifest: async (orderId) => gate(may.readPacks, 'cannotPack') ?? orderOk(orderId) ?? call<OrderManifest>('GET', `/v1/fulfilment/orders/${enc(orderId.trim())}/manifest`),
   };
 }

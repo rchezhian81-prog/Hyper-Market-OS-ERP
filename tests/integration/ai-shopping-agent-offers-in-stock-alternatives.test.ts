@@ -93,6 +93,9 @@ async function journey(h: ApiHarness, T: string, transport: ModelTransport & { s
     expect(mine.alternatives[0]!.summary).toMatch(/Arokya/);
     expect(mine.alternatives[0]).toMatchObject({ suggestedByAi: true, notice: { en: expect.stringMatching(/^Suggested by AI\./), ta: expect.stringMatching(/^AI பரிந்துரைத்தது/) } });
     expect(mine).toMatchObject({ personalisation: { optedIn: false }, boughtBefore: [] });
+    // W4 (A04, found by the connected customer-app run): the app is told WHICH products are the alternatives, closest in
+    // price first, so the customer's "Add" puts the alternative in the basket — never the product that ran out.
+    expect((mine.alternatives[0] as unknown as { forProductId: string; productIds: string[] })).toMatchObject({ forProductId: 'MILK-AAVIN', productIds: ['MILK-AROKYA', 'MILK-HERITAGE'] });
 
     // Restock Aavin and the proposal goes away on the next run — it re-derives from the ledger every time.
     await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'm7', body: { movementId: 'm7', productId: 'MILK-AAVIN', locationId: 'S1', kind: 'received', quantityMinor: 4, uom: 'each', occurredAt: `${today}T02:00:00.000Z`, enteredBy: OWNER, unitCostMinor: 50_00 } });

@@ -32,7 +32,7 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let reg = null;
 
-// OB-626: money received from a supplier is recorded only after the shared confirm sheet (the chrome's) says what will be
+// OB-691: money received from a supplier is recorded only after the shared confirm sheet (the chrome's) says what will be
 // recorded, in whose name, and the person confirms. Go back sends nothing.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const REQ = { en: '(required)', ta: '(கட்டாயம்)' };

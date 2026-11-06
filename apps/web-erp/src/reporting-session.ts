@@ -44,6 +44,7 @@ import {
 } from '../../../packages/reporting/src/index';
 import { AccessDeniedError, type AccessControl } from '../../../packages/rbac/src/index';
 import { figure, dashboard, type Dashboard, type Figure } from '../../../services/reporting/src/index';
+import { shopWallClockOf, shopZoneOr } from '../../../packages/calendar/src/shop-day'; // OB-639: hours at the shop's clock
 import { exportDomain, type ExportContext, type ExportResult, type ExportSpec } from '../../../packages/export/src/index';
 
 /** One sale as this screen reads it, with the facts a report is built from. */
@@ -140,6 +141,11 @@ export interface ReportingConfig {
    * would move it. The box already works this out; the screen is told, not left to guess.
    */
   readonly tradingDay: string;
+  /**
+   * OB-639 (owner, 1 Nov 2026): the shop's time zone, as the store computer served it (`window.shopTimeZone`). "Sales by
+   * hour" is grouped by the hour on the SHOP's clock in it. Absent or unknown → the shop default (Asia/Kolkata), never UTC.
+   */
+  readonly timeZone?: string;
 }
 
 /**
@@ -306,10 +312,30 @@ export function createReportingSession(
           })),
         };
 
-      case 'sales_by_hour':
-        // The hour in the shop's own recorded instant. Reading a local hour here would need a
-        // timezone this screen has not been given, and a wrong one moves the evening peak.
-        return byKey((s) => `${s.committedAt.slice(11, 13)}:00`);
+      case 'sales_by_hour': {
+        // OB-639 (owner, 1 Nov 2026): the hour on the SHOP's clock — the zone the store computer serves, the calendar every
+        // other date on these screens uses. It used to be the hour of the UTC stamp, so a 17:47 sale in Chennai was shown
+        // at 12:00 and the evening peak moved to the afternoon. A bill whose time cannot be read is in no hour, and said.
+        const zone = shopZoneOr(config.timeZone);
+        const hourOf = (s: ReportableSale): string => {
+          const wall = shopWallClockOf(s.committedAt, zone);
+          return wall === '' ? 'time not known' : `${wall.slice(11, 13)}:00`;
+        };
+        const out = byKey(hourOf);
+        // In the order the day ran (a trading day past midnight puts 00:00 after 23:00), not the order of the digits.
+        const first = new Map<string, number>();
+        for (const sale of ports.sales()) {
+          const key = hourOf(sale);
+          const at = Date.parse(sale.committedAt);
+          const t = Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+          first.set(key, Math.min(first.get(key) ?? Number.POSITIVE_INFINITY, t));
+        }
+        const order = (name: string): number => first.get(name) ?? Number.POSITIVE_INFINITY;
+        return {
+          figures: [...out.figures].sort((a, b) => order(a.name) - order(b.name)),
+          rows: [...out.rows].sort((a, b) => order(a['key']!) - order(b['key']!)),
+        };
+      }
 
       case 'sales_by_cashier':
         return byKey((s) => s.cashierId);

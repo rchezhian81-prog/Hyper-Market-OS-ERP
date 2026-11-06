@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Developer guide</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Developer guide (W3 · M36-FR-04 "versioned APIs … and documentation" · P-06). Every API call the shop's system answers,
+      GENERATED from the published contract docs/api/openapi.json into the guide's data script (scripts/developer-docs.mjs, run by every office build) —
+      never written by hand. Each call shows its method and path, its API group, the permission it needs, whether it takes
+      an Idempotency-Key, the fields it reads and the fields it answers with, and any field a reply shows only once. Found
+      by a plain word. Read-only: it calls no head-office route and changes nothing.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input:focus-visible, select:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; align-items: end; }
+      ul.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 15px; }
+      ul.ops { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .ops li { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow-wrap: anywhere; }
+      .ops summary { cursor: pointer; padding: 10px 12px; font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; min-height: 28px; }
+      .ops .verb { font-weight: 700; min-width: 4.5em; }
+      .ops code, .ops .path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 15px; }
+      .ops .body { padding: 0 12px 12px; display: grid; gap: 6px; font-size: 15px; }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Developer guide</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Developer guide</h2>
+        <p class="lead" id="lead"></p>
+        <p class="muted" id="version" role="status" aria-live="polite"></p>
+        <h3 id="how-h">How every call works</h3>
+        <ul class="how" id="how"></ul>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="find-h">
+        <h3 id="find-h">Find a call</h3>
+        <form id="find" class="row">
+          <label for="q"><span id="l-q">A word (a path, a permission, a field)</span><input id="q" type="search" autocomplete="off" /></label>
+          <label for="group"><span id="l-group">API group</span><select id="group"></select></label>
+        </form>
+        <p class="muted" id="count" role="status" aria-live="polite"></p>
+        <ul class="ops" id="ops" aria-label="API calls"></ul>
+      </section>
+    </main>
+    <script src="./developer-docs.bundle.js"></script>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./developer-docs.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

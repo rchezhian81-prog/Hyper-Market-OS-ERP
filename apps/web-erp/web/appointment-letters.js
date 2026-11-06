@@ -82,6 +82,9 @@ const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 const toBase64 = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 let wording = null; let letters = null; const shown = new Map();
+// W5 · OB-323: the signed copies listed for a letter, and the one photo being looked at (read live, never stored).
+const scanLists = new Map(); const scanShown = new Map();
+const SHOWABLE = new Set(api?.scanMediaTypes ?? ['image/jpeg', 'image/png', 'image/webp']);
 
 function paintWording() {
   if (wording === null) return;
@@ -113,8 +116,33 @@ function paintLetters() {
       const out = await session.keepSignedCopy(l.letterId, scan); say('l-status', out); if (out.result === 'ok') await loadLetters();
     });
     li.append(lab, k);
+    if (l.scans > 0) li.append(scansNode(l));
     ul.append(li);
   }
+}
+function scansNode(l) {
+  const box = document.createElement('div'); box.className = 'scans'; box.dataset.scansOf = l.letterId;
+  const list = scanLists.get(l.letterId);
+  if (list === undefined) {
+    const b = button(t('showScans'), 'search', 'quiet'); b.dataset.act = 'scans';
+    b.addEventListener('click', async () => { const o = await session.letter(l.letterId); if (o.result === 'ok') { scanLists.set(l.letterId, o.value.scans ?? []); if (o.value.letter) shown.set(l.letterId, o.value.letter); } else say('l-status', o); paintLetters(); });
+    box.append(b); return box;
+  }
+  if (list.length === 0) { box.append(text('p', t('noScans'), 'meta')); return box; }
+  for (const sc of list) {
+    const row = document.createElement('div'); row.className = 'scan'; row.dataset.scan = sc.scanId;
+    row.append(text('span', `${sc.scanId} · ${t('keptBy')} ${sc.keptBy} · ${api.moment ? api.moment(sc.keptAt) : sc.keptAt} · ${t('fingerprint')} ${sc.sha256.slice(0, 12)}…`, 'meta'));
+    const got = scanShown.get(sc.scanId);
+    if (got !== undefined && SHOWABLE.has(got.scan.mediaType)) {
+      const img = document.createElement('img'); img.alt = t('scanAlt'); img.className = 'scan-img'; img.src = `data:${got.scan.mediaType};base64,${got.contentBase64}`; row.append(img);
+    } else {
+      const v = button(t('viewScan'), 'search', 'quiet'); v.dataset.act = 'view-scan';
+      v.addEventListener('click', async () => { const o = await session.signedScan(l.letterId, sc.scanId); if (o.result === 'ok') scanShown.set(sc.scanId, o.value); else say('l-status', o); paintLetters(); });
+      row.append(v);
+    }
+    box.append(row);
+  }
+  return box;
 }
 function paint() {
   repaintShopDates();

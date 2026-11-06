@@ -44,7 +44,19 @@ export interface ApprovalKind {
    * told. Absent: every holder of `checkerPermission` but the maker, as before.
    */
   readonly decidedOnlyBy?: NamedDecider;
+  /**
+   * OB-613 (owner, 31 Oct 2026, in writing): for a kind whose only ordinary checker is the OWNER, a request the owner
+   * raises himself could never be approved (the engine refuses a self-approval). Then the store's ACCOUNTANT approves it
+   * instead: a person who holds `checkerPermission` here AND holds the `checkerRole` role. The owner never approves his own
+   * request. Anybody else's request of the kind is decided exactly as before. Absent: no such second approver.
+   */
+  readonly whenTheOwnerAsks?: { readonly checkerPermission: string; readonly checkerRole: string; readonly anyAmount?: true };
 }
+
+/** OB-613: the role whose holder raised a request decides whether `whenTheOwnerAsks` applies. */
+export const OWNER_ASKS_ROLE = 'owner';
+/** OB-613: who approves a request the owner raised, for the kinds that name `whenTheOwnerAsks`. */
+export const OWNER_REQUEST_CHECKER_ROLE = 'accountant';
 
 /** OB-420: a named role whose current holder alone decides a kind. */
 export type NamedDecider = 'security_reviewer';
@@ -156,6 +168,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'concession_deposit_forfeit', label: 'Forfeit a concessionaire\'s deposit',
     makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
   },
+  // Round 4d (M27-FR-03): the shop's invoice to a concessionaire for a period — made by one person, approved by ANOTHER
+  // already authorised over concession contracts (the same authority as the contract itself; no new role policy).
+  concession_invoice: {
+    kind: 'concession_invoice', label: 'Issue a concession invoice and settle the period',
+    makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
+  },
   // Stock, orders and purchasing (2b-vi-b-3). Each checker is the authority the route already named — now verified as an
   // approval that person GAVE, never a name in the body. A material write-off and an upward stock correction are
   // checked by ANOTHER person who handles stock (M28-FR-01 "Manager/Owner"; the same authority the write-off already
@@ -249,6 +267,8 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   store_computer_replaced: {
     kind: 'store_computer_replaced', label: 'Move a till\'s bill numbers to a replacement store computer',
     makerPermission: 'store.computer.replace', checkerPermission: 'store.computer.replace.approve', validForMinutes: 24 * 60,
+    // OB-613: when the owner raised it himself, the store's accountant approves it.
+    whenTheOwnerAsks: { checkerPermission: 'store.computer.replace.ownerrequest.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE },
   },
   // R2 C20 · OB-165 "A" (owner, 16 Oct 2026): the OWNER adds or removes an Internal Committee member (that role only); a
   // second person who takes part in access changes (`identity.role.request` — a store manager today) confirms it.
@@ -256,18 +276,30 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'posh_committee_change', label: 'Add or remove an Internal Committee member',
     makerPermission: 'posh.committee.manage', checkerPermission: 'identity.role.request', validForMinutes: 24 * 60,
   },
+  // OB-681 (owner, 3 Nov 2026, in writing): the OWNER asks to give the chartered accountant's role; the IT CUSTODIAN — the
+  // security reviewer named now under OB-330 / OB-405 — approves it in his own session, and only he may decide it.
+  ca_role_grant: {
+    kind: 'ca_role_grant', label: 'Give the chartered accountant\'s role (approved by the IT custodian)',
+    makerPermission: 'identity.ca.grant.request', checkerPermission: 'compliance.risk.read', validForMinutes: 24 * 60,
+    decidedOnlyBy: 'security_reviewer',
+  },
   // ── OB-288 lane 1 · P1 (identity, authority and configuration governance) — begin
   // OB-290/291/292: the owner's money limits, escalation waits and price-check size change only through a second person —
   // the OWNER approves (`approvals.rules.approve`); §28 "Store Manager … cannot modify … own approval limits".
   approval_rule_change: {
     kind: 'approval_rule_change', label: 'Change an approval rule (money limits, escalation waits or the price-check size)',
     makerPermission: 'approvals.rules.propose', checkerPermission: 'approvals.rules.approve', validForMinutes: 24 * 60,
+    // OB-613: when the owner raised it himself, the store's accountant approves it — never a change to the accountant's own
+    // limits (§28; the rule route refuses that approval by name).
+    whenTheOwnerAsks: { checkerPermission: 'approvals.rules.ownerrequest.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE },
   },
   // M01-FR-01 "structural changes are owner-approved (maker-checker)": activating, suspending or closing a place in the
   // business, or changing one that is already live.
   org_structure_change: {
     kind: 'org_structure_change', label: 'Activate, change or close a company, branch, warehouse or department',
     makerPermission: 'platform.setup.write', checkerPermission: 'org.structure.approve', validForMinutes: 24 * 60,
+    // OB-613: when the owner raised it himself, the store's accountant approves it.
+    whenTheOwnerAsks: { checkerPermission: 'org.structure.ownerrequest.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE },
   },
   // M01-FR-02/03: a high-impact setting (trading day, currency, time zone, payments, pricing, offline limits) or switch.
   config_change: {
@@ -357,6 +389,23 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'b2b_credit_override', label: 'Let a business order go over the customer\'s credit limit (or past a lapsed contract)',
     makerPermission: 'b2b.document.issue', checkerPermission: 'b2b.credit.override', validForMinutes: 24 * 60,
   },
+  // M23-FR-02 · OB-678 (owner, 2 Nov 2026, in writing): a GST credit note to a business customer counts as a REFUND under the
+  // money limits (OB-290) — the store manager approves up to his refund limit (₹5,000), the owner without limit; the
+  // accountant has no figure set, so a note above another approver's limit waits for the owner. The person who raised it
+  // never approves it. The amount asked is the note's whole value (taxable value plus its GST), worked out by head office.
+  // OB-679 (owner, 2 Nov 2026, in writing): a credit note the OWNER raises himself is approved by the accountant, at any amount
+  // (`anyAmount` — the accountant's missing refund figure does not bind this one case); the owner never approves his own.
+  customer_credit_note: {
+    kind: 'customer_credit_note', label: 'Issue a GST credit note to a business customer (money back off their tax invoice)',
+    makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve', validForMinutes: 24 * 60,
+    whenTheOwnerAsks: { checkerPermission: 'finance.creditnote.ownerrequest.approve', checkerRole: OWNER_REQUEST_CHECKER_ROLE, anyAmount: true },
+  },
+  // OB-679 (owner, 2 Nov 2026, in writing): EVERY debit note to a customer needs a second, different person's approval, at any
+  // amount — no money ladder (the kind is not money-limited); nobody approves their own; one approval issues one note.
+  customer_debit_note: {
+    kind: 'customer_debit_note', label: 'Issue a GST debit note to a business customer (more added to their tax invoice)',
+    makerPermission: 'finance.creditnote.issue', checkerPermission: 'finance.creditnote.approve', validForMinutes: 24 * 60,
+  },
   // OB-360 (owner, 24–25 Oct 2026, in writing): EVERY change of a B2B credit limit (or the terms set with it) goes through
   // the engine with a second person, like a contract's limit — the owner and the accountant check each other.
   b2b_credit_limit: {
@@ -389,7 +438,38 @@ export interface ApprovalRequest {
   readonly reason: string;
   readonly requestedBy: string;
   readonly requestedAt: string;
+  /**
+   * OB-613: true when the person who asked held the owner role at the time, for a kind that names `whenTheOwnerAsks` —
+   * judged and recorded by head office when the request is made, never taken from the body. Then the accountant decides.
+   */
+  readonly raisedByTheOwner?: true;
 }
+
+/** Who may decide a request: the permission, and (OB-613) a role the decider must also hold. */
+export interface CheckerOf { readonly permission: string; readonly role?: string }
+
+/**
+ * Who may decide a recorded request: the kind's ordinary checker (never the maker — the routes refuse a self-approval) and,
+ * OB-613, when the owner raised it himself, ALSO the store's accountant (the accountant's word and role). A second holder of
+ * the owner's authority (a co-owner) still may, as before; the owner himself never may. Empty for an unknown kind.
+ */
+export function checkersOf(request: Pick<ApprovalRequest, 'kind' | 'raisedByTheOwner'>): readonly CheckerOf[] {
+  const spec = APPROVAL_KINDS[request.kind];
+  if (spec === undefined) return [];
+  const ordinary: CheckerOf = { permission: spec.checkerPermission };
+  if (request.raisedByTheOwner === true && spec.whenTheOwnerAsks !== undefined) {
+    return [ordinary, { permission: spec.whenTheOwnerAsks.checkerPermission, role: spec.whenTheOwnerAsks.checkerRole }];
+  }
+  return [ordinary];
+}
+
+/** Whether a person holding these permissions and roles is one of the request's checkers. */
+export const isOneOf = (checkers: readonly CheckerOf[], permissions: readonly string[], roles: readonly string[]): boolean =>
+  checkers.some((c) => permissions.includes(c.permission) && (c.role === undefined || roles.includes(c.role)));
+
+/** OB-613: the plain words for a request the owner raised himself. */
+const ownerRequestWords = (label: string): string =>
+  `The owner asked for "${label}" himself, so the store's accountant approves it (owner decision OB-613) — the owner never approves his own request.`;
 
 /** A checker's decision on a request. */
 export interface ApprovalDecision {
@@ -433,6 +513,11 @@ export interface ApprovalRequestDeps {
    * then nobody is named, so such a kind is decided by nobody (never by everyone).
    */
   readonly namedDeciderOf?: (tenantId: string, role: NamedDecider) => Promise<NamedPerson | undefined>;
+  /**
+   * OB-613: the roles a person holds now — whether the asker is the owner, and whether a decider is the accountant. Absent
+   * on a bare stub: then no request is marked as the owner's, and a kind's ordinary checker decides, as before.
+   */
+  readonly rolesOfUser?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -469,11 +554,23 @@ const notPermitted = (what: string): Error => apiError(403, {
 export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route[] {
   const holds = async (tenantId: string, userId: string, permission: string): Promise<boolean> =>
     ((await deps.permissionsOfUser(tenantId, userId)) ?? []).includes(permission);
+  // OB-613: the roles a person holds now (none known on a bare stub).
+  const rolesOf = async (tenantId: string, userId: string): Promise<readonly string[]> => (await deps.rolesOfUser?.(tenantId, userId)) ?? [];
   // OB-420: who is named NOW in each role a kind needs — read once per request, at the moment of judging.
   const namedNow = async (tenantId: string, roles: Iterable<NamedDecider>): Promise<Map<NamedDecider, NamedPerson | undefined>> => {
     const out = new Map<NamedDecider, NamedPerson | undefined>();
     for (const role of roles) if (!out.has(role)) out.set(role, await deps.namedDeciderOf?.(tenantId, role));
     return out;
+  };
+  /**
+   * OB-679: a request the OWNER raised, of a kind whose `whenTheOwnerAsks` is `anyAmount`, decided by its second approver
+   * (the accountant: the word AND the role) — not bound by the decider's money limit. Anyone else's request, and anyone
+   * else deciding it, keeps the limits exactly as before.
+   */
+  const ownerRequestAnyAmount = async (tenantId: string, userId: string, request: Pick<ApprovalRequest, 'kind' | 'raisedByTheOwner'>): Promise<boolean> => {
+    const alt = request.raisedByTheOwner === true ? APPROVAL_KINDS[request.kind]?.whenTheOwnerAsks : undefined;
+    if (alt === undefined || alt.anyAmount !== true) return false;
+    return (await holds(tenantId, userId, alt.checkerPermission)) && (await rolesOf(tenantId, userId)).includes(alt.checkerRole);
   };
   const deciderView = (role: NamedDecider, person: NamedPerson | undefined): DeciderView => person === undefined
     ? { role, named: false, whatToDo: NAMED_DECIDER_WORDS[role].nameFirst }
@@ -502,16 +599,20 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         if (!(await holds(ctx.tenantId, ctx.userId, spec.makerPermission))) {
           throw notPermitted(`${ctx.userId} may not ${spec.label.toLowerCase()}, so cannot ask for it to be approved.`);
         }
+        // OB-613: the owner's own request of a kind only the owner decides goes to the store's accountant — judged here, from
+        // the roles head office holds for the asker, never from the body.
+        const raisedByTheOwner = spec.whenTheOwnerAsks !== undefined && (await rolesOf(ctx.tenantId, ctx.userId)).includes(OWNER_ASKS_ROLE);
         const request: ApprovalRequest = {
           requestId: `areq-${randomUUID()}`, kind: spec.kind, subjectRef: b['subjectRef'].trim(), valueMinor,
           fingerprint: fingerprintOf(details), details, summary: b['summary'].trim().slice(0, 300), reason: b['reason'].trim().slice(0, 300),
           requestedBy: ctx.userId, requestedAt: deps.now(),
+          ...(raisedByTheOwner ? { raisedByTheOwner: true as const } : {}),
         };
         await deps.recordRequest(ctx.tenantId, request);
         // OB-420: the asker is told who alone decides it — or that nobody is named yet, so it cannot be decided (P-08).
         const role = spec.decidedOnlyBy;
         const decider = role === undefined ? {} : { decider: deciderView(role, (await namedNow(ctx.tenantId, [role])).get(role)) };
-        return { status: 201, body: { ...request, status: 'waiting', ...decider } };
+        return { status: 201, body: { ...request, status: 'waiting', ...decider, ...(raisedByTheOwner ? { decidedByTheAccountant: ownerRequestWords(spec.label) } : {}) } };
       },
     },
     {
@@ -520,6 +621,7 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
       permission: 'identity.self.read',
       handler: async (ctx) => {
         const held = (await deps.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? [];
+        const heldRoles = await rolesOf(ctx.tenantId, ctx.userId);
         const now = Date.parse(deps.now());
         const all = await deps.allRequests(ctx.tenantId);
         const escalated = (await deps.escalations?.(ctx.tenantId)) ?? new Map<string, ApprovalEscalationView>();
@@ -538,11 +640,14 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
             ...(escalated.has(s.request.requestId) ? { escalation: escalated.get(s.request.requestId)! } : {}),
             // OB-420: a kind one named person decides says who that is now — or that nobody is named (P-08).
             ...(s.decision === undefined && role !== undefined ? { decider: deciderView(role, named.get(role)) } : {}),
+            // OB-613: a request the owner raised is the accountant's to decide — said on the row.
+            ...(s.request.raisedByTheOwner === true ? { decidedByTheAccountant: ownerRequestWords(APPROVAL_KINDS[s.request.kind]?.label ?? s.request.kind) } : {}),
           };
         };
         const open = all.filter((s) => {
           const spec = APPROVAL_KINDS[s.request.kind];
-          if (spec === undefined || s.decision !== undefined || s.request.requestedBy === ctx.userId || !held.includes(spec.checkerPermission)) return false;
+          // OB-613: a request the owner raised also shows to the store's accountant (never to the owner who raised it).
+          if (spec === undefined || s.decision !== undefined || s.request.requestedBy === ctx.userId || !isOneOf(checkersOf(s.request), held, heldRoles)) return false;
           // OB-420: only the person named NOW sees it as theirs to decide; with nobody named, nobody does.
           return spec.decidedOnlyBy === undefined || named.get(spec.decidedOnlyBy)?.userId === ctx.userId;
         });
@@ -551,6 +656,8 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         const mineToDecide: ApprovalState[] = []; let routedToOwner = 0;
         for (const s of open) {
           const subject = limitedSubjectOf(s.request.kind);
+          // OB-679: the owner's own request of an `anyAmount` kind is the accountant's to decide at any amount.
+          if (await ownerRequestAnyAmount(ctx.tenantId, ctx.userId, s.request)) { mineToDecide.push(s); continue; }
           if (deps.authorityOf !== undefined && subject !== undefined && s.request.valueMinor !== null
             && !mayApproveValue(await deps.authorityOf(ctx.tenantId, ctx.userId, s.request.kind), s.request.valueMinor)) { routedToOwner += 1; continue; }
           mineToDecide.push(s);
@@ -600,8 +707,12 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
             });
           }
         }
-        if (spec === undefined || !(await holds(ctx.tenantId, ctx.userId, spec.checkerPermission))) {
-          throw notPermitted(`${ctx.userId} may not approve "${spec?.label ?? state.request.kind}".`);
+        // OB-613: a request the owner raised may also be decided by the store's accountant (word AND role).
+        const mayCheck = spec !== undefined && isOneOf(checkersOf(state.request), (await deps.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? [], await rolesOf(ctx.tenantId, ctx.userId));
+        if (spec === undefined || !mayCheck) {
+          throw notPermitted(state.request.raisedByTheOwner === true && spec !== undefined
+            ? `${ownerRequestWords(spec.label)} ${ctx.userId} may not approve it.`
+            : `${ctx.userId} may not approve "${spec?.label ?? state.request.kind}".`);
         }
         if (state.request.requestedBy === ctx.userId) {
           throw apiError(422, {
@@ -619,7 +730,8 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
           });
         }
         // OB-290: approving money is bounded by the checker's own limit, read on the server (rejecting needs no budget).
-        if (decision === 'approved' && deps.authorityOf !== undefined && state.request.valueMinor !== null && limitedSubjectOf(state.request.kind) !== undefined) {
+        if (decision === 'approved' && deps.authorityOf !== undefined && state.request.valueMinor !== null && limitedSubjectOf(state.request.kind) !== undefined
+          && !(await ownerRequestAnyAmount(ctx.tenantId, ctx.userId, state.request))) {
           const authority = await deps.authorityOf(ctx.tenantId, ctx.userId, state.request.kind);
           if (!mayApproveValue(authority, state.request.valueMinor)) {
             throw apiError(422, {
@@ -679,6 +791,8 @@ export async function takeApproval(input: {
   readonly usedBy: string;
   readonly now: string;
   readonly checkerHolds: (userId: string, permission: string) => Promise<boolean> | boolean;
+  /** OB-613: whether the checker holds a role now (the accountant, for a request the owner raised). Absent: nobody does. */
+  readonly checkerHoldsRole?: (userId: string, role: string) => Promise<boolean> | boolean;
 }): Promise<ApprovalDecision> {
   const refuse = (code: string, whatHappened: string): never => {
     throw apiError(422, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Ask for approval of exactly this, and have a different person with the authority approve it.' });
@@ -696,9 +810,16 @@ export async function takeApproval(input: {
   if (s.decision.expiresAt !== null && Date.parse(s.decision.expiresAt) <= Date.parse(input.now)) {
     return refuse('approval_expired', `That approval expired at ${s.decision.expiresAt}.`);
   }
+  // Judged again at use: the checker still holds the authority — for a request the owner raised, the owner's ordinary
+  // authority (a co-owner) or the accountant's word AND role (OB-613).
+  // (Written without a loop, so the body-contract probe that reads these handlers follows every path.)
   const spec = APPROVAL_KINDS[r.kind];
-  if (spec === undefined || !(await input.checkerHolds(s.decision.decidedBy, spec.checkerPermission))) {
-    return refuse('checker_may_not_approve', `${s.decision.decidedBy} no longer holds the authority to approve this, so their approval does not count.`);
+  const by = s.decision.decidedBy;
+  const ordinary = spec !== undefined && (await input.checkerHolds(by, spec.checkerPermission));
+  const alt = r.raisedByTheOwner === true ? spec?.whenTheOwnerAsks : undefined;
+  const accountant = !ordinary && alt !== undefined && (await input.checkerHolds(by, alt.checkerPermission)) && ((await input.checkerHoldsRole?.(by, alt.checkerRole)) ?? false);
+  if (!ordinary && !accountant) {
+    return refuse('checker_may_not_approve', `${by} no longer holds the authority to approve this, so their approval does not count.`);
   }
   return s.decision;
 }
@@ -720,6 +841,8 @@ export interface ApprovalPort {
   /** Record the one use; resolves `false` when another action's use landed first (even the same action sent twice). */
   readonly spendApproval: (tenantId: string, requestId: string, usedBy: string, expectedVersion: number) => Promise<boolean | void> | boolean | void;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** OB-613: the roles a person holds now. Absent: an approval that needs a role (the accountant's) never counts. */
+  readonly rolesOfUser?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
 }
 
 /** No engine wired (a bare stub): every approval is unknown, so nothing is approved by accident. */
@@ -792,6 +915,7 @@ export async function openApproval(port: ApprovalPort, input: {
   const decision = await takeApproval({
     ...input, state,
     checkerHolds: async (userId, permission) => ((await port.permissionsOfUser(input.tenantId, userId)) ?? []).includes(permission),
+    checkerHoldsRole: async (userId, role) => ((await port.rolesOfUser?.(input.tenantId, userId)) ?? []).includes(role),
   });
   return {
     decision,

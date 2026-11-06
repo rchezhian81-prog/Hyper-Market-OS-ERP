@@ -186,12 +186,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       // wasted "now" is on the shop's today — a window ending on the browser's date would leave it out.
       expect(await page.inputValue('#to')).toBe(EVENING.shopDate);
       expect(await page.inputValue('#from')).toBe(`${EVENING.shopDate.slice(0, 7)}-01`);
-      await page.locator('table[data-breakdown="wo-reason"] tr[data-key="expiry"]').waitFor({ timeout: 15_000 });
-      expect(await page.locator('table[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/Past its date.*₹100\.00/);
-      expect(await page.locator('table[data-breakdown="wr-reason"] tr[data-key="preparation"]').textContent()).toMatch(/Lost in preparation.*₹25\.00/);
+      // UI-3: the breakdown is the shared register (its host carries data-breakdown) or, without the chrome, the plain table.
+      await page.locator('[data-breakdown="wo-reason"] tr[data-key="expiry"]').waitFor({ timeout: 15_000 });
+      expect(await page.locator('[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/Past its date.*₹100\.00/);
+      expect(await page.locator('[data-breakdown="wr-reason"] tr[data-key="preparation"]').textContent()).toMatch(/Lost in preparation.*₹25\.00/);
       expect(await page.textContent('#wo-total')).toMatch(/₹100\.00 · 1 event/);
       await page.click('#lang');
-      expect(await page.locator('table[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/காலாவதியானது/);
+      expect(await page.locator('[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/காலாவதியானது/);
     } finally { await close(); }
   }, 60_000);
 });

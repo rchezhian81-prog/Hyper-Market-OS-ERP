@@ -82,6 +82,14 @@ The last lines look like this:
 | `FAILED` | a step did not work | Read the named step. Do not load real data until a drill passes |
 | `REFUSED` | the drill would not start | Fix the one named thing |
 
+Beside the record, a drill that reached a rollback time also writes `rollback-drill-….qg08-rollback.json`: the body of
+`POST /v1/platform/dr-drills` for the **rollback** rehearsal (W4 · QG-08). Recorded on head office's register under the
+custodian's own sign-in, it is what the Quality gates page reads for QG-08's rollback line — head office scores it against
+the fixed 30-minute target, so an over-target drill is recorded as a miss, never a pass. A drill that failed or was refused
+writes no such file: record the miss in words, and QG-08 stays HOLD. The same drill also runs every week on the composed
+stack in CI (`.github/workflows/rollback-drill.yml`) — that run proves the drill itself still works; the run on the box is
+the one that counts for the box.
+
 Copy the record file onto the owner's backup drive next to the backup it made. Then check the tills: their queued sales
 drain to the books within a few minutes of the API coming back (the store box's sync badge goes green).
 

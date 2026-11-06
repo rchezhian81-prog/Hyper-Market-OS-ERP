@@ -136,6 +136,28 @@
         </div>
       </section>
 
+      <!-- W4 · WF-05 (M07 · §28): the second person's check of a typed bill — asked from the typing form, given on the checker's
+           own Approvals page, then the bill is saved here exactly as checked — and the debit notes for goods sent back, issued
+           their DN number once. Session: apps/web-erp/src/supplier-bills-to-the-books-session.ts (window.billCheck). -->
+      <section aria-labelledby="chk-h" id="chk-section" hidden>
+        <h2 id="chk-h"></h2>
+        <p class="lede" id="chk-lede"></p>
+        <button class="sre-btn" id="chk-show" type="button"></button>
+        <ul class="register" id="chk-list"></ul>
+        <p class="status" id="chk-status" role="status" aria-live="polite"></p>
+        <div id="dn-part" hidden>
+          <h3 id="dn-h"></h3>
+          <p class="lede" id="dn-lede"></p>
+          <div class="row">
+            <label for="dn-supplier"><span id="l-dn-supplier"></span><input id="dn-supplier" autocomplete="off" /></label>
+          </div>
+          <button class="sre-btn" id="dn-show" type="button"></button>
+          <p class="muted" id="dn-owed"></p>
+          <ul class="register" id="dn-list"></ul>
+          <p class="status" id="dn-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
       <section aria-labelledby="drawer-h" id="drawer" hidden>
         <h2 id="drawer-h">Bill</h2>
         <p class="facts" id="drawer-facts"></p>
@@ -173,6 +195,8 @@
           <div class="table-wrap"><table id="type-lines"></table></div>
           <button id="type-add-line" type="button" class="sre-btn">Add a line</button>
           <button id="type-save" class="primary sre-btn sre-btn-primary" type="button">Save this bill</button>
+          <!-- W4 · WF-05: a second person checks the typed bill first (supplier-bills-check.js). -->
+          <button id="type-ask" type="button" class="sre-btn" hidden>Ask a second person to check it</button>
           <p class="status" id="type-status" role="status" aria-live="polite"></p>
         </div>
 
@@ -199,6 +223,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script type="module" src="./supplier-bills.js"></script>
+    <script type="module" src="./supplier-bills-check.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

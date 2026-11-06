@@ -103,11 +103,14 @@
       <h3 id="watch-heading"></h3>
       <ul class="rows" id="watch" aria-label="Cards draining fast"></ul>
       <p class="muted" id="watch-none" hidden></p>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="household" id="desk-household" hidden></section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./stored-value.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

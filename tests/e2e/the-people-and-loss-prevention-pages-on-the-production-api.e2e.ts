@@ -14,7 +14,7 @@ const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${
  * PostgreSQL: Help and procedures (M25-FR-04: a cashier sees the cashier procedure and acknowledges it in their own name),
  * Related parties (M15-FR-03 · OB-301: a relative's number shown masked; taken off the list by its own door, with a
  * reason), Training and adoption (QG-09 "not proven" until the owner approves a role's curriculum, OB-320), Appointment
- * letters (C17 · OB-323: the owner's words, a letter made from the record, the signed copy kept) and the Investigations
+ * letters (C17 · OB-323: the owner's words, a letter made from the record, the signed copy kept — and, W5, looked at again) and the Investigations
  * page's "From the shop's own records" (M15-FR-02: the owner's staff-buying numbers "not set"). English and Tamil; every
  * button its icon. Needs DATABASE_URL and Chromium; else it SKIPS. Synthetic data only.
  */
@@ -173,6 +173,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the people
     await row.locator('input[type="file"]').setInputFiles({ name: 'signed.png', mimeType: 'image/png', buffer: PNG });
     await row.locator('button[data-act="keep"]').click();
     await waitText(page, '#letter-rows li[data-employee="u-cash"]', '✓ Signed copy kept');
+    // W5 · OB-323: the kept signed copy is looked at from head office (GET …/signed-scan/:scanId) — the very photo kept.
+    await row.locator('button[data-act="scans"]').click();
+    await row.locator('button[data-act="view-scan"]').click();
+    await row.locator('img.scan-img').waitFor({ timeout: 15_000 });
+    expect(await row.locator('img.scan-img').getAttribute('src')).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
+    expect(await row.locator('img.scan-img').getAttribute('alt')).toBe('Photo of the signed appointment letter');
     expect(await auditPage(page, { expectLang: 'en' }), 'the appointment-letters page').toEqual([]);
     expect(errors).toEqual([]);
     await close();

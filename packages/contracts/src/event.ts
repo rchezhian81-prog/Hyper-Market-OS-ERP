@@ -53,6 +53,17 @@ export const KNOWN_EVENT_TYPES = [
   'MigrationExceptionResolved',
   'ChecklistCompleted',
   'TaskCompleted',
+  // Round 4c (re-audit 30 Oct 2026, observation O-1): the rest of roadmap §30.2's core business events, by the roadmap's
+  // own names, so the published event contract (docs/api/asyncapi.json) lists every one. Where no code builds an event of
+  // that exact name yet, the contract says so by name ("not published") — the fact is kept today under another event type
+  // on its own stream — and its payload is derived the day code first builds it. Nothing is invented.
+  'ProductApproved', 'ProductPublished', 'PriceActivated', 'PriceRolledBack', 'PromotionActivated', 'PromotionStopped',
+  'PurchaseOrderApproved', 'GoodsRejected', 'SupplierInvoiceMatched', 'SupplierInvoiceException',
+  'InventoryReserved', 'InventoryReleased', 'InventoryCounted', 'BatchQuarantined', 'BatchRecalled',
+  'OrderPlaced', 'OrderAllocated', 'OrderPicked', 'OrderPacked', 'OrderDispatched', 'OrderDelivered', 'OrderCancelled', 'OrderReturned',
+  'ConsentGranted', 'ConsentWithdrawn', 'LoyaltyEarned', 'LoyaltyRedeemed', 'LoyaltyReversed',
+  'SyncDelayed', 'SyncRecovered', 'BackupVerified', 'BackupFailed', 'SecurityIncidentRaised',
+  'AIRecommendationCreated', 'AIRecommendationApproved', 'AIRecommendationRejected', 'AIToolCallBlocked', 'AIKillSwitchActivated',
 ] as const;
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
 export const isKnownEventType = (v: string): v is KnownEventType =>

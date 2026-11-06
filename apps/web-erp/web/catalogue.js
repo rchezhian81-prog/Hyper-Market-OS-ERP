@@ -91,7 +91,7 @@ const WORDS = {
     lowestPrice: 'Lowest price that keeps the margin', newPrice: 'New price (in rupees)',
     startsOn: 'Starts on', checkPrice: 'Check this price', priceThis: 'Change price', priceThisOf: 'Change the price of',
     saveIt: 'Save this price', priceOk: 'This price is fine', needsApproval: 'Somebody else has to approve this',
-    // U1 · OB-626: the consequence-and-confirm sheet before a price changes
+    // U1 · OB-691: the consequence-and-confirm sheet before a price changes
     confirmPriceTitle: 'Change the price of {product} {from}to {price}',
     confirmPriceFrom: 'from {old} ', confirmPriceDetail: 'From the day given, every till of this shop charges it (next store pack). A price change stays on record beside the ones before it; it is never deleted.',
     confirmPriceAuthority: 'In your name. Head office re-checks the MRP, the cost and the margin floor and refuses it if your role may not change prices.',
@@ -218,7 +218,7 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
-// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -1011,7 +1011,7 @@ el('save-price').addEventListener('click', () => {
     if (lastProposal === null) return;
     const proposal = lastProposal;
 
-    // U1 · OB-626: the consequence-and-confirm sheet before the price changes — Go back sends nothing.
+    // U1 · OB-691: the consequence-and-confirm sheet before the price changes — Go back sends nothing.
     const sub = (l, key) => String(WORDS[l][key]).replace('{product}', proposal.draft.productId).replace('{price}', inr(proposal.draft.price.minor))
       .replace('{from}', proposal.replaces === null ? '' : String(WORDS[l].confirmPriceFrom).replace('{old}', inr(proposal.replaces.price.minor)));
     const answer = await confirmFirst({ title: { en: sub('en', 'confirmPriceTitle'), ta: sub('ta', 'confirmPriceTitle') }, detail: { en: WORDS.en.confirmPriceDetail, ta: WORDS.ta.confirmPriceDetail }, authority: { en: WORDS.en[proposal.needsApproval ? 'confirmPriceAuthorityApproved' : 'confirmPriceAuthority'], ta: WORDS.ta[proposal.needsApproval ? 'confirmPriceAuthorityApproved' : 'confirmPriceAuthority'] }, confirmLabel: { en: WORDS.en.confirmPriceLabel, ta: WORDS.ta.confirmPriceLabel }, tone: 'primary' });
@@ -1708,6 +1708,18 @@ renderItems();
 // ?tab=price / ?tab=promo (screen-server SCREEN_ALIASES); anything else opens on the item list.
 const wantedTab = new URLSearchParams(window.location.search).get('tab');
 show(TABS.includes(wantedTab) ? wantedTab : 'items');
+// W3 · D06-FR-05: a markdown sent from the Expiry page (../catalogue/?tab=price&product=…&price=…) opens here holding its
+// product and its proposed price, checked as if typed — the normal limits, and the second person's approval where needed.
+{
+  const sent = new URLSearchParams(window.location.search);
+  const code = (sent.get('product') ?? '').trim();
+  if (wantedTab === 'price' && code !== '') {
+    const view = session.shelf().find((v) => v.product.sku === code || v.product.productId === code);
+    if (view !== undefined) openPriceFor(view.product); else { el('price-item').value = code; renderLimits(); }
+    const sentPrice = (sent.get('price') ?? '').trim();
+    if (sentPrice !== '') { el('new-price').value = sentPrice; checkThePrice(true); }
+  }
+}
 renderRivals();
 if (wantedTab === 'rivals') void loadRivals();
 renderScale();

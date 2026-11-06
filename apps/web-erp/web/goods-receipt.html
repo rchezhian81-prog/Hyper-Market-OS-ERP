@@ -165,6 +165,18 @@
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
 
+      <!-- W4 · M07-FR-03 · WF-04 (§28): the decisions a delivery waits for — a held line (put on sale · send back · claim) and a
+           held excess (accept · refuse; a refused one recorded as gone back) — by a second person, never the receiver.
+           Session: apps/web-erp/src/goods-receipt-session.ts createReceiptDecisionsSession (window.receiptDecisions);
+           drawn by goods-receipt-decisions.js. -->
+      <section class="form" id="decide" hidden aria-labelledby="decide-heading">
+        <h3 id="decide-heading"></h3>
+        <p class="note" id="decide-lead"></p>
+        <button id="decide-show" class="sre-btn" type="button"></button>
+        <p class="note" id="decide-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="decide-rows" aria-label="Deliveries waiting for a decision"></ul>
+      </section>
+
       <section class="form" id="returner" hidden aria-label="Going back to the supplier">
         <h3 id="return-heading"></h3>
         <p class="note" id="return-none" hidden></p>
@@ -189,6 +201,9 @@
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./goods-receipt.js" type="module"></script>
+    <script src="./goods-receipt-decisions.js" type="module"></script>
+    <!-- W5 (store operations): the sections head office answers on this page — apps/web-erp/src/w5-store-ops-sections.ts, drawn by w5-sections.js. -->
+    <script src="./w5-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

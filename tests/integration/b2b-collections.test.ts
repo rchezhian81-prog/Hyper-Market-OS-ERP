@@ -22,7 +22,11 @@ const dunning = (h: ApiHarness, tenantId: string, userId: string, customerId: st
   h.request({ method: 'GET', path: `/v1/b2b/collections/${customerId}/dunning`, userId, tenantId, query: { asOf } });
 
 interface Ageing { totalOutstandingMinor: number; overdueMinor: number; disputedMinor: number; chaseableMinor: number; buckets: Record<string, number> }
-interface Dunning { step: string; needsHuman: boolean; chaseableMinor: number; worstDaysOverdue: number }
+interface Dunning { step?: string; stepsSet: boolean; needsHuman: boolean; chaseableMinor: number; worstDaysOverdue: number; detail: string }
+const setSteps = (h: ApiHarness, tenantId: string, userId: string, body: Record<string, unknown>, key = `steps-${JSON.stringify(body)}`) =>
+  h.request({ method: 'POST', path: '/v1/b2b/collections/chasing-steps', userId, tenantId, idempotencyKey: key, body });
+// The owner's own chasing steps (synthetic numbers — OB-686: head office has none of its own).
+const OWNER_STEPS = { minimumChaseMinor: 50_000, reminderAfterDays: 7, finalNoticeAfterDays: 60, stopSupplyAfterDays: 90 };
 interface Pay { allocatedMinor: number; unappliedMinor: number; allocations: { invoiceId: string; appliedMinor: number }[] }
 
 describe('b2b collections: aged from the due date, a dispute is not chased, stop-supply needs a person (M22-FR-04)', () => {
@@ -70,8 +74,9 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
     await h.seedOwner(A, 'u-owner');
     await h.enableFeature(A, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 100_000 });
+    expect((await setSteps(h, A, 'u-owner', OWNER_STEPS)).status).toBe(201);
 
-    // 11 days overdue on 31 Aug, above the 7-day reminder threshold, below final notice → a reminder.
+    // 11 days overdue on 31 Aug, above the owner's 7-day reminder, below final notice → a reminder.
     const remind = (await dunning(h, A, 'u-owner', 'CUST1', '2026-08-31')).body as Dunning;
     expect(remind.step).toBe('reminder');
     expect(remind.needsHuman).toBe(false);
@@ -101,5 +106,54 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
     await h.seedOwner(B, 'u-owner-b');
     await h.enableFeature(B, 'b2b'); // this shop's plan includes B2B (M36-FR-01)
     expect((await ageing(h, B, 'u-owner-b', 'CUST1', '2026-08-31')).status).toBe(404);
+  });
+});
+
+// W5 · OB-686 (owner, 3 Nov 2026) · M22-FR-04: the business-customer chasing steps are the OWNER's. The programmers' ₹500 floor
+// and 7 / 60 / 90 days are gone: with none set the dunning read says "not set by the owner" and gives no step; once he sets
+// them, his numbers — not the old ones — decide the step.
+describe('OB-686: no built-in chasing steps — the owner sets his own', () => {
+  it('not set → no step, said in words; only the owner sets them; a bad set is refused; his numbers then decide', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.enableFeature(A, 'b2b');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await h.provisionRole(A, 'u-acct', 'accountant');
+    await invoice(h, A, 'u-owner', 'CUST1', 'inv-1', { number: 'INV-1', issuedOn: '2026-07-21', dueOn: '2026-08-20', grossMinor: 30_000 });
+
+    // Not set: the facts are shown, but no step (the old built-in would have said "statement" for ₹300 under its ₹500 floor).
+    const none = (await dunning(h, A, 'u-mgr', 'CUST1', '2026-08-31')).body as Dunning;
+    expect(none).toEqual({ customerId: 'CUST1', stepsSet: false, chaseableMinor: 30_000, worstDaysOverdue: 11, needsHuman: false, detail: expect.stringMatching(/^The chasing steps are not set by the owner — no reminder, final notice or stop-supply step is given/) });
+    expect(none.step).toBeUndefined();
+    expect(((await h.request({ method: 'GET', path: '/v1/b2b/collections/chasing-steps', userId: 'u-mgr', tenantId: A })).body as { state: string })).toMatchObject({ state: 'not_set' });
+
+    // Only the owner sets them; the four numbers together, the days rising.
+    expect((await setSteps(h, A, 'u-mgr', OWNER_STEPS)).status).toBe(403);
+    expect((await setSteps(h, A, 'u-acct', OWNER_STEPS)).status).toBe(403);
+    for (const bad of [
+      { ...OWNER_STEPS, minimumChaseMinor: -1 }, { ...OWNER_STEPS, reminderAfterDays: 0 }, { ...OWNER_STEPS, finalNoticeAfterDays: 5 },
+      { ...OWNER_STEPS, stopSupplyAfterDays: 60 }, { minimumChaseMinor: 0 }, { ...OWNER_STEPS, reminderAfterDays: 7.5 },
+    ]) {
+      const r = await setSteps(h, A, 'u-owner', bad);
+      expect([r.status, (r.body as { error: { code: string } }).error.code], JSON.stringify(bad)).toEqual([400, 'not_readable_as_chasing_steps']);
+    }
+
+    // The owner's own numbers: nothing is too small to chase, a reminder after 10 days.
+    const set = await setSteps(h, A, 'u-owner', { minimumChaseMinor: 0, reminderAfterDays: 10, finalNoticeAfterDays: 30, stopSupplyAfterDays: 45 });
+    expect(set.status).toBe(201);
+    expect((set.body as { steps: { setBy: string } }).steps.setBy).toBe('u-owner');
+    const mine = (await dunning(h, A, 'u-mgr', 'CUST1', '2026-08-31')).body as Dunning;
+    expect(mine).toMatchObject({ stepsSet: true, step: 'reminder' }); // ₹300 is chased: the old ₹500 floor no longer applies
+    // 35 days overdue: under the old 60 days it would be a reminder; under his 30 it is a final notice.
+    expect(((await dunning(h, A, 'u-mgr', 'CUST1', '2026-09-24')).body as Dunning).step).toBe('final_notice');
+    // 50 days overdue: past his 45 → stopping supply is recommended and needs a person (old 90 would not have).
+    expect(((await dunning(h, A, 'u-mgr', 'CUST1', '2026-10-09')).body as Dunning)).toMatchObject({ step: 'stop_supply', needsHuman: true });
+
+    // He changes them; the newest applies, the earlier stays on record. Another shop is untouched.
+    expect((await setSteps(h, A, 'u-owner', { minimumChaseMinor: 0, reminderAfterDays: 20, finalNoticeAfterDays: 30, stopSupplyAfterDays: 45 })).status).toBe(201);
+    expect(((await dunning(h, A, 'u-mgr', 'CUST1', '2026-08-31')).body as Dunning).step).toBe('statement');
+    await h.seedOwner(B, 'u-owner-b');
+    await h.enableFeature(B, 'b2b');
+    expect(((await h.request({ method: 'GET', path: '/v1/b2b/collections/chasing-steps', userId: 'u-owner-b', tenantId: B })).body as { state: string }).state).toBe('not_set');
   });
 });

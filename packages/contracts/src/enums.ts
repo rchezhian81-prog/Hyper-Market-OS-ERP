@@ -22,7 +22,9 @@ export function isMember<T extends string>(allowed: readonly T[], value: string)
  *  which stays the legal record; the new till records the same lines with this one non-cash kind. Never money in this
  *  system's drawer, never a card/UPI attempt; its own line wherever tenders are named (P-08). Rules in
  *  `packages/tender/src/paid-on-old-erp.ts`. */
-export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit', 'loyalty_points', 'paid_on_old_erp'] as const;
+export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit', 'loyalty_points', 'paid_on_old_erp',
+  // D07-FR-04 · OB-677: a gift card the shop sold, spent at the till (identified by its own code — never a bank card).
+  'gift_card'] as const;
 export type TenderKind = (typeof TENDER_KINDS)[number];
 export const isTenderKind = (v: string): v is TenderKind => isMember(TENDER_KINDS, v);
 

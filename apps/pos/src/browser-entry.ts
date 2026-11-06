@@ -24,7 +24,8 @@ import type { TenderKind } from '../../../packages/contracts/src/enums';
 import { PAID_ON_OLD_ERP_WORDS } from '../../../packages/tender/src/paid-on-old-erp';
 import { readOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, SaleUnconfirmedError, GUEST_SALES_ONLY_WORDS, type RefusedOffer } from './session';
+import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, SaleUnconfirmedError, GUEST_SALES_ONLY_WORDS, type RefusedOffer, type TillCoupon } from './session';
+import { giftCardCodeRefusal, maskVoucherCode } from '../../../packages/loyalty/src/till-vouchers'; // W3 · OB-673 · OB-677
 import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
 import {
   createTillSession, TILL_CASH_WORDS_FOR_THE_LANE,
@@ -49,6 +50,7 @@ import { readMachineReference, type MachineRefReading } from '../../../packages/
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 import { floorRefusal } from '../../../packages/price-guard/src/till-override'; // OB-500 (R7-A)
+import { operatorLabel } from './operator-label'; // OB-638
 import { APP_BUILD_VERSION, judgeClientVersion, readPackVersionPolicy, type ClientKind, type ClientVersionJudgement } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A) · OB-521 (R8-A)
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
@@ -309,7 +311,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
  * first price, quantity and unit the store computer needs to work the cut out itself; or why it cannot be lowered.
  */
 export type PriceChangeValue =
-  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-626: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
+  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-691: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
   | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
@@ -487,6 +489,45 @@ export function laneHeldBills(port: number = DEFAULT_LANE_PORT): HeldBillsPort {
 
 /** The store computer's answer about one card/UPI attempt (audit PF-06). */
 /** What the store computer says a member may spend now (PF-09 step 3). Amounts in paise. */
+/** W3 · OB-673: the coupon the cashier typed, as the till now holds it. */
+export interface CouponAtTillAnswer {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly code?: string;
+  /** What the coupon takes off this bill now (already spread over the lines). */
+  readonly offMinor?: number;
+  /** The store computer's list is old enough that a use on another till may not be counted yet (said, never hidden). */
+  readonly mayBeStale?: boolean;
+}
+/** W3 · OB-677: a gift card as the store computer's copy gives it to this till. */
+export interface GiftCardAtTillAnswer {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly last4?: string;
+  readonly balanceMinor?: number;
+  readonly mayTakeMinor?: number;
+  readonly linkUp?: boolean;
+  readonly offlineCapMinor?: number;
+  readonly offlineRemainingMinor?: number;
+  readonly expiresOn?: string;
+  readonly expired?: boolean;
+}
+export interface SellGiftCardInput {
+  readonly saleId: string;
+  readonly code: string;
+  readonly valueMinor: number;
+  readonly kind: 'cash' | 'card' | 'upi';
+  /** A card/UPI payment: the store computer's attempt it was approved under. */
+  readonly ref?: string;
+  readonly machineRef?: string;
+  readonly atIsoUtc: string;
+}
+export type SellGiftCardOutcome =
+  | { readonly ok: true; readonly saleId: string; readonly card: string; readonly valueMinor: number; readonly laneMessage: string }
+  | { readonly ok: false; readonly refusedBecause: string; readonly laneMessage: string; readonly unconfirmed?: boolean };
+
 export interface LoyaltyWalletAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
@@ -1122,6 +1163,23 @@ export function bootPos(config?: {
    * balances, with how old that copy is. Refused when no member is named or the box has no balances yet.
    */
   readonly loyaltyWallet: () => Promise<LoyaltyWalletAnswer>;
+  /**
+   * W3 · D06-FR-03 · OB-673: put a coupon on this bill — the store computer's copy of the shop's coupons says what it is
+   * (no network beyond the store computer); the till's coupon engine judges it against the basket. Refused in words when the
+   * code is unknown, already used as far as this store knows, expired, or the bill is too small.
+   */
+  readonly couponAtTill: (code: string) => Promise<CouponAtTillAnswer>;
+  /** OB-673: take the coupon off this bill. */
+  readonly removeCouponAtTill: () => void;
+  /** OB-673: the coupon on this bill now, with what it takes off — or null. */
+  readonly couponOnBill: () => { readonly code: string; readonly applied: boolean; readonly offMinor: number; readonly detail: string } | null;
+  /** W3 · D07-FR-04 · OB-677: what this till may take from a gift card now (offline: within the owner's limit per till per card). */
+  readonly giftCardBalance: (code: string) => Promise<GiftCardAtTillAnswer>;
+  /**
+   * W3 · OB-677: sell a gift card — its own record on the store computer's disk (never a goods bill, no bill number), paid in
+   * cash, or by card/UPI on an attempt the store computer recorded. Synced to head office, which issues the card.
+   */
+  readonly sellGiftCard: (input: SellGiftCardInput) => Promise<SellGiftCardOutcome>;
   /** D04-FR-05 · M12-FR-01: what the customer display shows now, from this till's own basket — no network. */
   readonly customerDisplay: () => CustomerDisplayFrame;
   /** The BroadcastChannel the display page listens on. */
@@ -1193,6 +1251,12 @@ export function bootPos(config?: {
   readonly resumeAtTill: (token: string) => Promise<boolean>;
   /** End the session on the box and forget it here. */
   readonly signOutAtTill: () => Promise<void>;
+  /**
+   * OB-638: the person at the till as the screen names them — "Ravi (u-ravi)", the name the store computer gave at
+   * sign-in with the staff code beside it; the code alone when no name is known; undefined when nobody is signed in.
+   * Words only: `operator()` (the code) is still what every record carries.
+   */
+  readonly operatorShown: () => string | undefined;
   /** How this box signs a cashier in — `pin`, or the hosted copy's `verified_sign_in`; `null` when the box did not answer. */
   readonly tillSignInBy: () => Promise<'pin' | 'verified_sign_in' | null>;
   /** The session token this tab holds, for the page to keep across a reload (never the PIN). */
@@ -1682,7 +1746,11 @@ export function bootPos(config?: {
     const day = session.laneToday();
     return day === undefined ? undefined : fssaiLicenceNumberOn(config?.fssaiLicence, day);
   };
-  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), ((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()));
+  // W3 · M36-FR-02 (OB-321): the shop's own name from the SIGNED catalogue pack this till holds — no network at sale time.
+  const brandName = (): string | undefined => { const n = config?.catalogue?.branding?.productName; return typeof n === 'string' && n.trim() !== '' ? n.trim() : undefined; };
+  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), {
+    ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
+  });
   // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
   const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
     const t = receiptTemplate();
@@ -1691,7 +1759,7 @@ export function bootPos(config?: {
   };
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
     billTaxInvoice(session.lastBill(), {
-      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
       ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...options,
     });
 
@@ -1897,7 +1965,7 @@ export function bootPos(config?: {
     if (r['printed'] !== true) return { ok: false, why: said, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }), ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}) };
     const printed = billCopyPrint(r as unknown as BillCopyAnswer, {
       realTrading: config?.realTrading === true, identity: config?.taxInvoice ?? null, ...(input.language === undefined ? {} : { language: input.language }),
-      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
       ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }),
       reason: body.reason, by, at: new Date().toISOString(),
     });
@@ -2015,10 +2083,19 @@ export function bootPos(config?: {
   // WHO IS AT THE TILL, verified by the store computer (ADR-0020). The model is told the person only once the box has
   // said who they are; the box then binds every money write to the session.
   const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT);
+  // OB-638: the name the store computer gave with the session, kept beside the code it belongs to — shown only while that
+  // same person is the one signed in, so a later sign-in (or a sign-out) can never show the last person's name.
+  let signedInName: { readonly userId: string; readonly name: string } | null = null;
+  const rememberName = (userId: string, name: unknown): void => { signedInName = typeof name === 'string' ? { userId, name } : null; };
+  const operatorShown = (): string | undefined => {
+    const id = session.operator();
+    return operatorLabel(id, signedInName !== null && signedInName.userId === id ? signedInName.name : undefined);
+  };
   const signInAtTill = async (input: { readonly staffId?: string; readonly pin?: string }): Promise<TillSignInOutcome> => {
     const outcome = await operators.signIn(input);
     if (outcome.signedIn) {
       tillOperatorSession.token = outcome.token;
+      rememberName(outcome.userId, outcome.displayName);
       signIn(outcome.userId);
     }
     return outcome;
@@ -2027,6 +2104,7 @@ export function bootPos(config?: {
     const status = await operators.status(token);
     if (status?.signedIn === true && typeof status.userId === 'string') {
       tillOperatorSession.token = token;
+      rememberName(status.userId, status.displayName);
       signIn(status.userId);
       return true;
     }
@@ -2035,6 +2113,7 @@ export function bootPos(config?: {
   const signOutAtTill = async (): Promise<void> => {
     const token = tillOperatorSession.token;
     tillOperatorSession.token = undefined;
+    signedInName = null;
     signOut();
     await operators.signOut(token);
   };
@@ -2077,6 +2156,82 @@ export function bootPos(config?: {
         ? { tiersSet: true as const, name: typeof r['tierName'] === 'string' ? r['tierName'] : null, multiplierBps: r['tierMultiplierBps'] }
         : { tiersSet: false as const },
     };
+  };
+
+  // COUPONS AND GIFT CARDS (W3 · OB-673 · OB-677): what the store computer's copy says — the till asks its own box only.
+  const voucherPost = async (path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+    const front = FRONT_REFUSED[response.status];
+    if (front !== undefined) return { known: false, ...front };
+    return await response.json() as Record<string, unknown>;
+  };
+  const words = (r: Record<string, unknown>, fallback: string): string => (typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback);
+  const couponAtTill = async (typed: string): Promise<CouponAtTillAnswer> => {
+    const code = typed.trim();
+    if (code === '') return { ok: false, refusedBecause: 'no_code', laneMessage: 'Type or scan the coupon code first.' };
+    const mobile = session.loyaltyMobileForBox();
+    let r: Record<string, unknown>;
+    try { r = await voucherPost('/lane/coupons/check', { code, ...(mobile === undefined ? {} : { mobile }) }); } catch {
+      return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the coupon cannot be checked now. Ring the sale without it.' };
+    }
+    if (r['known'] !== true) return { ok: false, refusedBecause: typeof r['refusedBecause'] === 'string' ? r['refusedBecause'] : 'coupons_not_known', laneMessage: words(r, 'The store computer could not check this coupon.') };
+    const verdict = session.setCoupon({
+      code, coupon: r['coupon'] as TillCoupon['coupon'], knownRedemptions: Array.isArray(r['knownRedemptions']) ? r['knownRedemptions'] as TillCoupon['knownRedemptions'] : [],
+      ...(typeof r['customerRef'] === 'string' ? { customerRef: r['customerRef'] } : {}),
+      customerSegments: Array.isArray(r['customerSegments']) ? (r['customerSegments'] as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+      cacheAgeMinutes: typeof r['cacheAgeMinutes'] === 'number' ? r['cacheAgeMinutes'] : 0,
+      staleAfterMinutes: typeof r['staleAfterMinutes'] === 'number' ? r['staleAfterMinutes'] : 15,
+    });
+    if (verdict === null || !verdict.redeemed) {
+      return { ok: false, refusedBecause: verdict?.outcome ?? 'coupon_not_applied', laneMessage: `This coupon cannot be used on this bill: ${verdict?.detail ?? 'it does not apply'}. The sale goes ahead without it.` };
+    }
+    return { ok: true, laneMessage: verdict.detail, code: (r['coupon'] as { code?: string }).code ?? code, offMinor: verdict.discountMinor, ...(verdict.countMayBeStale === true ? { mayBeStale: true } : {}) };
+  };
+  const couponOnBill = () => {
+    const code = session.couponCode();
+    const a = session.couponAnswer();
+    return code === null || a === null ? null : { code, applied: a.redeemed, offMinor: a.redeemed ? a.discountMinor : 0, detail: a.detail };
+  };
+  const giftCardBalance = async (typed: string): Promise<GiftCardAtTillAnswer> => {
+    const code = typed.replace(/\s+/g, '').toUpperCase();
+    if (code === '') return { ok: false, refusedBecause: 'no_code', laneMessage: 'Type or scan the gift card code first.' };
+    let r: Record<string, unknown>;
+    try { r = await voucherPost('/lane/gift-cards/balance', { code }); } catch {
+      return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the gift card cannot be checked now. Take another payment.' };
+    }
+    if (r['known'] !== true) return { ok: false, refusedBecause: typeof r['refusedBecause'] === 'string' ? r['refusedBecause'] : 'gift_cards_not_known', laneMessage: words(r, 'The store computer could not check this gift card.') };
+    const n = (k: string): number => (typeof r[k] === 'number' ? r[k] as number : 0);
+    return {
+      ok: true, laneMessage: '', last4: typeof r['last4'] === 'string' ? r['last4'] : code.slice(-4), balanceMinor: n('balanceMinor'), mayTakeMinor: n('mayTakeMinor'),
+      linkUp: r['linkUp'] === true, offlineCapMinor: n('offlineCapMinor'), offlineRemainingMinor: n('offlineRemainingMinor'),
+      ...(typeof r['expiresOn'] === 'string' ? { expiresOn: r['expiresOn'] } : {}), expired: r['expired'] === true,
+    };
+  };
+  const sellGiftCard = async (input: SellGiftCardInput): Promise<SellGiftCardOutcome> => {
+    const cashierId = session.operator();
+    if (cashierId === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('sell a gift card').laneMessage };
+    const laneId = session.laneId();
+    if (laneId === undefined) return { ok: false, refusedBecause: 'no_lane', laneMessage: 'This till was never told which lane it is. Tell the manager. Nothing was saved.' };
+    const code = input.code.replace(/\s+/g, '').toUpperCase();
+    const bad = giftCardCodeRefusal(code);
+    if (bad !== undefined) return { ok: false, refusedBecause: 'code_not_valid', laneMessage: `${bad} Nothing was saved.` };
+    if (!Number.isSafeInteger(input.valueMinor) || input.valueMinor <= 0) return { ok: false, refusedBecause: 'gift_card_value_not_valid', laneMessage: 'Type the card\'s value in rupees, like 500. Nothing was saved.' };
+    if ((input.kind === 'card' || input.kind === 'upi') && (input.ref === undefined || input.ref === '')) {
+      return { ok: false, refusedBecause: 'payment_not_approved', laneMessage: 'The card or UPI payment has not been approved on the machine. Nothing was saved.' };
+    }
+    const record = JSON.stringify({
+      id: input.saleId, kind: 'gift_card_sale', laneId, cashierId, tradingDay: session.tradingDayFor(input.atIsoUtc), committedAt: input.atIsoUtc,
+      currency: 'INR', lines: [], giftCardsSold: [{ code, faceValueMinor: input.valueMinor }], total: input.valueMinor,
+      tenders: [{
+        kind: input.kind, amount: { minor: input.valueMinor, currency: 'INR' }, status: input.kind === 'cash' ? 'settled' : 'authorized',
+        ...(input.ref === undefined ? {} : { ref: input.ref }), ...(input.machineRef === undefined || input.machineRef === '' ? {} : { machineRef: input.machineRef }),
+      }],
+    });
+    const write = laneDurableTo('/lane/sales', config?.lanePort ?? DEFAULT_LANE_PORT, 'The store computer did not say whether this gift card sale was saved. Do not sell this card again and do not hand back the money — tell the manager.', { onTheBox: async () => 'unknown' });
+    const out = await write(input.saleId, record);
+    if (out.committed) return { ok: true, saleId: input.saleId, card: maskVoucherCode(code), valueMinor: input.valueMinor, laneMessage: `Gift card ${maskVoucherCode(code)} sold for ₹${(input.valueMinor / 100).toFixed(2)}. Give the customer the card.` };
+    return { ok: false, refusedBecause: out.refusedBecause ?? 'not_saved', laneMessage: out.laneMessage ?? 'The gift card sale was not saved.', ...(out.unconfirmed === true ? { unconfirmed: true } : {}) };
   };
 
   const lane = () => ({
@@ -2279,7 +2434,7 @@ export function bootPos(config?: {
   });
   const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
   // ── R8-B · OB-523 — end ──
-  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
+  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

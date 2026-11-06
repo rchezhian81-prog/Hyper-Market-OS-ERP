@@ -206,6 +206,19 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
       },
     },
     {
+      // W5 (M34-FR-03 "keep evidence retrievable"): the register itself — every obligation the caller may see, active and
+      // closed, each with its named person and every piece of evidence filed against it. A read; closed ones are kept (hard
+      // rule #6), listed after the active ones. The Licences, controls and findings page reads this.
+      api: 'API-11', method: 'GET', path: '/v1/compliance/obligations',
+      permission: 'compliance.obligation.read',
+      handler: async (ctx) => {
+        const all = recordsInScope(ctx, await deps.obligations(ctx.tenantId), (o) => o.branchId); // PA-01-r1
+        const obligations = [...all].sort((a, z) => Number(a.status === 'closed') - Number(z.status === 'closed')
+          || (a.expiresOn ?? '9999-12-31').localeCompare(z.expiresOn ?? '9999-12-31') || a.obligationId.localeCompare(z.obligationId));
+        return { status: 200, body: { obligations, count: obligations.length, active: obligations.filter((o) => o.status !== 'closed').length } };
+      },
+    },
+    {
       // Active obligations with NOTHING on file to show an inspector — a finding in itself, separate from
       // any expiry date. A licence that is in date but unproven is still a gap.
       api: 'API-11', method: 'GET', path: '/v1/compliance/evidence-gaps',

@@ -4,26 +4,23 @@
 // never overwritten (hard rule #2). The rate is the pure `computeCommission` engine in `packages/b2b`
 // (exact money, no float) — this surface gives it persistence, an authorization split and a read.
 //
-// The rate is DECLARED on the accrual, never derived. A commission computed as a share of some
-// difference agrees with any figure (the migration banking-verification control makes the same point);
-// here the base and the rate are stated by the person recording the accrual, and the engine rounds
-// exactly. Recording is a finance act (owner/accountant); a manager may read what the floor has earned;
-// a cashier may do neither.
+// W4 (M22-FR-03): commission is only ever DERIVED. The rate is a rule one person proposed and a different person approved;
+// the base is the taxable value of the tax invoice head office issued for an order attributed to the salesperson, once per
+// invoice (`accrueFromInvoice` below). The old manual accrual — a typed base and rate from whoever called — is RETIRED: its
+// route only refuses, by name, naming the invoice-derived path, and records nothing. Accruals recorded before that stay on
+// the salesperson's stream and are read exactly as before (append-only). A manager may read what the floor has earned; a
+// cashier may do neither.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { computeCommission } from '../../../packages/b2b/src/commission';
 import type { CurrencyCode } from '../../../packages/contracts/src/money';
 
-const CURRENCIES: readonly CurrencyCode[] = ['INR', 'USD', 'EUR', 'GBP'];
-const asCurrency = (v: unknown): CurrencyCode =>
-  typeof v === 'string' && (CURRENCIES as readonly string[]).includes(v) ? (v as CurrencyCode) : 'INR';
-
-/** One recorded commission — the base it was earned on, the declared rate, and the exact amount. */
+/** One recorded commission — the base it was earned on, the rate, and the exact amount. */
 export interface CommissionAccrual {
   readonly accrualId: string;
   readonly salespersonId: string;
-  /** The commissionable base the rate was applied to, minor units. */
+  /** The commissionable base the rate was applied to, minor units (the invoice's taxable value). */
   readonly baseMinor: number;
   /** Basis points, 0–10000 (1000 = 10%). */
   readonly rateBps: number;
@@ -32,73 +29,38 @@ export interface CommissionAccrual {
   /** The exact commission, computed by the engine and rounded half-up. */
   readonly commissionMinor: number;
   readonly currency: CurrencyCode;
-  /** What it was earned against — an invoice, an order, a deal. Free text. */
+  /** What it was earned against — the invoice and the rule (older, retired manual accruals: free text). */
   readonly ref: string | null;
   readonly at: string;
 }
 
 export interface B2BCommissionDeps {
   readonly accruals: (tenantId: string, salespersonId: string) => Promise<readonly CommissionAccrual[]> | readonly CommissionAccrual[];
+  /** Used only by the invoice-derived path (`accrueFromInvoice`); the retired manual route never records. */
   readonly recordAccrual: (tenantId: string, salespersonId: string, accrual: CommissionAccrual) => Promise<void> | void;
   readonly now: () => string;
 }
 
+/** The refusal the retired manual accrual route gives (W4 · M22-FR-03). */
+export const MANUAL_ACCRUAL_RETIRED = 'manual_commission_accrual_retired';
+
 export function b2bCommissionRoutes(deps: B2BCommissionDeps): readonly Route[] {
   return [
     {
-      // Record a commission a salesperson has earned. The server computes the amount from the base and
-      // the declared rate — the caller never states the payout, so a fitted figure cannot be slipped in.
+      // RETIRED (W4 · M22-FR-03). It took a typed `baseMinor` and `rateBps`, so a fitted base could be recorded beside the
+      // invoice-derived path. It stays on the surface only to refuse — by name, naming that path — so an old caller is told,
+      // never silently ignored. Nothing it is sent is ever recorded; earlier accruals are untouched.
       api: 'API-09', method: 'POST', path: '/v1/b2b/commissions/:salespersonId/accruals/:accrualId',
       permission: 'b2b.commission.record', idempotent: true,
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const salespersonId = ctx.params['salespersonId'] ?? '';
-        const accrualId = ctx.params['accrualId'] ?? '';
-        const b = (ctx.body ?? {}) as { baseMinor?: unknown; rateBps?: unknown; capMinor?: unknown; currency?: unknown; ref?: unknown };
-
-        if (!Number.isInteger(b.baseMinor) || (b.baseMinor as number) < 0) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_commission',
-            whatHappened: 'A commission needs a whole, non-negative base in minor units.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "baseMinor": …, "rateBps": … }. Nothing was recorded.',
-          });
-        }
-        if (!Number.isInteger(b.rateBps) || (b.rateBps as number) < 0 || (b.rateBps as number) > 10_000) {
-          throw apiError(400, {
-            code: 'not_a_commission_rate',
-            whatHappened: 'A commission rate is a whole number of basis points from 0 to 10000 (1000 = 10%).',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send rateBps in the range 0–10000. Nothing was recorded.',
-          });
-        }
-        if (b.capMinor !== undefined && (!Number.isInteger(b.capMinor) || (b.capMinor as number) < 0)) {
-          throw apiError(400, {
-            code: 'not_a_commission_cap',
-            whatHappened: 'A commission cap, when given, is a whole, non-negative amount in minor units.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send a whole capMinor or omit it. Nothing was recorded.',
-          });
-        }
-
-        const currency = asCurrency(b.currency);
-        const capMinor = b.capMinor === undefined ? null : (b.capMinor as number);
-        // The exact engine — half-up rounding, cap applied after the round (M22-FR-03).
-        const commission = computeCommission(
-          { minor: b.baseMinor as number, currency },
-          b.rateBps as number,
-          capMinor ?? undefined,
-        );
-
-        const accrual: CommissionAccrual = {
-          accrualId, salespersonId,
-          baseMinor: b.baseMinor as number, rateBps: b.rateBps as number, capMinor,
-          commissionMinor: commission.minor, currency,
-          ref: typeof b.ref === 'string' ? b.ref : null,
-          at: deps.now(),
-        };
-        await deps.recordAccrual(ctx.tenantId, salespersonId, accrual);
-        return { status: 201, body: { salespersonId, accrualId, commissionMinor: commission.minor, currency } };
+        const salespersonId = (ctx.params['salespersonId'] ?? '').trim();
+        throw apiError(410, {
+          code: MANUAL_ACCRUAL_RETIRED,
+          whatHappened: `Commission is no longer recorded from a typed amount. ${salespersonId === '' ? 'A salesperson' : `Salesperson ${salespersonId}`} earns commission only from a tax invoice head office issues for an order attributed to them, at the commission rate a second person approved (M22-FR-03).`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Propose the rate on the Sales commission page (POST /v1/b2b/commissions/:salespersonId/rules/:ruleId) and have a different person approve it (POST /v1/b2b/commissions/:salespersonId/rules/:ruleId/approve); then issue the tax invoice for the attributed order (POST /v1/b2b/documents/:customerId/invoices/:documentId) — head office works the commission out from it. Nothing was recorded; earlier accruals are unchanged.',
+        });
       },
     },
     {
@@ -129,7 +91,7 @@ export function b2bCommissionRoutes(deps: B2BCommissionDeps): readonly Route[] {
 
 // ── Commission RULES, governed, and commission DERIVED from invoices (FUL-09 · M22-FR-03 "commission rules approved;
 // commission computed with exact money") ──────────────────────────────────────────────────────────────────────────────
-// The accrual route above takes the base and the rate from whoever calls it. The FR wants the rate to be an APPROVED
+// The retired accrual route above took the base and the rate from whoever called it. The FR wants the rate to be an APPROVED
 // rule and the base to be what was actually invoiced: so a salesperson's rate is proposed by one person and approved by
 // another (§28 — never the same person), and when a tax invoice is issued for an order attributed to them, the accrual
 // is derived from the invoice's taxable value at the rule in force, once per invoice.

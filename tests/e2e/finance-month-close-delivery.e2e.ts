@@ -256,7 +256,7 @@ interface BrowserGlobals {
   readonly document: { getElementById(id: string): { hidden: boolean; textContent: string | null } | null };
 }
 
-/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-691: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');
@@ -306,7 +306,7 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
   /** Click a step and wait for the page to say THIS click's answer (head office's word, in the model's words). */
   const clickFor = async (page: Page, button: string, expected: RegExp): Promise<string> => {
     await page.click(button);
-    if (button === '#close-month' || button === '#reopen') await confirmSheet(page); // OB-626: these two move the month
+    if (button === '#close-month' || button === '#reopen') await confirmSheet(page); // OB-691: these two move the month
     await page.waitForFunction(
       (source) => new RegExp(source).test((globalThis as unknown as BrowserGlobals).document.getElementById('month-status')?.textContent ?? ''),
       expected.source, { timeout: 10_000 },
@@ -497,7 +497,8 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
       await decideAsAccountant(ho, 'rejected', 'the cash count for the 14th is missing');
       expect(await clickFor(page, '#close-month', /rejected it/)).toBe('Not closed — u-accountant rejected it: “the cash count for the 14th is missing”. Settle what they said and ask again.');
       expect(posts(ho, CLOSE_PATH), 'a rejected close must not be sent').toHaveLength(0);
-      expect((await page.textContent('#close-request'))?.trim()).toBe('✕ Your request: Rejected by u-accountant: the cash count for the 14th is missing');
+      // The request line repaints after the answer is read — wait for it rather than racing it.
+      await expect.poll(async () => (await page.textContent('#close-request'))?.trim()).toBe('✕ Your request: Rejected by u-accountant: the cash count for the 14th is missing');
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
       expect(await clickFor(page, '#close-month', /மறுத்தார்/)).toBe('மூடப்படவில்லை — u-accountant மறுத்தார்: “the cash count for the 14th is missing”. அவர் சொன்னதைச் சரிசெய்து மீண்டும் கேளுங்கள்.');

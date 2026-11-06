@@ -25,7 +25,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { planCampaign, type Campaign, type Channel, type Purpose } from '../../../packages/service-desk/src/index';
+import { planCampaign, measureCampaign, type Campaign, type Channel, type Purpose } from '../../../packages/service-desk/src/index';
 import type { NotificationQueue } from '../../../packages/notifications/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 import { approvedTemplate, renderTemplate, type MessageTemplateVersion, type NotificationQueueEvent } from './notification-queue';
@@ -87,6 +87,9 @@ export interface CampaignSendDeps {
   readonly isProviderRelay?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /** OB-288 P5 · M31-FR-04: the stored do-not-contact register — a suppressed recipient is excluded by name. */
   readonly suppressions?: (tenantId: string) => Promise<readonly SuppressionFact[]> | readonly SuppressionFact[];
+  /** Round 4d (M21-FR-02): the shop's own bills by customer — banked till bills and online orders, net of what came back
+   *  (the order facts the segments read). Absent on a bare surface: attribution then refuses honestly. */
+  readonly orderFacts?: (tenantId: string) => Promise<readonly AttributedOrder[]>;
   readonly now: () => string;
 }
 
@@ -126,6 +129,7 @@ export function sentInWindow(input: {
 
 export function campaignSendRoutes(deps: CampaignSendDeps): readonly Route[] {
   return [
+    ...attributionRoutes(deps), // Round 4d · M21-FR-02
     {
       // The owner's frequency cap. Body: { capPerWindow (1–50), windowDays (1–90) }. A new version each time.
       api: 'API-06', method: 'PUT', path: '/v1/service/campaigns/frequency-policy',
@@ -339,4 +343,94 @@ export function campaignSendUnwired(now: () => string): CampaignSendDeps {
     consentRecords: refuse, templates: refuse, queueEvents: refuse, queue: refuse, enqueue: refuse, frequencyPolicy: refuse,
     recordFrequencyPolicy: refuse, sends: refuse, recordSend: refuse, callbacks: refuse, recordCallback: refuse, now,
   };
+}
+
+// ── Round 4d · M21-FR-02 "attribution derived": a campaign's results worked out from head office's own records ─────────
+//   • POST /v1/service/campaigns/:campaignId/attribution — { attributionWindowHours, controlGroup? }. WHO was sent to and
+//     WHEN is read from this campaign's recorded sends and the queue: a message counts as sent once the queue handed it to
+//     the provider, and not when the provider then reported it failed (withheld, dead-lettered, waiting and failed messages
+//     are counted beside it, never as sent). The ORDERS are the shop's own — banked till bills and online orders by customer
+//     (the same order facts the segments read, net of what came back). A bill counts for a customer only when it was made
+//     at or after THEIR message reached the provider and inside the window. The control group — comparable customers the
+//     marketer deliberately did not message — is the one thing named in the request, and its bills are read the same way.
+//     A body that types sentTo, sentAt or orders is refused: attribution is worked out, never typed (M21-FR-02).
+//     The margin is said only when every attributed bill's cost was known; otherwise "not known", never a made-up figure.
+export interface AttributedOrder { readonly orderId: string; readonly customerRef: string; readonly at: string; readonly netMinor: number; readonly marginMinor: number; readonly channel: string; readonly marginComplete?: boolean }
+
+export function workedOutAttribution(input: {
+  readonly campaignId: string;
+  readonly sentTo: readonly { readonly customerRef: string; readonly handedAt: string }[];
+  readonly orders: readonly AttributedOrder[];
+  readonly attributionWindowHours: number;
+  readonly controlGroup: readonly string[];
+}) {
+  const windowMs = input.attributionWindowHours * 3_600_000;
+  const firstSent = input.sentTo.map((s) => s.handedAt).sort()[0];
+  const sentAtOf = new Map(input.sentTo.map((s) => [s.customerRef, Date.parse(s.handedAt)]));
+  const control = new Set(input.controlGroup);
+  const counted = input.orders.filter((o) => {
+    const at = Date.parse(o.at);
+    const mine = sentAtOf.get(o.customerRef);
+    if (mine !== undefined) return at >= mine && at <= mine + windowMs;
+    return firstSent !== undefined && control.has(o.customerRef) && at >= Date.parse(firstSent) && at <= Date.parse(firstSent) + windowMs;
+  });
+  const result = measureCampaign({
+    campaignId: input.campaignId, sentTo: input.sentTo.map((s) => s.customerRef), sentAt: firstSent ?? new Date(0).toISOString(),
+    attributionWindowHours: input.attributionWindowHours, orders: counted, ...(input.controlGroup.length > 0 ? { controlGroup: [...input.controlGroup] } : {}),
+  });
+  const attributed = counted.filter((o) => sentAtOf.has(o.customerRef));
+  const marginNotKnown = attributed.filter((o) => o.marginComplete === false).length;
+  return {
+    ...result,
+    attributedMarginMinor: marginNotKnown > 0 ? null : result.attributedMarginMinor,
+    marginNotKnownOrders: marginNotKnown,
+    firstSentAt: firstSent ?? null,
+    attributedOrders: attributed.map((o) => ({ orderId: o.orderId, customerRef: o.customerRef, at: o.at, netMinor: o.netMinor, channel: o.channel })),
+  };
+}
+
+function attributionRoutes(deps: CampaignSendDeps): readonly Route[] {
+  return [
+    {
+      api: 'API-06', method: 'POST', path: '/v1/service/campaigns/:campaignId/attribution',
+      permission: 'customer.campaign.read', idempotent: true,
+      handler: async (ctx) => {
+        const campaignId = (ctx.params['campaignId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const typed = ['sentTo', 'sentAt', 'orders'].filter((k) => b[k] !== undefined);
+        if (typed.length > 0) {
+          throw apiError(400, {
+            code: 'attribution_is_worked_out',
+            whatHappened: `Attribution is worked out from the campaign's own sends and the shop's own bills; ${typed.join(', ')} cannot be typed in.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Send only { attributionWindowHours, controlGroup? }. Nothing was measured.',
+          });
+        }
+        const windowHours = b['attributionWindowHours'];
+        const control = b['controlGroup'] === undefined ? [] : b['controlGroup'];
+        if (campaignId === '' || typeof windowHours !== 'number' || !(windowHours > 0) || windowHours > 24 * 90 || !Array.isArray(control) || !control.every(isStr)) {
+          throw apiError(400, { code: 'not_readable_as_an_attribution', whatHappened: 'Attribution needs { attributionWindowHours (more than 0, at most 90 days), controlGroup? (customer codes not messaged) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the window, and the control group if there is one. Nothing was measured.' });
+        }
+        if (deps.orderFacts === undefined) throw apiError(503, { code: 'orders_not_wired', whatHappened: 'Head office cannot read the shop\'s bills here, so nothing can be measured.', wasItSaved: 'not_saved', nextSafeAction: 'Use the full head-office service.' });
+        const sends = await deps.sends(ctx.tenantId, campaignId);
+        if (sends.length === 0) throw apiError(404, { code: 'campaign_never_sent', whatHappened: `Campaign ${campaignId} has not been sent, so there is nothing to measure.`, wasItSaved: 'not_saved', nextSafeAction: 'Send it first.' });
+        const [queue, events, callbacks, orders] = await Promise.all([deps.queue(ctx.tenantId), deps.queueEvents(ctx.tenantId), deps.callbacks(ctx.tenantId, campaignId), deps.orderFacts(ctx.tenantId)]);
+        const ids = [...new Set(sends.flatMap((s) => s.messageIds))].sort();
+        const notSent = { waiting: 0, withheld: 0, deadLettered: 0, failedReported: 0 };
+        const sentTo: { customerRef: string; handedAt: string }[] = [];
+        for (const id of ids) {
+          const customerRef = events.find((e) => e.id === id && e.change === 'enqueued')?.intent?.customerId;
+          const state = queue.find(id)?.state;
+          const handed = [...events].reverse().find((e) => e.id === id && e.change === 'delivered');
+          const report = callbacks.filter((c) => c.messageId === id).sort((x, y) => x.reportedAt.localeCompare(y.reportedAt)).at(-1);
+          if (state === 'withheld') { notSent.withheld += 1; continue; }
+          if (state === 'dead_letter') { notSent.deadLettered += 1; continue; }
+          if (state !== 'delivered' || handed === undefined || customerRef === undefined) { notSent.waiting += 1; continue; }
+          if (report?.status === 'failed') { notSent.failedReported += 1; continue; }
+          sentTo.push({ customerRef, handedAt: handed.at });
+        }
+        const result = workedOutAttribution({ campaignId, sentTo, orders, attributionWindowHours: windowHours, controlGroup: [...new Set((control as string[]).map((c) => c.trim()))].filter((c) => !sentTo.some((s) => s.customerRef === c)) });
+        return { status: 200, body: { ...result, attributionWindowHours: windowHours, notSent, workedOutFrom: 'the campaign\'s recorded sends and the shop\'s own bills', asAt: deps.now() } };
+      },
+    },
+  ];
 }

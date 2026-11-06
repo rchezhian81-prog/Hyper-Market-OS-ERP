@@ -195,7 +195,7 @@ describe.skipIf(!DATABASE_URL)('Stage 16 — beyond the till (real PostgreSQL)',
     expect(ageing.disputedMinor).toBe(400_000);
     expect(ageing.chaseableMinor).toBe(3_806_250);
 
-    const step = decideDunning({ ageing });
+    const step = decideDunning({ ageing, steps: { minimumChaseMinor: 50_000, reminderAfterDays: 7, finalNoticeAfterDays: 60, stopSupplyAfterDays: 90 } }); // the owner's steps (OB-686: no built-in)
     expect(step.step).toBe('reminder');
     expect(step.needsHuman).toBe(false);
 
@@ -206,7 +206,7 @@ describe.skipIf(!DATABASE_URL)('Stage 16 — beyond the till (real PostgreSQL)',
       invoices: invoices.map((i) => ({ ...i, disputed: false })),
       asAt: '2026-08-04',
     });
-    const harsh = decideDunning({ ageing: undisputed });
+    const harsh = decideDunning({ ageing: undisputed, steps: { minimumChaseMinor: 50_000, reminderAfterDays: 7, finalNoticeAfterDays: 60, stopSupplyAfterDays: 90 } });
     expect(harsh.step).toBe('stop_supply');
     expect(harsh.needsHuman).toBe(true);
   });

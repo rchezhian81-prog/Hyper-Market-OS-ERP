@@ -137,6 +137,34 @@
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      /* W5: the act's answer, the fields an act needs, and the desk's forms and tables. */
+      p.answer-line { margin:0; padding:12px 16px; border-radius: var(--radius-lg); background:var(--panel-2); font-weight:600; }
+      p.answer-line.tone-error { background:var(--error-surface); color:var(--danger-text); } p.answer-line.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      form#prepare { align-items:flex-end; }
+      form#prepare input, .do-field input, .do-field select, section.desk input, section.desk select { min-height:var(--tap); font:inherit; padding:0 12px; border:1px solid var(--field-line); border-radius: var(--radius); background:var(--field); color:var(--ink); min-width:0; }
+      .do-field { display:grid; gap:4px; font-size:14px; color: var(--ink-2); }
+      section.desk { display:grid; gap: var(--space-4); margin-top: var(--space-4); padding: var(--space-5); background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      section.desk > h2 { margin:0; font-size: var(--fs-xl); }
+      section.desk h3 { margin: var(--space-3) 0 0; font-size: var(--fs-md); font-weight:600; }
+      section.desk p.lead2 { margin:0; color: var(--ink-2); font-size:15px; max-width:80ch; }
+      section.desk form { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(min(100%, 200px), 1fr)); align-items:end; }
+      section.desk label { display:grid; gap:4px; font-size:14px; color: var(--ink-2); font-weight:600; }
+      /* U1 · G3: a desk button's colour is its foundation class (sre-btn / sre-btn-primary), never painted here. */
+      section.desk button { min-height:var(--tap); font:inherit; font-weight:700; border:1px solid var(--field-line); border-radius: var(--radius); background: var(--panel); color: var(--ink); padding:0 16px; cursor:pointer; }
+      section.desk button.quiet { background: var(--panel); color: var(--ink); border-color: var(--field-line); }
+      section.desk button:disabled { background:var(--panel-2); border-color: var(--line); color:var(--muted); cursor:default; }
+      section.desk button:focus-visible, section.desk input:focus-visible, section.desk select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      section.desk .said { margin:0; padding:10px 14px; border-radius: var(--radius); background: var(--panel-2); font-size:15px; overflow-wrap:anywhere; }
+      section.desk .said.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); } section.desk .said.tone-error { background:var(--error-surface); color:var(--danger-text); }
+      section.desk .said:empty { display:none; }
+      section.desk .table-wrap { overflow-x:auto; }
+      section.desk table { border-collapse:collapse; width:100%; font-size:14px; }
+      section.desk th, section.desk td { text-align:left; padding:6px 10px; border-top:1px solid var(--line-soft); vertical-align:top; }
+      section.desk td.n, section.desk th.n { text-align:right; font-variant-numeric: var(--numbers); white-space:nowrap; }
+      section.desk ul.list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+      section.desk ul.list li { padding:10px 14px; border:1px solid var(--line-soft); border-radius: var(--radius); background: var(--panel-2); display:grid; gap:6px; overflow-wrap:anywhere; }
+      section.desk ul.list li form { grid-template-columns:repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+      section.desk .word { font-weight:700; }
     </style>
   </head>
   <body>
@@ -159,6 +187,18 @@
         <span class="count attention" id="attention-count"></span>
         <button class="filter" id="filter" type="button" aria-pressed="false"></button>
       </div>
+
+      <!-- W5 (route audit rows 161–167): the filing list is read live from head office; each act goes there once. -->
+      <p class="state-line" id="live-line" role="status" hidden></p>
+      <p class="state-line" id="unsent-line" role="status" hidden></p>
+      <p class="act-result" id="act-result" role="status" aria-live="polite" hidden></p>
+      <form class="pick" id="prepare" hidden>
+        <div class="field">
+          <label for="prepare-period" id="prepare-label">Period</label>
+          <input id="prepare-period" name="prepare-period" inputmode="numeric" autocomplete="off" maxlength="6" />
+        </div>
+        <button class="do-btn sre-btn sre-btn-primary" id="prepare-btn" type="submit">Prepare for approval</button>
+      </form>
 
       <div class="register" id="register">
         <!-- The captions are for the eye; every cell in a row still says what it is to a screen reader. -->
@@ -191,7 +231,7 @@
             <input id="period" name="period" inputmode="numeric" autocomplete="off" maxlength="6" aria-describedby="period-help" />
             <p class="help" id="period-help"></p>
           </div>
-          <button class="act sre-btn sre-btn-primary" id="show" type="submit"></button>
+          <button class="act sre-btn" id="show" type="submit"></button>
         </form>
         <div class="g3b" id="g3b" aria-live="polite">
           <p class="basis" id="basis"></p>
@@ -210,12 +250,28 @@
         <h3 id="annual-heading"></h3>
         <ul class="rows" id="annual" aria-label="Annual return"></ul>
       </section>
+
+      <!--
+        W5 (route audit section 2, bundle 2 — the GST and statutory tax desk): GSTR-1 for the month (the full return, Table 12,
+        Table 12 from the till's sales and the GSTN file to upload by hand — nothing is filed from here), the owner's warning
+        window before the 3-year bar, GSTR-9C reasons, reverse charge (the CA's heads, purchases, cash payment, the month) and
+        income-tax TDS (the CA's list, the owner's switch, challans, the 26Q). Drawn by gst-returns-desk.js from the tested
+        session (apps/web-erp/src/gst-desk-session.ts); each part asks its own permission and head office re-checks it.
+      -->
+      <section class="desk" id="desk" aria-label="GST and tax desk">
+        <div id="d-g1"></div>
+        <div id="d-timebar"></div>
+        <div id="d-9c"></div>
+        <div id="d-rcm"></div>
+        <div id="d-tds"></div>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./gst-returns.js" type="module"></script>
     <script src="./gst-returns-ho.js" type="module"></script>
+    <script src="./gst-returns-desk.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

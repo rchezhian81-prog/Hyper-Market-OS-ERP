@@ -37,6 +37,11 @@ import { shiftDate } from '../../packages/calendar/src/trading-day';
  * local test IdP (a minter never enters the page), and hands `/v1/*` straight to the REAL API kernel.
  * On a verified first sign-in the auth backend also registers the customer — grants the `customer`
  * role — which is the backend's second duty and the reason the shop then knows whose order it is.
+ *
+ * A04 (OB-674, owner, 2 Nov 2026, in writing: "the app's existing search and saved lists count as those legs; AI-chat
+ * guided shopping moves to R8"): the search that finds the product (every journey here) is A04's SEARCH leg, and the
+ * saved list put back into the basket in one tap, the customer then checking it before paying (the D08 test below), is
+ * A04's LIST-TO-CART leg — deterministic, nothing put in the basket without the customer's tap.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -218,7 +223,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
   }, 120_000);
   afterAll(async () => { await browser?.close(); vi.useRealTimers(); });
 
-  it('search → basket → check → slot → location → sign in by OTP → pay: the screen says CONFIRMED because the shop has it, with the payment and the stock reserved', async () => {
+  it('A04 search (OB-674) · search → basket → check → slot → location → sign in by OTP → pay: the screen says CONFIRMED because the shop has it, with the payment and the stock reserved', async () => {
     const h = await seededApi();
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
@@ -245,6 +250,8 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(rec.apiCalls).toEqual([
         { method: 'POST', path: '/v1/storefront/cart/quote', auth: true },
         { method: 'POST', path: expect.stringMatching(/^\/v1\/storefront\/orders\/ORD-/), auth: true },
+        // OB-687 (W6): then the order view reads the customer's OWN orders for a swap waiting for their answer — a read.
+        { method: 'GET', path: '/v1/storefront/orders', auth: true },
       ]);
       // The cloud holds it FOR this customer, with the checkout's payment: 1 × ₹60 + ₹40 delivery.
       const orders = await ordersOf(h);
@@ -353,7 +360,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     }
   }, 60_000);
 
-  it('D08-FR-02/05/06 (round 8): a favourite, a saved list, a voice search through the fake engine, and a complaint that reaches the desk — in English and Tamil', async () => {
+  it('D08-FR-02/05/06 (round 8) · A04 list-to-cart (OB-674): a favourite, a saved list put back in the basket, a voice search through the fake engine, and a complaint that reaches the desk — in English and Tamil', async () => {
     const h = await seededApi();
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
     const store = await startStore(h, rec);
@@ -385,6 +392,12 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await page.click('#tab-shop');
       await page.waitForSelector('#mylists .row', { timeout: 10_000 });
       expect(await page.textContent('#mylists .row .name')).toBe('Weekly — 1 item(s)');
+      // A04 list-to-cart (OB-674): the saved list goes back into the basket on the customer's own tap, to be checked.
+      await page.click('#mylists .row button');
+      await page.locator('#mine-say', { hasText: 'Added to your basket — check it before you pay.' }).waitFor({ timeout: 10_000 });
+      await page.click('#tab-basket');
+      expect(await page.textContent('#basket-lines .row .n'), 'the list\'s one milk on top of the one already in the basket').toBe('2');
+      await page.click('#tab-shop');
 
       // Voice search: what was heard becomes the search, shown — nothing goes in the basket by voice.
       await page.fill('#search', '');
@@ -415,6 +428,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     }
   }, 60_000);
 
+  // WF-15 (delivery, the customer's "track" step): the customer reads where the order is from the driver's own status.
   it('OB-77: the driver\'s delivery status and its as-of time reach the customer\'s screen — on its way, could not deliver — read back after a head-office restart, in English and Tamil', async () => {
     // On real PostgreSQL when DATABASE_URL is set (its own shop per run), otherwise the in-memory store; either way the restart
     // is a second head-office instance over the same records.

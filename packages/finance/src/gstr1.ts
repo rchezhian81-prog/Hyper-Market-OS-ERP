@@ -181,6 +181,70 @@ export interface B2cInvoice {
   readonly rateLines: readonly RateSummary[];
 }
 
+/**
+ * M23-FR-02 · OB-678: a credit or debit note to a business customer, as GSTR-1 reads it — its own number and date (the
+ * return period is the month it was ISSUED), the invoice it relieves or adds to, the buyer's GSTIN when the invoice named one,
+ * and rate-wise the taxable value and CGST / SGST / IGST it carries.
+ */
+export interface OutwardNote {
+  readonly noteNumber: string;
+  readonly noteDate: string;
+  readonly noteType: 'C' | 'D';
+  readonly againstInvoiceNumber: string;
+  readonly againstInvoiceDate: string;
+  readonly recipientGstin?: string;
+  readonly placeOfSupplyStateCode?: string;
+  /** False when issued after the CGST s.34(2) limit — commercially real, no tax adjustment, so not in the totals. */
+  readonly taxAdjustable: boolean;
+  readonly rateLines: readonly RateSummary[];
+}
+
+export interface OutwardNoteRow extends OutwardNote {
+  /** The note's whole value — taxable value plus its GST. */
+  readonly noteValueMinor: number;
+}
+
+/**
+ * M23-FR-02 · OB-678: the credit/debit-note section of the return — notes to registered buyers (with a GSTIN) note by note,
+ * and to unregistered buyers, with the period's totals. Notes are NOT put into the GSTN portal file and do not net the HSN
+ * summary here: how they are filed (Table 9B) is the CA's sign-off (C-01), said on the section, never assumed.
+ */
+export interface Gstr1NotesSection {
+  readonly registered: readonly OutwardNoteRow[];
+  readonly unregistered: readonly OutwardNoteRow[];
+  /** Issued after the s.34(2) limit: listed, but carrying no tax adjustment and outside the totals. */
+  readonly outsideTaxWindow: readonly OutwardNoteRow[];
+  readonly creditTaxableMinor: number;
+  readonly creditTaxMinor: number;
+  readonly debitTaxableMinor: number;
+  readonly debitTaxMinor: number;
+  readonly inGstnFile: false;
+  readonly caSignOff: 'C-01 — how notes are filed (Table 9B) waits for the CA\'s sign-off';
+  readonly detail: string;
+}
+
+/** Build the credit/debit-note section from the period's notes. Pure. */
+export function gstr1NotesSection(notes: readonly OutwardNote[]): Gstr1NotesSection {
+  const rows: OutwardNoteRow[] = notes.map((n) => ({ ...n, noteValueMinor: n.rateLines.reduce((s, r) => s + r.taxableMinor + r.cgstMinor + r.sgstMinor + r.igstMinor + (r.cessMinor ?? 0), 0) }))
+    .sort((a, b) => a.noteDate.localeCompare(b.noteDate) || a.noteNumber.localeCompare(b.noteNumber));
+  const inWindow = rows.filter((r) => r.taxAdjustable);
+  const total = (type: 'C' | 'D', k: 'taxable' | 'tax'): number => inWindow.filter((r) => r.noteType === type)
+    .reduce((s, r) => s + r.rateLines.reduce((t, l) => t + (k === 'taxable' ? l.taxableMinor : l.cgstMinor + l.sgstMinor + l.igstMinor + (l.cessMinor ?? 0)), 0), 0);
+  const creditTaxMinor = total('C', 'tax'); const debitTaxMinor = total('D', 'tax');
+  return {
+    registered: inWindow.filter((r) => typeof r.recipientGstin === 'string' && r.recipientGstin !== ''),
+    unregistered: inWindow.filter((r) => !(typeof r.recipientGstin === 'string' && r.recipientGstin !== '')),
+    outsideTaxWindow: rows.filter((r) => !r.taxAdjustable),
+    creditTaxableMinor: total('C', 'taxable'), creditTaxMinor,
+    debitTaxableMinor: total('D', 'taxable'), debitTaxMinor,
+    inGstnFile: false,
+    caSignOff: 'C-01 — how notes are filed (Table 9B) waits for the CA\'s sign-off',
+    detail: rows.length === 0
+      ? 'no credit or debit note to a business customer in this period'
+      : `${rows.length} note(s): credit notes take off ${creditTaxMinor} of tax, debit notes add ${debitTaxMinor}; not in the GSTN file until the CA signs off how they are filed (C-01)`,
+  };
+}
+
 export interface Gstr1Return {
   readonly b2b: readonly B2bInvoice[];
   readonly b2c: readonly RateSummary[];
@@ -189,6 +253,8 @@ export interface Gstr1Return {
   readonly hsn: Gstr1Table12;
   readonly totalTaxableMinor: number;
   readonly totalTaxMinor: number;
+  /** M23-FR-02 · OB-678: the credit/debit notes to business customers issued in the period. */
+  readonly creditDebitNotes: Gstr1NotesSection;
 }
 
 function summariseByRate(lines: readonly OutwardSupplyLine[]): RateSummary[] {
@@ -213,7 +279,7 @@ const isB2b = (doc: OutwardDocument): boolean =>
  * recipient GSTIN and a rate-wise breakdown per invoice), B2C rate-wise in aggregate, and the HSN Table 12
  * over everything. A "B2B" document with no recipient GSTIN is treated as B2C — it cannot be filed as B2B.
  */
-export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
+export function gstr1Return(docs: readonly OutwardDocument[], notes: readonly OutwardNote[] = []): Gstr1Return {
   const b2b: B2bInvoice[] = [];
   const b2cInvoices: B2cInvoice[] = [];
   const b2cLines: OutwardSupplyLine[] = [];
@@ -235,7 +301,7 @@ export function gstr1Return(docs: readonly OutwardDocument[]): Gstr1Return {
   b2cInvoices.sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate) || a.invoiceNumber.localeCompare(b.invoiceNumber));
   const classified: ClassifiedLine[] = docs.flatMap((d) => d.lines.map((l) => ({ ...l, supplyKind: isB2b(d) ? 'b2b' as const : 'b2c' as const })));
   const hsn = gstr1Table12(classified);
-  return { b2b, b2c: summariseByRate(b2cLines), b2cInvoices, hsn, totalTaxableMinor: hsn.totalTaxableMinor, totalTaxMinor: hsn.totalTaxMinor };
+  return { b2b, b2c: summariseByRate(b2cLines), b2cInvoices, hsn, totalTaxableMinor: hsn.totalTaxableMinor, totalTaxMinor: hsn.totalTaxMinor, creditDebitNotes: gstr1NotesSection(notes) };
 }
 
 // --- the GSTN portal JSON (the file the GST portal actually accepts) -------------------------------

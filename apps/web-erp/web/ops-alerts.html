@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Operational alerts</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Operational alerts (W3 · M35-FR-04 · §32 · P-03 · P-08). A THIN CLIENT over head office's alert lifecycle and alert
+      rules: my alerts (GET /v1/platform/alerts/inbox), every live alert (GET /v1/platform/alerts), tick one as seen
+      (POST /v1/platform/alerts/:alertId/acknowledge), and who owns each alert and the backup age (GET and PUT
+      /v1/platform/alert-rules, sending basedOnVersion — the version read), and (W4 · M35-FR-01) the backup and restore
+      readings: the newest backup the backup job reported and the newest good one (GET /v1/platform/operational-health/observed)
+      and the latest backup-restore rehearsal (GET /v1/platform/recovery-gate). Its session is apps/web-erp/src/ops-alerts-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.history > li { border-left-color: var(--idle); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Operational alerts</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Operational alerts</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="mine-s" hidden aria-labelledby="mine-h">
+        <h3 id="mine-h"></h3>
+        <p class="status" id="mine-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="mine"></ul>
+      </section>
+      <section id="all-s" hidden aria-labelledby="all-h">
+        <h3 id="all-h"></h3>
+        <p class="status" id="all-status" role="status" aria-live="polite"></p>
+        <ul class="rows history" id="all"></ul>
+      </section>
+      <section id="readings-s" hidden aria-labelledby="readings-h">
+        <h3 id="readings-h"></h3>
+        <p class="status" id="readings-status" role="status" aria-live="polite"></p>
+        <ul class="rows history" id="readings"></ul>
+      </section>
+      <section id="rules-s" hidden aria-labelledby="rules-h">
+        <h3 id="rules-h"></h3>
+        <p class="status" id="rules-status" role="status" aria-live="polite"></p>
+        <ul class="rows history" id="rules"></ul>
+        <h4 id="builtin-h"></h4>
+        <ul class="rows history" id="builtin"></ul>
+        <div id="manage" hidden>
+          <h4 id="add-h"></h4>
+          <form class="row-form" id="add-form">
+            <label for="n-component"><span id="n-component-l"></span><input id="n-component" autocomplete="off" /></label>
+            <label for="n-fires"><span id="n-fires-l"></span><select id="n-fires"></select></label>
+            <label for="n-owner"><span id="n-owner-l"></span><input id="n-owner" autocomplete="off" /></label>
+            <label for="n-name"><span id="n-name-l"></span><input id="n-name" autocomplete="off" /></label>
+            <label for="n-minutes"><span id="n-minutes-l"></span><input id="n-minutes" inputmode="numeric" autocomplete="off" /></label>
+            <label for="n-escalates"><span id="n-escalates-l"></span><input id="n-escalates" autocomplete="off" /></label>
+            <button id="n-add" type="submit" class="sre-btn sre-btn-primary"><span id="n-add-text"></span></button>
+          </form>
+          <p class="status" id="add-status" role="status" aria-live="polite"></p>
+          <h4 id="backup-h"></h4>
+          <form class="row-form" id="backup-form">
+            <label for="b-hours"><span id="b-hours-l"></span><input id="b-hours" inputmode="numeric" autocomplete="off" /></label>
+            <button id="b-save" type="submit" class="sre-btn"><span id="b-save-text"></span></button>
+          </form>
+          <p class="status" id="backup-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./ops-alerts.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

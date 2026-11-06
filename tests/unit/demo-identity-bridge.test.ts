@@ -110,9 +110,10 @@ describe('identity bridge — cannot drift from the screens', () => {
 
   for (const [path, page] of Object.entries(BRIDGED_PAGES)) {
     it(`${path}: carries the marker BEFORE its module bundle, and uses the global the screen reads`, () => {
-      const [, shell, file] = /^\/(erp|supplier|b2b)\/(.+)$/.exec(path)!;
+      const [, shell, file] = /^\/(erp|supplier|b2b|concession)\/(.+)$/.exec(path)!;
       // Round 3 (OB-559): the business-customer portal is bridged like the supplier portal.
-      const dir = shell === 'erp' ? 'web-erp' : shell === 'b2b' ? 'b2b-app' : 'supplier-app';
+      // OB-676: the concessionaire's own portal is bridged the same way.
+      const dir = shell === 'erp' ? 'web-erp' : shell === 'b2b' ? 'b2b-app' : shell === 'concession' ? 'concession-app' : 'supplier-app';
       const html = readFileSync(`apps/${dir}/web/${file!}`, 'utf8');
       const marker = html.indexOf('<!--SCREEN-DATA-->');
       const bundle = html.indexOf(`${dir}.bundle.js`);

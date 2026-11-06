@@ -90,6 +90,9 @@
         <button id="tab-stock" type="button">Stock adjustment</button>
         <button id="tab-plan" type="button">Budget and assets</button>
         <button id="tab-month" type="button">Close or reopen the month</button>
+        <button id="tab-owed" type="button">Owed to customers</button>
+        <button id="tab-books" type="button" hidden>Into the books</button>
+        <button id="tab-ca" type="button" hidden>For the CA</button>
       </nav>
 
       <section id="view-payments" class="panel" aria-labelledby="pay-h">
@@ -162,6 +165,65 @@
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
       </section>
 
+      <!-- W3 (D10-FR-04): what the shop owes customers — loyalty points, store credit and referral rewards as the members
+           hold them against the books, and the referral rewards put in the books. Its session is
+           apps/web-erp/src/liabilities-session.ts (window.liabilities). -->
+      <section id="view-owed" class="panel" hidden aria-labelledby="owed-h">
+        <h2 id="owed-h">What the shop owes customers</h2>
+        <p class="lead" id="owed-lede"></p>
+        <button id="owed-show" type="button" class="quiet">Read the figures</button>
+        <div class="tiles sre-summary" id="owed-tiles"></div>
+        <ul class="register" id="owed-list"></ul>
+        <button id="owed-post" type="button" hidden>Put referral rewards in the books</button>
+        <p class="status" id="owed-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W5 (M23-FR-01 · M22-FR-02 · D02-FR-06 · D09-FR-06): movements into the books — business-customer invoices and
+           collections, count differences and write-offs, stock confirmed lost, the own fleet's settlements and supplier display
+           funding — each read and posted through the accountant's map (apps/web-erp/src/books-postings-session.ts,
+           window.booksPostings, drawn by finance-close-books.js). Nothing is read on open. -->
+      <section id="view-books" class="panel" hidden aria-labelledby="books-h">
+        <h2 id="books-h">Movements into the books</h2>
+        <p class="lead" id="books-lede"></p>
+        <div id="books-streams"></div>
+      </section>
+
+      <!-- W5 (M23-FR-04 · D10-FR-01): the month's independent checks, the control totals and the CA's evidence pack, and the
+           cost and profit centres against the ledger (finance-close-books.js). Reads only — no month changes state. -->
+      <section id="view-ca" class="panel" hidden aria-labelledby="ca-h">
+        <h2 id="ca-h">Evidence for the CA</h2>
+        <p class="lead" id="ca-lede"></p>
+        <button id="ca-evidence" type="button" class="quiet">Read the month's checks</button>
+        <p class="status" id="ca-status" role="status" aria-live="polite"></p>
+        <ul class="register" id="ca-checks"></ul>
+        <ul class="blockers" id="ca-missing"></ul>
+        <details id="ca-extra">
+          <summary id="ca-extra-h">Add a line from another outside source</summary>
+          <div class="row">
+            <label for="ca-x-name"><span id="l-ca-x-name"></span><input id="ca-x-name" autocomplete="off" /></label>
+            <label for="ca-x-books"><span id="l-ca-x-books"></span><input id="ca-x-books" inputmode="decimal" autocomplete="off" /></label>
+            <label for="ca-x-outside"><span id="l-ca-x-outside"></span><input id="ca-x-outside" inputmode="decimal" autocomplete="off" /></label>
+            <label for="ca-x-method"><span id="l-ca-x-method"></span><input id="ca-x-method" autocomplete="off" /></label>
+          </div>
+        </details>
+        <div class="row">
+          <label for="ca-cutoff"><span id="l-ca-cutoff"></span><input id="ca-cutoff" inputmode="numeric" placeholder="HH:MM" autocomplete="off" /></label>
+        </div>
+        <div class="row">
+          <button id="ca-totals" type="button" class="quiet">Compare the control totals</button>
+          <button id="ca-pack" type="button">Prepare the CA's evidence pack</button>
+        </div>
+        <p class="status" id="ca-pack-status" role="status" aria-live="polite"></p>
+        <ul class="register" id="ca-results"></ul>
+        <ol class="note" id="ca-statement"></ol>
+
+        <h2 id="centres-h">Cost and profit centres</h2>
+        <p class="lead" id="centres-lede"></p>
+        <button id="centres-show" type="button" class="quiet">Read the centres</button>
+        <p class="status" id="centres-status" role="status" aria-live="polite"></p>
+        <div class="scroll"><table id="centres-table"></table></div>
+      </section>
+
       <!-- OB-567 (owner, 31 Oct 2026): a month is closed and reopened HERE, and nowhere else — two people, head office's
            own figures and routes. The steps are offered only to a person who holds the month-close permission. -->
       <section id="view-month" class="panel" hidden aria-labelledby="month-h">
@@ -190,6 +252,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script type="module" src="./finance-close.js"></script>
+    <script type="module" src="./finance-close-books.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

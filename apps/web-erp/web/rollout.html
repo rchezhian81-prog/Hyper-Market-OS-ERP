@@ -110,6 +110,11 @@
         <p class="meta" id="closure-blockers"></p>
         <p class="meta" id="closure-who"></p>
         <p class="status" id="cl-status" role="status" aria-live="polite"></p>
+        <!-- W7 · M36-FR-03 · D12-FR-05 · P-06: the shop's full export — head office's file saved exactly as it is sent. -->
+        <h4 id="export-h"></h4>
+        <p class="meta" id="export-lead"></p>
+        <button id="ex-download" type="button" class="quiet"><span id="ex-download-text"></span></button>
+        <p class="status" id="ex-status" role="status" aria-live="polite"></p>
       </section>
       <section id="consent" hidden aria-labelledby="consent-h">
         <h3 id="consent-h"></h3>
@@ -118,9 +123,15 @@
         <button id="cs-import" type="button" class="sre-btn"><span id="cs-import-text"></span></button>
         <p class="status" id="cs-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="licences" aria-live="polite"></section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="consent-exceptions" id="desk-consent-exceptions" hidden></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./w5-platform.js" type="module"></script>
     <script src="./rollout.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

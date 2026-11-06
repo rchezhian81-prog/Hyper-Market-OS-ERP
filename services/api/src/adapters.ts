@@ -67,6 +67,7 @@ import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
 import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement, type MonthEvidence } from '../../finance/src/independent-evidence';
+import { cashDepositViews, type CashDeposit, type CashDepositCancelled, type CashDepositDeps } from '../../finance/src/cash-deposits';
 import type { ControlTotalCheck } from '../../finance/src/index';
 import { stockAdjustmentSources, stockAdjustmentCheck, type PeriodBooksDeps, type CountForBooks, type WriteOffForBooks, type StockAdjustmentJournal, type AccountClass } from '../../finance/src/period-books';
 import { reconcilePayables, PAYABLES_LEFT_DERIVATION, PAYABLES_RIGHT_DERIVATION } from '../../../packages/finance/src/payables';
@@ -93,7 +94,7 @@ import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/sr
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
 import type { B2BCustomerGstinDeps, CustomerGstinRecord, CustomerGstinRemoval, CustomerGstinFact } from '../../finance/src/b2b-customer-gstin';
 import { gstinInForce } from '../../finance/src/b2b-customer-gstin';
-import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment } from '../../finance/src/b2b-collections';
+import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedPayment, ChasingStepsSetting } from '../../finance/src/b2b-collections';
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
 import { checkCredit } from '../../../packages/b2b/src/credit';
@@ -122,6 +123,7 @@ import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovemen
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
 import type { FacilitiesAssetsDeps, Asset, ServiceLog, DowntimeEvent, EnergyReading } from '../../platform/src/facilities-assets';
+import type { SparePart, SpareMovement } from '../../../packages/facilities/src/spares';
 import type { FacilitiesMonitoringDeps, EquipmentRangeReg, EquipmentContents, EquipmentReading, PowerEvent } from '../../platform/src/facilities-monitoring';
 import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inventory/src/packaging';
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
@@ -138,7 +140,7 @@ import type { PayRunStoreDeps } from '../../finance/src/pay-run-store';
 import type { RosterStoreDeps } from '../../finance/src/roster-store';
 import type { CertStoreDeps } from '../../finance/src/cert-store';
 import type { SopStoreDeps, Sop as WfSop } from '../../finance/src/sop-store';
-import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance } from '../../finance/src/attendance-store';
+import type { AttendanceStoreDeps, AttendanceRecord as WfAttendance, LabourGuideSetting } from '../../finance/src/attendance-store';
 import type { ChecklistStoreDeps, StoredChecklist as WfChecklist } from '../../finance/src/checklist-store';
 import type { TaskStoreDeps, TaskDefinition as WfTaskDef, TaskCompletion as WfTaskDone } from '../../finance/src/task-store';
 import type { PayslipStoreDeps, IssuedPayslip } from '../../finance/src/payslip-store';
@@ -248,8 +250,9 @@ import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlert
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
 import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
-import type { CreditNoteDeps } from '../../finance/src/credit-notes';
-import type { CreditNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { notePostableSourceId, type CreditNoteDeps } from '../../finance/src/credit-notes';
+import type { CreditNote, CustomerNote, ProductTaxEntry, OutwardSupplyLine } from '../../../packages/finance/src/index';
+import { isCustomerNote, outwardNoteOf } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
 import type { SegmentDeps } from '../../customer/src/segments';
 import { collapseConsent } from '../../customer/src/segments';
@@ -318,6 +321,7 @@ import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } 
 import { inMemorySettings } from '../../platform/src/index';
 import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
+import type { PackBranding } from '../../../packages/catalogue/src/catalogue';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
@@ -1180,8 +1184,11 @@ export function gstr1SubmissionAdapter(input: {
   readonly now: () => string;
 }): Gstr1SubmissionStoreDeps {
   const streamFor = (period: string): string => forGstr1Submission(period);
+  const people = peopleAdapter(input);
   return {
     now: input.now,
+    // OB-683: the name shown beside a return filed by hand — the signed-in person's own record in the staff register.
+    personName: async (tenantId, userId) => (await people.people(tenantId)).find((p) => p.userId === userId)?.displayName,
 
     load: async (tenantId, period) => {
       const persisted = await input.store.readStream(tenantId, streamFor(period));
@@ -1193,11 +1200,14 @@ export function gstr1SubmissionAdapter(input: {
       // A given step at a given instant is one fact — keyed on kind + actor + at, so a retry collapses.
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'portal';
+      // OB-683: a return is filed by hand ONCE per period — keyed on the period alone, so a second record (any person, any
+      // time) collapses onto the first at the store, whatever raced it.
+      const key = event.kind === 'filedByHand' ? `gstr1sub-${tenantId}-${period}-filedByHand` : `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`;
       const lifecycle = makeEvent({
-        id: keyedEventId('gstr1sub', `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`),
+        id: keyedEventId('gstr1sub', key),
         type: 'Gstr1SubmissionRecorded',
         occurredAt: input.now(),
-        idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
+        idempotencyKey: key,
         source: 'api/finance',
         payload: event,
       });
@@ -1257,6 +1267,13 @@ export function gstReturnsAdapter(input: {
   const calendarOf = shopCalendarOf(input.calendar);
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the GST notes to business customers, from the CreditNoteIssued facts (first record of an id stands).
+    customerNotes: async (tenantId) => {
+      const byId = new Map<string, CustomerNote>();
+      for (const n of (await allOf<CreditNote>(input.store, tenantId, STREAM.finance, 'CreditNoteIssued')).filter(isCustomerNote)) if (!byId.has(n.noteId)) byId.set(n.noteId, n);
+      return [...byId.values()].map(outwardNoteOf);
+    },
 
     documents: async (tenantId) => {
       const all = await allOf<StoredOutwardDoc>(input.store, tenantId, STREAM.gstreturns, 'OutwardSupplyRecorded');
@@ -1437,6 +1454,15 @@ const forCustomer = (customerId: string): string => streamName(STREAM.consent, c
 // Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
 // privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
 const DATA_REQUESTS_STREAM = streamName(STREAM.consent, 'data-requests');
+// Round 4d (M26-FR-01): the spare-parts register's own stream, and the one guard its draws are checked and appended under.
+const SPARES_STREAM = streamName(STREAM.facilities, 'spares');
+const SPARES_GUARD = 'facilities-spares';
+/** Round 4d: whether two stored records hold the same content (keys in any order) — a setting restated, not changed. */
+const sameContent = (a: unknown, b: unknown): boolean => {
+  const norm = (v: unknown): unknown => (Array.isArray(v) ? v.map(norm) : v !== null && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])])) : v);
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+};
 // Privacy EXECUTION sub-streams (M20-FR-04), all tenant-wide and append-only: the located-PII holdings, the
 // checker's erasure approvals, the sealed PII-free tombstones, and the processor-erasure notices enqueued.
 const PII_STREAM = streamName(STREAM.privacy, 'pii');
@@ -1884,8 +1910,17 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
  * stored staff for a branch and runs the tested `labourCost` (reported, never enforced).
  */
 export function attendanceStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): AttendanceStoreDeps {
+  const LABOUR_GUIDE = streamName(STREAM.workforce, 'labour-cost-guide');
   return {
     now: input.now,
+    // OB-686: the owner's labour-cost guide — append-only, every version kept; the newest applies. None → "not set".
+    labourGuide: (tenantId) => latest<LabourGuideSetting>(input.store, tenantId, LABOUR_GUIDE, 'LabourCostGuideSet'),
+    recordLabourGuide: async (tenantId, setting) => {
+      const key = `labour-guide-${tenantId}-${setting.setAt}-${setting.setBy}`;
+      await input.store.append(tenantId, LABOUR_GUIDE, makeEvent({
+        id: keyedEventId('labour-guide', key), type: 'LabourCostGuideSet', occurredAt: setting.setAt, idempotencyKey: key, source: 'api/hr', payload: setting,
+      }));
+    },
     putAttendance: async (tenantId, record, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
         // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
@@ -2231,8 +2266,10 @@ export function productMasterAdapter(input: {
     return byId;
   };
   return {
-    publish: async (tenantId, record, key, skuVersion) => {
+    publish: async (tenantId, record, key, skuVersion, alsoGuard) => {
       const at = input.now();
+      // The SKU's guard (when the caller read it) and the owner-2A safety save's guard (`product-safety:<id>`), all or none.
+      const guards = [...(skuVersion === undefined ? [] : [{ key: `sku:${record.sku}`, expectedVersion: skuVersion }]), ...(alsoGuard === undefined ? [] : [alsoGuard])];
       // The product's version and its SKU index entries, in ONE atomic batch — guarded on the SKU when the caller read it.
       await ensureSkuIndex(input.store, tenantId);
       await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
@@ -2244,8 +2281,12 @@ export function productMasterAdapter(input: {
         idempotencyKey: `product-${tenantId}-${record.productId}-${key}`,
         source: 'api/catalogue',
         payload: record,
-      }) }, ...skuIndexEntries(tenantId, record, key, at)], skuVersion === undefined ? undefined : { guard: { key: `sku:${record.sku}`, expectedVersion: skuVersion } });
+      }) }, ...skuIndexEntries(tenantId, record, key, at)], guards.length === 0 ? undefined : { guard: guards[0]!, ...(guards.length > 1 ? { alsoGuards: guards.slice(1) } : {}) });
     },
+    // Owner 2A: a product's version is how many versions of it were published (a retry under the same key is deduplicated).
+    productVersion: async (tenantId, productId) =>
+      (await input.store.readStream(tenantId, stream, { type: 'ProductPublished' })).filter((e) => payloadOf<ProductRecord>(e).productId === productId).length,
+    safetyGuardVersion: (tenantId, productId) => input.store.guardVersion(tenantId, `product-safety:${productId}`),
     skuHolder: (tenantId, sku, productId) => skuHolderOf(input.store, tenantId, sku, productId),
     categoryRegister: { ...categoryRegisterAdapter(input), approvals: approvalRequestsAdapter(input) },
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
@@ -2516,6 +2557,23 @@ export function consolidationAdapter(input: {
 }
 
 /**
+ * W3 · M36-FR-02 · OB-321: the part of a shop's stored white-label brand the signed pack carries — the name, the logo and
+ * the colours, only the fields the shop set, and only the shop's OWN brand (a stored brand naming another tenant is
+ * treated as absent, as `resolveBrand` does). Nothing set → undefined, and the pack carries no brand.
+ */
+export function packBrandingOf(stored: TenantBranding | undefined, tenantId: string): PackBranding | undefined {
+  if (stored === undefined || stored.tenantId !== tenantId) return undefined;
+  const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const productName = text(stored.productName); const legalName = text(stored.legalName); const logoRef = text(stored.logoRef);
+  const c = stored.colours;
+  const out: PackBranding = {
+    ...(productName === undefined ? {} : { productName }), ...(legalName === undefined ? {} : { legalName }), ...(logoRef === undefined ? {} : { logoRef }),
+    ...(c === undefined ? {} : { colours: { primary: c.primary, onPrimary: c.onPrimary, ...(c.accent === undefined ? {} : { accent: c.accent }) } }),
+  };
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/**
  * Catalogue-pack ASSEMBLY reader (slice 2) — composes the four master-data stores this session built so the
  * pack build can fold them: the product master, the price lists, the barcode register and the tax-class
  * rate schedules. It reuses the tested adapters above rather than re-reading the streams, so there is one
@@ -2543,6 +2601,8 @@ export function cataloguePreviewAdapter(input: {
     cessSchedule: cessRateStore(input).schedule, // Till bill and GST (A7): the cess in force rides the pack
     bundles: (t) => allOf<BundleDefinition>(input.store, t, streamName(STREAM.catalogue, 'bundles'), 'BundleDefined'), // OB-306: bundles ride the signed pack to the tills
     embeddedRules: scaleLabelRuleStore(input).inForce, // OB-570 "A": the scale-label rules in force ride the signed pack
+    // W3 · M36-FR-02 (OB-321): the shop's own name, logo and colours ride the signed pack — the till prints them offline.
+    branding: async (t) => packBrandingOf(await latest<TenantBranding>(input.store, t, STREAM.platform, 'TenantBrandingSet'), t),
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };
@@ -3276,6 +3336,8 @@ export function approvalRequestsAdapter(input: { readonly store: EventStore; rea
   return {
     now: input.now,
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    // OB-613: whether the asker is the owner, and whether a decider is the accountant — the live grants, now.
+    rolesOfUser: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     recordRequest: async (tenantId, request) => {
       await input.store.append(tenantId, APPROVAL_REQUESTS, makeEvent({
         id: `approval-request-${request.requestId}`, type: 'ApprovalRequested', occurredAt: request.requestedAt,
@@ -4147,6 +4209,48 @@ export function b2bCustomerGstinAdapter(input: { readonly store: EventStore; rea
   };
 }
 
+/**
+ * The stock on the ledger valued at weighted-average cost, one row per product and place AND per owner (M27-FR-02): each
+ * ownership pool valued SEPARATELY — a concessionaire's cost is never averaged into the store's. Reads the append-only
+ * ledger; writes nothing. The store valuation splits these; a concessionaire's own login reads only its own (OB-676).
+ */
+export async function ownedStockRows(store: EventStore, tenantId: string): Promise<OwnedStockValue[]> {
+  const events = await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+  const movements = events
+    .map((e) => payloadOf<Movement>(e))
+    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+
+  const adjustments = await stockCostAdjustments(store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
+  const groups = new Map<string, Movement[]>();
+  for (const m of movements) {
+    const ownership: StockOwnership = m.ownership ?? 'own';
+    const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
+    const key = `${ownership}\u001f${ownerId}`;
+    groups.set(key, [...(groups.get(key) ?? []), m]);
+  }
+
+  const rows: OwnedStockValue[] = [];
+  for (const [key, ms] of groups) {
+    const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
+    const valued = weightedAverageValuation(
+      withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
+        productId: m.productId, locationId: m.locationId,
+        effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+        isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
+        ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+      })),
+      'INR',
+    );
+    for (const v of valued) {
+      rows.push({
+        productId: v.productId, locationId: v.locationId,
+        ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
+      });
+    }
+  }
+  return rows;
+}
+
 export function concessionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4203,42 +4307,7 @@ export function concessionAdapter(input: {
      * `splitStoreValuation` reports what the store owns and names what it does not. Reads the
      * append-only ledger; writes nothing.
      */
-    storeValuation: async (tenantId, branchId) => {
-      const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
-      const movements = events
-        .map((e) => payloadOf<Movement>(e))
-        .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
-
-      const adjustments = await stockCostAdjustments(input.store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
-      const groups = new Map<string, Movement[]>();
-      for (const m of movements) {
-        const ownership: StockOwnership = m.ownership ?? 'own';
-        const ownerId = ownership === 'own' ? 'store' : (m.ownerId ?? 'unknown');
-        const key = `${ownership}\u001f${ownerId}`;
-        groups.set(key, [...(groups.get(key) ?? []), m]);
-      }
-
-      const rows: OwnedStockValue[] = [];
-      for (const [key, ms] of groups) {
-        const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
-        const valued = weightedAverageValuation(
-          withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
-            productId: m.productId, locationId: m.locationId,
-            effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
-            ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
-          })),
-          'INR',
-        );
-        for (const v of valued) {
-          rows.push({
-            productId: v.productId, locationId: v.locationId,
-            ownership, ownerId, valueMinor: v.value.minor, onHandMinor: v.onHandMinor,
-          });
-        }
-      }
-      return splitStoreValuation({ branchId, rows });
-    },
+    storeValuation: async (tenantId, branchId) => splitStoreValuation({ branchId, rows: await ownedStockRows(input.store, tenantId) }),
 
     recordDepositMovement: async (tenantId, movement) => {
       await input.store.append(tenantId, forConcessionaire(movement.concessionaireId), makeEvent({
@@ -4361,7 +4430,8 @@ export function facilitiesAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: schedule,
         sameSubject: (p) => (p as typeof schedule).scheduleId === schedule.scheduleId,
         subjectKey: schedule.scheduleId,
-        sameValue: (p) => v(p as typeof schedule) === v(schedule),
+        // Round 4d: the whole record — a renamed schedule or a new escalation contact is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, schedule),
       });
     },
 
@@ -4465,8 +4535,47 @@ export function facilitiesAssetsAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: asset,
         sameSubject: (p) => (p as typeof asset).assetId === asset.assetId,
         subjectKey: asset.assetId,
-        sameValue: (p) => v(p as typeof asset) === v(asset),
+        // Round 4d: the whole record — a renamed asset or a new AMC vendor is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, asset),
       });
+    },
+
+    // Round 4d (M26-FR-01): the spare-parts register — each definition and each movement is its own fact on the spares
+    // stream (append-only); on hand is the sum of the movements.
+    spareParts: async (tenantId) => {
+      const byId = new Map<string, SparePart>();
+      for (const p of await allOf<SparePart>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSparePartSet')) byId.set(p.sparePartId, p);
+      return [...byId.values()];
+    },
+    spareMovements: (tenantId) => allOf<SpareMovement>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSpareMoved'),
+    recordSparePart: async (tenantId, part) => {
+      await input.store.append(tenantId, SPARES_STREAM, makeEvent({
+        id: `fac-spare-${part.sparePartId}-${part.definedAt}`, type: 'FacilitiesSparePartSet', occurredAt: part.definedAt,
+        idempotencyKey: `fac-spare-${tenantId}-${part.sparePartId}-${part.definedAt}`, source: 'api/platform', payload: part,
+      }));
+    },
+    appendSpareMovements: async (tenantId, movements, check) => {
+      // One guard for the store's spares: the ledger is read, checked and appended as one step, so two services drawing the
+      // last part at the same moment cannot both have it — the second re-reads and is told what is left.
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, SPARES_GUARD);
+        const parts = await allOf<SparePart>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSparePartSet');
+        const latestParts = [...new Map(parts.map((p) => [p.sparePartId, p])).values()];
+        const ledger = await allOf<SpareMovement>(input.store, tenantId, SPARES_STREAM, 'FacilitiesSpareMoved');
+        const fresh = movements.filter((m) => !ledger.some((x) => x.movementId === m.movementId));
+        if (fresh.length === 0) return null; // already on the ledger: a re-send draws nothing twice
+        const problem = check(latestParts, ledger);
+        if (problem !== null) return problem;
+        try {
+          await input.store.appendBatch(tenantId, fresh.map((m) => ({ stream: SPARES_STREAM, event: makeEvent({
+            id: `fac-spare-move-${m.movementId}`, type: 'FacilitiesSpareMoved', occurredAt: m.at,
+            idempotencyKey: `fac-spare-move-${tenantId}-${m.movementId}`, source: 'api/platform', payload: m,
+          }) })), { guard: { key: SPARES_GUARD, expectedVersion: version } });
+          return null;
+        } catch (e) {
+          if (!(e instanceof ConcurrencyConflictError) || attempt >= 8) throw e;
+        }
+      }
     },
 
     recordService: async (tenantId, service) => {
@@ -4553,7 +4662,8 @@ export function facilitiesMonitoringAdapter(input: {
         occurredAt: input.now(), source: 'api/platform', payload: reg,
         sameSubject: (p) => (p as typeof reg).assetId === reg.assetId,
         subjectKey: reg.assetId,
-        sameValue: (p) => v(p as typeof reg) === v(reg),
+        // Round 4d: the whole record — a renamed room is a change too, never a silent no-op.
+        sameValue: (p) => sameContent(p, reg),
       });
     },
 
@@ -5621,8 +5731,19 @@ export function b2bCollectionsAdapter(input: {
 }): B2BCollectionsDeps {
   // Each B2B customer folds its own stream. Invoices are recorded with settledMinor 0; each invoice's
   // real settled is PROJECTED by summing the allocations of every recorded payment (#2 — never stored).
+  const CHASING_STEPS = streamName(STREAM.b2b, 'chasing-steps');
   return {
     now: input.now,
+
+    // OB-686: the owner's chasing steps — append-only, every version kept; the newest applies. None → "not set".
+    chasingSteps: (tenantId) => latest<ChasingStepsSetting>(input.store, tenantId, CHASING_STEPS, 'B2BChasingStepsSet'),
+    recordChasingSteps: async (tenantId, setting) => {
+      const key = `b2b-chasing-steps-${tenantId}-${setting.setAt}-${setting.setBy}`;
+      await input.store.append(tenantId, CHASING_STEPS, makeEvent({
+        id: keyedEventId('b2b-chasing-steps', key), type: 'B2BChasingStepsSet', occurredAt: setting.setAt,
+        idempotencyKey: key, source: 'api/finance', payload: setting,
+      }));
+    },
 
     // The finance AR balance for this customer — PROJECTED from the SAME receivable-movement stream
     // the credit surface folds (M22-FR-01), so the reconciliation compares the collections sub-ledger
@@ -9251,11 +9372,54 @@ export function financeNotesAdapter(input: {
    * rebuilt from the ledger) — just rebuilt on each cold start.
    */
   readonly snapshots?: SnapshotStore;
-}): CreditNoteDeps {
+  /** M23-FR-02 · OB-678: the gap-free number series the customer credit-note and debit-note series are drawn from. */
+  readonly numberSeries?: NumberSeriesStore;
+}): CreditNoteDeps & {
+  readonly alreadyCredited: (tenantId: string, invoiceId: string) => Promise<number>;
+  readonly appendCreditNote: (tenantId: string, note: CreditNote) => Promise<void>;
+} {
   const snapshots = input.snapshots ?? new InMemorySnapshotStore();
+  const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
+  const b2bDocs = b2bDocumentsAdapter({ store: input.store, now: input.now, numberSeries });
+  const books = b2bPostingAdapter({ store: input.store, now: input.now });
 
   return {
     now: input.now,
+
+    // M23-FR-02 · OB-678: the business tax invoice head office holds — the only source a note is worked from.
+    businessInvoice: (tenantId, customerId, documentId) => b2bDocs.document(tenantId, customerId, documentId),
+    businessDocuments: (tenantId, customerId) => b2bDocs.documents(tenantId, customerId),
+    allocateNumber: (tenantId, series) => numberSeries.allocate(tenantId, series),
+    // The posting rules in force (kinds only) and the B2B facts already journalled — where each note stands in the books.
+    postingState: async (tenantId) => {
+      const [map, journals] = await Promise.all([books.postingMap(tenantId), books.b2bJournals(tenantId)]);
+      // W4 · M23-FR-02: the rules (accounts by leg) and each journal's kind and lines too — the period credit-note
+      // reconciliation reads what the posted ledger carries from these, the same JournalPosted facts the month close reads.
+      return {
+        ruleKinds: map?.rules.map((r) => r.kind), ...(map === undefined ? {} : { rules: map.rules }),
+        journals: journals.map((j) => ({ sourceId: j.b2b.sourceId, entryId: j.entryId, period: j.period, kind: j.b2b.kind, lines: j.lines })),
+      };
+    },
+    // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
+    // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
+    recordCustomerNote: async (tenantId, note, issuedBy) => {
+      const at = input.now();
+      const credit = note.kind === 'credit_note';
+      const ar: RecordedReceivable = {
+        movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
+        deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
+      };
+      const postable: B2BPostable = {
+        sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
+        components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
+      };
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
+        { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+        receivableCustomerIndexEntry(tenantId, note.customerId, at),
+      ]);
+    },
 
     // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
     // facility rather than re-summing the whole history. This is what makes the s.34 cap hold across
@@ -9671,10 +9835,39 @@ export function independentEvidenceAdapter(input: { readonly store: EventStore; 
         .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
         .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
       const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
-      const base = monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+      const imported = await statements(tenantId);
+      const deposits = cashDepositAdapter({ store: input.store, now: input.now });
+      const depositViews = cashDepositViews({ deposits: await deposits.deposits(tenantId), cancelled: await deposits.cancellations(tenantId), statements: imported });
+      const base = monthEvidence({ period, tenders, batches, statements: imported, deposits: depositViews });
       // WF-18: the books reconciled to their registers inside the close (stock adjustments, payables, receivables).
       const books = await bookChecksFor(input, tenantId, period);
       return { ...base, checks: [...base.checks, ...books.checks], notChecked: [...base.notChecked, ...books.notChecked], books: books.books };
+    },
+  };
+}
+
+/**
+ * W3 (M23-FR-03): cash deposited to the bank — each deposit and each cancellation a fact of its own on the settlement
+ * stream, append-only (a cancel never edits or removes the deposit, hard rules #2 and #6). Once per deposit id.
+ */
+const CASH_DEPOSITS = streamName(STREAM.settlement, 'cash-deposits');
+export function cashDepositAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<CashDepositDeps, 'recordAudit'> {
+  return {
+    now: input.now,
+    deposits: (tenantId) => allOf<CashDeposit>(input.store, tenantId, CASH_DEPOSITS, 'CashDepositRecorded'),
+    cancellations: (tenantId) => allOf<CashDepositCancelled>(input.store, tenantId, CASH_DEPOSITS, 'CashDepositCancelled'),
+    statements: (tenantId) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported'),
+    recordDeposit: async (tenantId, d) => {
+      await input.store.append(tenantId, CASH_DEPOSITS, makeEvent({
+        id: `cash-deposit-${d.depositId}`, type: 'CashDepositRecorded', occurredAt: d.recordedAt,
+        idempotencyKey: `cash-deposit-${tenantId}-${d.depositId}`, source: 'api/finance', payload: d,
+      }));
+    },
+    recordCancel: async (tenantId, c) => {
+      await input.store.append(tenantId, CASH_DEPOSITS, makeEvent({
+        id: `cash-deposit-cancel-${c.depositId}`, type: 'CashDepositCancelled', occurredAt: c.at,
+        idempotencyKey: `cash-deposit-cancel-${tenantId}-${c.depositId}`, source: 'api/finance', payload: c,
+      }));
     },
   };
 }
@@ -10071,6 +10264,12 @@ export function couponAdapter(input: {
         idempotencyKey: `coupon-${tenantId}-${coupon.code}-${key}`,
         source: 'api/customer',
         payload: coupon,
+      }));
+      // D06-FR-03 · OB-673: every coupon goes on the coupon index (the same fact the stored fraud signals read, idempotent per
+      // code), so the store pack can carry every live coupon to the till — whichever route issued it.
+      await input.store.append(tenantId, streamName(STREAM.lossPrevention, 'coupon-index'), makeEvent({
+        id: `CouponIndexed-${coupon.code}`, type: 'CouponIndexed', occurredAt: input.now(),
+        idempotencyKey: `${tenantId}-CouponIndexed-${coupon.code}`, source: 'api/lp-workforce', payload: { code: coupon.code },
       }));
     },
     coupon: async (tenantId, code) => {
@@ -11318,8 +11517,27 @@ export function partnerAdapter(input: {
   readonly now: () => string;
 }): PartnerDeps {
   const streamFor = (credentialId: string): string => streamName(STREAM.platform, 'partner', credentialId);
+  // W3 (M36-FR-04): one register stream beside the per-record ones, so the office page can LIST them. Each write lands on
+  // both (the same fact, the same idempotency); the per-record stream stays the authority the access-check reads.
+  const registerStream = streamName(STREAM.platform, 'partner-register');
+  type RegisterEntry = { readonly entry: 'credential'; readonly record: PartnerCredential } | { readonly entry: 'certification'; readonly record: Certification } | { readonly entry: 'sandbox'; readonly record: SandboxTenant };
+  const indexed = async (tenantId: string, key: string, entry: RegisterEntry): Promise<void> => {
+    await input.store.append(tenantId, registerStream, makeEvent({
+      id: `partner-register-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`, type: 'PartnerRegisterEntry', occurredAt: input.now(),
+      idempotencyKey: `partner-register-${tenantId}-${key}`, source: 'api/platform', payload: entry as unknown as Record<string, unknown>,
+    }));
+  };
   return {
     now: input.now,
+    register: async (tenantId) => {
+      const credentials = new Map<string, PartnerCredential>(); const certifications = new Map<string, Certification>(); const sandboxes = new Map<string, SandboxTenant>();
+      for (const e of await allOf<RegisterEntry>(input.store, tenantId, registerStream, 'PartnerRegisterEntry')) {
+        if (e.entry === 'credential') credentials.set(e.record.credentialId, e.record);
+        else if (e.entry === 'certification') certifications.set(`${e.record.partnerId}\u001f${e.record.connectorId}`, e.record);
+        else sandboxes.set(e.record.tenantId, e.record);
+      }
+      return { credentials: [...credentials.values()], certifications: [...certifications.values()], sandboxes: [...sandboxes.values()] };
+    },
     credential: async (tenantId, credentialId) =>
       latest<PartnerCredential>(input.store, tenantId, streamFor(credentialId), 'PartnerCredentialSet'),
     recordCredential: async (tenantId, credential, key) => {
@@ -11331,6 +11549,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: credential,
       }));
+      await indexed(tenantId, `cred-${credential.credentialId}-${key}`, { entry: 'credential', record: credential });
     },
     // A connector's certification, latest-wins on its own per-partner+connector sub-stream (a re-cert is a
     // new version; the history stays, hard rule #6). Keyed on the certification's tested versions + date so
@@ -11347,6 +11566,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: certification,
       }));
+      await indexed(tenantId, `cert-${certification.partnerId}-${certification.connectorId}-${key}`, { entry: 'certification', record: certification });
     },
     // A registered sandbox tenant, latest-wins on its own id (a re-register with a new expiry is a new
     // version; the history stays, hard rule #6). A sandbox holds synthetic data only.
@@ -11362,6 +11582,7 @@ export function partnerAdapter(input: {
         source: 'api/platform',
         payload: sandbox,
       }));
+      await indexed(tenantId, `sandbox-${sandbox.tenantId}-${key}`, { entry: 'sandbox', record: sandbox });
     },
   };
 }
@@ -11980,6 +12201,22 @@ export function reportingAdapter(input: {
   };
 }
 
+/**
+ * MG-06 · QG-07: the control totals the migration register holds — the first record of each total, with the first signature
+ * applied over it (append-only underneath). Shared by the migration routes and the QG-07 gate reading (gates-adapters.ts).
+ */
+export async function migrationControlTotalsOn(store: EventStore, tenantId: string): Promise<readonly ControlTotal[]> {
+  const recorded = await allOf<ControlTotal>(store, tenantId, STREAM.migration, 'MigrationControlTotalRecorded');
+  const signatures = await allOf<{ readonly totalId: string; readonly signature: TotalSignature }>(store, tenantId, STREAM.migration, 'MigrationTotalSigned');
+  const byId = new Map<string, ControlTotal>();
+  for (const t of recorded) if (!byId.has(t.totalId)) byId.set(t.totalId, t);
+  for (const sg of signatures) {
+    const t = byId.get(sg.totalId);
+    if (t !== undefined && t.signature === undefined) byId.set(sg.totalId, { ...t, signature: sg.signature });
+  }
+  return [...byId.values()];
+}
+
 export function migrationAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -12315,17 +12552,7 @@ export function migrationAdapter(input: {
         idempotencyKey: `mig-exception-resolved-${tenantId}-${exceptionId}`, source: 'api/migration', payload: { exceptionId, resolution },
       }));
     },
-    controlTotals: async (tenantId) => {
-      const recorded = await allOf<ControlTotal>(input.store, tenantId, STREAM.migration, 'MigrationControlTotalRecorded');
-      const signatures = await allOf<{ readonly totalId: string; readonly signature: TotalSignature }>(input.store, tenantId, STREAM.migration, 'MigrationTotalSigned');
-      const byId = new Map<string, ControlTotal>();
-      for (const t of recorded) if (!byId.has(t.totalId)) byId.set(t.totalId, t);
-      for (const sg of signatures) {
-        const t = byId.get(sg.totalId);
-        if (t !== undefined && t.signature === undefined) byId.set(sg.totalId, { ...t, signature: sg.signature });
-      }
-      return [...byId.values()];
-    },
+    controlTotals: (tenantId) => migrationControlTotalsOn(input.store, tenantId),
     recordControlTotal: async (tenantId, total) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         id: `mig-total-${total.totalId}`, type: 'MigrationControlTotalRecorded', occurredAt: input.now(),
@@ -12379,6 +12606,8 @@ export function dayBookAdapter(input: {
     appendJournal: fin.appendJournal,
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    // Round 4d: every version ever defined (append-only), for the posting-map setup screen's history.
+    postingMapVersions: async (tenantId) => (await input.store.readStream(tenantId, STREAM.finance, { type: 'PostingMapDefined' })).map((e) => payloadOf<StoredPostingMap>(e)),
     definePostingMap: async (tenantId, map) => {
       await input.store.append(tenantId, STREAM.finance, makeEvent({
         id: `posting-map-${map.version}`,
@@ -12994,6 +13223,9 @@ export function campaignSendAdapter(input: { readonly store: EventStore; readonl
     queue: q.queue,
     enqueue: q.record,
     suppressions: q.suppressions!, // OB-288 P5 · M31-FR-04
+    // Round 4d (M21-FR-02): the shop's own bills by customer (till and online, net of returns) — the order facts the segments
+    // read, brought up to date first — so a campaign's attribution is worked out, never typed.
+    orderFacts: async (tenantId) => { await customer360Adapter(input).catchUp(tenantId); return segmentDataAdapter(input).orderFacts(tenantId); },
     frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
     recordFrequencyPolicy: async (tenantId, p) => {
       await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({
@@ -14521,6 +14753,14 @@ export async function outsideLoginOf(store: EventStore, tenantId: string, userId
   return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))?.role;
 }
 
+/**
+ * OB-676 (M27-FR-02): the concessionaire a login is bound to NOW — its approved, unrevoked concessionaire invite, read from
+ * head office's own records (never the request). undefined: bound to nobody (never approved, rejected or revoked).
+ */
+export async function concessionaireBoundTo(store: EventStore, tenantId: string, userId: string): Promise<string | undefined> {
+  return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && r.role === 'concessionaire' && r.state === 'approved')?.partyId;
+}
+
 /** Round 14 (verifier G6): the per-login write guard an outside-login invite and approval claim the login under. */
 const outsideLoginGuard = (userId: string): string => `outside-login:${userId}`;
 
@@ -14615,6 +14855,8 @@ export function outsidePartyLoginAdapter(input: {
     partyExists: async (tenantId, role, partyId) => {
       if (role === 'b2b_customer') return (await b2bCreditAdapter(input).account(tenantId, partyId)) !== undefined;
       if (role === 'supplier') return (await supplierPortalAdapter(input).partner(tenantId, partyId)) !== undefined;
+      // OB-676: a concessionaire is on record when a counter's contract names it (the contract index, written with each contract).
+      if (role === 'concessionaire') return (await allOf<{ concessionaireId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed')).some((x) => x.concessionaireId === partyId);
       // A customer record is what the shop holds about them: a purchase, a return or a loyalty membership (customer 360).
       const c = customer360Adapter(input);
       await c.catchUp(tenantId);
@@ -14641,6 +14883,8 @@ export function outsidePartyLoginAdapter(input: {
         }));
       }
       // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
+      // OB-676: a concessionaire's login is bound by its APPROVED invite itself — the portal reads the login's current party
+      // from the approved, unrevoked invite (`concessionaireBoundTo`), so a revocation unbinds it in the same act.
     },
   };
 }

@@ -199,6 +199,29 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
       },
     },
     {
+      // Round 4d (Screen D · the facilities set-up page): every schedule set for the caller's branches (narrowed to
+      // ?branchId= when asked), with its tasks raised so far and the last due date — so a manager sees what is set and
+      // when it was last raised. A read; it never raises a task.
+      api: 'API-11', method: 'GET', path: '/v1/facilities/schedules',
+      permission: 'facilities.overdue.read',
+      handler: async (ctx) => {
+        const asked = ctx.query['branchId'];
+        const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
+        const schedules = (await deps.schedules(ctx.tenantId)).filter((s) => scope === 'all' || scope.includes(s.branchId));
+        const tasks = await deps.tasks(ctx.tenantId);
+        return {
+          status: 200,
+          body: {
+            schedules: schedules.map((s) => {
+              const mine = tasks.filter((t) => t.scheduleId === s.scheduleId);
+              return { ...s, tasksRaised: mine.length, lastDueOn: mine.map((t) => t.dueOn).sort().at(-1) ?? null, open: mine.filter((t) => !assessCompletion({ schedule: s, task: t }).accepted).length };
+            }).sort((a, b) => a.title.localeCompare(b.title)),
+            asAt: deps.now(),
+          },
+        };
+      },
+    },
+    {
       // Raise a safety incident — injury, near miss, fire, equipment failure, food safety, security.
       api: 'API-11', method: 'POST', path: '/v1/facilities/incidents/:incidentId',
       permission: 'facilities.incident.record', idempotent: true,

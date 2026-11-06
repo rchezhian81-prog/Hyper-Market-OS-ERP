@@ -100,9 +100,10 @@
       }
       th:first-child { border-top-left-radius: var(--radius-lg); }
       th:last-child { border-top-right-radius: var(--radius-lg); }
+      /* UI-2: the bill is read at arm's length — every line at 20px, the amount bold. */
       td {
         padding: var(--space-3) var(--space-4); border-top: var(--hairline) solid var(--line-soft);
-        font-size: var(--fs-md); vertical-align: top; font-variant-numeric: var(--numbers);
+        font-size: var(--fs-lg); vertical-align: top; font-variant-numeric: var(--numbers);
       }
       tbody tr:first-child td { border-top: 0; }
       td.qty, th.qty, td.amount, th.amount { text-align: right; }
@@ -138,10 +139,20 @@
       .empty .sre-icon { width: 28px; height: 28px; }
       .empty[data-held] { color: var(--on-warn-surface); background: var(--warn-surface); border-radius: var(--radius-lg); font-weight: 600; }
 
+      /* ── The scan line (UI-2 · design system §4.3) ─────────────────────────
+         Under the strip and over the bill: the till says it is ready, shows the digits as a scanner or a keyboard types
+         them, names the last item it took, and offers "Type a barcode" for a label that will not scan. */
+      .scan-line { margin: var(--space-3) var(--space-4) 0; }
+      .scan-line .head-btn { font-size: var(--fs-md); }
+
       /* ── The total and the actions ───────────────────────────────────────
          The running total is the largest element on the screen. */
       footer { background: var(--panel); border-top: var(--hairline) solid var(--line); padding: var(--space-3) var(--space-4) var(--space-4); }
       .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+      /* UI-2: the total's name, and under it how many lines the bill holds — counted from the bill on screen. */
+      .total-words { display: grid; gap: 2px; min-width: 0; }
+      .bill-count { color: var(--ink-2); font-size: var(--fs-base); font-variant-numeric: var(--numbers); }
+      .bill-count:empty { display: none; }
       .total-label { color: var(--ink-2); font-size: var(--fs-lg); font-weight: 600; }
       .total { font-size: clamp(48px, 5.4vw, 76px); line-height: 1.05; font-weight: 700; letter-spacing: var(--tracking-tight); font-variant-numeric: var(--numbers); white-space: nowrap; }
       /* One row: the line's actions (Qty, Void), the basket's (Hold, More), then Tender — wide, green, last. */
@@ -187,7 +198,7 @@
       .entry-text:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
       .entry-text[hidden] { display: none; }
       .hint { color: var(--ink-2); font-size: var(--fs-md); font-weight: 600; min-height: 22px; }
-      /* OB-626: the consequence block — what will happen (the figure, big), what it means, in whose name. No motion. */
+      /* OB-691: the consequence block — what will happen (the figure, big), what it means, in whose name. No motion. */
       .consequence { display: grid; gap: 8px; padding: 12px 16px; background: var(--panel-2); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); }
       .consequence[hidden] { display: none; }
       .consequence p { margin: 0; line-height: 1.35; }
@@ -351,6 +362,16 @@
     <p class="stale" id="mirror-pilot" hidden role="status"></p>
     <!-- OB-271: real trading — the till's bill is the legal tax invoice, printed on paper; said whenever it is on (never in the mirror pilot). -->
     <p class="stale" id="real-trading" hidden role="status"></p>
+    <!-- UI-2: the scan line — ready, the digits so far, the last item taken; and the keypad for a code that will not scan. -->
+    <div class="sre-scan-ready scan-line" id="scan-ready" data-state="ready">
+      <span id="scan-mark" aria-hidden="true"></span>
+      <div class="sre-scan-words">
+        <span class="sre-scan-say" id="scan-say">Ready to scan</span>
+        <span class="sre-scan-code" id="scan-code"></span>
+        <span class="sre-scan-last" id="scan-last" role="status"></span>
+      </div>
+      <button class="head-btn" id="key-code" type="button">Type a barcode</button>
+    </div>
     <main>
       <div class="bill">
         <table id="bill-table">
@@ -370,8 +391,12 @@
 
     <footer>
       <div class="total-row">
-        <span class="total-label" id="total-label">Total to pay</span>
+        <div class="total-words">
+          <span class="total-label" id="total-label">Total to pay</span>
+          <span class="bill-count" id="bill-count"></span>
+        </div>
         <span class="total" id="total">₹0.00</span>
+        <span class="coupon-on-bill" id="coupon-on-bill" hidden></span>
       </div>
       <div class="actions">
         <button id="qty" type="button">Qty</button>
@@ -399,7 +424,7 @@
         <div class="hint" id="entry-hint"></div>
         <!-- U4: the matches under the find box — name, then code · price; a row rings the item as a scan would. -->
         <div class="finds" id="finds" hidden></div>
-        <!-- OB-626 (U1): a money, price or stock action says what will happen, in whose name, before it is sent — then
+        <!-- OB-691 (U1): a money, price or stock action says what will happen, in whose name, before it is sent — then
              the cashier confirms with the verb, or goes back. Nothing is sent on Go back, Escape or a closed sheet. -->
         <div class="consequence" id="consequence" hidden>
           <p class="consequence-what" id="consequence-what"></p>

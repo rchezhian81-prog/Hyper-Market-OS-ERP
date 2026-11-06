@@ -154,6 +154,16 @@ const WORDS = {
     // The bill as it prints (B13 · M31-FR-02): what the paper says, shown on the screen.
     receiptPreview: 'The bill', receiptNotMade: 'The sale is saved, but the bill could not be made',
     noCatalogue: 'This lane has no price list loaded, so it cannot scan. Tell the manager.',
+    // UI-2 (design system §4.3): the scan line over the bill, the keypad for a label that will not scan, the bill's line
+    // count, and a barcode the price list does not hold — what happened, that nothing was added, and what to do next.
+    scanReady: 'Ready to scan — scan the item, or type its barcode and press Enter',
+    scanTyping: 'Typed so far — press Enter to add it, Esc to clear',
+    lastAdded: 'Last added: {item} · {qty} · {amount}',
+    keyCode: 'Type a barcode', keyCodeTitle: 'Type the number under the barcode',
+    keyCodeHint: 'Then press OK. The item is added exactly as a scan would add it.',
+    billLines: '{n} line(s) on the bill',
+    unknownTitle: 'Not in the price list',
+    unknownMsg: 'Barcode {code} is not in this shop\'s price list. Nothing was added to the bill.\nScan it again, or type the number under the barcode. If it is still not found, put the item aside and call the manager.',
     hold: 'Hold', recall: 'Recall', held: 'Basket held',
     howPaying: 'How is the customer paying?', cash: 'Cash', card: 'Card', upi: 'UPI',
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
@@ -182,7 +192,7 @@ const WORDS = {
     // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
     takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
     cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
-    // OB-626 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
+    // OB-691 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
     goBack: 'Go back', confirmFloatTitle: 'Record the float?', confirmSafeTitle: 'Record cash to the safe?',
     confirmFloatWhat: '{amount} will be recorded as float put into this drawer.', confirmSafeWhat: '{amount} will be recorded as moved from this drawer to the safe.',
     confirmCashDetail: 'The store computer records it before anything else happens; the cash office counts this shift against it. A wrong figure is corrected only by a second movement, never by changing this one.',
@@ -219,6 +229,26 @@ const WORDS = {
     refundChangeAmount: 'Change the amount',
     refundHow: 'How is the refund given?',
     storeCredit: 'Store credit',
+    // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: coupons and gift cards at the till.
+    coupon: 'Coupon',
+    couponAsk: 'Type or scan the coupon code',
+    couponHint: 'The store computer checks it — it works with the internet down',
+    couponOn: 'Coupon {code}: {off} off this bill.',
+    couponStale: 'The store computer\'s coupon list is old, so a use on another till may not be counted yet. Head office will check it.',
+    couponRemove: 'Take coupon {code} off',
+    couponRemoved: 'The coupon is off this bill.',
+    couponLine: 'Coupon {code}: −{off}',
+    giftCard: 'Gift card',
+    giftCardAsk: 'Type or scan the gift card code',
+    giftCardHint: 'The code printed on the card',
+    giftCardHolds: 'Gift card ••••{last4} holds {balance}. This till may take up to {may} now.',
+    giftCardOffline: 'Head office cannot be reached: at most {cap} from one card on this till until the link is back ({left} left on this card). Take the rest another way.',
+    giftCardExpired: 'Gift card ••••{last4} has expired. Take another payment.',
+    giftCardEmpty: 'Gift card ••••{last4} has nothing this till may take now. Take another payment.',
+    sellGiftCard: 'Sell a gift card',
+    sellGiftCardValue: 'Value of the gift card (₹)',
+    sellGiftCardHow: 'How is the customer paying for the card?',
+    sellGiftCardDone: 'Gift card sold',
     refundCustomerId: 'Store credit: key the loyalty member\'s mobile number',
     refundCustomerHint: 'Store credit is money on the member\'s account — it goes to the mobile number they joined with',
     refundNeedCustomer: 'Store credit must go to a loyalty member. Key their mobile number — or choose a different refund method.',
@@ -406,6 +436,14 @@ const WORDS = {
     unsentNotKnownMsg: 'எத்தனை விற்பனைகள் அனுப்பக் காத்திருக்கின்றன என்று கடைப் பெட்டி சொல்லவில்லை, எனவே இந்த டில்லுக்குத் தெரியாது. பெட்டி பதிலளிக்கும் வரை 0 அல்ல — "தெரியவில்லை" என்றே காட்டும்.',
     receiptPreview: 'பில்', receiptNotMade: 'விற்பனை சேமிக்கப்பட்டது, ஆனால் பில்லை உருவாக்க முடியவில்லை',
     noCatalogue: 'இந்த லேனில் விலைப் பட்டியல் இல்லை. மேலாளரிடம் சொல்லவும்.',
+    scanReady: 'ஸ்கேன் செய்யத் தயார் — பொருளை ஸ்கேன் செய்யவும், அல்லது அதன் பார்கோடை உள்ளிட்டு Enter அழுத்தவும்',
+    scanTyping: 'இதுவரை உள்ளிட்டது — சேர்க்க Enter, அழிக்க Esc அழுத்தவும்',
+    lastAdded: 'கடைசியாகச் சேர்த்தது: {item} · {qty} · {amount}',
+    keyCode: 'பார்கோடை உள்ளிடு', keyCodeTitle: 'பார்கோடின் கீழ் உள்ள எண்ணை உள்ளிடவும்',
+    keyCodeHint: 'பிறகு சரி அழுத்தவும். ஸ்கேன் செய்தது போலவே பொருள் சேர்க்கப்படும்.',
+    billLines: 'பில்லில் {n} வரி(கள்)',
+    unknownTitle: 'விலைப் பட்டியலில் இல்லை',
+    unknownMsg: 'பார்கோடு {code} இந்தக் கடையின் விலைப் பட்டியலில் இல்லை. பில்லில் எதுவும் சேர்க்கப்படவில்லை.\nமீண்டும் ஸ்கேன் செய்யவும், அல்லது பார்கோடின் கீழ் உள்ள எண்ணை உள்ளிடவும். அப்போதும் கிடைக்கவில்லை என்றால், பொருளைத் தனியாக வைத்து மேலாளரை அழைக்கவும்.',
     hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
     howPaying: 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?', cash: 'ரொக்கம்', card: 'கார்டு', upi: 'UPI',
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
@@ -468,6 +506,26 @@ const WORDS = {
     refundChangeAmount: 'தொகையை மாற்று',
     refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
     storeCredit: 'கடை வரவு',
+    // W3 · OB-673 · OB-677: கூப்பன்கள் மற்றும் பரிசு அட்டைகள்.
+    coupon: 'கூப்பன்',
+    couponAsk: 'கூப்பன் குறியீட்டைத் தட்டச்சு செய்யுங்கள் அல்லது ஸ்கேன் செய்யுங்கள்',
+    couponHint: 'கடைக் கணினி சரிபார்க்கிறது — இணையம் இல்லாவிட்டாலும் வேலை செய்யும்',
+    couponOn: 'கூப்பன் {code}: இந்த பில்லில் {off} தள்ளுபடி.',
+    couponStale: 'கடைக் கணினியின் கூப்பன் பட்டியல் பழையது; வேறு கவுண்டரில் பயன்படுத்தியது இன்னும் கணக்கில் வராமல் இருக்கலாம். தலைமை அலுவலகம் சரிபார்க்கும்.',
+    couponRemove: 'கூப்பன் {code}-ஐ நீக்கு',
+    couponRemoved: 'கூப்பன் இந்த பில்லில் இருந்து நீக்கப்பட்டது.',
+    couponLine: 'கூப்பன் {code}: −{off}',
+    giftCard: 'பரிசு அட்டை',
+    giftCardAsk: 'பரிசு அட்டைக் குறியீட்டைத் தட்டச்சு செய்யுங்கள் அல்லது ஸ்கேன் செய்யுங்கள்',
+    giftCardHint: 'அட்டையில் அச்சிடப்பட்ட குறியீடு',
+    giftCardHolds: 'பரிசு அட்டை ••••{last4}-ல் {balance} உள்ளது. இந்த கவுண்டர் இப்போது {may} வரை எடுக்கலாம்.',
+    giftCardOffline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை: இணைப்பு திரும்பும் வரை ஒரு அட்டையிலிருந்து இந்த கவுண்டரில் அதிகபட்சம் {cap} ({left} மீதம்). மீதியை வேறு வழியில் பெறுங்கள்.',
+    giftCardExpired: 'பரிசு அட்டை ••••{last4} காலாவதியானது. வேறு வழியில் பணம் பெறுங்கள்.',
+    giftCardEmpty: 'பரிசு அட்டை ••••{last4}-லிருந்து இப்போது எதுவும் எடுக்க முடியாது. வேறு வழியில் பணம் பெறுங்கள்.',
+    sellGiftCard: 'பரிசு அட்டை விற்பனை',
+    sellGiftCardValue: 'பரிசு அட்டையின் மதிப்பு (₹)',
+    sellGiftCardHow: 'வாடிக்கையாளர் அட்டைக்கு எப்படி பணம் செலுத்துகிறார்?',
+    sellGiftCardDone: 'பரிசு அட்டை விற்கப்பட்டது',
     refundCustomerId: 'கடை வரவு: லாயல்டி உறுப்பினரின் கைபேசி எண்ணை உள்ளிடவும்',
     refundCustomerHint: 'கடை வரவு என்பது வாடிக்கையாளர் கணக்கில் உள்ள பணம் — அது ஒரு பெயரிடப்பட்ட வாடிக்கையாளருக்கே செல்ல வேண்டும்',
     refundNeedCustomer: 'கடை வரவு ஒரு லாயல்டி உறுப்பினருக்கே செல்ல வேண்டும். அவர்களின் கைபேசி எண்ணை உள்ளிடவும் — அல்லது வேறு முறையைத் தேர்ந்தெடுக்கவும்.',
@@ -761,6 +819,10 @@ function refundTenders() {
   ];
 }
 let selectedLineId = null;
+// UI-2: what the scan line shows — the characters a scanner (or a keyboard) has typed since the last Enter, and the last
+// line a scan added. Declared here, above the first paint, because the language toggle repaints the scan line too.
+let scanBuffer = '';
+let lastAddedLineId = null;
 
 // ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
 //
@@ -783,11 +845,14 @@ function rememberOperator(id) {
 function paintOperator() {
   const lane = session.lane ? session.lane() : { laneId: null };
   const who = session.operator ? session.operator() : undefined;
+  // OB-638: the person by NAME with the code beside it ("Ravi (u-ravi)"), as the store computer named them; the code alone
+  // when no name is known. `data-operator` below keeps the code — it is what every record carries.
+  const shown = who && typeof session.operatorShown === 'function' ? (session.operatorShown() ?? who) : who;
   const laneWords = lane.laneId ? `${t('lane')} ${lane.laneId}` : t('noLane');
   // The heading reads "Lane 1 · Signed in: …" as one line of words; on screen the lane sits over the cashier, and a
   // missing lane or nobody signed in is said in amber words (the words are the signal, the colour only helps).
   setText('lane-name', laneWords);
-  setText('cashier', who ? `${t('signedInAs')}: ${who}` : t('notSignedIn'));
+  setText('cashier', who ? `${t('signedInAs')}: ${shown}` : t('notSignedIn'));
   el('lane-name').toggleAttribute('data-missing', !lane.laneId);
   el('cashier').toggleAttribute('data-missing', !who);
   el('lane').setAttribute('data-operator', who || '');
@@ -1020,6 +1085,9 @@ let entryMasked = false;
 /** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
 let entryIsCode = false;
 const CODE_DIGITS = 8;
+// UI-2: a barcode keyed by hand — the longest a retail barcode carries (GTIN-14). Set for that one question only.
+const BARCODE_DIGITS = 14;
+let entryMaxDigits = CODE_DIGITS;
 /** A BILL NUMBER keyed by hand (this till's bills carry letters: ZZBFPJ75-000001): the keypad gains a letters pad, every
  *  character counts, and it is as long as a bill number can be. */
 let entryHasLetters = false;
@@ -1037,7 +1105,7 @@ function typeIntoEntry(key, literal = false) {
     : entryMasked
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
     : entryIsCode
-      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : CODE_DIGITS) ? current + key : current))
+      ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : entryMaxDigits) ? current + key : current))
     : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
   entryValue = next;
   paintEntry();
@@ -1058,10 +1126,10 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  // OB-626 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
+  // OB-691 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
   el('consequence').hidden = mode !== 'confirm';
   if (mode === 'confirm' && consequence !== null) {
     el('consequence-what').textContent = consequence.what;
@@ -1072,7 +1140,8 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
   // switch key flips between letters and digits. Both pads keep the till's full-size keys.
   entryHasLetters = mode === 'number' && letters === true;
-  entryIsCode = code === true || entryHasLetters;
+  entryIsCode = code === true || barcode === true || entryHasLetters;
+  entryMaxDigits = barcode === true ? BARCODE_DIGITS : CODE_DIGITS;
   entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
   paintEntry();
@@ -1128,13 +1197,13 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
 
   el('sheet').hidden = false;
   if (mode === 'text' || mode === 'find') el('entry-text').focus();
-  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-626).
+  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-691).
   if (mode === 'confirm') el('sheet-cancel').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
 }
 
 /**
- * OB-626 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
+ * OB-691 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
  * Says what will happen (with the figure), what it means and in whose name; the only ways on are the verb or Go back.
  * Resolves `true` only when the verb was tapped. Nothing here sends anything — the caller sends only on `true`.
  */
@@ -1195,7 +1264,7 @@ el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
   closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
-// OB-626: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
+// OB-691: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
 // by Enter on the verb itself once a person has moved the focus to it on purpose.)
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && sheetMode === 'confirm' && !el('sheet').hidden) { event.preventDefault(); event.stopPropagation(); closeSheet(null); }
@@ -1415,6 +1484,9 @@ function render() {
     return row;
   }));
   el('bill-table').hidden = lines.length === 0;
+  // UI-2: how many lines the bill holds, counted from the bill on screen (a voided line is evidence, not a line to pay).
+  const live = lines.filter((l) => !l.voided).length;
+  setText('bill-count', live === 0 ? '' : t('billLines').replace('{n}', String(live)));
 
   // On the box (PF-05): Hold while there are items, Recall when the till is empty. The stand-in keeps its flag.
   const suspended = session.holdAtTill ? (lines.length === 0 && heldCount > 0) : (session.state && session.state() === 'suspended');
@@ -1427,6 +1499,13 @@ function render() {
   el('empty').toggleAttribute('data-held', Boolean(suspended));
   setLeadIcon(el('empty'), suspended ? 'pause-circle' : 'scan-barcode', 28);
   el('total').textContent = inr(session.payableMinor());
+  // W3 · OB-673: the coupon on this bill, said beside the total (what it takes off is already in the total).
+  const couponNow = typeof session.couponOnBill === 'function' ? session.couponOnBill() : null;
+  const couponRow = document.getElementById('coupon-on-bill');
+  if (couponRow) {
+    couponRow.hidden = couponNow === null || !couponNow.applied;
+    couponRow.textContent = couponNow && couponNow.applied ? t('couponLine').replace('{code}', couponNow.code).replace('{off}', inr(couponNow.offMinor)) : '';
+  }
   // OB-299: a bill marked for delivery SAYS so beside its total — words and the truck icon.
   const forDelivery = typeof session.isForDelivery === 'function' && session.isForDelivery();
   const totalLabel = el('total-label');
@@ -1440,6 +1519,7 @@ function render() {
 
   paintOperator();
   paintBadge();
+  paintScan();
   publishToDisplay();
 }
 
@@ -1777,9 +1857,12 @@ el('tender').addEventListener('click', async () => {
     { value: 'upi', label: `${t('upi')} — ${inr(payable)}`, icon: 'monitor-smartphone' },
     // A split across tenders, and a loyalty member's points and store credit (M12-FR-03 · PF-09 step 3).
     ...(session.tenderSplit ? [{ value: 'split', label: t('split'), icon: 'arrow-left-right' }] : []),
+    // W3 · OB-677: a gift card the shop sold — the store computer says what this till may take from it now.
+    ...(session.tenderSplit && typeof session.giftCardBalance === 'function' ? [{ value: 'gift_card', label: t('giftCard'), icon: 'wallet' }] : []),
   ]);
   if (kind === null) return;
   if (kind === 'split') return splitPayment(payable);
+  if (kind === 'gift_card') return splitPayment(payable, 'gift_card');
   if (kind !== 'cash') return takeCardOrUpi(kind, payable);
 
   const changeFor = (rupees) => Math.round(rupees * 100) - payable;
@@ -2181,7 +2264,30 @@ function tierWords(tier) {
   return t('tierIs').replace('{name}', tier.name).replace('{times}', String(tier.multiplierBps / 10000));
 }
 
-async function splitPayment(payable) {
+/**
+ * W3 · OB-677: one gift-card part of a payment — the code, what the store computer says this till may take from it now, and
+ * the amount. Returns the part, or null when nothing can be taken (said in words; the cashier takes another payment).
+ */
+async function giftCardPart(remaining) {
+  const code = await ask({ title: t('giftCardAsk'), mode: 'text', hint: t('giftCardHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return null;
+  const card = await session.giftCardBalance(String(code));
+  if (!card.ok) { tell(t('giftCard'), card.laneMessage, STOP); return null; }
+  if (card.expired) { tell(t('giftCard'), t('giftCardExpired').replace('{last4}', card.last4), STOP); return null; }
+  const max = Math.min(remaining, card.mayTakeMinor);
+  const said = t('giftCardHolds').replace('{last4}', card.last4).replace('{balance}', inr(card.balanceMinor)).replace('{may}', inr(card.mayTakeMinor))
+    + (card.linkUp ? '' : ` ${t('giftCardOffline').replace('{cap}', inr(card.offlineCapMinor)).replace('{left}', inr(card.offlineRemainingMinor))}`);
+  if (max <= 0) { tell(t('giftCard'), `${said} ${t('giftCardEmpty').replace('{last4}', card.last4)}`, STOP); return null; }
+  const typed = await ask({ title: `${t('giftCard')} ••••${card.last4} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: said, initial: String(max / 100),
+    quick: [{ label: `${t('upTo')} ${inr(max)}`, value: String(max / 100) }] });
+  if (typed === null) return null;
+  const amountMinor = Math.round(Number(typed) * 100);
+  if (!(amountMinor > 0)) return null;
+  if (amountMinor > max) { tell(t('giftCard'), `${t('upTo')} ${inr(max)}. ${said}`, STOP); return null; }
+  return { kind: 'gift_card', amountMinor, giftCardCode: String(code).replace(/\s+/g, '').toUpperCase() };
+}
+
+async function splitPayment(payable, first) {
   let wallet = null;
   if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
     wallet = await session.loyaltyWallet();
@@ -2192,7 +2298,7 @@ async function splitPayment(payable) {
         // OB-295: the member's tier multiplier from the box's copy — "not set" until the owner sets tiers.
         + ' ' + tierWords(wallet.tier), STOP);
     }
-  } else if (session.loyaltyWallet && !guestOnly()) {
+  } else if (session.loyaltyWallet && !guestOnly() && first !== 'gift_card') {
     tell(t('read'), t('splitNoMember'), STOP);
   }
   const parts = [];
@@ -2200,6 +2306,15 @@ async function splitPayment(payable) {
   let change = 0;
   let walletSpent = 0;
   while (remaining > 0) {
+    // W3 · OB-677: "Gift card" chosen at the first question starts here.
+    if (first === 'gift_card' && parts.length === 0) {
+      first = undefined;
+      const part = await giftCardPart(remaining);
+      if (part === null) return;
+      parts.push(part);
+      remaining -= part.amountMinor;
+      continue;
+    }
     const used = new Set(parts.map((p) => p.kind));
     const capLeft = wallet ? wallet.capRemainingMinor - walletSpent : 0;
     const pointsMax = wallet && wallet.pointValuePaise > 0
@@ -2211,8 +2326,16 @@ async function splitPayment(payable) {
       { value: 'upi', label: t('upi') },
       ...(pointsMax > 0 && !used.has('loyalty_points') ? [{ value: 'loyalty_points', label: `${t('points')} — ${t('upTo')} ${inr(pointsMax)}` }] : []),
       ...(creditMax > 0 && !used.has('store_credit') ? [{ value: 'store_credit', label: `${t('storeCredit')} — ${t('upTo')} ${inr(creditMax)}` }] : []),
+      ...(typeof session.giftCardBalance === 'function' ? [{ value: 'gift_card', label: t('giftCard') }] : []),
     ]);
     if (kind === null) return;
+    if (kind === 'gift_card') {
+      const part = await giftCardPart(remaining);
+      if (part === null) continue;
+      parts.push(part);
+      remaining -= part.amountMinor;
+      continue;
+    }
     const max = kind === 'loyalty_points' ? pointsMax : kind === 'store_credit' ? creditMax : remaining;
     const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(remaining)}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
       // One tap: the notes that cover what is left, or the most this part may be.
@@ -2293,6 +2416,11 @@ el('more').addEventListener('click', async () => {
     ...(typeof session.printBillCopy === 'function' ? [{ value: 'bill_copy', label: t('billCopyOption'), icon: 'receipt-text', group: 'groupBills' }] : []),
     // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
     ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption'), group: 'groupBills' }] : []),
+    // W3 · D06-FR-03 · OB-673: a coupon on this bill — checked by the store computer, so it works with the internet down.
+    ...(typeof session.couponAtTill === 'function' && session.basket().some((l) => !l.voided)
+      ? [session.couponOnBill() === null ? { value: 'coupon', label: t('coupon'), icon: 'receipt-text', group: 'groupBills' } : { value: 'coupon_remove', label: t('couponRemove').replace('{code}', session.couponOnBill().code), icon: 'x', group: 'groupBills' }] : []),
+    // W3 · D07-FR-04 · OB-677: sell a gift card — onto an empty till (it is its own record, never a goods bill).
+    ...(typeof session.sellGiftCard === 'function' && session.basket().length === 0 && !mirror() ? [{ value: 'sell_gift_card', label: t('sellGiftCard'), icon: 'wallet', group: 'groupBills' }] : []),
     // ── This line & delivery ──
     // Changing a price needs a selected line (PF-07 · M12-FR-04).
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange'), group: 'groupLine' }] : []),
@@ -2331,6 +2459,9 @@ el('more').addEventListener('click', async () => {
   if (what === 'deliver') return deliverThisBill();
   if (what === 'undeliver') { session.undeliverThisBill(t('deliveryRemovedReason')); render(); tell(t('deliveryTitle'), t('deliveryRemoved'), SUCCESS); return undefined; }
   if (what === 'price_change') return changeLinePrice();
+  if (what === 'coupon') return putCouponOnBill();
+  if (what === 'coupon_remove') { session.removeCouponAtTill(); render(); tell(t('coupon'), t('couponRemoved'), SUCCESS); return undefined; }
+  if (what === 'sell_gift_card') return sellGiftCardAtTill();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
 
@@ -2343,7 +2474,7 @@ async function findItem() {
   if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
   const code = await ask({ title: t('findTitle'), mode: 'find', hint: t('findHint') });
   if (code === null || code === '') return;
-  ringCode(String(code), null);
+  scanCode(String(code), null);
 }
 el('find').addEventListener('click', () => { void findItem(); });
 
@@ -2395,7 +2526,7 @@ async function changeLinePrice() {
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
-  // OB-626 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
+  // OB-691 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
   // knows — so the person who keys their PIN next approves a figure they have read, not a request they have not seen.
   const lineFrom = value.fromUnitMinor * (value.quantityMinor || 1);
   const pct = lineFrom > 0 ? Math.round((value.reductionMinor / lineFrom) * 100) : 0;
@@ -2422,6 +2553,42 @@ async function changeLinePrice() {
  * keypad; the number stays in this page's memory and goes to the store computer with the sale, which turns it into the
  * member code before anything is written. Only the last four digits are ever shown.
  */
+/** W3 · OB-673: a coupon on this bill — the store computer's copy says what it is; the till's engine judges the basket. */
+async function putCouponOnBill() {
+  const code = await ask({ title: t('couponAsk'), mode: 'text', hint: t('couponHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return;
+  const r = await session.couponAtTill(String(code));
+  if (!r.ok) { tell(t('coupon'), r.laneMessage, STOP); return; }
+  render();
+  tell(t('coupon'), `${t('couponOn').replace('{code}', r.code).replace('{off}', inr(r.offMinor))}${r.mayBeStale ? ` ${t('couponStale')}` : ''}`, SUCCESS);
+}
+
+/** W3 · OB-677: sell a gift card — the code, its value, and the payment; saved on the store computer, synced to head office. */
+async function sellGiftCardAtTill() {
+  const code = await ask({ title: t('giftCardAsk'), mode: 'text', hint: t('giftCardHint'), initial: '' });
+  if (code === null || String(code).trim() === '') return;
+  const value = await ask({ title: t('sellGiftCardValue'), mode: 'number', hint: t('sellGiftCardValue'), initial: '' });
+  if (value === null) return;
+  const valueMinor = Math.round(Number(value) * 100);
+  if (!(valueMinor > 0)) return;
+  const kind = await choose(`${t('sellGiftCardHow')} — ${inr(valueMinor)}`, [
+    { value: 'cash', label: t('cash'), icon: 'banknote' },
+    { value: 'card', label: t('card'), icon: 'wallet' },
+    { value: 'upi', label: t('upi'), icon: 'monitor-smartphone' },
+  ]);
+  if (kind === null) return;
+  const saleId = `GC-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+  let ref;
+  if (kind !== 'cash') {
+    ref = await cardAttempt(kind, valueMinor);
+    if (ref === null) return;
+  }
+  const out = await session.sellGiftCard({ saleId, code: String(code), valueMinor, kind, ...(ref ? { ref } : {}), ...(ref && machineRefs.get(ref) ? { machineRef: machineRefs.get(ref) } : {}), atIsoUtc: new Date().toISOString() });
+  if (!out.ok) { tell(t('notSavedTitle'), out.laneMessage, STOP); return; }
+  tell(t('sellGiftCardDone'), out.laneMessage, SUCCESS);
+  void refreshBadge();
+}
+
 async function nameLoyaltyMember() {
   const typed = await ask({ title: t('memberAsk'), mode: 'number', hint: t('memberHint'), initial: '' });
   if (typed === null || typed === '' || typed === '0') return;
@@ -2468,7 +2635,7 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
-  // OB-626 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
+  // OB-691 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
   const at = new Date().toISOString();
   const float = kind === 'float_issue';
   const confirmed = await confirmAction({
@@ -3091,9 +3258,11 @@ function paintWords() {
   setText('th-qty', t('qty'));
   setText('th-amount', t('amount'));
   setText('total-label', t('totalToPay'));
+  setLabel('key-code', t('keyCode'));
+  paintScan();
 }
 // Each control takes its mark from the one set once, here; afterwards only its words change.
-for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['find', 'search'], ['more', 'layout-grid'], ['tender', 'indian-rupee']]) setLabel(id, undefined, icon);
+for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['find', 'search'], ['more', 'layout-grid'], ['tender', 'indian-rupee'], ['key-code', 'barcode']]) setLabel(id, undefined, icon);
 paintWords();
 
 el('lang').addEventListener('click', () => {
@@ -3129,7 +3298,6 @@ el('unsent').addEventListener('click', () => {
 // D-20: a 2D scanner (DataMatrix, GS1 QR) types more than digits — the printed "(01)…(17)…(10)…" form, a web address,
 // or the raw code with group separators (sent as Ctrl+]). Every character is collected; at Enter a code shaped like a
 // GS1 code goes to the catalogue whole, and anything else keeps ONLY its digits — exactly what a 1D scan did before.
-let scanBuffer = '';
 // M12-FR-01: when the scan's first character arrived — the scan-to-line time runs from here to the line on the screen.
 let scanStartedAt = null;
 /** M12-FR-01: time one scan to the next painted frame (the line is on the screen), and hand it to the till. */
@@ -3206,13 +3374,40 @@ async function askPackDate(refusal, retry) {
   tell(t('packDateNotSoldTitle'), fill(t('packDateNotSold')), STOP);
 }
 /**
- * Ring a code onto the bill — the ONE path for a scanner's code and for a row picked on the find panel (U4), so every gate
- * (age, pack date, a recalled or banned item, a weighed item by a plain code — OB-570, a barred build) speaks the same way.
+ * UI-2: the scan line over the bill. It says the till is ready, shows what has been typed since the last Enter (a scanner
+ * types too fast to see; a person keying a code by hand sees every digit), and names the last item a scan added. Words
+ * only: it touches nothing the sale holds. Called on every key, so it changes the page only when the words differ.
  */
-function ringCode(code, startedAt) {
+function paintScan() {
+  const typing = scanBuffer !== '';
+  setText('scan-say', typing ? t('scanTyping') : t('scanReady'));
+  setText('scan-code', scanBuffer);
+  // Read off the bill as it is NOW, so a quantity changed since, or a line voided since, is said as it stands.
+  const line = lastAddedLineId === null ? null : session.basket().find((l) => l.lineId === lastAddedLineId && !l.voided) ?? null;
+  setText('scan-last', line === null ? '' : t('lastAdded').replace('{item}', line.description).replace('{qty}', line.qtyText ?? String(line.qty)).replace('{amount}', inr(line.amountMinor)));
+  const box = el('scan-ready');
+  const state = typing ? 'reading' : 'ready';
+  if (box.dataset.state !== state) box.dataset.state = state;
+}
+setLeadIcon(el('scan-mark'), 'scan-barcode', 30);
+
+/** The line a scan added or grew: one that was not on the bill before, or whose quantity changed; else the last line. */
+function lineAddedSince(before) {
+  const lines = session.basket();
+  return lines.find((l) => !l.voided && (!before.has(l.lineId) || before.get(l.lineId) !== l.qty)) ?? lines[lines.length - 1] ?? null;
+}
+
+/**
+ * One code into the sale — from the scanner's Enter, from the "Type a barcode" keypad (UI-2), or from a row picked on the
+ * Find panel (U4). Exactly the path a scan always took: the same session call, the same questions, the same refusals in
+ * the gate's own words (age, pack date, a recalled or banned item, a weighed item by a plain code — OB-570, a barred build).
+ */
+function scanCode(code, startedAt) {
   if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
+  const before = new Map(session.basket().map((l) => [l.lineId, l.qty]));
   try {
     session.scanBarcode(code);
+    lastAddedLineId = lineAddedSince(before)?.lineId ?? null;
     render();
     noteScanToLine(startedAt);
   } catch (e) {
@@ -3230,9 +3425,21 @@ function ringCode(code, startedAt) {
     if (e && e.name === 'ScaleLabelRefusedError') { tell(t('cannotSellTitle'), saidInLang(e), STOP); return; }
     // OB-501 (R7-A): this till's build may not start a new bill — said in the cashier's language.
     if (e && e.name === 'NewBillRefusedError') { tell(t('newBillRefusedTitle'), saidInLang(e), STOP); return; }
+    // UI-2: a code the price list does not hold — what happened, that nothing was added, and what to do next, in the
+    // cashier's language (the catalogue's own sentence is English only and says neither).
+    if (e && e.name === 'UnknownBarcodeError') { tell(t('unknownTitle'), t('unknownMsg').replace('{code}', code), STOP); return; }
     tell(t('read'), String(e && e.message ? e.message : e), STOP);
   }
 }
+
+/** UI-2: a label that will not scan — the digits under the barcode on the till's own keypad, then the scan's own path. */
+el('key-code').addEventListener('click', async () => {
+  el('key-code').blur(); // a scanner's Enter must never press this button again (see the keydown handler)
+  const typed = await ask({ title: t('keyCodeTitle'), mode: 'number', hint: t('keyCodeHint'), barcode: true });
+  const code = typed === null ? '' : String(typed).replace(/[^0-9]/g, '');
+  if (code === '') return;
+  scanCode(code, null);
+});
 
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
@@ -3243,22 +3450,26 @@ window.addEventListener('keydown', (event) => {
     const startedAt = scanStartedAt;
     scanStartedAt = null;
     const code = gs1Shaped(raw) ? raw : raw.replace(/[^0-9]/g, '');
-    if (code.length < 6) return; // a person pressing Enter, not a scanner
+    if (code.length < 6) { paintScan(); return; } // a person pressing Enter, not a scanner
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
     // language toggle, Void, Tender — would be pressed by the next scan. The Enter belongs to the scan, so it stops here.
     event.preventDefault();
-    ringCode(code, startedAt);
+    paintScan();
+    scanCode(code, startedAt);
     return;
   }
+  // UI-2: a person keying a code by hand can take back a digit, or clear what they typed, before Enter.
+  if (event.key === 'Escape' && scanBuffer !== '') { scanBuffer = ''; scanStartedAt = null; paintScan(); return; }
+  if (event.key === 'Backspace' && scanBuffer !== '' && !(event.target instanceof HTMLInputElement)) { scanBuffer = scanBuffer.slice(0, -1); paintScan(); return; }
   // A 2D scanner sends FNC1 as Ctrl+] (the group separator); every other printable character is kept as typed.
   if (event.ctrlKey && event.key === ']') { scanBuffer += GS; return; }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key.length === 1) {
     if (scanBuffer === '') scanStartedAt = event.timeStamp;
     scanBuffer += event.key;
+    paintScan();
   }
 });
-
 render();
 
 // ── The shell's own honesty about where this page came from ─────────────────

@@ -31,6 +31,7 @@ import { searchCatalogue, repeatOrder, type SavedList } from '../../../packages/
 import type { Slot, ServiceabilityPolicy } from '../../../packages/storefront/src/checkout';
 import type { ConsentState } from '../../../packages/customer/src/consent';
 import { PUBLISHED_RESPONSE_SLA_DAYS } from '../../../packages/customer/src/data-rights';
+import { swapsFromOrders, answerBody, answerKey, type MySwap } from './substitution-answers'; // OB-687
 import {
   newSession,
   setLine,
@@ -281,6 +282,18 @@ export interface Shop {
   raise(kind: (typeof RIGHTS_OFFERED)[number]['kind'], at: string): Promise<RaiseOutcome>;
   /** My requests as the shop last reported them. */
   myRequests(): readonly MyPrivacyRequest[];
+  /** W5 · C5 (DPDP s.14): the nominee the shop holds for me (read with my privacy position) — null when I named nobody. */
+  myNominee(): { readonly nomineeRef: string; readonly relationship: string } | null;
+  /** W5 · C5: name or change my nominee ON THE SHOP — by their reference and our relationship (no name or phone kept). */
+  setNominee(nomineeRef: string, relationship: string): Promise<PrivacyOutcome>;
+  /** W5 · C5: withdraw my nominee ON THE SHOP. */
+  withdrawNominee(): Promise<PrivacyOutcome>;
+  /**
+   * W5 · D02-FR-04 · OB-319: a search I finished that found nothing, told to the shop — the words only, never who searched,
+   * and never a phone number or an e-mail address (the shop refuses those). Signed out or offline, nothing is sent and the
+   * search works as before: this is the shop learning what it does not stock, never something the customer waits on.
+   */
+  recordSearchMiss(words: string): Promise<{ readonly sent: boolean }>;
   /**
    * Round 8 (D08-FR-02/05): my own favourites, lists, complaints and return requests, ON THE SHOP and read back — saved
    * only on the shop's 2xx; signed out, offline or refused, nothing changes and the answer says which (`refusal`).
@@ -369,6 +382,10 @@ export interface OnlineShop {
   myRatings(): Promise<MineOutcome<unknown>>;
   returns(): Promise<MineOutcome<unknown>>;
   returnPolicy(): Promise<MineOutcome<unknown>>;
+  /** OB-687 · FUL-14: every swap the shop put to me on my orders, as the shop holds it (the product, its price, why). */
+  swaps(): Promise<MineOutcome<readonly MySwap[]>>;
+  /** OB-687: my yes or no to one swap — sent once (one key per order line and answer); the shop's own words on a refusal. */
+  answerSwap(swap: MySwap, yes: boolean): Promise<MineOutcome<unknown>>;
 }
 
 /** Why a call about my own records did not happen — the view words each one, in English and Tamil. */
@@ -466,6 +483,10 @@ export function bootShop(
   let consent: ConsentState = data?.consent ?? { grants: [] };
   // FUL-06: my requests as the shop last reported them, and a request sent but not yet acknowledged (kept for retry).
   let requests: readonly MyPrivacyRequest[] = [];
+  // W5 · C5: my nominee as the shop last reported it.
+  let nominee: { readonly nomineeRef: string; readonly relationship: string } | null = null;
+  // W5 · D02-FR-04: the last no-result words told to the shop, so the same finished search is told once.
+  let lastMiss = '';
   let pendingRequest: { readonly kind: string; readonly requestId: string } | undefined;
   const newRequestId = nextId;
   let consentTaps = 0;
@@ -605,6 +626,32 @@ export function bootShop(
 
     myRequests: () => requests,
 
+    myNominee: () => nominee,
+    setNominee: async (nomineeRef, relationship) => {
+      const answer = await privacyCall({ method: 'POST', path: '/nominee', body: { nomineeRef: nomineeRef.trim(), relationship: relationship.trim() }, idempotencyKey: `nominee-${nomineeRef.trim()}-${relationship.trim()}-${nextId()}` });
+      if (!answer.ok) return answer;
+      const reread = await loadPrivacyFromTheShop();
+      const b = answer.body as { tellTheCustomer?: unknown };
+      const said = typeof b.tellTheCustomer === 'string' ? b.tellTheCustomer : 'Saved.';
+      return reread.ok ? { ok: true, tellTheCustomer: said } : { ok: false, refusal: reread.refusal, tellTheCustomer: `The shop took your choice but we could not read it back to show you. ${reread.tellTheCustomer}` };
+    },
+    withdrawNominee: async () => {
+      const answer = await privacyCall({ method: 'POST', path: '/nominee/withdrawal', body: {}, idempotencyKey: `nominee-withdrawal-${nextId()}` });
+      if (!answer.ok) return answer;
+      const reread = await loadPrivacyFromTheShop();
+      const b = answer.body as { tellTheCustomer?: unknown };
+      const said = typeof b.tellTheCustomer === 'string' ? b.tellTheCustomer : 'Saved.';
+      return reread.ok ? { ok: true, tellTheCustomer: said } : { ok: false, refusal: reread.refusal, tellTheCustomer: `The shop took your choice but we could not read it back to show you. ${reread.tellTheCustomer}` };
+    },
+    recordSearchMiss: async (words) => {
+      const w = words.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60);
+      // The phone's own check first (the shop refuses them too): a phone number or an e-mail address is never sent.
+      if (w === '' || w === lastMiss || /@/.test(w) || /\d{6,}/.test(w.replace(/[\s-]/g, ''))) return { sent: false };
+      const a = await commerceCall({ method: 'POST', path: 'catalogue/search-misses', body: { words: w }, idempotencyKey: `search-miss-${nextId()}` });
+      if (a.ok) lastMiss = w;
+      return { sent: a.ok };
+    },
+
     mine: {
       favourites: async () => {
         const a = await mineCall({ method: 'GET', path: 'favourites' });
@@ -693,6 +740,12 @@ export function bootShop(
       myRatings: async () => { const a = await mineCall({ method: 'GET', path: 'ratings' }); return a.ok ? { ok: true, value: a.body } : a; },
       returns: async () => { const a = await mineCall({ method: 'GET', path: 'online-returns' }); return a.ok ? { ok: true, value: a.body } : a; },
       returnPolicy: async () => { const a = await mineCall({ method: 'GET', path: 'return-policy' }); return a.ok ? { ok: true, value: a.body } : a; },
+      // OB-687: the swaps put to me, from my own orders; my answer through the shop's own route, once.
+      swaps: async () => { const a = await commerceCall({ method: 'GET', path: 'storefront/orders' }); return a.ok ? { ok: true, value: swapsFromOrders(a.body) } : a; },
+      answerSwap: async (swap, yes) => {
+        const a = await commerceCall({ method: 'POST', path: `storefront/orders/${encodeURIComponent(swap.orderId)}/substitutions/${encodeURIComponent(swap.lineId)}`, body: answerBody(swap, yes), idempotencyKey: answerKey(swap, yes) });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
     },
     // ── R4 Lane 2 (end) ──
 
@@ -866,7 +919,7 @@ export function bootShop(
   }
 
   /** One privacy call as the signed-in customer, read honestly: saved only on the shop's 2xx. */
-  async function privacyCall(call: { method: 'GET' | 'POST'; path: '' | '/consent' | `/requests/${string}`; body?: unknown; idempotencyKey?: string }):
+  async function privacyCall(call: { method: 'GET' | 'POST'; path: '' | '/consent' | `/requests/${string}` | '/nominee' | '/nominee/withdrawal'; body?: unknown; idempotencyKey?: string }):
     Promise<{ ok: true; body: unknown } | { ok: false; refusal: PrivacyRefusal; tellTheCustomer: string }> {
     if (token === undefined) return { ok: false, refusal: 'not_signed_in', tellTheCustomer: 'Please sign in first, so the shop knows these are your choices. Nothing was changed.' };
     if (transport?.privacy === undefined) return { ok: false, refusal: 'no_road_to_the_shop', tellTheCustomer: 'This app has no connection to the shop set up, so nothing was saved. Your earlier choices stand.' };
@@ -883,7 +936,9 @@ export function bootShop(
   async function loadPrivacyFromTheShop(): Promise<PrivacyOutcome> {
     const answer = await privacyCall({ method: 'GET', path: '' });
     if (!answer.ok) return answer;
-    const b = answer.body as { consent?: unknown; requests?: unknown };
+    const b = answer.body as { consent?: unknown; requests?: unknown; nominee?: unknown };
+    const n = b.nominee as { nomineeRef?: unknown; relationship?: unknown } | null | undefined;
+    nominee = n !== null && typeof n === 'object' && typeof n.nomineeRef === 'string' ? { nomineeRef: n.nomineeRef, relationship: typeof n.relationship === 'string' ? n.relationship : '' } : null;
     const held = Array.isArray(b.consent) ? (b.consent as { purpose?: unknown; channel?: unknown; granted?: unknown }[]) : [];
     consent = {
       grants: held.filter((c) => typeof c.purpose === 'string' && typeof c.channel === 'string').map((c) => ({

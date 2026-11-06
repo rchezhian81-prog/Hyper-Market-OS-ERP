@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Sales commission</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Sales commission (W3 · M22-FR-03 · FUL-09 · §28). A THIN CLIENT over head office's commission rules and earnings: a
+      salesperson's rates (GET /v1/b2b/commissions/:salespersonId/rules), propose one (POST …/rules/:ruleId), approve one by a
+      different person (POST …/rules/:ruleId/approve) and what was earned (GET /v1/b2b/commissions/:salespersonId).
+      Its session is apps/web-erp/src/sales-commission-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.history > li { border-left-color: var(--idle); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Sales commission</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Sales commission</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="pick" hidden aria-labelledby="pick-h">
+        <h3 id="pick-h" hidden></h3>
+        <form class="row-form" id="pick-form">
+          <label for="c-sp"><span id="c-sp-l"></span><input id="c-sp" autocomplete="off" /></label>
+          <button id="c-look" type="submit" class="sre-btn"><span id="c-look-text"></span></button>
+        </form>
+        <p class="status" id="look-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="rules-s" hidden aria-labelledby="rules-h">
+        <h3 id="rules-h"></h3>
+        <ul class="rows" id="rules"></ul>
+        <form class="row-form" id="propose-form" hidden>
+          <label for="c-rate"><span id="c-rate-l"></span><input id="c-rate" inputmode="decimal" autocomplete="off" /></label>
+          <label for="c-cap"><span id="c-cap-l"></span><input id="c-cap" inputmode="decimal" autocomplete="off" /></label>
+          <button id="c-propose" type="submit" class="sre-btn sre-btn-primary"><span id="c-propose-text"></span></button>
+        </form>
+        <p class="status" id="propose-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="earned-s" hidden aria-labelledby="earned-h">
+        <h3 id="earned-h"></h3>
+        <p class="meta" id="earned-sum"></p>
+        <ul class="rows history" id="earned"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./sales-commission.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

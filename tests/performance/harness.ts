@@ -1,5 +1,10 @@
 // The measurement harness for §32 — and, more importantly, the honest boundary around it.
 //
+// QG-05 (roadmap §22 "Scan-to-line p95 ≤300 ms on certified pilot hardware; audited targets for other journeys"): every
+// figure this folder measures is QG-05 EVIDENCE OF SHAPE taken in CI, never the gate's proof. The proof is the p95 measured
+// on the certified pilot hardware (EX-09) and recorded on head office's gate-evidence register (scan_to_line_p95,
+// total_tender_p95 — packages/compliance/src/gate-evidence.ts), which holds QG-05 until it is there. That stays EXTERNAL.
+//
 // §32 states its POS targets **"on certified pilot hardware"**. That hardware is EX-09 and does
 // not exist yet, so no test in this folder can certify *"scan-to-line p95 ≤ 300 ms"*. Pretending
 // otherwise would be worse than not measuring: a green tick against a number nobody has actually
@@ -284,8 +289,8 @@ export function againstBudget(input: {
     withinHeadroom,
     certifiesTheTarget: false,
     detail: withinHeadroom
-      ? `${input.label}: p95 ${measuredP95Ms.toFixed(4)}ms against a §32 budget of ${input.targetMs}ms — ${(1 / Math.max(usedFraction, 1e-9)).toFixed(0)}× headroom on this machine, which leaves room for a till ${headroomMultiple}× slower. NOT a certification: §32 says certified pilot hardware (EX-09)`
-      : `${input.label}: p95 ${measuredP95Ms.toFixed(4)}ms against ${input.targetMs}ms leaves under ${headroomMultiple}× headroom — a certified till is slower than CI, and this will not hold on one`,
+      ? `${input.label}: p95 ${measuredP95Ms.toFixed(4)}ms against a §32 budget of ${input.targetMs}ms — ${(1 / Math.max(usedFraction, 1e-9)).toFixed(0)}× headroom on this machine, which leaves room for a till ${headroomMultiple}× slower. QG-05 CI ratio — NOT a certification: §32 says certified pilot hardware (EX-09)`
+      : `${input.label}: p95 ${measuredP95Ms.toFixed(4)}ms against ${input.targetMs}ms leaves under ${headroomMultiple}× headroom — a certified till is slower than CI, and this will not hold on one (QG-05 CI ratio — NOT a certification)`,
   };
 }
 

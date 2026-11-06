@@ -34,7 +34,7 @@ const W = {
     subsTitle: 'If something is out of stock', subsSave: 'Save my choice', subs_best_match: 'Send the closest match', subs_contact_me: 'Ask me first', subs_no_substitution: 'Leave it out',
     subsSaved: 'Saved — the shop will do this for every order.', subsPick: 'Choose one first. Nothing was sent.',
     ideasTitle: 'Ideas for your basket', ideasBtn: 'Show ideas', ideasEmpty: 'Put something in your basket first.', ideasNone: 'No ideas for this basket just now.',
-    goesWith: 'Goes well with', aiAlt: 'In stock instead', add: 'Add', added: 'Added to your basket:',
+    goesWith: 'Goes well with', aiAltFor: 'In stock, instead of {name}', add: 'Add', added: 'Added to your basket:',
     handoverCode: 'Delivery code', handoverEta: 'Arriving', notGivenYet: 'not given yet',
     referralTitle: 'Invite a friend', referralLead: 'Give your code to a friend. When their first online order is delivered, you both earn the shop’s referral reward — once.',
     referralCode: 'My code', referralMine: 'I earn', referralFriend: 'My friend earns', rewardNotSet: 'not set yet — nothing is given until the shop sets it',
@@ -85,7 +85,7 @@ const W = {
     subsTitle: 'ஏதாவது கையிருப்பில் இல்லையென்றால்', subsSave: 'என் தேர்வைச் சேமி', subs_best_match: 'மிக நெருக்கமான பொருளை அனுப்பு', subs_contact_me: 'முதலில் என்னைக் கேள்', subs_no_substitution: 'அதை விட்டுவிடு',
     subsSaved: 'சேமிக்கப்பட்டது — ஒவ்வொரு ஆர்டருக்கும் கடை இப்படிச் செய்யும்.', subsPick: 'முதலில் ஒன்றைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     ideasTitle: 'உங்கள் கூடைக்கான யோசனைகள்', ideasBtn: 'யோசனைகளைக் காட்டு', ideasEmpty: 'முதலில் கூடையில் ஏதாவது சேருங்கள்.', ideasNone: 'இப்போது இந்தக் கூடைக்கு யோசனைகள் இல்லை.',
-    goesWith: 'இதனுடன் பொருந்துவது', aiAlt: 'பதிலாகக் கையிருப்பில் உள்ளது', add: 'சேர்', added: 'உங்கள் கூடையில் சேர்க்கப்பட்டது:',
+    goesWith: 'இதனுடன் பொருந்துவது', aiAltFor: '{name} என்பதற்குப் பதிலாக, கையிருப்பில் உள்ளது', add: 'சேர்', added: 'உங்கள் கூடையில் சேர்க்கப்பட்டது:',
     handoverCode: 'விநியோகக் குறியீடு', handoverEta: 'வந்து சேரும் நேரம்', notGivenYet: 'இன்னும் கொடுக்கப்படவில்லை',
     referralTitle: 'நண்பரை அழையுங்கள்', referralLead: 'உங்கள் குறியீட்டை நண்பரிடம் கொடுங்கள். அவரது முதல் ஆன்லைன் ஆர்டர் டெலிவரி ஆனதும், நீங்கள் இருவரும் கடையின் பரிந்துரைப் பரிசைப் பெறுவீர்கள் — ஒருமுறை மட்டும்.',
     referralCode: 'என் குறியீடு', referralMine: 'நான் பெறுவது', referralFriend: 'என் நண்பர் பெறுவது', rewardNotSet: 'இன்னும் அமைக்கப்படவில்லை — கடை அமைக்கும் வரை எதுவும் வழங்கப்படாது',
@@ -279,7 +279,11 @@ el('ideas').addEventListener('click', async () => {
   if (ai.ok) {
     // AI-NFR-11: every AI suggestion is marked, with the plain notice — the shop's own words, in this language.
     aiNotice = ai.value.notice ?? null; paintAiNotice();
-    for (const a of ai.value.alternatives ?? []) rows.push(ideaRow(a.forProductId, 'ai', `${t('aiAlt')} — ${a.summary}`));
+    // W4 · A04: one row per alternative PRODUCT (closest in price first); its Add puts THAT product in the basket — never
+    // the one that ran out. A shortlist that names no product offers nothing to add.
+    for (const a of ai.value.alternatives ?? []) {
+      for (const id of a.productIds ?? []) rows.push(ideaRow(id, 'ai', t('aiAltFor').replace('{name}', nameOf(a.forProductId))));
+    }
   }
   el('ideas-list').replaceChildren(...rows);
   say('ideas-say', rows.length === 0 ? t('ideasNone') : '');

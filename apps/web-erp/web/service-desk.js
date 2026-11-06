@@ -73,6 +73,10 @@ const WORDS = {
     rcH: 'Root cause', rcLede: 'Why it happened, once it is resolved — so it does not happen again.', rcCause: 'Cause', rcNote: 'What happened', rcPrevent: 'What will stop it (optional)', rcSave: 'Record the root cause',
     summaryH: 'Why cases happen', summaryLede: 'Resolved cases by root cause — and the resolved ones nobody has explained yet.',
     noRootCause: 'Resolved with no root cause yet:', allExplained: 'Every resolved case has a root cause.', noneResolved: 'No case has been resolved yet, so there is no root cause to record.', cases: 'case(s)', complaints: 'complaint(s)',
+    reportH: 'How the service is doing — every case', reportLede: 'Head office\'s count across all cases: how many were dealt with in time, which are late and must go up now, and what customers said.',
+    rCases: 'Cases', rResolved: 'resolved', rMet: 'resolved within time', rBreached: 'past their time', rFirst: 'Not answered in time (first reply)',
+    rEscalate: 'Late and still open — escalate now:', rNothingToEscalate: 'No open case is past its time.', rCsat: 'Satisfaction (out of 5)', rOfCases: 'of cases replied',
+    rNoCsat: 'No customer has rated a case yet — there is no satisfaction score.', rUnreachable: 'The service report could not be read from head office.',
     done: 'Done.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', readOnly: 'You may read the cases; working them needs the service-desk role.',
     none: 'No cases yet — head office holds no case for this shop.', loading: 'Reading the cases from head office…',
@@ -102,6 +106,10 @@ const WORDS = {
     rcH: 'மூல காரணம்', rcLede: 'தீர்ந்த பிறகு, ஏன் நடந்தது — மீண்டும் நடக்காமல் இருக்க.', rcCause: 'காரணம்', rcNote: 'என்ன நடந்தது', rcPrevent: 'எது தடுக்கும் (விருப்பம்)', rcSave: 'மூல காரணத்தைப் பதிவு செய்',
     summaryH: 'வழக்குகள் ஏன் நடக்கின்றன', summaryLede: 'மூல காரணப்படி தீர்ந்த வழக்குகள் — விளக்கப்படாதவையும்.',
     noRootCause: 'மூல காரணம் இல்லாமல் தீர்ந்தவை:', allExplained: 'தீர்ந்த ஒவ்வொரு வழக்கிற்கும் மூல காரணம் உள்ளது.', noneResolved: 'இன்னும் எந்த வழக்கும் தீர்க்கப்படவில்லை, எனவே பதிவு செய்ய மூல காரணம் எதுவும் இல்லை.', cases: 'வழக்கு(கள்)', complaints: 'புகார்(கள்)',
+    reportH: 'சேவை எப்படி உள்ளது — எல்லா வழக்குகளும்', reportLede: 'எல்லா வழக்குகளிலும் தலைமை அலுவலகத்தின் கணக்கு: நேரத்தில் தீர்ந்தவை எத்தனை, தாமதமாகி இப்போதே மேலே அனுப்ப வேண்டியவை எவை, வாடிக்கையாளர்கள் என்ன சொன்னார்கள்.',
+    rCases: 'வழக்குகள்', rResolved: 'தீர்ந்தவை', rMet: 'நேரத்திற்குள் தீர்ந்தவை', rBreached: 'நேரம் மீறியவை', rFirst: 'நேரத்தில் பதில் இல்லாதவை (முதல் பதில்)',
+    rEscalate: 'தாமதமாகி இன்னும் திறந்துள்ளவை — இப்போதே மேலே அனுப்புங்கள்:', rNothingToEscalate: 'நேரம் மீறிய திறந்த வழக்கு எதுவும் இல்லை.', rCsat: 'திருப்தி (5-க்கு)', rOfCases: 'வழக்குகளில் பதில் வந்தவை',
+    rNoCsat: 'இன்னும் எந்த வாடிக்கையாளரும் மதிப்பிடவில்லை — திருப்தி மதிப்பெண் இல்லை.', rUnreachable: 'சேவை அறிக்கையைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை.',
     done: 'முடிந்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', readOnly: 'நீங்கள் வழக்குகளைப் படிக்கலாம்; அவற்றில் வேலை செய்ய சேவை மேசைப் பங்கு தேவை.',
     none: 'இன்னும் வழக்குகள் இல்லை — இந்தக் கடைக்கு தலைமை அலுவலகத்தில் வழக்கு எதுவும் இல்லை.', loading: 'தலைமை அலுவலகத்திலிருந்து வழக்குகளைப் படிக்கிறது…',
@@ -120,6 +128,7 @@ let picked = null;
 let pickedSla = null;
 let drafts = [];
 let summary = null;
+let report = null;
 
 async function getJson(path) {
   const res = await fetch(path, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
@@ -153,7 +162,7 @@ function paintWords() {
     ['o-complaint', 'complaint'], ['o-enquiry', 'enquiry'], ['o-warranty', 'warranty'], ['o-lost_and_found', 'lost_and_found'], ['o-low', 'low'], ['o-normal', 'normal'], ['o-high', 'high'], ['o-urgent', 'urgent'],
     ['l-first-clock', 'firstClock'], ['l-resolution-clock', 'resolutionClock'], ['drafts-h', 'draftsH'], ['drafts-lede', 'draftsLede'], ['l-ask-note', 'askNote'], ['ask-draft', 'askDraft'],
     ['resolve-h', 'resolveH'], ['l-resolution', 'resolutionL'], ['resolve', 'resolve'], ['rc-h', 'rcH'], ['rc-lede', 'rcLede'], ['l-rc-cause', 'rcCause'], ['l-rc-note', 'rcNote'], ['l-rc-prevent', 'rcPrevent'], ['rc-save', 'rcSave'],
-    ['summary-h', 'summaryH'], ['summary-lede', 'summaryLede']]) {
+    ['summary-h', 'summaryH'], ['summary-lede', 'summaryLede'], ['report-h', 'reportH'], ['report-lede', 'reportLede']]) {
     const el = $(id);
     if (el) el.textContent = t(k);
   }
@@ -293,6 +302,31 @@ function renderSummary() {
   missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained');
 }
 
+// W4 · M21-FR-04: head office's service report over every case — the figures exactly as it sends them, nothing worked out here.
+function renderReport() {
+  const ul = $('service-report');
+  ul.replaceChildren();
+  if (report === null) return;
+  const line = (k, words) => { const li = document.createElement('li'); li.dataset.r = k; li.textContent = words; ul.append(li); };
+  line('cases', `${t('rCases')}: ${report.cases} · ${t('rResolved')} ${report.resolved} · ${t('rMet')} ${report.met ?? 0} · ${t('rBreached')} ${report.breached}`);
+  line('first', `${t('rFirst')}: ${report.firstResponseBreached}`);
+  const late = Array.isArray(report.escalateNow) ? report.escalateNow : [];
+  line('escalate', late.length === 0 ? t('rNothingToEscalate') : `${t('rEscalate')} ${late.join(', ')}`);
+  line('csat', report.csatHundredths === 'no_responses' ? t('rNoCsat')
+    : `${t('rCsat')}: ${(report.csatHundredths / 100).toFixed(2)}${report.responseRateBps === 'not_meaningful' ? '' : ` · ${(report.responseRateBps / 100).toFixed(1)}% ${t('rOfCases')}`}`);
+}
+
+async function loadReport() {
+  try {
+    report = await getJson('/v1/service/report');
+    $('report-status').textContent = '';
+  } catch {
+    report = null;
+    $('report-status').textContent = t('rUnreachable');
+  }
+  renderReport();
+}
+
 async function pick(caseId) {
   picked = cases.find((c) => c.caseId === caseId) ?? { caseId };
   try {
@@ -322,6 +356,7 @@ async function loadCases() {
   renderCase();
   if (mayAct && $('new-id').value.trim() === '') proposeCaseNumber();
   renderSummary();
+  void loadReport();
 }
 
 /** U2: the case number is GIVEN by the page — the shop's day and the next free number in head office's own list — never
@@ -393,6 +428,7 @@ $('lang').addEventListener('click', () => {
   renderCase();
   renderSummary();
   repaintPickers();
+  renderReport();
 });
 
 paintWords();

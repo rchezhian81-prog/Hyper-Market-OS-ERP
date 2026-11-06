@@ -47,6 +47,8 @@
       button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700;   }
       .worker { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .worker label { font-size:14px; color:var(--muted); }
+      .roles { display:flex; gap:14px; flex-wrap:wrap; font-size:14px; } .roles label { display:inline-flex; gap:6px; align-items:center; min-height:var(--tap); }
+      li.row.unowned .headline { color:var(--danger-text); }
       .worker select, .worker input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       .worker .buttons { display:flex; gap:10px; flex-wrap:wrap; }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
@@ -128,13 +130,35 @@
         <ul class="rows" id="repeat-plans"></ul>
       </section>
 
+      <!-- OB-676 (owner, 2 Nov 2026): who works each queue — the code's map offered as the starting suggestion, "not confirmed"
+           until the owner confirms it; a queue with no role is shown UNOWNED, never dropped. Session:
+           apps/web-erp/src/exception-queue-staffing-session.ts (window.exceptionQueueStaffing). -->
+      <section id="staffing" hidden aria-labelledby="staffing-h">
+        <h3 id="staffing-h">Who works each queue</h3>
+        <p class="lead" id="staffing-lead"></p>
+        <div class="buttons"><button id="staffing-show" class="act quiet" type="button">Show who works each queue</button></div>
+        <p id="staffing-status" role="status" aria-live="polite"></p>
+        <p id="staffing-state" hidden></p>
+        <ul class="rows" id="staffing-queues"></ul>
+        <div class="worker" id="staffing-form" hidden>
+          <label for="staffing-note" id="staffing-note-l">Note (optional)</label>
+          <input id="staffing-note" type="text" autocomplete="off" maxlength="200" />
+          <div class="buttons"><button id="staffing-confirm" class="act" type="button">Confirm these roles</button></div>
+        </div>
+        <h3 id="staffing-history-h" hidden></h3>
+        <ul class="rows" id="staffing-history"></ul>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="reassign" id="desk-reassign" hidden></section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./substitution-exceptions.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

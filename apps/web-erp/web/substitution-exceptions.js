@@ -125,6 +125,75 @@ if (ro !== null && ro.session.may.read) {
   });
 }
 
+// ── OB-676: who works each queue (the owner sets and confirms it) ─────────────
+const qs = window.exceptionQueueStaffing ?? null;
+const sw = (k) => (qs === null ? k : qs.words(lang, k));
+let staffing = null;
+/** OB-676: the queues the worklist read says no role works. */
+let unownedQueues = [];
+function paintStaffing() {
+  if (qs === null) return;
+  for (const [id, k] of [['staffing-h', 'h'], ['staffing-lead', 'lead'], ['staffing-show', 'show'], ['staffing-note-l', 'noteL'], ['staffing-confirm', 'confirm'], ['staffing-history-h', 'historyH']]) el(id).textContent = sw(k);
+  el('staffing-state').hidden = staffing === null;
+  el('staffing-form').hidden = staffing === null || !qs.session.may.set;
+  el('staffing-history-h').hidden = staffing === null || staffing.history.length === 0;
+  el('staffing-queues').replaceChildren(); el('staffing-history').replaceChildren();
+  if (staffing === null) return;
+  const st = el('staffing-state');
+  st.dataset.state = staffing.state;
+  st.className = `result tone-${staffing.state === 'confirmed' && staffing.unowned.length === 0 ? 'ok' : 'degraded'}`;
+  const who = staffing.confirmed === null ? '' : ` (${sw('by')} ${staffing.confirmed.by}, ${sw('version')} ${staffing.confirmed.version})`;
+  const unowned = staffing.unowned.length === 0 ? '' : ` ${sw('unownedSummary')} ${staffing.unowned.map((q) => sw(`q_${q}`)).join(', ')}.`;
+  // A mark AND words: ✓ only when the owner has confirmed it and every queue has somebody (an unowned queue is a warning).
+  st.textContent = `${staffing.state === 'confirmed' && staffing.unowned.length === 0 ? '✓' : '⚠'} ${sw(`st_${staffing.state}`)}${who}.${unowned}`;
+  el('staffing-queues').append(...qs.queueRows(lang, staffing).map((r) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${r.unowned ? 'error' : 'ok'}${r.unowned ? ' unowned' : ''}`;
+    li.dataset.queue = r.queue; li.dataset.unowned = String(r.unowned);
+    const head = document.createElement('div'); head.className = 'head';
+    const h = document.createElement('span'); h.className = 'headline'; h.textContent = `${r.unowned ? '⚠' : '✓'} ${r.name}: ${r.words}`;
+    head.append(h); li.append(head);
+    if (qs.session.may.set) {
+      const boxes = document.createElement('div'); boxes.className = 'roles';
+      for (const role of staffing.rolesThatMayWork) {
+        const label = document.createElement('label'); const box = document.createElement('input');
+        box.type = 'checkbox'; box.className = 'role'; box.value = role; box.checked = r.roles.includes(role);
+        box.setAttribute('aria-label', `${r.name}: ${qs.roleWords(lang, role)}`);
+        label.append(box, qs.roleWords(lang, role)); boxes.append(label);
+      }
+      li.append(boxes);
+    }
+    return li;
+  }));
+  el('staffing-history').append(...[...staffing.history].reverse().map((v) => {
+    const li = document.createElement('li'); li.className = 'row tone-ok'; li.dataset.version = String(v.version);
+    const words = qs.queues.map((q) => `${sw(`q_${q}`)}: ${(v.staffing[q] ?? []).length === 0 ? sw('unowned').split(' — ')[0] : v.staffing[q].map((x) => qs.roleWords(lang, x)).join(', ')}`).join(' · ');
+    const head = document.createElement('div'); head.className = 'head';
+    const h = document.createElement('span'); h.className = 'headline'; h.textContent = `${sw('version')} ${v.version} — ${v.asSuggested ? sw('asSuggested') : sw('changed')}`;
+    head.append(h);
+    const facts = document.createElement('div'); facts.className = 'facts';
+    for (const x of [words, `${v.by} · ${window.sreShopDay?.dateTimeOf(v.at) ?? v.at}`, ...(v.reason ? [v.reason] : [])]) { const s = document.createElement('span'); s.textContent = x; facts.append(s); }
+    li.append(head, facts);
+    return li;
+  }));
+}
+async function readStaffing() {
+  const out = await qs.session.read();
+  if (out.result === 'ok') { staffing = out.value; el('staffing-status').textContent = ''; } else { staffing = null; el('staffing-status').textContent = qs.outcomeWords(lang, out); }
+  paintStaffing();
+}
+if (qs !== null && qs.session.may.read) {
+  el('staffing').hidden = false;
+  el('staffing-show').addEventListener('click', () => { void readStaffing(); });
+  el('staffing-confirm').addEventListener('click', async () => {
+    const chosen = Object.fromEntries(qs.queues.map((q) => [q, [...document.querySelectorAll(`#staffing-queues li[data-queue="${q}"] input.role:checked`)].map((b) => b.value)]));
+    const out = await qs.session.setStaffing(chosen, el('staffing-note').value);
+    if (out.result === 'ok') { staffing = out.value; el('staffing-note').value = ''; el('staffing-status').textContent = `✓ ${sw('confirmedNow')} ${sw(`st_${out.value.state}`)}`; }
+    else el('staffing-status').textContent = qs.outcomeWords(lang, out);
+    paintStaffing();
+  });
+}
+
 function paint() {
   const view = session.view(lang);
 
@@ -145,7 +214,10 @@ function paint() {
   el('queues-heading').textContent = t('queuesHeading');
   el('queues').replaceChildren(...view.queues.map((q) => {
     const li = document.createElement('li'); const b = document.createElement('b'); b.textContent = String(q.count);
-    li.append(`${q.label}: `, b); return li;
+    li.append(`${q.label}: `, b);
+    // OB-676: a queue no role works is said UNOWNED beside its count — its exceptions stay here, never dropped.
+    if (unownedQueues.includes(q.queue)) { li.dataset.unowned = 'true'; li.append(` — ⚠ ${sw('unowned')}`); }
+    return li;
   }));
 
   el('open-heading').hidden = view.rows.length === 0;
@@ -211,12 +283,13 @@ async function act(action, exceptionId) {
 }
 el('resolve').addEventListener('click', () => { void act('resolve', el('work-item').value); });
 el('release').addEventListener('click', () => { void act('release', el('work-item').value); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintRepeat(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintRepeat(); paintStaffing(); });
 
 el('sample').hidden = window.substitutionExceptionInboxSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
 paintRepeat();
+paintStaffing();
 
 // Read the live worklist (a GET — read-only). Offline or refused, the screen keeps its current view and the
 // stale strip already says the page is what the box last told it.
@@ -224,7 +297,7 @@ async function refresh() {
   const api = window.substitutionExceptionInbox;
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  if (data) { unownedQueues = Array.isArray(data.staffing?.unowned) ? data.staffing.unowned : []; session = api.present(data); paint(); }
 }
 refresh();
 

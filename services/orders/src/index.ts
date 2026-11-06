@@ -607,6 +607,107 @@ async function substituteFromStoredTruth(deps: OrdersDeps, truth: SubstitutionTr
   };
 }
 
+/**
+ * M18-FR-04 · FUL-14 · OB-687 — record a substitution decision on an order line: the ONE path, run by
+ * `POST /v1/orders/:orderId/substitute` and by head office itself when a swap the customer answered is packed (OB-687 —
+ * the picker's packed outcome settles the proposal through here, so the order, the bill and any refund match the crate).
+ * Throws the route's refusals by name; nothing is recorded on a refusal.
+ */
+export async function recordSubstitutionDecision(deps: OrdersDeps, input: {
+  readonly tenantId: string; readonly userId: string; readonly orderId: string;
+  readonly offer: SubstitutionOffer; readonly decision: SubstitutionDecision; readonly body: Record<string, unknown>;
+}): Promise<{ readonly status: number; readonly body: Record<string, unknown> }> {
+  const { orderId, offer, body: b } = input;
+  const current = await deps.orderState(input.tenantId, orderId);
+  if (current === undefined) {
+    throw apiError(404, {
+      code: 'order_unknown',
+      whatHappened: `No order "${orderId}" has been placed.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Check the order reference. Nothing was changed.',
+    });
+  }
+  if (isTerminal(current.state)) {
+    throw apiError(409, {
+      code: 'order_finished',
+      whatHappened: `Order "${orderId}" is ${current.state} — a substitution cannot be recorded against a finished order.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Nothing was changed. A change to a finished order is a return or a new order.',
+    });
+  }
+  const already = await deps.orderSubstitutions(input.tenantId, orderId);
+  if (already.some((s) => s.lineId === offer.lineId)) {
+    throw apiError(409, {
+      code: 'line_already_substituted',
+      whatHappened: `Line "${offer.lineId}" already has a recorded substitution decision — a line is substituted once (append-only).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Nothing was changed. A further change is a return or a re-pick, not a second substitution.',
+    });
+  }
+
+  const decision = input.decision;
+  // FUL-14: in the running system the swap is decided from stored truth, never from the picker's body.
+  if (deps.substitutionTruth !== undefined) {
+    const sub = await substituteFromStoredTruth(deps, deps.substitutionTruth, {
+      tenantId: input.tenantId, userId: input.userId, orderId, order: current, offer, decision, body: b, now: deps.now(),
+    });
+    return { status: 201, body: sub };
+  }
+
+  // M19-FR-01 POLICY gate (optional): when the caller supplies the customer's rules and both
+  // products' attributes, the eligibility engine decides whether the swap may be offered at all.
+  // A `refused` policy result BLOCKS the swap regardless of the picker's decision — a controlled
+  // item, an avoided allergen or a blocked brand is short-picked, never applied "because the
+  // picker said confirmed". `auto_accept` / `needs_confirmation` proceed with the picker's decision.
+  const bodyRules = readSubRules(b['rules']);
+  const orderedAttrs = readAttrs(b['orderedAttrs']);
+  const substituteAttrs = readAttrs(b['substituteAttrs']);
+  let eligibility: SubstitutionEligibility | undefined;
+  let policyReason: string | undefined;
+  let effectiveDecision = decision;
+  if (bodyRules !== undefined && orderedAttrs !== undefined && substituteAttrs !== undefined) {
+    const assessed = assessSubstitution({ lineId: offer.lineId, ordered: orderedAttrs, substitute: substituteAttrs, rules: bodyRules });
+    eligibility = assessed.eligibility;
+    policyReason = assessed.reason;
+    if (assessed.eligibility === 'refused') effectiveDecision = 'declined'; // policy blocks it → short-pick, charge nothing
+  }
+
+  const result = applySubstitution({ offer, decision: effectiveDecision });
+
+  // M19-FR-01 tender-aware MONEY (optional): when the caller supplies how the order is paid, the
+  // settlement engine decides how the difference moves (refund vs collect-less, and an approved
+  // dearer swap above the cap). Without a tender, the plain M18 charge/refund fact is recorded.
+  const tender = readTender(b['tender']);
+  const approvedAboveCap = b['approvedAboveCap'] === true;
+  const money = tender !== undefined
+    ? settleSubstitutionMoney({ offer, decision: effectiveDecision, tender, approvedAboveCap })
+    : undefined;
+  const chargeMinor = money?.chargeMinor ?? result.chargeMinor;
+  const tellTheCustomer = money?.tellTheCustomer ?? result.tellTheCustomer;
+
+  const at = deps.now();
+  const sub: StoredSubstitution = {
+    orderId, lineId: result.lineId, decision, outcome: result.outcome,
+    pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+    chargeMinor, refundMinor: result.refundMinor, at,
+    ...(eligibility !== undefined ? { eligibility } : {}),
+    ...(policyReason !== undefined ? { policyReason } : {}),
+    ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
+  };
+  await deps.recordSubstitution(input.tenantId, sub);
+  return {
+    status: 201,
+    body: {
+      orderId, lineId: result.lineId, outcome: result.outcome,
+      pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+      chargeMinor, refundMinor: result.refundMinor,
+      refundDue: result.refundMinor > 0, tellTheCustomer,
+      ...(eligibility !== undefined ? { eligibility, policyReason } : {}),
+      ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
+    },
+  };
+}
+
 export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
   return [
     {
@@ -785,95 +886,8 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
             nextSafeAction: 'Send the offer and the customer’s decision. Nothing was changed.',
           });
         }
-        const current = await deps.orderState(ctx.tenantId, orderId);
-        if (current === undefined) {
-          throw apiError(404, {
-            code: 'order_unknown',
-            whatHappened: `No order "${orderId}" has been placed.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Check the order reference. Nothing was changed.',
-          });
-        }
-        if (isTerminal(current.state)) {
-          throw apiError(409, {
-            code: 'order_finished',
-            whatHappened: `Order "${orderId}" is ${current.state} — a substitution cannot be recorded against a finished order.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Nothing was changed. A change to a finished order is a return or a new order.',
-          });
-        }
         const offer = b.offer;
-        const already = await deps.orderSubstitutions(ctx.tenantId, orderId);
-        if (already.some((s) => s.lineId === offer.lineId)) {
-          throw apiError(409, {
-            code: 'line_already_substituted',
-            whatHappened: `Line "${offer.lineId}" already has a recorded substitution decision — a line is substituted once (append-only).`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Nothing was changed. A further change is a return or a re-pick, not a second substitution.',
-          });
-        }
-
-        const decision = b.decision as SubstitutionDecision;
-        // FUL-14: in the running system the swap is decided from stored truth, never from the picker's body.
-        if (deps.substitutionTruth !== undefined) {
-          const sub = await substituteFromStoredTruth(deps, deps.substitutionTruth, {
-            tenantId: ctx.tenantId, userId: ctx.userId, orderId, order: current, offer, decision, body: b as Record<string, unknown>, now: deps.now(),
-          });
-          return { status: 201, body: sub };
-        }
-
-        // M19-FR-01 POLICY gate (optional): when the caller supplies the customer's rules and both
-        // products' attributes, the eligibility engine decides whether the swap may be offered at all.
-        // A `refused` policy result BLOCKS the swap regardless of the picker's decision — a controlled
-        // item, an avoided allergen or a blocked brand is short-picked, never applied "because the
-        // picker said confirmed". `auto_accept` / `needs_confirmation` proceed with the picker's decision.
-        const bodyRules = readSubRules(b['rules']);
-        const orderedAttrs = readAttrs(b['orderedAttrs']);
-        const substituteAttrs = readAttrs(b['substituteAttrs']);
-        let eligibility: SubstitutionEligibility | undefined;
-        let policyReason: string | undefined;
-        let effectiveDecision = decision;
-        if (bodyRules !== undefined && orderedAttrs !== undefined && substituteAttrs !== undefined) {
-          const assessed = assessSubstitution({ lineId: offer.lineId, ordered: orderedAttrs, substitute: substituteAttrs, rules: bodyRules });
-          eligibility = assessed.eligibility;
-          policyReason = assessed.reason;
-          if (assessed.eligibility === 'refused') effectiveDecision = 'declined'; // policy blocks it → short-pick, charge nothing
-        }
-
-        const result = applySubstitution({ offer, decision: effectiveDecision });
-
-        // M19-FR-01 tender-aware MONEY (optional): when the caller supplies how the order is paid, the
-        // settlement engine decides how the difference moves (refund vs collect-less, and an approved
-        // dearer swap above the cap). Without a tender, the plain M18 charge/refund fact is recorded.
-        const tender = readTender(b['tender']);
-        const approvedAboveCap = b['approvedAboveCap'] === true;
-        const money = tender !== undefined
-          ? settleSubstitutionMoney({ offer, decision: effectiveDecision, tender, approvedAboveCap })
-          : undefined;
-        const chargeMinor = money?.chargeMinor ?? result.chargeMinor;
-        const tellTheCustomer = money?.tellTheCustomer ?? result.tellTheCustomer;
-
-        const at = deps.now();
-        const sub: StoredSubstitution = {
-          orderId, lineId: result.lineId, decision, outcome: result.outcome,
-          pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
-          chargeMinor, refundMinor: result.refundMinor, at,
-          ...(eligibility !== undefined ? { eligibility } : {}),
-          ...(policyReason !== undefined ? { policyReason } : {}),
-          ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
-        };
-        await deps.recordSubstitution(ctx.tenantId, sub);
-        return {
-          status: 201,
-          body: {
-            orderId, lineId: result.lineId, outcome: result.outcome,
-            pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
-            chargeMinor, refundMinor: result.refundMinor,
-            refundDue: result.refundMinor > 0, tellTheCustomer,
-            ...(eligibility !== undefined ? { eligibility, policyReason } : {}),
-            ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
-          },
-        };
+        return recordSubstitutionDecision(deps, { tenantId: ctx.tenantId, userId: ctx.userId, orderId, offer, decision: b.decision as SubstitutionDecision, body: b as Record<string, unknown> });
       },
     },
     // FUL-14: what the customer said about substitutes on THIS order, told to a member of staff — recorded with how they were

@@ -34,7 +34,7 @@ const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({ pack, sales: 
 describe("today's refunds, counted the day book's way", () => {
   it('a cash refund today is counted; one from yesterday, or an unreadable one, is not', () => {
     const r = refundsOn(input({ returns: [refund(), refund({ returnId: 'RT-0', processedAt: '2026-08-03T10:00:00.000Z' }), 'not a record', { refundMinor: 99 }] }));
-    expect(r).toEqual({ count: 1, refundedMinor: 35_00, tenderMix: { cash: 35_00 } });
+    expect(r).toEqual({ count: 1, refundedMinor: 35_00, tenderMix: { cash: 35_00 }, lines: [{ id: 'RT-1', amountMinor: 35_00, tender: 'cash' }] });
     // The same legs the day book posts for it.
     expect(refundLegs({ returnId: 'RT-1', originalSaleId: 'S-1', refundMinor: 35_00, refundTender: 'cash', lines: [] })).toEqual([{ kind: 'cash', amountMinor: 35_00 }]);
   });
@@ -44,13 +44,13 @@ describe("today's refunds, counted the day book's way", () => {
       returnId: 'RT-X', refundMinor: 145_00, refundTender: 'exchange',
       exchange: { exchangeId: 'X-1', replacementSaleId: 'S-2', replacementTotalMinor: 100_00, appliedMinor: 100_00, balance: 'refund', balanceMinor: 45_00, balanceTender: 'cash' },
     })] }));
-    expect(r).toEqual({ count: 1, refundedMinor: 145_00, tenderMix: { exchange_credit: 100_00, cash: 45_00 } });
+    expect(r).toEqual({ count: 1, refundedMinor: 145_00, tenderMix: { exchange_credit: 100_00, cash: 45_00 }, lines: [{ id: 'RT-X', amountMinor: 100_00, tender: 'exchange_credit' }, { id: 'RT-X', amountMinor: 45_00, tender: 'cash' }] });
   });
 
   it('the owner payload carries them, and the brief\'s takings, tender mix and sentence are net of them', () => {
     const payload = ownerPayload(input({ returns: [refund()] }))!;
     const branch = (payload['branches'] as Record<string, unknown>[])[0]!;
-    expect(branch['refunds']).toEqual({ count: 1, refundedMinor: 35_00, tenderMix: { cash: 35_00 } });
+    expect(branch['refunds']).toEqual({ count: 1, refundedMinor: 35_00, tenderMix: { cash: 35_00 }, lines: [{ id: 'RT-1', amountMinor: 35_00, tender: 'cash' }] });
     const brief = buildBrief({
       asOf: NOW, lastSyncedAt: NOW, staleAfterSeconds: 300, sales: branch['sales'] as never, exceptions: [], approvals: [],
       refunds: branch['refunds'] as never,

@@ -78,7 +78,7 @@ function paint() {
   for (const [id, key] of [['counters-h', 'countersH'], ['raise-text', 'raise'], ['contract-h', 'contractH'], ['f-id-l', 'contractId'], ['f-who-l', 'concessionaire'], ['f-name-l', 'name'], ['f-branch-l', 'branch'], ['f-start-l', 'startsOn'], ['f-end-l', 'endsOn'],
     ['f-basis-l', 'basis'], ['f-basis-rent', 'basis_fixed_rent'], ['f-basis-share', 'basis_revenue_share'], ['f-basis-higher', 'basis_higher_of_both'], ['f-rent-l', 'rent'], ['f-share-l', 'share'], ['f-util-l', 'utilities'], ['f-deposit-l', 'deposit'], ['f-ins-l', 'insurance'], ['f-lic-l', 'licence'],
     ['f-save-text', 'save'], ['f-ask-text', 'askApproval'], ['deposit-h', 'depositH'], ['d-who-l', 'concessionaire'], ['d-kind-l', 'movement'], ['d-kind-in', 'received'], ['d-kind-out', 'refunded'], ['d-kind-forfeit', 'forfeited'], ['d-amount-l', 'amount'], ['d-save-text', 'recordDeposit'],
-    ['money-h', 'chargeH'], ['m-contract-l', 'contractPick'], ['m-from-l', 'from'], ['m-to-l', 'to'], ['m-metered-l', 'metered'], ['m-banked-l', 'banked'], ['m-charge-text', 'readCharge'], ['m-settle-text', 'readSettlement']]) $(id).textContent = t(key);
+    ['money-h', 'chargeH'], ['m-contract-l', 'contractPick'], ['m-from-l', 'from'], ['m-to-l', 'to'], ['m-metered-l', 'metered'], ['m-banked-l', 'banked'], ['m-charge-text', 'readCharge'], ['m-settle-text', 'readSettlement']]) { const n = $(id); if (n) n.textContent = t(key); }
   if (off) $('page-status').textContent = t('off');
   paintCounters(); paintAsked();
 }

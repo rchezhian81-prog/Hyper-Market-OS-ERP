@@ -37,7 +37,7 @@
       #doc { border: 2px solid var(--ink); }
       .draft { font-weight: 700; }
       [hidden] { display: none !important; }
-      @media print { header, #page-intro, #register, #scheme, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } }
+      @media print { header, #page-intro, #register, #scheme, #raise, #receipt, #period, .no-print { display: none !important; } #doc { border: 0; } #measure, #books { display: none !important; } }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
     </style>
@@ -101,6 +101,33 @@
         </div>
         <button id="c-raise" type="button" class="sre-btn"><span id="c-raise-text"></span></button>
         <p class="status" id="c-status" role="status" aria-live="polite"></p>
+      </section>
+      <!-- W3 (D03-FR-03 · D10-FR-04): measure what a scheme earned (head office folds it from the matched bills; only the
+           period is sent), and put earned rebates in the books through the accountant's rule. Its session is
+           apps/web-erp/src/rebate-accruals-session.ts. -->
+      <section id="measure" hidden aria-labelledby="measure-h">
+        <h3 id="measure-h"></h3>
+        <p class="meta" id="measure-lead"></p>
+        <div class="row-form">
+          <label for="a-scheme"><span id="a-scheme-l"></span><input id="a-scheme" autocomplete="off" /></label>
+          <label for="a-from"><span id="a-from-l"></span><input id="a-from" inputmode="numeric" autocomplete="off" /></label>
+          <label for="a-to"><span id="a-to-l"></span><input id="a-to" inputmode="numeric" autocomplete="off" /></label>
+          <label for="a-base-from"><span id="a-base-from-l"></span><input id="a-base-from" inputmode="numeric" autocomplete="off" /></label>
+          <label for="a-base-to"><span id="a-base-to-l"></span><input id="a-base-to" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <button id="a-measure" type="button"><span id="a-measure-text"></span></button>
+        <p class="status" id="a-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="books" hidden aria-labelledby="books-h">
+        <h3 id="books-h"></h3>
+        <p class="meta" id="books-lead"></p>
+        <div class="acts">
+          <button id="b-show" class="quiet" type="button"><span id="b-show-text"></span></button>
+          <button id="b-post" type="button" hidden><span id="b-post-text"></span></button>
+        </div>
+        <p class="meta" id="b-accounts"></p>
+        <ul class="rows" id="book-rows"></ul>
+        <p class="status" id="b-status" role="status" aria-live="polite"></p>
       </section>
       <section id="receipt" hidden aria-labelledby="receipt-h">
         <h3 id="receipt-h"></h3>

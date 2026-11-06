@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Committee: make the annual report</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      The Internal Committee's annual report (Round 4c · R2 C20 · POSH Act · OB-154 · OB-157). A THIN CLIENT for the committee
+      alone: which ended years need a report (GET /v1/hr/posh/annual-report-status), make a year's report from the register
+      (POST /v1/hr/posh/annual-reports/:year) and read it (GET …/:year). Counts only — never a complaint or a name. The owner
+      records the filing on his own page. Its session is apps/web-erp/src/posh-committee-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.rows > li.overdue { border-left-color: var(--error); } ul.rows > li.filed { border-left-color: var(--ok); }
+      dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 15px; }
+      dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Committee: make the annual report</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Committee: make the annual report</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="years" hidden aria-labelledby="years-h">
+        <h3 id="years-h"></h3>
+        <p class="status" id="years-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rows"></ul>
+        <h4 id="other-h"></h4>
+        <form class="row-form" id="other-form">
+          <label for="other-year"><span id="other-year-l"></span><input id="other-year" inputmode="numeric" maxlength="4" autocomplete="off" /></label>
+          <button id="other-show" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="other-show-text"></span></button>
+        </form>
+        <p class="status" id="other-status" role="status" aria-live="polite"></p>
+        <div id="other-report"></div>
+      </section>
+      <!-- W5 (C20 · OB-157): the committee's confidential complaints register — posh-register.js over posh-register-session.ts. -->
+      <section id="register" hidden aria-labelledby="reg-h">
+        <h3 id="reg-h"></h3>
+        <p class="meta" id="reg-lead"></p>
+        <p class="status" id="reg-status" role="status" aria-live="polite"></p>
+        <div id="reg-body" hidden>
+          <button id="reg-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="reg-show-text"></span></button>
+          <p class="meta" id="reg-count"></p>
+          <ul class="rows" id="reg-rows"></ul>
+          <div id="receive" hidden>
+            <h4 id="rc-h"></h4>
+            <div class="row-form">
+              <label for="rc-on"><span id="rc-on-l"></span><input id="rc-on" type="date" /></label>
+              <label for="rc-c"><span id="rc-c-l"></span><input id="rc-c" autocomplete="off" /></label>
+              <label for="rc-r"><span id="rc-r-l"></span><input id="rc-r" autocomplete="off" /></label>
+              <label for="rc-s"><span id="rc-s-l"></span><textarea id="rc-s" rows="3"></textarea></label>
+              <button id="rc-save" type="button" class="sre-btn sre-btn-primary"><span id="rc-save-text"></span></button>
+            </div>
+            <p class="status" id="rc-status" role="status" aria-live="polite"></p>
+          </div>
+          <h4 id="log-h"></h4>
+          <button id="log-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="log-show-text"></span></button>
+          <p class="status" id="log-status" role="status" aria-live="polite"></p>
+          <ul class="rows" id="log-rows"></ul>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./posh-committee.js" type="module"></script>
+    <script src="./posh-register.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

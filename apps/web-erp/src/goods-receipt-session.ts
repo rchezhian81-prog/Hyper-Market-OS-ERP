@@ -38,6 +38,7 @@ import { translator, presentScreenState, type BilingualCopy, type Lang } from '.
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { DiscrepancyKind } from '../../../packages/receiving/src/index';
 import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/quantity';
+import { makeCaller, outcomeIn as decisionOutcomeIn, type Outcome } from './r4-insight-call';
 
 // ── what the screen was last told (the GRN list, one snapshot) ──────────────────────────────────────────────
 
@@ -220,7 +221,7 @@ export interface GoodsReceiptConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'confirmReturnTitle' | 'confirmReturnDetail' | 'confirmReturnAuthority' | 'confirmReturnLabel' | 'confirmUnavailable' // U1 · OB-626
+  | 'confirmReturnTitle' | 'confirmReturnDetail' | 'confirmReturnAuthority' | 'confirmReturnLabel' | 'confirmUnavailable' // U1 · OB-691
   | 'listHeading' | 'asOfLabel' | 'refresh'
   | 'sigNeedsApproval' | 'sigDiscrepancies' | 'sigClean'
   | 'needsApprovalBadge' | 'noPo'
@@ -272,7 +273,7 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     returnsHeading: 'Going back to the supplier', returnAwaiting: 'Waiting to go back to the supplier', returnGone: 'Gone back to the supplier',
     returnNeedsCount: 'Count it first — handheld scans may have put it on the shelf', returnChoiceLabel: 'Which held line went back',
     returnReasonLabel: 'How it went back', returnReasonPlaceholder: 'e.g. the supplier’s driver collected it, van KA-01', returnBtn: 'Record it as gone back',
-    // U1 · OB-626: the consequence-and-confirm sheet before a delivery line goes back to the supplier
+    // U1 · OB-691: the consequence-and-confirm sheet before a delivery line goes back to the supplier
     confirmReturnTitle: 'Send {line} back to the supplier',
     confirmReturnDetail: 'Stock falls by that line and the supplier is owed nothing for it; the bill is matched without it. A return cannot be taken back from this screen.',
     confirmReturnAuthority: 'In your name, with the words you gave on how it went back. Head office refuses it if the line is not waiting or your role may not return goods.',
@@ -797,5 +798,116 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           : [],
       };
     },
+  };
+}
+
+// ── W4 · M07-FR-03 · WF-04 (SP-6 · §28): the decisions a delivery waits for ──────────────────────────────────────────
+// Before W4 no screen made them: a line's quarantined / refused stock was disposed of (accept · return · claim) and a held
+// over-tolerance excess was decided (accept · refuse) only through head office's API. This is the Goods receipts page's
+// section for them — a DOM-free THIN client over head office's own routes:
+//   • `POST /v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` { disposition, reason } (`inventory.adjustment.approve`)
+//   • `POST /v1/inventory/goods-receipt/:grnId/excess/decide` { decision: approved | rejected, reason } (the same word)
+//   • `POST /v1/inventory/goods-receipt/:grnId/excess/returned` { reason } — a refused excess has gone back (`inventory.movement.append`)
+// The decision is a SECOND person's (§28): the buttons are never offered to the person who received the delivery (the screen
+// says why), and head office refuses it anyway — its refusal is shown in its own words. A reason is always asked. Nothing is
+// read on open; every call is a click; the receipts list is head office's.
+
+export const RECEIPT_DECISIONS_COPY = {
+  en: {
+    h: 'Deliveries waiting for a decision', lead: 'Stock held back at the door — damaged, failed a check, or more than was ordered — is decided by a second person, never the one who received it. Give a reason every time.',
+    show: 'Show what waits for a decision', none: 'No delivery waits for a decision.', receivedBy: 'received by', heldLine: 'held back', refusedLine: 'refused at the door',
+    excess: 'more than ordered, held', reasonL: 'Reason (what you saw, who you spoke to)', accept: 'Put it on sale', return: 'Send it back to the supplier', claim: 'Keep it and claim its value',
+    acceptExcess: 'Accept the extra', refuseExcess: 'Refuse the extra', excessReturned: 'Record the refused extra as gone back',
+    yours: 'You received this delivery, so a different person decides it.', decided: 'Decided.', returned: 'Recorded as gone back.',
+    needReason: 'Write the reason first.', nobody: 'Nobody is signed in on this screen.', cannotDecide: 'Your role cannot decide held stock.', cannotReturn: 'Your role cannot record goods going back.',
+    refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was decided.', lost_link: 'Head office cannot be reached — nothing was decided.',
+  },
+  ta: {
+    h: 'முடிவுக்குக் காத்திருக்கும் டெலிவரிகள்', lead: 'வாசலில் நிறுத்தி வைத்த சரக்கு — சேதமானது, சோதனையில் தோல்வி, அல்லது ஆர்டரைவிட அதிகம் — பெற்றவர் அல்லாத இரண்டாவது நபர் முடிவு செய்கிறார். ஒவ்வொரு முறையும் காரணம் தரவும்.',
+    show: 'முடிவுக்குக் காத்திருப்பவற்றைக் காட்டு', none: 'எந்த டெலிவரியும் முடிவுக்குக் காத்திருக்கவில்லை.', receivedBy: 'பெற்றவர்', heldLine: 'நிறுத்தி வைத்தது', refusedLine: 'வாசலில் மறுத்தது',
+    excess: 'ஆர்டரைவிட அதிகம், நிறுத்தி வைத்தது', reasonL: 'காரணம் (என்ன பார்த்தீர்கள், யாரிடம் பேசினீர்கள்)', accept: 'விற்பனைக்கு வை', return: 'சப்ளையருக்குத் திருப்பி அனுப்பு', claim: 'வைத்துக்கொண்டு மதிப்பைக் கோரு',
+    acceptExcess: 'கூடுதலை ஏற்றுக்கொள்', refuseExcess: 'கூடுதலை மறு', excessReturned: 'மறுத்த கூடுதல் திரும்பிச் சென்றதாகப் பதி',
+    yours: 'இந்த டெலிவரியை நீங்கள் பெற்றீர்கள், எனவே வேறொருவர் முடிவு செய்வார்.', decided: 'முடிவு செய்யப்பட்டது.', returned: 'திரும்பிச் சென்றதாகப் பதிவானது.',
+    needReason: 'முதலில் காரணத்தை எழுதுங்கள்.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotDecide: 'உங்கள் பணி நிறுத்திய சரக்கை முடிவு செய்ய முடியாது.', cannotReturn: 'உங்கள் பணி திரும்பிச் சென்றதைப் பதிய முடியாது.',
+    refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் முடிவு செய்யப்படவில்லை.', lost_link: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் முடிவு செய்யப்படவில்லை.',
+  },
+} as const;
+export const receiptDecisionWords = (lang: 'en' | 'ta', key: string): string =>
+  (RECEIPT_DECISIONS_COPY[lang] as Record<string, string>)[key] ?? (RECEIPT_DECISIONS_COPY.en as Record<string, string>)[key] ?? key;
+export const receiptDecisionOutcomeWords = (lang: 'en' | 'ta', out: Outcome<unknown>, good: string): string =>
+  out.result === 'ok' ? receiptDecisionWords(lang, good) : decisionOutcomeIn((k) => receiptDecisionWords(lang, k), out);
+
+/** One delivery's decisions still to make, as head office's receipt record says — and whether they are this person's to make. */
+export interface PendingReceiptDecision {
+  readonly grnId: string; readonly warehouseId: string; readonly receivedBy: string;
+  /** The viewer received it: no decision is offered (§28). */
+  readonly receivedByYou: boolean;
+  readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly quarantinedMinor: number; readonly rejectedMinor: number; readonly uom: string; readonly mayAccept: boolean }[];
+  /** A held excess no one decided yet. */
+  readonly heldExcessMinor: number;
+  /** A refused excess not yet recorded as gone back. */
+  readonly refusedExcessAwaitingReturn: boolean;
+}
+
+/** Head office's receipts list → the decisions each delivery waits for (a refused line can only go back or be claimed). */
+export function pendingDecisionsOf(raw: unknown, viewerId: string | undefined): readonly PendingReceiptDecision[] {
+  const receipts = Array.isArray((raw as { receipts?: unknown } | null)?.receipts) ? (raw as { receipts: unknown[] }).receipts : [];
+  const out: PendingReceiptDecision[] = [];
+  for (const r of receipts) {
+    if (r === null || typeof r !== 'object') continue;
+    const g = r as Record<string, unknown>;
+    const captured = (g['captured'] ?? {}) as { lines?: unknown };
+    const lines = Array.isArray(captured.lines) ? captured.lines as Record<string, unknown>[] : [];
+    const disposed = new Set((Array.isArray(g['dispositions']) ? g['dispositions'] as { lineId?: unknown }[] : []).map((d) => String(d.lineId)));
+    const waiting = lines.filter((l) => Number(l['quarantinedMinor'] ?? 0) + Number(l['rejectedMinor'] ?? 0) > 0 && !disposed.has(String(l['lineId'])))
+      .map((l) => ({
+        lineId: String(l['lineId']), productId: String(l['productId']), quarantinedMinor: Number(l['quarantinedMinor'] ?? 0), rejectedMinor: Number(l['rejectedMinor'] ?? 0),
+        uom: String(l['uom'] ?? 'ea'), mayAccept: Number(l['rejectedMinor'] ?? 0) === 0,
+      }));
+    const held = Number(g['heldMinor'] ?? 0);
+    const excessDecision = g['excessDecision'] as { decision?: unknown } | undefined;
+    const heldExcessMinor = held > 0 && excessDecision === undefined ? held : 0;
+    const refusedExcessAwaitingReturn = excessDecision?.decision === 'rejected' && held > 0 && g['excessReturn'] === undefined;
+    if (waiting.length === 0 && heldExcessMinor === 0 && !refusedExcessAwaitingReturn) continue;
+    const receivedBy = String(g['receivedBy'] ?? '');
+    out.push({ grnId: String(g['grnId']), warehouseId: String(g['warehouseId'] ?? ''), receivedBy, receivedByYou: viewerId !== undefined && receivedBy === viewerId, lines: waiting, heldExcessMinor, refusedExcessAwaitingReturn });
+  }
+  return out;
+}
+
+type DecisionWhy = 'nobody' | 'cannotDecide' | 'cannotReturn' | 'needReason';
+export interface ReceiptDecisionsSession {
+  readonly may: { readonly decide: boolean; readonly recordReturn: boolean };
+  pending(): Promise<Outcome<readonly PendingReceiptDecision[], DecisionWhy>>;
+  disposeLine(grnId: string, lineId: string, disposition: 'accept' | 'return' | 'claim', reason: string): Promise<Outcome<unknown, DecisionWhy>>;
+  decideExcess(grnId: string, decision: 'approved' | 'rejected', reason: string): Promise<Outcome<unknown, DecisionWhy>>;
+  excessReturned(grnId: string, reason: string): Promise<Outcome<unknown, DecisionWhy>>;
+}
+
+export function createReceiptDecisionsSession(input: {
+  readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
+  readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string;
+}): ReceiptDecisionsSession {
+  const named = input.viewer?.userId !== undefined;
+  const held = new Set(input.viewer?.permissions ?? []);
+  const may = { decide: named && held.has('inventory.adjustment.approve'), recordReturn: named && held.has('inventory.movement.append') };
+  const call = makeCaller({ keyPrefix: 'grn-decision', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
+  const enc = encodeURIComponent;
+  const gate = (right: boolean, why: DecisionWhy, reason?: string): { result: 'invalid'; why: DecisionWhy } | undefined =>
+    !named ? { result: 'invalid', why: 'nobody' } : !right ? { result: 'invalid', why } : reason !== undefined && reason.trim() === '' ? { result: 'invalid', why: 'needReason' } : undefined;
+  const readPath = held.has('inventory.availability.read') ? '/v1/inventory/goods-receipt' : '/v1/inventory/goods-receipt-review';
+  return {
+    may,
+    pending: async () => {
+      const no = gate(may.decide || may.recordReturn, 'cannotDecide'); if (no !== undefined) return no;
+      const r = await call<unknown>('GET', readPath);
+      return r.result === 'ok' ? { result: 'ok', value: pendingDecisionsOf(r.value, input.viewer?.userId) } : r;
+    },
+    disposeLine: async (grnId, lineId, disposition, reason) => gate(may.decide, 'cannotDecide', reason)
+      ?? call('POST', `/v1/inventory/goods-receipt/${enc(grnId)}/lines/${enc(lineId)}/disposition`, { disposition, reason: reason.trim() }),
+    decideExcess: async (grnId, decision, reason) => gate(may.decide, 'cannotDecide', reason)
+      ?? call('POST', `/v1/inventory/goods-receipt/${enc(grnId)}/excess/decide`, { decision, reason: reason.trim() }),
+    excessReturned: async (grnId, reason) => gate(may.recordReturn, 'cannotReturn', reason)
+      ?? call('POST', `/v1/inventory/goods-receipt/${enc(grnId)}/excess/returned`, { reason: reason.trim() }),
   };
 }

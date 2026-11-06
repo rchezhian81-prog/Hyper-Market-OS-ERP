@@ -109,6 +109,8 @@ const WORDS = {
     balanced: 'The cash matches exactly.', over: 'You have more than the day recorded, by',
     short: 'You have less than the day recorded, by',
     materialVariance: 'This difference is big enough that the cash office must be told. Do not hand the money over until somebody from the office is with you.',
+    // OB-676: the limit the difference is judged against, while the owner has not confirmed it.
+    toleranceNotConfirmed: 'The cash-difference limit ({amount}) is not confirmed by the owner yet.',
     noRoute: 'No route has been given to this phone yet.',
     noRouteBody: 'Nothing is wrong. When a route is assigned to you it will appear here on its own.',
     sampleRoute: 'Sample route — this is not real work.',
@@ -163,6 +165,7 @@ const WORDS = {
     balanced: 'பணம் சரியாகப் பொருந்துகிறது.', over: 'பதிவானதை விட அதிகம்',
     short: 'பதிவானதை விடக் குறைவு',
     materialVariance: 'இந்த வித்தியாசம் பெரியது. பணப் பிரிவுக்குச் சொல்ல வேண்டும். அலுவலகத்திலிருந்து ஒருவர் வரும் வரை பணத்தை ஒப்படைக்க வேண்டாம்.',
+    toleranceNotConfirmed: 'பண வித்தியாச வரம்பை ({amount}) உரிமையாளர் இன்னும் உறுதிசெய்யவில்லை.',
     noRoute: 'இந்த ஃபோனுக்கு இதுவரை வழி தரப்படவில்லை.',
     noRouteBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வழி ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sampleRoute: 'மாதிரி வழி — இது உண்மையான வேலை அல்ல.',
@@ -338,6 +341,8 @@ const real = window.routeSession;
 const session = real ?? sampleRoute();
 const outbox = window.driverOutbox ?? null;
 const TOLERANCE = window.driverHandoverToleranceMinor ?? 10_000;
+// OB-676: true only when the store computer served the owner's confirmation of the limit; anything else is "not confirmed".
+const TOLERANCE_CONFIRMED = window.driverHandoverToleranceConfirmed === true;
 
 let selectedStopId = null;
 
@@ -1023,7 +1028,9 @@ el('handover').addEventListener('click', async () => {
       : variance > 0 ? `${t('over')} ${inr(variance)}`
         : `${t('short')} ${inr(-variance)}`;
     // The recorded figure may be shown NOW — it can no longer influence what was counted.
-    tell(headline, result.material ? t('materialVariance') : `${t('counted')}: ${inr(counted)}`, !result.material);
+    const said = result.material ? t('materialVariance') : `${t('counted')}: ${inr(counted)}`;
+    // OB-676: a cash difference is always shown with whether the owner has confirmed the limit it was judged against.
+    tell(headline, TOLERANCE_CONFIRMED ? said : `${said} ${t('toleranceNotConfirmed').replace('{amount}', inr(TOLERANCE))}`, !result.material);
     void syncToBox();
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));

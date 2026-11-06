@@ -153,9 +153,83 @@
         <button id="pay-save" type="button" class="sre-btn"><span id="pay-save-text"></span></button>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
       </section>
+
+      <!-- W3 · M22-FR-04: payments business customers SAY they sent on their portal — finance matches each to the shop's own
+           bank statement, or rejects it with a reason (apps/web-erp/src/b2b-transfer-notes-session.ts, window.b2bTransferNotes,
+           drawn by b2b-payments.js). Nothing is read on open; every call is a click. -->
+      <section id="tn" hidden aria-labelledby="tn-h">
+        <h3 id="tn-h"></h3>
+        <p class="meta" id="tn-lead"></p>
+        <button id="tn-show" type="button" class="sre-btn"><span id="tn-show-text"></span></button>
+        <p class="status" id="tn-summary" role="status" aria-live="polite"></p>
+        <ul class="rows" id="tn-list"></ul>
+        <p class="status" id="tn-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W3 · M23-FR-02 · OB-678: GST credit and debit notes against the open customer's business tax invoices — worked out
+           by head office from the invoice it holds; a credit note asks a second person's approval first
+           (apps/web-erp/src/b2b-notes-session.ts, window.b2bNotes, drawn by b2b-notes.js). Nothing is read on open. -->
+      <section id="cn" hidden aria-labelledby="cn-h">
+        <h3 id="cn-h"></h3>
+        <p class="meta" id="cn-lead"></p>
+        <button id="cn-show" type="button" class="sre-btn"><span id="cn-show-text"></span></button>
+        <ul class="rows" id="cn-invoices"></ul>
+        <p class="status" id="cn-status" role="status" aria-live="polite"></p>
+        <h3 id="cn-asked-h"></h3>
+        <ul class="rows" id="cn-asked"></ul>
+        <h3 id="cn-notes-h"></h3>
+        <ul class="rows" id="cn-notes"></ul>
+        <!-- W4 · M23-FR-02: the month's credit notes (every business customer) against what the books carry for that month —
+             head office reads the posted ledger itself; only the month is sent. A difference is shown with its sign. -->
+        <h3 id="cnr-h"></h3>
+        <p class="meta" id="cnr-lead"></p>
+        <div class="row-form">
+          <label for="cnr-period"><span id="cnr-period-l"></span><input id="cnr-period" type="month" autocomplete="off" /></label>
+        </div>
+        <button id="cnr-show" type="button" class="sre-btn"><span id="cnr-show-text"></span></button>
+        <p class="status" id="cnr-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="cnr-figs"></div>
+        <ul class="rows" id="cnr-missing"></ul>
+      </section>
+
+      <!-- W5 · M22-FR-01/02/04 · M23: the next step in chasing (recommended — a person decides; nothing is sent), what the
+           customer is shown against the books, one order's chain from ordered to billed, and portal logins trying other
+           customers' data (apps/web-erp/src/b2b-books-session.ts, window.b2bBooks, drawn by b2b-books.js). Reads only. -->
+      <section id="bk" hidden aria-labelledby="bk-h">
+        <h3 id="bk-h"></h3>
+        <p class="meta" id="bk-lede"></p>
+        <div class="row-form">
+          <label for="bk-customer"><span id="bk-customer-l"></span><input id="bk-customer" autocomplete="off" /></label>
+          <label for="bk-asof"><span id="bk-asof-l"></span><input id="bk-asof" type="date" /></label>
+          <label for="bk-order"><span id="bk-order-l"></span><input id="bk-order" autocomplete="off" /></label>
+        </div>
+        <div class="actions">
+          <button id="bk-dunning" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-dunning-text"></span></button>
+          <button id="bk-reconcile" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-reconcile-text"></span></button>
+          <button id="bk-chain" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-chain-text"></span></button>
+          <button id="bk-probing" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-probing-text"></span></button>
+        </div>
+        <p class="status" id="bk-status" role="status" aria-live="polite"></p>
+        <div class="figs" id="bk-figs"></div>
+        <ul class="rows" id="bk-rows"></ul>
+        <!-- OB-686: the owner's chasing steps — "not set" until he sets them; no step is given until then. -->
+        <h4 id="bk-steps-h"></h4>
+        <p class="meta" id="bk-steps-line" role="status" aria-live="polite"></p>
+        <div class="row-form" id="bk-steps-form" hidden>
+          <label for="bk-steps-floor"><span id="bk-steps-floor-l"></span><input id="bk-steps-floor" inputmode="decimal" autocomplete="off" /></label>
+          <label for="bk-steps-remind"><span id="bk-steps-remind-l"></span><input id="bk-steps-remind" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-final"><span id="bk-steps-final-l"></span><input id="bk-steps-final" inputmode="numeric" autocomplete="off" /></label>
+          <label for="bk-steps-stop"><span id="bk-steps-stop-l"></span><input id="bk-steps-stop" inputmode="numeric" autocomplete="off" /></label>
+          <button class="sre-btn" id="bk-steps-save" type="button"><span id="bk-steps-save-text"></span></button>
+        </div>
+        <p class="status" id="bk-steps-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./b2b.js" type="module"></script>
+    <script src="./b2b-payments.js" type="module"></script>
+    <script src="./b2b-notes.js" type="module"></script>
+    <script src="./b2b-books.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

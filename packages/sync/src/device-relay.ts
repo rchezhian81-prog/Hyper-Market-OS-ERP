@@ -69,6 +69,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   FloorIndentReceived: { surfaces: ['manager'] },
   // SP-8c: the back store's ISSUE against the indent, from the warehouse handheld (tap the line → scan bin → scan item → confirm).
   FloorIndentIssued: { surfaces: ['warehouse'] },
+  // W5 (M09-FR-03): a floor RETURN counted in at the back store on the warehouse handheld — head office re-verifies the
+  // acceptor and runs the same indent and transfer engines as the direct acceptance (the returner accepting it is refused).
+  FloorIndentReturnAccepted: { surfaces: ['warehouse'] },
   // SP-8c-ii (F08): the shelf count taken on the merchandising screen (the ERP surface the box serves, so it rides as `manager`).
   // Head office re-verifies the COUNTER from their grants and judges the shelf against its own map; a count against a shelf
   // it does not have dead-letters visibly. The refill task's indent rides `FloorIndentRequested` above, from the same screen.
@@ -79,6 +82,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // their grants and keeps a wave register; a payload it cannot read dead-letters visibly. Nothing here moves stock.
   PickLineResolved: { surfaces: ['picker'] },
   WavePacked: { surfaces: ['picker'] },
+  // OB-687 (owner, 4 Nov 2026) · FUL-14: a swap the picker PUT TO THE CUSTOMER on a line whose rule needs a yes. Head office keeps
+  // it once, re-verifies the picker and runs the shop's own substitution rules on it; the customer answers it in the app.
+  SubstitutionProposed: { surfaces: ['picker'] },
   // SP-3c-ii (F11's driver half): the DRIVER handheld's work over the same socket. A stop's outcome (departed, at the door,
   // delivered with proof KIND and the cash taken, partly delivered, failed with a reason, reattempted, returned), the route's
   // end-of-shift settlement and the counted cash handover. Head office re-verifies the DRIVER, maps a stop onto the order's

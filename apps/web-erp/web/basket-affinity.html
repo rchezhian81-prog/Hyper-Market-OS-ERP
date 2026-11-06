@@ -19,7 +19,7 @@
     <style>
       :root { --tap: 48px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
-      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
@@ -70,6 +70,8 @@
       </section>
       <section aria-labelledby="pairs-h" id="pairs-section" hidden>
         <h3 id="pairs-h">Pairs bought together</h3>
+        <!-- UI-3: what these pairs cover and when head office answered; the counts as the shared cards (window.sreOffice). -->
+        <p class="muted" id="pairs-covers"></p>
         <div class="panels" id="totals"></div>
         <p class="muted" id="suggestions-note"></p>
         <ul class="rows" id="pairs"></ul>

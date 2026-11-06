@@ -24,6 +24,13 @@ export interface AudienceView { readonly customerRefs: readonly string[]; readon
 export interface PlanView { readonly campaignId: string; readonly blocked: boolean; readonly sendTo: readonly string[]; readonly sendToCount: number; readonly excludedCount: number; readonly excludedByReason: Readonly<Record<string, number>>; readonly detail: string }
 export interface SendView { readonly campaignId: string; readonly queued: number; readonly alreadyQueued: number; readonly excludedCount: number; readonly detail: string }
 export interface StatusView { readonly campaignId: string; readonly totals: { readonly queued: number; readonly pending: number; readonly sent: number; readonly withheld: number; readonly deadLettered: number } }
+/** Round 4d (M21-FR-02): head office's worked-out results for one campaign. A margin of null is "not known". */
+export interface AttributionView {
+  readonly campaignId: string; readonly sent: number; readonly converted: number; readonly conversionBps: number; readonly attributedRevenueMinor: number;
+  readonly attributedMarginMinor: number | null; readonly marginNotKnownOrders: number; readonly controlConversionBps: number | 'no_control_group'; readonly upliftBps: number | 'not_meaningful';
+  readonly notSent: { readonly waiting: number; readonly withheld: number; readonly deadLettered: number; readonly failedReported: number };
+  readonly attributionWindowHours: number;
+}
 export interface JourneyView {
   readonly kind: string; readonly on: boolean; readonly templateId: string | null; readonly channel: string | null; readonly say: string; readonly eligibleCount: number;
   readonly candidates: readonly { readonly customerRef: string; readonly eligible: boolean; readonly detail: string }[];
@@ -39,6 +46,11 @@ export const CAMPAIGNS_COPY = {
     planH: 'Plan a campaign', segment: 'Customers', promotion: 'It contains an offer or a price', findAudience: 'Who can we reach?', plan: 'Check consent and plan', send: 'Send', campaignK: 'Campaign',
     reach: 'can be reached', notContactable: 'match but have not said yes and are not contacted', willSend: 'will be sent', excluded: 'held back', queuedK: 'queued', alreadyK: 'already queued', blocked: 'Blocked:',
     statusH: 'Where the messages are', showStatus: 'Show the status', pendingK: 'waiting', sentK: 'sent', withheldK: 'withheld', deadK: 'dead letter',
+    resultsH: 'What the campaign brought in', resultsLead: 'Worked out by head office from the messages that reached the provider and the shop\'s own bills: a bill counts only when it was made after that customer\'s message, inside the window. Comparison customers — like the ones messaged, but deliberately not messaged — show whether the campaign beat doing nothing.',
+    windowK: 'Count bills made within (hours of the message)', controlK: 'Comparison customers not messaged (customer codes, separated by commas)', showResults: 'Work out the results',
+    resSent: 'reached', resConverted: 'bought afterwards', resConversion: 'bought', resRevenue: 'their bills came to', resMargin: 'margin', resMarginNotKnown: 'margin not known — the cost of some bills is not on record',
+    resControl: 'of the comparison customers bought', resNoControl: 'no comparison customers — this is activity, not proof the campaign worked', resUplift: 'points better than doing nothing',
+    resNotSent: 'not reached', resFailed: 'the provider said failed', needWindow: 'Say how many hours after the message a bill counts (a whole number above 0).',
     journeysH: 'Journeys', showJourneys: 'Show the journeys', on: 'ON', off: 'OFF', eligibleK: 'would be reached now', switchOn: 'Switch on', switchOff: 'Switch off', reason: 'Why (kept with the change)', run: 'Run the journeys now', ranSay: 'Journeys run — queued:', heldBack: 'held back',
     j_abandoned_cart: 'A basket left without an order', j_occasion: 'A birthday or anniversary the customer gave', j_win_back: 'A customer who has not bought for a while',
     template: 'Template', why_no_consent: 'have not said yes', why_withdrawn: 'took back their yes', why_do_not_contact: 'asked never to be contacted', why_frequency_cap: 'already had enough messages this week', why_template_not_approved: 'the words are not approved', why_promotion_in_transactional: 'an offer cannot go in a service message',
@@ -55,6 +67,11 @@ export const CAMPAIGNS_COPY = {
     planH: 'ஒரு பிரச்சாரத்தைத் திட்டமிடு', segment: 'வாடிக்கையாளர்கள்', promotion: 'இதில் சலுகை அல்லது விலை உள்ளது', findAudience: 'யாரைச் சென்றடையலாம்?', plan: 'ஒப்புதலைச் சரிபார்த்துத் திட்டமிடு', send: 'அனுப்பு', campaignK: 'பிரச்சாரம்',
     reach: 'சென்றடையலாம்', notContactable: 'பொருந்துகின்றனர், ஆனால் ஒப்புக்கொள்ளவில்லை, தொடர்பு கொள்ளப்படமாட்டார்கள்', willSend: 'அனுப்பப்படும்', excluded: 'நிறுத்தப்பட்டவை', queuedK: 'வரிசையில்', alreadyK: 'ஏற்கனவே வரிசையில்', blocked: 'தடுக்கப்பட்டது:',
     statusH: 'செய்திகள் எங்கே உள்ளன', showStatus: 'நிலையைக் காட்டு', pendingK: 'காத்திருக்கிறது', sentK: 'அனுப்பப்பட்டது', withheldK: 'நிறுத்தி வைக்கப்பட்டது', deadK: 'தோல்விப் பட்டியல்',
+    resultsH: 'பிரச்சாரம் கொண்டு வந்தது', resultsLead: 'சேவை வழங்குநரைச் சென்றடைந்த செய்திகளிலிருந்தும் கடையின் சொந்த பில்களிலிருந்தும் தலைமை அலுவலகம் கணக்கிட்டது: அந்த வாடிக்கையாளரின் செய்திக்குப் பின், கால வரம்பிற்குள் போட்ட பில் மட்டுமே கணக்கிடப்படும். செய்தி அனுப்பப்பட்டவர்களைப் போன்ற, ஆனால் வேண்டுமென்றே அனுப்பப்படாத ஒப்பீட்டு வாடிக்கையாளர்கள், எதுவும் செய்யாததை விட பிரச்சாரம் சிறந்ததா என்று காட்டுவார்கள்.',
+    windowK: 'செய்திக்குப் பின் எத்தனை மணி நேரத்திற்குள் போட்ட பில்', controlK: 'செய்தி அனுப்பாத ஒப்பீட்டு வாடிக்கையாளர்கள் (குறியீடுகள், காற்புள்ளியால் பிரித்து)', showResults: 'முடிவுகளைக் கணக்கிடு',
+    resSent: 'சென்றடைந்தது', resConverted: 'பின்னர் வாங்கினர்', resConversion: 'வாங்கினர்', resRevenue: 'அவர்களின் பில்கள்', resMargin: 'லாப விளிம்பு', resMarginNotKnown: 'லாப விளிம்பு தெரியவில்லை — சில பில்களின் அடக்கவிலை பதிவில் இல்லை',
+    resControl: 'ஒப்பீட்டு வாடிக்கையாளர்கள் வாங்கினர்', resNoControl: 'ஒப்பீட்டு வாடிக்கையாளர்கள் இல்லை — இது செயல்பாடு மட்டுமே, பிரச்சாரம் வேலை செய்தது என்பதற்கான சான்று அல்ல', resUplift: 'புள்ளிகள் எதுவும் செய்யாததை விடச் சிறந்தது',
+    resNotSent: 'சென்றடையவில்லை', resFailed: 'சேவை வழங்குநர் தோல்வி என்றார்', needWindow: 'செய்திக்குப் பின் எத்தனை மணி நேரத்திற்குள் போட்ட பில் கணக்கிடப்படும் என்று சொல்லுங்கள் (0க்கு மேல் முழு எண்).',
     journeysH: 'பயணங்கள்', showJourneys: 'பயணங்களைக் காட்டு', on: 'இயக்கம்', off: 'நிறுத்தம்', eligibleK: 'இப்போது சென்றடையப்படுவார்கள்', switchOn: 'இயக்கு', switchOff: 'நிறுத்து', reason: 'ஏன் (மாற்றத்துடன் வைக்கப்படும்)', run: 'இப்போதே பயணங்களை இயக்கு', ranSay: 'பயணங்கள் இயக்கப்பட்டன — வரிசையில்:', heldBack: 'நிறுத்தப்பட்டவை',
     j_abandoned_cart: 'ஆர்டர் இல்லாமல் விடப்பட்ட கூடை', j_occasion: 'வாடிக்கையாளர் கொடுத்த பிறந்தநாள் அல்லது ஆண்டுவிழா', j_win_back: 'சில காலமாக வாங்காத வாடிக்கையாளர்',
     template: 'வார்ப்புரு', why_no_consent: 'ஒப்புக்கொள்ளவில்லை', why_withdrawn: 'ஒப்புதலைத் திரும்பப் பெற்றனர்', why_do_not_contact: 'ஒருபோதும் தொடர்பு கொள்ள வேண்டாம் என்று கேட்டனர்', why_frequency_cap: 'இந்த வாரம் ஏற்கனவே போதுமான செய்திகள் பெற்றனர்', why_template_not_approved: 'வார்த்தைகள் ஒப்புக்கொள்ளப்படவில்லை', why_promotion_in_transactional: 'சேவைச் செய்தியில் சலுகை இருக்கக்கூடாது',
@@ -87,6 +104,8 @@ export interface CampaignsSession {
   plan(input: { readonly campaignId: string; readonly template: TemplateVersion | undefined; readonly containsPromotion: boolean; readonly audience: readonly string[] | undefined }): Promise<Outcome<PlanView>>;
   send(input: { readonly campaignId: string; readonly template: TemplateVersion | undefined; readonly containsPromotion: boolean; readonly plan: PlanView | undefined; readonly value?: string }): Promise<Outcome<SendView>>;
   status(campaignId: string): Promise<Outcome<StatusView>>;
+  /** Round 4d (M21-FR-02): what the campaign brought in — worked out by head office from its sends and the shop's bills. */
+  attribution(campaignId: string, windowHours: string, controlGroup: string): Promise<Outcome<AttributionView>>;
   journeys(): Promise<Outcome<{ readonly journeys: readonly JourneyView[] }>>;
   switchJourney(kind: string, on: boolean, template: TemplateVersion | undefined, reason: string): Promise<Outcome<unknown>>;
   runJourneys(): Promise<Outcome<{ readonly queued: number; readonly notQueued: number }>>;
@@ -133,6 +152,13 @@ export function createCampaignsSession(input: { readonly viewer: ViewerIdentity 
     status: async (campaignId) => {
       const g = guard(may.read, 'cannotRead'); if (g) return g;
       return campaignId.trim() === '' ? { result: 'invalid', why: 'needCampaign' } : call('GET', `/v1/service/campaigns/${enc(campaignId.trim())}/status`);
+    },
+    attribution: async (campaignId, windowHours, controlGroup) => {
+      const g = guard(may.read, 'cannotRead'); if (g) return g;
+      if (campaignId.trim() === '') return { result: 'invalid', why: 'needCampaign' };
+      if (!/^\d+$/.test(windowHours.trim()) || Number(windowHours.trim()) <= 0) return { result: 'invalid', why: 'needWindow' };
+      const control = [...new Set(controlGroup.split(/[,\s]+/).map((c) => c.trim()).filter((c) => c !== ''))];
+      return call('POST', `/v1/service/campaigns/${enc(campaignId.trim())}/attribution`, { attributionWindowHours: Number(windowHours.trim()), ...(control.length === 0 ? {} : { controlGroup: control }) });
     },
     journeys: async () => guard(may.read, 'cannotRead') ?? call('GET', '/v1/service/journeys'),
     switchJourney: async (kind, on, template, reason) => {

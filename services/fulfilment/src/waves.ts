@@ -133,6 +133,12 @@ export interface WaveSyncDeps {
   readonly recordOrderPack: (tenantId: string, orderId: string, result: PackResult, key: string) => Promise<void> | void;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * OB-687: run after a NEW line outcome is recorded — a line that carried a swap put to the customer is settled on the order
+   * from what was packed (`substitution-proposals.ts settleOnPick`). Its own refusals are kept on its own record; a failure
+   * here never undoes the outcome already recorded.
+   */
+  readonly afterLineOutcome?: (tenantId: string, outcome: WaveLineOutcome) => Promise<unknown>;
 }
 
 /** The latest outcome per line, in first-seen order — the register folded to the wave as it stands. */
@@ -324,6 +330,7 @@ export function syncedWaveRoutes(deps: WaveSyncDeps): readonly Route[] {
           },
           correlationId: waveId,
         });
+        await deps.afterLineOutcome?.(ctx.tenantId, outcome);
         // 202: it happened in the aisle; this records that head office now holds it.
         return { status: 202, body: { waveId, lineId, state: r.state, recorded: true, flags } };
       },

@@ -1,8 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { addDays } from '../../packages/workforce/src/working-time';
+import { pinTheEveningClock } from '../support/evening-clock';
+
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop. The marks are made
+// hours before "now", so the shop's midnight falls between them EVERY run: the across-midnight rule (attendance-pairing.ts)
+// is proved each time, instead of only when CI happens to run between 03:00 and 04:00 shop time.
+pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
+
 
 // Round 7 · R7-D — head office's side, through the real API, in memory and (with DATABASE_URL) on real PostgreSQL, with
 // cold restarts. Synthetic people only.

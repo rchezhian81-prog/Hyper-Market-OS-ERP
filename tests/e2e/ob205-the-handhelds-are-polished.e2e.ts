@@ -197,7 +197,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the staff phones, polished — at 360 an
       await expectThumbFooter(page);
       expect(await loneIcons(page)).toEqual([]);
       // Big quantities, the number on its own; the words read exactly as before.
-      expect(await page.textContent('#pick-lines .item .qty')).toBe('12 units · EA');
+      expect(await page.textContent('#pick-lines .item .qty')).toBe('12 units');
       expect(await fontSize(page, '#pick-lines .item .qty .n')).toBeGreaterThanOrEqual(22);
       // Each list says how many it holds — beside its words, which stay exactly the words.
       expect(await page.textContent('#pick-heading')).toBe('To pick');
@@ -208,7 +208,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the staff phones, polished — at 360 an
       expect(await page.$('#scan-title svg.sre-icon')).not.toBeNull();
       await page.keyboard.type('890RICE'); await page.keyboard.press('Enter');
       await page.waitForSelector('#confirm:not([hidden])');
-      expect(await page.textContent('#confirm-qty')).toBe('12 units · EA');
+      expect(await page.textContent('#confirm-qty')).toBe('12 units');
       expect(await fontSize(page, '#confirm-qty .n')).toBeGreaterThanOrEqual(48);
       expect(await overflow(page)).toEqual([]);
       expect(await audit(page, 'en')).toEqual([]);

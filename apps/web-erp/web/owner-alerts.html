@@ -96,6 +96,9 @@
       </section>
       <section id="today" hidden aria-labelledby="today-h">
         <h3 id="today-h"></h3>
+        <!-- UI-3: what today's list covers and when head office answered; its counts as the shared cards (window.sreOffice). -->
+        <p class="meta" id="d-covers"></p>
+        <div id="d-cards"></div>
         <ul class="rows" id="d-rows"></ul>
         <ul class="rows" id="d-alerts"></ul>
         <button id="d-check" type="button" hidden class="sre-btn"><span id="d-check-text"></span></button>
@@ -118,8 +121,11 @@
         </div>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="scheduleRuns" aria-live="polite"></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./w5-platform.js" type="module"></script>
     <script src="./owner-alerts.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>

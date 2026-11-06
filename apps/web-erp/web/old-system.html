@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Old system checks</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Old system checks (W3 · MG-01 · MG-03 · MG-07 · MG-08 · MG-09 · MG-11 · MG-12 · roadmap §30). A THIN CLIENT over head
+      office's migration routes that had no caller on any screen: discovery, mapping coverage and approval, the left-behind
+      exclusions and the owner's decision, the two-export comparison, the switch-over window and night check, undoing an
+      opening load inside its window (a second person approves), and the retirement check. Its session is
+      apps/web-erp/src/old-system-session.ts. Nothing is read before the person asks, nothing written except on an explicit
+      click; the person's name is never sent (head office takes the signed-in person). No prompt/confirm/alert; no timer.
+      W5 (MG-10 · MG-11 · OD-05 · GT-02) adds the switch-over evidence (old-system-evidence.js over
+      apps/web-erp/src/cutover-evidence-session.ts): who ran the extraction, the six outside witnesses, where the twelve kinds
+      of record stand, the signed page; the owner's acceptance in his own name; his four going-back limits ("not set" until he
+      sets each); the books side of a parallel day, a name on each difference, the printable sheet; and confirming and
+      reconciling a decided rollback. The old system's data is never deleted by anything on this page.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.check { display: inline-flex; gap: 8px; align-items: center; min-height: var(--tap); }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      label.check input { min-height: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      /* A real target both ways even before its words load (§1, ≥ 44px). */
+      button, input:not([type="checkbox"]):not([type="radio"]), select { min-width: var(--tap); }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; font-size: 14px; }
+      ul.rows > li.tone-ok { border-left-color: var(--ok); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); } ul.rows > li.tone-error { border-left-color: var(--error); }
+      .verdict { font-weight: 700; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+      .facts { font-size: var(--fs-sm); color: var(--muted); }
+      pre.kept-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: var(--fs-sm); margin: 0; }
+      a.quiet-link { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-weight: 600; }
+      @media print { body.printing > header, body.printing > p, body.printing main > section:not(.printing), body.printing main > section.printing > :not(pre.printing) { display: none !important; } body.printing pre.kept-text.printing { border: 0; display: block !important; } }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Old system checks</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Old system checks</h2>
+        <p class="lead" id="lead"></p>
+      </section>
+
+      <!-- MG-01 -->
+      <section aria-labelledby="disc-h" id="disc">
+        <h3 id="disc-h">What the old shop keeps its records in</h3>
+        <p class="lead" id="disc-lead"></p>
+        <div class="row-form">
+          <label for="src-id"><span data-w="srcId"></span><input id="src-id" type="text" autocomplete="off" /></label>
+          <label for="src-name"><span data-w="srcName"></span><input id="src-name" type="text" autocomplete="off" /></label>
+          <label for="src-kind"><span data-w="srcKind"></span><select id="src-kind"></select></label>
+          <label for="src-owner"><span data-w="srcOwner"></span><input id="src-owner" type="text" autocomplete="off" /></label>
+          <label for="src-rows"><span data-w="srcRows"></span><input id="src-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="src-basis"><span data-w="srcBasis"></span><select id="src-basis"></select></label>
+          <label for="src-retention"><span data-w="srcRetention"></span><input id="src-retention" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label class="check" for="src-extract"><input id="src-extract" type="checkbox" checked /> <span data-w="srcExtract"></span></label>
+          <button id="src-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addSource"></span></button>
+        </div>
+        <ul class="rows" id="src-list"></ul>
+        <button id="src-check" type="button" class="sre-btn"><span data-w="checkSources"></span></button>
+        <p class="status" id="disc-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="disc-result"></ul>
+      </section>
+
+      <!-- MG-03 -->
+      <section aria-labelledby="map-h" id="map">
+        <h3 id="map-h">How the old codes map</h3>
+        <p class="lead" id="map-lead"></p>
+        <div class="row-form">
+          <label for="map-id"><span data-w="mapId"></span><input id="map-id" type="text" autocomplete="off" /></label>
+          <label for="map-version"><span data-w="mapVersion"></span><input id="map-version" type="text" inputmode="numeric" value="1" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <label for="map-domain"><span data-w="mapDomain"></span><select id="map-domain"></select></label>
+          <label for="map-old"><span data-w="mapOld"></span><input id="map-old" type="text" autocomplete="off" /></label>
+          <label for="map-new"><span data-w="mapNew"></span><input id="map-new" type="text" autocomplete="off" /></label>
+          <label for="map-why"><span data-w="mapWhy"></span><input id="map-why" type="text" autocomplete="off" /></label>
+          <button id="map-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addEntry"></span></button>
+        </div>
+        <ul class="rows" id="map-list"></ul>
+        <h4 data-w="seenH"></h4>
+        <div class="row-form">
+          <label for="seen-domain"><span data-w="mapDomain"></span><select id="seen-domain"></select></label>
+          <label for="seen-value"><span data-w="seenValue"></span><input id="seen-value" type="text" autocomplete="off" /></label>
+          <label for="seen-rows"><span data-w="seenRows"></span><input id="seen-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <button id="seen-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addSeen"></span></button>
+        </div>
+        <ul class="rows" id="seen-list"></ul>
+        <div class="row-form">
+          <button id="map-approve" type="button" class="sre-btn"><span data-w="approveMapping"></span></button>
+          <button id="map-coverage" type="button" class="sre-btn"><span data-w="checkCoverage"></span></button>
+        </div>
+        <p class="status" id="map-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="map-result"></ul>
+        <a id="map-save" hidden></a>
+      </section>
+
+      <!-- MG-07 -->
+      <section aria-labelledby="excl-h" id="excl">
+        <h3 id="excl-h">Old records left behind</h3>
+        <p class="lead" id="excl-lead"></p>
+        <button id="excl-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showExclusions"></span></button>
+        <ul class="rows" id="excl-list"></ul>
+        <div id="excl-propose">
+          <div class="row-form">
+            <label for="excl-id"><span data-w="exclId"></span><input id="excl-id" type="text" autocomplete="off" /></label>
+            <label for="excl-scope"><span data-w="exclScope"></span><select id="excl-scope"></select></label>
+            <label for="excl-count"><span data-w="exclCount"></span><input id="excl-count" type="text" inputmode="numeric" autocomplete="off" /></label>
+            <label for="excl-value"><span data-w="exclValue"></span><input id="excl-value" type="text" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+          <label for="excl-desc"><span data-w="exclDesc"></span><input id="excl-desc" type="text" autocomplete="off" /></label>
+          <label for="excl-reason"><span data-w="exclReason"></span><textarea id="excl-reason" rows="2"></textarea></label>
+          <button id="excl-propose-btn" type="button" class="sre-btn"><span data-w="proposeExclusion"></span></button>
+        </div>
+        <div id="excl-decide">
+          <div class="row-form">
+            <label for="excl-which"><span data-w="exclId"></span><select id="excl-which"></select></label>
+            <label for="excl-choice"><span data-w="decideExclusion"></span>
+              <select id="excl-choice"><option value=""></option><option value="approve" data-w="approveK"></option><option value="reject" data-w="rejectK"></option></select>
+            </label>
+          </div>
+          <label for="excl-statement"><span data-w="statementK"></span><textarea id="excl-statement" rows="2"></textarea></label>
+          <button id="excl-decide-btn" type="button" class="sre-btn"><span data-w="decideExclusion"></span></button>
+        </div>
+        <p class="status" id="excl-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- MG-09 -->
+      <section aria-labelledby="diff-h" id="diff">
+        <h3 id="diff-h">Compare two exports from the old system</h3>
+        <p class="lead" id="diff-lead"></p>
+        <button id="diff-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showDiffs"></span></button>
+        <ul class="rows" id="diff-runs"></ul>
+        <div id="diff-form">
+          <div class="row-form">
+            <label for="diff-id"><span data-w="diffId"></span><input id="diff-id" type="text" autocomplete="off" /></label>
+            <label for="diff-domain"><span data-w="diffDomain"></span><select id="diff-domain"></select></label>
+          </div>
+          <div class="row-form" id="diff-columns"></div>
+          <div class="row-form">
+            <label for="diff-baseline"><span data-w="baselineFile"></span><input id="diff-baseline" type="file" accept=".csv,text/csv" /></label>
+            <label for="diff-latest"><span data-w="latestFile"></span><input id="diff-latest" type="file" accept=".csv,text/csv" /></label>
+          </div>
+          <button id="diff-run" type="button" class="sre-btn"><span data-w="runDiff"></span></button>
+        </div>
+        <p class="status" id="diff-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 · MG-02 the export checked against its seal -->
+      <section aria-labelledby="seal-h" id="seal">
+        <h3 id="seal-h">Check the export against its seal before loading</h3>
+        <p class="lead" id="seal-lead"></p>
+        <div class="row-form">
+          <label for="seal-file"><span data-w="sealFile"></span><input id="seal-file" type="file" accept=".json,application/json" /></label>
+          <label for="seal-extract"><span data-w="extractFile"></span><input id="seal-extract" type="file" accept=".csv,text/csv" /></label>
+        </div>
+        <button id="seal-verify" type="button" class="sre-btn"><span data-w="verifyBtn"></span></button>
+        <p class="status" id="seal-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="seal-result"></ul>
+      </section>
+
+      <!-- W4 · MG-04 the old data's problems, decided -->
+      <section aria-labelledby="prob-h" id="prob">
+        <h3 id="prob-h">Problems in the old data</h3>
+        <p class="lead" id="prob-lead"></p>
+        <button id="prob-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showProblems"></span></button>
+        <ul class="rows" id="prob-list"></ul>
+        <div id="prob-decide">
+          <div class="row-form">
+            <label for="prob-which"><span data-w="excWhich"></span><select id="prob-which"></select></label>
+            <label for="prob-action"><span data-w="excAction"></span><select id="prob-action"></select></label>
+            <label for="prob-survivor"><span data-w="excSurvivor"></span><input id="prob-survivor" type="text" autocomplete="off" /></label>
+          </div>
+          <label for="prob-reason"><span data-w="excReason"></span><textarea id="prob-reason" rows="2"></textarea></label>
+          <button id="prob-decide-btn" type="button" class="sre-btn"><span data-w="decideProblem"></span></button>
+        </div>
+        <p class="status" id="prob-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 · MG-05 the trial load's record -->
+      <section aria-labelledby="trial-h" id="trial">
+        <h3 id="trial-h">Trial load</h3>
+        <p class="lead" id="trial-lead"></p>
+        <div class="row-form">
+          <label for="trial-id"><span data-w="trialId"></span><input id="trial-id" type="text" autocomplete="off" /></label>
+          <label for="trial-rows"><span data-w="trialRows"></span><input id="trial-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="trial-minutes"><span data-w="trialMinutes"></span><input id="trial-minutes" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="trial-full"><span data-w="trialFull"></span><input id="trial-full" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label class="check" for="trial-empty"><input id="trial-empty" type="checkbox" /> <span data-w="trialEmpty"></span></label>
+        </div>
+        <button id="trial-run" type="button" class="sre-btn"><span data-w="runTrial"></span></button>
+        <p class="status" id="trial-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="trial-result"></ul>
+      </section>
+
+      <!-- W4 · MG-06 the figures, signed -->
+      <section aria-labelledby="tot-h" id="tot">
+        <h3 id="tot-h">The figures (control totals)</h3>
+        <p class="lead" id="tot-lead"></p>
+        <button id="tot-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showTotals"></span></button>
+        <ul class="rows" id="tot-list"></ul>
+        <div id="tot-sign">
+          <div class="row-form">
+            <label for="tot-which"><span data-w="totWhich"></span><select id="tot-which"></select></label>
+          </div>
+          <label for="tot-statement"><span data-w="totStatement"></span><textarea id="tot-statement" rows="2"></textarea></label>
+          <button id="tot-sign-btn" type="button" class="sre-btn"><span data-w="signTotal"></span></button>
+        </div>
+        <p class="status" id="tot-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W4 · WF-19 the switch-over gate's own reading, and the rehearsed going-back -->
+      <section aria-labelledby="gate-h" id="gate">
+        <h3 id="gate-h">Can we switch over — the checks</h3>
+        <p class="lead" id="gate-lead"></p>
+        <div class="row-form">
+          <label for="gate-cutover"><span data-w="gateCutover"></span><input id="gate-cutover" type="text" autocomplete="off" /></label>
+          <button id="gate-read" type="button" class="sre-btn"><span data-w="readGate"></span></button>
+          <button id="gate-rollback" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showRollback"></span></button>
+        </div>
+        <p class="status" id="gate-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="gate-result"></ul>
+        <ul class="rows" id="gate-rollback-result"></ul>
+      </section>
+
+      <!-- MG-11 night, OB-52 window, MG-08 reversal -->
+      <section aria-labelledby="night-h" id="night">
+        <h3 id="night-h">The switch-over night</h3>
+        <p class="lead" id="night-lead"></p>
+        <div class="row-form">
+          <label for="cutover-id"><span data-w="cutoverId"></span><input id="cutover-id" type="text" autocomplete="off" /></label>
+          <button id="window-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showWindow"></span></button>
+          <button id="night-check" type="button" class="sre-btn"><span data-w="nightCheck"></span></button>
+        </div>
+        <ul class="rows" id="night-result"></ul>
+        <div class="row-form">
+          <label for="load-id"><span data-w="loadId"></span><input id="load-id" type="text" autocomplete="off" /></label>
+          <label for="reverse-reason"><span data-w="reverseReason"></span><input id="reverse-reason" type="text" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <button id="reverse-ask" type="button" class="sre-btn"><span data-w="askReverse"></span></button>
+          <button id="reverse-approve" type="button" class="sre-btn"><span data-w="approveReverse"></span></button>
+          <button id="reverse-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showReverse"></span></button>
+        </div>
+        <p class="status" id="night-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="reverse-result"></ul>
+      </section>
+
+      <!-- MG-12 -->
+      <section aria-labelledby="retire-h" id="retire">
+        <h3 id="retire-h">Switching the old system off</h3>
+        <p class="lead" id="retire-lead"></p>
+        <div class="row-form">
+          <label for="ar-id"><span data-w="archiveId"></span><input id="ar-id" type="text" autocomplete="off" /></label>
+          <label for="ar-source"><span data-w="archiveSource"></span><input id="ar-source" type="text" autocomplete="off" /></label>
+          <label for="ar-digest"><span data-w="archiveDigest"></span><input id="ar-digest" type="text" autocomplete="off" /></label>
+          <label for="ar-rows"><span data-w="archiveRows"></span><input id="ar-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="ar-on"><span data-w="archivedOn"></span><input id="ar-on" type="date" /></label>
+          <label for="ar-years"><span data-w="retentionYears"></span><input id="ar-years" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="ar-earliest"><span data-w="earliest"></span><input id="ar-earliest" type="date" /></label>
+          <label for="ar-latest"><span data-w="latest"></span><input id="ar-latest" type="date" /></label>
+          <label for="ar-restore"><span data-w="restoreOn"></span><input id="ar-restore" type="date" /></label>
+          <label for="ar-open"><span data-w="openAssessments"></span><input id="ar-open" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
+          <label class="check" for="ar-accepted"><input id="ar-accepted" type="checkbox" /> <span data-w="cutoverAccepted"></span></label>
+        </div>
+        <button id="ar-assess" type="button" class="sre-btn"><span data-w="assess"></span></button>
+        <p class="status" id="retire-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="retire-result"></ul>
+      </section>
+
+      <!-- W5 · MG-11 — every figure has a witness: who ran the extraction, the six witnesses, where the twelve stand, the signed page -->
+      <section aria-labelledby="ver-h" id="ver">
+        <h3 id="ver-h">Every figure has a witness — the signed page</h3>
+        <p class="lead" id="ver-lead"></p>
+        <h4 id="run-h"></h4>
+        <div class="row-form">
+          <label for="run-id"><span data-e="runId">Run name</span><input id="run-id" type="text" autocomplete="off" /></label>
+          <label for="run-operator"><span data-e="runOperator">Who ran it (their sign-in)</span><input id="run-operator" type="text" autocomplete="off" /></label>
+          <label for="run-sources"><span data-e="runSources">Sources it took (comma between)</span><input id="run-sources" type="text" autocomplete="off" /></label>
+          <label for="run-note"><span data-e="runNote">Note</span><input id="run-note" type="text" autocomplete="off" /></label>
+        </div>
+        <button id="run-record" type="button" class="sre-btn"><span data-e="runRecord">Record who ran it</span></button>
+        <p class="status" id="run-status" role="status" aria-live="polite"></p>
+
+        <h4 id="wit-h"></h4>
+        <div class="row-form">
+          <label for="wit-which"><span data-e="witWhich">Which witness</span><select id="wit-which"></select></label>
+          <label for="wit-ref"><span data-e="evidenceRef">Which document (its reference)</span><input id="wit-ref" type="text" autocomplete="off" /></label>
+        </div>
+        <div class="row-form" data-witness="count loyalty" hidden>
+          <label for="wit-plan"><span data-e="planId">Sample plan name</span><input id="wit-plan" type="text" autocomplete="off" /></label>
+          <label for="wit-planner"><span data-e="plannedBy">Who planned the sample (their sign-in)</span><input id="wit-planner" type="text" autocomplete="off" /></label>
+          <label for="wit-seed"><span data-e="seed">Sample number (seed)</span><input id="wit-seed" type="text" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <div class="row-form" data-witness="suppliers" hidden>
+          <label for="wit-asked"><span data-e="suppliersAsked">Suppliers asked for a statement (comma between)</span><input id="wit-asked" type="text" autocomplete="off" /></label>
+        </div>
+        <div class="row-form" data-witness="bank" hidden>
+          <label for="wit-pstart"><span data-e="periodStart">Takings from</span><input id="wit-pstart" type="date" /></label>
+          <label for="wit-pend"><span data-e="periodEnd">Takings to</span><input id="wit-pend" type="date" /></label>
+          <label for="wit-sfrom"><span data-e="stmtFrom">Statement period from (as printed)</span><input id="wit-sfrom" type="date" /></label>
+          <label for="wit-sto"><span data-e="stmtTo">Statement period to (as printed)</span><input id="wit-sto" type="date" /></label>
+        </div>
+        <div class="row-form" data-witness="tax" hidden>
+          <label for="wit-periods"><span data-e="periodsExpected">Months that must have a return (YYYY-MM, comma between)</span><input id="wit-periods" type="text" autocomplete="off" /></label>
+        </div>
+        <div class="row-form" data-witness="books" hidden>
+          <label for="wit-entity"><span data-e="entity">Whose accounts</span><input id="wit-entity" type="text" autocomplete="off" /></label>
+          <label for="wit-pe"><span data-e="periodEndAcc">Accounts drawn to</span><input id="wit-pe" type="date" /></label>
+          <label for="wit-prep"><span data-e="preparedBy">Prepared by</span><input id="wit-prep" type="text" autocomplete="off" /></label>
+          <label for="wit-signed"><span data-e="signedOn">Signed on</span><input id="wit-signed" type="date" /></label>
+          <label for="wit-member"><span data-e="membership">Membership number</span><input id="wit-member" type="text" autocomplete="off" /></label>
+          <label for="wit-cutdate"><span data-e="cutoverDate">Switch-over date</span><input id="wit-cutdate" type="date" /></label>
+        </div>
+        <div class="row-form" data-witness="loyalty" hidden>
+          <label for="wit-source"><span data-e="sampleSource">How the sample was drawn</span><select id="wit-source"></select></label>
+          <label for="wit-cost"><span data-e="pointCost">What one point costs the shop (₹)</span><input id="wit-cost" type="text" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <div class="row-form" id="wit-files"></div>
+        <button id="wit-record" type="button" class="sre-btn"><span data-e="recordWitness">Give this evidence to head office</span></button>
+        <p class="status" id="wit-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="wit-result"></ul>
+
+        <h4 id="prog-h"></h4>
+        <button id="prog-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showProgress">Show where they stand</span></button>
+        <p class="status" id="prog-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="prog-list"></ul>
+
+        <h4 id="vpage-h"></h4>
+        <div class="row-form">
+          <button id="vpage-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showPage">Show the page</span></button>
+          <a id="vpage-save" class="quiet-link" hidden><span data-e="savePage">Keep a copy (to print)</span></a>
+          <button id="vpage-print" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span data-e="printPage">Print it</span></button>
+        </div>
+        <p class="status" id="vpage-status" role="status" aria-live="polite"></p>
+        <pre class="kept-text" id="vpage-text" hidden></pre>
+        <div class="row-form">
+          <label for="vpage-statement"><span data-e="signStatement">What you checked, in your own words</span><input id="vpage-statement" type="text" autocomplete="off" /></label>
+          <button id="vpage-sign" type="button" class="sre-btn"><span data-e="signPage">Sign the page</span></button>
+        </div>
+        <p class="status" id="vsign-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W5 · OD-05 — the owner accepts a kind of record on the old system's word, in his own name -->
+      <section aria-labelledby="acc-h" id="acc">
+        <h3 id="acc-h">The owner accepts a kind of record on the old system's word</h3>
+        <p class="lead" id="acc-lead"></p>
+        <div class="row-form">
+          <label for="acc-domain"><span data-e="accDomain">Which kind of record</span><select id="acc-domain"></select></label>
+          <label for="acc-reason"><span data-e="accReason">Why you accept it, in your own words</span><input id="acc-reason" type="text" autocomplete="off" /></label>
+        </div>
+        <button id="acc-accept" type="button" class="sre-btn"><span data-e="accept">Accept it, in my name</span></button>
+        <p class="status" id="acc-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- W5 · MG-11 — the owner's four rollback limits (his numbers; "not set" until set) -->
+      <section aria-labelledby="lim-h" id="lim">
+        <h3 id="lim-h">The owner's going-back limits</h3>
+        <p class="lead" id="lim-lead"></p>
+        <div class="row-form">
+          <label for="lim-controlTotalDifferenceMinor"><span data-e="lim_controlTotalDifferenceMinor">Largest money difference allowed on the night (₹)</span><input id="lim-controlTotalDifferenceMinor" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="lim-edgeOutageMinutes"><span data-e="lim_edgeOutageMinutes">Longest the store may be cut off from head office (minutes)</span><input id="lim-edgeOutageMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="lim-windowMinutes"><span data-e="lim_windowMinutes">How long the night may run after GO (minutes)</span><input id="lim-windowMinutes" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="lim-backupMaxAgeHours"><span data-e="lim_backupMaxAgeHours">How old the last good backup may be (hours)</span><input id="lim-backupMaxAgeHours" type="text" inputmode="numeric" autocomplete="off" /></label>
+        </div>
+        <div class="row-form">
+          <button id="lim-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showLimits">Show the limits</span></button>
+          <button id="lim-set" type="button" class="sre-btn"><span data-e="setLimits">Save my limits</span></button>
+        </div>
+        <p class="status" id="lim-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="lim-list"></ul>
+      </section>
+
+      <!-- W5 · MG-10 — the books side of a parallel day, a name on each difference, the printable sheet -->
+      <section aria-labelledby="books-h" id="books">
+        <h3 id="books-h">Running both — the books side of a day</h3>
+        <p class="lead" id="books-lead"></p>
+        <div class="row-form">
+          <label for="books-date"><span data-e="booksDate">Trading day</span><input id="books-date" type="date" /></label>
+          <button id="books-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showBooks">Show the reports and the day</span></button>
+        </div>
+        <ul class="rows" id="books-held"></ul>
+        <div class="row-form">
+          <label for="books-report"><span data-e="booksReport">Which report</span><select id="books-report"></select></label>
+          <label for="books-order"><span data-e="booksDateOrder">Dates in the file are written</span><select id="books-order"></select></label>
+          <label for="books-file"><span data-e="booksFile">The report as the old ERP printed it (CSV)</span><input id="books-file" type="file" accept=".csv,text/csv" /></label>
+        </div>
+        <div class="row-form" id="books-columns"></div>
+        <div class="row-form">
+          <button id="books-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="addReport">Add this report</span></button>
+          <button id="books-record" type="button" class="sre-btn"><span data-e="recordBooks">Record the books side of the day</span></button>
+        </div>
+        <ul class="rows" id="books-pending"></ul>
+        <p class="status" id="books-status" role="status" aria-live="polite"></p>
+
+        <h4 id="pdiff-h"></h4>
+        <button id="pdiff-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showDiffs">Show the open differences</span></button>
+        <p class="status" id="pdiff-pos" role="status" aria-live="polite"></p>
+        <ul class="rows" id="pdiff-list"></ul>
+        <div class="row-form">
+          <label for="pdiff-which"><span data-e="diffWhich">Which difference</span><select id="pdiff-which"></select></label>
+          <label for="pdiff-explain"><span data-e="diffExplain">What caused it (when known)</span><input id="pdiff-explain" type="text" autocomplete="off" /></label>
+          <label for="pdiff-wrong"><span data-e="diffWrong">Which system was wrong</span><select id="pdiff-wrong"></select></label>
+        </div>
+        <button id="pdiff-own" type="button" class="sre-btn"><span data-e="ownDiff">Own this difference</span></button>
+        <p class="status" id="pdiff-status" role="status" aria-live="polite"></p>
+
+        <h4 id="sheet-h"></h4>
+        <div class="row-form">
+          <button id="sheet-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showSheet">Show the sheet</span></button>
+          <a id="sheet-save" class="quiet-link" hidden><span data-e="saveSheet">Keep a copy (to print)</span></a>
+          <button id="sheet-print" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span data-e="printSheet">Print it</span></button>
+        </div>
+        <p class="status" id="sheet-status" role="status" aria-live="polite"></p>
+        <pre class="kept-text" id="sheet-text" hidden></pre>
+      </section>
+
+      <!-- W5 · GT-02 — confirm a decided rollback with the old system's first bill, then reconcile its window -->
+      <section aria-labelledby="rb-h" id="rb">
+        <h3 id="rb-h">Going back to the old system — confirm it and reconcile it</h3>
+        <p class="lead" id="rb-lead"></p>
+        <div class="row-form">
+          <label for="rb-cutover"><span data-e="rbCutover">Switch-over name</span><input id="rb-cutover" type="text" autocomplete="off" /></label>
+          <label for="rb-bill"><span data-e="rbBill">The old system's first bill number</span><input id="rb-bill" type="text" autocomplete="off" /></label>
+          <label for="rb-from"><span data-e="rbFrom">When the old system started taking sales (shop time)</span><input id="rb-from" type="datetime-local" step="1" /></label>
+        </div>
+        <button id="rb-confirm" type="button" class="sre-btn"><span data-e="rbConfirm">Confirm going back</span></button>
+        <p class="status" id="rb-confirm-status" role="status" aria-live="polite"></p>
+        <div class="row-form">
+          <label for="rb-newfrom"><span data-e="rbNewFrom">When the new system started taking sales (shop time)</span><input id="rb-newfrom" type="datetime-local" step="1" /></label>
+          <label for="rb-count"><span data-e="rbCount">Bills carried back into the old system</span><input id="rb-count" type="text" inputmode="numeric" autocomplete="off" /></label>
+          <label for="rb-total"><span data-e="rbTotal">Their total (₹)</span><input id="rb-total" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="rb-refunds"><span data-e="rbRefunds">Refunds carried back</span><input id="rb-refunds" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
+          <label for="rb-refund-total"><span data-e="rbRefundTotal">Refunds total (₹)</span><input id="rb-refund-total" type="text" inputmode="decimal" value="0" autocomplete="off" /></label>
+          <label for="rb-stock"><span data-e="f_rollback_stock">Each product's stock movement in the old system (CSV)</span><input id="rb-stock" type="file" accept=".csv,text/csv" /></label>
+          <a id="rb-stock-template" class="quiet-link"><span data-e="template">Empty template</span></a>
+        </div>
+        <button id="rb-reconcile" type="button" class="sre-btn"><span data-e="rbReconcile">Reconcile the window</span></button>
+        <p class="status" id="rb-rec-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./old-system.js" type="module"></script>
+    <script src="./old-system-evidence.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

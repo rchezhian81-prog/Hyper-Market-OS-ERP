@@ -18,7 +18,7 @@
     <style>
       :root { --tap: 48px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
-      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
@@ -43,6 +43,8 @@
       .table-wrap { overflow-x: auto; max-width: 100%; }
       td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      /* UI-3: a section's parts (cards, chart, register) never widen the page on a phone. */
+      section > * { min-width: 0; max-width: 100%; }
       [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
@@ -65,17 +67,27 @@
           <button id="show" type="submit" class="sre-btn sre-btn-primary">Show</button>
         </form>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <!-- UI-3: what the figures below cover and when head office answered. -->
+        <p class="muted" id="wa-covers"></p>
       </section>
       <section aria-labelledby="wo-h" id="wo">
         <h3 id="wo-h">Write-offs</h3>
-        <div class="panels" role="status" aria-live="polite"><div class="panel"><span class="k" id="wo-k-total">Total lost</span><span class="v" id="wo-total">—</span></div></div>
+        <!-- UI-3: the shared summary cards (window.sreOffice); the plain panel stays for a page opened without the chrome. -->
+        <div id="wo-cards"></div>
+        <div class="panels" id="wo-panels" role="status" aria-live="polite"><div class="panel"><span class="k" id="wo-k-total">Total lost</span><span class="v" id="wo-total">—</span></div></div>
         <p class="muted" id="wo-odd" hidden></p>
+        <div id="wo-trend"></div>
+        <div id="wo-chart"></div>
         <div id="wo-tables"></div>
       </section>
       <section aria-labelledby="wr-h" id="wr">
         <h3 id="wr-h">Waste records</h3>
-        <div class="panels" role="status" aria-live="polite"><div class="panel"><span class="k" id="wr-k-total">Total lost</span><span class="v" id="wr-total">—</span></div></div>
+        <!-- UI-3: the shared summary cards (window.sreOffice); the plain panel stays for a page opened without the chrome. -->
+        <div id="wr-cards"></div>
+        <div class="panels" id="wr-panels" role="status" aria-live="polite"><div class="panel"><span class="k" id="wr-k-total">Total lost</span><span class="v" id="wr-total">—</span></div></div>
         <p class="muted" id="wr-odd" hidden></p>
+        <div id="wr-trend"></div>
+        <div id="wr-chart"></div>
         <div id="wr-tables"></div>
       </section>
     </main>

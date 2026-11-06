@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Emergency access</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Emergency access (W3 · D11-FR-02 · M02-FR-04 · SEC-11 · §28). A THIN CLIENT over head office's emergency-access routes:
+      ask the owner to approve exactly one grant (POST /v1/approvals/requests, kind emergency_access), give it once he has
+      approved it (POST /v1/access/emergency/:grantId with the approvalId), end one early (POST …/:grantId/revoke), and see
+      every grant (GET /v1/access/emergency). Its session is apps/web-erp/src/emergency-access-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 180px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; border-left: 6px solid var(--degraded); overflow-wrap: anywhere; }
+      ul.history > li { border-left-color: var(--idle); }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Emergency access</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Emergency access</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="ask" hidden aria-labelledby="ask-h">
+        <h3 id="ask-h"></h3>
+        <form class="row-form" id="ask-form">
+          <label for="e-person"><span id="e-person-l"></span><input id="e-person" autocomplete="off" /></label>
+          <label for="e-role"><span id="e-role-l"></span><input id="e-role" autocomplete="off" /></label>
+          <label for="e-stores"><span id="e-stores-l"></span><input id="e-stores" autocomplete="off" /></label>
+          <label for="e-minutes"><span id="e-minutes-l"></span><input id="e-minutes" inputmode="numeric" autocomplete="off" /></label>
+          <label for="e-reason"><span id="e-reason-l"></span><input id="e-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="e-ask" type="submit" class="sre-btn sre-btn-primary"><span id="e-ask-text"></span></button>
+        </form>
+        <p class="status" id="ask-status" role="status" aria-live="polite"></p>
+        <h4 id="asks-h"></h4>
+        <p class="status" id="asks-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="asks"></ul>
+      </section>
+      <section id="review" hidden aria-labelledby="review-h">
+        <h3 id="review-h"></h3>
+        <p class="status" id="review-status" role="status" aria-live="polite"></p>
+        <ul class="rows history" id="grants"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./emergency-access.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

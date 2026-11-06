@@ -40,7 +40,7 @@ export const EVENTS_COPY = {
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotRead: 'Your role cannot read the forecast.', cannotManage: 'Only a manager can record or withdraw an event.',
     needStore: 'Fill in the store first. Nothing was sent.', needEvent: 'Fill in the name, both days and the expected effect (a number above 0). Nothing was sent.', needReason: 'Say why first. Nothing was sent.', needProduct: 'Choose a product first. Nothing was sent.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
-    // U1 · OB-626: the consequence-and-confirm sheet before an event changes the forecasts
+    // U1 · OB-691: the consequence-and-confirm sheet before an event changes the forecasts
     confirmTitle: 'Record {label} ({kind}), {from} to {to}: orders will be proposed {effect} for {products}',
     confirmDetail: 'From the next forecast, every order proposal for those days moves by that much. A wrong event is withdrawn with a reason; it stays on record.',
     confirmAuthority: 'In your name as the manager of store {store}. Head office refuses it if your role may not manage events.',

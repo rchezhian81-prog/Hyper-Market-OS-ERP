@@ -6,7 +6,7 @@ import { auditPage } from './lib/a11y-audit';
 import { startOfficeShop, PEOPLE, type OfficeShop } from './lib/office-shop';
 
 /**
- * **A privilege moves only through the shared confirm sheet (OB-626 A, 2 Nov 2026 · UI/UX gap audit G4 · design system
+ * **A privilege moves only through the shared confirm sheet (OB-691 A, 2 Nov 2026 · UI/UX gap audit G4 · design system
  * §1 rule 3 · §27.1 "destructive/financial actions show consequence, authorization and confirmation").**
  *
  * On the REAL store computer fed by the REAL head office, the owner lends the manager's refund authority to the

@@ -94,13 +94,14 @@ describe('every screen the store computer serves has a door, and every door open
 });
 
 describe('OB-401: the two old placeholders open the pages that already do their work', () => {
-  it('Reconciliation opens the month-end checks (its card and UPI section); Settings opens Store setup — each gated as its page is', () => {
+  it('Reconciliation opens the month-end checks (its card and UPI section); Settings is its own page (Round 4c) — each gated as its page is', () => {
     const byId = (id: string) => ERP_NAVIGATION.find((i) => i.id === id)!;
     expect(byId('reconciliation')).toMatchObject({ path: '/finance-close?tab=payments', requires: byId('finance-close').requires, group: 'Finance' });
-    expect(byId('settings')).toMatchObject({ path: '/setup?tab=settings', requires: byId('store-setup').requires, group: 'Administration' });
+    // Round 4c: "Settings duplicates Store setup" — Settings now opens the settings history page, gated as Store setup is.
+    expect(byId('settings')).toMatchObject({ path: '/settings', requires: byId('store-setup').requires, group: 'Administration' });
     expect(screenOfPath(byId('reconciliation').path)).toBe('finance-close');
-    expect(screenOfPath(byId('settings').path)).toBe(screenOfPath(byId('store-setup').path));
-    expect(screenOfPath(byId('settings').path)).not.toBeNull();
+    expect(screenOfPath(byId('settings').path)).toBe('settings');
+    expect(screenOfPath(byId('settings').path)).not.toBe(screenOfPath(byId('store-setup').path));
     for (const id of ['reconciliation', 'settings']) expect(byId(id).served ?? 'box').toBe('box');
     // The finance-close page has the tab the link names, so the link opens that section.
     expect(readFileSync('apps/web-erp/web/finance-close.html', 'utf8')).toContain('id="tab-payments"');

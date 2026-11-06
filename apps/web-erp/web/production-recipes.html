@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Recipes</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Recipes (Round 4d · M11-FR-01). A THIN CLIENT over head office's recipe register: the recipes in force and the
+      departments switched on (GET /v1/production/recipes), and add or change a recipe (POST /v1/production/recipes/:id),
+      checked by the production engine and kept version by version. Its session is apps/web-erp/src/production-recipes-session.ts.
+      Nothing is written on open. W3 (M11-FR-04): the departments this shop runs (GET /v1/production/departments), and
+      switching one on (POST /v1/production/departments/:id) — a recipe belongs to one, so a new shop no longer dead-ends.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      form.grid, .ingredient { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
+      .ingredient { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+      #ingredients { display: grid; gap: 8px; grid-column: 1 / -1; }
+      form.grid > button, form.grid > h4 { grid-column: 1 / -1; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      ul.depts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.depts li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+      ul.depts li .state { font-size: 14px; color: var(--muted); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Recipes</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Recipes</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <div id="cards"></div>
+      </section>
+      <section id="list" aria-labelledby="register-h">
+        <h3 id="register-h"></h3>
+        <div id="recipes-register"></div>
+      </section>
+      <section id="departments" hidden aria-labelledby="dept-h">
+        <h3 id="dept-h"></h3>
+        <p class="lead" id="dept-lead"></p>
+        <ul class="depts" id="dept-rows"></ul>
+        <p class="status" id="dept-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="editor" hidden aria-labelledby="form-h">
+        <h3 id="form-h"></h3>
+        <p class="status" id="no-departments" hidden></p>
+        <form id="recipe-form" class="grid" novalidate>
+          <div id="recipe-fields" style="display: contents"></div>
+          <h4 id="inputs-h"></h4>
+          <div id="ingredients"></div>
+          <button id="add-ingredient" class="quiet sre-btn sre-btn-quiet" type="button"><span id="add-ingredient-text"></span></button>
+          <button id="save-recipe" type="submit" class="sre-btn sre-btn-primary"><span id="save-recipe-text"></span></button>
+        </form>
+        <p class="status" id="recipe-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./production-recipes.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

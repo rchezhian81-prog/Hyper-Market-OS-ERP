@@ -33,8 +33,13 @@ import { giveSignIn, type PeopleDeps } from './people';
 import type { TokenRevocation } from './revocation';
 import { isGenericName, SIGN_IN_NAME, PRODUCT_ID, tidyPersonName, readablePersonName } from '../../../packages/identity/src/sign-in-names';
 
-/** The three outside-party roles this flow may give — and no other (the named exception). */
-export const OUTSIDE_PARTY_ROLES = ['b2b_customer', 'customer', 'supplier'] as const;
+/**
+ * The outside-party roles this flow may give — and no other (the named exception). OB-676 "A" (owner, 2 Nov 2026, in
+ * writing) adds the fourth: a concessionaire's own login (M27-FR-02 "only the concessionaire accesses it"), managed by
+ * those who manage concessions (`concession.contract.manage`), bound to the concessionaire's record, seeing only its own
+ * counter's sales, stock and invoices.
+ */
+export const OUTSIDE_PARTY_ROLES = ['b2b_customer', 'customer', 'supplier', 'concessionaire'] as const;
 export type OutsidePartyRole = (typeof OUTSIDE_PARTY_ROLES)[number];
 
 /** Each kind: the path segment, the permission that manages that party (to invite, approve, revoke), and its words. */
@@ -42,6 +47,7 @@ export const OUTSIDE_PARTY_KINDS: Readonly<Record<OutsidePartyRole, { readonly s
   b2b_customer: { segment: 'b2b-accounts', permission: 'b2b.account.manage', party: 'business customer account' },
   customer: { segment: 'customers', permission: 'customer.identity.manage', party: 'customer record' },
   supplier: { segment: 'suppliers', permission: 'supplier.portal.manage', party: 'supplier portal partner' },
+  concessionaire: { segment: 'concessionaires', permission: 'concession.contract.manage', party: 'concessionaire' },
 };
 
 /** The code every refusal of the "an outside party's login holds only its own role" rule carries (round 14, verifier G5). */

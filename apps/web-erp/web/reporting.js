@@ -57,6 +57,9 @@ const WORDS = {
     cardReady: 'Reports you can run', cardBlocked: 'Cannot be run yet', cardBacklog: 'Facts to start recording', cardNote: 'from what this shop records',
     findReport: 'Find a report', noReportMatches: 'No report matches those words.', rowsLabel: 'The rows behind this report',
     notFed: 'This page has not been told what this shop records, so it does not know which reports can run. Nothing is shown as ready or as clear.',
+    // UI-3: what a report covers, and its chart
+    covers: 'Store {store} · trading day {day} · read from the store computer at {time}', notToldStore: 'not told',
+    chartBy: 'By', chartTaken: 'Taken', chartUnits: 'Items sold', chartToday: 'today',
   },
   ta: {
     title: 'அறிக்கைகள்',
@@ -83,6 +86,8 @@ const WORDS = {
     cardReady: 'இயக்கக்கூடிய அறிக்கைகள்', cardBlocked: 'இன்னும் இயக்க முடியாதவை', cardBacklog: 'பதிவு செய்யத் தொடங்க வேண்டியவை', cardNote: 'இந்தக் கடை பதிவு செய்வதிலிருந்து',
     findReport: 'ஒரு அறிக்கையைத் தேடு', noReportMatches: 'அந்தச் சொற்களுக்குப் பொருந்தும் அறிக்கை இல்லை.', rowsLabel: 'இந்த அறிக்கைக்குப் பின்னால் உள்ள வரிகள்',
     notFed: 'இந்தக் கடை என்ன பதிவு செய்கிறது என்று இந்தப் பக்கத்திற்குச் சொல்லப்படவில்லை, எனவே எந்த அறிக்கைகள் இயங்கும் என்று தெரியாது. எதுவும் தயார் என்றோ சரி என்றோ காட்டப்படவில்லை.',
+    covers: 'கடை {store} · வணிக நாள் {day} · கடை கணினியிலிருந்து படித்த நேரம் {time}', notToldStore: 'சொல்லப்படவில்லை',
+    chartBy: 'வாரியாக', chartTaken: 'வசூல்', chartUnits: 'விற்ற பொருட்கள்', chartToday: 'இன்று',
   },
 };
 let lang = 'en';
@@ -290,9 +295,53 @@ function openReport(reportId) {
   renderReport(outcome);
 }
 
+// ── UI-3: what a report covers, and its chart ─────────────────────────────────────────────────────────────────────
+// OB-607: a moment at the SHOP's clock (the zone the store computer served), never the reader's device clock or raw UTC.
+const shopTime = (at) => (at ? window.sreShopDay?.dateTimeOf(at) || at : '');
+const fillIn = (text, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), text);
+function coversLine() {
+  const d = window.reportingData ?? {};
+  return fillIn(t('covers'), { store: d.branchId || d.storeId || t('notToldStore'), day: d.tradingDay || t('notToldStore'), time: shopTime(d.now) || t('notToldStore') });
+}
+
+/**
+ * The reports whose point is a comparison or a figure over time get a chart, drawn from the report's OWN rows (never a
+ * second sum). `columns` = over time, in order; `bars` = a comparison, largest first as the report already orders it.
+ */
+const CHARTS = {
+  sales_by_hour: { kind: 'columns', key: 'key', value: 'totalMinor', money: true },
+  day_on_day: { kind: 'columns', key: 'tradingDay', value: 'totalMinor', money: true, oldestFirst: true },
+  sales_by_cashier: { kind: 'bars', key: 'key', value: 'totalMinor', money: true },
+  tender_mix: { kind: 'bars', key: 'key', value: 'totalMinor', money: true },
+  units_by_category: { kind: 'bars', key: 'department', value: 'units', money: false },
+};
+function renderReportChart(outcome) {
+  const host = el('report-chart');
+  host.replaceChildren();
+  const how = CHARTS[outcome.report.id];
+  if (how === undefined || window.sreCharts === undefined) return;
+  const number = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const rows = (how.oldestFirst ? [...outcome.rows].sort((a, b) => String(a[how.key]).localeCompare(String(b[how.key]))) : outcome.rows).map((r) => {
+    const value = number(r[how.value]);
+    const label = String(r[how.key]);
+    return {
+      key: String(r[how.key]), label, value,
+      ...(value === null ? {} : { text: how.money ? inr(value) : String(value) }),
+      ...(how.oldestFirst && r[how.key] === window.reportingData?.tradingDay ? { mark: t('chartToday') } : {}),
+    };
+  });
+  window.sreCharts.draw(host, {
+    id: outcome.report.id, kind: how.kind, title: outcome.report.name,
+    covers: coversLine(),
+    labelHeading: t('chartBy'), valueHeading: how.money ? t('chartTaken') : t('chartUnits'), rows,
+  }, lang);
+}
+
 function renderReport(outcome) {
   el('report-title').textContent = outcome.report.name;
   el('report-answers').textContent = outcome.report.answers;
+  el('report-covers').textContent = coversLine();
+  renderReportChart(outcome);
   el('rows-title').textContent = t('rowsTitle');
   el('export').textContent = t('exportIt');
   el('export-note').textContent = t('exportNote');
@@ -373,7 +422,8 @@ function figureBox(f) {
   asat.className = 'asat';
   // Words as well as the colour on the border: one man in twelve cannot tell the two apart, and
   // this is a screen people quote from.
-  asat.textContent = `${t('asAt')} ${f.asAt ?? t('neverHeard')} · ${words(STALENESS_WORDS, f.staleness)}`;
+  // UI-3 (OB-607): the moment at the shop's clock, not the raw universal-time stamp.
+  asat.textContent = `${t('asAt')} ${f.asAt ? shopTime(f.asAt) : t('neverHeard')} · ${words(STALENESS_WORDS, f.staleness)}`;
 
   box.append(name, value, asat);
   return box;

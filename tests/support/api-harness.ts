@@ -8,11 +8,12 @@
 // a given user (auto-minting a token via the local IdP); `raw()` sends an explicit/no token for
 // auth-rejection tests.
 
+import { secretUseCounter, type SecretUseCounter } from '../../services/api/src/w6-secret-use-adapters';
 import { randomBytes } from 'node:crypto';
 import type { IdentityDirectory } from '../../services/identity/src/identity-directory';
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
+import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation, type AuthThrottle } from '../../services/kernel/src/index';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
 import { tokenRevocationAdapter, personalDataStore } from '../../services/api/src/adapters';
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
@@ -21,6 +22,7 @@ import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
 import { withHandheldBuildCheck } from '../../services/api/src/r9b-handheld-build-adapters';
 import { idempotencyConflictsAdapter } from '../../services/api/src/idempotency-conflicts';
+import { officeSignInLogAdapter } from '../../services/api/src/office-sign-in-log'; // W3 · D13-FR-06
 import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
@@ -97,7 +99,7 @@ export interface ApiHarness {
     authTimeFromNowSeconds?: number | null; amr?: readonly string[] | null;
   }): Promise<HttpResponse>;
   /** Send a request with an explicit Authorization token (or none) and optional extra headers. */
-  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string>; query?: Readonly<Record<string, string>> }): Promise<HttpResponse>;
+  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string>; query?: Readonly<Record<string, string>>; clientIp?: string }): Promise<HttpResponse>;
   /** Establish the tenant's first owner via the guarded genesis path (once-only). */
   seedOwner(tenantId: string, userId: string): Promise<void>;
   /** Provision an owner directly (as tenant provisioning would seed the initial admin set). */
@@ -106,6 +108,8 @@ export interface ApiHarness {
   provisionRole(tenantId: string, userId: string, roleId: string, branchScope?: readonly string[] | 'all'): Promise<void>;
   /** Turn an optional/paid feature on for a tenant, so routes tagged with it (M36-FR-01) are reachable. */
   enableFeature(tenantId: string, feature: string): Promise<void>;
+  /** W6 · M32-FR-03 · OB-688: the kernel's secret-use counter, composed as main.ts does it (no timer here: a test flushes). */
+  readonly secretUse: SecretUseCounter;
 }
 
 /**
@@ -145,6 +149,8 @@ export function apiHarness(opts: {
   boxHistorySealSecret?: string;
   /** R3 OB-196: the gap-free number series (a SqlNumberSeriesStore on PostgreSQL, or one shared in-memory store) — so a restart continues it. */
   numberSeries?: NumberSeriesStore;
+  /** W3 · D13-FR-06: the sign-in lockout (main.ts runs the in-memory backoff) — omitted, nothing is locked here. */
+  authThrottle?: AuthThrottle;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -169,6 +175,7 @@ export function apiHarness(opts: {
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
+  const secretUse = secretUseCounter({ store, now: opts.now ?? (() => new Date().toISOString()) });
   const kernel: Kernel = {
     router: built.router!,
     authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
@@ -183,6 +190,11 @@ export function apiHarness(opts: {
     entitlements: tenantEntitlementResolver(store),
     idempotency,
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),
+    // W3 · D13-FR-06: failed office sign-ins and lockouts kept on the shop's record, composed exactly as main.ts does it.
+    ...(opts.authThrottle === undefined ? {} : { authThrottle: opts.authThrottle }),
+    signInLog: officeSignInLogAdapter({ store }),
+    // W6 · M32-FR-03 · OB-688: each machine credential's use counted, as main.ts composes it.
+    credentialUse: secretUse.record,
     newTraceId: () => 'trace-e2e',
   };
 
@@ -209,8 +221,8 @@ export function apiHarness(opts: {
         ...(authTimeFromNowSeconds === undefined ? {} : { authTimeFromNowSeconds }),
         ...(amr === undefined ? {} : { amr }),
       }), idempotencyKey) }),
-    raw: ({ method, path, token, body, idempotencyKey, headers: extra, query }) =>
-      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(token, idempotencyKey, extra) }),
+    raw: ({ method, path, token, body, idempotencyKey, headers: extra, query, clientIp }) =>
+      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), ...(clientIp === undefined ? {} : { clientIp }), headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: async (tenantId, userId, roleId, branchScope) => {
@@ -219,5 +231,6 @@ export function apiHarness(opts: {
       await appendGrant(store, tenantId, userId, roleId, branchScope);
     },
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),
+    secretUse,
   };
 }

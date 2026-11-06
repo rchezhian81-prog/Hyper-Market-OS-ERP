@@ -158,7 +158,7 @@ async function makeDraft() {
 }
 async function commit() {
   if (draft === null) return;
-  // OB-626 A (U1): the roster is committed only through the shared confirm sheet — the week, how many shifts and people.
+  // OB-691 A (U1): the roster is committed only through the shared confirm sheet — the week, how many shifts and people.
   if (!window.sreOffice || typeof window.sreOffice.confirm !== 'function') { $('commit-status').className = 'status err'; $('commit-status').textContent = t('noChrome'); return; }
   const vars = { week: draft.weekStart, shifts: String(draft.draft.shifts.length), people: String(new Set(draft.draft.assignments.map((a) => a.employeeId)).size), uncovered: String(draft.draft.uncovered.length) };
   const said = (key) => ({ en: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), api.words('en', key)), ta: Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(v), api.words('ta', key)) });

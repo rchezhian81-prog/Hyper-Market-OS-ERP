@@ -10,7 +10,7 @@ const session = window.transfersSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
 
-// U1 · OB-626 (design system §1.3, §27.1): a stock-moving click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a stock-moving click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -150,7 +150,7 @@ function paintWords() {
 if (session !== null) {
   $('d-dispatch').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status';
-    // U1 · OB-626: the consequence-and-confirm sheet before stock leaves the store — Go back sends nothing.
+    // U1 · OB-691: the consequence-and-confirm sheet before stock leaves the store — Go back sends nothing.
     const row = currentRow();
     if (row === undefined) return;
     const v = session.rowView(lang, row);

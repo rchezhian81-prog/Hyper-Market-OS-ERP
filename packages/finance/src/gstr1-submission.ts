@@ -25,6 +25,9 @@
 //   • markUnknown  — no clear answer (timeout/outage): needs reconciliation, never assumed filed or failed.
 //   • reconcile    — an operator resolves a stuck `unknown` to filed or failed with EVIDENCE — a recorded
 //                    fact, never a silent rewrite.
+//   • fileByHand   — OB-683 (owner, 3 Nov 2026): live filing is off, so the person who uploaded the APPROVED return on
+//                    the GST portal themselves records the portal's acknowledgement number (ARN). The return is then
+//                    FILED BY HAND — nothing was sent to the portal from the system; only an approved return, once.
 //
 // The fold is replay-safe: an event that does not fit the current state is ignored (a re-posted ack on a
 // filed return, an approval before a preview), so a duplicate or out-of-order delivery cannot corrupt state.
@@ -79,7 +82,7 @@ export type Gstr1SubmissionState =
   | 'cancelled';  // withdrawn before filing — terminal; a fresh return re-previews
 
 export type Gstr1SubmissionAction =
-  | 'preview' | 'approve' | 'submit' | 'acknowledge' | 'markFailed' | 'markUnknown' | 'reconcile' | 'cancel';
+  | 'preview' | 'approve' | 'submit' | 'acknowledge' | 'markFailed' | 'markUnknown' | 'reconcile' | 'cancel' | 'fileByHand';
 
 export type Gstr1SubmissionEvent =
   | { readonly kind: 'previewed'; readonly period: string; readonly returnDigest: string; readonly by: string; readonly at: string; readonly summary?: string }
@@ -89,7 +92,9 @@ export type Gstr1SubmissionEvent =
   | { readonly kind: 'failed'; readonly errorCode: string; readonly errorClass: GstnErrorClass; readonly at: string }
   | { readonly kind: 'unknownResponse'; readonly detail: string; readonly at: string }
   | { readonly kind: 'reconciled'; readonly resolvedState: 'filed' | 'failed'; readonly by: string; readonly note: string; readonly at: string; readonly arn?: string }
-  | { readonly kind: 'cancelled'; readonly by: string; readonly reason: string; readonly at: string };
+  | { readonly kind: 'cancelled'; readonly by: string; readonly reason: string; readonly at: string }
+  /** OB-683: the approved return was uploaded on the GST portal by hand; `by` (and `byName`) come from the session. */
+  | { readonly kind: 'filedByHand'; readonly arn: string; readonly by: string; readonly byName: string; readonly at: string };
 
 /** The operator-facing status category a submission falls into — the exception-queue vocabulary. */
 export type Gstr1SubmissionQueueCategory = 'pending' | 'processing' | 'success' | 'failed' | 'cancelled' | 'unknown';
@@ -123,7 +128,19 @@ export interface Gstr1SubmissionAggregate {
   /** The portal reference once filed. */
   readonly arn?: string;
   readonly errorClass?: GstnErrorClass;
+  /** OB-683: who recorded it filed by hand on the portal (their id and name, from the session) and head office's time. */
+  readonly filedByHand?: { readonly by: string; readonly name: string; readonly at: string };
   readonly detail: string;
+}
+
+/**
+ * The GST portal's acknowledgement reference number (ARN) as the portal prints it: 15 characters — "AA", the two-digit
+ * state code, the month and year it was generated (MMYY), a six-digit number and one check character (e.g.
+ * AA330626012345X). Upper-case; spaces are not part of it.
+ */
+export const GST_PORTAL_ARN = /^AA(?!00)\d{2}(0[1-9]|1[0-2])\d{2}\d{6}[0-9A-Z]$/;
+export function isGstPortalArn(arn: string): boolean {
+  return GST_PORTAL_ARN.test(arn);
 }
 
 /**
@@ -164,6 +181,11 @@ export function foldGstr1Submission(period: string, events: readonly Gstr1Submis
           ? { ...agg, state: 'filed', ...(e.arn !== undefined ? { arn: e.arn } : {}), detail: `reconciled to filed by ${e.by}: ${e.note}` }
           : { ...agg, state: 'failed', detail: `reconciled to failed by ${e.by}: ${e.note}` };
       }
+    } else if (e.kind === 'filedByHand') {
+      // Only an APPROVED return is filed by hand, and only once (a second record on a filed return is ignored).
+      if (agg.state === 'approved') {
+        agg = { ...agg, state: 'filed', arn: e.arn, filedByHand: { by: e.by, name: e.byName, at: e.at }, detail: `filed by hand on the portal by ${e.byName} — portal reference ${e.arn}` };
+      }
     } else if (e.kind === 'cancelled') {
       // A return not yet filed can be withdrawn; a filed one cannot (an amendment is a later period).
       if (agg.state === 'previewed' || agg.state === 'approved') {
@@ -186,7 +208,8 @@ export type Gstr1SubmissionRefusal =
   | 'self_approval'
   | 'digest_mismatch'
   | 'invalid_period'
-  | 'reason_required';
+  | 'reason_required'
+  | 'arn_malformed';
 
 export interface Gstr1SubmissionTransitionInput {
   readonly current?: Gstr1SubmissionAggregate;
@@ -199,6 +222,8 @@ export interface Gstr1SubmissionTransitionInput {
   readonly period?: string;
   /** For `reconcile`: the evidence/note (required — no silent rewrite). */
   readonly note?: string;
+  /** For `fileByHand`: the portal's acknowledgement number (ARN), already trimmed and upper-cased. */
+  readonly arn?: string;
 }
 
 export interface Gstr1SubmissionDecision {
@@ -256,6 +281,11 @@ export function evaluateGstr1SubmissionTransition(input: Gstr1SubmissionTransiti
       if (current.state !== 'unknown') return deny('not_unknown', `only a submission whose outcome is unknown can be reconciled — this one is ${current.state}`);
       if ((input.note ?? '').trim() === '') return deny('reason_required', 'reconciliation needs evidence/a note — a stuck return is resolved by a recorded fact, never a silent rewrite');
       return allow(`reconcile: ${input.note}`, 'filed'); // resolvedState decided by the caller (filed|failed)
+    case 'fileByHand':
+      if (current.state === 'filed') return deny('already_filed', `the ${current.period} return is already filed (${current.arn ?? 'no reference'}) — a filing is recorded once`);
+      if (current.state !== 'approved') return deny('not_approved', `only an approved return can be recorded as filed by hand — this one is ${current.state}`);
+      if (!isGstPortalArn(input.arn ?? '')) return deny('arn_malformed', 'the portal acknowledgement number (ARN) is 15 characters: AA, the state code, the month and year, six digits and one check character');
+      return allow('record the return as filed by hand on the portal', 'filed');
     case 'cancel':
       if (current.state !== 'previewed' && current.state !== 'approved') return deny('not_cancellable', `only a return not yet filed can be cancelled — this one is ${current.state} (a filed return is corrected by an amendment in a later period)`);
       if ((input.note ?? '').trim() === '') return deny('reason_required', 'cancelling a return needs a reason — the withdrawal is a recorded fact');

@@ -97,6 +97,19 @@
         <ul class="rows" id="status-out"></ul>
         <p class="status" id="status-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- Round 4d (M21-FR-02): what a campaign brought in, worked out by head office from its sends and the shop's own bills. -->
+      <section aria-labelledby="results-h">
+        <h3 id="results-h">What the campaign brought in</h3>
+        <p class="muted" id="results-lead"></p>
+        <div class="row-form">
+          <label for="results-id"><span id="l-results-id">Campaign</span><input id="results-id" autocomplete="off" maxlength="48" /></label>
+          <label for="results-window"><span id="l-results-window">Count bills made within (hours of the message)</span><input id="results-window" inputmode="numeric" autocomplete="off" value="48" /></label>
+          <label for="results-control"><span id="l-results-control">Comparison customers not messaged</span><input id="results-control" autocomplete="off" /></label>
+          <button id="show-results" type="button" class="quiet sre-btn sre-btn-quiet"><span id="show-results-text">Work out the results</span></button>
+        </div>
+        <div id="results-cards"></div>
+        <p class="status" id="results-say" role="status" aria-live="polite"></p>
+      </section>
       <section aria-labelledby="journeys-h">
         <h3 id="journeys-h">Journeys</h3>
         <div class="row-form">
@@ -106,9 +119,12 @@
         <ul class="rows" id="journeys"></ul>
         <p class="status" id="journeys-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="campaign-log" id="desk-campaign-log" hidden></section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./campaigns.js" type="module"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

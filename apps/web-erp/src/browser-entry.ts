@@ -26,6 +26,7 @@ import { refusalWords as refusalWordsOf, whatHappenedWords, nextSafeActionWords,
 import { wireR7dPages } from './r7d-browser-wiring'; // Round 7 · OB-507 attendance, OB-502 food-handling check
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
 import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
+import { createGstDeskSession, gstDeskWords, gstDeskOutcomeWords, rupeesOf as gstDeskRupees, monthDates as gstDeskMonthDates, fyOfMonth as gstDeskFyOfMonth } from './gst-desk-session'; // W5 · the GST and statutory tax desk
 import { createContractExpirySession, contractExpiryWords, contractExpiryOutcomeWords, windowWords as contractWindowWords, dueWords as contractDueWords } from './contract-expiry-session'; // FG-4 · M04-FR-04 / M06-FR-03
 import { wireOwnerReportingPages } from './owner-reporting-browser-wiring'; // OB-288 lane 4 · P2
 import { wireSaasPages } from './saas-browser-wiring'; // OB-288 P4: Trial switches and shop account
@@ -53,6 +54,7 @@ import {
   type RegisterItem,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
+import { attachCharts } from '../../../packages/ui/src/charts'; // UI-3: the one chart drawing
 import { readLiveCounts, todayLiveFigures } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
 import {
   createBuyingSession,
@@ -115,10 +117,29 @@ import {
 } from './payroll-session';
 import { wireR4Screens } from './r4-screens-browser-wiring'; // QG-02 lane 1 R4
 import { wireBuyingAndStockScreens } from './buying-stock-browser-wiring'; // Round 4b: buying and stock
+import { createStaffingSession, staffingWords, staffingOutcomeWords, queueRows as staffingQueueRows, roleWords as staffingRoleWords, STAFFED_QUEUES } from './exception-queue-staffing-session'; // OB-676
 import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring'; // M28-FR-02 · M28-FR-03 · M29-FR-02
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
 import { wireFindings } from './findings-browser-wiring'; // OB-609
+import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
+import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
+import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
+import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
+import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
+import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
+import { wireW3TrainingChecks } from './w3-training-checks-browser-wiring'; // Wave 3 · OB-675 Training checks (QG-02)
+import { wireW4Production } from './w4-production-browser-wiring'; // W4 · M11 plan, batch trace and production costs
+import { wireW3Money } from './w3-money-browser-wiring'; // W3 · money: card, UPI and bank; rebate accruals; owed to customers
+import { wireW4Finance } from './w4-finance-browser-wiring'; // W4 · WF-05: the bill's second check, debit notes, supplier bills in the books and for Tally
+import { wireW5People } from './w5-people-browser-wiring'; // W5 · payroll checks (compute and show), working time, HR registers, POSH register
+import { wireW5Platform } from './w5-platform-browser-wiring'; // W5: platform, access, approvals and data-import sections
+import { wireW3Orders } from './w3-orders-browser-wiring'; // W3 · online orders desk and delivery area (M18 · D05-FR-03)
+import { wireW3Migration } from './w3-browser-wiring'; // W3 · the Old system checks page (MG-01/03/07/08/09/11/12)
+import { wireW5Compliance } from './w5-compliance-browser-wiring'; // W5 · EPR records, licences/controls/findings, legal holds and evidence pack
+import { wireW5Books } from './w5-books-browser-wiring'; // W5 · the accountant's books and the commercial ledgers (M23 · M22 · M27 · M24 · M15-FR-03)
+import { wireW5StoreOps } from './w5-store-ops-browser-wiring'; // W5 · store operations: policy numbers, indents, DSD, OSA, trace requests, costs, bins, facilities, LP
+import { wireW5Customers } from './w5-customers-browser-wiring'; // W5 · customers, privacy, service desk and online orders
 import { createPayrollLiveSession, payrollLiveWords, payrollLiveOutcome, payRunRows, holdWords as payrollHoldWords, rupees as payrollLiveRupees, type PayrollLiveSession } from './payroll-live-session'; // OB-380
 import {
   createPayrollEssSession, type PayrollEssPorts, type PayrollEssSession,
@@ -130,7 +151,8 @@ import {
   createEssSession, type EssPorts, type EssSession, type EssRoster, type EssPayslip,
 } from './ess-session';
 import {
-  createGstReturnsSession, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
+  createGstReturnsSession, headOfficeOverFetch, type GstReturnsPorts, type GstReturnsSession, type ReturnRow as GstReturnRow,
+  type HeadOfficeCall,
 } from './gst-returns-session';
 import {
   createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
@@ -279,6 +301,7 @@ import {
 import type { DeviceChangeCommand } from './fleet-device-command';
 import { deviceChangeRequest, type FleetDeliveryPort } from './fleet-device-delivery';
 import { fleetVersionExceptionsPort, type FleetVersionExceptionsPort } from './fleet-version-exceptions'; // R10-A · OB-540
+import { fleetHealthPort, type FleetHealthPort } from './fleet-health-read'; // W6 · M33-FR-04
 import {
   createProductPublishReviewSession, type ProductPublishReviewPorts, type ProductPublishReviewSession,
 } from './product-publish-review-session';
@@ -345,7 +368,7 @@ import { createAffinitySession, affinityWords, affinityOutcomeWords, type Affini
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
-import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, qg10NoteView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, qg10NoteView, qg01ReadingView, outsideStandingView, OUTSIDE_KINDS, OUTSIDE_TIMINGS, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
@@ -354,7 +377,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
-import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, type DispatchSession } from './dispatch-session';
 import { createTillDeskSession, tillDeskWords, tillDeskOutcomeWords, type TillDeskSession } from './till-delivery-desk-session'; // OB-352
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
@@ -911,10 +934,18 @@ export interface GstReturnsData {
 const GST_RETURNS_READ_PERMISSION = 'finance.gstr.read';
 const GST_RETURNS_APPROVE_PERMISSION = 'finance.gstr.approve';
 const GST_RETURNS_SUBMIT_PERMISSION = 'finance.gstr.submit';
+const GST_RETURNS_PREPARE_PERMISSION = 'finance.gstr.generate';
 
+/**
+ * W5 (route audit rows 164–167): the screen reads and acts on head office directly (`headOffice`), under the signed-in
+ * person's own session. `earlier` is the browser queue an earlier version of this page wrote approve/file requests to —
+ * nothing ever sent them on. It is only COUNTED (said on the page so the person presses again), never sent and never
+ * deleted (hard rule #6).
+ */
 export function gstReturnsPortsFromData(
   data: GstReturnsData | undefined,
-  outbox: SyncOutbox = new SyncOutbox(),
+  headOffice?: HeadOfficeCall,
+  earlier?: SyncOutbox,
 ): GstReturnsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -923,19 +954,22 @@ export function gstReturnsPortsFromData(
     mayRead: () => held.has(GST_RETURNS_READ_PERMISSION),
     mayApprove: () => held.has(GST_RETURNS_APPROVE_PERMISSION),
     maySubmit: () => held.has(GST_RETURNS_SUBMIT_PERMISSION),
-    outbox: () => outbox,
+    mayPrepare: () => held.has(GST_RETURNS_PREPARE_PERMISSION),
+    ...(headOffice !== undefined ? { headOffice } : {}),
+    unsentEarlier: () => earlier?.pending().length ?? 0,
   };
 }
 
 /** Build the GST-returns screen, or `null` when the box carried no payload for it. */
 export function bootGstReturns(
   data: GstReturnsData | undefined,
-  outbox: SyncOutbox = new SyncOutbox(),
+  headOffice?: HeadOfficeCall,
+  earlier?: SyncOutbox,
 ): GstReturnsSession | null {
   if (data === undefined) return null;
   return createGstReturnsSession(
     { userId: data.userId === undefined ? null : data.userId },
-    gstReturnsPortsFromData(data, outbox),
+    gstReturnsPortsFromData(data, headOffice, earlier),
   );
 }
 
@@ -1344,6 +1378,13 @@ function openLpClosePort(): LpCloseCasePort {
 export interface ViewerIdentity {
   readonly userId?: string;
   readonly permissions: readonly string[];
+}
+
+/** Wave 2: keep the store the box named for the page (it starts on it) beside who is looking — nothing else. */
+function withStore(viewer: ViewerIdentity | undefined, raw: unknown): (ViewerIdentity & { readonly storeId?: string }) | undefined {
+  if (viewer === undefined) return undefined;
+  const storeId = raw !== null && typeof raw === 'object' ? (raw as { storeId?: unknown }).storeId : undefined;
+  return typeof storeId === 'string' && storeId.trim() !== '' ? { ...viewer, storeId: storeId.trim() } : viewer;
 }
 
 /**
@@ -4035,7 +4076,7 @@ export async function fetchWorkforceWorklist(): Promise<WorkforceWorklistData | 
 }
 
 /** What the box tells the device fleet-manager screen — who is looking and what they may do (M33-FR-02/04).
- *  The fleet itself is fetched from the cloud fleet-health call (wired next); the shell shows a sample
+ *  The fleet itself is fetched from the cloud fleet-health call by the page itself (W6, fleet-health-read.ts); off the store computer the shell shows a sample
  *  stand-in until then. `summary`/`devices` are carried when a later cloud→box sync provides them. */
 export interface FleetData {
   readonly userId?: string;
@@ -4054,10 +4095,12 @@ export function fleetPortsFromData(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
   deliveryPort?: FleetDeliveryPort,
+  /** W6 · M33-FR-04: the fleet head office answered on the page's last read, once there is one. */
+  live?: () => { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined,
 ): FleetPorts {
   const held = new Set(data?.permissions ?? []);
   return {
-    fleet: () => ({ summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] }),
+    fleet: () => live?.() ?? { summary: data?.summary ?? EMPTY_FLEET_ROLLUP, devices: data?.devices ?? [] },
     // Default-deny: an absent permission list can read/manage nothing (the server would refuse it anyway).
     mayRead: () => held.has(FLEET_READ_PERMISSION),
     mayManage: () => held.has(FLEET_MANAGE_PERMISSION),
@@ -4071,11 +4114,12 @@ export function bootFleet(
   data: FleetData | undefined,
   outbox: SyncOutbox = new SyncOutbox(),
   deliveryPort?: FleetDeliveryPort,
+  live?: () => { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined,
 ): FleetSession | null {
   if (data === undefined) return null;
   return createFleetSession(
     { userId: data.userId === undefined ? null : data.userId },
-    fleetPortsFromData(data, outbox, deliveryPort),
+    fleetPortsFromData(data, outbox, deliveryPort, live),
   );
 }
 
@@ -5382,11 +5426,11 @@ interface ManagerWindow {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
   gatesData?: ViewerIdentity;
-  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly noteView: typeof qg10NoteView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly noteView: typeof qg10NoteView; readonly qg01View: typeof qg01ReadingView; readonly outsideView: typeof outsideStandingView; readonly outsideKinds: typeof OUTSIDE_KINDS; readonly outsideTimings: typeof OUTSIDE_TIMINGS; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
   // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
-  floorHeatMapData?: ViewerIdentity;
+  floorHeatMapData?: ViewerIdentity & { readonly storeId?: string };
   floorHeatMap?: {
     readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
     readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
@@ -5401,14 +5445,14 @@ interface ManagerWindow {
   orderRefunds?: { readonly session: OrderRefundsSession; readonly words: typeof orderRefundsWords; readonly outcomeWords: typeof orderRefundsOutcomeWords; readonly rupees: typeof orderRefundsRupees; readonly bases: typeof REFUND_BASES };
   loyaltyDeskData?: ViewerIdentity;
   campaignsData?: ViewerIdentity;
-  campaigns?: { readonly session: CampaignsSession; readonly words: typeof campaignsWords; readonly outcomeWords: typeof campaignsOutcomeWords; readonly approved: typeof approvedTemplates; readonly segments: typeof CAMPAIGN_SEGMENTS; readonly channels: typeof CAMPAIGN_CHANNELS };
+  campaigns?: { readonly session: CampaignsSession; readonly words: typeof campaignsWords; readonly outcomeWords: typeof campaignsOutcomeWords; readonly approved: typeof approvedTemplates; readonly segments: typeof CAMPAIGN_SEGMENTS; readonly channels: typeof CAMPAIGN_CHANNELS; readonly rupees: typeof loyaltyRupees };
   loyaltyDesk?: { readonly session: LoyaltyDeskSession; readonly words: typeof loyaltyDeskWords; readonly outcomeWords: typeof loyaltyDeskOutcomeWords; readonly rupees: typeof loyaltyRupees; readonly multiplierWords: typeof loyaltyMultiplierWords };
   // OB-288 P5 (OB-293): the Tally files page.
   tallyFilesData?: ViewerIdentity;
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
-  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords };
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote };
   /** OB-352: the delivery desk's till jobs on the Dispatch page. */
   tillDeliveryDesk?: { readonly session: TillDeskSession; readonly words: typeof tillDeskWords; readonly outcomeWords: typeof tillDeskOutcomeWords };
   approvalRules?: {
@@ -5427,7 +5471,7 @@ interface ManagerWindow {
   /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
   lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
   /** R4 D-13: the Shelf compliance by bay page — who is looking; head office answers the rest. */
-  planogramBaysData?: ViewerIdentity;
+  planogramBaysData?: ViewerIdentity & { readonly storeId?: string };
   planogramBays?: { readonly session: BaysSession; readonly words: typeof baysWords; readonly outcomeWords: typeof baysOutcomeWords; readonly scoreWords: typeof bayScoreWords };
   // ── R4 Lane 4 — end
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
@@ -5598,6 +5642,8 @@ interface ManagerWindow {
   fleetSession?: FleetSession;
   /** R10-A · OB-540: the Devices page's section on handheld work done on a withdrawn or too-old app version. */
   fleetVersionExceptions?: FleetVersionExceptionsPort;
+  /** W6 · M33-FR-04: head office's fleet health, read through the store computer as this person. */
+  fleetHealth?: FleetHealthPort;
   /** Where a device change (register/block/retire) queues for the sync agent — device-backed, survives a reload. */
   fleetOutbox?: SyncOutbox;
   productPublishReviewData?: ProductPublishReviewData;
@@ -6590,6 +6636,8 @@ export function bootReporting(data: ReportingData | undefined): ReportingSession
       // The SHOP's day, worked out by the box against its own cutoff. Slicing on the calendar date
       // here would move a sale rung at half past midnight into the wrong day.
       tradingDay: data.tradingDay ?? '',
+      // OB-639: the shop's zone as the store computer served it — "Sales by hour" is on the shop's clock.
+      timeZone: servedShopZone(),
     },
     reportingPortsFromData(data),
   );
@@ -6602,6 +6650,8 @@ if (browserWindow !== undefined) {
   browserWindow.sreShopDay = shopDay();
   // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
   browserWindow.sreQuantity = Object.freeze({ label: officeQuantityLabel });
+  // UI-3: the one chart drawing (inline SVG, no library, no network) as `window.sreCharts` — design system §4.3.
+  attachCharts(browserWindow);
   // The day close (M14-FR-04) reaches the store computer when the box injected its lane address;
   // without it the manager screen falls back to a local preview close that only touches this browser.
   // The manager's DURABLE device queue (SP-2a · F11): opened here so the session writes into it and the relay
@@ -6706,13 +6756,17 @@ if (browserWindow !== undefined) {
   }
   const categoryPolicy = bootCategoryPolicy(browserWindow.categoryPolicyData);
   if (categoryPolicy !== null) browserWindow.categoryPolicySession = categoryPolicy;
-  // The governance actions this screen commits queue in a DEVICE-backed outbox, so an approve/submit requested
-  // while the link is down survives the operator closing and reopening the tab before it syncs (P-01, §31).
-  const gstReturnsOutbox = browserWindow.gstReturnsOutbox ?? openGstReturnsOutbox();
-  const gstReturns = bootGstReturns(browserWindow.gstReturnsData, gstReturnsOutbox);
-  if (gstReturns !== null) {
-    browserWindow.gstReturnsSession = gstReturns;
-    browserWindow.gstReturnsOutbox = gstReturnsOutbox;
+  // W5 (route audit rows 164–167): the GSTR-1 maker-checker goes straight to head office under the person's own session
+  // (§31 "finance — generally online; no unsafe stale approval"). The old browser queue is only read, to say how many
+  // requests an earlier version left unsent there.
+  if (browserWindow.gstReturnsData !== undefined) {
+    const gstReturnsOutbox = browserWindow.gstReturnsOutbox ?? openGstReturnsOutbox();
+    const fetchFn = (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
+    const gstReturns = bootGstReturns(browserWindow.gstReturnsData, fetchFn === undefined ? undefined : headOfficeOverFetch(fetchFn.bind(globalThis)), gstReturnsOutbox);
+    if (gstReturns !== null) {
+      browserWindow.gstReturnsSession = gstReturns;
+      browserWindow.gstReturnsOutbox = gstReturnsOutbox;
+    }
   }
   const waste = bootWaste(browserWindow.wasteData);
   if (waste !== null) browserWindow.wasteSession = waste;
@@ -7225,14 +7279,21 @@ if (browserWindow !== undefined) {
     };
   }
   // The device fleet manager (M33-FR-02/04): boots only when the box carried who is looking. The fleet
-  // itself is fetched from the cloud fleet-health call (wired next); until then the shell shows a sample.
+  // itself is fetched from the cloud fleet-health call by the page as the person (W6); off the store computer the shell shows a sample.
   // Its register/block/retire actions commit to a device-backed outbox that survives a reload (§31); the
   // authenticated sync-drain delivery of those commands to the registry is the follow-up increment.
   const fleetOutbox = browserWindow.fleetOutbox ?? openFleetOutbox();
-  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox, openFleetDeliveryPort());
+  // W6 · M33-FR-04: the fleet itself is head office's answer to the page's own read (window.fleetHealth), as this person.
+  let liveFleet: { readonly summary: FleetSummaryRollup; readonly devices: readonly FleetDeviceRow[] } | undefined;
+  const fleet = bootFleet(browserWindow.fleetData, fleetOutbox, openFleetDeliveryPort(), () => liveFleet);
   if (fleet !== null) {
     browserWindow.fleetSession = fleet;
     browserWindow.fleetOutbox = fleetOutbox;
+    browserWindow.fleetHealth = fleetHealthPort({
+      permissions: browserWindow.fleetData?.permissions,
+      ...(browserWindow.fleetData?.storeId === undefined ? {} : { storeId: browserWindow.fleetData.storeId }),
+      onRead: (f) => { liveFleet = f; },
+    });
     // R10-A · OB-540: head office's register of handheld work on a barred build, read through the store computer as this person.
     browserWindow.fleetVersionExceptions = fleetVersionExceptionsPort(browserWindow.fleetData?.permissions, undefined, browserWindow.fleetData?.storeId);
   }
@@ -7414,10 +7475,10 @@ if (browserWindow !== undefined) {
   // ── end R4 Lane 3 ──
   // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
-  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, names: GATE_NAMES, releases: GATE_RELEASES };
+  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, noteView: qg10NoteView, qg01View: qg01ReadingView, outsideView: outsideStandingView, outsideKinds: OUTSIDE_KINDS, outsideTimings: OUTSIDE_TIMINGS, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
-  browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
+  browserWindow.floorHeatMapData = withStore(viewerIdentity(browserWindow.floorHeatMapData), browserWindow.floorHeatMapData);
   browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees, todayAtShop: heatMapTodayAtShop };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
@@ -7428,14 +7489,14 @@ if (browserWindow !== undefined) {
   browserWindow.orderRefunds = { session: createOrderRefundsSession({ viewer: browserWindow.orderRefundsData }), words: orderRefundsWords, outcomeWords: orderRefundsOutcomeWords, rupees: orderRefundsRupees, bases: REFUND_BASES };
   // OB-288 wave 3 (M21-FR-01 · M21-FR-02): the Campaigns page — nothing read on open; every read and write is a person's click.
   browserWindow.campaignsData = viewerIdentity(browserWindow.campaignsData);
-  browserWindow.campaigns = { session: createCampaignsSession({ viewer: browserWindow.campaignsData }), words: campaignsWords, outcomeWords: campaignsOutcomeWords, approved: approvedTemplates, segments: CAMPAIGN_SEGMENTS, channels: CAMPAIGN_CHANNELS };
+  browserWindow.campaigns = { session: createCampaignsSession({ viewer: browserWindow.campaignsData }), words: campaignsWords, outcomeWords: campaignsOutcomeWords, approved: approvedTemplates, segments: CAMPAIGN_SEGMENTS, channels: CAMPAIGN_CHANNELS, rupees: loyaltyRupees /* Round 4d: the attribution figures */ };
   browserWindow.loyaltyDeskData = viewerIdentity(browserWindow.loyaltyDeskData);
   browserWindow.loyaltyDesk = { session: createLoyaltyDeskSession({ viewer: browserWindow.loyaltyDeskData }), words: loyaltyDeskWords, outcomeWords: loyaltyDeskOutcomeWords, rupees: loyaltyRupees, multiplierWords: loyaltyMultiplierWords };
   browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
-  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords };
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote };
   // OB-352: the delivery desk's till jobs, on the same page.
   browserWindow.tillDeliveryDesk = { session: createTillDeskSession({ viewer: browserWindow.dispatchData }), words: tillDeskWords, outcomeWords: tillDeskOutcomeWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
@@ -7453,7 +7514,7 @@ if (browserWindow !== undefined) {
     browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
   }
   // R4 D-13: Shelf compliance by bay — a read of the staff counts against the plan; a photo is kept only on an explicit click.
-  browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
+  browserWindow.planogramBaysData = withStore(viewerIdentity(browserWindow.planogramBaysData), browserWindow.planogramBaysData);
   browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
   // ── R4 Lane 4 — end
   // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,
@@ -7471,6 +7532,16 @@ if (browserWindow !== undefined) {
   wireOwnerReportingPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // OB-288 lane 4 · P2 — owner alerts and schedules
   // OB-288 P4 (R8-9 · M36-FR-01 · C8 · C9): the Trial switches and shop account page — its session, in its own file.
   wireSaasPages(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // W5 (route audit bundle 2): the GST and statutory tax desk — GSTR-1 views and the GSTN file, the time-bar window, GSTR-9C
+  // reasons, reverse charge and TDS on the GST returns page; the ITC claim and reversals on the ITC page. Each page's viewer.
+  for (const [global, dataKey] of [['gstDesk', 'gstReturnsData'], ['itcDesk', 'itcReviewData']] as const) {
+    const viewer = (browserWindow as unknown as Record<string, unknown>)[dataKey];
+    if (viewer === undefined) continue;
+    (browserWindow as unknown as Record<string, unknown>)[global] = {
+      session: createGstDeskSession({ viewer: viewerIdentity(viewer) }),
+      words: gstDeskWords, outcomeWords: gstDeskOutcomeWords, rupees: gstDeskRupees, monthDates: gstDeskMonthDates, fyOfMonth: gstDeskFyOfMonth,
+    };
+  }
   // FG-4 · OB-386: free samples — recorded on the write-off capture screen (who is looking, from its data), checked on the ITC page.
   (browserWindow as unknown as Record<string, unknown>)['freeSample'] = {
     session: createFreeSampleSession(browserWindow.writeOffCaptureData === undefined ? {} : { viewer: viewerIdentity(browserWindow.writeOffCaptureData) ?? { permissions: [] } }),
@@ -7485,6 +7556,13 @@ if (browserWindow !== undefined) {
   wireR4Screens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 4b: the Buying page's Open orders tab (M06-FR-04) and the buying-and-stock sections.
   wireBuyingAndStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  // OB-676 (owner, 2 Nov 2026): "Who works each queue" on the Delivery exceptions page — the owner sets and confirms it.
+  if (browserWindow.substitutionExceptionInboxData !== undefined) {
+    (browserWindow as unknown as Record<string, unknown>)['exceptionQueueStaffing'] = {
+      session: createStaffingSession({ viewer: viewerIdentity(browserWindow.substitutionExceptionInboxData) }),
+      words: staffingWords, outcomeWords: staffingOutcomeWords, queueRows: staffingQueueRows, roleWords: staffingRoleWords, queues: STAFFED_QUEUES,
+    };
+  }
   // Round 6: Scrap and recycling, Packaging and crates, Compare side by side.
   wireSalvageAndCompareScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // Round 7 (R7-C): Shelf tags (OB-505) and Quotations (OB-506).
@@ -7493,6 +7571,24 @@ if (browserWindow !== undefined) {
   wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // OB-609: Bill findings and attendance flags.
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
+  wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
+  wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
+  wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
+  wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
+  wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
+  wireW3TrainingChecks(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · OB-675 Training checks (QG-02)
+  wireW4Production(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · M11 plan, batch trace and production costs
+  wireW3Money(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · money
+  wireW4Finance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · WF-05 after-match steps
+  wireW5People(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · people, payroll and HR registers
+  wireW5Platform(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5: platform, access, approvals and data import
+  wireW3Orders(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · M18 · D05-FR-03
+  wireW3Migration(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · Old system checks
+  wireW5Compliance(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · compliance, risk, EPR and audit registers
+  wireW5Books(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · books and commercial ledgers
+  wireW5StoreOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · store operations sections
+  wireW5Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · customers, privacy, service desk and online orders
 }
 
 // U2 (G10): the chrome's `sreOffice.refusalWords(outcome)` turns an outcome into the three parts in the reader's language.

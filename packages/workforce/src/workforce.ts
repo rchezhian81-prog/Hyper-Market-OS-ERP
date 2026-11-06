@@ -347,7 +347,9 @@ export interface LabourCostView {
   readonly labourCostMinor: number;
   readonly salesMinor: number;
   readonly labourBps: number | 'not_meaningful';
-  /** True when it is above the tenant's guide. Reported, never enforced. */
+  /** The guide it was compared against, or null when there is none (OB-686: no built-in guide — no comparison). */
+  readonly guideBps: number | null;
+  /** True when it is above the guide. Reported, never enforced. Always false when there is no guide (nothing compared). */
   readonly aboveGuide: boolean;
   readonly detail: string;
 }
@@ -364,7 +366,10 @@ export function labourCost(input: {
   readonly hours: readonly { readonly employeeId: string; readonly hours: number }[];
   readonly employees: readonly Employee[];
   readonly salesMinor: number;
-  /** Per-tenant guide, in basis points of sales. Default 1,200 (12%). */
+  /**
+   * The owner's guide, in basis points of sales. OB-686 (owner, 3 Nov 2026): there is NO default (the old built-in 12% is
+   * removed) — with no guide the cost and its share are still shown, and nothing is compared.
+   */
   readonly guideBps?: number;
 }): LabourCostView {
   const rateById = new Map(input.employees.map((e) => [e.employeeId, e.hourlyRateMinor ?? 0]));
@@ -372,25 +377,28 @@ export function labourCost(input: {
     (s, h) => s + Math.round((rateById.get(h.employeeId) ?? 0) * h.hours),
     0,
   );
-  const guide = input.guideBps ?? 1_200;
+  const guide = input.guideBps;
   const labourBps =
     input.salesMinor === 0
       ? ('not_meaningful' as const)
       : Number((BigInt(labourCostMinor) * 10_000n) / BigInt(input.salesMinor));
-  const aboveGuide = labourBps !== 'not_meaningful' && labourBps > guide;
+  const aboveGuide = guide !== undefined && labourBps !== 'not_meaningful' && labourBps > guide;
 
   return {
     branchId: input.branchId,
     labourCostMinor,
     salesMinor: input.salesMinor,
     labourBps,
+    guideBps: guide ?? null,
     aboveGuide,
     detail:
       labourBps === 'not_meaningful'
         ? `${labourCostMinor} of labour against no sales — the ratio means nothing today`
-        : aboveGuide
-          ? `labour is ${(labourBps / 100).toFixed(1)}% of sales against a ${(guide / 100).toFixed(1)}% guide — worth a look, and it is your call: a queue costs more than a cashier`
-          : `labour is ${(labourBps / 100).toFixed(1)}% of sales`,
+        : guide === undefined
+          ? `labour is ${(labourBps / 100).toFixed(1)}% of sales — no guide is set by the owner, so nothing is compared`
+          : aboveGuide
+            ? `labour is ${(labourBps / 100).toFixed(1)}% of sales against a ${(guide / 100).toFixed(1)}% guide — worth a look, and it is your call: a queue costs more than a cashier`
+            : `labour is ${(labourBps / 100).toFixed(1)}% of sales`,
   };
 }
 

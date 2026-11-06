@@ -21,7 +21,7 @@ import { attachShopDay } from '../../../packages/calendar/src/shop-day'; // OB-6
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
-import { PickSession, type PickLineInput } from './pick-session';
+import { PickSession, ANSWER_STATES, type PickLineInput, type SubstitutionAnswer, type AnswerOutcome, type PickLine } from './pick-session';
 import { openNewWorkGate, bindNewWorkGate, APP_BUILD_VERSION, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A) · OB-537 (R9)
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -52,6 +52,10 @@ export interface PickerData {
   readonly unmapped?: readonly string[];
   /** OB-521: the signed pack's app version policy, as the store computer served it (`null` = the pack carries none). */
   readonly appVersionPolicy?: unknown;
+  /** OB-687: how long the picker waits for a customer's answer to a swap — the owner's number; null: not set (no wait). */
+  readonly substitutionWaitMinutes?: number | null;
+  /** OB-687: head office's word on the swaps put to customers on this wave, as the store computer last held it. */
+  readonly substitutionAnswers?: readonly SubstitutionAnswer[] | null;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -64,8 +68,61 @@ interface PickerWindow {
   /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
   laneWriteBase?: string;
   pickerRelay?: PickerRelay;
+  /** OB-687: the answers to the swaps this handheld put to customers. */
+  pickerAnswers?: PickerAnswers;
   /** OB-521: this build's new-work gate — the screen applies each policy the store computer reports. */
   pickerVersion?: NewWorkGate;
+}
+
+/** OB-687: the swaps this handheld put to customers, read back through the store computer. */
+export interface PickerAnswers {
+  /** The owner's wait as last heard (the page's, then each read-back's): null — not set, the picker does not wait. */
+  waitMinutes(): number | null;
+  /**
+   * Ask the store computer for head office's word and settle every waiting line by it (a yes packs the swap; a no, a refusal or
+   * the time running out leaves it short). With no store computer, or no answer from it, a line whose time ran out still goes
+   * short — the owner said how long the picker waits.
+   */
+  readNow(): Promise<{ readonly reached: boolean; readonly settled: readonly { readonly lineId: string; readonly outcome: AnswerOutcome; readonly line: PickLine; readonly substituteName?: string }[]; readonly asAt?: string }>;
+}
+
+/** Read the store computer's answers body strictly — anything unreadable is "no word", never a guess. */
+export function readAnswersBody(body: unknown): { readonly waitMinutes: number | null; readonly answers: readonly SubstitutionAnswer[]; readonly asAt?: string } | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  const wait = b['waitMinutes'];
+  if (wait !== null && !(typeof wait === 'number' && Number.isInteger(wait) && wait > 0)) return undefined;
+  // `null`: head office has said nothing about swaps on this wave (a hand-written wave) — nothing to settle by, never a guess.
+  if (b['answers'] !== null && !Array.isArray(b['answers'])) return undefined;
+  const answers = ((b['answers'] ?? []) as unknown[]).filter((a): a is SubstitutionAnswer => a !== null && typeof a === 'object'
+    && typeof (a as Record<string, unknown>)['proposalId'] === 'string' && typeof (a as Record<string, unknown>)['lineId'] === 'string'
+    && (ANSWER_STATES as readonly unknown[]).includes((a as Record<string, unknown>)['state']));
+  return { waitMinutes: wait as number | null, answers, ...(typeof b['asAt'] === 'string' ? { asAt: b['asAt'] } : {}) };
+}
+
+/** OB-687: the picker's read-back of the answers on its wave, through the store computer's device socket. */
+export function openPickerAnswers(laneWriteBase: string | undefined, session: PickSession, data: PickerData | undefined, now: () => string = () => new Date().toISOString()): PickerAnswers {
+  let wait: number | null = data?.substitutionWaitMinutes ?? null;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  return {
+    waitMinutes: () => wait,
+    readNow: async () => {
+      let read: ReturnType<typeof readAnswersBody>;
+      if (laneWriteBase !== undefined && fetchFn !== undefined && session.waitingForCustomer().length > 0) {
+        try {
+          const res = await fetchFn(`${laneWriteBase}/lane/picker/substitution-answers?waveId=${encodeURIComponent(session.waveId)}`, { headers: { 'cache-control': 'no-store' } });
+          read = res.ok ? readAnswersBody(await res.json()) : undefined;
+        } catch { read = undefined; }
+      }
+      if (read !== undefined) wait = read.waitMinutes;
+      const answers = read?.answers ?? [];
+      const settled = session.applyAnswers(answers, now()).map((x) => {
+        const name = answers.find((a) => a.lineId === x.lineId)?.substituteName;
+        return name === undefined ? x : { ...x, substituteName: name };
+      });
+      return { reached: read !== undefined, settled, ...(read?.asAt === undefined ? {} : { asAt: read.asAt }) };
+    },
+  };
 }
 
 export interface PickerRelay {
@@ -117,7 +174,10 @@ export function bootPicker(
   const lines = data?.lines;
   if (data?.waveId === undefined || lines === undefined || lines.length === 0) return null;
   // The picker the wave names travels on every outcome, so head office can re-verify the person — never invented here.
-  return new PickSession(data.waveId, lines, outbox, { now, ...(data.pickerId === undefined ? {} : { pickerId: data.pickerId }) });
+  const session = new PickSession(data.waveId, lines, outbox, { now, ...(data.pickerId === undefined ? {} : { pickerId: data.pickerId }) });
+  // OB-687: a line put to a customer before the handheld was closed still waits (never asked twice).
+  session.resumeProposals(data.substitutionAnswers ?? []);
+  return session;
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -150,6 +210,7 @@ if (browserWindow !== undefined) {
     // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
     const relay = openPickerRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.pickerRelay = relay;
+    browserWindow.pickerAnswers = openPickerAnswers(browserWindow.laneWriteBase, session, browserWindow.pickerData);
   }
   // OB-521: a withdrawn or too-old build finishes the wave it started and starts no new one — by the store computer's
   // signed pack (served with the wave, then each badge refresh), kept on this device for a reload with no signal.

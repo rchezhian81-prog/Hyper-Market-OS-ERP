@@ -65,6 +65,9 @@ export function readSales(records: readonly string[]): { readonly sales: readonl
       unreadable += 1;
       continue;
     }
+    // W3 · OB-677: a gift card's sale is on the sale log for the drawer's cash, but it is not a sale of goods — it is money the
+    // shop now owes on the card (GST falls on the redemption, A12). It is not counted in the day's takings or bills.
+    if ((parsed as { kind?: unknown }).kind === 'gift_card_sale') continue;
     sales.push(parsed as LoggedSale);
   }
   return { sales, unreadable };

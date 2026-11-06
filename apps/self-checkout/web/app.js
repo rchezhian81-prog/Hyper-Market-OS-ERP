@@ -25,7 +25,7 @@ const inr = (minor) => '₹' + (minor / 100).toLocaleString('en-IN', { minimumFr
 const WORDS = {
   en: {
     title: 'Self-checkout', colleague: 'Colleague', total: 'Total', payCard: 'Pay by card', payUpi: 'Pay by UPI', next: 'Next customer',
-    empty: 'Your items will appear here.', remove: 'Remove', staff: 'Staff code', pin: 'PIN', panel: 'Colleague', open: 'Open lane', close: 'Close lane', done: 'Done',
+    empty: 'Your items will appear here.', remove: 'Remove', qty: 'Quantity', yourItems: 'Your items', staff: 'Staff code', pin: 'PIN', panel: 'Colleague', open: 'Open lane', close: 'Close lane', done: 'Done',
     machine: 'What did the machine say?', ref: 'Approval / reference number from the slip', approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
     nothing: 'Nothing is waiting for a colleague.', bill: 'Bill', attendant: 'Opened by', notOpened: 'Not open', recordedNot: 'The basket\'s record has not reached the store computer yet.',
     noBundle: 'This lane is not ready: its program did not load. Please use a staffed till.',
@@ -38,7 +38,7 @@ const WORDS = {
   },
   ta: {
     title: 'சுய-கட்டணம்', colleague: 'ஊழியர்', total: 'மொத்தம்', payCard: 'கார்டு மூலம் செலுத்து', payUpi: 'UPI மூலம் செலுத்து', next: 'அடுத்த வாடிக்கையாளர்',
-    empty: 'உங்கள் பொருட்கள் இங்கே தெரியும்.', remove: 'நீக்கு', staff: 'ஊழியர் குறியீடு', pin: 'PIN', panel: 'ஊழியர்', open: 'வரிசையைத் திற', close: 'வரிசையை மூடு', done: 'முடிந்தது',
+    empty: 'உங்கள் பொருட்கள் இங்கே தெரியும்.', remove: 'நீக்கு', qty: 'எண்ணிக்கை', yourItems: 'உங்கள் பொருட்கள்', staff: 'ஊழியர் குறியீடு', pin: 'PIN', panel: 'ஊழியர்', open: 'வரிசையைத் திற', close: 'வரிசையை மூடு', done: 'முடிந்தது',
     machine: 'இயந்திரம் என்ன சொன்னது?', ref: 'சீட்டில் உள்ள ஒப்புதல் / குறிப்பு எண்', approved: 'ஒப்புதல் கிடைத்தது', declined: 'நிராகரிக்கப்பட்டது', noAnswer: 'பதில் வரவில்லை',
     nothing: 'ஊழியருக்காக எதுவும் காத்திருக்கவில்லை.', bill: 'பில்', attendant: 'திறந்தவர்', notOpened: 'திறக்கப்படவில்லை', recordedNot: 'இந்தக் கூடையின் பதிவு இன்னும் கடை கணினியை அடையவில்லை.',
     noBundle: 'இந்த வரிசை தயாராக இல்லை: அதன் நிரல் ஏற்றப்படவில்லை. ஊழியர் உள்ள கட்டண மையத்தைப் பயன்படுத்தவும்.',
@@ -116,6 +116,9 @@ function render() {
   el('approved-words').textContent = t('approved');
   el('declined-words').textContent = t('declined');
   el('noanswer-words').textContent = t('noAnswer');
+  // UI-2: what a screen reader hears is in the customer's language too.
+  el('basket').setAttribute('aria-label', t('yourItems'));
+  el('panel').setAttribute('aria-label', t('panel'));
   if (lane === undefined) {
     setWithIcon(el('now'), 'circle-alert', t('noBundle'));
     el('now').className = 'now closed';
@@ -123,7 +126,8 @@ function render() {
     return;
   }
   const v = lane.view();
-  el('subtitle').textContent = v.attendant === null ? t('notOpened') : `${t('attendant')}: ${v.attendant}`;
+  // OB-638: the colleague by name with their code beside it; the code alone when the store computer gave no name.
+  el('subtitle').textContent = v.attendant === null ? t('notOpened') : `${t('attendant')}: ${v.attendantShown ?? v.attendant}`;
   const now = el('now');
   now.className = v.open ? (v.waitingForColleague ? 'now waiting' : 'now') : 'now closed';
   setWithIcon(now, v.open ? (v.waitingForColleague ? 'hand' : (v.receipt !== null ? 'circle-check' : 'scan-barcode')) : 'lock', words(v.customerNow));
@@ -137,7 +141,8 @@ function render() {
     what.className = 'what';
     what.textContent = l.description;
     const qty = document.createElement('small');
-    qty.textContent = l.qtyText;
+    // UI-2: the quantity said in words ("Quantity 2", "Quantity 1.250 kg"), never a bare number under the name.
+    qty.textContent = `${t('qty')} ${l.qtyText}`;
     what.append(qty);
     const amount = document.createElement('span');
     amount.className = 'amount';
@@ -236,7 +241,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const code = buffer.trim();
     buffer = '';
-    if (code !== '') { const a = lane.scan(code); said = words(a.words); render(); }
+    // UI-2: a scanner ends every code with Enter, and Enter on a FOCUSED button presses it — "Remove", "Pay by card" or
+    // the language button a customer last touched would be pressed by the next scan. The Enter belongs to the scan.
+    if (code !== '') { e.preventDefault(); const a = lane.scan(code); said = words(a.words); render(); }
     return;
   }
   if (e.key.length === 1) buffer += e.key;

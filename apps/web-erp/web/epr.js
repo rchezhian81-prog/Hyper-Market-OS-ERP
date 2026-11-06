@@ -254,6 +254,8 @@ el('csv').addEventListener('click', downloadCsv);
 el('record').addEventListener('submit', (event) => { void recordTakeBack(event); });
 el('handover').addEventListener('submit', (event) => { void handOver(event); });
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+// W5 (OB-212): a record made in the sections below (epr-records.js) changes these registers — read them again.
+window.addEventListener('epr:changed', () => { void refresh(); });
 const asked = new URLSearchParams(location.search).get('fy');
 if (asked !== null && /^\d{4}-\d{2}$/.test(asked)) el('fy').value = asked;
 paint();

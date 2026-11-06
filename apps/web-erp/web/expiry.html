@@ -134,6 +134,39 @@
         <p class="lead" id="expiry-lead">Earliest first. Expired stock is thrown away; stock close to its date is marked down while it can still sell.</p>
         <p class="lead" id="no-batches" hidden></p>
         <div id="expiry-list"></div>
+        <!--
+          W3 (D06-FR-05 · D-4 · D-16): work out a markdown for stock close to its date (POST /v1/pricing/markdown/propose) and
+          read the clearance suggestions (GET /v1/pricing/clearance-markdowns). Both ADVISORY: nothing here changes a price.
+          "Send this price for approval" opens Change a price on Products and prices, where the normal checks and the second
+          person's approval apply. Session: apps/web-erp/src/markdown-session.ts; view: expiry-markdown.js.
+        -->
+        <div id="markdown" hidden>
+          <h2 id="md-h"></h2>
+          <p class="lead" id="md-lead"></p>
+          <form id="md-form" novalidate>
+            <div class="row2">
+              <label for="md-product"><span id="l-md-product"></span><input id="md-product" autocomplete="off" /></label>
+              <label for="md-batch"><span id="l-md-batch"></span><input id="md-batch" autocomplete="off" /></label>
+              <label for="md-days"><span id="l-md-days"></span><input id="md-days" inputmode="numeric" autocomplete="off" /></label>
+              <label for="md-qty"><span id="l-md-qty"></span><input id="md-qty" inputmode="numeric" autocomplete="off" /></label>
+              <label for="md-price"><span id="l-md-price"></span><input id="md-price" inputmode="decimal" autocomplete="off" /></label>
+              <label for="md-rate"><span id="l-md-rate"></span><input id="md-rate" inputmode="numeric" autocomplete="off" /></label>
+            </div>
+            <button id="md-go" class="sre-btn" type="submit"></button>
+          </form>
+          <p class="lead" id="md-status" role="status" aria-live="polite"></p>
+          <div id="md-result" hidden>
+            <p><strong id="md-proposal"></strong></p>
+            <p class="lead" id="md-surplus"></p>
+            <p class="lead" id="md-send-lead"></p>
+            <a id="md-send" class="primary"></a>
+          </div>
+          <h2 id="cl-h"></h2>
+          <p class="lead" id="cl-lead"></p>
+          <button id="cl-go" class="sre-btn" type="button"></button>
+          <p class="lead" id="cl-status" role="status" aria-live="polite"></p>
+          <div id="cl-list"></div>
+        </div>
       </section>
 
       <!-- M10-FR-01 (Round 4b): head office's expired register — every batch the daily sweep moved off sale, what is still on
@@ -173,6 +206,7 @@
 
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
+    <script type="module" src="./expiry-markdown.js"></script>
     <script type="module" src="./expiry.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>

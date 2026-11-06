@@ -35,8 +35,12 @@ const EVIDENCE: Record<string, string> = {
   M16: 'tests/integration/customer-segments-stateful.test.ts',
   M15: 'tests/integration/duplicate-bank.test.ts',
   M17: 'tests/e2e/stored-value-oversight-delivery.e2e.ts',
+  M18: 'tests/integration/orders-backorder.test.ts',
+  M19: 'tests/e2e/w4-m19-the-picker-and-driver-phones-reach-head-office-on-postgresql.e2e.ts',
+  M20: 'tests/integration/storefront-orders.test.ts',
   M21: 'tests/integration/service-cases.test.ts',
   M22: 'tests/integration/b2b-portal.test.ts',
+  M23: 'tests/integration/the-month-closes-on-independent-evidence.test.ts',
   M24: 'tests/e2e/supplier-portal-delivery.e2e.ts',
   M25: 'tests/e2e/rostering-delivery.e2e.ts',
   M26: 'tests/e2e/facilities-delivery.e2e.ts',
@@ -48,6 +52,8 @@ const EVIDENCE: Record<string, string> = {
   M32: 'tests/e2e/integration-health-delivery.e2e.ts',
   M33: 'tests/integration/setup-surface.test.ts',
   M34: 'tests/integration/audit-trail-store.test.ts',
+  M35: 'tests/integration/dr-readiness.test.ts',
+  M36: 'tests/integration/tenant-entitlements.test.ts',
 };
 
 function statusOf(cell: string): string | undefined {

@@ -59,6 +59,13 @@
       .vmi-qty { display:grid; gap:4px; font-size:14px; color:var(--muted); max-width:220px; }
       .vmi-qty input { min-height:44px; font-size:16px; border-radius:10px; border:1px solid var(--line); padding:0 10px; background:var(--bg); color:var(--ink); }
       .status-line { margin:0; font-weight:600; font-size:15px; } .status-line.tone-error { color:var(--danger-text); }
+      .doc-lines { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      .doc-lines > li { border:1px solid var(--line); border-radius:12px; padding:10px; display:grid; gap:8px; }
+      .doc-lines > li > .doc-line-h { display:flex; justify-content:space-between; align-items:center; gap:8px; font-weight:600; }
+      .doc-lines label { display:grid; gap:4px; font-size:14px; }
+      .doc-lines input, .doc-lines select { min-height:44px; font-size:16px; border-radius:10px; border:1px solid var(--line); padding:0 10px; background:var(--bg); color:var(--ink); max-width:100%; box-sizing:border-box; }
+      .du-form > .doc-lines, .du-form > .muted { grid-column:1 / -1; }
+      button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); }
       [hidden] { display:none !important; }
     </style>
   </head>
@@ -119,6 +126,39 @@
         <p class="status-line" id="vmi-result" role="status" aria-live="polite"></p>
         <h4 id="vmi-proposals-h" hidden></h4>
         <ul class="rows" id="vmi-proposals" aria-label="Your top-up proposals"></ul>
+      </section>
+
+      <section class="delivery" id="invoice" hidden aria-labelledby="inv-h">
+        <!-- OB-624: the THIRD form — the supplier's own invoice; it waits for a buyer to accept it, and counts only then. -->
+        <h3 id="inv-h"></h3>
+        <p class="muted" id="inv-lead"></p>
+        <p class="muted" id="inv-said" hidden></p>
+        <div class="du-form" id="inv-form" hidden>
+          <label for="inv-order"><span id="inv-order-l"></span><select id="inv-order"></select></label>
+          <label for="inv-no"><span id="inv-no-l"></span><input id="inv-no" maxlength="64" autocomplete="off" /></label>
+          <ol class="doc-lines" id="inv-lines" aria-label="Invoice lines"></ol>
+          <button id="inv-add" type="button" class="secondary"><span id="inv-add-text"></span></button>
+          <p class="muted" id="inv-sum" role="status" aria-live="polite"></p>
+          <label for="inv-total"><span id="inv-total-l"></span><input id="inv-total" inputmode="decimal" autocomplete="off" /></label>
+          <button id="inv-send" type="button"><span id="inv-send-text"></span></button>
+        </div>
+        <p class="status-line" id="inv-result" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="delivery" id="asn" hidden aria-labelledby="asn-h">
+        <!-- OB-624: the FOURTH and last form — the supplier's own delivery note (ASN); a buyer accepts it before it counts. -->
+        <h3 id="asn-h"></h3>
+        <p class="muted" id="asn-lead"></p>
+        <p class="muted" id="asn-said" hidden></p>
+        <div class="du-form" id="asn-form" hidden>
+          <label for="asn-order"><span id="asn-order-l"></span><select id="asn-order"></select></label>
+          <label for="asn-no"><span id="asn-no-l"></span><input id="asn-no" maxlength="64" autocomplete="off" /></label>
+          <label for="asn-expected"><span id="asn-expected-l"></span><input id="asn-expected" type="datetime-local" /></label>
+          <ol class="doc-lines" id="asn-lines" aria-label="Delivery note lines"></ol>
+          <button id="asn-add" type="button" class="secondary"><span id="asn-add-text"></span></button>
+          <button id="asn-send" type="button"><span id="asn-send-text"></span></button>
+        </div>
+        <p class="status-line" id="asn-result" role="status" aria-live="polite"></p>
       </section>
 
       <section class="delivery" id="rebates" hidden aria-labelledby="rebates-h">

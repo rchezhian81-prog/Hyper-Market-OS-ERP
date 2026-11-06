@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { askForApproval, decide } from '../support/approval-request';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { pinTheEveningClock } from '../support/evening-clock';
 
 /**
  * **OB-412 (owner, 27 Oct 2026, in writing: "confirmed as built"), rules 1 and 2, on the real API.**
@@ -13,9 +15,17 @@ import { askForApproval, decide } from '../support/approval-request';
  * In memory and, with DATABASE_URL, on real PostgreSQL. Synthetic data.
  */
 
+// Pinned to an evening UTC moment (tests/support/evening-clock.ts): 01:00 the next morning in the shop, when the UTC date is
+// still the shop's yesterday — so this file proves the shop's date every time it runs, not only when CI runs after 18:30 UTC.
+const evening = pinTheEveningClock();
+afterAll(() => { vi.useRealTimers(); });
+
 const backings = useRestartableBackings();
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-const TODAY = new Date().toISOString().slice(0, 10);
+// The SHOP's date (Asia/Kolkata), as head office judges "raised on" and "today" — never the UTC date, which is the shop's
+// yesterday from 18:30 to 24:00 UTC.
+const TODAY = shopDateIn(new Date().toISOString());
+if (TODAY === evening.utcDate) throw new Error('the pinned evening must put the shop on the day after the UTC date');
 
 interface Ask { kind: string; subjectRef: string; valueMinor: number; details: Record<string, unknown>; summary: string; reason: string }
 interface ClaimRow { claimId: string; state: string; unansweredMinor: number; findings: string[]; approvalAsk?: Ask }

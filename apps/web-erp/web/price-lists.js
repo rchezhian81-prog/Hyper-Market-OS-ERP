@@ -54,6 +54,8 @@ const mayPropose = perms.has('price.change.propose');
 const mayApprove = perms.has('price.change.approve');
 const mayZone = perms.has('price.zone.manage');
 const mayRead = perms.has('catalogue.pack.read') || mayPropose;
+// W4 · OB-546 · ADR-0013: sending the signed pack is the catalogue keeper's own act — its own permission, and head office's step-up.
+const mayPublishPack = perms.has('catalogue.pack.publish');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 // U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
@@ -71,7 +73,15 @@ const WORDS = {
     lang: 'தமிழ்', title: 'Price lists',
     lead: 'Prices set ahead and for a scope: one store from a date, a price zone, a channel or one customer. Head office judges each on its own MRP, buying cost and margin floor, and a big move or a loss needs a second person.',
     kSame: 'One price everywhere?', kPending: 'Switch requests waiting', kZoned: 'Stores in a price zone', yes: 'Yes — every channel charges the shelf price', no: 'No — {list} on',
-    tabPrices: 'Dated prices', tabZones: 'Price zones', tabChannels: 'Channel prices',
+    tabPrices: 'Dated prices', tabZones: 'Price zones', tabChannels: 'Channel prices', tabPack: 'Send to the tills',
+    packLead: 'Head office signs one pack of products and prices for a store; the store computer pulls it and the tills sell from it with no network. Look first at what would go and what is left out, then send it. Drafts, products with no price or no tax rate are never sent.',
+    pkStore: 'Store', pkAsOf: 'Prices as of (date)', pkPreview: 'See what would go', pkPublish: 'Send to the tills', pkAck: 'Products you checked are leaving the tills (only if head office asks)',
+    pkGoes: '{n} product(s) would go to the tills of {store} as of {day}.', pkLeft: 'Left out: {id} — {why}', pkNoneLeft: 'Nothing is left out.',
+    pkSent: 'Sent. Catalogue pack version {v} is signed; each store computer takes it on its next pull.', pkNoRight: 'Only someone who keeps the catalogue may send a pack. You can look at what would go.',
+    pkStepUp: 'This pack needs a fresh two-step sign-in, because {why} Sign out, sign in again with the code from your phone, then press “Send to the tills” again. Nothing was sent.',
+    pkNeedStore: 'Write the store first.',
+    why_draft_not_on_sale: 'a draft, not on sale', why_no_price: 'no price for this store that day', why_no_tax_class: 'no GST rate for its HSN that day', why_price_above_mrp: 'its price is above its MRP',
+    why_cess_on_demerit_slab: 'a cess on the 40% slab would tax it twice', why_tobacco_warning_not_confirmed: 'its tobacco warning picture is not confirmed', why_liquor_not_sold: 'liquor is never sold', why_medicine_not_sold: 'medicines are never sold',
     pricesLead: 'Choose the product, which price and from when, then read head office\'s figures. The price is saved only when head office accepts it; the till charges it from the next store pack on or after its date.',
     product: 'Product', scope: 'Which price', store: 'One store\'s shelf price', zone: 'A price zone', channel: 'A channel (app, delivery)', customer: 'One customer',
     ref: 'Store, zone, channel or customer', from: 'From (date)', to: 'Until (date, if it ends)', price: 'Price (₹)',
@@ -102,7 +112,15 @@ const WORDS = {
     lang: 'English', title: 'விலைப் பட்டியல்கள்',
     lead: 'முன்கூட்டியும் ஒரு வரம்புக்கும் அமைக்கப்படும் விலைகள்: ஒரு தேதியிலிருந்து ஒரு கடை, ஒரு விலை மண்டலம், ஒரு வழி அல்லது ஒரு வாடிக்கையாளர். தலைமை அலுவலகம் ஒவ்வொன்றையும் அதன் MRP, வாங்கும் விலை, லாப வரம்பு கொண்டு மதிப்பிடுகிறது; பெரிய மாற்றம் அல்லது நஷ்டத்திற்கு இரண்டாம் நபர் தேவை.',
     kSame: 'எல்லா இடத்திலும் ஒரே விலையா?', kPending: 'காத்திருக்கும் மாற்றக் கோரிக்கைகள்', kZoned: 'விலை மண்டலத்தில் உள்ள கடைகள்', yes: 'ஆம் — ஒவ்வொரு வழியும் அலமாரி விலையை வசூலிக்கிறது', no: 'இல்லை — {list} இயக்கத்தில்',
-    tabPrices: 'தேதியிட்ட விலைகள்', tabZones: 'விலை மண்டலங்கள்', tabChannels: 'வழி விலைகள்',
+    tabPrices: 'தேதியிட்ட விலைகள்', tabZones: 'விலை மண்டலங்கள்', tabChannels: 'வழி விலைகள்', tabPack: 'கவுண்டர்களுக்கு அனுப்பு',
+    packLead: 'தலைமை அலுவலகம் ஒரு கடைக்கான பொருட்களும் விலைகளும் அடங்கிய ஒரு பொதியில் கையொப்பமிடுகிறது; கடைக் கணினி அதை எடுத்துக்கொள்கிறது, கவுண்டர்கள் இணையம் இல்லாமலே அதிலிருந்து விற்கின்றன. முதலில் எது செல்லும், எது விடுபடும் என்று பாருங்கள், பிறகு அனுப்புங்கள். வரைவுகள், விலையோ வரி விகிதமோ இல்லாத பொருட்கள் ஒருபோதும் அனுப்பப்படாது.',
+    pkStore: 'கடை', pkAsOf: 'விலைகள் இந்தத் தேதியின்படி', pkPreview: 'எது செல்லும் என்று பார்', pkPublish: 'கவுண்டர்களுக்கு அனுப்பு', pkAck: 'கவுண்டர்களிலிருந்து நீங்குவதாக நீங்கள் சரிபார்த்த பொருட்கள் (தலைமை அலுவலகம் கேட்டால் மட்டும்)',
+    pkGoes: '{day} தேதியின்படி {store} கவுண்டர்களுக்கு {n} பொருள்(கள்) செல்லும்.', pkLeft: 'விடுபட்டது: {id} — {why}', pkNoneLeft: 'எதுவும் விடுபடவில்லை.',
+    pkSent: 'அனுப்பப்பட்டது. பொருள் பொதி பதிப்பு {v} கையொப்பமிடப்பட்டது; ஒவ்வொரு கடைக் கணினியும் அடுத்த முறை எடுக்கும்போது அதைப் பெறும்.', pkNoRight: 'பொருள் பட்டியலைப் பராமரிப்பவர் மட்டுமே பொதியை அனுப்பலாம். எது செல்லும் என்று நீங்கள் பார்க்கலாம்.',
+    pkStepUp: 'இந்தப் பொதிக்கு புதிய இரு-படி உள்நுழைவு தேவை, ஏனெனில் {why} வெளியேறி, உங்கள் தொலைபேசிக் குறியீட்டுடன் மீண்டும் உள்நுழைந்து, மீண்டும் “கவுண்டர்களுக்கு அனுப்பு” அழுத்துங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    pkNeedStore: 'முதலில் கடையை எழுதுங்கள்.',
+    why_draft_not_on_sale: 'வரைவு, விற்பனையில் இல்லை', why_no_price: 'அன்று இந்தக் கடைக்கு விலை இல்லை', why_no_tax_class: 'அன்று அதன் HSN க்கு GST விகிதம் இல்லை', why_price_above_mrp: 'அதன் விலை MRP ஐ விட அதிகம்',
+    why_cess_on_demerit_slab: '40% வரம்பில் செஸ் இருமுறை வரி விதிக்கும்', why_tobacco_warning_not_confirmed: 'அதன் புகையிலை எச்சரிக்கைப் படம் உறுதிசெய்யப்படவில்லை', why_liquor_not_sold: 'மதுபானம் ஒருபோதும் விற்கப்படாது', why_medicine_not_sold: 'மருந்துகள் ஒருபோதும் விற்கப்படாது',
     pricesLead: 'பொருள், எந்த விலை, எப்போதிலிருந்து என்பதைத் தேர்வு செய்து, தலைமை அலுவலக எண்களைப் படியுங்கள். தலைமை அலுவலகம் ஏற்றால் மட்டுமே விலை சேமிக்கப்படும்; அதன் தேதியிலோ பிறகோ வரும் அடுத்த கடைப் பொதியிலிருந்து கவுண்டர் அதை வசூலிக்கும்.',
     product: 'பொருள்', scope: 'எந்த விலை', store: 'ஒரு கடையின் அலமாரி விலை', zone: 'ஒரு விலை மண்டலம்', channel: 'ஒரு வழி (செயலி, டெலிவரி)', customer: 'ஒரு வாடிக்கையாளர்',
     ref: 'கடை, மண்டலம், வழி அல்லது வாடிக்கையாளர்', from: 'தொடங்கும் தேதி', to: 'முடியும் தேதி (முடிந்தால்)', price: 'விலை (₹)',
@@ -298,7 +316,7 @@ function paint() {
   repaintShopDates();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-same', 'kSame'], ['k-pending', 'kPending'], ['k-zoned', 'kZoned'],
-    ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
+    ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['tab-pack', 'tabPack'], ['pack-h', 'tabPack'], ['pack-lead', 'packLead'], ['l-pk-store', 'pkStore'], ['l-pk-asof', 'pkAsOf'], ['pk-preview', 'pkPreview'], ['pk-publish', 'pkPublish'], ['l-pk-ack', 'pkAck'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
     ['l-p-product', 'product'], ['l-p-scope', 'scope'], ['o-store', 'store'], ['o-zone', 'zone'], ['o-channel', 'channel'], ['o-customer', 'customer'], ['l-p-ref', 'ref'], ['l-p-from', 'from'], ['l-p-to', 'to'], ['l-p-price', 'price'],
     ['k-mrp', 'kMrp'], ['k-cost', 'kCost'], ['k-floor', 'kFloor'], ['k-now', 'kNow'], ['k-size', 'kSize'], ['read-basis', 'readBasis'], ['save', 'save'], ['l-p-why', 'why'], ['ask', 'ask'],
     ['history-h', 'historyH'], ['c-scope', 'cScope'], ['c-ref', 'cRef'], ['c-price', 'cPrice'], ['c-from', 'cFrom'], ['c-to', 'cTo'], ['c-ver', 'cVer'],
@@ -309,7 +327,9 @@ function paint() {
   for (const id of ['p-from', 'p-to', 'p-price', 'read-basis', 'save', 'p-why']) $(id).disabled = !mayPropose;
   whyDisabled($('read-basis'), mayPropose ? '' : 'role'); whyDisabled($('save'), mayPropose ? '' : 'role');
   $('ask').hidden = pending === null || !mayPropose;
-  for (const v of ['prices', 'zones', 'channels']) {
+  $('pk-publish').disabled = !mayPublishPack; $('pk-ack').disabled = !mayPublishPack; whyDisabled($('pk-publish'), mayPublishPack ? '' : 'role');
+  $('pk-note').textContent = mayPublishPack ? '' : t('pkNoRight');
+  for (const v of ['prices', 'zones', 'channels', 'pack']) {
     $(`view-${v}`).hidden = tab !== v;
     if (v === tab) $(`tab-${v}`).setAttribute('aria-current', 'page'); else $(`tab-${v}`).removeAttribute('aria-current');
   }
@@ -415,13 +435,36 @@ $('d-run').addEventListener('click', async () => {
     ...out.body.dormantEntries.map((d) => fill(t('dormant'), { product: d.productId, scope: scopeWords(d.scope), price: (d.priceMinor / 100).toFixed(2), ref: d.scopeRef, sw: subjectWords(d.switch) }))];
   $('differences').replaceChildren(...(lines.length === 0 ? [t('noDiff')] : lines).map((l) => Object.assign(document.createElement('li'), { textContent: l })));
 });
-for (const v of ['prices', 'zones', 'channels']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
+for (const v of ['prices', 'zones', 'channels', 'pack']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
+
+// ── W4 · Send to the tills: preview head office's pack for a store, then send it (its own permission; head office's step-up) ──
+const packOf = () => ({ storeId: $('pk-store').value.trim(), asOf: $('pk-asof').value || today() });
+$('pk-preview').addEventListener('click', async () => {
+  const st = $('pk-status'); const { storeId, asOf } = packOf();
+  if (storeId === '') { tell(st, false, t('pkNeedStore')); return; }
+  const out = await call('GET', `/v1/catalogue/pack/preview?${new URLSearchParams({ storeId, asOf })}`);
+  if (!out.ok) { say(st, out, ''); return; }
+  st.className = 'status'; st.textContent = fill(t('pkGoes'), { n: out.body.includedCount ?? out.body.snapshot?.products?.length ?? 0, store: storeId, day: asOf });
+  const left = [...(out.body.excluded ?? []), ...(out.body.notSold ?? [])];
+  $('pk-left').replaceChildren(...(left.length === 0 ? [t('pkNoneLeft')] : left.map((x) => fill(t('pkLeft'), { id: x.productId, why: WORDS[lang][`why_${x.reason}`] ?? x.reason })))
+    .map((line) => Object.assign(document.createElement('li'), { textContent: line })));
+});
+$('pk-publish').addEventListener('click', async () => {
+  const st = $('pk-status'); const { storeId, asOf } = packOf();
+  if (!mayPublishPack) { tell(st, false, t('pkNoRight')); return; }
+  if (storeId === '') { tell(st, false, t('pkNeedStore')); return; }
+  const ack = $('pk-ack').value.trim();
+  const out = await call('POST', '/v1/catalogue/pack', { storeId, asOf, ...(/^\d+$/.test(ack) && Number(ack) > 0 ? { acknowledgedRemovals: Number(ack) } : {}) });
+  if (out.status === 403 && out.body?.error?.code === 'reauthentication_required') { tell(st, false, fill(t('pkStepUp'), { why: out.body.error.whatHappened })); return; }
+  say(st, out, fill(t('pkSent'), { v: out.body?.version ?? '' }));
+});
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
 paint();
 if (named && !mayRead) tell($('page-status'), false, t('noRight'));
 if (named && mayRead) {
   setShopDate('p-from', today());
+  $('pk-asof').value = today();
   if (!mayPropose) { $('page-status').className = 'status'; $('page-status').textContent = t('readOnly'); }
   const asked = new URLSearchParams(location.search).get('product');
   if (asked !== null && /^[A-Za-z0-9_.:-]{1,64}$/.test(asked)) $('p-product').value = asked;

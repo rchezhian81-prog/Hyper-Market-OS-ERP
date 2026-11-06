@@ -72,9 +72,10 @@ const REVIEWER_A = { userId: 'u-reviewer-a', displayName: 'Reviewer A' };
 const REVIEWER_B = { userId: 'u-reviewer-b', displayName: 'Reviewer B' };
 
 describe('the kind says who alone decides it', () => {
-  it('floor_device_review is decided only by the named security reviewer; no other kind is', () => {
+  it('floor_device_review is decided only by the named security reviewer and so is ca_role_grant (OB-681: the IT custodian); no other kind is', () => {
     expect(APPROVAL_KINDS['floor_device_review']?.decidedOnlyBy).toBe('security_reviewer');
-    expect(Object.values(APPROVAL_KINDS).filter((k) => k.decidedOnlyBy !== undefined).map((k) => k.kind)).toEqual(['floor_device_review']);
+    expect(Object.values(APPROVAL_KINDS).filter((k) => k.decidedOnlyBy !== undefined).map((k) => k.kind).sort()).toEqual(['ca_role_grant', 'floor_device_review']);
+    expect(APPROVAL_KINDS['ca_role_grant']?.decidedOnlyBy).toBe('security_reviewer');
   });
 });
 

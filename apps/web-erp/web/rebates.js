@@ -214,3 +214,65 @@ else {
 }
 // the chrome loads after this script: its shared date fields replace the plain ones once it is there
 document.addEventListener('sre:chrome', () => { shopDate('s-starts', { en: wordsIn('en', 'startsOn'), ta: wordsIn('ta', 'startsOn') }); shopDate('s-ends', { en: wordsIn('en', 'endsOn'), ta: wordsIn('ta', 'endsOn') }); shopDate('m-on', { en: wordsIn('en', 'receivedOn'), ta: wordsIn('ta', 'receivedOn') }); paint(); }, { once: true });
+
+// W3 (D03-FR-03 · D10-FR-04): measure what a scheme earned, and put earned rebates in the books — its own tested session
+// (window.rebateAccruals, apps/web-erp/src/rebate-accruals-session.ts). Only the period is sent; head office folds the basis
+// from the matched bills and posts through the accountant's rule. Nothing is read or written until a click.
+const accr = window.rebateAccruals ?? null;
+const at = (k, fill) => (accr === null ? k : accr.words(lang, k, fill));
+let books = null;
+function paintAccrualWords() {
+  if (accr === null) return;
+  for (const [id, key] of [['measure-h', 'measureH'], ['measure-lead', 'measureLead'], ['a-scheme-l', 'schemeId'], ['a-from-l', 'from'], ['a-to-l', 'to'], ['a-base-from-l', 'baseFrom'], ['a-base-to-l', 'baseTo'],
+    ['a-measure-text', 'measure'], ['books-h', 'booksH'], ['books-lead', 'booksLead'], ['b-show-text', 'show'], ['b-post-text', 'post']]) $(id).textContent = at(key);
+  paintBooks();
+}
+function paintBooks() {
+  const rows = $('book-rows'); rows.replaceChildren(); $('b-accounts').textContent = '';
+  if (books === null) return;
+  $('b-accounts').textContent = books.accounts === null ? at('noRule') : at('accounts', books.accounts);
+  if (books.lines.length === 0) rows.append(text('li', `○ ${at('noSchemes')}`));
+  for (const l of books.lines) {
+    const li = document.createElement('li'); li.dataset.scheme = l.schemeId; if (!l.agrees) li.className = 'attention';
+    li.append(text('strong', `${at('colScheme')} ${l.schemeId} · ${l.supplierId}${l.approved ? '' : ` · ${at('notApproved')}`}`));
+    li.append(text('span', `${at('colRegister')} ${rs(l.registerAccruedMinor)} · ${at('colLedger')} ${rs(l.ledgerAccruedMinor)} · ${at('colReceived')} ${rs(l.receivedMinor)} · ${at('colReceivable')} ${l.ledgerReceivableMinor === null ? at('notMapped') : rs(l.ledgerReceivableMinor)} · ${at('colToPost')} ${rs(l.toPostMinor)} · ${at('colAgrees')} ${l.agrees ? at('yes') : at('no')}`, 'figures'));
+    rows.append(li);
+  }
+  rows.append(text('li', books.agrees ? at('allAgree') : at('someDiffer'), 'meta'));
+}
+async function showBooks() {
+  const out = await accr.session.books();
+  if (out.result !== 'ok') { books = null; $('b-status').textContent = accr.outcomeWords(lang, out); paintBooks(); return; }
+  books = out.value; paintBooks();
+}
+if (accr !== null && accr.session.may.named) {
+  paintAccrualWords();
+  $('lang').addEventListener('click', () => paintAccrualWords());
+  if (accr.session.may.measure) {
+    $('measure').hidden = false;
+    $('a-to').value = accr.today();
+    $('a-measure').addEventListener('click', async () => {
+      const out = await accr.session.measure({ schemeId: $('a-scheme').value, from: $('a-from').value, to: $('a-to').value, baselineFrom: $('a-base-from').value, baselineTo: $('a-base-to').value });
+      if (out.result !== 'ok') { $('a-status').textContent = accr.outcomeWords(lang, out); return; }
+      const a = out.value.accrual;
+      const left = a.basisSources?.notValued?.length ?? 0;
+      $('a-status').textContent = `${at('measured', { amount: rs(a.accrued.minor), bills: a.basisSources?.invoices?.length ?? 0 })}${left > 0 ? ` ${at('notValued', { count: left })}` : ''}`;
+      if (may.read && reg !== null) await showRegister();
+      if (books !== null) await showBooks();
+    });
+  }
+  if (accr.session.may.books) {
+    $('books').hidden = false;
+    $('b-show').addEventListener('click', () => { void showBooks(); });
+    if (accr.session.may.post) {
+      $('b-post').hidden = false;
+      $('b-post').addEventListener('click', async () => {
+        const out = await accr.session.post();
+        if (out.result !== 'ok') { $('b-status').textContent = accr.outcomeWords(lang, out); return; }
+        const said = [out.value.posted.length > 0 ? at('posted', { count: out.value.posted.length }) : at('nothingToPost'), ...out.value.notPosted.map((n) => at('notPostedFor', { scheme: n.schemeId, reason: n.reason }))];
+        await showBooks();
+        $('b-status').textContent = said.join(' ');
+      });
+    }
+  }
+}

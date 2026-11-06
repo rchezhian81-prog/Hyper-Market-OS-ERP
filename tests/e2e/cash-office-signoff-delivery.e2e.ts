@@ -106,7 +106,7 @@ const reviewer = (userId: string, permissions: readonly string[]): Record<string
   userId, tenantId: 't1', permissions,
 });
 
-/** OB-626: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-691: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');

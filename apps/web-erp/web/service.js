@@ -184,7 +184,7 @@ function sampleSession() {
     caseList: () => [],
     compensate: () => ({ granted: false, outcome: 'no_such_case', detail: 'this is sample data' }),
     useDraft: () => ({ sent: false, why: 'this is sample data' }),
-    report: () => ({ cases: 0, resolved: 0, breached: 0, breachedValue: [], firstResponseBreached: 0, csatHundredths: 'no_responses', responseRateBps: 'not_meaningful', detail: 'this is sample data' }),
+    report: () => ({ cases: 0, resolved: 0, breached: 0, breachedValue: [], met: 0, escalateNow: [], firstResponseBreached: 0, csatHundredths: 'no_responses', responseRateBps: 'not_meaningful', detail: 'this is sample data' }),
   };
 }
 
@@ -314,7 +314,7 @@ function lineRow(line) {
 
 // ── Putting it through ──────────────────────────────────────────────────────
 
-// OB-626: money goes back across the desk only after the shared confirm sheet (the chrome's) says how much, how, for which
+// OB-691: money goes back across the desk only after the shared confirm sheet (the chrome's) says how much, how, for which
 // bill, and in whose name — and the person confirms. Go back puts nothing through.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const CONFIRM = {

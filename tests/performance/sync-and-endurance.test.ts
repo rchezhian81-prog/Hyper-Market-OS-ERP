@@ -3,7 +3,10 @@ import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { measure, measureComplexity, certifiedHardwareGate, TARGETS } from './harness';
 
-// §32 — sync backlog and offline endurance. NFR-01, NFR-03, P-01, P-08, hard rules #1, #10.
+// §32 — sync backlog and offline endurance. NFR-01, NFR-03, P-01, P-08, hard rules #1, #10. QG-05 (the audited targets for
+// journeys other than the scan: the backlog drain) and QG-04 (the 72-hour offline arithmetic) — CI ratios, NOT a
+// certification: the wall-clock proof is the store's real uplink and the certified store PC (EX-09), recorded on the
+// gate-evidence register.
 //
 // Two targets here have a property the POS ones do not: **their arithmetic can be settled
 // without the hardware, even though their wall-clock cannot.**

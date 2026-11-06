@@ -88,7 +88,27 @@ export interface PartnerDeps {
   readonly sandbox: (tenantId: string, sandboxId: string) => Promise<SandboxTenant | undefined> | SandboxTenant | undefined;
   /** Register a sandbox tenant, append-only. Idempotent on the sandbox id + expiry. */
   readonly recordSandbox: (tenantId: string, sandbox: SandboxTenant) => Promise<void> | void;
+  /**
+   * W3 (M36-FR-04): every credential, certification and sandbox head office holds — for the office "Partners and
+   * sandboxes" page. Each is the latest version of its record (the history stays on its own stream). Absent on a bare stub.
+   */
+  readonly register?: (tenantId: string) => Promise<PartnerRegister> | PartnerRegister;
   readonly now: () => string;
+}
+
+/** W3 (M36-FR-04): what the partner register lists — latest version of each record. */
+export interface PartnerRegister {
+  readonly credentials: readonly PartnerCredential[];
+  readonly certifications: readonly Certification[];
+  readonly sandboxes: readonly SandboxTenant[];
+}
+
+/** How a credential stands on the shop's day: revoked and expired are said, never hidden. */
+export function credentialState(c: PartnerCredential, today: string): 'active' | 'revoked' | 'expired' | 'not_yet' {
+  if (c.revokedOn !== undefined && c.revokedOn <= today) return 'revoked';
+  if (c.expiresOn < today) return 'expired';
+  if (c.issuedOn > today) return 'not_yet';
+  return 'active';
 }
 
 /** One record offered for a sandbox seed — its id and whether it was generated or copied from production. */
@@ -97,6 +117,24 @@ const isSeedRecord = (v: unknown): v is { readonly recordId: string; readonly or
 
 export function partnerRoutes(deps: PartnerDeps): readonly Route[] {
   return [
+    {
+      // W3 (M36-FR-04): the partner register for the office page — every credential (with how it stands today), every
+      // connector certification and every sandbox. A read: no secret is held here at all (a credential is a scoped,
+      // dated grant; its access token is issued out of band, hard rule #4), and nothing is changed or removed.
+      api: 'API-11', method: 'GET', path: '/v1/platform/partners',
+      permission: 'platform.partner.read',
+      handler: async (ctx) => {
+        const today = await shopToday(deps, ctx.tenantId);
+        const reg: PartnerRegister = deps.register === undefined ? { credentials: [], certifications: [], sandboxes: [] } : await deps.register(ctx.tenantId);
+        const credentials = [...reg.credentials].sort((a, b) => a.credentialId.localeCompare(b.credentialId))
+          .map((c) => ({ ...c, state: credentialState(c, today) }));
+        const sandboxes = [...reg.sandboxes].sort((a, b) => a.tenantId.localeCompare(b.tenantId))
+          // The sandbox's own id is reported as `sandboxId`, never `tenantId` (OB-01 cross-tenant response backstop).
+          .map((s) => ({ sandboxId: s.tenantId, partnerId: s.partnerId, createdOn: s.createdOn, expiresOn: s.expiresOn, syntheticDataOnly: s.syntheticDataOnly, expired: s.expiresOn < today }));
+        const certifications = [...reg.certifications].sort((a, b) => a.partnerId.localeCompare(b.partnerId) || a.connectorId.localeCompare(b.connectorId));
+        return { status: 200, body: { today, credentials, certifications, sandboxes, listed: deps.register !== undefined, asAt: deps.now() } };
+      },
+    },
     {
       // Decide whether a partner call may proceed, against the STORED credential (M36-FR-04). Every security
       // refusal — sandbox-in-production (hard rule #7), out-of-scope tenant, revoked, expired — is decided

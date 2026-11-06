@@ -44,8 +44,12 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   ReceivingCompleted: 'completedBy',
   DsdCheckInClosed: 'receivedBy',
   FloorIndentIssued: 'issuedBy',
+  // W5 (M09-FR-03): a floor return counted in at the back store names the person who accepted it.
+  FloorIndentReturnAccepted: 'acceptedBy',
   PickLineResolved: 'pickedBy',
   WavePacked: 'packedBy',
+  // OB-687: a swap put to the customer names the picker who asked.
+  SubstitutionProposed: 'proposedBy',
   DeliveryStopUpdated: 'driverId',
   RouteSettled: 'driverId',
   DriverCashHandedOver: 'driverId',

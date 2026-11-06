@@ -171,7 +171,7 @@ describe.skipIf(!HAVE_BROWSER)('the QC operator releases a batch for sale, end t
       expect(await page.locator('#rows button.release').count()).toBe(1);
       expect(await page.locator('#rows button.hold').count()).toBe(1);
 
-      // U1 · OB-626: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      // U1 · OB-691: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(page, () => page.click('#rows button.release'), /Release batch .* for sale/, writeCounter(page));
 
       // The batch drops off because the board was re-READ (server re-derive: it now folds released:true),

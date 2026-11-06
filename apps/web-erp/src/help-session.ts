@@ -104,7 +104,11 @@ export function createHelpSession(input: {
   const held = new Set(data?.permissions ?? []);
   const onBox = input.onBox && data?.library !== undefined;
   const now = input.now ?? (() => new Date().toISOString());
-  const may = { named, manage: named && !onBox && held.has('workforce.roster.manage'), contacts: named && !onBox && held.has('workforce.emergency.manage'), drills: named && !onBox && held.has('workforce.training.manage'), onBox };
+  // Round 4c (screen audit 31 Oct 2026): the manager's tools — publish a sheet, write a procedure, set the emergency
+  // contacts, record a drill — work on the STORE COMPUTER too: each is a head-office write in the person's own session,
+  // carried by the box to head office on the same origin (OB-380). With the line down each says so in its own words
+  // (nothing is saved, nothing is pretended); reading and acknowledging still work offline as before.
+  const may = { named, manage: named && held.has('workforce.roster.manage'), contacts: named && held.has('workforce.emergency.manage'), drills: named && held.has('workforce.training.manage'), onBox };
   const call = makeCaller({ keyPrefix: 'help', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const queue = onBox && input.outbox !== undefined ? createBoxQueue<{ sopId: string; employeeId: string; version: number; acknowledgedAt: string }>(SOP_ACKNOWLEDGED, 'web-erp/help', input.outbox) : undefined;
 

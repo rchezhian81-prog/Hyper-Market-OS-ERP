@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Partner webhooks</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Partner webhooks (W3 · D14-FR-06 · M32-FR-01/02 · roadmap §30.1 · P-08 · hard rules #4 and #6). A THIN CLIENT over head
+      office's outbound webhooks: every partner subscription with what it has delivered, what waits and what is dead-lettered
+      (GET /v1/integration/outbound-webhooks); a new subscription, which a SECOND person with setup rights approves on their
+      own Approvals page (OB-72) before head office sets it up; switching one off; each message since a time (reconciliation);
+      the dead letters, each sent again by a person — a new series of attempts, the old attempts kept, nothing ever deleted;
+      and the connector queues' waiting and dead-lettered messages (read-only). The signing secret is NEVER typed here: only
+      its vault:// name. Every refusal is head office's; nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      input[type="checkbox"] { min-height: 0; width: 22px; height: 22px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
+      .checks { display: flex; flex-wrap: wrap; gap: 14px; }
+      .checks label { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary {   border: 0; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.unknown, .panel .v.warn { color: var(--warn); font-size: 18px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; overflow-wrap: anywhere; }
+      tr[data-id] { cursor: pointer; }
+      td.warn { color: var(--warn); font-weight: 600; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; display: grid; gap: 6px; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Partner webhooks</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Partner webhooks</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-subs">Subscriptions</span><span class="v" id="v-subs">—</span></div>
+          <div class="panel"><span class="k" id="k-dead">Dead letters</span><span class="v" id="v-dead">—</span></div>
+          <div class="panel"><span class="k" id="k-sender">Sender</span><span class="v" id="v-sender">—</span></div>
+        </div>
+        <div class="row"><button id="refresh" type="button" class="sre-btn sre-btn-quiet">Refresh</button><button id="drain" type="button" class="sre-btn">Send what is due now</button></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="list-h">
+        <h3 id="list-h">Subscriptions</h3>
+        <p class="lead" id="list-lead"></p>
+        <div class="table-wrap"><table aria-labelledby="list-h">
+          <thead><tr><th id="c-id">Subscription</th><th id="c-partner">Partner</th><th id="c-events">Events</th><th id="c-state">State</th><th id="c-delivered">Delivered</th><th id="c-waiting">Waiting</th><th id="c-dead">Dead letters</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <p class="muted" id="none" hidden></p>
+      </section>
+
+      <section id="record" aria-labelledby="record-h" hidden>
+        <h3 id="record-h"></h3>
+        <ul class="rows" id="facts" aria-label="This subscription"></ul>
+        <div class="row"><button id="off" type="button" class="sre-btn sre-btn-danger">Switch it off</button></div>
+        <h3 id="dead-h">Dead letters</h3>
+        <p class="lead" id="dead-lead"></p>
+        <ul class="rows" id="dead-list" aria-label="Dead letters"></ul>
+        <h3 id="recon-h">Every message since</h3>
+        <div class="row">
+          <label for="recon-from"><span id="l-recon-from">From (date)</span><input id="recon-from" type="date" /></label>
+          <button id="recon" type="button" class="sre-btn">Read the messages</button>
+        </div>
+        <p class="muted" id="recon-totals"></p>
+        <ul class="rows" id="recon-list" aria-label="Messages"></ul>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="new" aria-labelledby="new-h">
+        <h3 id="new-h">Subscribe a partner</h3>
+        <p class="lead" id="new-lead"></p>
+        <form id="sub-form" class="row">
+          <label for="s-id"><span id="l-s-id">Subscription name (letters, digits, dashes)</span><input id="s-id" autocomplete="off" maxlength="60" /></label>
+          <label for="s-partner"><span id="l-s-partner">Partner</span><input id="s-partner" autocomplete="off" maxlength="80" /></label>
+          <label for="s-url"><span id="l-s-url">Partner's https address</span><input id="s-url" type="url" autocomplete="off" inputmode="url" /></label>
+          <label for="s-key"><span id="l-s-key">Signing secret's vault name (never the secret)</span><input id="s-key" autocomplete="off" maxlength="120" /></label>
+          <label for="s-tries"><span id="l-s-tries">Attempts before it is a dead letter (1 to 20)</span><input id="s-tries" inputmode="numeric" value="8" /></label>
+        </form>
+        <fieldset class="checks" id="s-events" aria-labelledby="l-s-events"><legend id="l-s-events">Events to send</legend></fieldset>
+        <div class="row">
+          <button id="s-save" class="primary sre-btn sre-btn-primary" type="button">Set up the subscription</button>
+          <label for="s-why"><span id="l-s-why">Why (for the second person)</span><input id="s-why" autocomplete="off" maxlength="300" /></label>
+          <button id="s-ask" type="button" hidden class="sre-btn">Ask a second person to approve</button>
+        </div>
+        <p class="status" id="new-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="q-h">
+        <h3 id="q-h">Connector queues</h3>
+        <p class="lead" id="q-lead"></p>
+        <form id="q-form" class="row">
+          <label for="q-id"><span id="l-q-id">Connector</span><input id="q-id" autocomplete="off" list="q-known" maxlength="80" /></label>
+          <datalist id="q-known"></datalist>
+          <button id="q-read" type="submit" class="sre-btn">Read its queue</button>
+        </form>
+        <p class="muted" id="q-totals"></p>
+        <ul class="rows" id="q-list" aria-label="Connector queue"></ul>
+        <p class="status" id="q-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./partner-webhooks.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

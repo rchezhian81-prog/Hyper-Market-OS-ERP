@@ -5,10 +5,12 @@
 
 import { createOpenOrdersSession, openOrdersWords, openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice } from './open-orders-session';
 import { createSupplierTermsSession, supplierTermsWords, supplierTermsOutcomeWords } from './supplier-terms-session';
-import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable } from './replenishment-session';
+import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable, heldReorderSettingsOf } from './replenishment-session';
+import { shopMomentOf } from './findings-session';
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
+import { createSupplierRecordsSession, supplierRecordsWords, supplierRecordsOutcomeWords, DOCUMENT_KINDS, REQUESTED_VIA } from './supplier-records-session';
 
 import { typedQuantityMinor, toDecimalString, normaliseUom } from '../../../packages/contracts/src/quantity';
 
@@ -40,7 +42,9 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
     // M09-FR-02 · WF-03: the stored reorder settings, head office's proposal on them, and a requisition raised from it.
     const raw = win['buyingData'] as { productUoms?: unknown } | null;
     const uoms = raw !== null && typeof raw === 'object' && raw.productUoms !== null && typeof raw.productUoms === 'object' ? raw.productUoms as Record<string, string> : undefined;
-    win['buyingReorder'] = { session: createReplenishmentSession({ viewer: buyerOf(win['buyingData']), ...(uoms === undefined ? {} : { productUoms: uoms }) }), words: replenishmentWords, outcomeWords: replenishmentOutcomeWords, qtyIn, editable };
+    // OB-630: the store pack's copy of the reorder settings, for when head office cannot be reached (shown as a copy).
+    const held = heldReorderSettingsOf(raw);
+    win['buyingReorder'] = { session: createReplenishmentSession({ viewer: buyerOf(win['buyingData']), ...(uoms === undefined ? {} : { productUoms: uoms }), ...(held === undefined ? {} : { held }) }), words: replenishmentWords, outcomeWords: replenishmentOutcomeWords, qtyIn, editable, moment: shopMomentOf };
     win['buyingOpenOrders'] = { session: createOpenOrdersSession({ viewer: buyerOf(win['buyingData']) }), words: openOrdersWords, outcomeWords: openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice };
   }
   // M06-FR-03: supplier contracts (with the agreed lead time) on the Supplier scorecard page, rebate schemes on the Supplier
@@ -52,6 +56,11 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
   }
   // D10-FR-01: supplier advances on the Supplier bills page — pay (asked for and approved by a second person), use against a
   // matched bill, undo a use.
+  // W3 · WF-02 (M06-FR-01): a supplier's papers (captured and checked), the two-person bank account change and the hold — on the
+  // Suppliers page, under its own viewer.
+  if (win['suppliersData'] !== undefined) {
+    win['supplierRecords'] = { session: createSupplierRecordsSession({ viewer: viewerIdentity(win['suppliersData']) }), words: supplierRecordsWords, outcomeWords: supplierRecordsOutcomeWords, kinds: DOCUMENT_KINDS, via: REQUESTED_VIA };
+  }
   if (win['supplierBillsData'] !== undefined) {
     win['supplierAdvances'] = { session: createSupplierAdvancesSession({ viewer: viewerIdentity(win['supplierBillsData']) }), words: advancesWords, outcomeWords: advancesOutcomeWords, rupees: advanceRupees };
   }

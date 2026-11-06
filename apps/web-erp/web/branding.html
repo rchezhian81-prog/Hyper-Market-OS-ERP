@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shop name and colours</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Shop name, logo and colours (W3 · M36-FR-02 "white-label without code forks" · OB-321 · P-06 · P-08). A THIN CLIENT over
+      head office's white-label branding (GET/PUT /v1/platform/branding): the shop's own name, legal name, logo reference and
+      colours — and nothing else (OB-321: terminology and document wording are refused by name). Head office refuses an
+      unreadable colour pair or a bad colour, and keeps every change as a new version. The brand rides the SIGNED catalogue
+      pack to the store computer and the tills, so the bill prints the name with no network at the sale; this page shows the
+      copy this store computer holds beside head office's, so a brand not yet on the tills is visible. Nothing is written on
+      open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 15px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary {   border: 0; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 4px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.warn { color: var(--warn); }
+      .swatch { border-radius: 12px; padding: 14px; font-weight: 700; font-size: 18px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+      .status { font-size: 15px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Shop name and colours</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Shop name and colours</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel"><span class="k" id="k-ho">Head office says</span><span class="v" id="v-ho">—</span><span class="muted" id="v-ho-more"></span></div>
+          <div class="panel"><span class="k" id="k-box">This store computer and its tills print</span><span class="v" id="v-box">—</span><span class="muted" id="v-box-more"></span></div>
+        </div>
+        <div class="swatch" id="swatch" aria-hidden="true"></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="edit" aria-labelledby="edit-h">
+        <h3 id="edit-h">Change the brand</h3>
+        <p class="lead" id="edit-lead"></p>
+        <form id="form" class="row">
+          <label for="b-name"><span id="l-b-name">Shop name (as customers see it)</span><input id="b-name" autocomplete="off" maxlength="80" /></label>
+          <label for="b-legal"><span id="l-b-legal">Legal name</span><input id="b-legal" autocomplete="off" maxlength="120" /></label>
+          <label for="b-logo"><span id="l-b-logo">Logo (the stored file's reference)</span><input id="b-logo" autocomplete="off" maxlength="200" /></label>
+          <label for="b-primary"><span id="l-b-primary">Main colour</span><input id="b-primary" type="color" value="#1f2933" /></label>
+          <label for="b-on"><span id="l-b-on">Writing on the main colour</span><input id="b-on" type="color" value="#ffffff" /></label>
+          <button id="save" class="primary sre-btn sre-btn-primary" type="submit">Save the brand</button>
+        </form>
+        <p class="status" id="edit-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./branding.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

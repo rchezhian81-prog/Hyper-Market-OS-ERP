@@ -143,6 +143,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       data_import_rollback: { en: APPROVALS_COPY.en.kindDataImportRollback, ta: APPROVALS_COPY.ta.kindDataImportRollback },
       category_define: { en: APPROVALS_COPY.en.kindCategoryDefine, ta: APPROVALS_COPY.ta.kindCategoryDefine },
       supplier_bank_change: { en: APPROVALS_COPY.en.kindSupplierBank, ta: APPROVALS_COPY.ta.kindSupplierBank },
+      customer_credit_note: { en: APPROVALS_COPY.en.kindCustomerCreditNote, ta: APPROVALS_COPY.ta.kindCustomerCreditNote }, // W3 · M23-FR-02 · OB-678
+      customer_debit_note: { en: APPROVALS_COPY.en.kindCustomerDebitNote, ta: APPROVALS_COPY.ta.kindCustomerDebitNote }, // W3 · OB-679
       price_change: { en: APPROVALS_COPY.en.kindPriceChange, ta: APPROVALS_COPY.ta.kindPriceChange },
       price_list_entry: { en: APPROVALS_COPY.en.kindPriceListEntry, ta: APPROVALS_COPY.ta.kindPriceListEntry },
       promotion_launch: { en: APPROVALS_COPY.en.kindPromotionLaunch, ta: APPROVALS_COPY.ta.kindPromotionLaunch },
@@ -154,6 +156,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       period_reopen: { en: 'Reopen a signed accounting month', ta: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்' },
       concession_contract: { en: 'Approve a concession contract', ta: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்' },
       concession_deposit_forfeit: { en: 'Forfeit a concessionaire\'s deposit', ta: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்' },
+      concession_invoice: { en: 'Issue a concession invoice and settle the period', ta: 'சலுகை விலைப்பட்டியலை வெளியிட்டு காலத்தைத் தீர்த்தல்' }, // Round 4d · M27-FR-03
       // Stock, orders and purchasing (2b-vi-b-3).
       stock_write_off: { en: 'Write off stock (a material loss)', ta: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)' },
       stock_adjustment_up: { en: 'Correct stock upward', ta: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்' },
@@ -207,6 +210,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       tenant_closure: { en: APPROVALS_COPY.en.kindTenantClosure, ta: APPROVALS_COPY.ta.kindTenantClosure },
       // OB-407: the named security reviewer's signature on switching on a floor device.
       floor_device_review: { en: APPROVALS_COPY.en.kindFloorDeviceReview, ta: APPROVALS_COPY.ta.kindFloorDeviceReview },
+      // OB-681: the CA's own login — the owner asks, the IT custodian approves.
+      ca_role_grant: { en: APPROVALS_COPY.en.kindCaRoleGrant, ta: APPROVALS_COPY.ta.kindCaRoleGrant },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

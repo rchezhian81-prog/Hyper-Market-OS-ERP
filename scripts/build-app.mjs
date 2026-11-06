@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncFoundation, stampServiceWorkers, FOUNDATION_FILE, WORKER_FILE } from './sync-ui-foundation.mjs';
+import { writeDeveloperDocs } from './developer-docs.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,6 +67,13 @@ const options = {
     PILOT_DEMO_LANE_BASE: JSON.stringify(process.env.PILOT_DEMO_LANE_BASE ?? ''),
   },
 };
+
+// W3 · M36-FR-04: the office "Developer guide" reads the published contract; each build of the office pages regenerates its
+// data from docs/api/openapi.json (an ignored build output), so the guide is always the contract this release carries.
+if (app === 'web-erp') {
+  const docs = writeDeveloperDocs();
+  console.log(`developer guide: ${docs.operations.length} operations from docs/api/openapi.json`);
+}
 
 if (process.argv.includes('--watch')) {
   const ctx = await context(options);

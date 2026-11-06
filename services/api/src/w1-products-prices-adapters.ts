@@ -25,12 +25,13 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/durable-settings';
-import { resolvePrice, type PriceScope } from '../../../packages/price-list/src/price-list';
+import { effectiveInstant, resolvePrice, type PriceScope } from '../../../packages/price-list/src/price-list';
 import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { priceChangeSize } from '../../../packages/approvals/src/authority-rules';
 import { priceCheckOf } from '../../identity/src/authority-limits';
-import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { shopClock, shopToday, type ShopCalendarOf, type ShopClock } from '../../../packages/calendar/src/shop-clock';
+import { instantOf, shiftDate } from '../../../packages/calendar/src/trading-day';
 import type { ProductRecord } from '../../../packages/product/src/index';
 import {
   productMasterAdapter, categoryRegisterAdapter, packHierarchyAdapter, barcodeAdapter, productMergeAdapter, priceListAdapter, pricingAdapter,
@@ -238,9 +239,18 @@ export interface PriceBasis {
 const SCOPES: readonly PriceScope[] = ['store', 'zone', 'channel', 'customer'];
 const isScope = (v: unknown): v is PriceScope => typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
 const dayOf = (v: string): string => (/^\d{4}-\d{2}-\d{2}/.exec(v)?.[0] ?? v);
+/**
+ * The SHOP's date of an effective date (R1c · M01-FR-02): a plain date is already a date; an instant is read on the shop's
+ * calendar, never by its first ten characters — from 18:30 to 24:00 UTC those are the shop's YESTERDAY, so a price set "from
+ * now" just after the shop's midnight was taken for a back-dated one and skipped the second-person check (OB-291), and the
+ * price in force "today" was looked up on the wrong day.
+ */
+const shopDayOf = async (clock: ShopClock, tenantId: string, v: string): Promise<string> =>
+  (/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v)) ? dayOf(v) : clock.dateOf(tenantId, v));
 
 function priceBasis(base: Base) {
   const { store, now } = base;
+  const clock = shopClock(base.calendar);
   const products = productMasterAdapter({ store, now });
   const list = priceListAdapter({ store, now });
   const rules = storeRulesAdapter({ store });
@@ -261,12 +271,17 @@ function priceBasis(base: Base) {
       averageBuyingCosts({ store, now, ...(base.calendar === undefined ? {} : { calendar: base.calendar }) }, tenantId),
       priceCheckOf(rulesStoreOf({ store, now, settings: base.settings }), tenantId),
     ]);
-    const mrp = (product?.mrpHistory ?? []).filter((m) => dayOf(m.effectiveFrom) <= onDay).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)).at(-1);
+    const mrpDays = await Promise.all((product?.mrpHistory ?? []).map(async (m) => ({ m, day: await shopDayOf(clock, tenantId, m.effectiveFrom) })));
+    const mrp = mrpDays.filter((x) => x.day <= onDay).map((x) => x.m).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)).at(-1);
     const knownCosts = reach.map((s) => ({ s, c: costs.costOf(productId, s) }));
     const floors = await Promise.all(reach.map(async (s) => ({ s, f: (await rules.rules(tenantId, s))?.marginFloorBps })));
     // What this scope charges at the moment in question: for a new entry, the instant it would start (so a
     // price that took effect earlier the same day counts); for a read of today, now; for a read of another day, that day's end.
-    const at = atInstant ?? (dayOf(now()) === onDay ? now() : `${onDay}T23:59:59.999Z`);
+    // Today and a day's end are the SHOP's (its zone's midnight), never the UTC date or 23:59 UTC (05:29 the next shop day).
+    const zone = (await clock.calendar(tenantId)).timeZone;
+    const at = atInstant ?? ((await clock.today(tenantId, now())) === onDay
+      ? now()
+      : new Date(Date.parse(instantOf(`${shiftDate(onDay, 1)}T00:00`, zone)) - 1).toISOString());
     const same = entries.filter((e) => e.scope === scope && e.scopeRef === scopeRef && (e.batchId ?? null) === (batchId ?? null));
     const ctxFor = (s: string) => ({ productId, at, storeId: scope === 'store' ? scopeRef : s, ...(scope === 'zone' ? { zoneId: scopeRef } : {}), ...(scope === 'channel' ? { channel: scopeRef } : {}), ...(scope === 'customer' ? { customerId: scopeRef } : {}), ...(batchId === undefined ? {} : { batchId }) });
     const current = resolvePrice(same, ctxFor(reach[0] ?? scopeRef));
@@ -291,6 +306,7 @@ const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
 function priceListGuard(surface: Route[], base: Base): void {
   const basisOf = priceBasis(base);
+  const clock = shopClock(base.calendar);
   const calendarDeps = { now: base.now, ...(base.calendar === undefined ? {} : { calendar: base.calendar }) };
   surface.push({
     // What the price screen shows beside a scoped, dated price, and sends with it. Read only.
@@ -322,10 +338,13 @@ function priceListGuard(surface: Route[], base: Base): void {
     if (!isScope(b['scope']) || !isStr(b['scopeRef']) || !whole(b['priceMinor']) || !whole(b['mrpMinor']) || !whole(b['costMinor'])
       || !Number.isInteger(b['marginFloorBps']) || typeof b['currency'] !== 'string' || !isCurrencyCode(b['currency'])
       || typeof b['effectiveFrom'] !== 'string' || Number.isNaN(Date.parse(b['effectiveFrom'])) || isStr(b['approvalId']) || b['approval'] !== undefined) return inner(ctx);
-    const onDay = dayOf(b['effectiveFrom']);
+    // The shop's day the entry starts, read as the route's own back-dating rule reads it (services/pricing price-list.ts).
+    const onDay = await shopDayOf(clock, ctx.tenantId, b['effectiveFrom']);
     if (onDay < await shopToday(calendarDeps, ctx.tenantId)) return inner(ctx);
     const batchId = isStr(b['batchId']) ? b['batchId'].trim() : undefined;
-    const basis = await basisOf(ctx.tenantId, productId, b['scope'], b['scopeRef'].trim(), onDay, batchId, new Date(Date.parse(b['effectiveFrom'])).toISOString());
+    // The instant it starts: a plain date at the shop's midnight (R1c, as `resolvePrice` reads it), an instant as written.
+    const startsAt = new Date(effectiveInstant(b['effectiveFrom'], (await clock.calendar(ctx.tenantId)).timeZone)).toISOString();
+    const basis = await basisOf(ctx.tenantId, productId, b['scope'], b['scopeRef'].trim(), onDay, batchId, startsAt);
     const currency = b['currency'] as CurrencyCode;
     const priceMinor = b['priceMinor'];
     const mrpMinor = basis.mrpMinor === null ? b['mrpMinor'] : Math.min(b['mrpMinor'], basis.mrpMinor);

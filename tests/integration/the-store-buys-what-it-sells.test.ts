@@ -263,7 +263,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     const served = (await servedTillCatalogue(edge))!;
     expect(served).toMatchObject({ source: 'head_office', version: 1 });
     expect(served.products.map((p) => p.productId)).toEqual([PRODUCT]);
-    const till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+    const till = bootPos({ laneId: LANE, timeZone: 'UTC', catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
     await signInTill(till, CASHIER);
     const soldAt = new Date().toISOString();
     const tradingDay = tradingDateOf(soldAt, makeTradingDayRule('00:00'));
@@ -324,7 +324,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     const sold = async (edge: EdgeProcess, laneId: string, saleId: string): Promise<string> => {
       const served = (await servedTillCatalogue(edge))!;
       expect(served).toMatchObject({ source: 'head_office', version: 1 });
-      const till = bootPos({ laneId, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+      const till = bootPos({ laneId, timeZone: 'UTC', catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
       await signInTill(till, CASHIER);
       till.scanBarcode(BARCODE);
       const receipt = await till.nextReceipt(); // each box numbers its own lane's bills (audit PF-04)

@@ -118,7 +118,7 @@ describe('the frequent actions fit the spec\'s budget by construction (Stage G s
   });
 });
 
-describe('OB-626 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
+describe('OB-691 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
   // The owner decided (2 Nov 2026) that a money, price or stock action shows what will happen, in whose name, and asks
   // for the verb before anything is sent. At the till that is the same on-screen panel in a `'confirm'` mode — never a
   // browser dialog (the first test in this file still forbids those).
@@ -197,11 +197,11 @@ describe('U4: More under headings, and Find an item through the scan path', () =
     expect(code(APP)).toContain("if (mode === 'text' || mode === 'find') el('entry-text').focus();");
   });
 
-  it('a found row and a scanned code ring through ONE path (ringCode), so every gate applies the same way; the list comes from the lane\'s own snapshot', () => {
-    expect(code(APP)).toMatch(/function ringCode\(code, startedAt\) \{\s*if \(!session\.hasCatalogue\(\)\)/);
-    expect(code(APP)).toContain('ringCode(code, startedAt);'); // the scanner's Enter
-    expect(code(APP)).toContain('ringCode(String(code), null);'); // the found row
-    expect(code(APP)).toContain('session.scanBarcode(code);'); // inside ringCode — the till itself still prices nothing
+  it('a found row and a scanned code ring through ONE path (scanCode, shared with the UI-2 keyed barcode), so every gate applies the same way; the list comes from the lane\'s own snapshot', () => {
+    expect(code(APP)).toMatch(/function scanCode\(code, startedAt\) \{\s*if \(!session\.hasCatalogue\(\)\)/);
+    expect(code(APP)).toContain('scanCode(code, startedAt);'); // the scanner's Enter
+    expect(code(APP)).toContain('scanCode(String(code), null);'); // the found row
+    expect(code(APP)).toContain('session.scanBarcode(code);'); // inside scanCode — the till itself still prices nothing
     expect(code(APP)).toContain('session.findItems(');
     expect(ENTRY).toContain('const findItems = (query: string, limit = 20): readonly FoundItem[] =>');
     expect(ENTRY).toMatch(/const snapshot = config\?\.catalogue;/); // the signed snapshot, no network

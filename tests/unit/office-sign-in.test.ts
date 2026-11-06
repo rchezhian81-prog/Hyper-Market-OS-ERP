@@ -45,7 +45,8 @@ describe('the office gate (OB-259)', () => {
   });
 
   it('only the owner, the manager, the accountants and the security reviewer (OB-406) are office roles; only the till and the customer-facing lane screens stay open', () => {
-    expect(OFFICE_ROLE_IDS).toEqual(['owner', 'store_manager', 'accountant', 'chartered_accountant', 'security_reviewer']);
+    // OB-622: the four §28 buying and stock roles open office screens too; the Picker and Delivery driver (OB-571) do not.
+    expect(OFFICE_ROLE_IDS).toEqual(['owner', 'store_manager', 'accountant', 'chartered_accountant', 'security_reviewer', 'purchase_user', 'purchase_approver', 'receiver_qc', 'warehouse_user']);
     // OB-288 P6 (R8-3 · D14-FR-02): the self-checkout lane is a till (its colleague signs in at the lane itself, with their
     // own PIN, as a cashier does) and the price kiosk is read-only — neither is an office screen.
     expect(OPEN_SCREENS).toEqual(['pos', 'self-checkout', 'price-kiosk']);

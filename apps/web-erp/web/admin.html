@@ -61,7 +61,8 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good);  font-size: 18px; }
+      /* U1: the one primary wears .sre-btn-primary; a page paints no button in the accent itself */
+      button.primary { font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -127,7 +128,6 @@
       li.wait .decide label { margin: 0; }
       li.wait .buttons { display: flex; gap: 12px; flex-wrap: wrap; }
       li.wait .buttons button { padding: 0 22px; }
-      button.approve { background: var(--good);  }
       button:disabled { opacity: 0.6; }
       .row .end { padding: 0 18px; flex: none; }
       /* On a phone the End button goes under the words, full width, so the words keep the row. */
@@ -200,6 +200,8 @@
         <h3 id="sessions-title">Who has been let in</h3>
         <div id="support-list"></div>
         <p class="lead" id="requests-note"></p>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="supportReview" aria-live="polite"></section>
       </section>
 
       <section id="view-people" hidden>
@@ -298,6 +300,7 @@
 
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>
+    <script src="./w5-platform.js" type="module"></script>
     <script type="module" src="./admin.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>

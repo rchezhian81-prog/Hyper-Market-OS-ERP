@@ -1,0 +1,130 @@
+// Business customers · "Chasing, the books and the order chain" (W5 · M22-FR-01/04 "outstanding and collection tracking" ·
+// M22-FR-02 "quote → order → challan → invoice" · M23-FR-01 "AP/AR reconciles to purchase/sales" · M22-FR-04 portal access ·
+// §35 · P-03 · P-05 · P-08) — a tested, DOM-free session over four head-office reads no screen reached:
+//   • THE NEXT STEP IN CHASING (`GET /v1/b2b/collections/:customerId/dunning?asOf=`) — statement, reminder, final notice or
+//     stop supply, as head office decides it on the day. Stopping supply is only ever RECOMMENDED: head office marks it as
+//     needing a person, and nothing here sends or stops anything;
+//   • WHAT THE CUSTOMER SEES AGAINST THE BOOKS (`GET …/reconciliation?asOf=`) — the collections ageing total against the AR
+//     balance finance holds, the difference exact and with its sign (finance's own permission, a rung above chasing);
+//   • THE ORDER'S CHAIN (`GET /v1/b2b/documents/:customerId/orders/:orderId/chain`) — ordered, delivered and billed, and
+//     what left the building with no bill;
+//   • PORTAL LOGINS TRYING OTHER CUSTOMERS' DATA (`GET /v1/b2b-portal/probing`) — the tenant-wide security view; the
+//     threshold is head office's (it says which it used).
+//   • OB-686 (owner, 3 Nov 2026): THE OWNER'S CHASING STEPS (`GET/POST /v1/b2b/collections/chasing-steps`) — the smallest
+//     amount worth chasing and the reminder / final-notice / stop-supply days. "Not set by the owner" until he sets them, and
+//     until then the next step in chasing is not given at all (no built-in ₹500 or 7 / 60 / 90 days). Only he sets them.
+// The day is the shop's own date (never the device's). Every read is a click; the owner's steps are the one thing written.
+
+import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
+
+export type Lang = 'en' | 'ta';
+
+export const B2B_BOOKS_COPY = {
+  en: {
+    bkH: 'Chasing, the books and the order chain', bkLede: 'For the customer typed here: the next step in chasing what is overdue, what the customer is shown against what the books hold, and one order from what was ordered to what was billed. Nothing is sent or stopped from here — a person decides.',
+    customer: 'Customer', asOf: 'As on', order: 'Order number', dunning: 'Next step in chasing', reconcile: 'Customer\'s balance against the books', chain: 'Check this order\'s chain', probing: 'Portal logins trying other customers\' data',
+    step_none: 'Nothing to chase', step_statement: 'Put it on the next statement', step_reminder: 'Send a reminder', step_final_notice: 'Draft a final notice for a person to send', step_stop_supply: 'Stopping supply is RECOMMENDED — a person decides',
+    chaseable: 'Overdue and not queried', worst: 'Oldest overdue (days)', needsPerson: 'A person must decide before anything is sent.',
+    portal: 'What the customer is shown', books: 'What the books hold', difference: 'Difference', agrees: 'agrees exactly', differs: 'does not agree',
+    ordered: 'Ordered', delivered: 'Delivered', billed: 'Billed', undelivered: 'Still to deliver', unbilled: 'Delivered, not billed', complete: 'ordered, delivered and billed agree',
+    noProbing: 'No portal login has reached the pattern head office watches for ({threshold} refusals).', probingRow: '{user} (customer {customer}): {attempts} attempts, {targets} other customer(s)', threshold: 'Counted from {threshold} refusals', thresholdBuiltIn: 'Counted from {threshold} refusals — built-in, not yet set by the owner',
+    needCustomer: 'Type the customer first.', needOrder: 'Type the order number.', needDate: 'Give the day as YYYY-MM-DD.',
+    nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot see business customer accounts.', cannotReconcile: 'Comparing with the books needs finance\'s permission.', cannotDocs: 'Your role cannot see business documents.',
+    refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.',
+    stepsH: 'The owner\'s chasing steps', stepsNotSet: 'Not set by the owner — no chasing step is given until he sets the smallest amount worth chasing and the three day counts.',
+    stepsSet: 'Chase from {floor} · a reminder after {remind} days overdue · a final notice after {final} · stopping supply is recommended after {stop} (set by {who})',
+    stepsNoStep: 'No step: the chasing steps are not set by the owner.', floorL: 'Smallest amount worth chasing (₹)', remindL: 'Reminder after (days overdue)', finalL: 'Final notice after (days overdue)', stopL: 'Recommend stopping supply after (days overdue)',
+    stepsSave: 'Save the chasing steps', stepsSaved: 'Saved. The newest steps apply from now; the earlier ones stay on record.',
+    needSteps: 'Write the amount in rupees and the three day counts as whole numbers that rise (reminder, then final notice, then stopping supply).',
+    cannotSetSteps: 'Only the owner sets the chasing steps.',
+  },
+  ta: {
+    bkH: 'வசூல் பின்தொடர்வு, கணக்குப் புத்தகம், ஆர்டர் சங்கிலி', bkLede: 'இங்கே தட்டச்சு செய்த வாடிக்கையாளருக்கு: தாமதமானதை வசூலிக்க அடுத்த படி, வாடிக்கையாளருக்குக் காட்டப்படுவதும் புத்தகம் வைத்திருப்பதும், ஒரு ஆர்டர் — ஆர்டர் செய்ததிலிருந்து பில் போட்டது வரை. இங்கிருந்து எதுவும் அனுப்பப்படாது, நிறுத்தப்படாது — ஒருவர் முடிவு செய்கிறார்.',
+    customer: 'வாடிக்கையாளர்', asOf: 'தேதியில்', order: 'ஆர்டர் எண்', dunning: 'வசூலில் அடுத்த படி', reconcile: 'வாடிக்கையாளர் இருப்பும் புத்தகமும்', chain: 'இந்த ஆர்டரின் சங்கிலியைச் சரிபார்', probing: 'மற்ற வாடிக்கையாளர் தரவைத் தேடும் போர்டல் உள்நுழைவுகள்',
+    step_none: 'வசூலிக்க எதுவும் இல்லை', step_statement: 'அடுத்த அறிக்கையில் சேர்', step_reminder: 'நினைவூட்டல் அனுப்பு', step_final_notice: 'ஒருவர் அனுப்ப இறுதி அறிவிப்பை வரைவு செய்', step_stop_supply: 'விநியோகத்தை நிறுத்தப் பரிந்துரைக்கப்படுகிறது — ஒருவர் முடிவு செய்கிறார்',
+    chaseable: 'தாமதமானது, கேள்வி எழுப்பப்படாதது', worst: 'மிகப் பழைய தாமதம் (நாட்கள்)', needsPerson: 'எதுவும் அனுப்பும் முன் ஒருவர் முடிவு செய்ய வேண்டும்.',
+    portal: 'வாடிக்கையாளருக்குக் காட்டப்படுவது', books: 'புத்தகம் வைத்திருப்பது', difference: 'வேறுபாடு', agrees: 'சரியாகப் பொருந்துகிறது', differs: 'பொருந்தவில்லை',
+    ordered: 'ஆர்டர் செய்தது', delivered: 'விநியோகித்தது', billed: 'பில் போட்டது', undelivered: 'இன்னும் விநியோகிக்க வேண்டியது', unbilled: 'விநியோகித்தது, பில் இல்லை', complete: 'ஆர்டர், விநியோகம், பில் பொருந்துகின்றன',
+    noProbing: 'தலைமை அலுவலகம் கவனிக்கும் அளவை ({threshold} மறுப்புகள்) எந்தப் போர்டல் உள்நுழைவும் எட்டவில்லை.', probingRow: '{user} (வாடிக்கையாளர் {customer}): {attempts} முயற்சிகள், {targets} மற்ற வாடிக்கையாளர்கள்', threshold: '{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது', thresholdBuiltIn: '{threshold} மறுப்புகளிலிருந்து எண்ணப்பட்டது — உள்ளமைந்தது, உரிமையாளர் இன்னும் அமைக்கவில்லை',
+    needCustomer: 'முதலில் வாடிக்கையாளரைத் தட்டச்சு செய்யவும்.', needOrder: 'ஆர்டர் எண்ணைத் தட்டச்சு செய்யவும்.', needDate: 'நாளை YYYY-MM-DD ஆகக் கொடுக்கவும்.',
+    nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு வணிக வாடிக்கையாளர் கணக்குகளைப் பார்க்க முடியாது.', cannotReconcile: 'புத்தகத்துடன் ஒப்பிட நிதித்துறையின் அனுமதி தேவை.', cannotDocs: 'உங்கள் பங்கு வணிக ஆவணங்களைப் பார்க்க முடியாது.',
+    refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை.',
+    stepsH: 'உரிமையாளரின் வசூல் படிகள்', stepsNotSet: 'உரிமையாளர் அமைக்கவில்லை — வசூலிக்கத் தகுந்த குறைந்தபட்சத் தொகையையும் மூன்று நாள் எண்ணிக்கைகளையும் அவர் அமைக்கும் வரை எந்த வசூல் படியும் தரப்படாது.',
+    stepsSet: '{floor} முதல் வசூல் · {remind} நாள் தாமதத்துக்குப் பின் நினைவூட்டல் · {final} நாளுக்குப் பின் இறுதி அறிவிப்பு · {stop} நாளுக்குப் பின் விநியோக நிறுத்தம் பரிந்துரை ({who} அமைத்தார்)',
+    stepsNoStep: 'படி இல்லை: வசூல் படிகளை உரிமையாளர் அமைக்கவில்லை.', floorL: 'வசூலிக்கத் தகுந்த குறைந்தபட்சத் தொகை (₹)', remindL: 'நினைவூட்டல் (தாமத நாட்களுக்குப் பின்)', finalL: 'இறுதி அறிவிப்பு (தாமத நாட்களுக்குப் பின்)', stopL: 'விநியோக நிறுத்தப் பரிந்துரை (தாமத நாட்களுக்குப் பின்)',
+    stepsSave: 'வசூல் படிகளைச் சேமி', stepsSaved: 'சேமிக்கப்பட்டது. புதிய படிகள் இப்போதிலிருந்து பொருந்தும்; முந்தையவை பதிவில் இருக்கும்.',
+    needSteps: 'தொகையை ரூபாயிலும், மூன்று நாள் எண்ணிக்கைகளை ஏறுவரிசையில் முழு எண்களாகவும் எழுதுங்கள் (நினைவூட்டல், பின் இறுதி அறிவிப்பு, பின் விநியோக நிறுத்தம்).',
+    cannotSetSteps: 'வசூல் படிகளை உரிமையாளர் மட்டுமே அமைக்கிறார்.',
+  },
+} as const;
+
+export function b2bBooksWords(lang: Lang, key: string, fill?: Readonly<Record<string, string | number>>): string {
+  const raw = (B2B_BOOKS_COPY[lang] as Record<string, string>)[key] ?? (B2B_BOOKS_COPY.en as Record<string, string>)[key] ?? key;
+  return fill === undefined ? raw : raw.replace(/\{(\w+)\}/g, (_, k: string) => String(fill[k] ?? `{${k}}`));
+}
+export const b2bBooksOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => b2bBooksWords(lang, k), out);
+
+/** OB-686: `step` is absent (and `stepsSet` false) while the owner has set no chasing steps. */
+export interface Dunning { readonly customerId: string; readonly stepsSet?: boolean; readonly step?: 'none' | 'statement' | 'reminder' | 'final_notice' | 'stop_supply'; readonly chaseableMinor: number; readonly worstDaysOverdue: number; readonly needsHuman: boolean; readonly detail: string }
+export interface ChasingSteps { readonly minimumChaseMinor: number; readonly reminderAfterDays: number; readonly finalNoticeAfterDays: number; readonly stopSupplyAfterDays: number; readonly setBy: string; readonly setAt: string }
+export type ChasingStepsRead = { readonly state: 'not_set'; readonly say?: string } | { readonly state: 'set'; readonly steps: ChasingSteps };
+export interface ArReconciliation { readonly customerId: string; readonly portalOutstandingMinor: number; readonly financeOutstandingMinor: number; readonly differenceMinor: number; readonly agrees: boolean; readonly detail: string }
+export interface Chain { readonly orderId: string; readonly complete: boolean; readonly orderedMinor: number; readonly deliveredMinor: number; readonly invoicedMinor: number; readonly undeliveredMinor: number; readonly uninvoicedMinor: number; readonly detail: string }
+export interface Probing { readonly probing: readonly { readonly customerId: string; readonly userId: string; readonly attempts: number; readonly distinctTargets: number; readonly detail: string }[]; readonly threshold: number; readonly builtIn?: boolean; readonly count: number }
+
+type Why = 'nobody' | 'cannotRead' | 'cannotReconcile' | 'cannotDocs' | 'needCustomer' | 'needOrder' | 'needDate' | 'needSteps' | 'cannotSetSteps';
+type Done<T> = Promise<Outcome<T, Why>>;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+export interface B2BBooksSession {
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly reconcile: boolean; readonly documents: boolean; readonly setSteps: boolean };
+  dunning(customerId: string, asOf: string): Done<Dunning>;
+  reconciliation(customerId: string, asOf: string): Done<ArReconciliation>;
+  chain(customerId: string, orderId: string): Done<Chain>;
+  probing(): Done<Probing>;
+  /** OB-686: the owner's chasing steps, or "not set". */
+  chasingSteps(): Done<ChasingStepsRead>;
+  /** OB-686: the owner sets them — rupees and three whole day counts that rise; all four together. */
+  setChasingSteps(f: { readonly floorRupees: string; readonly reminderDays: string; readonly finalDays: string; readonly stopDays: string }): Done<ChasingStepsRead>;
+}
+
+/** "₹1,500.50" → paise; undefined when not an amount (0 is an amount: nothing too small to chase). */
+const paise = (text: string): number | undefined => {
+  const t = text.replace(/[,\s₹]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return undefined;
+  const [r, p = ''] = t.split('.');
+  return Number(r) * 100 + Number(p.padEnd(2, '0'));
+};
+const days = (text: string): number | undefined => (/^\d+$/.test(text.trim()) && Number(text.trim()) > 0 ? Number(text.trim()) : undefined);
+
+export function createB2BBooksSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch }): B2BBooksSession {
+  const named = input.viewer?.userId !== undefined;
+  const held = new Set(input.viewer?.permissions ?? []);
+  const may = { named, read: named && held.has('b2b.account.read'), reconcile: named && held.has('b2b.receivable.record'), documents: named && held.has('b2b.document.read'), setSteps: named && held.has('b2b.chasing.steps.set') };
+  const call = makeCaller({ keyPrefix: 'b2b-books', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
+  const no = (why: Why): { result: 'invalid'; why: Why } => ({ result: 'invalid', why });
+  const enc = (s: string): string => encodeURIComponent(s.trim());
+  const check = (need: 'read' | 'reconcile' | 'documents', customerId: string, asOf?: string) => {
+    if (!named) return no('nobody');
+    if (!may[need]) return no(need === 'read' ? 'cannotRead' : need === 'reconcile' ? 'cannotReconcile' : 'cannotDocs');
+    if (customerId.trim() === '') return no('needCustomer');
+    if (asOf !== undefined && !DAY.test(asOf.trim())) return no('needDate');
+    return undefined;
+  };
+  return {
+    may,
+    dunning: async (c, asOf) => check('read', c, asOf) ?? call<Dunning>('GET', `/v1/b2b/collections/${enc(c)}/dunning?asOf=${enc(asOf)}`),
+    reconciliation: async (c, asOf) => check('reconcile', c, asOf) ?? call<ArReconciliation>('GET', `/v1/b2b/collections/${enc(c)}/reconciliation?asOf=${enc(asOf)}`),
+    chain: async (c, o) => check('documents', c) ?? (o.trim() === '' ? no('needOrder') : call<Chain>('GET', `/v1/b2b/documents/${enc(c)}/orders/${enc(o)}/chain`)),
+    probing: async () => (!named ? no('nobody') : !may.read ? no('cannotRead') : call<Probing>('GET', '/v1/b2b-portal/probing')),
+    chasingSteps: async () => (!named ? no('nobody') : !may.read ? no('cannotRead') : call<ChasingStepsRead>('GET', '/v1/b2b/collections/chasing-steps')),
+    setChasingSteps: async (f) => {
+      if (!named) return no('nobody');
+      if (!may.setSteps) return no('cannotSetSteps');
+      const minimumChaseMinor = paise(f.floorRupees); const reminderAfterDays = days(f.reminderDays); const finalNoticeAfterDays = days(f.finalDays); const stopSupplyAfterDays = days(f.stopDays);
+      if (minimumChaseMinor === undefined || reminderAfterDays === undefined || finalNoticeAfterDays === undefined || stopSupplyAfterDays === undefined
+        || !(reminderAfterDays < finalNoticeAfterDays && finalNoticeAfterDays < stopSupplyAfterDays)) return no('needSteps');
+      return call<ChasingStepsRead>('POST', '/v1/b2b/collections/chasing-steps', { minimumChaseMinor, reminderAfterDays, finalNoticeAfterDays, stopSupplyAfterDays });
+    },
+  };
+}

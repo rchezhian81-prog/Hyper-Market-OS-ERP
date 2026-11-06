@@ -181,8 +181,11 @@ export function tobaccoWarningRoutes(deps: TobaccoWarningDeps): readonly Route[]
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
         const today = await shopToday(deps, ctx.tenantId);
+        // W3 (D01-FR-05): judged against the picture register as head office holds it now — a product never confirmed
+        // carries no copy of the register on its record, and must read "never confirmed", not "no picture on record".
+        const pictures = await deps.pictures(ctx.tenantId);
         const rows = (await deps.products(ctx.tenantId)).filter(isTobacco).map((p) => {
-          const s = warningStanding(p.tobaccoWarning, today);
+          const s = warningStanding(withPictures(p.tobaccoWarning, pictures), today);
           return s.sellable
             ? { productId: p.productId, name: p.name, sellable: true, standing: s.reason, picture: s.image.imageId, confirmedBy: s.confirmation.confirmedByName, confirmedAt: s.confirmation.confirmedAt, goodUntil: s.goodUntil ?? null }
             : { productId: p.productId, name: p.name, sellable: false, standing: s.reason, picture: s.image?.imageId ?? null, detail: s.detail };

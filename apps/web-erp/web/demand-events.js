@@ -133,7 +133,7 @@ function paint() {
 }
 
 const store = () => $('store').value;
-// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -170,7 +170,7 @@ async function show(event) {
 }
 async function record(event) {
   event.preventDefault();
-  // U1 · OB-626: the consequence-and-confirm sheet before the event changes the forecasts — Go back sends nothing.
+  // U1 · OB-691: the consequence-and-confirm sheet before the event changes the forecasts — Go back sends nothing.
   const effect = Number($('effect').value);
   const pct = Number.isFinite(effect) && effect > 0 ? Math.round(Math.abs(effect - 1) * 100) : null;
   const w = (l, k) => api.words(l, k);

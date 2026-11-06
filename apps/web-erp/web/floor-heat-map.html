@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>SRE Floor heat map</title>
+    <title>SRE Which areas earn most</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#192f27" />
     <!--
@@ -60,14 +60,14 @@
   </head>
   <body>
     <header>
-      <h1 class="who" id="title"><span id="title-text">Floor heat map</span> <small id="whoami"></small></h1>
+      <h1 class="who" id="title"><span id="title-text">Which areas earn most</span> <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
     <!--SCREEN-DATA-->
     <p class="nobody" id="nobody" hidden></p>
     <main>
       <section aria-labelledby="page-h">
-        <h2 id="page-h">Floor heat map</h2>
+        <h2 id="page-h">Which areas earn most</h2>
         <p class="lead" id="lead"></p>
         <div class="row-form">
           <label for="store"><span id="store-l">Store</span><input id="store" autocomplete="off" /></label>
@@ -77,7 +77,7 @@
         <div class="measures" role="group" aria-label="Measure">
           <button class="toggle" id="m-sales" type="button" aria-pressed="true"><span id="m-sales-text">Sales per sq ft</span></button>
           <button class="toggle" id="m-margin" type="button" aria-pressed="false"><span id="m-margin-text">Margin per sq ft</span></button>
-          <button id="show" type="button" class="sre-btn sre-btn-primary"><span id="show-text">Show the heat map</span></button>
+          <button id="show" type="button" class="sre-btn sre-btn-primary"><span id="show-text">Show which areas earn most</span></button>
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>

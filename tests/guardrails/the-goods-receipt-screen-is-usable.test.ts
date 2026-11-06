@@ -63,7 +63,7 @@ describe('the view renders from the tested session and re-decides nothing', () =
   });
 
   it('never asks its questions with a browser dialog', () => {
-    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-626: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
+    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-691: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
   });
 
   it('labels each status for a screen reader and hides the decorative icon', () => {

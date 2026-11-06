@@ -11,9 +11,14 @@
 //   • CLOSING THE SHOP'S ACCOUNT (M36-FR-03 · OB-367): a read — the export, what blocks closure, what the law wants kept,
 //     and that EVERYTHING is sealed until the CA or the lawyer writes the closure retention schedule ("not set"). Nothing
 //     here closes anything: the IT administrator asks and the owner approves through the approval engine.
+//   • THE SHOP'S FULL EXPORT (W7 · M36-FR-02/03 · D12-FR-05 · P-06): "Download the shop's full export" asks head office's own
+//     route (GET /v1/platform/export, permission platform.tenant.export) and hands back the file EXACTLY as head office
+//     returned it — the bytes are never re-written here — with, in words, what it holds (its parts and records, complete or
+//     what is missing) and when it was taken on the shop's clock. A closed account is sealed (OB-367): nothing is asked.
 // Head office re-checks every permission and approval; `may` only shapes what is shown.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
+import { shopDateOf, shopDateTimeOf } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 
@@ -31,6 +36,9 @@ export const ROLLOUT_COPY = {
     watchH: 'Customer-data watch (DPDP)', threshold: 'Threshold set by the CA', volume: 'Customers whose details the shop holds', crossed: 'Reached — ask the CA and lawyer about a data protection impact assessment.', below: 'Below the threshold.', neverAlerts: 'Not set — the watch never alerts until the CA enters a number.',
     consentH: 'Customer consent record', download: 'Download the consent record', importFile: 'Consent manager\'s file', bringIn: 'Bring in the file', applied: 'applied', exceptions: 'need a person to check', alreadyThere: 'already in the record', downloaded: 'Downloaded:', records: 'records',
     closureH: 'Closing this shop\'s account', closureState: 'This account', active: 'open', closed: 'closed', exportTaken: 'Latest full export', noExport: 'none taken yet', complete: 'complete', notComplete: 'not complete',
+    exportH: 'The shop\'s full export', exportLead: 'Every record this shop holds, in one file the shop keeps — each part with a checksum so the file can be checked.', exportDownload: 'Download the shop\'s full export',
+    exportSaved: 'Saved the shop\'s full export', exportTakenAt: 'taken', shopClock: '(shop\'s clock)', exportBy: 'by', exportHolds: 'It holds', exportRecords: 'records in', exportParts: 'parts:', exportComplete: 'Complete — every part of the shop is in it.', exportMissing: 'NOT complete — these parts are missing:',
+    closedSealed: 'This account is closed and sealed — no export can be taken from this screen (OB-367).', notAnExport: 'Head office did not send an export file.',
     lawKeeps: 'The law asks for at least these to be kept:', sealedH: 'What happens to the data', schedule: 'Closure retention schedule', closureBlockers: 'Before it can close:', whoCloses: 'The IT administrator asks; the owner approves.', indefinitely: 'kept indefinitely', until: 'until at least',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role does not open the trial switches.', cannotMeter: 'Your role does not see the usage meter.',
     saved: 'Saved.', needFields: 'Fill in the switch name, the branch and the reason first.', pickFile: 'Choose the file first.', notJson: 'That file is not a consent record.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
@@ -48,6 +56,9 @@ export const ROLLOUT_COPY = {
     watchH: 'வாடிக்கையாளர் தரவு கண்காணிப்பு (DPDP)', threshold: 'CA அமைத்த வரம்பு', volume: 'கடையிடம் விவரங்கள் உள்ள வாடிக்கையாளர்கள்', crossed: 'எட்டப்பட்டது — தரவு பாதுகாப்பு தாக்க மதிப்பீடு பற்றி CA மற்றும் வழக்கறிஞரிடம் கேளுங்கள்.', below: 'வரம்புக்குக் கீழே.', neverAlerts: 'அமைக்கப்படவில்லை — CA ஒரு எண்ணை உள்ளிடும் வரை கண்காணிப்பு எச்சரிக்காது.',
     consentH: 'வாடிக்கையாளர் ஒப்புதல் பதிவு', download: 'ஒப்புதல் பதிவைப் பதிவிறக்கு', importFile: 'ஒப்புதல் மேலாளரின் கோப்பு', bringIn: 'கோப்பைக் கொண்டு வா', applied: 'பதிவானது', exceptions: 'ஒருவர் சரிபார்க்க வேண்டியவை', alreadyThere: 'ஏற்கனவே பதிவில் உள்ளவை', downloaded: 'பதிவிறக்கப்பட்டது:', records: 'பதிவுகள்',
     closureH: 'இந்தக் கடையின் கணக்கை மூடுதல்', closureState: 'இந்தக் கணக்கு', active: 'திறந்துள்ளது', closed: 'மூடப்பட்டது', exportTaken: 'கடைசி முழு ஏற்றுமதி', noExport: 'இன்னும் எடுக்கப்படவில்லை', complete: 'முழுமையானது', notComplete: 'முழுமையில்லை',
+    exportH: 'கடையின் முழு ஏற்றுமதி', exportLead: 'இந்தக் கடை வைத்திருக்கும் ஒவ்வொரு பதிவும், கடை வைத்துக்கொள்ளும் ஒரே கோப்பில் — கோப்பைச் சரிபார்க்க ஒவ்வொரு பகுதிக்கும் ஒரு சரிபார்ப்புத் தொகை.', exportDownload: 'கடையின் முழு ஏற்றுமதியைப் பதிவிறக்கு',
+    exportSaved: 'கடையின் முழு ஏற்றுமதி சேமிக்கப்பட்டது', exportTakenAt: 'எடுத்தது', shopClock: '(கடையின் நேரம்)', exportBy: 'எடுத்தவர்', exportHolds: 'இதில் உள்ளவை', exportRecords: 'பதிவுகள்,', exportParts: 'பகுதிகளில்:', exportComplete: 'முழுமையானது — கடையின் ஒவ்வொரு பகுதியும் இதில் உள்ளது.', exportMissing: 'முழுமையில்லை — இந்தப் பகுதிகள் இல்லை:',
+    closedSealed: 'இந்தக் கணக்கு மூடப்பட்டு முத்திரையிடப்பட்டுள்ளது — இந்தத் திரையிலிருந்து ஏற்றுமதி எடுக்க முடியாது (OB-367).', notAnExport: 'தலைமை அலுவலகம் ஏற்றுமதி கோப்பை அனுப்பவில்லை.',
     lawKeeps: 'சட்டம் குறைந்தது இவற்றை வைத்திருக்கக் கேட்கிறது:', sealedH: 'தரவுக்கு என்ன ஆகும்', schedule: 'மூடல் தக்கவைப்பு அட்டவணை', closureBlockers: 'மூடுவதற்கு முன்:', whoCloses: 'IT நிர்வாகி கேட்கிறார்; உரிமையாளர் ஒப்புதல் தருகிறார்.', indefinitely: 'காலவரையின்றி வைக்கப்படும்', until: 'குறைந்தது வரை',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பணி சோதனை சுவிட்சுகளைத் திறப்பதில்லை.', cannotMeter: 'உங்கள் பணி பயன்பாட்டு அளவீட்டைப் பார்ப்பதில்லை.',
     saved: 'சேமிக்கப்பட்டது.', needFields: 'முதலில் சுவிட்ச் பெயர், கிளை மற்றும் காரணத்தை நிரப்பவும்.', pickFile: 'முதலில் கோப்பைத் தேர்ந்தெடுக்கவும்.', notJson: 'அந்தக் கோப்பு ஒப்புதல் பதிவு அல்ல.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
@@ -78,12 +89,40 @@ export interface ClosureView {
   readonly wouldRetain: readonly { readonly what: string; readonly untilDate: string }[];
   readonly sealed: { readonly everythingSealed: true; readonly nothingDeleted: true; readonly retentionSchedule: { readonly state: 'not_set' | 'set'; readonly words: string }; readonly en: string; readonly ta: string };
 }
+/** W7 · M36-FR-03: the shop's full export, as saved — the file head office returned (never altered) and what it holds. */
+export interface FullExport {
+  /** The response body exactly as head office sent it — this is what is saved. */
+  readonly fileText: string;
+  readonly fileName: string;
+  readonly exportId: string;
+  readonly at: string;
+  readonly requestedBy: string;
+  readonly complete: boolean;
+  readonly totalRows: number;
+  readonly parts: readonly { readonly domain: string; readonly rows: number }[];
+  readonly missing: readonly string[];
+}
+/** In words: when the export was taken (the shop's clock), who took it, what it holds, and whether it is whole. */
+export function fullExportWords(lang: Lang, e: FullExport): string {
+  const w = (k: string): string => rolloutWords(lang, k);
+  const when = shopDateTimeOf(e.at) || e.at;
+  const parts = e.parts.map((p) => `${p.domain} ${p.rows}`).join(', ');
+  return `${w('exportSaved')} (${e.fileName}) — ${w('exportTakenAt')} ${when} ${w('shopClock')} ${w('exportBy')} ${e.requestedBy}. `
+    + `${w('exportHolds')} ${e.totalRows} ${w('exportRecords')} ${e.parts.length} ${w('exportParts')} ${parts}. `
+    + (e.complete ? w('exportComplete') : `${w('exportMissing')} ${e.missing.length === 0 ? '—' : e.missing.join(', ')}`);
+}
+
 export interface Change { readonly key: string; readonly branchId: string; readonly laneId: string; readonly enabled: boolean; readonly reason: string; readonly approvalId: string }
 
 export interface RolloutSession {
   readonly may: { readonly named: boolean; readonly open: boolean; readonly change: boolean; readonly meter: boolean; readonly watch: boolean; readonly consent: boolean; readonly closure: boolean };
   /** OB-367: the closure readiness — export, blockers, what the law wants kept, and that everything is sealed until the schedule. */
   closure(): Promise<Outcome<ClosureView>>;
+  /**
+   * W7 · M36-FR-03: take the shop's full export through head office's own route. The file is head office's answer byte for
+   * byte. `state` is the closure readiness last read: a closed account is sealed (OB-367) and nothing is asked.
+   */
+  fullExport(state?: 'active' | 'closed'): Promise<Outcome<FullExport, 'closedSealed' | 'notAnExport'>>;
   board(): Promise<Outcome<{ readonly switches: readonly BoardRow[] }>>;
   preview(c: Change): Promise<Outcome<Preview, 'needFields'>>;
   /** OB-407 · ADR-0024: ask for exactly the approvals head office's preview names for this change (none → said so). */
@@ -108,6 +147,7 @@ const placeQuery = (key: string, p: Place, what: string): string =>
 export function createRolloutSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): RolloutSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
+  const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
   const call = makeCaller({ keyPrefix: 'rollout', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const filled = (c: Change): boolean => /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/.test(c.key.trim()) && c.branchId.trim() !== '';
   const bodyOf = (c: Change): Record<string, unknown> => ({
@@ -120,6 +160,33 @@ export function createRolloutSession(input: { readonly viewer: { readonly userId
       closure: named && held.has('platform.tenant.export'),
     },
     closure: () => call('GET', '/v1/platform/tenant/closure'),
+    fullExport: async (state) => {
+      if (state === 'closed') return { result: 'invalid', why: 'closedSealed' };
+      let res: Response;
+      try { res = await http('/v1/platform/export', { method: 'GET', credentials: 'same-origin', headers: { accept: 'application/json' } }); } catch { return { result: 'lost_link' }; }
+      // The body is read ONCE as text and that text is what is saved — it is parsed only to describe it in words.
+      let fileText: string;
+      try { fileText = await res.text(); } catch { return { result: 'lost_link' }; }
+      let json: Record<string, unknown> = {};
+      try { json = JSON.parse(fileText) as Record<string, unknown>; } catch { /* not JSON: refused or "not an export" below */ }
+      if (!res.ok) {
+        const err = (json['error'] ?? {}) as { code?: string; whatHappened?: string };
+        return { result: 'refused', status: res.status, code: err.code ?? String(res.status), whatHappened: err.whatHappened ?? `status ${res.status}` };
+      }
+      const m = json['export'] as { exportId?: unknown; at?: unknown; requestedBy?: unknown; complete?: unknown; totalRows?: unknown; domains?: unknown; missing?: unknown } | undefined;
+      if (m === undefined || m === null || typeof m.exportId !== 'string' || typeof m.at !== 'string' || !Array.isArray(m.domains)) return { result: 'invalid', why: 'notAnExport' };
+      const safe = m.exportId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'export';
+      return {
+        result: 'ok',
+        value: {
+          fileText, fileName: `shop-full-export-${shopDateOf(m.at) || 'undated'}-${safe}.json`,
+          exportId: m.exportId, at: m.at, requestedBy: typeof m.requestedBy === 'string' ? m.requestedBy : '',
+          complete: m.complete === true, totalRows: typeof m.totalRows === 'number' ? m.totalRows : 0,
+          parts: (m.domains as { domain?: unknown; rows?: unknown }[]).map((d) => ({ domain: String(d.domain ?? ''), rows: typeof d.rows === 'number' ? d.rows : 0 })),
+          missing: Array.isArray(m.missing) ? m.missing.map(String) : [],
+        },
+      };
+    },
     board: () => call('GET', '/v1/platform/rollout'),
     preview: async (c) => (filled(c) ? call('POST', `/v1/platform/rollout/${encodeURIComponent(c.key.trim())}/preview`, { ...bodyOf(c), ...(c.reason.trim() === '' ? {} : { reason: c.reason.trim() }) }) : { result: 'invalid', why: 'needFields' }),
     // The asks are exactly what head office's preview hands over for this change — never rebuilt here.

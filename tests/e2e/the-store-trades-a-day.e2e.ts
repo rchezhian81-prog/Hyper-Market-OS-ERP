@@ -131,7 +131,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.waitForSelector('#sheet:not([hidden])');
     for (const digit of rupees) await page.click(`#keypad button:text-is("${digit}")`);
     await page.click('#sheet-ok');
-    // OB-626 (U1): a cash movement is confirmed on screen before the box is asked — the verb, after the panel says the figure.
+    // OB-691 (U1): a cash movement is confirmed on screen before the box is asked — the verb, after the panel says the figure.
     await page.waitForSelector('#sheet:not([hidden]) #consequence:not([hidden])');
     await page.click('#sheet-ok');
   };
@@ -179,7 +179,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
 
     // Float, then the sale by barcode — keystrokes and Enter, as a scanner does — then exact cash.
     // OB-350: this box has a head-office link, so a scan-and-go phone basket can be brought up here.
-    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Deliver this bill', 'Loyalty member', 'Scan speed']);
+    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Sell a gift card', 'Deliver this bill', 'Loyalty member', 'Scan speed']);
     await choose(page, 'Take float (open the till)');
     await keyAmount(page, '2000');
     expect(await shown(page)).toMatchObject({ title: 'Float taken — the till is open' });
@@ -228,13 +228,13 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await onHandAt(STORE)).toBe(10);
 
     // A pickup, a reload (the browser forgets; the box remembers the float is out), then the blind close: 2,000 + 480 − 480 − 1,000 = ₹1,000.
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Deliver this bill', 'Loyalty member', 'Close till', 'Scan speed']);
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Sell a gift card', 'Deliver this bill', 'Loyalty member', 'Close till', 'Scan speed']);
     await choose(page, 'Cash to safe');
     await keyAmount(page, '1000');
     expect(await shown(page)).toMatchObject({ title: 'Moved to the safe' });
     await open(base);
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-meena');
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Deliver this bill', 'Loyalty member', 'Close till', 'Scan speed']);
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Open drawer (no sale)', 'Refund', 'Exchange', 'Phone basket (scan and go)', 'Quotation number', 'Print a copy of a bill by its number', 'Sell a gift card', 'Deliver this bill', 'Loyalty member', 'Close till', 'Scan speed']);
     await choose(page, 'Close till');
     await page.waitForSelector('#count:not([hidden])');
     expect(await page.textContent('#count')).not.toMatch(/expected|1,000/);

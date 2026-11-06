@@ -56,6 +56,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { LaneSyncStatus } from './sync-status';
 import { returnIdOf, toCloudReturn } from './cloud-return';
 import { toCloudSale } from './cloud-sale';
+import { isGiftCardSaleRecord } from '../../../packages/loyalty/src/till-vouchers';
 import type { OperatorStamp, TillSealSubject } from '../../../packages/identity/src/till-seal';
 import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
@@ -64,6 +65,7 @@ import {
   type BoxItemStatus, type RelayReply,
 } from '../../../packages/sync/src/device-relay';
 import { HANDHELD_AUTHORITY } from './handheld-sign-in';
+import { OFFICE_SOURCE, officeDoorPerson, officeDoorRefusal, judgeOfficeItems, inSentOrder } from './office-door'; // OB-572
 import type {
   CashMovementRequest, CashMovementOutcome, ShiftCloseRequest, ShiftCloseOutcome, TillCashStatus, CountedDenomination,
 } from './till-cash';
@@ -244,6 +246,20 @@ const LANE_PERIPHERALS_ROUTE = '/lane/peripherals';
  * old the box's copy is. The number travels in the body, never the URL, and is never written (P-04).
  */
 const LANE_LOYALTY_WALLET_ROUTE = '/lane/loyalty/wallet';
+/** W3 · D06-FR-03 · OB-673: a coupon as this box's copy says, for the till to judge on this bill (no network). */
+const LANE_COUPON_ROUTE = '/lane/coupons/check';
+/** W3 · D07-FR-04 · OB-677: what this till may take from a gift card now (the offline limit while head office is unreachable). */
+const LANE_GIFT_CARD_ROUTE = '/lane/gift-cards/balance';
+
+/** The box's coupons and gift cards for its tills (`TillVouchers`, edge/store-edge/src/till-vouchers.ts). */
+export interface LaneVouchersPort {
+  coupon(code: string, memberRef?: string, isMember?: boolean): import('../../../packages/loyalty/src/till-vouchers').CouponForTill;
+  giftCard(code: string, laneId: string): import('../../../packages/loyalty/src/till-vouchers').GiftCardAvailability;
+  checkTenders(record: Record<string, unknown>, laneId: string): import('../../../packages/loyalty/src/till-vouchers').VoucherCheck;
+  checkSale(record: Record<string, unknown>): import('../../../packages/loyalty/src/till-vouchers').VoucherCheck;
+  note(record: unknown): void;
+  serialise<T>(fn: () => Promise<T>): Promise<T>;
+}
 
 /** The box's copy of the members' balances and its record of till spends (`LoyaltyWallets`). */
 export interface LaneLoyaltyPort {
@@ -596,6 +612,14 @@ export function startLaneServer(input: {
    */
   readonly loyalty?: LaneLoyaltyPort;
   /**
+   * W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: the shop's coupons and gift cards as this box's signed store pack carries
+   * them, with what this box's tills did since. A sale paying with a gift card, or selling one, is decided here before the
+   * disk — one at a time. Absent → no gift card is taken or sold here, and the till cannot check a coupon.
+   */
+  readonly vouchers?: LaneVouchersPort;
+  /** Whether a member code is one head office's members list holds (a member-only coupon's question). */
+  readonly isMember?: (memberRef: string) => boolean;
+  /**
    * The partner counters' trading decisions (PF-13): a NEW concession sale line for a counter whose agreement does not
    * allow trading today is refused before the disk. Absent → no decision here (the line is kept; head office flags it).
    */
@@ -819,6 +843,29 @@ export function startLaneServer(input: {
     const cors = corsHeadersFor(req.headers.origin, isOfficeLaneRoute(pathname));
     const route = LANE_ROUTES.find((r) => r === req.url);
 
+    // OB-572 "B" (owner, 31 Oct 2026): the hosted copy's OFFICE door takes office work only, from a person the front named,
+    // each route held to its own permission here and each office item to its own below (office-door.ts) — never "may sell".
+    {
+      const ops = input.operators;
+      const trust = ops?.trustForwardedUser === true;
+      const doorSays = officeDoorRefusal({
+        trustForwardedUser: trust, door: req.headers['x-sre-door'], user: req.headers['x-sre-user'], pathname,
+        officeRoutes: [...Object.keys(OFFICE_LANE_ROUTES), DEVICE_OUTBOX_STATUS_PATH],
+      });
+      if (doorSays !== undefined) {
+        send(res, doorSays.status, { acks: [], refusedBecause: doorSays.refusedBecause, reason: doorSays.reason }, cors);
+        req.resume();
+        return;
+      }
+      const person = officeDoorPerson(trust, req.headers['x-sre-door'], req.headers['x-sre-user']);
+      const needs = person === undefined ? null : OFFICE_LANE_ROUTES[pathname] ?? null;
+      if (person !== undefined && needs !== null && !(input.forwardedPermissionsOf?.(person) ?? []).includes(needs)) {
+        send(res, 403, { acks: [], refusedBecause: 'lacks_permission', reason: `${person} may not use this (it needs ${needs}). Nothing was changed.` }, cors);
+        req.resume();
+        return;
+      }
+    }
+
     // The READ route: GET /lane/lookup?receipt=… — resolve a bill this lane rang for the refund
     // screen (M13-FR-01). No write happens here, so a foreign-origin call cannot mutate anything; but
     // it returns a customer's bill, so a foreign origin is refused outright (403, no data) rather than
@@ -928,6 +975,35 @@ export function startLaneServer(input: {
         const tradingDay = typeof b['tradingDay'] === 'string' ? b['tradingDay'] : '';
         const a = input.loyalty!.availability(memberRef, tradingDay);
         send(res, 200, { ...a, last4: (b['mobile'] as string).replace(/\D/g, '').slice(-4) }, { ...cors, 'cache-control': 'no-store' });
+      })();
+      return;
+    }
+
+    // COUPONS AND GIFT CARDS (W3 · OB-673 · OB-677): what the box's copy says, for the till — never a network call.
+    if (req.method === 'POST' && (pathname === LANE_COUPON_ROUTE || pathname === LANE_GIFT_CARD_ROUTE)) {
+      const refused = (refusedBecause: string, laneMessage: string) => ({ known: false, refusedBecause, laneMessage });
+      const nostore = { ...cors, 'cache-control': 'no-store' };
+      if (input.vouchers === undefined) { send(res, 404, refused('not_served', 'This store computer does not keep the shop\'s coupons and gift cards.'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      const ops = input.operators;
+      if (ops !== undefined) {
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); req.resume(); return; }
+      }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (reason) => refused('not_readable', reason));
+        if (body === undefined) return;
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const code = typeof b['code'] === 'string' ? b['code'] : '';
+        if (code.trim() === '') { send(res, 200, refused('no_code', 'Type or scan the code first.'), nostore); return; }
+        if (pathname === LANE_GIFT_CARD_ROUTE) {
+          send(res, 200, input.vouchers!.giftCard(code, ops?.laneId ?? (typeof b['laneId'] === 'string' ? b['laneId'] : '')), nostore);
+          return;
+        }
+        // The customer this bill names (their keyed number becomes the member code HERE; it never reaches the till).
+        const memberRef = typeof b['mobile'] === 'string' && b['mobile'].trim() !== '' && input.guestSalesOnly?.() !== true ? input.memberCode?.(b['mobile']) : undefined;
+        send(res, 200, input.vouchers!.coupon(code, memberRef, memberRef === undefined ? undefined : input.isMember?.(memberRef)), nostore);
       })();
       return;
     }
@@ -1320,9 +1396,21 @@ export function startLaneServer(input: {
             send(res, forwardRefusal.status, { acks: [], refusedBecause: forwardRefusal.refusedBecause, reason: forwardRefusal.reason }, cors);
             return;
           }
+          // OB-572: on the hosted copy's office door, an office page's batch only, each item held to its own permission.
+          const officePerson = officeDoorPerson(input.operators?.trustForwardedUser === true, req.headers['x-sre-door'], req.headers['x-sre-user']);
+          if (officePerson !== undefined && batch.source !== OFFICE_SOURCE) {
+            send(res, 403, { acks: [], refusedBecause: 'not_office_work', reason: `The office door takes an office page's work only, not ${batch.source} work. Nothing was taken.` }, cors);
+            return;
+          }
+          const judged = officePerson === undefined ? undefined : judgeOfficeItems(batch.items, officePerson, input.forwardedPermissionsOf?.(officePerson) ?? null);
           try {
             // OB-259: with the office gate on, the person who signed in to the office screens — never a till's sign-in.
             const verifiedPerson = office.person ?? verifiedPersonOf(req);
+            if (judged !== undefined) {
+              const relayed = judged.allowed.length === 0 ? { acks: [] } : await relay({ source: batch.source, items: judged.allowed, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) });
+              send(res, 200, { ...relayed, acks: inSentOrder(batch.items, relayed.acks, judged.refused) }, cors);
+              return;
+            }
             send(res, 200, await relay({ source: batch.source, items: batch.items, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             // The box itself failed mid-batch: no verdict on any item. The device keeps them all (a 5xx is a
@@ -1648,6 +1736,7 @@ export function startLaneServer(input: {
       || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE
       || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE
       || pathname === LANE_TILL_ACTIVITY_ROUTE || pathname === LANE_BILL_COPIES_ROUTE || pathname === LANE_LOYALTY_WALLET_ROUTE || pathname === LANE_PERIPHERALS_ROUTE
+      || pathname === LANE_COUPON_ROUTE || pathname === LANE_GIFT_CARD_ROUTE
       || pathname === LANE_PHONE_BASKETS_RECALL_ROUTE || pathname === LANE_QUEUE_BASKETS_RECALL_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
@@ -1768,7 +1857,8 @@ export function startLaneServer(input: {
           // OB-271: REAL TRADING — never with the mirror pilot; a sale's bill must be a complete tax invoice (the till's rule).
           if (input.realTrading?.() === true) {
             const legal = mirrorOn ? { refusedBecause: 'real_trading_and_mirror', laneMessage: REAL_TRADING_AND_MIRROR_BOX_WORDS }
-              : isReturn ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null, (id) => input.node.pack()?.snapshot.products.find((p) => p.productId === id)?.cess);
+              // A gift card's sale is not a supply of goods (GST falls on its redemption, A12): no tax invoice is made for it.
+              : isReturn || isGiftCardSaleRecord(r) ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null, (id) => input.node.pack()?.snapshot.products.find((p) => p.productId === id)?.cess);
             if (legal !== undefined) {
               send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, laneMessage: legal.laneMessage }, cors);
               return;
@@ -1933,7 +2023,8 @@ export function startLaneServer(input: {
         // The bill's number (audit PF-04): one this box issued to this lane, not on another record. A sale carries it as
         // `receiptNumber` (the till's record calls it `number`), a refund as `number`. Checked before the disk; its use is noted once the record is there.
         let numberUse: UseCheck | undefined;
-        if (!isTag && input.receiptNumbers !== undefined && input.operators !== undefined) {
+        // A gift card's sale is not a bill: it takes no bill number (its own id is its identity — OB-677).
+        if (!isTag && !isGiftCardSaleRecord(parsed) && input.receiptNumbers !== undefined && input.operators !== undefined) {
           const r = (parsed ?? {}) as Record<string, unknown>;
           numberUse = input.receiptNumbers.checkUse({ laneId: input.operators.laneId, receiptNumber: isReturn ? r['number'] : (r['receiptNumber'] ?? r['number']), recordId: id });
           if (!numberUse.ok) {
@@ -1962,6 +2053,34 @@ export function startLaneServer(input: {
           }
         }
 
+        // GIFT CARDS (W3 · D07-FR-04 · OB-677): a sale paying with a gift card, or selling one, is decided against this box's copy
+        // of the cards — and saved — one at a time (the lock is held until this answer is sent), so two tills cannot spend the
+        // same card's last rupees between the check and the disk. Offline, at most the owner's limit per till per card.
+        const giftCardSale = !isTag && !isReturn && isGiftCardSaleRecord(parsed);
+        const giftCardSpend = !isTag && !isReturn && Array.isArray((parsed as Record<string, unknown>)['tenders'])
+          && ((parsed as Record<string, unknown>)['tenders'] as unknown[]).some((t) => t !== null && typeof t === 'object' && (t as Record<string, unknown>)['kind'] === 'gift_card');
+        if ((giftCardSale || giftCardSpend) && input.vouchers === undefined) {
+          send(res, 200, { committed: false, refusedBecause: 'gift_cards_not_on_this_box', laneMessage: 'This store computer cannot check gift cards, so none can be taken or sold here. Take another payment. Nothing was saved.' }, cors);
+          return;
+        }
+        if (giftCardSale || giftCardSpend) {
+          const vouchers = input.vouchers!;
+          await new Promise<void>((acquired) => {
+            void vouchers.serialise(() => new Promise<void>((release) => {
+              res.once('finish', () => release());
+              res.once('close', () => release());
+              acquired();
+            }));
+          });
+          const laneOfBox = input.operators?.laneId ?? (typeof (parsed as Record<string, unknown>)['laneId'] === 'string' ? (parsed as Record<string, string>)['laneId']! : '');
+          const decided = giftCardSale ? vouchers.checkSale(parsed as Record<string, unknown>) : vouchers.checkTenders(parsed as Record<string, unknown>, laneOfBox);
+          if (!decided.ok) {
+            send(res, 200, { committed: false, refusedBecause: decided.refusedBecause, laneMessage: decided.laneMessage }, cors);
+            return;
+          }
+          parsed = decided.record;
+        }
+
         // POINTS AND STORE CREDIT (PF-09 step 3): a sale that spends a member's value is decided against this box's copy of
         // the balances — and saved — one at a time, so two tills cannot spend the same value between the check and the disk.
         const spends = !isTag && !isReturn && Array.isArray((parsed as Record<string, unknown>)['tenders'])
@@ -1985,6 +2104,7 @@ export function startLaneServer(input: {
               }
               const outcome = await input.node.commit(id, JSON.stringify(decided.record));
               if (outcome.committed) {
+                input.vouchers?.note(decided.record);
                 loyalty.note(decided.spends);
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
@@ -2017,6 +2137,7 @@ export function startLaneServer(input: {
               }
               const outcome = await input.node.commit(id, JSON.stringify(parsed));
               if (outcome.committed) {
+                input.vouchers?.note(parsed);
                 bills.noteSale(parsed);
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
@@ -2038,6 +2159,8 @@ export function startLaneServer(input: {
             : isReturn
               ? await input.node.commitReturn(id, JSON.stringify(parsed))
               : await input.node.commit(id, JSON.stringify(parsed));
+          // OB-673 · OB-677: what the sale did to coupons and gift cards counts on this box from now on (a resend is one use).
+          if (outcome.committed && !isTag && !isReturn) input.vouchers?.note(parsed);
           if (outcome.committed && numberUse?.ok === true) await numberUse.record();
           if (outcome.committed && tenderUse?.ok === true) await tenderUse.record();
           // OB-264: a refund counts against its sale's old bill number (a sale fully refunded no longer holds it).

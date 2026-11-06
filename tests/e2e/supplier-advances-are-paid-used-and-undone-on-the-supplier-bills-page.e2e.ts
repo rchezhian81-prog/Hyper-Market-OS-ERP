@@ -132,7 +132,7 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
 
     await p.click('#adv-show');
     await p.waitForSelector('#adv-asks li[data-status="approved"] button[data-act="record"]');
-    // U1 · OB-626: the consequence-and-confirm sheet names the money and the supplier; Go back sends nothing; Confirm sends once.
+    // U1 · OB-691: the consequence-and-confirm sheet names the money and the supplier; Go back sends nothing; Confirm sends once.
     await askedThenConfirmed(p, () => p.click('#adv-asks li[data-status="approved"] button[data-act="record"]'), /Record ₹1,000\.00 paid to supplier sup-1 as an advance/, () => payer.writes.length);
     await says(p, '#adv-status', /^Recorded — one journal in the books, with who approved it\.$/);
     const row = await p.textContent('#adv-list li[data-advance]');

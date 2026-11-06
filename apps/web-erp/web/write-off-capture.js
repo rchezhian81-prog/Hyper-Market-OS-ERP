@@ -58,7 +58,7 @@ const CHROME = {
     valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost',
     evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
-    // U1 · OB-626: the consequence-and-confirm sheet before a loss goes into the books
+    // U1 · OB-691: the consequence-and-confirm sheet before a loss goes into the books
     confirmTitle: 'Record a loss of {qty} of {product} worth {value}',
     confirmDetail: 'Stock falls by that much in the books, in your name. A big loss goes only with the approval named on this form. A loss is never undone — a mistake is corrected by a new entry.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not record a loss or the approval does not match.',
@@ -313,7 +313,7 @@ function paint() {
 let lastSaid = null;
 
 /** Show an answer, and remember how to say it in the other language. */
-// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -437,7 +437,7 @@ el('ask').addEventListener('click', () => {
 // clears for the next loss.
 el('record').addEventListener('click', () => {
   void busy('record', async () => {
-    // U1 · OB-626: the consequence-and-confirm sheet before the loss goes into the books — Go back sends nothing.
+    // U1 · OB-691: the consequence-and-confirm sheet before the loss goes into the books — Go back sends nothing.
     const draft = draftNow();
     // An incomplete draft skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
     const complete = draft.productId.trim() !== '' && draft.locationId.trim() !== '' && Number.isFinite(draft.qty) && draft.qty > 0 && draft.lossType !== null && draft.reasonCode !== undefined;

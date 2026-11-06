@@ -62,9 +62,25 @@
       </section>
       <section aria-labelledby="brief-h" id="brief-section" hidden>
         <h3 id="brief-h">Today's brief</h3>
+        <!-- UI-3: what this brief covers (the trading day) and when head office answered; the facts as the shared cards. -->
+        <p class="muted" id="brief-covers"></p>
+        <div id="brief-cards"></div>
         <div class="panels"><div class="panel attention" id="sent-panel"><span class="k" id="sent-k">Sent?</span><span class="v" id="sent-v"></span></div></div>
         <p id="sent-detail" data-sending=""></p>
         <ul class="rows" id="lines"></ul>
+      </section>
+      <!-- W3 (D13-FR-01..06): when the brief is prepared — GET / POST /v1/reporting/brief-schedule (the owner changes it). -->
+      <section aria-labelledby="schedule-h" id="schedule-section" hidden>
+        <h3 id="schedule-h">When the brief is prepared</h3>
+        <p class="muted" id="schedule-now"></p>
+        <form class="form-row" id="schedule-form">
+          <label for="sch-time"><span id="sch-time-l"></span><input id="sch-time" type="time" /></label>
+          <label for="sch-lang"><span id="sch-lang-l"></span><select id="sch-lang"><option value="en"></option><option value="ta"></option></select></label>
+          <label for="sch-stale"><span id="sch-stale-l"></span><input id="sch-stale" inputmode="numeric" autocomplete="off" /></label>
+          <button id="sch-save" type="submit"><span id="sch-save-text"></span></button>
+        </form>
+        <p class="status" id="schedule-status" role="status" aria-live="polite"></p>
+        <p class="muted" id="schedule-note"></p>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

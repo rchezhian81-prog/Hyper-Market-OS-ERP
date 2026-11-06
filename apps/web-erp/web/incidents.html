@@ -122,6 +122,11 @@
           <p class="status" id="drill-status" role="status" aria-live="polite"></p>
         </div>
       </section>
+      <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
+      <section class="w5" data-w5="incidentAlert" aria-live="polite"></section>
+      <section class="w5" data-w5="serviceRequests" aria-live="polite"></section>
+      <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
+      <section data-desk="breach" id="desk-breach" hidden></section>
     </main>
 
     <!-- New incident: the page's one primary action, in a drawer. -->
@@ -181,7 +186,9 @@
     </div>
 
     <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./w5-platform.js" type="module"></script>
     <script type="module" src="./incidents.js"></script>
+    <script src="./customer-desk-sections.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

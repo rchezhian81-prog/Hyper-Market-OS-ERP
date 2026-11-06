@@ -80,6 +80,19 @@
         <h3 id="files-h"></h3>
         <ul class="rows" id="files"></ul>
       </section>
+      <!-- W4 · WF-05 (M23-FR-04): the month's supplier-bill vouchers as one Tally import file, checked before it is offered.
+           Session: apps/web-erp/src/supplier-bills-to-the-books-session.ts (window.apTally); drawn by tally-files-ap.js. -->
+      <section aria-labelledby="tap-h" id="tap" hidden>
+        <h3 id="tap-h"></h3>
+        <p class="status" id="tap-lead"></p>
+        <div class="row-form">
+          <label for="tap-month"><span id="tap-month-l"></span><input id="tap-month" type="month" autocomplete="off" /></label>
+          <button id="tap-read" type="button"><span id="tap-read-text"></span></button>
+        </div>
+        <p class="status" id="tap-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="tap-rows"></ul>
+        <button id="tap-download" type="button" hidden><span id="tap-download-text"></span></button>
+      </section>
       <section aria-labelledby="tb-h">
         <h3 id="tb-h">Trial balance for a month</h3>
         <div class="row-form">
@@ -108,6 +121,7 @@
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./tally-files.js" type="module"></script>
+    <script src="./tally-files-ap.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

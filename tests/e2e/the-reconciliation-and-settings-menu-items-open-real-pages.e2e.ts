@@ -13,7 +13,7 @@ import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
  * link (re-audit final, T4).** Until now both were catalogue placeholders the store computer never drew. Now, in real
  * Chromium on the store computer's own screen server, a person who may open them sees both on the rail; Reconciliation
  * opens the Month-end checks on their card-and-UPI section (the payments a day close carried with no answer), and
- * Settings opens Store setup. The rail marks the item that was used — only that one — and the words are read only once
+ * Settings opens its own page, the settings history (Round 4c; OB-401 had pointed it at Store setup). The rail marks the item that was used — only that one — and the words are read only once
  * the page has said them (never in the same tick as the click).
  */
 
@@ -52,7 +52,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
     return link;
   };
 
-  it('Reconciliation opens Month-end on its payments section, and is the one item marked; Settings opens Store setup', async () => {
+  it('Reconciliation opens Month-end on its payments section, and is the one item marked; Settings opens its own page', async () => {
     const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 800 }, extraHTTPHeaders: { 'x-sre-user': 'u-owner' } });
     try {
       const page = await context.newPage();
@@ -69,9 +69,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
       expect(await page.evaluate('document.getElementById("view-payments").hidden')).toBe(false);
       expect(await current(page)).toEqual(['Reconciliation']);
 
+      // Round 4c: Settings is its own page now (every setting's history), no longer a second door to Store setup.
       await (await menuLink(page, 'Settings')).click();
-      await page.waitForURL(/\/setup\/\?tab=settings$/, { timeout: 15_000 });
-      await page.waitForFunction(`document.title === 'SRE Store setup' && ${MARKED}`, undefined, { timeout: 15_000 });
+      await page.waitForURL(/\/settings\/$/, { timeout: 15_000 });
+      await page.waitForFunction(`document.title === 'SRE Settings' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Settings']);
 
       // Reached by its own item, each page marks only that item.

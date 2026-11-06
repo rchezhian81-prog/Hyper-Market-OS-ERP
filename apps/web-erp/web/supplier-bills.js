@@ -534,7 +534,7 @@ function renderWaiting() {
 
 const adv = window.supplierAdvances ?? null;
 const at = (k) => (adv === null ? k : adv.words(lang, k));
-// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -609,7 +609,7 @@ function renderAsks() {
       const go = advNode('button', 'primary', at('record')); go.type = 'button'; go.dataset.act = 'record';
       const st = advNode('p', 'status');
       go.addEventListener('click', async () => {
-        // U1 · OB-626: the consequence-and-confirm sheet before money is recorded as paid — Go back sends nothing.
+        // U1 · OB-691: the consequence-and-confirm sheet before money is recorded as paid — Go back sends nothing.
         const sub = (l, key) => String(adv.words(l, key)).replace('{amount}', adv.rupees(Number(d.amountMinor))).replace('{supplier}', d.supplierId).replace('{method}', adv.words(l, `m_${d.method}`)).replace('{reference}', d.reference ?? '');
         const answer = await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
         if (answer === 'unavailable') { st.className = 'status err'; st.textContent = at('confirmUnavailable'); return; }
@@ -699,6 +699,8 @@ if (who === null || session === null) {
 }
 paint();
 if (session !== null) { void refresh(); void refreshWaiting(); }
+// W4 · WF-05: a checked bill saved by the second-check section (supplier-bills-check.js) — the register reads it back.
+window.addEventListener('sre-bills-changed', () => { if (session !== null) void refresh(); });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it just will not be cached */ });

@@ -82,7 +82,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await page.click('#save');
       await expect.poll(() => page.textContent('#record-status')).toMatch(/expected effect/);
       await page.fill('#effect', '1.5');
-      // U1 · OB-626: the consequence-and-confirm sheet says the event and its effect in plain words; Go back sends nothing; Confirm sends once.
+      // U1 · OB-691: the consequence-and-confirm sheet says the event and its effect in plain words; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(page, () => page.click('#save'), /Record Pongal \(Festival\).*50% higher for all products/, writeCounter(page));
       await expect.poll(() => page.textContent('#record-status')).toMatch(/Recorded/);
       await page.locator('#events li[data-event]').waitFor({ timeout: 15_000 });

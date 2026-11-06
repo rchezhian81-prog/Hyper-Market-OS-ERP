@@ -119,7 +119,7 @@ import { withDeciderSeal } from './decision-seal';
 import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, pickerSubstitutionAnswers, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { judgeClientVersion, readPackVersionPolicy } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A)
@@ -128,7 +128,9 @@ import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
-import { toCloudSale } from './cloud-sale';
+import { toCloudSale, toCloudGiftCardSale } from './cloud-sale';
+import { TillVouchers } from './till-vouchers'; // W3 · OB-673 · OB-677
+import { isGiftCardSaleRecord } from '../../../packages/loyalty/src/till-vouchers';
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
@@ -894,6 +896,14 @@ export async function startEdge(
       try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
       const saleId = (parsed as { id?: string; saleId?: string }).id
         ?? (parsed as { saleId?: string }).saleId ?? `record-${index}`;
+      // OB-677: a gift card's SALE is not a goods bill — it goes to head office's gift-card door, never to /v1/sales.
+      if (isGiftCardSaleRecord(parsed)) {
+        return makeEvent({
+          id: `edge-giftcard-sale-${saleId}`, type: 'GiftCardSold', occurredAt: new Date().toISOString(),
+          idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
+          payload: toCloudGiftCardSale(parsed, storeIdOfThisBox(), laneIdOfThisBox()),
+        });
+      }
       return makeEvent({
         id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
         idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
@@ -1387,6 +1397,19 @@ export async function startEdge(
   // PF-13: the partner counters' agreement terms as this box last pulled them.
   const concessionTrading = await ConcessionTrading.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId });
   if (loyaltyWallets.heldCopy() !== undefined) say(`loyalty balances as of ${loyaltyWallets.heldCopy()!.feed.generatedAt} restored from disk.`);
+  // W3 · D06-FR-03 · OB-673 · D07-FR-04 · OB-677: the shop's coupons and gift cards as the signed store pack carries them, and
+  // every coupon use, gift card spend and gift card sale the tills made since — read back from the sale log, so a reboot with
+  // the cable out still knows them. The offline limit applies while head office has not answered in the last five minutes.
+  const cloudLink: { lastContactMs: number | null; offline: boolean } = { lastContactMs: null, offline: true };
+  const tillVouchers = TillVouchers.open({
+    sections: () => ({
+      ...(pack.coupons?.known === true ? { coupons: pack.coupons.value } : {}),
+      ...(pack.giftCards?.known === true ? { giftCards: pack.giftCards.value } : {}),
+      receivedAt: pack.receivedAt,
+    }),
+    linkUp: () => !cloudLink.offline && cloudLink.lastContactMs !== null && Date.now() - cloudLink.lastContactMs <= 5 * 60_000,
+    timeZone: () => packTimeZone(pack),
+  }, salesRecords);
 
   const node = createEdgeNode({
     tenantId,
@@ -1981,6 +2004,9 @@ export async function startEdge(
     // OB-264: every mirror sale's old ERP bill number, never keyed twice; a mirror refund looks its sale up by it.
     oldErpBills,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
+    // W3 · OB-673 · OB-677: coupons and gift cards, judged on this box from its store pack — a gift card one sale at a time.
+    vouchers: tillVouchers,
+    isMember: (memberRef: string) => loyaltyWallets.heldFeed()?.members.some((m) => m.memberRef === memberRef) === true,
     loyalty: {
       check: (record) => loyaltyWallets.check(record),
       note: (spends) => { loyaltyWallets.note(spends); },
@@ -2094,7 +2120,7 @@ export async function startEdge(
   seriesClockRef.guard = clockGuard; // A2: the bill series' year switch now follows the clock check
   /** OB-403 "A" · §31.1: what this box holds while its clock is 5+ minutes out — the offers and prices due, by name. */
   const activationHoldNow = (now: string): ActivationHoldReport => activationHoldReport({
-    hold: clockGuard.activationHold(), pack, now, tradingDay: packTradingDay(pack, now),
+    hold: clockGuard.activationHold(), pack, now,
     promotions: node.pack()?.snapshot.promotions ?? [],
     priceEntries: pack.priceEntries.known ? pack.priceEntries.value : [],
   });
@@ -2320,8 +2346,21 @@ export async function startEdge(
     for (const e of made.events) say(sayDeviceTlsEvent(e));
     return { dir: deviceTlsDir, addresses: where.addresses, material: made.tls };
   })();
+  // OB-687: the picker's phone reads back the answers on its wave — the box asks head office afresh first (at most every five
+  // seconds, whoever asks), set once the assignments pull below is composed.
+  let refreshAssignmentsForPhones: (() => Promise<unknown>) | null = null;
+  let lastAnswersRefreshAt = 0;
+  const pickerAnswers = async (waveId: string): Promise<unknown> => {
+    if (refreshAssignmentsForPhones !== null && Date.now() - lastAnswersRefreshAt >= 5_000) {
+      lastAnswersRefreshAt = Date.now();
+      await refreshAssignmentsForPhones().catch(() => undefined);
+    }
+    const held = pickerSubstitutionAnswers(snapshot(), waveId);
+    return held === null ? null : { ...held, boxNow: new Date().toISOString() };
+  };
   const devices = devicePort === undefined || enrolments === null || deviceTls === null ? null : await startDeviceServer({
     tls: deviceTls,
+    pickerAnswers,
     onTls: say,
     port: Number(devicePort),
     ...(deviceHost === undefined ? {} : { host: deviceHost }),
@@ -2768,6 +2807,9 @@ export async function startEdge(
     lastPackStatus = outcome.status;
     // Anything but `offline` means head office answered — that is contact, whether or not a pack moved.
     if (outcome.status !== 'offline') lastContactAt = new Date().toISOString();
+    // OB-677: whether head office answered — the gift-card offline limit reads it.
+    cloudLink.offline = outcome.status === 'offline';
+    if (outcome.status !== 'offline') cloudLink.lastContactMs = Date.now();
     return outcome;
   };
 
@@ -2854,7 +2896,9 @@ export async function startEdge(
   // taken when not older than what is held, laid into the pack for the picker and driver phones, persisted so a reboot keeps
   // them. The whole feed replaces what was held, so a packed wave or a settled route leaves the phones by itself. A box whose
   // pack names no store cannot ask, and says so once.
-  const storeIdOfBox = pack.policies.known ? pack.policies.value.storeId : undefined;
+  // W4: a box set up from head office (OB-26 "A") names its store in its own settings (EDGE_STORE_ID) — on its FIRST boot it
+  // holds no setup yet, and asking by the pack it had at boot left the phones with no wave and no route until a restart.
+  const storeIdOfBox = headOfficeStoreId ?? (pack.policies.known ? pack.policies.value.storeId : undefined);
   const assignmentsSource = storeIdOfBox === undefined ? null : httpAssignmentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, storeId: storeIdOfBox, fetch: cloudFetch });
   if (assignmentsSource === null) say('this box\'s pack names no store, so head office cannot be asked for assignments — the phones use the pack file\'s wave and route.');
   const assignmentsReceiver: AssignmentsFeedReceiver = {
@@ -2880,6 +2924,7 @@ export async function startEdge(
     lastAssignmentsStatus = outcome.status;
     return outcome;
   };
+  refreshAssignmentsForPhones = refreshAssignmentsFeed; // OB-687: the picker's read-back asks afresh through the same pull
 
   // PF-09 step 3: the loyalty balances ride the same loop — taken when newer and this shop's, written to disk before they are
   // believed; on a failure the till keeps the copy this box holds and says how old it is.

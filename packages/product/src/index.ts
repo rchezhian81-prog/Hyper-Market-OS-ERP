@@ -22,3 +22,4 @@ export * from './nutrition';
 export * from './variants';
 export * from './bundles';
 export * from './substitutes';
+export * from './product-checks';

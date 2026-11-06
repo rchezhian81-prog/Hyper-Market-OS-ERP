@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1639 | 950 | 950 | 178 | 436 |
+| 13 | 1700 | 979 | 979 | 194 | 444 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -48,8 +48,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/approvals/rules/:rule/rollback` | `approvals.rules.propose` | core | yes |
 | GET | `/v1/idempotency-conflicts` | `platform.health.read` | core | — |
 | GET | `/v1/identity/access-review` | `identity.access.review` | core | — |
+| POST | `/v1/identity/chartered-accountant/grants/:changeId` | `identity.ca.grant.request` | core | yes |
 | GET | `/v1/identity/department-scopes` | `identity.role.read` | core | — |
 | POST | `/v1/identity/department-scopes/:userId/:roleId` | `identity.role.request` | core | yes |
+| GET | `/v1/identity/grants` | `identity.role.request` | core | — |
 | POST | `/v1/identity/grants` | `identity.role.request` | core | yes |
 | POST | `/v1/identity/grants/:grantId/approve` | `identity.role.grant` | core | yes |
 | POST | `/v1/identity/grants/:grantId/reject` | `identity.role.grant` | core | yes |
@@ -63,6 +65,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/reject` | `b2b.account.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/revoke` | `b2b.account.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/sign-in` | `b2b.account.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/concessionaires` | `concession.contract.manage` | core | — |
+| POST | `/v1/identity/outside-logins/concessionaires/:partyId/invites/:inviteId` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/approve` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/reject` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/revoke` | `concession.contract.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/concessionaires/invites/:inviteId/sign-in` | `concession.contract.manage` | core | yes |
 | GET | `/v1/identity/outside-logins/customers` | `customer.identity.manage` | core | — |
 | POST | `/v1/identity/outside-logins/customers/:partyId/invites/:inviteId` | `customer.identity.manage` | core | yes |
 | POST | `/v1/identity/outside-logins/customers/invites/:inviteId/approve` | `customer.identity.manage` | core | yes |
@@ -148,10 +156,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/publish` | `catalogue.pack.publish` | core | yes |
+| POST | `/v1/catalogue/products/:productId/safety` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/substitutes` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/substitutes` | `catalogue.pack.publish` | core | yes |
 | POST | `/v1/catalogue/products/:productId/tobacco-warning-confirmation` | `catalogue.tobacco.warning.confirm` | core | yes |
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
+| GET | `/v1/catalogue/reports/product-checks` | `reporting.report.read` | core | — |
 | GET | `/v1/catalogue/reports/variants` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/scale-label-rules` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/scale-label-rules/:prefix` | `catalogue.pack.publish` | core | yes |
@@ -335,6 +345,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/floor/indents/:indentId/rejection` | `inventory.indent.approve` | core | yes |
 | POST | `/v1/floor/indents/:indentId/returns/:returnId` | `inventory.indent.request` | core | yes |
 | POST | `/v1/floor/indents/:indentId/returns/:returnId/accepted` | `inventory.movement.append` | core | yes |
+| POST | `/v1/floor/indents/:indentId/returns/:returnId/accepted/synced` | `inventory.indent.sync` | core | yes |
 | POST | `/v1/floor/indents/:indentId/synced` | `inventory.indent.sync` | core | yes |
 | GET | `/v1/inventory/adjustment-requests` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/adjustment-requests/:requestId/decide` | `inventory.adjustment.approve` | core | yes |
@@ -432,6 +443,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/merchandising/clusters` | `merchandising.range.read` | core | — |
 | POST | `/v1/merchandising/clusters/:zoneId/:productId/drop` | `merchandising.range.manage` | core | yes |
 | POST | `/v1/merchandising/clusters/:zoneId/:productId/list` | `merchandising.range.manage` | core | yes |
+| GET | `/v1/merchandising/display-contracts` | `merchandising.space.read` | core | — |
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
@@ -461,6 +473,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/packaging/items/:packagingId/position` | `inventory.availability.read` | core | — |
 | POST | `/v1/pricing/markdown/propose` | `price.change.propose` | core | yes |
 | GET | `/v1/production/batches/:outputBatchId/inputs` | `production.read` | core | — |
+| GET | `/v1/production/costs` | `production.cost.read` | core | — |
 | POST | `/v1/production/costs/:productId` | `production.recipe.manage` | core | yes |
 | GET | `/v1/production/departments` | `production.read` | core | — |
 | POST | `/v1/production/departments/:departmentId` | `production.recipe.manage` | core | yes |
@@ -469,6 +482,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/production/price-by-weight` | `production.read` | core | yes |
 | GET | `/v1/production/recipes` | `production.read` | core | — |
 | POST | `/v1/production/recipes/:recipeId` | `production.recipe.manage` | core | yes |
+| POST | `/v1/production/repacks/:repackId` | `production.plan.commit` | core | yes |
 | GET | `/v1/production/runs` | `production.read` | core | — |
 | POST | `/v1/production/runs/:runId` | `production.plan.commit` | core | yes |
 | POST | `/v1/production/runs/:runId/label` | `production.recipe.manage` | core | yes |
@@ -524,6 +538,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/warehouse/transfers/:transferId/receive/synced` | `inventory.transfer.sync` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/shortfall/resolution` | `inventory.adjustment.approve` | core | yes |
 | GET | `/v1/waste/analytics` | `waste.view` | core | — |
+| GET | `/v1/waste/analytics/by-day` | `waste.view` | core | — |
 | GET | `/v1/waste/compare` | `reporting.report.read` | core | — |
 | POST | `/v1/waste/coverage` | `inventory.movement.append` | core | yes |
 | POST | `/v1/waste/records/:wasteId` | `inventory.movement.append` | core | yes |
@@ -778,6 +793,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/stored-value/instruments/:instrumentId` | `loyalty.value.read` | core | — |
 | POST | `/v1/stored-value/instruments/:instrumentId/redeem` | `loyalty.value.redeem` | core | yes |
 | GET | `/v1/stored-value/liability` | `lp.case.read` | core | — |
+| POST | `/v1/stored-value/till-sales` | `pos.sale.sync` | core | yes |
 | GET | `/v1/stored-value/velocity` | `lp.case.read` | core | — |
 
 ## API-07 — OMS (M18)
@@ -832,8 +848,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/orders/:orderId/refunds/:refundId/outcome` | `order.refund.issue` | core | yes |
 | POST | `/v1/orders/:orderId/substitute` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/:orderId/substitution-preference` | `order.lifecycle.manage` | core | yes |
+| GET | `/v1/orders/:orderId/substitution-proposals` | `order.read` | core | — |
+| POST | `/v1/orders/:orderId/substitution-proposals/:lineId/answer` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/:orderId/transition` | `order.lifecycle.manage` | core | yes |
 | POST | `/v1/orders/channel-reconcile` | `order.read` | core | yes |
+| GET | `/v1/orders/exception-queue-staffing` | `order.read` | core | — |
+| POST | `/v1/orders/exception-queue-staffing` | `order.exception.staffing.set` | core | yes |
 | GET | `/v1/orders/refunds/pending` | `order.read` | core | — |
 | GET | `/v1/orders/reservations` | `order.reservation.read` | core | — |
 | GET | `/v1/orders/substitution-exceptions` | `order.read` | core | — |
@@ -895,6 +915,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/delivery/fleet-settlements/:routeId` | `delivery.dispatch.manage` | `delivery` | yes |
 | POST | `/v1/delivery/fleet-settlements/:routeId/approve` | `delivery.settlement.approve` | `delivery` | yes |
 | POST | `/v1/delivery/fleet-settlements/:routeId/paid` | `delivery.settlement.approve` | `delivery` | yes |
+| GET | `/v1/delivery/handover-tolerance` | `delivery.run.read` | `delivery` | — |
+| POST | `/v1/delivery/handover-tolerance/:storeId` | `delivery.controls.set` | `delivery` | yes |
 | GET | `/v1/delivery/locations` | `delivery.serviceability.read` | core | — |
 | POST | `/v1/delivery/locations/:locationId` | `delivery.serviceability.manage` | core | yes |
 | GET | `/v1/delivery/orders/:orderId` | `delivery.run.read` | `delivery` | — |
@@ -920,11 +942,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/fulfilment/orders/:orderId/pack` | `fulfilment.pack.record` | core | yes |
 | GET | `/v1/fulfilment/orders/:orderId/routing` | `order.read` | core | — |
 | GET | `/v1/fulfilment/orders/:orderId/settlement` | `fulfilment.pack.read` | core | — |
+| GET | `/v1/fulfilment/substitution-wait` | `order.read` | core | — |
+| POST | `/v1/fulfilment/substitution-wait` | `fulfilment.substitution.wait.set` | core | yes |
 | GET | `/v1/fulfilment/wave-board` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/wave-candidates` | `fulfilment.wave.assign` | core | — |
 | GET | `/v1/fulfilment/waves/:waveId` | `fulfilment.pack.read` | core | — |
 | POST | `/v1/fulfilment/waves/:waveId/assignment` | `fulfilment.wave.assign` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/build` | `fulfilment.wave.assign` | core | yes |
+| POST | `/v1/fulfilment/waves/:waveId/lines/:lineId/substitution-proposal/synced` | `fulfilment.pick.sync` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/lines/:lineId/synced` | `fulfilment.pick.sync` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/packed/synced` | `fulfilment.pick.sync` | core | yes |
 
@@ -970,6 +995,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b/collections/:customerId/invoices/:invoiceId` | `b2b.receivable.record` | `b2b` | yes |
 | POST | `/v1/b2b/collections/:customerId/payments/:receiptId` | `b2b.receivable.record` | `b2b` | yes |
 | GET | `/v1/b2b/collections/:customerId/reconciliation` | `b2b.receivable.record` | `b2b` | — |
+| GET | `/v1/b2b/collections/chasing-steps` | `b2b.account.read` | `b2b` | — |
+| POST | `/v1/b2b/collections/chasing-steps` | `b2b.chasing.steps.set` | `b2b` | yes |
 | GET | `/v1/b2b/commissions/:salespersonId` | `b2b.commission.read` | `b2b` | — |
 | POST | `/v1/b2b/commissions/:salespersonId/accruals/:accrualId` | `b2b.commission.record` | `b2b` | yes |
 | GET | `/v1/b2b/commissions/:salespersonId/rules` | `b2b.commission.read` | `b2b` | — |
@@ -996,12 +1023,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/b2b/transfer-notes` | `b2b.receivable.record` | `b2b` | — |
 | POST | `/v1/b2b/transfer-notes/:noteId/match` | `b2b.receivable.record` | `b2b` | yes |
 | POST | `/v1/b2b/transfer-notes/:noteId/reject` | `b2b.receivable.record` | `b2b` | yes |
+| GET | `/v1/concession-portal/me/counters` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/invoices` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/sales` | `concession.portal.self` | `dept.concession` | — |
+| GET | `/v1/concession-portal/me/stock` | `concession.portal.self` | `dept.concession` | — |
 | GET | `/v1/concession/branches/:branchId/store-valuation` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/concessionaires/:concessionaireId/deposit` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId` | `concession.contract.manage` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/contracts/:contractId` | `concession.contract.manage` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/charge` | `concession.charge.read` | `dept.concession` | — |
+| GET | `/v1/concession/contracts/:contractId/invoice-preview` | `concession.charge.read` | `dept.concession` | — |
+| GET | `/v1/concession/contracts/:contractId/invoices` | `concession.charge.read` | `dept.concession` | — |
+| POST | `/v1/concession/contracts/:contractId/invoices/:invoiceId` | `concession.contract.manage` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/may-trade` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/contracts/:contractId/sales` | `concession.sale.record` | `dept.concession` | yes |
 | GET | `/v1/concession/contracts/:contractId/settlement` | `concession.charge.read` | `dept.concession` | — |
@@ -1011,6 +1045,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/adjust` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/reverse` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/expiry-alerts/raise` | `concession.contract.manage` | `dept.concession` | yes |
+| GET | `/v1/concession/gst-treatment` | `concession.charge.read` | `dept.concession` | — |
+| PUT | `/v1/concession/gst-treatment` | `finance.posting.configure` | `dept.concession` | yes |
 | POST | `/v1/concession/stock-access` | `concession.charge.read` | `dept.concession` | yes |
 | POST | `/v1/concession/tags/synced` | `concession.tag.sync` | `dept.concession` | yes |
 | GET | `/v1/concession/trading-breaches` | `concession.charge.read` | `dept.concession` | — |
@@ -1027,7 +1063,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
 | GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/budgets/:period` | `finance.posting.configure` | core | yes |
-| POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
+| GET | `/v1/finance/cash-deposits` | `settlement.review.read` | core | — |
+| POST | `/v1/finance/cash-deposits/:depositId` | `settlement.batch.import` | core | yes |
+| POST | `/v1/finance/cash-deposits/:depositId/cancel` | `settlement.batch.import` | core | yes |
+| POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | `b2b` | yes |
+| GET | `/v1/finance/credit-notes/customers/:customerId` | `finance.creditnote.issue` | `b2b` | — |
+| POST | `/v1/finance/credit-notes/preview` | `finance.creditnote.issue` | `b2b` | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
 | POST | `/v1/finance/day-book/:tradingDay/post` | `finance.journal.post` | core | yes |
@@ -1077,6 +1118,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/gstr1/submission/:period` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/gstr1/submission/:period/approve` | `finance.gstr.approve` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/cancel` | `finance.gstr.approve` | core | yes |
+| POST | `/v1/finance/gstr1/submission/:period/filed-by-hand` | `finance.gstr.submit` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/poll` | `finance.gstr.submit` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/preview` | `finance.gstr.generate` | core | yes |
 | POST | `/v1/finance/gstr1/submission/:period/reconcile` | `finance.gstr.submit` | core | yes |
@@ -1264,6 +1306,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 |---|---|---|---|---|
 | GET | `/v1/compliance/alerts` | `compliance.obligation.read` | core | — |
 | POST | `/v1/compliance/attestations/:attestationId` | `compliance.risk.manage` | core | yes |
+| GET | `/v1/compliance/control-register` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/controls/:controlId` | `compliance.risk.manage` | core | yes |
 | GET | `/v1/compliance/controls/health` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/epr/assets/:assetId/not-e-waste` | `epr.register.record` | core | yes |
@@ -1290,12 +1333,16 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/fssai-licence` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
+| GET | `/v1/compliance/gate-evidence` | `compliance.gate.read` | core | — |
+| POST | `/v1/compliance/gate-evidence/:evidenceId` | `compliance.gate.decide` | core | yes |
 | GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |
+| GET | `/v1/compliance/gate-register/qg01-reading` | `compliance.gate.read` | core | — |
 | GET | `/v1/compliance/gate-register/qg10-evidence` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-register/qg10-evidence` | `compliance.qg10.evidence.push` | core | yes |
 | GET | `/v1/compliance/gates/:gate/can-pass` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/gates/blocked` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/incidents/:incidentId` | `compliance.risk.manage` | core | yes |
+| GET | `/v1/compliance/obligations` | `compliance.obligation.read` | core | — |
 | POST | `/v1/compliance/obligations/:obligationId` | `compliance.obligation.manage` | core | yes |
 | POST | `/v1/compliance/obligations/:obligationId/close` | `compliance.obligation.manage` | core | yes |
 | POST | `/v1/compliance/obligations/:obligationId/evidence` | `compliance.obligation.manage` | core | yes |
@@ -1357,8 +1404,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/facilities/scale-verification` | `facilities.asset.read` | core | — |
 | GET | `/v1/facilities/scales` | `facilities.asset.read` | core | — |
 | POST | `/v1/facilities/scales/:assetId` | `facilities.asset.manage` | core | yes |
+| GET | `/v1/facilities/schedules` | `facilities.overdue.read` | core | — |
 | POST | `/v1/facilities/schedules/:scheduleId` | `facilities.schedule.manage` | core | yes |
 | POST | `/v1/facilities/schedules/:scheduleId/tasks/:taskId` | `facilities.task.record` | core | yes |
+| GET | `/v1/facilities/spares` | `facilities.asset.read` | core | — |
+| POST | `/v1/facilities/spares/:sparePartId` | `facilities.asset.manage` | core | yes |
+| POST | `/v1/facilities/spares/:sparePartId/movements/:movementId` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/complete` | `facilities.task.record` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/verify` | `facilities.task.record` | core | yes |
 | POST | `/v1/hr/compliance/leave/:employeeId/:date` | `workforce.roster.manage` | core | yes |
@@ -1428,12 +1479,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/hr/workforce/incentive` | `workforce.incentive.read` | core | yes |
 | GET | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | yes |
+| GET | `/v1/hr/workforce/labour-cost-guide` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/labour-cost-guide` | `workforce.labour.guide.set` | core | yes |
 | GET | `/v1/hr/workforce/labour-demand` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/labour-standards` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/labour-standards/:role` | `workforce.standard.set` | core | yes |
 | GET | `/v1/hr/workforce/my-roster` | `payroll.ess.self` | core | — |
 | GET | `/v1/hr/workforce/my-tasks` | `workforce.task.complete.own` | core | — |
 | GET | `/v1/hr/workforce/productivity` | `workforce.incentive.read` | core | — |
+| GET | `/v1/hr/workforce/role-checks` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/role-checks/:roleId` | `workforce.training.manage` | core | yes |
+| GET | `/v1/hr/workforce/role-checks/:roleId/attempts` | `workforce.roster.read` | core | — |
+| POST | `/v1/hr/workforce/role-checks/:roleId/attempts/:attemptId` | `workforce.training.manage` | core | yes |
+| POST | `/v1/hr/workforce/role-checks/:roleId/pass-mark` | `workforce.curriculum.approve` | core | yes |
 | GET | `/v1/hr/workforce/roster` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | yes |
@@ -1474,6 +1532,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/integration/health` | `platform.health.read` | core | — |
 | POST | `/v1/integration/matrix/:entryId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-deliveries/drain` | `platform.setup.write` | core | yes |
+| GET | `/v1/integration/outbound-webhooks` | `platform.health.read` | core | — |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/outbound-webhooks/:subscriptionId/deactivate` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/outbound-webhooks/:subscriptionId/dead-letters` | `platform.health.read` | core | — |
@@ -1484,6 +1543,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/integration/secrets/:secretId/revocation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/:secretId/rotation` | `platform.setup.write` | core | yes |
 | POST | `/v1/integration/secrets/review` | `platform.setup.read` | core | yes |
+| GET | `/v1/integration/secrets/usage` | `platform.setup.read` | core | — |
 | POST | `/v1/integration/secrets/usage-signals` | `platform.setup.read` | core | yes |
 | POST | `/v1/integration/webhooks/:provider` | `platform.setup.write` | core | yes |
 | GET | `/v1/integration/webhooks/:provider/deliveries` | `platform.health.read` | core | — |
@@ -1491,7 +1551,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/alert-rules` | `platform.health.read` | core | — |
 | PUT | `/v1/platform/alert-rules` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/alerts` | `platform.health.read` | core | — |
-| POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.acknowledge` | core | yes |
 | POST | `/v1/platform/alerts/escalate` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/alerts/inbox` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/raise` | `platform.alert.manage` | core | yes |
@@ -1549,6 +1609,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/operational-health` | `platform.health.read` | core | yes |
 | GET | `/v1/platform/operational-health/observed` | `platform.health.read` | core | — |
 | POST | `/v1/platform/operational-health/observed/raise` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/partners` | `platform.partner.read` | core | — |
 | GET | `/v1/platform/partners/:credentialId` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/partners/:credentialId` | `platform.partner.manage` | core | yes |
 | POST | `/v1/platform/partners/:credentialId/revoke` | `platform.partner.manage` | core | yes |

@@ -46,10 +46,12 @@ describe('an empty list says what it covers, or "not known" — never good news 
 
   it('the owner\'s phone: an empty attention, alert or approval list is "not known" when the phone has never synced or is stale', () => {
     const view = read('apps/owner-app/web/app.js');
-    expect(view).toMatch(/function emptyWords\(freshness, key\)/);
-    expect(view).toMatch(/freshness\.state === 'missing' \? t\('notKnownNever'\)/);
+    // Merged with main's UI-3 `emptyLine` (5 Nov 2026): one helper, "not known" when never synced AND when stale.
+    expect(view).toMatch(/function emptyLine\(words, freshness\)/);
     expect(view).toMatch(/freshness\.state === 'stale' \? `\$\{t\('notKnownStale'\)\} \$\{ageInWords\(freshness\.ageSeconds\)\}\.`/);
-    expect(view.match(/none\.textContent = emptyWords\(freshness, '(nothingToDecide|noAlerts|nothingWaiting)'\)/g)).toHaveLength(3);
+    expect(view).toMatch(/freshness\.state === 'missing' \? t\('notKnownNoData'\)/); // main's UI-3 word for the never-synced case
+    expect(view).toMatch(/freshness\.state === 'stale' \? `\$\{t\('notKnownStale'\)\} \$\{ageInWords\(freshness\.ageSeconds\)\}\.`/);
+    expect(view.match(/const none = emptyLine\(t\('(nothingToDecide|noAlerts|nothingWaiting)'\), freshness\)/g)).toHaveLength(3);
     expect(view).toMatch(/notKnownNever: 'Not known — no data has ever reached this phone\.'/);
     expect(view).toMatch(/notKnownStale: 'Not known — the last word from the shop was'/);
     expect(view).toMatch(/notKnownNever: '[஀-௿]/);

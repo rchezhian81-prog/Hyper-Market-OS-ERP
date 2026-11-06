@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 /**
- * **The confirm sheet is in the chrome, and it is never a browser dialog (OB-626 · design system §1.3 · §27.1).**
+ * **The confirm sheet is in the chrome, and it is never a browser dialog (OB-691 · design system §1.3 · §27.1).**
  *
  * Before money, stock, a price or a privilege moves, a page asks `sreOffice.confirm(spec)` and sends only on
  * `{ ok: true }`. The sheet lives in the one chrome every office page loads (precached, so it works with no internet),
@@ -44,7 +44,7 @@ describe('the chrome carries the confirm sheet', () => {
     expect(FOUNDATION).toMatch(/\.sre-confirm-actions \.sre-btn-primary, \.sre-confirm-actions \.sre-btn-danger \{ min-height: 48px; \}/);
   });
 
-  it('bites: the chrome before OB-626 had no confirm sheet', () => {
+  it('bites: the chrome before OB-691 had no confirm sheet', () => {
     const before = execFileSync('git', ['show', '7fb2406:apps/web-erp/web/sre-chrome.js'], { encoding: 'utf8' });
     expect(before).not.toMatch(/confirm: officeConfirm,/);
   });

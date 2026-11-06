@@ -350,7 +350,7 @@ describe('the screen somebody puts their name to', () => {
   });
 
   it('never interrupts anybody with a browser dialog', () => {
-    expect(code(VIEW), 'a bare browser dialog (the shared sheet is sreOffice.confirm, OB-626)').not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
+    expect(code(VIEW), 'a bare browser dialog (the shared sheet is sreOffice.confirm, OB-691)').not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
     expect(code(ME_VIEW)).not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
   });
 

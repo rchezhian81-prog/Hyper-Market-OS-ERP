@@ -37,7 +37,7 @@ export const SCRAP_COPY = {
     markPosted: 'Mark as taken into the books',
     recordH: 'Record a disposal', category: 'What', disposal: 'What happened to it', kg: 'Weight (kg)', proceedsRs: 'Money received (₹)', buyer: 'Buyer (optional)',
     evidence: 'Evidence references, comma separated (optional)', recycler: 'Recycler registration (e-waste, used oil)', handledBy: 'Handled by', record: 'Record it',
-    // U1 · OB-626: the consequence-and-confirm sheet before a disposal goes into the registers
+    // U1 · OB-691: the consequence-and-confirm sheet before a disposal goes into the registers
     confirmTitle: 'Record {kg} kg of {category} disposed as {disposal}, {proceeds} received',
     confirmDetail: 'The EPR register and the books carry it in your name from now; the accountant reviews it and posts it. A disposal is never undone — a mistake is corrected by a new entry.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not record scrap.',

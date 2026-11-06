@@ -38,7 +38,7 @@ export interface PackReceiptNumbering {
 import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
-import type { AssignmentsFeed } from '../../sync-agent/src/assignments-feed';
+import type { AssignmentsFeed, AssignedSubstitutionAnswer } from '../../sync-agent/src/assignments-feed';
 import type { PublishedTemplatesFeed, PublishedTemplate } from '../../sync-agent/src/published-templates';
 
 export type Register<T> =
@@ -144,7 +144,13 @@ export interface PackWave {
     readonly requiredQty: number;
     readonly uom: string;
     readonly unitPriceMinor: number;
+    /** OB-687 · FUL-14: the order's substitution rule, as head office carried it (never on a hand-written wave). */
+    readonly substitution?: 'ask_first' | 'never' | 'best_match';
   }[];
+  /** OB-687: the owner's wait for a customer's answer (null: not set) — only on a wave head office assigned. */
+  readonly substitutionWaitMinutes?: number | null;
+  /** OB-687: head office's word on each swap put to a customer on this wave. */
+  readonly substitutionAnswers?: readonly AssignedSubstitutionAnswer[];
 }
 
 /**
@@ -992,6 +998,11 @@ export interface PackPolicies {
   /** |over/short| at or above which a driver's cash handover needs the cash office. */
   readonly handoverToleranceMinor: number;
   /**
+   * OB-676 (owner, 2 Nov 2026): who confirmed `handoverToleranceMinor` and when. Absent → the owner has NOT confirmed the
+   * figure: the box and the driver's phone keep working on it and say "not confirmed" wherever a cash difference shows.
+   */
+  readonly handoverToleranceConfirmed?: { readonly by: string; readonly at: string; readonly version: number };
+  /**
    * |over/short| at or above which a TILL's shift close is material — needs a reason and is raised for the cash office
    * (M14-FR-02, SP-4c). Optional: a pack that names none makes the box apply its default AND say so on every close
    * (`toleranceKnown: false`), never a silent constant.
@@ -1352,6 +1363,9 @@ export interface StorePack {
    * would read as "no losses today" (P-08).
    */
   readonly wasteWriteOffs: Register<readonly unknown[]>;
+  /** OB-630: this store's reorder settings as head office last sent them ({ storeId, products, asAt }) — the Buying page's
+   *  Reorder tab shows this copy, said as a copy, when head office cannot be reached. Absent: the box was never told. */
+  readonly reorderSettings: Register<unknown>;
   /** Who is on the waste review screen and what they may do there. */
   readonly wastePolicy: Register<PackWastePolicy>;
   /** Who is on the shop-floor write-off CAPTURE screen, what they hold, and the material-loss threshold (M28-FR-01). */
@@ -1450,6 +1464,18 @@ export interface StorePack {
    * told, and it approves no price cut. Optional in the type only so an older pack still type-checks.
    */
   readonly tillControls?: Register<unknown>;
+  /**
+   * D06-FR-03 · OB-673 — head office's live coupons and every redemption it holds of them (`readCouponPack`,
+   * packages/loyalty/src/till-vouchers.ts), so the till honours a coupon with the internet down. Absent → the box was not
+   * told, and the till says it cannot check coupons here.
+   */
+  readonly coupons?: Register<unknown>;
+  /**
+   * D07-FR-04 · OB-677 — the gift cards head office holds, each with its balance and the till redemptions already in it,
+   * and the owner's offline limit per till per card (`readGiftCardPack`). Absent → the box was not told, and no gift card is
+   * taken at the till.
+   */
+  readonly giftCards?: Register<unknown>;
   /**
    * OB-172 · D-6 — the receiving checklists head office has in force for this store, and which products are cold-chain by
    * its product master (`{ checks, coldChainProductIds }`, read by `readReceivingChecklistSetup`). The manager's screen and
@@ -1610,6 +1636,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReturnsQueue: notKnown(why),
     gstReturnsPolicy: notKnown(why),
     wasteWriteOffs: notKnown(why),
+    reorderSettings: notKnown(why),
     wastePolicy: notKnown(why),
     writeOffCapturePolicy: notKnown(why),
     countsQueue: notKnown(why),
@@ -1649,6 +1676,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     weighingScales: notKnown(why),
     rollout: notKnown(why),
     tillControls: notKnown(why),
+    coupons: notKnown(why),
+    giftCards: notKnown(why),
     receivingChecklist: notKnown(why),
     packedProductIds: notKnown(why),
     roster: notKnown(why),
@@ -1761,6 +1790,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReturnsQueue: section<readonly unknown[]>('gstReturnsQueue'),
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
+    reorderSettings: section<unknown>('reorderSettings'),
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
     writeOffCapturePolicy: section<PackWriteOffCapturePolicy>('writeOffCapturePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),
@@ -1800,6 +1830,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     weighingScales: section<readonly unknown[]>('weighingScales'),
     rollout: section<unknown>('rollout'),
     tillControls: section<unknown>('tillControls'),
+    coupons: section<unknown>('coupons'),
+    giftCards: section<unknown>('giftCards'),
     receivingChecklist: section<unknown>('receivingChecklist'),
     packedProductIds: section<readonly unknown[]>('packedProductIds'),
     roster: section<unknown>('roster'),

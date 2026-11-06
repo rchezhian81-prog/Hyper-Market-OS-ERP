@@ -262,11 +262,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the till reads clearly at a busy counter
         expect(await auditPage(page, { expectLang: 'en' }), what).toEqual([]);
       };
 
-      // tender: the four ways to pay, each with its mark beside its words
+      // tender: the ways to pay (W3: + a gift card), each with its mark beside its words
       await page.click('#tender');
       await page.waitForSelector('#pay:not([hidden])');
       expect(await page.$$eval('#pay-kinds button', (b) => b.map((x) => [x.textContent, x.querySelector('svg')?.getAttribute('data-icon') ?? null]))).toEqual([
         ['Cash — ₹46,415.00', 'banknote'], ['Card — ₹46,415.00', 'wallet'], ['UPI — ₹46,415.00', 'monitor-smartphone'], ['Split / points / store credit', 'arrow-left-right'],
+        ['Gift card', 'wallet'], // W3 · OB-677: a gift card the shop sold
       ]);
       // the mark never hides the words from the button: a choice is still found by its exact words
       expect(await page.locator('#pay-kinds button:text-is("Split / points / store credit")').count()).toBe(1);

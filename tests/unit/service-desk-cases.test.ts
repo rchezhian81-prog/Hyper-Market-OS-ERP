@@ -285,12 +285,26 @@ describe('CSAT is reported with its response rate', () => {
     expect(report.resolved).toBe(20);
     expect(report.breached).toBe(1);
     expect(report.breachedValue).toEqual(['C-1']);
+    // W4 · M21-FR-04: the one view says escalate now; none was met.
+    expect(report.met).toBe(0);
+    expect(report.escalateNow).toEqual(['C-1']);
     // Counted separately: slow to resolve and never answered are different failures.
     expect(report.firstResponseBreached).toBe(1);
     expect(report.detail).toContain('1 never answered in time');
     expect(report.csatHundredths).toBe(450); // 4.50
     expect(report.responseRateBps).toBe(1_000); // 10%
     expect(report.detail).toContain('the ones who reply are rarely the ones who left quietly');
+  });
+
+  it('W4 · M21-FR-04: counts the cases resolved within target, and names the open breaches to escalate now', () => {
+    const now = '2026-11-10T10:00:00.000Z';
+    const quick = { ...CASE, caseId: 'Q', state: 'resolved' as const, openedAt: '2026-11-10T08:00:00.000Z', resolvedAt: '2026-11-10T09:00:00.000Z' };
+    const late = { ...CASE, caseId: 'L', state: 'open' as const, openedAt: '2026-11-01T08:00:00.000Z' };
+    const cases = [quick, late];
+    const report = serviceReport({ cases, slaViews: cases.map((c) => assessSla({ serviceCase: c, now })), scores: [] });
+    expect(report.met).toBe(1);
+    expect(report.breachedValue).toEqual(['L']);
+    expect(report.escalateNow).toEqual(['L']);
   });
 
   it('says "no responses" rather than reporting a score of zero', () => {

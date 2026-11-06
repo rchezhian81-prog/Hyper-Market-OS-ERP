@@ -48,7 +48,7 @@ const WORDS = {
     acceptLabel: 'If some is still out there, why are you closing it?',
     ok: 'OK', read: 'Please read this', done: 'Done',
     notSent: 'Not sent to head office, so it is not recorded. Nothing was saved — try again when the store computer is back online.',
-    // U1 · OB-626: the consequence-and-confirm sheet before a recall starts
+    // U1 · OB-691: the consequence-and-confirm sheet before a recall starts
     confirmTitle: 'Recall batch {batch}: every till of every store will refuse it from the next store pack',
     confirmDetail: 'Customers who bought it and can be reached are listed afterwards and the owner is told. A recall cannot be withdrawn from this screen — it is closed with evidence once the goods are back.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not start a recall.',
@@ -198,7 +198,7 @@ const session = real ?? sampleSession();
 
 // ── The banner ──────────────────────────────────────────────────────────────
 
-// U1 · OB-626 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-691 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -259,6 +259,15 @@ function renderExpiry() {
         : `${t('markdown')} ${item.expiry} (${item.daysToExpiry} ${t('daysLeft')}) · ${item.batchId}`;
       what.append(name, sub);
       row.append(what);
+      // W3 · D06-FR-05: stock close to its date gets "Work out a markdown" — the advisory ladder, never a price change.
+      row.dataset.product = item.productId; row.dataset.batch = item.batchId;
+      if (item.status !== 'expired' && typeof window.expiryMarkdownPick === 'function' && window.markdowns?.session?.may?.propose === true) {
+        const pick = document.createElement('button');
+        pick.type = 'button'; pick.className = 'pick-markdown';
+        pick.textContent = window.markdowns.words(lang, 'pickRow');
+        pick.addEventListener('click', () => { window.expiryMarkdownPick(item); });
+        row.append(pick);
+      }
       return row;
     })));
 }
@@ -290,7 +299,7 @@ function emptyLine(text) {
 
 el('start').addEventListener('click', async () => {
   const go = el('start');
-  // U1 · OB-626: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
+  // U1 · OB-691: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
   const batchKeyed = el('batch').value.trim();
   const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{batch}', batchKeyed), ta: String(WORDS.ta.confirmTitle).replace('{batch}', batchKeyed) }, detail: { en: String(WORDS.en.confirmDetail), ta: String(WORDS.ta.confirmDetail) }, authority: { en: String(WORDS.en.confirmAuthority), ta: String(WORDS.ta.confirmAuthority) }, confirmLabel: { en: String(WORDS.en.confirmLabel), ta: String(WORDS.ta.confirmLabel) }, tone: 'danger' });
   if (answer === 'unavailable') { tell(t('read'), t('confirmUnavailable')); return; }

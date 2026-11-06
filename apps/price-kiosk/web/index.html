@@ -10,6 +10,11 @@
       The price kiosk (D14-FR-02). Read-only: a customer scans an item and reads its price from the store computer's
       signed price list, with no network. It ALWAYS says how old that list is (P-08). It sells nothing and posts nothing.
       English and Tamil; icons beside words; targets 64px.
+
+      UI-2 (owner, 1 Nov 2026): a customer reads it from a step away — the item's name large, the price the largest thing
+      on the screen (the shared `.sre-figure-xl`), "offers at the till" under it, all on one white card
+      (`.sre-kiosk-card`, design system §4.3); a refusal is the same card in amber, in plain words. The sentence the kiosk
+      model writes is kept whole for a screen reader; only its parts are laid out.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -18,22 +23,24 @@
       :root { --tap: 64px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 20px/1.45 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
       header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--panel); border-bottom: 1px solid var(--line); }
-      h1 { margin: 0; font-size: 24px; display: flex; align-items: center; gap: var(--space-2); }
-      h1 .sre-icon { width: 28px; height: 28px; }
+      h1 { margin: 0; font-size: 28px; display: flex; align-items: center; gap: var(--space-3); }
+      h1 .sre-icon { width: 32px; height: 32px; }
       button { min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600; background: var(--panel-2); color: var(--ink); padding: 0 var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); }
       button .sre-icon { width: 22px; height: 22px; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .stale { background: var(--warn-surface); color: var(--on-warn-surface); padding: var(--space-2) var(--space-4); margin: 0; font-size: 16px; font-weight: 600; }
       .stale[hidden] { display: none; }
       main { flex: 1; display: grid; align-content: center; justify-items: center; gap: var(--space-4); padding: var(--space-5) var(--space-4); text-align: center; }
-      .ask { margin: 0; font-size: 28px; font-weight: 700; display: flex; align-items: center; gap: var(--space-3); }
-      .ask .sre-icon { width: 40px; height: 40px; }
-      .answer { margin: 0; font-size: 30px; font-weight: 700; max-width: 900px; overflow-wrap: anywhere; }
-      .answer.quoted { color: var(--ink); }
-      .answer.refused { color: var(--on-warn-surface); background: var(--warn-surface); padding: var(--space-3) var(--space-4); border-radius: var(--radius-xl); }
-      .age { margin: 0; font-size: 18px; color: var(--ink-2); display: flex; align-items: center; gap: var(--space-2); }
-      .age .sre-icon { width: 20px; height: 20px; }
-      .limit { margin: 0; font-size: 15px; color: var(--muted); }
+      .ask { margin: 0; font-size: clamp(26px, 3.2vw, 36px); font-weight: 700; display: flex; align-items: center; gap: var(--space-3); }
+      .ask .sre-icon { width: 44px; height: 44px; }
+      /* The answer: the model's whole sentence, laid out as name · price · note on the card. */
+      .answer { margin: 0; overflow-wrap: anywhere; display: grid; gap: var(--space-2); justify-items: center; }
+      .answer.refused { font-size: clamp(24px, 3vw, 34px); font-weight: 700; line-height: var(--leading-tight); }
+      .answer .per { font-size: .4em; font-weight: 700; margin-left: .25em; }
+      .sre-kiosk-card[hidden] { display: none; }
+      .age { margin: 0; font-size: 20px; color: var(--ink-2); display: flex; align-items: center; gap: var(--space-2); }
+      .age .sre-icon { width: 22px; height: 22px; }
+      .limit { margin: 0; font-size: 16px; color: var(--muted); max-width: 60ch; }
     </style>
   </head>
   <body>
@@ -44,7 +51,9 @@
     <p class="stale" id="stale" hidden role="status"></p>
     <main>
       <p class="ask" id="ask"><span data-sre-icon="scan-barcode"></span><span id="ask-words">Scan an item to see its price.</span></p>
-      <p class="answer" id="answer" role="status" aria-live="polite"></p>
+      <div class="sre-kiosk-card" id="card" hidden>
+        <p class="answer" id="answer" role="status" aria-live="polite"></p>
+      </div>
       <p class="age" id="age"><span data-sre-icon="clock"></span><span id="age-words">—</span></p>
       <p class="limit" id="limit">—</p>
     </main>

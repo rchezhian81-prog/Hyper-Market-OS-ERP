@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   scopeToCustomer,
   ageReceivables,
   allocatePayment,
   decideDunning,
+  dunningStepsProblem,
   reconcileAr,
   type B2BSession,
   type Receivable,
@@ -193,6 +195,9 @@ describe('a payment is ALLOCATED, never absorbed into a balance', () => {
   });
 });
 
+// The owner's own chasing steps for these tests (synthetic; OB-686 — the engine has no built-in numbers any more).
+const OWNER_STEPS = { minimumChaseMinor: 50_000, reminderAfterDays: 7, finalNoticeAfterDays: 60, stopSupplyAfterDays: 90 };
+
 describe('stopping supply is RECOMMENDED, never automatic', () => {
   const ageing = (dueOn: string, over: Partial<Receivable> = {}) =>
     ageReceivables({
@@ -200,33 +205,33 @@ describe('stopping supply is RECOMMENDED, never automatic', () => {
     });
 
   it('needs a human before it would cut a customer off', () => {
-    const decision = decideDunning({ ageing: ageing('2026-04-01') });
+    const decision = decideDunning({ ageing: ageing('2026-04-01'), steps: OWNER_STEPS });
     expect(decision.step).toBe('stop_supply');
     expect(decision.needsHuman).toBe(true);
     expect(decision.detail).toContain('the morning of their function');
   });
 
   it('escalates through statement, reminder and final notice', () => {
-    expect(decideDunning({ ageing: ageing('2026-08-01') }).step).toBe('statement');
-    expect(decideDunning({ ageing: ageing('2026-07-20') }).step).toBe('reminder');
-    expect(decideDunning({ ageing: ageing('2026-05-20') }).step).toBe('final_notice');
+    expect(decideDunning({ ageing: ageing('2026-08-01'), steps: OWNER_STEPS }).step).toBe('statement');
+    expect(decideDunning({ ageing: ageing('2026-07-20'), steps: OWNER_STEPS }).step).toBe('reminder');
+    expect(decideDunning({ ageing: ageing('2026-05-20'), steps: OWNER_STEPS }).step).toBe('final_notice');
   });
 
   it('does not send a letter for a trivial amount', () => {
-    const decision = decideDunning({ ageing: ageing('2026-05-01', { grossMinor: 20_000 }) });
+    const decision = decideDunning({ ageing: ageing('2026-05-01', { grossMinor: 20_000 }), steps: OWNER_STEPS });
     expect(decision.step).toBe('statement');
     expect(decision.detail).toContain('below the chase threshold');
   });
 
   it('chases NOTHING when the only overdue invoice is disputed', () => {
-    const decision = decideDunning({ ageing: ageing('2026-04-01', { disputed: true }) });
+    const decision = decideDunning({ ageing: ageing('2026-04-01', { disputed: true }), steps: OWNER_STEPS });
     expect(decision.step).toBe('none');
     expect(decision.chaseableMinor).toBe(0);
     expect(decision.detail).toContain('belongs with a person, not a reminder letter');
   });
 
   it('is quiet on an account with nothing overdue', () => {
-    expect(decideDunning({ ageing: ageing('2026-09-01') }).step).toBe('none');
+    expect(decideDunning({ ageing: ageing('2026-09-01'), steps: OWNER_STEPS }).step).toBe('none');
   });
 });
 
@@ -245,5 +250,28 @@ describe('the portal must agree with the ledger (M23)', () => {
     const over = reconcileAr({ customerId: 'c-school', ageing: report, financeOutstandingMinor: 400_000 });
     expect(over.differenceMinor).toBe(100_000);
     expect(over.detail).toContain('money the books do not record');
+  });
+});
+
+// W5 · OB-686 (owner, 3 Nov 2026): the chasing steps are the owner's — the engine has no ₹500 floor and no 7 / 60 / 90 days.
+describe('OB-686 — the owner\'s chasing steps decide; nothing is built in', () => {
+  const ageing = (dueOn: string, grossMinor = 100_000) => ageReceivables({ customerId: 'c-school', invoices: [invoice({ dueOn, grossMinor })], asAt: '2026-08-04' });
+  it('his numbers, not the old ones: a ₹200 debt is chased with a ₹0 floor; 20 days is a final notice under his 15', () => {
+    const his = { minimumChaseMinor: 0, reminderAfterDays: 5, finalNoticeAfterDays: 15, stopSupplyAfterDays: 40 };
+    expect(decideDunning({ ageing: ageing('2026-07-20', 20_000), steps: his }).step).toBe('reminder'); // 15 days: past his 5, not past his 15 (old floor would say statement)
+    expect(decideDunning({ ageing: ageing('2026-07-15', 20_000), steps: his }).step).toBe('final_notice'); // 20 days
+    expect(decideDunning({ ageing: ageing('2026-06-20', 20_000), steps: his })).toMatchObject({ step: 'stop_supply', needsHuman: true }); // 45 days
+    expect(decideDunning({ ageing: ageing('2026-07-31', 20_000), steps: his }).step).toBe('statement'); // 4 days
+  });
+  it('a set of steps is refused unless whole, above zero and rising', () => {
+    expect(dunningStepsProblem({ minimumChaseMinor: 0, reminderAfterDays: 1, finalNoticeAfterDays: 2, stopSupplyAfterDays: 3 })).toBeUndefined();
+    expect(dunningStepsProblem({})).toMatch(/smallest amount/);
+    expect(dunningStepsProblem({ minimumChaseMinor: 0, reminderAfterDays: 0, finalNoticeAfterDays: 2, stopSupplyAfterDays: 3 })).toMatch(/more than 0/);
+    expect(dunningStepsProblem({ minimumChaseMinor: 0, reminderAfterDays: 9, finalNoticeAfterDays: 9, stopSupplyAfterDays: 30 })).toMatch(/must rise/);
+  });
+  it('the engine source carries no built-in floor or day count', () => {
+    const src = readFileSync('packages/b2b/src/collections.ts', 'utf8');
+    const fn = src.slice(src.indexOf('export function decideDunning'), src.indexOf('export interface ArReconciliation'));
+    expect(fn).not.toMatch(/\?\? ?(50_000|7|60|90)\b/);
   });
 });

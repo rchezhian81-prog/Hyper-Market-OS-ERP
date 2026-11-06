@@ -8,7 +8,8 @@ import type { RealCloud } from '../support/real-store';
 
 /**
  * **The Buying page's Open orders tab, in a real browser, on the PRODUCTION API over real PostgreSQL (M06-FR-04 "central/local
- * procurement, amendments, cancellations and open-commitment tracking" · OB-289 · OB-31 · hard rule #2).**
+ * procurement, amendments, cancellations and open-commitment tracking" · OB-289 · OB-31 · hard rule #2).** This is also WF-03's
+ * last step (purchase planning → PO → amendment): an issued order is amended and part-cancelled by a person, head office keeps both.
  *
  * Before this tab no screen amended or cancelled an order or showed `GET /v1/purchase/commitments/report`. Through Chromium:
  *   • the br-1 manager's order (25 kg of rice, 12 soaps) is issued by the owner; the manager reads what is on order — by

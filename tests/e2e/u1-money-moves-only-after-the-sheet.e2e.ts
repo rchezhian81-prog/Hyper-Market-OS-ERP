@@ -6,7 +6,7 @@ import { auditPage } from './lib/a11y-audit';
 import { startOfficeShop, PEOPLE, type OfficeShop } from './lib/office-shop';
 
 /**
- * **OB-626 (2 Nov 2026 · UI/UX gap audit G4 · design system §1.3 · §27.1): money moves in the office only after the
+ * **OB-691 (2 Nov 2026 · UI/UX gap audit G4 · design system §1.3 · §27.1): money moves in the office only after the
  * confirm sheet — on the REAL store computer fed by the REAL head office, in real Chromium.**
  *
  * For each action: the click opens the sheet with the figure and the day/month in words; **Go back sends no write to head

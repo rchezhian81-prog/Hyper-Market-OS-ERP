@@ -32,7 +32,7 @@ export {
   MemoryIdempotencyStore,
   type Principal, type HttpRequest, type HttpResponse, type Authenticator,
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions, type IdempotencyConflict,
-  type OutboundFinding, type RequestObservation,
+  type OutboundFinding, type RequestObservation, type CredentialUse,
   type AccessResolver, type EntitlementResolver,
   type SessionChannel, type ChannelVerdict, type ChannelGuard,
   type BoundStoreGuard, type BoundStoreVerdict,
@@ -62,3 +62,4 @@ export * from './idempotency-store';
 export * from './audit-sink';
 export * from './audit-chain';
 export * from './rate-limit';
+export * from './sign-in-attempts';

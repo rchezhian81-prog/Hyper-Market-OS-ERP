@@ -70,7 +70,7 @@ describe('SF-06-b — head office\'s own category list', () => {
     const lying = await post(h, '/v1/catalogue/products/p-rice/publish', 'u-owner', { product: rice, categories: [{ categoryId: 'staples', name: 'Staples', parentId: 'grocery' }, { categoryId: 'grocery', ...GROCERY }] });
     expect(codeOf(lying)).toBe('category_differs_from_head_office');
     // No categories sent: the list is read — and the food rules apply (no allergens, no origin, no net quantity → refused).
-    const bare = await post(h, '/v1/catalogue/products/p-rice/publish', 'u-owner', { product: rice });
+    const bare = await post(h, '/v1/catalogue/products/p-rice/publish', 'u-owner', { product: { ...rice, lifecycle: 'new' } }); // sent to go on sale
     expect(codeOf(bare)).toBe('product_not_publishable');
     expect(JSON.stringify(bare.body)).toMatch(/allergen/);
     const full = { ...rice, safety: { allergens: [], countryOfOrigin: 'India', netQuantity: '5 kg', packerDetails: 'Synthetic Mills, Madurai', consumerCareContact: 'Care desk, 1800-000-0000' } };

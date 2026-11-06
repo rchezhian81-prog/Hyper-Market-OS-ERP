@@ -42,6 +42,7 @@
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
       findScreenHint: 'Find a screen — type a word like cash, GST or expiry', matchesOne: '1 screen matches', matchesMany: '{n} screens match',
       pinned: 'Pinned', recent: 'Recently opened', pinPage: 'Pin this page', unpinPage: 'Unpin this page',
+      signOut: 'Sign out',
       storeAlarm: 'The store computer needs you',
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
       storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
@@ -62,6 +63,7 @@
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
       findScreenHint: 'திரையைத் தேடு — பணம், ஜிஎஸ்டி, காலாவதி போன்ற சொல்லைத் தட்டச்சு செய்க', matchesOne: '1 திரை பொருந்துகிறது', matchesMany: '{n} திரைகள் பொருந்துகின்றன',
       pinned: 'மேலே வைத்தவை', recent: 'சமீபத்தில் திறந்தவை', pinPage: 'இந்தப் பக்கத்தை மேலே வை', unpinPage: 'மேலிருந்து எடு',
+      signOut: 'வெளியேறு',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
       storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
@@ -406,16 +408,29 @@
     return asked === own;
   }
 
+  // W3 · M36-FR-02 (OB-321): the shop's own name and colours, as head office signed them into the pack this store computer
+  // holds (`window.sreBrand`, no network). Absent → the menu keeps its own words; a colour is used only when it is a hex.
+  function shopBrand() {
+    const b = window.sreBrand;
+    if (!b || typeof b !== 'object') return null;
+    const hex = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+    const name = typeof b.productName === 'string' && b.productName.trim() !== '' ? b.productName.trim() : null;
+    return { name, primary: hex(b.colours?.primary), onPrimary: hex(b.colours?.onPrimary) };
+  }
+
   function brand() {
+    const own = shopBrand();
     const block = document.createElement('div');
     block.className = 'brand';
+    if (own) block.setAttribute('data-shop-brand', '');
     const mark = document.createElement('span');
     mark.className = 'mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = 'SRE';
+    mark.textContent = own?.name ? own.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase() : 'SRE';
+    if (own?.primary && own?.onPrimary) { mark.style.background = own.primary; mark.style.color = own.onPrimary; }
     const words = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = 'Hyper Market';
+    name.textContent = own?.name ?? 'Hyper Market';
     const what = document.createElement('small');
     what.textContent = t('workspace');
     words.append(name, what);
@@ -502,6 +517,17 @@
       scroller.append(section);
     }
     panel.append(personCard(nav));
+    // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
+    // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
+    const out = window.sreSignOut && typeof window.sreSignOut.action === 'string' && window.sreSignOut.action.startsWith('/') ? window.sreSignOut.action : null;
+    if (out !== null && !byId('sre-office-bar')) {
+      const form = document.createElement('form');
+      form.method = 'post'; form.action = out; form.id = 'sre-sign-out';
+      const b = document.createElement('button');
+      b.type = 'submit'; b.className = 'sre-sign-out'; b.textContent = t('signOut');
+      form.append(b);
+      panel.append(form);
+    }
     filterMenu(byId('sre-find')?.value ?? '');
     layout();
     const current = scroller.querySelector('.group-section a[aria-current="page"]');
@@ -674,6 +700,40 @@
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
     'findings': 'clipboard-check', // OB-609 — an icon already in the set
+    'staff': 'users', // Round 4c — an icon already in the set
+    'posh-committee': 'book', // Round 4c — an icon already in the set
+    'branches': 'store', // Round 4c — an icon already in the set
+    'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
+    'posting-map': 'book-open', // Round 4d — an icon already in the set
+    'settlement': 'banknote', // W3 — an icon already in the set
+    'facilities-setup': 'wrench', // Round 4d — an icon already in the set
+    'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
+    'production-costs': 'banknote', // W4 — an icon already in the set
+    'data-requests': 'shield-check', // W3 — an icon already in the set
+    'customer-value': 'chart-column', // W3 — an icon already in the set
+    'message-queue': 'message-circle', // W3 — an icon already in the set
+    'compensation-limits': 'banknote', // W3 — an icon already in the set
+    'gift-cards': 'ticket', // W3 — an icon already in the set
+    'partner-webhooks': 'send', // Wave 3 — an icon already in the set
+    'partners': 'key-round', // Wave 3 — an icon already in the set
+    'developer-docs': 'book-open', // Wave 3 — an icon already in the set
+    'floor-devices': 'tag', // Wave 3 — an icon already in the set
+    'branding': 'store', // Wave 3 — an icon already in the set
+    'old-system': 'history', // W3 — an icon already in the set
+    'cert-in': 'shield-check', // Round 4c — an icon already in the set
+    'emergency-access': 'key-round', // Wave 3 — an icon already in the set
+    'training-checks': 'badge-check', // Wave 3 · OB-675 — an icon already in the set
+    'safety-incidents': 'shield-alert', // Wave 3 — an icon already in the set
+    'ops-alerts': 'triangle-alert', // Wave 3 — an icon already in the set
+    'failed-jobs': 'history', // W4 — an icon already in the set
+    'compliance-registers': 'shield-check', // W5 — an icon already in the set
+    'payroll-legal': 'scale', // W5 · OB-684 — an icon already in the set
+    'document-retention': 'files', // Wave 3 — an icon already in the set
+    'sales-commission': 'percent', // Wave 3 — an icon already in the set
+    'space-setup': 'boxes', // Wave 2 — an icon already in the set
+    'display-contracts': 'banknote', // Wave 2 — an icon already in the set
+    'range-clusters': 'calendar-days', // Wave 2 — an icon already in the set
+    'product-checks': 'clipboard-check', // Wave 2 — an icon already in the set
     'switches': 'history',
     'planogram-compliance': 'layout-grid',
     'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set
@@ -722,6 +782,8 @@
     'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
     'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
     'loyalty-desk': 'badge-check', // OB-288 wave 3 (OB-329 · OB-295) — an icon already in the set
+    'online-orders': 'package-check', // W3 (M18) — an icon already in the set
+    'delivery-area': 'truck', // W3 (M18-FR-01/03) — an icon already in the set
     'order-refunds': 'indian-rupee', // OB-288 wave 3 (M18-FR-04) — an icon already in the set
     'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
     'b2b': 'building', // OB-288 commercial desks (M22) — an icon already in the set
@@ -1290,7 +1352,7 @@
     if (drawerReturn && typeof drawerReturn.focus === 'function' && document.contains(drawerReturn)) drawerReturn.focus();
     drawerReturn = null;
   }
-  // ── The confirm sheet (OB-626, 2 Nov 2026 · design system §1.3 · §27.1): consequence, authority, then the person's
+  // ── The confirm sheet (OB-691, 2 Nov 2026 · design system §1.3 · §27.1): consequence, authority, then the person's
   // own word — BEFORE money, stock, a price or a privilege moves. `await sreOffice.confirm({ title, detail, authority,
   // confirmLabel, tone, reason? })` → `{ ok: true, reason? }` only on the confirm button; Go back, Escape, a tap on the
   // scrim, a second ask or leaving the page all answer `{ ok: false }`, and the page sends nothing on that. The safe
