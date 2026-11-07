@@ -99,7 +99,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Incide
       // A follow-up owned by somebody who works nowhere here: head office refuses it, in its words.
       await s.page.fill('#a-desc', 'Put the router on the UPS');
       await s.page.fill('#a-owner', 'u-nobody-here');
-      await s.page.fill('#a-due', '2026-10-20');
+      await s.page.fill('#a-due', '20/10/2026');
       await s.page.click('#a-add');
       await says(s.page, 'record-status', /^Head office refused: u-nobody-here holds no sign-in at this shop/);
       // The store manager owns it.

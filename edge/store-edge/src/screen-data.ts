@@ -2221,6 +2221,12 @@ export function categoryPolicyPayload(input: ScreenInput): Record<string, unknow
   const payload: Record<string, unknown> = { permissions: policy.permissions, onDate: input.tradingDay };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
   if (input.pack.categoryPolicyCategories.known) payload['categories'] = input.pack.categoryPolicyCategories.value;
+  // U2 (G16): the category's NAME beside its rules, from the pack's categories, so the page never shows a bare id.
+  if (input.pack.categories.known) {
+    payload['categoryNames'] = Object.fromEntries(
+      input.pack.categories.value.map((c) => [c.categoryId, c.name] as const),
+    );
+  }
 
   return payload;
 }

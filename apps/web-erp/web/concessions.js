@@ -4,6 +4,26 @@
 // shows nothing else. Every write is a click; every word has a Tamil twin; every button carries an icon beside its word.
 
 const $ = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.concessions ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
@@ -12,7 +32,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const money = (minor) => (api === null ? String(minor) : api.rupees(minor));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let counters = null; let asked = []; let off = false;
 
@@ -58,7 +78,7 @@ function paint() {
   for (const [id, key] of [['counters-h', 'countersH'], ['raise-text', 'raise'], ['contract-h', 'contractH'], ['f-id-l', 'contractId'], ['f-who-l', 'concessionaire'], ['f-name-l', 'name'], ['f-branch-l', 'branch'], ['f-start-l', 'startsOn'], ['f-end-l', 'endsOn'],
     ['f-basis-l', 'basis'], ['f-basis-rent', 'basis_fixed_rent'], ['f-basis-share', 'basis_revenue_share'], ['f-basis-higher', 'basis_higher_of_both'], ['f-rent-l', 'rent'], ['f-share-l', 'share'], ['f-util-l', 'utilities'], ['f-deposit-l', 'deposit'], ['f-ins-l', 'insurance'], ['f-lic-l', 'licence'],
     ['f-save-text', 'save'], ['f-ask-text', 'askApproval'], ['deposit-h', 'depositH'], ['d-who-l', 'concessionaire'], ['d-kind-l', 'movement'], ['d-kind-in', 'received'], ['d-kind-out', 'refunded'], ['d-kind-forfeit', 'forfeited'], ['d-amount-l', 'amount'], ['d-save-text', 'recordDeposit'],
-    ['money-h', 'chargeH'], ['m-contract-l', 'contractPick'], ['m-from-l', 'from'], ['m-to-l', 'to'], ['m-metered-l', 'metered'], ['m-banked-l', 'banked'], ['m-charge-text', 'readCharge'], ['m-settle-text', 'readSettlement']]) $(id).textContent = t(key);
+    ['money-h', 'chargeH'], ['m-contract-l', 'contractPick'], ['m-from-l', 'from'], ['m-to-l', 'to'], ['m-metered-l', 'metered'], ['m-banked-l', 'banked'], ['m-charge-text', 'readCharge'], ['m-settle-text', 'readSettlement']]) { const n = $(id); if (n) n.textContent = t(key); }
   if (off) $('page-status').textContent = t('off');
   paintCounters(); paintAsked();
 }
@@ -77,8 +97,8 @@ async function load() {
   const a = await session.readMyRequests(); if (a.result === 'ok') asked = a.value;
   paintCounters(); paintAsked();
 }
-const form = () => ({ contractId: $('f-id').value, concessionaireId: $('f-who').value, name: $('f-name').value, branchId: $('f-branch').value, startsOn: $('f-start').value, endsOn: $('f-end').value, basis: $('f-basis').value,
-  rentRupees: $('f-rent').value, sharePercent: $('f-share').value, utilitiesRupees: $('f-util').value, depositRupees: $('f-deposit').value, insuranceUntil: $('f-ins').value, licenceUntil: $('f-lic').value });
+const form = () => ({ contractId: $('f-id').value, concessionaireId: $('f-who').value, name: $('f-name').value, branchId: $('f-branch').value, startsOn: dateOf('f-start'), endsOn: dateOf('f-end'), basis: $('f-basis').value,
+  rentRupees: $('f-rent').value, sharePercent: $('f-share').value, utilitiesRupees: $('f-util').value, depositRupees: $('f-deposit').value, insuranceUntil: dateOf('f-ins'), licenceUntil: dateOf('f-lic') });
 
 for (const [id, name] of [['raise', 'send'], ['f-save', 'file-text'], ['f-ask', 'hand'], ['d-save', 'banknote'], ['m-charge', 'calculator'], ['m-settle', 'scale']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
@@ -100,6 +120,9 @@ else {
     say('d-status', o); if (o.result === 'ok') await load();
   });
   const figs = (o, keys) => { const box = $('m-figs'); box.replaceChildren(); if (o.result !== 'ok') { say('m-status', o); return; } $('m-status').textContent = ''; for (const [label, key, isMoney] of keys) if (o.value[key] !== undefined) box.append(fig(t(label), isMoney ? money(o.value[key]) : o.value[key] ? t('reconciles') : `⚠ ${t('doesNot')}`)); };
-  $('m-charge').addEventListener('click', async () => figs(await session.readCharge($('m-contract').value, $('m-from').value, $('m-to').value, $('m-metered').value), [['gross', 'grossSalesMinor', true], ['charge', 'chargeMinor', true], ['totalDue', 'totalDueMinor', true]]));
-  $('m-settle').addEventListener('click', async () => figs(await session.readSettlement($('m-contract').value, $('m-from').value, $('m-to').value, $('m-banked').value), [['collected', 'collectedForThemMinor', true], ['charge', 'chargeMinor', true], ['payable', 'payableToThemMinor', true], ['difference', 'differenceMinor', true], ['reconciles', 'reconciles', false]]));
+  $('m-charge').addEventListener('click', async () => figs(await session.readCharge($('m-contract').value, dateOf('m-from'), dateOf('m-to'), $('m-metered').value), [['gross', 'grossSalesMinor', true], ['charge', 'chargeMinor', true], ['totalDue', 'totalDueMinor', true]]));
+  $('m-settle').addEventListener('click', async () => figs(await session.readSettlement($('m-contract').value, dateOf('m-from'), dateOf('m-to'), $('m-banked').value), [['collected', 'collectedForThemMinor', true], ['charge', 'chargeMinor', true], ['payable', 'payableToThemMinor', true], ['difference', 'differenceMinor', true], ['reconciles', 'reconciles', false]]));
 }
+
+// ── U2b (G14): a date a shop person reads — the contract and settlement dates on the shared dd/mm field, ISO sent as before
+if (api !== null) for (const [id, key] of [['f-start', 'startsOn'], ['f-end', 'endsOn'], ['f-ins', 'insurance'], ['f-lic', 'licence'], ['m-from', 'from'], ['m-to', 'to']]) shopDate(id, { en: api.words('en', key), ta: api.words('ta', key) });

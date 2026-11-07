@@ -23,7 +23,7 @@
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       p.lead { margin: 0; color: var(--muted); font-size: 15px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
       button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .status { font-size: 15px; min-height: 20px; margin: 0; }
       .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
@@ -42,7 +42,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Product checks</h2>
         <p class="lead" id="lead"></p>
-        <button id="refresh" type="button">Check the products again</button>
+        <button id="refresh" type="button" class="sre-btn sre-btn-primary">Check the products again</button>
         <div id="cards"></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>

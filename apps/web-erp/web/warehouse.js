@@ -15,6 +15,52 @@
 // NOTE: the Tamil below is pending a native-speaker review before go-live (OWNER-ACTION OA-10).
 
 const el = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// the pickers' words follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 
 const WORDS = {
   en: {
@@ -205,9 +251,9 @@ function renderApprovals() {
     if (row.actionable) {
       const buttons = document.createElement('div');
       buttons.className = 'buttons';
-      const approve = document.createElement('button'); approve.className = 'approve'; approve.type = 'button'; approve.textContent = t('approve');
+      const approve = document.createElement('button'); approve.className = 'approve sre-btn'; approve.type = 'button'; approve.textContent = t('approve');
       approve.addEventListener('click', () => openReason(row.request.id, 'approved'));
-      const reject = document.createElement('button'); reject.className = 'reject'; reject.type = 'button'; reject.textContent = t('reject');
+      const reject = document.createElement('button'); reject.className = 'reject sre-btn sre-btn-danger'; reject.type = 'button'; reject.textContent = t('reject');
       reject.addEventListener('click', () => openReason(row.request.id, 'rejected'));
       buttons.append(approve, reject);
       box.append(buttons);
@@ -228,7 +274,7 @@ function openReason(requestId, decision) {
   const choices = el('reason-choices');
   choices.textContent = '';
   for (const code of decision === 'approved' ? APPROVE_CODES : REJECT_CODES) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = t(code);
+    const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t(code);
     b.addEventListener('click', () => { el('reason-sheet').hidden = true; submit(requestId, decision, code); });
     choices.append(b);
   }
@@ -334,3 +380,12 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+// ── U2b (G5): pick by name, never type a code (the typed id stays the fallback when the list cannot be read)
+const storeScope = () => ({ storeId: window.sreOffice?.me?.()?.storeId });
+pickable('t-from', 'place', 'pickPlace', { scope: storeScope });
+pickable('t-to', 'place', 'pickPlace', { scope: storeScope });
+pickable('k-bin', 'place', 'pickPlace', { scope: storeScope });
+pickable('t-product', 'product', 'pickProduct');
+pickable('k-product', 'product', 'pickProduct');
+pickable('k-assignee', 'person', 'pickPerson', { scope: storeScope });

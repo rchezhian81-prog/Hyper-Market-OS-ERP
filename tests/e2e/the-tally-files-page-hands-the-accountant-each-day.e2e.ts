@@ -139,11 +139,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     // The original stays on the record, in the dead letter's history (never deleted).
     expect(await page.locator(`#files li.row[data-posting="tally-day:${DAY_DEAD}:1"]`).getAttribute('data-state')).toBe('dead_lettered');
 
-    // The month's trial balance, balanced; a month written wrong is refused on the page.
-    await page.fill('#tb-month', '2026-13');
-    await page.click('#tb-read');
-    expect(await page.textContent('#tb-status')).toBe('Write the month as YYYY-MM.');
-    await page.fill('#tb-month', DAY_DEAD.slice(0, 7));
+    // The month's trial balance, balanced. U2: the month is PICKED from the last 24 months (named), so a month written
+    // wrong cannot reach the page — the list simply has no such option.
+    expect(await page.locator('#tb-month option[value="2026-13"]').count()).toBe(0);
+    expect(await page.locator('#tb-month').evaluate((e) => e.tagName)).toBe('SELECT');
+    await page.selectOption('#tb-month', DAY_DEAD.slice(0, 7));
     await page.click('#tb-read');
     await page.locator('#tb-rows tr').first().waitFor({ timeout: 15_000 });
     expect(await page.textContent('#tb-status')).toBe('✓ Balanced — debit and credit agree to the paisa.');

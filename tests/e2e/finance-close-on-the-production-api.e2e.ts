@@ -33,6 +33,8 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/day-book'
  * Synthetic data, a fresh tenant. Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['finance', 'close', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
@@ -45,6 +47,13 @@ const PERIOD = new Date().toISOString().slice(0, 7);
 const TODAY = new Date().toISOString().slice(0, 10);
 
 interface Row { attemptId: string; state: string; conflicts: unknown[]; resolution: { paid: boolean } | null }
+
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-end page on the production API, in a real browser (M23 · WF-18 · D10)', () => {
   let browser: Browser;
@@ -183,6 +192,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
       await says(s.page, '#stock-blockers', /Ponni rice 5kg at store-1: 5 each on hand with no buying cost/);
       expect(await s.page.locator('#stock-blockers li[data-kind="outstanding"]').allInnerTexts()).toEqual(['Not in the books yet: count:C1', 'Not in the books yet: write_off:W1']);
       await s.page.click('#post-adjustment');
+      await confirmSheet(s.page);
       await says(s.page, '#post-status', /^Head office refused: 2 count difference\(s\), write-off\(s\) or shortfall\(s\) of .* are not in the books yet: count:C1, write_off:W1/);
       expect(s.writes).toEqual([`POST /v1/finance/periods/${PERIOD}/stock-adjustment`]);
       expect(s.errors).toEqual([]);
@@ -201,6 +211,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
       expect(await s.page.locator('[data-tile="closing"] b').innerText()).toBe('₹450.00'); // oil 7 @ ₹50, rice 10 @ ₹10
       expect(await s.page.locator('[data-tile="cogs"] b').innerText()).toBe('₹50.00');
       await s.page.click('#post-adjustment');
+      await confirmSheet(s.page);
       await says(s.page, '#post-status', /^Posted — one journal for the month\./);
       await says(s.page, '#stock-posted', /Already posted for this month — nothing posted twice\. posted by u-acct\./);
       expect(await s.page.locator('#post-adjustment').isHidden()).toBe(true);
@@ -240,7 +251,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
       // The freezer: ₹12,000, nothing left at the end, 12 months, in service mid-month.
       await s.page.click('#asset-add summary');
       for (const [id, v] of [['#a-id', 'FA-FRZ-1'], ['#a-name', 'Chest freezer'], ['#a-category', 'refrigeration'], ['#a-store', 'store-1'], ['#a-cost', '12000'], ['#a-salvage', '0'], ['#a-life', '12']] as const) await s.page.fill(id, v);
-      await s.page.fill('#a-in', `${PERIOD}-15`);
+      await s.page.fill('#a-in', ddmm(`${PERIOD}-15`));
       await s.page.click('#asset-add-go');
       await says(s.page, '#asset-add-status', /^Added — head office kept it\./);
       await s.page.fill('#a-cost', '15000');
@@ -248,9 +259,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
       await says(s.page, '#asset-add-status', /^Head office refused: FA-FRZ-1 is already on the register with other figures\. A register entry is never edited\./);
       // The run: the acquisition and ONE FULL month (OB-67: from the month it went into service, even mid-month).
       await s.page.click('#run-depreciation');
+      await confirmSheet(s.page);
       await says(s.page, '#run-status', /^2 journal\(s\) posted\./);
       await says(s.page, '#assets-list li[data-asset="FA-FRZ-1"]', /₹1,000\.00 a month · depreciated so far ₹1,000\.00 · worth in the books ₹11,000\.00/);
       await s.page.click('#run-depreciation');
+      await confirmSheet(s.page);
       await says(s.page, '#run-status', /^Nothing new to post/);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

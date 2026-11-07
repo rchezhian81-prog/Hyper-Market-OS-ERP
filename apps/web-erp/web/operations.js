@@ -104,7 +104,7 @@ function rowNode(r, mayDismiss, isOpen) {
     li.append(actions);
   } else if (mayDismiss && !isOpen) {
     const actions = document.createElement('div'); actions.className = 'actions';
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act reopen'; btn.textContent = t('reopenBtn');
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act reopen sre-btn'; btn.textContent = t('reopenBtn');
     btn.addEventListener('click', () => act(() => session.reopen(r.findingId)));
     actions.append(btn);
     li.append(actions);

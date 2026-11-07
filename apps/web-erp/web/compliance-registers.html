@@ -25,7 +25,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       form.row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; border-top: 1px solid var(--line); padding-top: 10px; }
@@ -77,20 +77,20 @@
           <label for="lic-person"><span data-w="personId"></span><input id="lic-person" autocomplete="off" /></label>
           <label for="lic-person-name"><span data-w="personName"></span><input id="lic-person-name" autocomplete="off" /></label>
           <label for="lic-escalate"><span data-w="escalatesTo"></span><input id="lic-escalate" autocomplete="off" /></label>
-          <button id="lic-go" type="submit" data-w="registerGo"></button>
+          <button id="lic-go" type="submit" data-w="registerGo" class="sre-btn"></button>
         </form>
         <form class="row-form" id="ev-form" hidden>
           <h4 data-w="evidenceH"></h4>
           <label for="ev-which"><span data-w="which"></span><select id="ev-which"></select></label>
           <label for="ev-ref"><span data-w="evidenceRef"></span><input id="ev-ref" autocomplete="off" /></label>
           <label for="ev-what"><span data-w="evidenceWhat"></span><input id="ev-what" autocomplete="off" /></label>
-          <button id="ev-go" type="submit" data-w="evidenceGo"></button>
+          <button id="ev-go" type="submit" data-w="evidenceGo" class="sre-btn"></button>
         </form>
         <form class="row-form" id="cl-form" hidden>
           <h4 data-w="closeH"></h4>
           <label for="cl-which"><span data-w="which"></span><select id="cl-which"></select></label>
           <label for="cl-why"><span data-w="closeWhy"></span><input id="cl-why" autocomplete="off" /></label>
-          <button id="cl-go" type="submit" class="quiet" data-w="closeGo"></button>
+          <button id="cl-go" type="submit" class="quiet sre-btn sre-btn-quiet" data-w="closeGo"></button>
         </form>
       </section>
 
@@ -108,7 +108,7 @@
           <label for="ctl-title"><span data-w="controlTitle"></span><input id="ctl-title" autocomplete="off" /></label>
           <label for="ctl-impl"><span data-w="controlImplements"></span><input id="ctl-impl" autocomplete="off" /></label>
           <label for="ctl-owner"><span data-w="controlOwner"></span><input id="ctl-owner" autocomplete="off" /></label>
-          <button id="ctl-go" type="submit" data-w="controlGo"></button>
+          <button id="ctl-go" type="submit" data-w="controlGo" class="sre-btn"></button>
         </form>
         <form class="row-form" id="inc-form" hidden>
           <h4 data-w="incidentH"></h4>
@@ -117,7 +117,7 @@
           <label for="inc-occ"><span data-w="occurredAt"></span><input id="inc-occ" type="datetime-local" /></label>
           <label for="inc-det"><span data-w="detectedAt"></span><input id="inc-det" type="datetime-local" /></label>
           <label for="inc-ctl"><span data-w="control"></span><select id="inc-ctl"></select></label>
-          <button id="inc-go" type="submit" data-w="incidentGo"></button>
+          <button id="inc-go" type="submit" data-w="incidentGo" class="sre-btn"></button>
         </form>
         <form class="row-form" id="rem-form" hidden>
           <h4 data-w="remediationH"></h4>
@@ -125,13 +125,13 @@
           <label for="rem-action"><span data-w="action"></span><input id="rem-action" autocomplete="off" /></label>
           <label for="rem-owner"><span data-w="remOwner"></span><input id="rem-owner" autocomplete="off" /></label>
           <label for="rem-due"><span data-w="dueOn"></span><input id="rem-due" type="date" /></label>
-          <button id="rem-go" type="submit" data-w="remediationGo"></button>
+          <button id="rem-go" type="submit" data-w="remediationGo" class="sre-btn"></button>
         </form>
         <form class="row-form" id="att-form" hidden>
           <h4 data-w="attestH"></h4>
           <label for="att-ctl"><span data-w="control"></span><select id="att-ctl"></select></label>
           <label for="att-stmt"><span data-w="statement"></span><input id="att-stmt" autocomplete="off" /></label>
-          <button id="att-go" type="submit" data-w="attestGo"></button>
+          <button id="att-go" type="submit" data-w="attestGo" class="sre-btn"></button>
         </form>
       </section>
 
@@ -147,7 +147,7 @@
           <label for="fnd-title"><span data-w="findingTitle"></span><input id="fnd-title" autocomplete="off" /></label>
           <label for="fnd-loc"><span data-w="location"></span><input id="fnd-loc" autocomplete="off" /></label>
           <label for="fnd-owner"><span data-w="findingOwner"></span><input id="fnd-owner" autocomplete="off" /></label>
-          <button id="fnd-go" type="submit" data-w="raiseGo"></button>
+          <button id="fnd-go" type="submit" data-w="raiseGo" class="sre-btn"></button>
         </form>
       </section>
     </main>

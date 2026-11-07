@@ -28,7 +28,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; max-width: 100%; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; max-width: 100%; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; max-width: 100%; }
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; min-width: 0; }
@@ -50,7 +50,12 @@
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 14px; }
       [hidden] { display: none !important; }
-    </style>
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -68,7 +73,7 @@
             <h2 id="page-h">Store computers</h2>
             <p class="lead" id="lead">Which store computer each till's bill numbers belong to, what needs a person, and moving a till to a replacement store computer with the owner's approval.</p>
           </div>
-          <button id="open-replace" type="button" hidden>Record a replaced store computer</button>
+          <button id="open-replace" type="button" hidden class="sre-btn">Record a replaced store computer</button>
         </div>
         <div class="panels" role="status" aria-live="polite">
           <div class="panel" id="p-bindings"><span class="k" id="k-bindings">Tills with a store computer</span><span class="v" id="v-bindings">—</span></div>
@@ -140,7 +145,7 @@
         <label for="f-from"><span id="l-f-from">Old store computer (its sign-in)</span><input id="f-from" autocomplete="off" /></label>
         <label for="f-to"><span id="l-f-to">New store computer (its sign-in)</span><input id="f-to" autocomplete="off" /></label>
         <label for="f-reason"><span id="l-f-reason">Why</span><input id="f-reason" autocomplete="off" /></label>
-        <div class="head-row"><button id="f-ask" type="button">Ask the owner's approval</button><button id="f-cancel" class="quiet" type="button">Close</button></div>
+        <div class="head-row"><button id="f-ask" type="button" class="sre-btn sre-btn-primary">Ask the owner's approval</button><button id="f-cancel" class="quiet sre-btn sre-btn-quiet" type="button">Close</button></div>
         <p class="status" id="replace-status" role="status" aria-live="polite"></p>
       </div>
     </div>

@@ -41,6 +41,7 @@ const WORDS = {
     waitingForYou: 'Waiting for you', alerts: 'Alerts', lookAgain: 'Look at these again',
     decidedNotSent: 'Decided, not yet sent', nothingToDecide: 'Nothing needs a decision right now.',
     noAlerts: 'No alerts today.', nothingWaiting: 'Nothing is waiting for you.',
+    notKnownNever: 'Not known — no data has ever reached this phone.', notKnownStale: 'Not known — the last word from the shop was',
     live: 'Live · synced', notLive: 'NOT LIVE — last synced', neverSynced: 'No data has ever reached this phone',
     justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hours ago',
     sales: 'Taken today', margin: 'Margin', bills: 'Bills', averageBasket: 'Average basket',
@@ -85,6 +86,7 @@ const WORDS = {
     waitingForYou: 'உங்களுக்காகக் காத்திருப்பவை', alerts: 'எச்சரிக்கைகள்', lookAgain: 'இவற்றை மீண்டும் பாருங்கள்',
     decidedNotSent: 'முடிவு செய்யப்பட்டது, இன்னும் அனுப்பப்படவில்லை', nothingToDecide: 'இப்போது எந்த முடிவும் தேவையில்லை.',
     noAlerts: 'இன்று எச்சரிக்கை எதுவும் இல்லை.', nothingWaiting: 'உங்களுக்காக எதுவும் காத்திருக்கவில்லை.',
+    notKnownNever: 'தெரியாது — இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை.', notKnownStale: 'தெரியாது — கடையிலிருந்து கடைசித் தகவல் வந்தது',
     live: 'நேரலை · ஒத்திசைவு', notLive: 'நேரலை அல்ல — கடைசி ஒத்திசைவு', neverSynced: 'இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை',
     justNow: 'இப்போதுதான்', minutesAgo: 'நிமிடங்களுக்கு முன்', hoursAgo: 'மணி நேரத்திற்கு முன்',
     sales: 'இன்று வசூல்', margin: 'லாபம்', bills: 'பில்கள்', averageBasket: 'சராசரி கூடை',
@@ -375,11 +377,16 @@ function renderBranches() {
   }));
 }
 
-/** UI-3: an empty list on a phone that has never been told anything is "not known" — never "nothing needs you" (P-08). */
+/**
+ * UI-3 · U0 (P-08): an empty list is good news only on live data. On a phone that has never been told anything, or whose
+ * data is stale, "nothing needs you" is a guess — the list says "not known" and how old the last word was.
+ */
 function emptyLine(words, freshness) {
   const none = document.createElement('p');
-  none.className = freshness.state === 'missing' ? 'empty unknown' : 'empty';
-  none.textContent = freshness.state === 'missing' ? t('notKnownNoData') : words;
+  none.className = freshness.state === 'fresh' ? 'empty' : 'empty unknown';
+  none.textContent = freshness.state === 'missing' ? t('notKnownNoData')
+    : freshness.state === 'stale' ? `${t('notKnownStale')} ${ageInWords(freshness.ageSeconds)}.`
+    : words;
   return none;
 }
 const countOf = (list, freshness) => (freshness.state === 'missing' ? '' : `(${list.length})`);

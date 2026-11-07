@@ -31,7 +31,7 @@
       label.check { display: inline-flex; gap: 8px; align-items: center; min-height: var(--tap); }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       label.check input { min-height: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       /* A real target both ways even before its words load (§1, ≥ 44px). */
       button, input:not([type="checkbox"]):not([type="radio"]), select { min-width: var(--tap); }
@@ -42,8 +42,8 @@
       ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; font-size: 14px; }
       ul.rows > li.tone-ok { border-left-color: var(--ok); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); } ul.rows > li.tone-error { border-left-color: var(--error); }
       .verdict { font-weight: 700; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-      .facts { font-size: 13px; color: var(--muted); }
-      pre.kept-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; margin: 0; }
+      .facts { font-size: var(--fs-sm); color: var(--muted); }
+      pre.kept-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: var(--fs-sm); margin: 0; }
       a.quiet-link { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-weight: 600; }
       @media print { body.printing > header, body.printing > p, body.printing main > section:not(.printing), body.printing main > section.printing > :not(pre.printing) { display: none !important; } body.printing pre.kept-text.printing { border: 0; display: block !important; } }
       [hidden] { display: none !important; }
@@ -75,10 +75,10 @@
           <label for="src-basis"><span data-w="srcBasis"></span><select id="src-basis"></select></label>
           <label for="src-retention"><span data-w="srcRetention"></span><input id="src-retention" type="text" inputmode="numeric" autocomplete="off" /></label>
           <label class="check" for="src-extract"><input id="src-extract" type="checkbox" checked /> <span data-w="srcExtract"></span></label>
-          <button id="src-add" type="button" class="quiet"><span data-w="addSource"></span></button>
+          <button id="src-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addSource"></span></button>
         </div>
         <ul class="rows" id="src-list"></ul>
-        <button id="src-check" type="button"><span data-w="checkSources"></span></button>
+        <button id="src-check" type="button" class="sre-btn"><span data-w="checkSources"></span></button>
         <p class="status" id="disc-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="disc-result"></ul>
       </section>
@@ -96,7 +96,7 @@
           <label for="map-old"><span data-w="mapOld"></span><input id="map-old" type="text" autocomplete="off" /></label>
           <label for="map-new"><span data-w="mapNew"></span><input id="map-new" type="text" autocomplete="off" /></label>
           <label for="map-why"><span data-w="mapWhy"></span><input id="map-why" type="text" autocomplete="off" /></label>
-          <button id="map-add" type="button" class="quiet"><span data-w="addEntry"></span></button>
+          <button id="map-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addEntry"></span></button>
         </div>
         <ul class="rows" id="map-list"></ul>
         <h4 data-w="seenH"></h4>
@@ -104,12 +104,12 @@
           <label for="seen-domain"><span data-w="mapDomain"></span><select id="seen-domain"></select></label>
           <label for="seen-value"><span data-w="seenValue"></span><input id="seen-value" type="text" autocomplete="off" /></label>
           <label for="seen-rows"><span data-w="seenRows"></span><input id="seen-rows" type="text" inputmode="numeric" autocomplete="off" /></label>
-          <button id="seen-add" type="button" class="quiet"><span data-w="addSeen"></span></button>
+          <button id="seen-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="addSeen"></span></button>
         </div>
         <ul class="rows" id="seen-list"></ul>
         <div class="row-form">
-          <button id="map-approve" type="button"><span data-w="approveMapping"></span></button>
-          <button id="map-coverage" type="button"><span data-w="checkCoverage"></span></button>
+          <button id="map-approve" type="button" class="sre-btn"><span data-w="approveMapping"></span></button>
+          <button id="map-coverage" type="button" class="sre-btn"><span data-w="checkCoverage"></span></button>
         </div>
         <p class="status" id="map-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="map-result"></ul>
@@ -120,7 +120,7 @@
       <section aria-labelledby="excl-h" id="excl">
         <h3 id="excl-h">Old records left behind</h3>
         <p class="lead" id="excl-lead"></p>
-        <button id="excl-show" type="button" class="quiet"><span data-w="showExclusions"></span></button>
+        <button id="excl-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showExclusions"></span></button>
         <ul class="rows" id="excl-list"></ul>
         <div id="excl-propose">
           <div class="row-form">
@@ -131,7 +131,7 @@
           </div>
           <label for="excl-desc"><span data-w="exclDesc"></span><input id="excl-desc" type="text" autocomplete="off" /></label>
           <label for="excl-reason"><span data-w="exclReason"></span><textarea id="excl-reason" rows="2"></textarea></label>
-          <button id="excl-propose-btn" type="button"><span data-w="proposeExclusion"></span></button>
+          <button id="excl-propose-btn" type="button" class="sre-btn"><span data-w="proposeExclusion"></span></button>
         </div>
         <div id="excl-decide">
           <div class="row-form">
@@ -141,7 +141,7 @@
             </label>
           </div>
           <label for="excl-statement"><span data-w="statementK"></span><textarea id="excl-statement" rows="2"></textarea></label>
-          <button id="excl-decide-btn" type="button"><span data-w="decideExclusion"></span></button>
+          <button id="excl-decide-btn" type="button" class="sre-btn"><span data-w="decideExclusion"></span></button>
         </div>
         <p class="status" id="excl-status" role="status" aria-live="polite"></p>
       </section>
@@ -150,7 +150,7 @@
       <section aria-labelledby="diff-h" id="diff">
         <h3 id="diff-h">Compare two exports from the old system</h3>
         <p class="lead" id="diff-lead"></p>
-        <button id="diff-show" type="button" class="quiet"><span data-w="showDiffs"></span></button>
+        <button id="diff-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showDiffs"></span></button>
         <ul class="rows" id="diff-runs"></ul>
         <div id="diff-form">
           <div class="row-form">
@@ -162,7 +162,7 @@
             <label for="diff-baseline"><span data-w="baselineFile"></span><input id="diff-baseline" type="file" accept=".csv,text/csv" /></label>
             <label for="diff-latest"><span data-w="latestFile"></span><input id="diff-latest" type="file" accept=".csv,text/csv" /></label>
           </div>
-          <button id="diff-run" type="button"><span data-w="runDiff"></span></button>
+          <button id="diff-run" type="button" class="sre-btn"><span data-w="runDiff"></span></button>
         </div>
         <p class="status" id="diff-status" role="status" aria-live="polite"></p>
       </section>
@@ -175,7 +175,7 @@
           <label for="seal-file"><span data-w="sealFile"></span><input id="seal-file" type="file" accept=".json,application/json" /></label>
           <label for="seal-extract"><span data-w="extractFile"></span><input id="seal-extract" type="file" accept=".csv,text/csv" /></label>
         </div>
-        <button id="seal-verify" type="button"><span data-w="verifyBtn"></span></button>
+        <button id="seal-verify" type="button" class="sre-btn"><span data-w="verifyBtn"></span></button>
         <p class="status" id="seal-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="seal-result"></ul>
       </section>
@@ -184,7 +184,7 @@
       <section aria-labelledby="prob-h" id="prob">
         <h3 id="prob-h">Problems in the old data</h3>
         <p class="lead" id="prob-lead"></p>
-        <button id="prob-show" type="button" class="quiet"><span data-w="showProblems"></span></button>
+        <button id="prob-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showProblems"></span></button>
         <ul class="rows" id="prob-list"></ul>
         <div id="prob-decide">
           <div class="row-form">
@@ -193,7 +193,7 @@
             <label for="prob-survivor"><span data-w="excSurvivor"></span><input id="prob-survivor" type="text" autocomplete="off" /></label>
           </div>
           <label for="prob-reason"><span data-w="excReason"></span><textarea id="prob-reason" rows="2"></textarea></label>
-          <button id="prob-decide-btn" type="button"><span data-w="decideProblem"></span></button>
+          <button id="prob-decide-btn" type="button" class="sre-btn"><span data-w="decideProblem"></span></button>
         </div>
         <p class="status" id="prob-status" role="status" aria-live="polite"></p>
       </section>
@@ -209,7 +209,7 @@
           <label for="trial-full"><span data-w="trialFull"></span><input id="trial-full" type="text" inputmode="numeric" autocomplete="off" /></label>
           <label class="check" for="trial-empty"><input id="trial-empty" type="checkbox" /> <span data-w="trialEmpty"></span></label>
         </div>
-        <button id="trial-run" type="button"><span data-w="runTrial"></span></button>
+        <button id="trial-run" type="button" class="sre-btn"><span data-w="runTrial"></span></button>
         <p class="status" id="trial-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="trial-result"></ul>
       </section>
@@ -218,14 +218,14 @@
       <section aria-labelledby="tot-h" id="tot">
         <h3 id="tot-h">The figures (control totals)</h3>
         <p class="lead" id="tot-lead"></p>
-        <button id="tot-show" type="button" class="quiet"><span data-w="showTotals"></span></button>
+        <button id="tot-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showTotals"></span></button>
         <ul class="rows" id="tot-list"></ul>
         <div id="tot-sign">
           <div class="row-form">
             <label for="tot-which"><span data-w="totWhich"></span><select id="tot-which"></select></label>
           </div>
           <label for="tot-statement"><span data-w="totStatement"></span><textarea id="tot-statement" rows="2"></textarea></label>
-          <button id="tot-sign-btn" type="button"><span data-w="signTotal"></span></button>
+          <button id="tot-sign-btn" type="button" class="sre-btn"><span data-w="signTotal"></span></button>
         </div>
         <p class="status" id="tot-status" role="status" aria-live="polite"></p>
       </section>
@@ -236,8 +236,8 @@
         <p class="lead" id="gate-lead"></p>
         <div class="row-form">
           <label for="gate-cutover"><span data-w="gateCutover"></span><input id="gate-cutover" type="text" autocomplete="off" /></label>
-          <button id="gate-read" type="button"><span data-w="readGate"></span></button>
-          <button id="gate-rollback" type="button" class="quiet"><span data-w="showRollback"></span></button>
+          <button id="gate-read" type="button" class="sre-btn"><span data-w="readGate"></span></button>
+          <button id="gate-rollback" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showRollback"></span></button>
         </div>
         <p class="status" id="gate-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="gate-result"></ul>
@@ -250,8 +250,8 @@
         <p class="lead" id="night-lead"></p>
         <div class="row-form">
           <label for="cutover-id"><span data-w="cutoverId"></span><input id="cutover-id" type="text" autocomplete="off" /></label>
-          <button id="window-show" type="button" class="quiet"><span data-w="showWindow"></span></button>
-          <button id="night-check" type="button"><span data-w="nightCheck"></span></button>
+          <button id="window-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showWindow"></span></button>
+          <button id="night-check" type="button" class="sre-btn"><span data-w="nightCheck"></span></button>
         </div>
         <ul class="rows" id="night-result"></ul>
         <div class="row-form">
@@ -259,9 +259,9 @@
           <label for="reverse-reason"><span data-w="reverseReason"></span><input id="reverse-reason" type="text" autocomplete="off" /></label>
         </div>
         <div class="row-form">
-          <button id="reverse-ask" type="button"><span data-w="askReverse"></span></button>
-          <button id="reverse-approve" type="button"><span data-w="approveReverse"></span></button>
-          <button id="reverse-show" type="button" class="quiet"><span data-w="showReverse"></span></button>
+          <button id="reverse-ask" type="button" class="sre-btn"><span data-w="askReverse"></span></button>
+          <button id="reverse-approve" type="button" class="sre-btn"><span data-w="approveReverse"></span></button>
+          <button id="reverse-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="showReverse"></span></button>
         </div>
         <p class="status" id="night-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="reverse-result"></ul>
@@ -284,7 +284,7 @@
           <label for="ar-open"><span data-w="openAssessments"></span><input id="ar-open" type="text" inputmode="numeric" value="0" autocomplete="off" /></label>
           <label class="check" for="ar-accepted"><input id="ar-accepted" type="checkbox" /> <span data-w="cutoverAccepted"></span></label>
         </div>
-        <button id="ar-assess" type="button"><span data-w="assess"></span></button>
+        <button id="ar-assess" type="button" class="sre-btn"><span data-w="assess"></span></button>
         <p class="status" id="retire-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="retire-result"></ul>
       </section>
@@ -300,7 +300,7 @@
           <label for="run-sources"><span data-e="runSources">Sources it took (comma between)</span><input id="run-sources" type="text" autocomplete="off" /></label>
           <label for="run-note"><span data-e="runNote">Note</span><input id="run-note" type="text" autocomplete="off" /></label>
         </div>
-        <button id="run-record" type="button"><span data-e="runRecord">Record who ran it</span></button>
+        <button id="run-record" type="button" class="sre-btn"><span data-e="runRecord">Record who ran it</span></button>
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
 
         <h4 id="wit-h"></h4>
@@ -338,26 +338,26 @@
           <label for="wit-cost"><span data-e="pointCost">What one point costs the shop (₹)</span><input id="wit-cost" type="text" inputmode="decimal" autocomplete="off" /></label>
         </div>
         <div class="row-form" id="wit-files"></div>
-        <button id="wit-record" type="button"><span data-e="recordWitness">Give this evidence to head office</span></button>
+        <button id="wit-record" type="button" class="sre-btn"><span data-e="recordWitness">Give this evidence to head office</span></button>
         <p class="status" id="wit-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="wit-result"></ul>
 
         <h4 id="prog-h"></h4>
-        <button id="prog-show" type="button" class="quiet"><span data-e="showProgress">Show where they stand</span></button>
+        <button id="prog-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showProgress">Show where they stand</span></button>
         <p class="status" id="prog-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="prog-list"></ul>
 
         <h4 id="vpage-h"></h4>
         <div class="row-form">
-          <button id="vpage-show" type="button" class="quiet"><span data-e="showPage">Show the page</span></button>
+          <button id="vpage-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showPage">Show the page</span></button>
           <a id="vpage-save" class="quiet-link" hidden><span data-e="savePage">Keep a copy (to print)</span></a>
-          <button id="vpage-print" type="button" class="quiet" hidden><span data-e="printPage">Print it</span></button>
+          <button id="vpage-print" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span data-e="printPage">Print it</span></button>
         </div>
         <p class="status" id="vpage-status" role="status" aria-live="polite"></p>
         <pre class="kept-text" id="vpage-text" hidden></pre>
         <div class="row-form">
           <label for="vpage-statement"><span data-e="signStatement">What you checked, in your own words</span><input id="vpage-statement" type="text" autocomplete="off" /></label>
-          <button id="vpage-sign" type="button"><span data-e="signPage">Sign the page</span></button>
+          <button id="vpage-sign" type="button" class="sre-btn"><span data-e="signPage">Sign the page</span></button>
         </div>
         <p class="status" id="vsign-status" role="status" aria-live="polite"></p>
       </section>
@@ -370,7 +370,7 @@
           <label for="acc-domain"><span data-e="accDomain">Which kind of record</span><select id="acc-domain"></select></label>
           <label for="acc-reason"><span data-e="accReason">Why you accept it, in your own words</span><input id="acc-reason" type="text" autocomplete="off" /></label>
         </div>
-        <button id="acc-accept" type="button"><span data-e="accept">Accept it, in my name</span></button>
+        <button id="acc-accept" type="button" class="sre-btn"><span data-e="accept">Accept it, in my name</span></button>
         <p class="status" id="acc-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -385,8 +385,8 @@
           <label for="lim-backupMaxAgeHours"><span data-e="lim_backupMaxAgeHours">How old the last good backup may be (hours)</span><input id="lim-backupMaxAgeHours" type="text" inputmode="numeric" autocomplete="off" /></label>
         </div>
         <div class="row-form">
-          <button id="lim-show" type="button" class="quiet"><span data-e="showLimits">Show the limits</span></button>
-          <button id="lim-set" type="button"><span data-e="setLimits">Save my limits</span></button>
+          <button id="lim-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showLimits">Show the limits</span></button>
+          <button id="lim-set" type="button" class="sre-btn"><span data-e="setLimits">Save my limits</span></button>
         </div>
         <p class="status" id="lim-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="lim-list"></ul>
@@ -398,7 +398,7 @@
         <p class="lead" id="books-lead"></p>
         <div class="row-form">
           <label for="books-date"><span data-e="booksDate">Trading day</span><input id="books-date" type="date" /></label>
-          <button id="books-show" type="button" class="quiet"><span data-e="showBooks">Show the reports and the day</span></button>
+          <button id="books-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showBooks">Show the reports and the day</span></button>
         </div>
         <ul class="rows" id="books-held"></ul>
         <div class="row-form">
@@ -408,14 +408,14 @@
         </div>
         <div class="row-form" id="books-columns"></div>
         <div class="row-form">
-          <button id="books-add" type="button" class="quiet"><span data-e="addReport">Add this report</span></button>
-          <button id="books-record" type="button"><span data-e="recordBooks">Record the books side of the day</span></button>
+          <button id="books-add" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="addReport">Add this report</span></button>
+          <button id="books-record" type="button" class="sre-btn"><span data-e="recordBooks">Record the books side of the day</span></button>
         </div>
         <ul class="rows" id="books-pending"></ul>
         <p class="status" id="books-status" role="status" aria-live="polite"></p>
 
         <h4 id="pdiff-h"></h4>
-        <button id="pdiff-show" type="button" class="quiet"><span data-e="showDiffs">Show the open differences</span></button>
+        <button id="pdiff-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showDiffs">Show the open differences</span></button>
         <p class="status" id="pdiff-pos" role="status" aria-live="polite"></p>
         <ul class="rows" id="pdiff-list"></ul>
         <div class="row-form">
@@ -423,14 +423,14 @@
           <label for="pdiff-explain"><span data-e="diffExplain">What caused it (when known)</span><input id="pdiff-explain" type="text" autocomplete="off" /></label>
           <label for="pdiff-wrong"><span data-e="diffWrong">Which system was wrong</span><select id="pdiff-wrong"></select></label>
         </div>
-        <button id="pdiff-own" type="button"><span data-e="ownDiff">Own this difference</span></button>
+        <button id="pdiff-own" type="button" class="sre-btn"><span data-e="ownDiff">Own this difference</span></button>
         <p class="status" id="pdiff-status" role="status" aria-live="polite"></p>
 
         <h4 id="sheet-h"></h4>
         <div class="row-form">
-          <button id="sheet-show" type="button" class="quiet"><span data-e="showSheet">Show the sheet</span></button>
+          <button id="sheet-show" type="button" class="quiet sre-btn sre-btn-quiet"><span data-e="showSheet">Show the sheet</span></button>
           <a id="sheet-save" class="quiet-link" hidden><span data-e="saveSheet">Keep a copy (to print)</span></a>
-          <button id="sheet-print" type="button" class="quiet" hidden><span data-e="printSheet">Print it</span></button>
+          <button id="sheet-print" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span data-e="printSheet">Print it</span></button>
         </div>
         <p class="status" id="sheet-status" role="status" aria-live="polite"></p>
         <pre class="kept-text" id="sheet-text" hidden></pre>
@@ -445,7 +445,7 @@
           <label for="rb-bill"><span data-e="rbBill">The old system's first bill number</span><input id="rb-bill" type="text" autocomplete="off" /></label>
           <label for="rb-from"><span data-e="rbFrom">When the old system started taking sales (shop time)</span><input id="rb-from" type="datetime-local" step="1" /></label>
         </div>
-        <button id="rb-confirm" type="button"><span data-e="rbConfirm">Confirm going back</span></button>
+        <button id="rb-confirm" type="button" class="sre-btn"><span data-e="rbConfirm">Confirm going back</span></button>
         <p class="status" id="rb-confirm-status" role="status" aria-live="polite"></p>
         <div class="row-form">
           <label for="rb-newfrom"><span data-e="rbNewFrom">When the new system started taking sales (shop time)</span><input id="rb-newfrom" type="datetime-local" step="1" /></label>
@@ -456,7 +456,7 @@
           <label for="rb-stock"><span data-e="f_rollback_stock">Each product's stock movement in the old system (CSV)</span><input id="rb-stock" type="file" accept=".csv,text/csv" /></label>
           <a id="rb-stock-template" class="quiet-link"><span data-e="template">Empty template</span></a>
         </div>
-        <button id="rb-reconcile" type="button"><span data-e="rbReconcile">Reconcile the window</span></button>
+        <button id="rb-reconcile" type="button" class="sre-btn"><span data-e="rbReconcile">Reconcile the window</span></button>
         <p class="status" id="rb-rec-status" role="status" aria-live="polite"></p>
       </section>
     </main>

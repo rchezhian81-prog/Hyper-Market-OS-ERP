@@ -31,7 +31,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--field-line, var(--line)); border-radius: 10px; background: var(--field, var(--bg)); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field, var(--bg)); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
       legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
@@ -74,7 +74,7 @@
               <label for="r-reason"><span id="l-rreason">Why it is taken out</span><select id="r-reason"></select></label>
               <label for="r-note"><span id="l-rnote">Note (optional)</span><input id="r-note" autocomplete="off" maxlength="200" /></label>
             </div>
-            <button id="range-go" class="primary" type="submit">Record this for every store in the group</button>
+            <button id="range-go" class="primary sre-btn sre-btn-primary" type="submit">Record this for every store in the group</button>
             <p class="status" id="range-status" role="status" aria-live="polite"></p>
             <ul class="rows" id="range-result" aria-label="What happened in each store"></ul>
           </fieldset>
@@ -96,7 +96,7 @@
               <label for="s-to"><span id="l-sto">Last day of the season</span><input id="s-to" type="date" /></label>
               <label for="s-reason"><span id="l-sreason">What the season is</span><input id="s-reason" autocomplete="off" maxlength="200" /></label>
             </div>
-            <button id="season-go" class="primary" type="submit">Make this season plan</button>
+            <button id="season-go" class="primary sre-btn" type="submit">Make this season plan</button>
             <p class="status" id="season-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>
@@ -110,7 +110,7 @@
             <label for="g-to"><span id="l-gto">To</span><input id="g-to" type="date" /></label>
             <label for="g-bands"><span id="l-gbands">Price bands</span><input id="g-bands" autocomplete="off" inputmode="decimal" /></label>
           </div>
-          <button id="gaps-go" class="primary" type="submit">Show the report</button>
+          <button id="gaps-go" class="primary sre-btn" type="submit">Show the report</button>
         </form>
         <p class="status" id="gaps-status" role="status" aria-live="polite"></p>
         <div id="gaps-report"></div>

@@ -25,7 +25,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; justify-self: start; display: inline-flex; gap: 6px; align-items: center; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; display: inline-flex; gap: 6px; align-items: center; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
@@ -62,7 +62,7 @@
         <div class="row">
           <label for="batch-file"><span id="batch-file-l"></span><input id="batch-file" type="file" accept=".json,application/json" /></label>
         </div>
-        <button id="batch-load" type="button"><span id="batch-load-text"></span></button>
+        <button id="batch-load" type="button" class="sre-btn"><span id="batch-load-text"></span></button>
         <p class="status" id="batch-status" role="status" aria-live="polite"></p>
         <h3 id="statement-h"></h3>
         <div class="row">
@@ -74,7 +74,7 @@
           <label for="st-closing"><span id="st-closing-l"></span><input id="st-closing" autocomplete="off" inputmode="decimal" /></label>
           <label for="st-file"><span id="st-file-l"></span><input id="st-file" type="file" accept=".csv,text/csv" /></label>
         </div>
-        <button id="st-load" type="button"><span id="st-load-text"></span></button>
+        <button id="st-load" type="button" class="sre-btn"><span id="st-load-text"></span></button>
         <p class="status" id="st-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -92,7 +92,7 @@
             <label for="dep-account"><span id="dep-account-l"></span><input id="dep-account" autocomplete="off" /></label>
             <label for="dep-note"><span id="dep-note-l"></span><input id="dep-note" autocomplete="off" /></label>
           </div>
-          <button id="dep-record" type="button"><span id="dep-record-text"></span></button>
+          <button id="dep-record" type="button" class="sre-btn sre-btn-primary"><span id="dep-record-text"></span></button>
         </div>
         <p class="status" id="dep-status" role="status" aria-live="polite"></p>
       </section>
@@ -103,7 +103,7 @@
           <label for="rv-date"><span id="rv-date-l"></span><input id="rv-date" autocomplete="off" inputmode="numeric" /></label>
           <label for="rv-cycle"><span id="rv-cycle-l"></span><input id="rv-cycle" autocomplete="off" inputmode="numeric" /></label>
         </div>
-        <button id="rv-go" type="button"><span id="rv-go-text"></span></button>
+        <button id="rv-go" type="button" class="sre-btn"><span id="rv-go-text"></span></button>
         <p class="status" id="rv-status" role="status" aria-live="polite"></p>
         <div class="tiles" id="rv-tiles"></div>
         <p class="meta" id="rv-window"></p>
@@ -129,7 +129,7 @@
             <label for="d-reason"><span id="d-reason-l"></span><input id="d-reason" autocomplete="off" /></label>
             <label for="d-sale"><span id="d-sale-l"></span><input id="d-sale" autocomplete="off" /></label>
           </div>
-          <button id="d-record" type="button"><span id="d-record-text"></span></button>
+          <button id="d-record" type="button" class="sre-btn"><span id="d-record-text"></span></button>
         </div>
         <p class="status" id="d-status" role="status" aria-live="polite"></p>
       </section>

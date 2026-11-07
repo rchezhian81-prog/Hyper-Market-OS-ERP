@@ -31,8 +31,8 @@
       p.lead { margin:0; color:var(--muted); font-size:15px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--bg); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-left:5px solid var(--line); }
-      li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size:13px; }
-      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
+      li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size: var(--fs-sm); }
+      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size: var(--fs-sm); margin-left:6px; }
       label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
       select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
@@ -42,22 +42,23 @@
       li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
       .chip { display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:14px; }
       .chip .icon { font-size:16px; }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
-      button.act.primary { background:var(--good); color:var(--on-accent); }
-      button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:var(--on-info); }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700;   }
+      button.act.small { min-height: var(--tap); font-size:14px;   }
       button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
       .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
-      .preview .errline { color:var(--danger-text); font-size:13px; }
+      .preview .errline { color:var(--danger-text); font-size: var(--fs-sm); }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--bg); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.locked { margin:0; padding:14px; background:var(--bg); border-radius:12px; color:var(--muted); }
       .period { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px; margin-top:6px; }
       .period label { margin:0 0 2px; }
-      .preview .changeline { font-size:13px; }
+      .preview .changeline { font-size: var(--fs-sm); }
       li.row .undo { display:grid; gap:6px; width:100%; }
       li.row .undo .actions { margin-top:0; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -97,7 +98,7 @@
           <textarea id="import-file" autocomplete="off" spellcheck="false"></textarea>
           <label for="import-total" id="total-label"></label>
           <input id="import-total" type="text" inputmode="numeric" autocomplete="off" />
-          <button id="validate" class="act small" type="button"></button>
+          <button id="validate" class="act small sre-btn" type="button"></button>
           <p class="result" id="validate-result" hidden role="status" aria-live="polite"><span class="icon" id="validate-result-icon" aria-hidden="true"></span><span id="validate-result-text"></span></p>
           <div class="preview" id="preview" hidden></div>
           <div class="row2">
@@ -105,8 +106,8 @@
             <div><label for="import-why" id="why-label"></label><input id="import-why" type="text" autocomplete="off" maxlength="300" /></div>
           </div>
           <div class="actions">
-            <button id="ask" class="act small" type="button"></button>
-            <button id="commit" class="act primary" type="button"></button>
+            <button id="ask" class="act small sre-btn" type="button"></button>
+            <button id="commit" class="act primary sre-btn sre-btn-primary" type="button"></button>
           </div>
           <p class="result" id="ask-result" hidden role="status" aria-live="polite"><span class="icon" id="ask-result-icon" aria-hidden="true"></span><span id="ask-result-text"></span></p>
           <p class="result" id="commit-result" hidden role="status" aria-live="polite"><span class="icon" id="commit-result-icon" aria-hidden="true"></span><span id="commit-result-text"></span></p>

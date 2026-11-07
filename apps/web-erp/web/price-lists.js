@@ -8,6 +8,45 @@
 // word has a Tamil twin; nothing is written on open.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 const who = window.priceListsData && typeof window.priceListsData === 'object' ? window.priceListsData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
@@ -18,6 +57,16 @@ const mayRead = perms.has('catalogue.pack.read') || mayPropose;
 // W4 · OB-546 · ADR-0013: sending the signed pack is the catalogue keeper's own act — its own permission, and head office's step-up.
 const mayPublishPack = perms.has('catalogue.pack.publish');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 
 const WORDS = {
   en: {
@@ -34,8 +83,8 @@ const WORDS = {
     why_draft_not_on_sale: 'a draft, not on sale', why_no_price: 'no price for this store that day', why_no_tax_class: 'no GST rate for its HSN that day', why_price_above_mrp: 'its price is above its MRP',
     why_cess_on_demerit_slab: 'a cess on the 40% slab would tax it twice', why_tobacco_warning_not_confirmed: 'its tobacco warning picture is not confirmed', why_liquor_not_sold: 'liquor is never sold', why_medicine_not_sold: 'medicines are never sold',
     pricesLead: 'Choose the product, which price and from when, then read head office\'s figures. The price is saved only when head office accepts it; the till charges it from the next store pack on or after its date.',
-    product: 'Product id', scope: 'Which price', store: 'One store\'s shelf price', zone: 'A price zone', channel: 'A channel (app, delivery)', customer: 'One customer',
-    ref: 'Store, zone, channel or customer id', from: 'From (date)', to: 'Until (date, if it ends)', price: 'Price (₹)',
+    product: 'Product', scope: 'Which price', store: 'One store\'s shelf price', zone: 'A price zone', channel: 'A channel (app, delivery)', customer: 'One customer',
+    ref: 'Store, zone, channel or customer', from: 'From (date)', to: 'Until (date, if it ends)', price: 'Price (₹)',
     kMrp: 'MRP that day', kCost: 'Buying cost', kFloor: 'Margin floor', kNow: 'Price for this scope now', kSize: 'A second person checks a move of more than',
     readBasis: 'Read head office\'s figures', save: 'Save the price', why: 'Why (for the approver, if one is needed)', ask: 'Ask for approval',
     notKnown: 'Not known', notSet: 'not set', none: 'none yet', size: '{pct}% or ₹{amt}', stores: 'Judged at: {list}.',
@@ -43,7 +92,7 @@ const WORDS = {
     noCost: 'Head office knows no buying cost at {list} (nothing received at a cost yet), so the price cannot be checked against cost. It is not sent.',
     noFloor: 'No margin floor is set for {list} in the store rules, so the price cannot be checked against it. The owner sets it in Store setup first.',
     noStores: 'This scope reaches no store yet (a zone with no store in it).',
-    needAll: 'Choose the product, which price, the id and the date, and write the price.', needBasis: 'Read head office\'s figures first.', needWhy: 'Write the reason first.',
+    needAll: 'Choose the product, which price, who or where it is for, and the date, and write the price.', needBasis: 'Read head office\'s figures first.', needWhy: 'Write the reason first.',
     saved: 'Saved. {price} from {from} for {scope} {ref}.', savedWith: 'Saved with the approval of {by}.',
     needsApproval: 'This needs a second person: {why} Write why and press “Ask for approval”; once they approve it on their Approvals page, press “Save the price” again.',
     asked: 'Asked. It waits on the approver\'s Approvals page; nothing is saved until then.', waiting: 'Still waiting for the second person. Nothing was saved.', rejected: 'The second person rejected it: {why}',
@@ -73,8 +122,8 @@ const WORDS = {
     why_draft_not_on_sale: 'வரைவு, விற்பனையில் இல்லை', why_no_price: 'அன்று இந்தக் கடைக்கு விலை இல்லை', why_no_tax_class: 'அன்று அதன் HSN க்கு GST விகிதம் இல்லை', why_price_above_mrp: 'அதன் விலை MRP ஐ விட அதிகம்',
     why_cess_on_demerit_slab: '40% வரம்பில் செஸ் இருமுறை வரி விதிக்கும்', why_tobacco_warning_not_confirmed: 'அதன் புகையிலை எச்சரிக்கைப் படம் உறுதிசெய்யப்படவில்லை', why_liquor_not_sold: 'மதுபானம் ஒருபோதும் விற்கப்படாது', why_medicine_not_sold: 'மருந்துகள் ஒருபோதும் விற்கப்படாது',
     pricesLead: 'பொருள், எந்த விலை, எப்போதிலிருந்து என்பதைத் தேர்வு செய்து, தலைமை அலுவலக எண்களைப் படியுங்கள். தலைமை அலுவலகம் ஏற்றால் மட்டுமே விலை சேமிக்கப்படும்; அதன் தேதியிலோ பிறகோ வரும் அடுத்த கடைப் பொதியிலிருந்து கவுண்டர் அதை வசூலிக்கும்.',
-    product: 'பொருள் எண்', scope: 'எந்த விலை', store: 'ஒரு கடையின் அலமாரி விலை', zone: 'ஒரு விலை மண்டலம்', channel: 'ஒரு வழி (செயலி, டெலிவரி)', customer: 'ஒரு வாடிக்கையாளர்',
-    ref: 'கடை, மண்டலம், வழி அல்லது வாடிக்கையாளர் எண்', from: 'தொடங்கும் தேதி', to: 'முடியும் தேதி (முடிந்தால்)', price: 'விலை (₹)',
+    product: 'பொருள்', scope: 'எந்த விலை', store: 'ஒரு கடையின் அலமாரி விலை', zone: 'ஒரு விலை மண்டலம்', channel: 'ஒரு வழி (செயலி, டெலிவரி)', customer: 'ஒரு வாடிக்கையாளர்',
+    ref: 'கடை, மண்டலம், வழி அல்லது வாடிக்கையாளர்', from: 'தொடங்கும் தேதி', to: 'முடியும் தேதி (முடிந்தால்)', price: 'விலை (₹)',
     kMrp: 'அன்றைய MRP', kCost: 'வாங்கும் விலை', kFloor: 'லாப வரம்பு', kNow: 'இந்த வரம்பின் இப்போதைய விலை', kSize: 'இதைவிட அதிக மாற்றத்தை இரண்டாம் நபர் சரிபார்ப்பார்',
     readBasis: 'தலைமை அலுவலக எண்களைப் படி', save: 'விலையைச் சேமி', why: 'ஏன் (ஒப்புதலாளருக்கு, தேவைப்பட்டால்)', ask: 'ஒப்புதல் கேள்',
     notKnown: 'தெரியவில்லை', notSet: 'அமைக்கப்படவில்லை', none: 'இன்னும் இல்லை', size: '{pct}% அல்லது ₹{amt}', stores: 'மதிப்பிடப்பட்ட கடைகள்: {list}.',
@@ -82,7 +131,7 @@ const WORDS = {
     noCost: '{list}-இல் வாங்கும் விலை தலைமை அலுவலகத்திற்குத் தெரியாது (இன்னும் விலையுடன் எதுவும் பெறப்படவில்லை), எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. அனுப்பப்படவில்லை.',
     noFloor: 'கடை விதிகளில் {list}-க்கு லாப வரம்பு அமைக்கப்படவில்லை, எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. உரிமையாளர் முதலில் கடை அமைப்பில் அதை அமைக்கிறார்.',
     noStores: 'இந்த வரம்பு இன்னும் எந்தக் கடையையும் அடையவில்லை (கடை இல்லாத மண்டலம்).',
-    needAll: 'பொருள், எந்த விலை, எண், தேதி ஆகியவற்றைத் தேர்வு செய்து விலையை எழுதுங்கள்.', needBasis: 'முதலில் தலைமை அலுவலக எண்களைப் படியுங்கள்.', needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.',
+    needAll: 'பொருள், எந்த விலை, யாருக்கு அல்லது எங்கே, தேதி ஆகியவற்றைத் தேர்வு செய்து விலையை எழுதுங்கள்.', needBasis: 'முதலில் தலைமை அலுவலக எண்களைப் படியுங்கள்.', needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.',
     saved: 'சேமிக்கப்பட்டது. {from} முதல் {scope} {ref}-க்கு {price}.', savedWith: '{by} அவர்களின் ஒப்புதலுடன் சேமிக்கப்பட்டது.',
     needsApproval: 'இதற்கு இரண்டாம் நபர் தேவை: {why} ஏன் என்று எழுதி “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும் மீண்டும் “விலையைச் சேமி” அழுத்துங்கள்.',
     asked: 'கேட்கப்பட்டது. ஒப்புதலாளரின் ஒப்புதல்கள் பக்கத்தில் காத்திருக்கிறது; அதுவரை எதுவும் சேமிக்கப்படாது.', waiting: 'இரண்டாம் நபர் இன்னும் முடிவு செய்யவில்லை. எதுவும் சேமிக்கப்படவில்லை.', rejected: 'இரண்டாம் நபர் நிராகரித்தார்: {why}',
@@ -100,6 +149,25 @@ const WORDS = {
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 const rupees = (minor) => `₹${(minor / 100).toFixed(2)}`;
 const subjectWords = (s) => WORDS[lang][`subject:${s}`] ?? s;
@@ -120,7 +188,7 @@ async function call(method, path, body) {
   } catch { return { ok: false, status: 0, body: null }; }
 }
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
-const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
 function canonical(v) {
   if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
@@ -191,6 +259,7 @@ function paintZones() {
     tbody.append(tr);
   }
   for (const id of ['z-store', 'z-zone', 'z-save']) $(id).disabled = !mayZone;
+  whyDisabled($('z-save'), mayZone ? '' : 'role');
   $('zone-form').hidden = !mayZone;
 }
 
@@ -225,7 +294,7 @@ function paintChannels() {
       const acts = document.createElement('div'); acts.className = 'acts';
       const label = document.createElement('label'); const span = document.createElement('span'); span.textContent = t('reasonFor');
       const input = document.createElement('input'); input.autocomplete = 'off'; input.setAttribute('aria-label', `${t('reasonFor')}: ${r.requestId}`); label.append(span, input);
-      const b = document.createElement('button'); b.type = 'button'; b.dataset.act = 'approve'; b.textContent = t('approveOn');
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.dataset.act = 'approve'; b.textContent = t('approveOn');
       const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
       b.addEventListener('click', async () => {
         if (input.value.trim() === '') { tell(line, false, t('needWhy')); return; }
@@ -244,6 +313,7 @@ function paintChannels() {
 }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-same', 'kSame'], ['k-pending', 'kPending'], ['k-zoned', 'kZoned'],
     ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['tab-pack', 'tabPack'], ['pack-h', 'tabPack'], ['pack-lead', 'packLead'], ['l-pk-store', 'pkStore'], ['l-pk-asof', 'pkAsOf'], ['pk-preview', 'pkPreview'], ['pk-publish', 'pkPublish'], ['l-pk-ack', 'pkAck'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
@@ -255,8 +325,9 @@ function paint() {
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
   for (const id of ['p-from', 'p-to', 'p-price', 'read-basis', 'save', 'p-why']) $(id).disabled = !mayPropose;
+  whyDisabled($('read-basis'), mayPropose ? '' : 'role'); whyDisabled($('save'), mayPropose ? '' : 'role');
   $('ask').hidden = pending === null || !mayPropose;
-  $('pk-publish').disabled = !mayPublishPack; $('pk-ack').disabled = !mayPublishPack;
+  $('pk-publish').disabled = !mayPublishPack; $('pk-ack').disabled = !mayPublishPack; whyDisabled($('pk-publish'), mayPublishPack ? '' : 'role');
   $('pk-note').textContent = mayPublishPack ? '' : t('pkNoRight');
   for (const v of ['prices', 'zones', 'channels', 'pack']) {
     $(`view-${v}`).hidden = tab !== v;
@@ -291,7 +362,7 @@ async function loadHistory() {
 
 async function readBasis() {
   const st = $('price-status');
-  const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim(); const from = $('p-from').value;
+  const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim(); const from = dateOf('p-from');
   if (id === '' || ref === '' || from === '') { tell(st, false, t('needAll')); return false; }
   const out = await call('GET', `/v1/prices/list/${encodeURIComponent(id)}/basis?${new URLSearchParams({ scope, scopeRef: ref, on: from })}`);
   if (!out.ok) { basis = null; basisFor = ''; say(st, out, ''); paintBasis(); return false; }
@@ -302,14 +373,14 @@ async function readBasis() {
   return true;
 }
 
-$('p-scope').addEventListener('change', paintRefs);
+$('p-scope').addEventListener('change', () => { paintRefs(); repaintPickers(); });
 for (const id of ['p-product', 'p-scope', 'p-ref', 'p-from', 'p-to', 'p-price']) $(id).addEventListener('change', () => { if (formKey() !== basisFor) { entryId = null; pending = null; $('ask').hidden = true; } });
 $('p-product').addEventListener('change', () => { void loadHistory(); });
 $('read-basis').addEventListener('click', () => { void readBasis(); });
 $('save').addEventListener('click', async () => {
   const st = $('price-status');
   const id = $('p-product').value.trim(); const scope = $('p-scope').value; const ref = $('p-ref').value.trim();
-  const from = $('p-from').value; const to = $('p-to').value; const price = $('p-price').value.trim();
+  const from = dateOf('p-from'); const to = dateOf('p-to'); const price = $('p-price').value.trim();
   if (id === '' || ref === '' || from === '' || price === '') { tell(st, false, t('needAll')); return; }
   if (basis === null || basisFor !== formKey()) { if (!(await readBasis())) return; }
   if (basis.mrpMinor === null) { tell(st, false, t('noMrp')); return; }
@@ -387,12 +458,12 @@ $('pk-publish').addEventListener('click', async () => {
   if (out.status === 403 && out.body?.error?.code === 'reauthentication_required') { tell(st, false, fill(t('pkStepUp'), { why: out.body.error.whatHappened })); return; }
   say(st, out, fill(t('pkSent'), { v: out.body?.version ?? '' }));
 });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
 paint();
 if (named && !mayRead) tell($('page-status'), false, t('noRight'));
 if (named && mayRead) {
-  $('p-from').value = today();
+  setShopDate('p-from', today());
   $('pk-asof').value = today();
   if (!mayPropose) { $('page-status').className = 'status'; $('page-status').textContent = t('readOnly'); }
   const asked = new URLSearchParams(location.search).get('product');
@@ -409,3 +480,31 @@ if (named && mayRead) {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
 }
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('p-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+
+pickable('p-product', 'product', 'pickProduct');
+// a store price picks a store, a customer price a customer; a zone or a channel has no list to pick from (typed, as before)
+pickable('p-ref', () => ({ store: 'store', customer: 'customer' })[$('p-scope').value] ?? null, () => ($('p-scope').value === 'customer' ? 'pickCustomer' : 'pickStore'));

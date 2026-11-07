@@ -6,6 +6,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * D-24 (R4, signed OB-227 · OB-220) — the Store events page, in a real browser, on the PRODUCTION API over real
@@ -16,6 +17,8 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['events', 'e2e', 'key'].join('-').padEnd(48, '0');
@@ -68,18 +71,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await page.goto(`${shop.base}/demand-events`, { waitUntil: 'load' });
       await page.waitForFunction(() => (globalThis as unknown as { demandEvents?: unknown }).demandEvents !== undefined);
 
-      // Refused before anything is sent: no store, then no effect.
+      // Refused before anything is sent: no store, then no effect. U2 fills in the person's own store, so it is cleared to
+      // provoke the refusal; the shared date fields are required by the browser, so the days are typed first (dd/mm).
+      await page.waitForFunction(() => (globalThis as unknown as { sreOffice?: unknown }).sreOffice !== undefined);
+      await page.fill('#label', 'Pongal');
+      await page.selectOption('#kind', 'festival');
+      await page.fill('#ev-from', ddmm(day(3)));
+      await page.fill('#ev-to', ddmm(day(4)));
+      await page.fill('#store', '');
       await page.click('#save');
       await expect.poll(() => page.textContent('#record-status')).toMatch(/Fill in the store first/);
       await page.fill('#store', 'br-1');
-      await page.fill('#label', 'Pongal');
-      await page.selectOption('#kind', 'festival');
-      await page.fill('#ev-from', day(3));
-      await page.fill('#ev-to', day(4));
       await page.click('#save');
       await expect.poll(() => page.textContent('#record-status')).toMatch(/expected effect/);
       await page.fill('#effect', '1.5');
-      await page.click('#save');
+      // U1 · OB-698: the consequence-and-confirm sheet says the event and its effect in plain words; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(page, () => page.click('#save'), /Record Pongal \(Festival\).*50% higher for all products/, writeCounter(page));
       await expect.poll(() => page.textContent('#record-status')).toMatch(/Recorded/);
       await page.locator('#events li[data-event]').waitFor({ timeout: 15_000 });
       expect(await page.getAttribute('#events li[data-event]', 'data-basis')).toBe('manager_estimate');

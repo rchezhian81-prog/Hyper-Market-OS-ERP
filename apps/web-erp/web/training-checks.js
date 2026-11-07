@@ -12,7 +12,7 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function field(labelKey, control) { const l = document.createElement('label'); l.append(text('span', t(labelKey)), control); return l; }
-function button(key, cls) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t(key); if (cls) b.className = cls; return b; }
+function button(key, cls) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t(key); if (cls) b.className = cls; return b; }
 const when = (iso) => (api === null ? iso : api.moment(iso));
 
 let view = null;

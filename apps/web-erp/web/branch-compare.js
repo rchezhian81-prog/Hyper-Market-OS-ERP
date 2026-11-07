@@ -8,10 +8,29 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, compare: false, list: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, act, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }
@@ -128,6 +147,7 @@ function paintTxns() {
   }
 }
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['form-h', 'formH'], ['c-by-l', 'by'], ['c-from-l', 'from'], ['c-to-l', 'to'], ['c-go-text', 'go'], ['result-h', 'resultH'],
@@ -149,11 +169,11 @@ if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.compare) $('page-status').textContent = t('cannotCompare');
 else {
   const today = api.today();
-  $('c-from').value = today; $('c-to').value = today;
+  setShopDate('c-from', today); setShopDate('c-to', today);
   $('form').hidden = false;
   $('c-go').addEventListener('click', async () => {
     $('c-status').textContent = '';
-    const ask = { by: $('c-by').value, from: $('c-from').value, to: $('c-to').value };
+    const ask = { by: $('c-by').value, from: dateOf('c-from'), to: dateOf('c-to') };
     const out = await session.compare(ask);
     asked = { ...ask, at: new Date().toISOString() };
     opened = null;
@@ -166,3 +186,5 @@ else {
   });
   $('tx-close').addEventListener('click', () => { opened = null; paintTxns(); });
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('c-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('c-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });

@@ -171,7 +171,7 @@ function renderRaiseLines() {
     li.dataset.productId = l.productId;
     // OB-31: the line holds what was TYPED, in its unit ("2.5" kg); the session turns it into grams on Save.
     const what = document.createElement('span'); what.textContent = `${l.productId} × ${`${l.quantity} ${l.uom}`.trim()}`;
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'minor'; remove.textContent = t('raiseRemove');
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'minor sre-btn sre-btn-quiet'; remove.textContent = t('raiseRemove');
     remove.addEventListener('click', () => { raiseLines = raiseLines.filter((_, i) => i !== index); renderRaiseLines(); });
     li.append(what, remove);
     return li;

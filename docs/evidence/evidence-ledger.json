@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2245,
+  "testFiles": 2270,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -5698,7 +5698,7 @@
         "unit": 8,
         "integration": 2,
         "realDb": 1,
-        "browser": 16,
+        "browser": 17,
         "connected": 5,
         "device": 0,
         "uat": 0
@@ -5737,6 +5737,7 @@
           "tests/e2e/the-rebates-screen-works-through-the-store-computer.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts",
+          "tests/e2e/u4-the-tills-second-layer.e2e.ts",
           "tests/e2e/w3-a-cashier-check-is-set-scored-and-read-by-the-training-gate.e2e.ts"
         ],
         "connected": [

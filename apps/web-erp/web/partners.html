@@ -33,7 +33,7 @@
       .checks { display: flex; flex-wrap: wrap; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin: 0; }
       .checks label { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -88,7 +88,7 @@
           <label for="cr-reach"><span id="l-cr-reach">Shops or sandboxes it may reach (names, commas)</span><input id="cr-reach" autocomplete="off" list="sandbox-ids" /></label>
           <label for="cr-scopes"><span id="l-cr-scopes">What it may do (scopes, commas)</span><input id="cr-scopes" autocomplete="off" /></label>
           <label for="cr-expires"><span id="l-cr-expires">Until (date)</span><input id="cr-expires" type="date" /></label>
-          <button id="cr-save" class="primary" type="submit">Register the credential</button>
+          <button id="cr-save" class="primary sre-btn sre-btn-primary" type="submit">Register the credential</button>
         </form>
         <datalist id="sandbox-ids"></datalist>
         <p class="status" id="cred-status" role="status" aria-live="polite"></p>
@@ -106,7 +106,7 @@
           <label for="sb-partner"><span id="l-sb-partner">Partner</span><input id="sb-partner" autocomplete="off" maxlength="80" /></label>
           <label for="sb-expires"><span id="l-sb-expires">Until (date)</span><input id="sb-expires" type="date" /></label>
           <label for="sb-count"><span id="l-sb-count">Generated records to seed</span><input id="sb-count" inputmode="numeric" value="25" /></label>
-          <button id="sb-save" class="primary" type="submit">Make the sandbox</button>
+          <button id="sb-save" class="primary sre-btn sre-btn-primary" type="submit">Make the sandbox</button>
         </form>
         <p class="status" id="sb-status" role="status" aria-live="polite"></p>
       </section>
@@ -123,7 +123,7 @@
           <label for="ce-partner"><span id="l-ce-partner">Partner</span><input id="ce-partner" autocomplete="off" maxlength="80" /></label>
           <label for="ce-conn"><span id="l-ce-conn">Connector</span><input id="ce-conn" autocomplete="off" maxlength="80" /></label>
           <label for="ce-on"><span id="l-ce-on">Certified on (date)</span><input id="ce-on" type="date" /></label>
-          <button id="ce-save" class="primary" type="submit">Record the certification</button>
+          <button id="ce-save" class="primary sre-btn sre-btn-primary" type="submit">Record the certification</button>
         </form>
         <fieldset class="checks" id="ce-apis" aria-labelledby="l-ce-apis"><legend id="l-ce-apis">Tested against these APIs (current version)</legend></fieldset>
         <p class="status" id="ce-status" role="status" aria-live="polite"></p>
@@ -138,7 +138,7 @@
           <label for="ac-tenant"><span id="l-ac-tenant">Shop or sandbox</span><input id="ac-tenant" autocomplete="off" list="sandbox-ids" /></label>
           <label for="ac-scope"><span id="l-ac-scope">Scope it needs</span><input id="ac-scope" autocomplete="off" /></label>
           <label for="ac-api"><span id="l-ac-api">API</span><select id="ac-api"></select></label>
-          <button id="ac-check" type="submit">Check</button>
+          <button id="ac-check" type="submit" class="sre-btn">Check</button>
         </form>
         <p class="status" id="ac-status" role="status" aria-live="polite"></p>
       </section>

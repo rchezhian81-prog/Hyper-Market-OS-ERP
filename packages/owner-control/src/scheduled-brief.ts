@@ -91,6 +91,9 @@ const WORDS: Record<BriefLanguage, Record<string, string>> = {
     staleWarning: 'THESE NUMBERS ARE NOT LIVE — the last update was',
     minutesAgo: 'minutes ago.',
     noNarrative: 'The written summary was not available this morning; the figures above are complete and correct.',
+    noNarrativeIncomplete: 'The written summary was not available this morning.',
+    notKnown: 'Not known this morning',
+    notKnownWhy: 'the shop has not sent them, so this brief cannot say the day was quiet',
     notAvailable: 'not available',
     taken: 'Taken at the tills (incl. GST)',
     neverArrived: 'THESE NUMBERS ARE NOT LIVE — nothing has arrived from the shop yet.',
@@ -105,6 +108,9 @@ const WORDS: Record<BriefLanguage, Record<string, string>> = {
     staleWarning: 'இந்த எண்கள் நேரலை அல்ல — கடைசி புதுப்பிப்பு',
     minutesAgo: 'நிமிடங்களுக்கு முன்பு.',
     noNarrative: 'இன்று காலை எழுத்துச் சுருக்கம் கிடைக்கவில்லை; மேலே உள்ள எண்கள் முழுமையானவை.',
+    noNarrativeIncomplete: 'இன்று காலை எழுத்துச் சுருக்கம் கிடைக்கவில்லை.',
+    notKnown: 'இன்று காலை தெரியாதவை',
+    notKnownWhy: 'கடை அவற்றை அனுப்பவில்லை, எனவே இன்று அமைதியான நாள் என்று இந்தச் சுருக்கம் சொல்ல முடியாது',
     notAvailable: 'கிடைக்கவில்லை',
     taken: 'கல்லாவில் பெற்றது (ஜிஎஸ்டி உட்பட)',
     neverArrived: 'இந்த எண்கள் நேரலை அல்ல — கடையிலிருந்து இன்னும் எதுவும் வரவில்லை.',
@@ -153,11 +159,18 @@ export function buildScheduledBrief(input: {
     `${w['baskets']}: ${input.figures.basketCount === undefined ? w['notAvailable'] : input.figures.basketCount}`,
     `${w['cash']}: ${money(input.figures.cashBankedMinor)}`,
   );
-  lines.push(
-    top.length === 0
-      ? w['nothing']!
-      : `${w['attention']}: ${top.map((a) => `${a.headline} (${rupees(a.valueMinor)})`).join('; ')}`,
-  );
+  // U0 (UI/UX gap audit, 1 Nov 2026 · P-08): a figure the shop has not sent is said as NOT KNOWN, by name, and the
+  // quiet-morning sentence is withheld — "nothing needs your attention" beside "sales: not available" is a claim the
+  // brief cannot back. Whatever is on the attention list still goes out.
+  const notKnown = [
+    ...(input.figures.netSalesMinor === undefined ? [w['sales']!] : []),
+    ...(input.figures.marginMinor === undefined || input.figures.marginBps === undefined ? [w['margin']!] : []),
+    ...(input.figures.basketCount === undefined ? [w['baskets']!] : []),
+    ...(input.figures.cashBankedMinor === undefined ? [w['cash']!] : []),
+  ];
+  if (notKnown.length > 0) lines.push(`${w['notKnown']}: ${notKnown.map((n) => n.toLowerCase()).join(', ')} — ${w['notKnownWhy']}.`);
+  if (top.length > 0) lines.push(`${w['attention']}: ${top.map((a) => `${a.headline} (${rupees(a.valueMinor)})`).join('; ')}`);
+  else if (notKnown.length === 0) lines.push(w['nothing']!);
 
   // Everything above this point exists without any AI. What follows is decoration.
   const n = input.narrative;
@@ -181,7 +194,8 @@ export function buildScheduledBrief(input: {
   }
 
   if (narrative === undefined) {
-    lines.push(w['noNarrative']!);
+    // "the figures above are complete and correct" is said only when every figure is there.
+    lines.push(notKnown.length === 0 ? w['noNarrative']! : w['noNarrativeIncomplete']!);
   }
 
   return {

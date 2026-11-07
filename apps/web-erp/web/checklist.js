@@ -119,7 +119,7 @@ function rowNode(c) {
   // The sign button — only for a manager, and only while there is something to sign (not already complete).
   if (canSignNow && !c.complete) {
     const btn = document.createElement('button');
-    btn.className = 'act sign';
+    btn.className = 'act sign sre-btn';
     btn.type = 'button';
     btn.dataset.checklistId = c.checklistId;
     btn.textContent = t('signSubmitBtn');

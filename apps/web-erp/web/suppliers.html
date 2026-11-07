@@ -106,8 +106,8 @@
       section.form .grid > div > label { margin-bottom:0; align-self:end; }
       section.form .grid > div > .help { margin:0; }
       .help { margin:6px 0 0; color: var(--muted); font-size:14px; }
-      button.act { justify-self:start; min-height: var(--tap); padding:0 20px; border:1px solid var(--accent); border-radius: var(--radius); font-size:16px; font-weight:700; background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-sm); }
-      button.act:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      button.act { justify-self:start; min-height: var(--tap); padding:0 20px;  border-radius: var(--radius); font-size:16px; font-weight:700;   box-shadow: var(--shadow-sm); }
+      button.act:hover {   }
       button.act:active { transform: translateY(1px); }
       p.note { margin:0; color: var(--ink-2); font-size:15px; }
       /* W3 · WF-02: the papers and bank-change lists — one line each, its state in words, its act beside it. */
@@ -124,6 +124,8 @@
       p.result.tone-error { color:var(--danger-text); background: var(--error-surface); border-color: var(--error-surface); }
       p.result.tone-ok { color: var(--on-ok-surface); background: var(--ok-surface); border-color: var(--ok-surface); }
       p.result.tone-degraded { color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -170,7 +172,7 @@
             <p class="help" id="approve-reason-help"></p>
           </div>
         </div>
-        <button id="approve" class="act" type="button"></button>
+        <button id="approve" class="act sre-btn" type="button"></button>
       </section>
       <p class="note" id="no-approve" hidden></p>
 
@@ -203,7 +205,7 @@
             <input id="propose-terms" type="text" inputmode="numeric" autocomplete="off" />
           </div>
         </div>
-        <button id="propose" class="act" type="button"></button>
+        <button id="propose" class="act sre-btn sre-btn-primary" type="button"></button>
       </section>
       <p class="note" id="no-propose" hidden></p>
 

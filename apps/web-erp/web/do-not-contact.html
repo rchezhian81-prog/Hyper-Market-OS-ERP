@@ -21,7 +21,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -55,7 +55,7 @@
           <label for="a-channel"><span id="a-channel-l"></span><select id="a-channel"></select></label>
           <label for="a-source"><span id="a-source-l"></span><select id="a-source"></select></label>
           <label for="a-reason"><span id="a-reason-l"></span><input id="a-reason" autocomplete="off" maxlength="500" /></label>
-          <button id="a-add" type="submit"><span id="a-add-text"></span></button>
+          <button id="a-add" type="submit" class="sre-btn sre-btn-primary"><span id="a-add-text"></span></button>
         </form>
         <p class="status" id="add-status" role="status" aria-live="polite"></p>
       </section>

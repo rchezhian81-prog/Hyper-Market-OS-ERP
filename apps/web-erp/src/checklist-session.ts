@@ -89,6 +89,7 @@ export type CopyKey =
   | 'blockedWord' | 'incompleteWord' | 'completeWord'
   | 'submitHeading' | 'whichLabel' | 'signSubmitBtn' | 'tickHint' | 'noneToSign'
   | 'submitRecorded' | 'submitRefused' | 'submitLostLink'
+  | 'refusedNoRight' | 'refusedNobodySigning' | 'refusedGone' | 'refusedByHeadOffice'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noManage'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -106,6 +107,11 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     noneToSign: 'Nothing here to sign — every checklist is complete.',
     submitRecorded: 'Signed and recorded.',
     submitRefused: 'Could not record — a blocking item is still outstanding, or you do not have permission to sign the checklist.',
+    // U0 · G10 (1 Nov 2026): the ONE real cause, nothing was recorded, the next step — the catch-all above is kept for a refusal with no known cause.
+    refusedNoRight: 'Could not record it — you do not hold the right to sign a checklist. Nothing was recorded. Ask the manager to sign it.',
+    refusedNobodySigning: 'Could not record it — this store computer was not told who is signing. Nothing was recorded. Sign in again.',
+    refusedGone: 'Could not record it — that checklist is not on this store computer any more. Nothing was recorded. Refresh the list.',
+    refusedByHeadOffice: 'Head office refused it — a blocking item is still outstanding, or the checklist was already signed. Nothing was recorded. Finish the items marked Blocking and try again.',
     submitLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the day\'s checklists', scrEmpty: 'Every checklist is signed and nothing blocking is outstanding.',
     stateNotPermitted: 'You do not have permission to see the checklists.',
@@ -126,6 +132,10 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     noneToSign: 'கையொப்பமிட எதுவும் இல்லை — ஒவ்வொரு பட்டியலும் முழுமையானது.',
     submitRecorded: 'கையொப்பமிடப்பட்டு பதிவு செய்யப்பட்டது.',
     submitRefused: 'பதிவு செய்ய முடியவில்லை — ஒரு தடையான உருப்படி இன்னும் நிலுவையில் உள்ளது, அல்லது பட்டியலைக் கையொப்பமிட உங்களுக்கு அனுமதி இல்லை.',
+    refusedNoRight: 'பதிவு செய்ய முடியவில்லை — சரிபார்ப்புப் பட்டியலில் கையொப்பமிடும் உரிமை உங்களிடம் இல்லை. எதுவும் பதிவு செய்யப்படவில்லை. மேலாளரைக் கையொப்பமிடச் சொல்லுங்கள்.',
+    refusedNobodySigning: 'பதிவு செய்ய முடியவில்லை — யார் கையொப்பமிடுகிறார் என்று இந்தக் கடைக் கணினிக்குச் சொல்லப்படவில்லை. எதுவும் பதிவு செய்யப்படவில்லை. மீண்டும் உள்நுழையவும்.',
+    refusedGone: 'பதிவு செய்ய முடியவில்லை — அந்தப் பட்டியல் இனி இந்தக் கடைக் கணினியில் இல்லை. எதுவும் பதிவு செய்யப்படவில்லை. பட்டியலைப் புதுப்பிக்கவும்.',
+    refusedByHeadOffice: 'தலைமை அலுவலகம் மறுத்தது — ஒரு தடையான உருப்படி இன்னும் நிலுவையில் உள்ளது, அல்லது பட்டியல் ஏற்கனவே கையொப்பமிடப்பட்டது. எதுவும் பதிவு செய்யப்படவில்லை. "தடையானது" எனக் குறிக்கப்பட்டவற்றை முடித்து மீண்டும் முயற்சிக்கவும்.',
     submitLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'அன்றைய சரிபார்ப்புப் பட்டியல்களைக் காட்டுகிறது', scrEmpty: 'ஒவ்வொரு பட்டியலும் கையொப்பமிடப்பட்டு, தடையான எதுவும் நிலுவையில் இல்லை.',
     stateNotPermitted: 'சரிபார்ப்புப் பட்டியல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -254,6 +264,10 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
     };
   };
 
+  // U0 · G10: the cause of the last refusal, for the words the shell shows after it.
+  let lastRefusal: 'refusedNoRight' | 'refusedNobodySigning' | 'refusedGone' | 'refusedByHeadOffice' | null = null;
+  const refuse = (key: NonNullable<typeof lastRefusal>): SubmitResult => { lastRefusal = key; return 'refused'; };
+
   return {
     text,
     view: (lang) => {
@@ -290,15 +304,16 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
     // hold is a local refusal, not a round trip. The given items are ticked done (a shift's existing tick is
     // never un-done — done stays done); the caller's name signs it. The server re-checks the permission and
     // refuses a blocking item still outstanding, and records it in the manager's own name (hard rule #5).
+    // U0 · G10: each local refusal remembers its ONE cause; the status after it names that cause, never a list of maybes.
     submit: async (checklistId, doneItemIds, sign) => {
-      if (!ports.mayManage()) return 'refused';
-      if (sign && config.userId === null) return 'refused'; // a checklist cannot be signed by nobody
+      if (!ports.mayManage()) return refuse('refusedNoRight');
+      if (sign && config.userId === null) return refuse('refusedNobodySigning'); // a checklist cannot be signed by nobody
       const data = ports.worklist();
       const stored = data.checklists.find((c) => c.checklistId === checklistId);
-      if (stored === undefined) return 'refused';
+      if (stored === undefined) return refuse('refusedGone');
       const ticked = new Set(doneItemIds);
       const items: ChecklistItem[] = stored.items.map((i) => (i.done || !ticked.has(i.itemId) ? i : { ...i, done: true }));
-      return ports.submitPort().post({
+      const result = await ports.submitPort().post({
         checklistId,
         kind: stored.kind,
         items,
@@ -309,13 +324,15 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
         ...(stored.branchId === undefined ? {} : { branchId: stored.branchId }),
         ...(stored.forDate === undefined ? {} : { forDate: stored.forDate }),
       });
+      lastRefusal = result === 'refused' ? 'refusedByHeadOffice' : null;
+      return result;
     },
 
     presentSubmitResult: (lang, result) => {
       const t = translator(CHECKLIST_COPY, lang);
       if (result === 'recorded') return presentStatus({ tone: 'ok', icon: '✓', label: t('submitRecorded'), needsAttention: false });
       if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('submitLostLink'), needsAttention: true });
-      return presentStatus({ tone: 'error', icon: '✕', label: t('submitRefused'), needsAttention: true });
+      return presentStatus({ tone: 'error', icon: '✕', label: t(lastRefusal ?? 'submitRefused'), needsAttention: true });
     },
   };
 }

@@ -26,16 +26,17 @@
       .rows { display:grid; gap:4px; } .rows .row { display:flex; justify-content:space-between; gap:12px; font-size:15px; font-variant-numeric:tabular-nums; }
       .rows .row.total { font-weight:700; border-top:1px solid var(--line); padding-top:4px; }
       .card { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; }
-      .employer { border-left:6px solid var(--info); } .employer .note { color:var(--muted); font-size:13px; }
+      .employer { border-left:6px solid var(--info); } .employer .note { color:var(--muted); font-size: var(--fs-sm); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:16px; display:inline-flex; gap:8px; align-items:center; }
       p.state.tone-error { color:var(--danger-text); } p.state .icon { font-size:18px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; }
-      .actions button { min-height:var(--tap); padding:0 18px; border:0; border-radius:12px; background:var(--info); color:var(--on-info); font-size:16px; font-weight:700; }
+      .actions button { min-height:var(--tap); padding:0 18px; border:0; border-radius:12px;   font-size:16px; font-weight:700; }
       .actions button[disabled] { background:var(--line); color:var(--muted); }
-      .muted { color:var(--muted); font-size:13px; }
+      .muted { color:var(--muted); font-size: var(--fs-sm); }
       #banner { position:sticky; bottom:0; background:var(--panel); border-top:2px solid var(--info); padding:14px 16px; display:grid; gap:8px; }
       #banner[hidden] { display:none; } #banner.good { border-top-color:var(--ok); }
       #banner button { min-height:44px; padding:0 16px; border:0; border-radius:10px; background:var(--ink); color:var(--bg); font-weight:700; justify-self:start; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
     </style>
   </head>
   <body>

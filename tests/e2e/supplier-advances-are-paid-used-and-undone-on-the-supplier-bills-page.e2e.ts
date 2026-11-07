@@ -11,6 +11,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { decide } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
+import { askedThenConfirmed } from './lib/confirm-sheet';
 
 /**
  * **Supplier advances on the Supplier bills page, in a real browser served by the store computer, over head office's real
@@ -27,6 +28,8 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
  * Synthetic data only. Without a browser binary it SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const KEY = ['supplier', 'advances', 'box', 'signing', 'key'].join('-').padEnd(48, '0');
 const TENANT = randomUUID();
@@ -115,7 +118,7 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
     await p.click('#adv-ask');
     await says(p, '#adv-ask-status', /^Fill in the supplier, an amount in rupees/);
     expect(payer.writes).toEqual([]);
-    await p.fill('#adv-on', TODAY); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-ref', 'NEFT-ADV-1'); await p.fill('#adv-po', 'po-a');
+    await p.fill('#adv-on', ddmm(TODAY)); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-ref', 'NEFT-ADV-1'); await p.fill('#adv-po', 'po-a');
     await p.click('#adv-ask');
     await says(p, '#adv-ask-status', /^Asked\. A different person who pays suppliers approves exactly this payment/);
     await p.waitForSelector('#adv-asks li[data-status="waiting"]');
@@ -129,7 +132,8 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
 
     await p.click('#adv-show');
     await p.waitForSelector('#adv-asks li[data-status="approved"] button[data-act="record"]');
-    await p.click('#adv-asks li[data-status="approved"] button[data-act="record"]');
+    // U1 · OB-698: the consequence-and-confirm sheet names the money and the supplier; Go back sends nothing; Confirm sends once.
+    await askedThenConfirmed(p, () => p.click('#adv-asks li[data-status="approved"] button[data-act="record"]'), /Record ₹1,000\.00 paid to supplier sup-1 as an advance/, () => payer.writes.length);
     await says(p, '#adv-status', /^Recorded — one journal in the books, with who approved it\.$/);
     const row = await p.textContent('#adv-list li[data-advance]');
     expect(row).toContain('Supplier sup-1 · order po-a');

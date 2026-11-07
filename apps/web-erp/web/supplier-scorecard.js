@@ -4,12 +4,69 @@
 // cannot rate it — never a number. Nothing is written. Every word has a Tamil twin (in the session's copy).
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 const api = window.supplierScorecard ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 let card = null;
 let contractId = null;
 // FG-4 · D03-FR-05: the price variance shown (the roll-ups), and the drill-through open on it (the lines behind one row).
@@ -43,12 +100,13 @@ function panel(figure, r) {
 }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-supplier', 'supplier'], ['l-from', 'from'], ['l-to', 'to'], ['show', 'show']]) $(id).textContent = t(k);
+  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['l-supplier', 'supplier'], ['l-from', 'from'], ['l-to', 'to'], ['show', 'show']]) { const n = $(id); if (n) n.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.supplierScorecardData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
-  $('show').disabled = !may.read;
+  $('show').disabled = !may.read; whyDisabled($('show'), may.read ? '' : 'role');
   $('card-section').hidden = card === null;
   if (card === null) return;
   $('card-h').textContent = `${card.supplierId} · ${card.period.from} – ${card.period.to}`;
@@ -76,7 +134,7 @@ function rollupRows(table, rows, kind) {
   table.querySelector('tbody').replaceChildren(...rows.map((r) => {
     const tr = document.createElement('tr');
     tr.dataset.key = r.key;
-    const open = document.createElement('button');
+    const open = document.createElement('button'); open.classList.add('sre-btn');
     open.type = 'button'; open.dataset.drill = kind; open.dataset.key = r.key;
     open.append(t('ppvOpen')); withIcon(open, 'list');
     open.addEventListener('click', () => { void openDrill(kind, r.key); });
@@ -107,9 +165,9 @@ function lineRows(table, lines) {
 }
 
 function paintPpv() {
-  for (const [id, k] of [['ppv-h', 'ppvTitle'], ['ppv-lead', 'ppvLead'], ['ppv-show-text', 'ppvShow'], ['ppv-h-product', 'ppvByProduct'], ['ppv-h-receipt', 'ppvByReceipt'], ['ppv-back-text', 'ppvBack']]) $(id).textContent = t(k);
+  for (const [id, k] of [['ppv-h', 'ppvTitle'], ['ppv-lead', 'ppvLead'], ['ppv-show-text', 'ppvShow'], ['ppv-h-product', 'ppvByProduct'], ['ppv-h-receipt', 'ppvByReceipt'], ['ppv-back-text', 'ppvBack']]) { const n = $(id); if (n) n.textContent = t(k); }
   for (const [id, name] of [['ppv-h', 'percent'], ['ppv-show', 'chart-column'], ['ppv-h-product', 'package'], ['ppv-h-receipt', 'receipt'], ['ppv-back', 'rotate-ccw']]) withIcon($(id), name);
-  $('ppv-show').disabled = !may.read;
+  $('ppv-show').disabled = !may.read; whyDisabled($('ppv-show'), may.read ? '' : 'role');
   $('ppv-rollups').hidden = ppv === null || drill !== null;
   $('ppv-drill').hidden = drill === null;
   if (ppv !== null && drill === null) {
@@ -129,7 +187,7 @@ function paintPpv() {
 }
 
 async function showPpv() {
-  ppvAsked = { supplier: $('supplier').value, from: $('from').value, to: $('to').value };
+  ppvAsked = { supplier: $('supplier').value, from: dateOf('from'), to: dateOf('to') };
   const out = await session.priceVariance(ppvAsked.supplier, ppvAsked.from, ppvAsked.to);
   drill = null;
   if (out.result === 'ok') { ppv = out.value; $('ppv-status').className = 'status'; $('ppv-status').textContent = ''; }
@@ -147,7 +205,7 @@ async function openDrill(kind, key) {
 
 async function show(event) {
   event?.preventDefault();
-  const out = await session.scorecard($('supplier').value, $('from').value, $('to').value);
+  const out = await session.scorecard($('supplier').value, dateOf('from'), dateOf('to'));
   if (out.result === 'ok') { card = out.value.scorecard; contractId = out.value.contractId; $('page-status').className = 'status'; $('page-status').textContent = ''; }
   else { card = null; $('page-status').className = 'status err'; $('page-status').textContent = api.outcomeWords(lang, out); }
   paint();
@@ -159,7 +217,7 @@ const tt = (k) => (terms === null ? k : terms.words(lang, k));
 let contracts = null;
 function paintContracts() {
   for (const [id, key] of [['contracts-h', 'contractsH'], ['contracts-show-text', 'contractsShow'], ['contract-h', 'contractH'], ['contract-lead', 'contractLead'], ['k-id-l', 'contractId'],
-    ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) $(id).textContent = tt(key);
+    ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) { const n = $(id); if (n) n.textContent = tt(key); }
   const body = $('contracts').querySelector('tbody');
   body.replaceChildren();
   if (contracts === null) return;
@@ -179,7 +237,7 @@ async function showContracts() {
   else { contracts = null; $('contracts-status').className = 'status err'; $('contracts-status').textContent = terms.outcomeWords(lang, out); }
   paintContracts();
 }
-const contractForm = () => ({ contractId: $('k-id').value, supplierId: $('k-supplier').value, startsOn: $('k-starts').value, endsOn: $('k-ends').value, leadDays: $('k-lead').value });
+const contractForm = () => ({ contractId: $('k-id').value, supplierId: $('k-supplier').value, startsOn: dateOf('k-starts'), endsOn: dateOf('k-ends'), leadDays: $('k-lead').value });
 const kSay = (out) => { $('k-status').className = `status${out.result === 'ok' ? '' : ' err'}`; $('k-status').textContent = terms.outcomeWords(lang, out); };
 if (terms !== null && terms.session.may.read) {
   $('contracts-section').hidden = false;
@@ -192,7 +250,7 @@ if (terms !== null && terms.session.may.read) {
 }
 
 $('ask').addEventListener('submit', (e) => { void show(e); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintPpv(); paintContracts(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); paintPpv(); paintContracts(); });
 $('ppv-show').addEventListener('click', () => { void showPpv(); });
 $('ppv-back').addEventListener('click', () => { drill = null; paintPpv(); });
 paint();
@@ -205,3 +263,29 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { if (terms !== null) { shopDate('k-starts', { en: terms.words('en', 'startsOn'), ta: terms.words('ta', 'startsOn') }); shopDate('k-ends', { en: terms.words('en', 'endsOn'), ta: terms.words('ta', 'endsOn') }); } shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+
+pickable('supplier', 'supplier', 'pickSupplier');

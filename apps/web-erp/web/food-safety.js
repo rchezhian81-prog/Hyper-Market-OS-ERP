@@ -48,7 +48,7 @@ function recordForm(check, slotDueAt) {
   }
   const action = document.createElement('textarea'); action.className = 'action';
   parts.push(field(t('fsAction'), action));
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'save'; button.textContent = t('fsSave');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'save sre-btn'; button.textContent = t('fsSave');
   const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   form.append(...parts, button, status);
   form.addEventListener('submit', async (event) => {

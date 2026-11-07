@@ -139,6 +139,7 @@ export type CopyKey =
   | 'reasonTaxRateUnknown' | 'reasonTaxSplitFailed' | 'reasonNegativeLine' | 'reasonLinesDoNotSum' | 'reasonTendersDoNotSum'
   | 'reasonRefundSplitUnknown' | 'reasonUnmappedKind' | 'reasonMissingComponent' | 'reasonUnbalancedJournal' | 'reasonOther'
   | 'postDone' | 'postNothing' | 'postNoMap' | 'postRefused' | 'postLostLink' | 'postLate' | 'postCounted'
+  | 'confirmTitle' | 'confirmTitleNoFigure' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -146,7 +147,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Day book', langName: 'தமிழ்',
     lead: 'One trading day, posted into the accounts: sales, returns, the takings by tender and the refunds by tender, each a balanced journal through the posting map into the open period. What could not be posted is an exception that stays open until a later posting covers it — never dropped. Posting is your act, in your name; a day posted twice is one posting.',
-    dayLabel: 'Trading day', loadBtn: 'Show the day', postBtn: 'Post this day to the accounts', badDay: 'Pick a trading day (YYYY-MM-DD).',
+    dayLabel: 'Trading day', loadBtn: 'Show the day', postBtn: 'Post this day to the accounts', badDay: 'Pick a trading day.',
     notPosted: 'Nothing posted for this day yet.', postedSummary: 'journals posted',
     salesTotalLabel: 'Sales posted', returnsTotalLabel: 'Returns posted', coveredLabel: 'Receipts covered', openLabel: 'open exceptions',
     journalsHeading: 'Journals', accountsHeading: 'Accounts moved', exceptionsHeading: 'Exceptions', noExceptions: 'No exceptions on this day.',
@@ -160,8 +161,11 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     reasonUnbalancedJournal: 'The journal did not balance — nothing posted for this kind', reasonOther: 'Could not be posted',
     postDone: 'Posted.', postNothing: 'Nothing new to post — the day is already posted, or has no sales.',
     postNoMap: 'The posting map is not defined — an accountant defines the rules first (Cash, accounts & GST → Accounts and Tally names). Nothing was posted.',
-    postRefused: 'Could not post — you may not have permission, or the date is not a trading day. Nothing was posted.',
-    postLostLink: 'No connection — not saved. Try again.',
+    postRefused: 'Could not post — you may not have permission, or the date is not a trading day. Nothing was posted. Check the day is a trading day and that you hold the posting right; the accountant can post it.',
+    postLostLink: 'No connection — not saved. Try again when head office answers; nothing was posted.',
+    confirmTitle: '{total} of sales will be posted to the accounts for {day}', confirmTitleNoFigure: 'The day {day} will be posted to the accounts',
+    confirmDetail: 'Every till of this shop for that day becomes journals in the books. Nothing posts twice. A posted day is reopened only on "Reopen a locked day", with a second person.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not post or the posting map is not defined.', confirmLabel: 'Post this day',
     postLate: 'This day belongs to a closed month; it was posted to the next open period', postCounted: 'counted',
     scrReady: 'Showing the day book', scrEmpty: 'Nothing posted for this day yet.',
     stateNotPermitted: 'You do not have permission to see the day book.',
@@ -171,7 +175,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
   ta: {
     title: 'நாள் புத்தகம்', langName: 'English',
     lead: 'ஒரு வர்த்தக நாள், கணக்குகளில் பதிவு: விற்பனை, திருப்பங்கள், ஒவ்வொரு பணவகை வசூல் மற்றும் திருப்பிச் செலுத்தல் — ஒவ்வொன்றும் பதிவு வரைபடத்தின் வழியாகத் திறந்த காலத்திற்குச் சமநிலை ஜர்னல். பதிவு செய்ய முடியாதது ஒரு விதிவிலக்காக, பின்னர் ஒரு பதிவு அதை மூடும் வரை திறந்திருக்கும் — ஒருபோதும் கைவிடப்படாது. பதிவு உங்கள் பெயரில் உங்கள் செயல்; இருமுறை பதிவு செய்த நாள் ஒரே பதிவு.',
-    dayLabel: 'வர்த்தக நாள்', loadBtn: 'நாளைக் காட்டு', postBtn: 'இந்த நாளைக் கணக்குகளில் பதிவு செய்', badDay: 'ஒரு வர்த்தக நாளைத் தேர்வு செய்யுங்கள் (YYYY-MM-DD).',
+    dayLabel: 'வர்த்தக நாள்', loadBtn: 'நாளைக் காட்டு', postBtn: 'இந்த நாளைக் கணக்குகளில் பதிவு செய்', badDay: 'ஒரு வர்த்தக நாளைத் தேர்வு செய்யுங்கள்.',
     notPosted: 'இந்த நாளுக்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.', postedSummary: 'ஜர்னல்கள் பதிவு செய்யப்பட்டன',
     salesTotalLabel: 'பதிவான விற்பனை', returnsTotalLabel: 'பதிவான திருப்பங்கள்', coveredLabel: 'உள்ளடக்கிய ரசீதுகள்', openLabel: 'திறந்த விதிவிலக்குகள்',
     journalsHeading: 'ஜர்னல்கள்', accountsHeading: 'நகர்ந்த கணக்குகள்', exceptionsHeading: 'விதிவிலக்குகள்', noExceptions: 'இந்த நாளில் விதிவிலக்குகள் இல்லை.',
@@ -185,8 +189,11 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     reasonUnbalancedJournal: 'ஜர்னல் சமநிலையில் இல்லை — இந்த வகைக்கு எதுவும் பதிவு செய்யப்படவில்லை', reasonOther: 'பதிவு செய்ய முடியவில்லை',
     postDone: 'பதிவு செய்யப்பட்டது.', postNothing: 'புதிதாகப் பதிவு செய்ய எதுவும் இல்லை — நாள் ஏற்கனவே பதிவு செய்யப்பட்டது, அல்லது விற்பனை இல்லை.',
     postNoMap: 'பதிவு வரைபடம் வரையறுக்கப்படவில்லை — ஒரு கணக்காளர் முதலில் விதிகளை வரையறுக்கிறார் (பணம், கணக்குகள், ஜிஎஸ்டி → கணக்குகளும் டேலி பெயர்களும்). எதுவும் பதிவு செய்யப்படவில்லை.',
-    postRefused: 'பதிவு செய்ய முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது தேதி வர்த்தக நாள் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை.',
-    postLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    postRefused: 'பதிவு செய்ய முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது தேதி வர்த்தக நாள் அல்ல. எதுவும் பதிவு செய்யப்படவில்லை. நாள் வர்த்தக நாளா என்றும் உங்களுக்குப் பதிவு உரிமை உண்டா என்றும் சரிபார்க்கவும்; கணக்காளர் பதிவு செய்யலாம்.',
+    postLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. தலைமை அலுவலகம் பதிலளிக்கும்போது மீண்டும் முயற்சிக்கவும்; எதுவும் பதிவு செய்யப்படவில்லை.',
+    confirmTitle: '{day} நாளுக்கான {total} விற்பனை கணக்குகளில் பதியப்படும்', confirmTitleNoFigure: '{day} நாள் கணக்குகளில் பதியப்படும்',
+    confirmDetail: 'அந்த நாளின் இந்தக் கடையின் ஒவ்வொரு கல்லாவும் புத்தகங்களில் பதிவுகளாகும். எதுவும் இருமுறை பதியப்படாது. பதிந்த நாள் "பூட்டிய நாளை மீண்டும் திற" திரையில், இரண்டாவது நபருடன் மட்டுமே திறக்கப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். உங்கள் பங்கு பதிய முடியாததாக இருந்தாலோ பதிவு வரைபடம் வரையறுக்கப்படாவிட்டாலோ தலைமை அலுவலகம் மறுக்கும்.', confirmLabel: 'இந்த நாளைப் பதி',
     postLate: 'இந்த நாள் மூடிய மாதத்திற்குரியது; அடுத்த திறந்த காலத்தில் பதிவு செய்யப்பட்டது', postCounted: 'எண்ணப்பட்டது',
     scrReady: 'நாள் புத்தகத்தைக் காட்டுகிறது', scrEmpty: 'இந்த நாளுக்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'நாள் புத்தகத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',

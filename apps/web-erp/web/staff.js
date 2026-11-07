@@ -11,7 +11,7 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet'; b.textContent = words; b.addEventListener('click', onClick); return b; }
+function button(words, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = words; b.addEventListener('click', onClick); return b; }
 
 let roster = null;
 

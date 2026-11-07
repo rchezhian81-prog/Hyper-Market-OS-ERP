@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { askedThenConfirmed, confirmIt } from './lib/confirm-sheet';
 
 /**
  * **The Transfers page, in a real browser, on the PRODUCTION API over real PostgreSQL (WF-07 · M09-FR-03 · M08-FR-02/03 ·
@@ -96,7 +97,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       expect(await s.page.locator('#d-lines').innerText()).toMatch(/P1 — 10 EA[\s\S]*head office cost ₹2\.00[\s\S]*P2 — 4 EA[\s\S]*head office cost ₹5\.00/);
       expect(await s.page.locator('#drawer input:visible:not(#d-cancel-reason)').count(), 'no cost or approver is typed (the only box is a cancel reason)').toBe(0);
       const answered = s.page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/t-1/dispatch'));
-      await s.page.click('#d-dispatch');
+      // U1 · OB-698: the consequence-and-confirm sheet names the lines and the route; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(s.page, () => s.page.click('#d-dispatch'), /P1 × 10 .*P2 × 4 .*will leave/, () => s.writes.length);
       expect(await (await answered).json()).toMatchObject({ state: 'in_transit', approvedBy: MGR, lineCostsMinor: [200, 500] });
       await says(s.page, 'd-state', /^On the road — not sellable yet/);
       // He sent it, so he cannot also count it in (§28) — head office's words; nothing is received.
@@ -107,6 +109,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       // More than the back store holds: refused by head office, nothing moves.
       await look(s.page, 't-2');
       await s.page.click('#d-dispatch');
+      await confirmIt(s.page);
       await says(s.page, 'd-status', /^Head office refused: only 40 of P1 available to send, not 500/);
       expect(s.writes).toEqual(['POST /v1/warehouse/transfers/t-1/dispatch {}', 'POST /v1/warehouse/transfers/t-1/receive {"counted":[{"productId":"P1","batchId":null,"quantityMinor":10},{"productId":"P2","batchId":null,"quantityMinor":4}]}', 'POST /v1/warehouse/transfers/t-2/dispatch {}']);
       expect(s.errors).toEqual([]);

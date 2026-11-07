@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * D-21 (R4, OB-217) — the "Seen together" panel on the Investigations page, in a real browser, on the PRODUCTION API over
@@ -65,8 +67,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the "Seen 
 
       await page.selectOption('#together-kind', 'product');
       await page.fill('#together-id', 'p-ghee');
-      await page.fill('#together-from', shopDay(now - 3 * 86_400_000));
-      await page.fill('#together-to', shopDay(now + 86_400_000));
+      await page.fill('#together-from', ddmm(shopDay(now - 3 * 86_400_000)));
+      await page.fill('#together-to', ddmm(shopDay(now + 86_400_000)));
       await page.click('#together-show');
       await page.locator('#together-result:not([hidden])').waitFor({ timeout: 15_000 });
       expect(await page.locator('#till-rows li[data-kind="void"]').count()).toBe(1);

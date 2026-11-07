@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -39,6 +39,8 @@
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
       td[data-state="true"] { font-weight: 700; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -77,9 +79,9 @@
         <label for="ch-reason"><span id="ch-reason-l"></span><input id="ch-reason" autocomplete="off" /></label>
         <label for="ch-approval"><span id="ch-approval-l"></span><input id="ch-approval" autocomplete="off" /></label>
         <div class="row-form">
-          <button id="ch-preview" type="button" class="quiet"><span id="ch-preview-text"></span></button>
-          <button id="ch-ask" type="button" class="quiet"><span id="ch-ask-text"></span></button>
-          <button id="ch-save" type="button"><span id="ch-save-text"></span></button>
+          <button id="ch-preview" type="button" class="quiet sre-btn sre-btn-quiet"><span id="ch-preview-text"></span></button>
+          <button id="ch-ask" type="button" class="quiet sre-btn sre-btn-quiet"><span id="ch-ask-text"></span></button>
+          <button id="ch-save" type="button" class="sre-btn sre-btn-primary"><span id="ch-save-text"></span></button>
         </div>
         <p class="meta" id="ch-said" role="status" aria-live="polite"></p>
         <p class="status" id="ch-status" role="status" aria-live="polite"></p>
@@ -116,9 +118,9 @@
       </section>
       <section id="consent" hidden aria-labelledby="consent-h">
         <h3 id="consent-h"></h3>
-        <button id="cs-download" type="button" class="quiet"><span id="cs-download-text"></span></button>
+        <button id="cs-download" type="button" class="quiet sre-btn sre-btn-quiet"><span id="cs-download-text"></span></button>
         <label for="cs-file"><span id="cs-file-l"></span><input id="cs-file" type="file" accept="application/json,.json" /></label>
-        <button id="cs-import" type="button"><span id="cs-import-text"></span></button>
+        <button id="cs-import" type="button" class="sre-btn"><span id="cs-import-text"></span></button>
         <p class="status" id="cs-status" role="status" aria-live="polite"></p>
       </section>
       <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->

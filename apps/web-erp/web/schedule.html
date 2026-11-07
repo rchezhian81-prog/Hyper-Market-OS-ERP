@@ -24,7 +24,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
@@ -45,7 +45,13 @@
       td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       [hidden] { display: none !important; }
-    </style>
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -61,9 +67,9 @@
         <form class="form-row" id="ask">
           <label for="branch"><span id="l-branch">Store</span><input id="branch" autocomplete="off" /></label>
           <label for="week"><span id="l-week">Week starting (Monday)</span><input id="week" type="date" /></label>
-          <button id="show" type="submit">Show the forecast</button>
-          <button id="draft" type="button">Draft the roster</button>
-          <button id="actuals" type="button">Show actual against roster</button>
+          <button id="show" type="submit" class="sre-btn">Show the forecast</button>
+          <button id="draft" type="button" class="sre-btn">Draft the roster</button>
+          <button id="actuals" type="button" class="sre-btn">Show actual against roster</button>
         </form>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -88,7 +94,7 @@
         <ul class="rows" id="breaches"></ul>
         <h3 id="cost-h">Labour cost (reported, not capped)</h3>
         <ul class="rows" id="cost"></ul>
-        <button id="commit" type="button">Commit this roster</button>
+        <button id="commit" type="button" class="sre-btn sre-btn-primary">Commit this roster</button>
         <p class="status" id="commit-status" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="actuals-h" id="actuals-section" hidden>

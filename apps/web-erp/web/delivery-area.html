@@ -26,7 +26,7 @@
       select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); }
       label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); } label.tick input { width: 24px; height: 24px; min-height: 0; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-self: start; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 1 1 180px; }
@@ -57,7 +57,7 @@
         <h3 id="area-h">Delivery area</h3>
         <div class="row-form">
           <label for="area-on"><span id="l-area-on">For the day</span><input id="area-on" type="date" /></label>
-          <button id="show-area" type="button"><span id="show-area-text">Show the area</span></button>
+          <button id="show-area" type="button" class="sre-btn"><span id="show-area-text">Show the area</span></button>
         </div>
         <p class="status" id="area-status" role="status" aria-live="polite"></p>
         <dl class="area" id="area"></dl>
@@ -72,12 +72,12 @@
           <label for="a-fee"><span id="l-a-fee">Delivery fee (₹)</span><input id="a-fee" inputmode="decimal" autocomplete="off" /></label>
           <label for="a-free"><span id="l-a-free">Free delivery above (₹)</span><input id="a-free" inputmode="decimal" autocomplete="off" /></label>
         </div>
-        <button id="save-area" type="button"><span id="save-area-text">Save from that date</span></button>
+        <button id="save-area" type="button" class="sre-btn sre-btn-primary"><span id="save-area-text">Save from that date</span></button>
         <p class="status" id="set-area-status" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="history-h">
         <h3 id="history-h">Every figure set</h3>
-        <button id="show-history" type="button"><span id="show-history-text">Show the history</span></button>
+        <button id="show-history" type="button" class="sre-btn"><span id="show-history-text">Show the history</span></button>
         <p class="status" id="history-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="history"></ul>
       </section>
@@ -85,7 +85,7 @@
         <h3 id="slots-h">Delivery slots</h3>
         <div class="row-form">
           <label for="slots-day"><span id="l-slots-day">Day</span><input id="slots-day" type="date" /></label>
-          <button id="show-slots" type="button"><span id="show-slots-text">Show the slots</span></button>
+          <button id="show-slots" type="button" class="sre-btn"><span id="show-slots-text">Show the slots</span></button>
         </div>
         <p class="status" id="slots-status" role="status" aria-live="polite"></p>
         <p class="facts" id="service"></p>
@@ -102,13 +102,13 @@
           <label for="s-capacity"><span id="l-s-capacity">Orders each slot can take</span><input id="s-capacity" inputmode="numeric" autocomplete="off" /></label>
           <label for="s-lead"><span id="l-s-lead">Notice needed (minutes)</span><input id="s-lead" inputmode="numeric" autocomplete="off" /></label>
         </div>
-        <button id="save-slots" type="button"><span id="save-slots-text">Save the slots</span></button>
+        <button id="save-slots" type="button" class="sre-btn"><span id="save-slots-text">Save the slots</span></button>
         <p class="status" id="set-slots-status" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="places-h">
         <h3 id="places-h">Places that fulfil online orders</h3>
         <p class="lead" id="places-lead"></p>
-        <button id="show-places" type="button"><span id="show-places-text">Show the places</span></button>
+        <button id="show-places" type="button" class="sre-btn"><span id="show-places-text">Show the places</span></button>
         <p class="status" id="places-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="places"></ul>
         <div class="row-form">
@@ -122,7 +122,7 @@
           <label class="tick" for="p-pickup"><input id="p-pickup" type="checkbox" /><span id="l-p-pickup">Takes pickup</span></label>
           <label class="tick" for="p-delivery"><input id="p-delivery" type="checkbox" checked /><span id="l-p-delivery">Delivers</span></label>
         </div>
-        <button id="save-place" type="button"><span id="save-place-text">Save the place</span></button>
+        <button id="save-place" type="button" class="sre-btn"><span id="save-place-text">Save the place</span></button>
         <p class="status" id="set-place-status" role="status" aria-live="polite"></p>
       </section>
     </main>

@@ -56,7 +56,7 @@ function paintGrants() {
       text('p', `${t('until')} ${when(g.expiresAt)} · ${t('for')} ${g.minutes} ${t('minutesWord')} · ${t('approvedBy')} ${g.approvedBy} · ${g.reason}`, 'meta'));
     if (g.active && may.end) {
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet'; b.textContent = t('end'); b.title = t('endReasonHint');
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('end'); b.title = t('endReasonHint');
       b.addEventListener('click', async () => {
         status.textContent = t('reading');
         const out = await session.end(g.grantId);

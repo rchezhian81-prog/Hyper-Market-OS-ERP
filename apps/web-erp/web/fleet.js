@@ -20,18 +20,20 @@ let lang = 'en';
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
 function sampleSession() {
   const CHROME = {
-    en: { title: 'Devices', langName: 'தமிழ்',
+    en: { title: 'Tills & devices', langName: 'தமிழ்',
       lead: 'Sample fleet. Connect the store computer to see the shop’s own tills, scanners, scales and kiosks.',
       tileTotal: 'Devices', tileTrading: 'Trading', tileMustUpgrade: 'Must update', tileBlocked: 'Blocked', tileSilent: 'Gone quiet',
       attentionLead: 'need a look', allWell: 'Every device is up to date and checking in.',
+      noneRegistered: 'Not known — no till or device is registered yet, so nothing can be checked. A till is registered when it is installed on the store computer (owner guide: installing a till).',
       versionLabel: 'Version', lastSeenLabel: 'Last seen', branchLabel: 'Branch', neverSeen: 'never checked in',
       canManage: 'You can register, block or retire a device.',
       sampleData: 'Sample data — this is not your shop.',
       nobodyNamed: '' },
-    ta: { title: 'சாதனங்கள்', langName: 'English',
+    ta: { title: 'கல்லாக்களும் சாதனங்களும்', langName: 'English',
       lead: 'மாதிரி கடற்படை. கடையின் சொந்த இயந்திரங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       tileTotal: 'சாதனங்கள்', tileTrading: 'வர்த்தகம்', tileMustUpgrade: 'புதுப்பிக்க வேண்டும்', tileBlocked: 'தடுக்கப்பட்டது', tileSilent: 'அமைதி',
       attentionLead: 'கவனம் தேவை', allWell: 'ஒவ்வொரு சாதனமும் புதுப்பித்து தகவல் அனுப்புகிறது.',
+      noneRegistered: 'தெரியாது — எந்தக் கல்லாவும் சாதனமும் இன்னும் பதிவு செய்யப்படவில்லை, எனவே எதையும் சரிபார்க்க முடியாது. கல்லா கடைக் கணினியில் நிறுவப்படும்போது பதிவு செய்யப்படுகிறது (உரிமையாளர் வழிகாட்டி: கல்லா நிறுவுதல்).',
       versionLabel: 'பதிப்பு', lastSeenLabel: 'கடைசியாக பார்த்தது', branchLabel: 'கிளை', neverSeen: 'ஒருபோதும் தெரிவிக்கவில்லை',
       canManage: 'நீங்கள் ஒரு சாதனத்தை பதிவு செய்யலாம், தடுக்கலாம் அல்லது நீக்கலாம்.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -173,9 +175,9 @@ function rowNode(d) {
     for (const a of actions) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `act act-${a.change}`;
+      btn.className = `act act-${a.change} sre-btn`;
       btn.textContent = a.label;
-      btn.disabled = !a.enabled;
+      btn.disabled = !a.enabled; whyDisabled(btn, a.enabled ? '' : (a.note ?? 'role'));
       btn.addEventListener('click', () => openSheet(a, d.label));
       bar.append(btn);
       if (a.note) { const n = document.createElement('span'); n.className = 'act-note'; n.textContent = a.note; bar.append(n); }
@@ -241,10 +243,12 @@ function paint() {
     tileNode(s.silent, 'tileSilent', 'attention'),
   );
 
-  el('attention-count').textContent = !known ? '' : view.attentionCount === 0
-    ? t('allWell')
+  // U0 (P-08): an empty register is NOT a healthy fleet — with nothing registered the line says "Not known" and why,
+  // in the warn tone; "every device is up to date" is said only of devices that exist. Not read at all → nothing said.
+  el('attention-count').textContent = !known ? '' : view.total === 0 ? t('noneRegistered')
+    : view.attentionCount === 0 ? t('allWell')
     : `${view.attentionCount} ${t('attentionLead')}`;
-  el('attention-count').className = view.attentionCount === 0 ? 'count' : 'count attention';
+  el('attention-count').className = view.total === 0 ? 'count unknown' : view.attentionCount === 0 ? 'count' : 'count attention';
 
   const manage = el('manage');
   manage.hidden = !view.mayManage;
@@ -375,4 +379,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

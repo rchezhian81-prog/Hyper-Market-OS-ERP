@@ -13,6 +13,7 @@
 // (`GET /v1/inventory/count-plans/:planId`) carries expected, variance and value. DOM-free and tested.
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
+import { refusalWords } from './refusal-words';
 import { rupees } from './head-office-http';
 import { quantityLabel, normaliseUom, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -85,12 +86,18 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
   en: {
     title: 'Count plans', lede: 'Plan a stock count for one place, freeze what must not move while it is counted, count blind, recount, give each difference a cause, and have a different person approve it. Head office posts the corrections.',
     newH: 'Plan a count', newLede: 'Choose the place and the products. Left as it is, the count freezes adjustments and write-offs only (the owner\'s default) — deliveries and transfers keep flowing, and the till never stops.',
-    place: 'Place (location id)', products: 'Products to count (ids, one per line or separated by commas)', threshold: 'Recount any difference worth at least ₹', note: 'Note (optional)',
+    place: 'Place', products: 'Products to count', productsBulk: 'Many at once, pasted (one per line or separated by commas)', addProduct: 'Add a product…', remove: 'Remove', noProductsYet: 'No product chosen yet.',
+    choose: 'Choose…', pickUnavailable: 'The list could not open — type the id instead.', whichPlace: 'Which place?', whichProduct: 'Which product? (name or barcode)', threshold: 'Recount any difference worth at least ₹', note: 'Note (optional)',
     freezeDefault: 'Owner\'s default: adjustments and write-offs', freezeCustom: 'Choose what to freeze', freezeNone: 'Freeze nothing (said on the plan)', create: 'Plan this count',
     registerH: 'Count plans', registerLede: 'Newest first. Open one to see its lines, its exceptions and what is left to do.', empty: 'No count plans yet.',
     planned: 'Planned — not counting yet', counting: 'Counting — frozen', approved: 'Approved — corrections posted', cancelled: 'Cancelled — nothing posted',
     freezes: 'Frozen while counting:', freezesNothing: 'Freezes nothing.', byDefault: '(the owner\'s default, OB-59)', tillNever: 'Till sales and returns are never frozen.',
     open: 'Open the count (start the freeze)', approve: 'Approve and post', cancel: 'Cancel the count', reason: 'Reason', why: 'Why',
+    // U1 · OB-698: the consequence-and-confirm sheet before a count's corrections are posted
+    confirmTitle: 'Approve count {plan} at {place}: {counted} of {products} products counted, loss {loss}, gain {gain}',
+    confirmDetail: 'Stock is corrected to what was counted, as new movements in the books — nothing is overwritten. A big loss held by the rules waits for its own approval. The freeze on this place ends.',
+    confirmAuthority: 'In your name as the approver — never the person who counted. Head office refuses it if your role may not approve, or if you counted a line yourself.',
+    confirmLabel: 'Approve and post', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     linesH: 'Lines', sheetH: 'Count sheet (blind)', sheetLede: 'What to count or recount — no expected figure is shown here.',
     breachesH: 'Freeze exceptions', breachesLede: 'Frozen movements that reached head office from the floor while counting. Kept, never refused into the void — the product must be counted again.', noBreaches: 'No frozen movement landed here.',
     heldH: 'Damaged write-offs held for this count', heldLede: 'Damaged units that arrived while counting. Held — not on the shelf, not yet written off — and applied once when the count closes (OB-66).', noHeld: 'None held.',
@@ -120,12 +127,17 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
   ta: {
     title: 'எண்ணிக்கைத் திட்டங்கள்', lede: 'ஓர் இடத்துக்குச் சரக்கு எண்ணிக்கையைத் திட்டமிடுங்கள், எண்ணும்போது நகரக்கூடாதவற்றை உறைய வையுங்கள், பார்க்காமல் எண்ணுங்கள், மீண்டும் எண்ணுங்கள், ஒவ்வொரு வேறுபாட்டுக்கும் காரணம் கொடுங்கள், வேறொருவர் ஒப்புதல் தரட்டும். திருத்தங்களைத் தலைமை அலுவலகம் பதிவு செய்யும்.',
     newH: 'எண்ணிக்கையைத் திட்டமிடு', newLede: 'இடத்தையும் பொருட்களையும் தேர்ந்தெடுங்கள். அப்படியே விட்டால், சரிசெய்தல்களும் தள்ளுபடிகளும் மட்டுமே உறையும் (உரிமையாளரின் இயல்புநிலை) — வரவுகளும் இடமாற்றங்களும் தொடரும், கல்லா ஒருபோதும் நிற்காது.',
-    place: 'இடம் (இட அடையாளம்)', products: 'எண்ண வேண்டிய பொருட்கள் (அடையாளங்கள், வரிக்கு ஒன்று அல்லது காற்புள்ளியால் பிரித்து)', threshold: 'இந்த அளவு ₹ அல்லது அதற்கு மேலான வேறுபாட்டை மீண்டும் எண்ணு', note: 'குறிப்பு (விருப்பம்)',
+    place: 'இடம்', products: 'எண்ண வேண்டிய பொருட்கள்', productsBulk: 'பல ஒரே நேரத்தில், ஒட்டி (வரிக்கு ஒன்று அல்லது காற்புள்ளியால் பிரித்து)', addProduct: 'ஒரு பொருளைச் சேர்…', remove: 'நீக்கு', noProductsYet: 'இன்னும் பொருள் தேர்ந்தெடுக்கப்படவில்லை.',
+    choose: 'தேர்ந்தெடு…', pickUnavailable: 'பட்டியலைத் திறக்க முடியவில்லை — அடையாளத்தைத் தட்டச்சு செய்யவும்.', whichPlace: 'எந்த இடம்?', whichProduct: 'எந்தப் பொருள்? (பெயர் அல்லது பார்கோடு)', threshold: 'இந்த அளவு ₹ அல்லது அதற்கு மேலான வேறுபாட்டை மீண்டும் எண்ணு', note: 'குறிப்பு (விருப்பம்)',
     freezeDefault: 'உரிமையாளரின் இயல்புநிலை: சரிசெய்தல்களும் தள்ளுபடிகளும்', freezeCustom: 'எதை உறைய வைப்பது எனத் தேர்ந்தெடு', freezeNone: 'எதையும் உறைய வைக்காதே (திட்டத்தில் சொல்லப்படும்)', create: 'இந்த எண்ணிக்கையைத் திட்டமிடு',
     registerH: 'எண்ணிக்கைத் திட்டங்கள்', registerLede: 'புதியவை முதலில். ஒன்றைத் திறந்து அதன் வரிகள், விதிவிலக்குகள், மீதமுள்ள வேலையைப் பாருங்கள்.', empty: 'இன்னும் எண்ணிக்கைத் திட்டங்கள் இல்லை.',
     planned: 'திட்டமிடப்பட்டது — இன்னும் எண்ணவில்லை', counting: 'எண்ணுகிறது — உறைந்துள்ளது', approved: 'ஒப்புதல் — திருத்தங்கள் பதிவாயின', cancelled: 'ரத்து — எதுவும் பதிவாகவில்லை',
     freezes: 'எண்ணும்போது உறைந்தவை:', freezesNothing: 'எதையும் உறைய வைக்கவில்லை.', byDefault: '(உரிமையாளரின் இயல்புநிலை, OB-59)', tillNever: 'கல்லா விற்பனையும் திருப்பமும் ஒருபோதும் உறையாது.',
     open: 'எண்ணிக்கையைத் தொடங்கு (உறைவைத் தொடங்கு)', approve: 'ஒப்புதல் தந்து பதிவு செய்', cancel: 'எண்ணிக்கையை ரத்து செய்', reason: 'காரணம்', why: 'ஏன்',
+    confirmTitle: '{place}இல் எண்ணிக்கை {plan} ஒப்புதல்: {products}இல் {counted} பொருட்கள் எண்ணப்பட்டன, இழப்பு {loss}, லாபம் {gain}',
+    confirmDetail: 'எண்ணியதற்கு ஏற்பச் சரக்கு கணக்கில் புதிய நகர்வுகளாகத் திருத்தப்படும் — எதுவும் மேலெழுதப்படாது. விதிகளால் நிறுத்தப்பட்ட பெரிய இழப்பு அதன் சொந்த ஒப்புதலுக்குக் காத்திருக்கும். இந்த இடத்தின் முடக்கம் முடியும்.',
+    confirmAuthority: 'ஒப்புதல் அளிப்பவராக உங்கள் பெயரில் — எண்ணியவர் அல்ல. ஒப்புதல் உரிமை இல்லையெனில் அல்லது நீங்களே ஒரு வரியை எண்ணியிருந்தால் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'ஒப்புதல் அளித்துப் பதிவு செய்', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     linesH: 'வரிகள்', sheetH: 'எண்ணிக்கைத் தாள் (பார்க்காமல்)', sheetLede: 'எதை எண்ண வேண்டும் அல்லது மீண்டும் எண்ண வேண்டும் — எதிர்பார்க்கும் எண் இங்கே காட்டப்படாது.',
     breachesH: 'உறைவு விதிவிலக்குகள்', breachesLede: 'எண்ணும்போது தளத்திலிருந்து தலைமை அலுவலகத்தை அடைந்த உறைந்த நகர்வுகள். வைக்கப்பட்டவை, மறுக்கப்படவில்லை — பொருளை மீண்டும் எண்ண வேண்டும்.', noBreaches: 'இங்கே உறைந்த நகர்வு எதுவும் வரவில்லை.',
     heldH: 'இந்த எண்ணிக்கைக்காக நிறுத்தப்பட்ட சேத தள்ளுபடிகள்', heldLede: 'எண்ணும்போது வந்த சேதமான அலகுகள். நிறுத்தப்பட்டவை — அடுக்கில் இல்லை, இன்னும் தள்ளுபடி இல்லை — எண்ணிக்கை முடியும்போது ஒருமுறை பதிவாகும் (OB-66).', noHeld: 'எதுவும் நிறுத்தப்படவில்லை.',
@@ -346,7 +358,7 @@ export function createCountPlansSession(viewer: CountPlanViewer | undefined, htt
       if (out.result === 'ok') return { tone: 'good', words: text(lang, good) };
       if (out.result === 'lost_link') return { tone: 'err', words: text(lang, 'unreachable') };
       if (out.result === 'invalid') return { tone: 'err', words: text(lang, out.key) };
-      return { tone: 'err', words: `${text(lang, 'refused')} ${out.whatHappened === '' ? out.code : out.whatHappened}` };
+      return { tone: 'err', words: refusalWords(lang, out) }; // U0 · G10: what happened · nothing was changed · the next safe action
     },
   };
 }

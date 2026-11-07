@@ -37,12 +37,12 @@
       .row .headline { font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row .facts .warnc { color:var(--degraded); font-weight:700; }
-      .row .exc { font-size:13px; color:var(--danger-text); }
+      .row .exc { font-size: var(--fs-sm); color:var(--danger-text); }
       .actions { display:flex; gap:10px; flex-wrap:wrap; }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; }
-      button.release { background:var(--ok); color:var(--on-accent); } button.hold { background:var(--line); color:var(--ink); }
+      button.release {   } button.hold { background:var(--line); color:var(--ink); }
       button.act:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
@@ -52,14 +52,14 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       section.form h3 { margin:0; }
-      section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+      section.form label { display:block; font-size: var(--fs-sm); color:var(--muted); margin-bottom:4px; }
       section.form input, section.form select { width:100%; box-sizing:border-box; min-height:var(--tap); padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
       section.form .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
-      section.form button.act { background:var(--accent, var(--line)); color:var(--ink); }
+      section.form button.act {   } /* U0: white words on the accent (was the ink, 1.73:1) */
       input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.note { margin:0; color:var(--muted); font-size:14px; }
       fieldset.ticks { border:1px solid var(--line); border-radius:10px; padding:8px 12px; margin:0; display:grid; gap:4px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
-      fieldset.ticks legend { font-size:13px; color:var(--muted); padding:0 4px; }
+      fieldset.ticks legend { font-size: var(--fs-sm); color:var(--muted); padding:0 4px; }
       fieldset.ticks p.note { grid-column:1 / -1; }
       label.tick { display:flex; align-items:center; gap:10px; min-height:var(--tap); font-size:15px; color:var(--ink); margin:0; cursor:pointer; }
       label.tick input { width:24px; height:24px; min-height:0; margin:0; }
@@ -74,7 +74,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <h1 class="who" id="who">Release for sale <small id="whoami"></small></h1>
+      <h1 class="who" id="who">Production <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -99,7 +99,7 @@
         <form id="plan-form" class="grid" novalidate>
           <div><label for="plan-location" id="plan-location-label"></label><input id="plan-location" type="text" autocomplete="off" /></div>
           <div><label for="plan-day" id="plan-day-label"></label><input id="plan-day" type="text" inputmode="numeric" autocomplete="off" placeholder="YYYY-MM-DD" /></div>
-          <button id="plan-go" class="act" type="submit"><span id="plan-go-text"></span></button>
+          <button id="plan-go" class="sre-btn act" type="submit"><span id="plan-go-text"></span></button>
         </form>
         <p class="note" id="plan-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="plan-rows" aria-labelledby="plan-h"></ul>
@@ -116,7 +116,7 @@
           <div><label for="run-batch" id="run-batch-label"></label><input id="run-batch" type="text" autocomplete="off" /></div>
           <div><label for="run-location" id="run-location-label"></label><input id="run-location" type="text" autocomplete="off" /></div>
         </div>
-        <button id="run" class="act" type="button"></button>
+        <button id="run" class="act sre-btn sre-btn-primary" type="button"></button>
       </section>
       <p class="note" id="no-run" hidden></p>
 
@@ -126,7 +126,7 @@
         <p class="note" id="repack-lead"></p>
         <form id="repack-form" class="grid" novalidate>
           <div id="repack-fields" style="display: contents"></div>
-          <button id="repack-go" class="act" type="submit"><span id="repack-go-text"></span></button>
+          <button id="repack-go" class="sre-btn act" type="submit"><span id="repack-go-text"></span></button>
         </form>
         <p class="status" id="repack-status" role="status" aria-live="polite"></p>
       </section>
@@ -137,8 +137,8 @@
         <p class="note" id="trace-lead"></p>
         <form id="trace-form" class="grid" novalidate>
           <div><label for="trace-batch" id="trace-batch-label"></label><input id="trace-batch" type="text" autocomplete="off" /></div>
-          <button id="trace-inputs" class="act" type="submit"><span id="trace-inputs-text"></span></button>
-          <button id="trace-forward" class="act" type="button" hidden><span id="trace-forward-text"></span></button>
+          <button id="trace-inputs" class="sre-btn act" type="submit"><span id="trace-inputs-text"></span></button>
+          <button id="trace-forward" class="sre-btn act" type="button" hidden><span id="trace-forward-text"></span></button>
         </form>
         <p class="note" id="trace-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="trace-rows" aria-labelledby="trace-h"></ul>
@@ -174,7 +174,7 @@
             <label class="tick"><input type="checkbox" id="label-allergen-none" value="none" /><span id="label-allergen-none-word"></span></label>
           </fieldset>
           <p class="note" id="label-box-hint" hidden></p>
-          <button id="label" class="act" type="button"></button>
+          <button id="label" class="act sre-btn" type="button"></button>
         </div>
         <pre class="label" id="label-out" hidden aria-label="The label"></pre>
       </section>
@@ -192,7 +192,7 @@
           <div><label for="weigh-by" id="weigh-by-label"></label><input id="weigh-by" type="text" autocomplete="off" /></div>
           <div><label for="weigh-by-g" id="weigh-by-g-label"></label><input id="weigh-by-g" type="text" inputmode="numeric" autocomplete="off" /></div>
         </div>
-        <button id="weigh" class="act" type="button"></button>
+        <button id="weigh" class="act sre-btn" type="button"></button>
       </section>
 
       <section class="form" id="saved" hidden aria-label="Saved on this screen">

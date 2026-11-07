@@ -24,7 +24,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -34,6 +34,8 @@
       ul.rows li.attention { border-left: 6px solid var(--degraded); }
       .meta { font-size: 14px; color: var(--muted); }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
     <style>
       /* The tags: real millimetres, so a printed tag is the size of its stock and every character at least its judged height. */
@@ -75,7 +77,7 @@
         <div class="row-form">
           <label for="f-text"><span id="f-text-l"></span><input id="f-text" autocomplete="off" /></label>
         </div>
-        <button id="f-find" type="button" class="quiet"><span id="f-find-text"></span></button>
+        <button id="f-find" type="button" class="quiet sre-btn sre-btn-quiet"><span id="f-find-text"></span></button>
         <p class="status" id="f-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="f-rows"></ul>
         <label for="t-codes"><span id="t-codes-l"></span><textarea id="t-codes" rows="5" autocomplete="off"></textarea></label>
@@ -83,7 +85,7 @@
           <label for="t-lang"><span id="t-lang-l"></span><select id="t-lang"></select></label>
           <label for="t-size"><span id="t-size-l"></span><select id="t-size"></select></label>
         </div>
-        <button id="t-make" type="button"><span id="t-make-text"></span></button>
+        <button id="t-make" type="button" class="sre-btn"><span id="t-make-text"></span></button>
         <p class="status" id="t-status" role="status" aria-live="polite"></p>
       </section>
       <section id="refused" hidden aria-labelledby="refused-h">
@@ -100,7 +102,7 @@
           <label for="t-mode"><span id="t-mode-l"></span><select id="t-mode"></select></label>
         </div>
         <p class="meta" id="t-hint"></p>
-        <button id="t-print" type="button"><span id="t-print-text"></span></button>
+        <button id="t-print" type="button" class="sre-btn sre-btn-primary"><span id="t-print-text"></span></button>
         <p class="status" id="t-print-status" role="alert" hidden></p>
         <div id="sheet"></div>
       </section>

@@ -24,7 +24,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -81,13 +81,13 @@
             <label for="n-name"><span id="n-name-l"></span><input id="n-name" autocomplete="off" /></label>
             <label for="n-minutes"><span id="n-minutes-l"></span><input id="n-minutes" inputmode="numeric" autocomplete="off" /></label>
             <label for="n-escalates"><span id="n-escalates-l"></span><input id="n-escalates" autocomplete="off" /></label>
-            <button id="n-add" type="submit"><span id="n-add-text"></span></button>
+            <button id="n-add" type="submit" class="sre-btn sre-btn-primary"><span id="n-add-text"></span></button>
           </form>
           <p class="status" id="add-status" role="status" aria-live="polite"></p>
           <h4 id="backup-h"></h4>
           <form class="row-form" id="backup-form">
             <label for="b-hours"><span id="b-hours-l"></span><input id="b-hours" inputmode="numeric" autocomplete="off" /></label>
-            <button id="b-save" type="submit"><span id="b-save-text"></span></button>
+            <button id="b-save" type="submit" class="sre-btn"><span id="b-save-text"></span></button>
           </form>
           <p class="status" id="backup-status" role="status" aria-live="polite"></p>
         </div>

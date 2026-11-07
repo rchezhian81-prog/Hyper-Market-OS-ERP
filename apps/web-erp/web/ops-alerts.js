@@ -53,7 +53,7 @@ function paintRules() {
       const form = document.createElement('form'); form.className = 'acts';
       const id = input(r.ownerUserId, 'o-owner'); const name = input(r.ownerName, 'o-name'); const minutes = input(String(r.ackWithinMinutes), 'o-minutes'); const esc = input(r.escalatesToUserId, 'o-escalates');
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet'; b.textContent = t('save');
+      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('save');
       const slug = r.alertId.replace(/[^A-Za-z0-9_-]/g, '_');
       form.append(field(`o-owner-${slug}`, t('ownerId'), id), field(`o-name-${slug}`, t('ownerName'), name), field(`o-min-${slug}`, t('ackMinutes'), minutes), field(`o-esc-${slug}`, t('escalatesTo'), esc), b, status);
       form.addEventListener('submit', async (e) => {

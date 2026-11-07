@@ -26,7 +26,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
       .stack { display: grid; gap: 10px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
       .card blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); }
@@ -34,7 +34,10 @@
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .off-r8 { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
-      .muted { color: var(--muted); font-size: 13px; }
+      .muted { color: var(--muted); font-size: var(--fs-sm); }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -59,7 +62,7 @@
           </label>
           <label for="tpl-brief"><span id="l-tpl-brief">Brief (optional)</span><input id="tpl-brief" autocomplete="off" /></label>
         </div>
-        <button id="ask-campaign" type="button">Ask the assistant for the words</button>
+        <button id="ask-campaign" type="button" class="sre-btn sre-btn-primary">Ask the assistant for the words</button>
         <p class="status" id="camp-status" role="status" aria-live="polite"></p>
         <div id="camp-list" class="stack"></div>
       </section>
@@ -67,7 +70,7 @@
       <section aria-labelledby="anom-h">
         <h2 id="anom-h">Anomaly summaries</h2>
         <p class="lede" id="anom-lede">What the assistant sees across the open investigations and the rule breaches, and what it suggests looking at first. It suspends nobody and opens or closes nothing.</p>
-        <button id="ask-summary" type="button">Ask the assistant for a summary</button>
+        <button id="ask-summary" type="button" class="sre-btn">Ask the assistant for a summary</button>
         <p class="status" id="anom-status" role="status" aria-live="polite"></p>
         <div id="anom-list" class="stack"></div>
       </section>

@@ -61,7 +61,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -81,7 +81,7 @@
       .row.blocker { border-left: 5px solid var(--warn); }
       .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
       .sides span { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
-      .sides small { display: block; color: var(--muted); font-size: 13px; }
+      .sides small { display: block; color: var(--muted); font-size: var(--fs-sm); }
       .verdict { border-radius: 12px; padding: 12px 14px; font-weight: 600; margin-bottom: 12px; }
       .verdict.signable { background: var(--ok-surface); color: var(--on-ok-surface); border: 2px solid var(--good); }
       .verdict.not-signable { background: var(--error-surface); color: var(--danger-text); border: 2px solid var(--danger); }

@@ -68,7 +68,7 @@ async function read(path) { const res = await fetch(path, { credentials: 'same-o
 
 function field(labelKey, control) { const label = document.createElement('label'); const span = document.createElement('span'); span.textContent = t(labelKey); label.append(span, control); return label; }
 function input(type, cls) { const i = document.createElement('input'); i.type = type; if (cls) i.className = cls; return i; }
-function button(key, cls, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = `act ${cls ?? ''}`.trim(); b.textContent = t(key); b.addEventListener('click', onClick); return b; }
+function button(key, cls, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = `sre-btn ${cls === 'quiet' ? 'sre-btn-quiet' : (cls ?? '')}`.trim(); b.textContent = t(key); b.addEventListener('click', onClick); return b; }
 function row(tone, headText, stateText) {
   const li = document.createElement('li'); li.className = `row tone-${tone}`;
   const head = document.createElement('div'); head.className = 'head';
@@ -202,7 +202,20 @@ el('details-form').addEventListener('submit', async (event) => {
   if (out.ok) for (const k of [...DETAIL_KEYS, 'reason']) el(`d-${k}`).value = '';
   await refresh();
 });
-el('publish-store').addEventListener('click', async () => { await post('/v1/online-store/publish', {}, 'publish-store'); await refresh(); });
+// OB-698: the shop goes online only after the shared confirm sheet (the chrome's) says what goes live, in whose name, and
+// the person writes why and confirms. Go back sends nothing. The reason travels with the publication record.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: { title: 'The online store will go live for customers now', detail: 'Every listing marked online, with the shop\'s details, terms and the grievance officer, is shown to the public and can be ordered from. Withdrawing a listing later needs a reason of its own.', authority: 'In your name. Head office refuses it while any detail the law requires is not set.', label: 'Publish the online store', why: 'Why it is going live now', whyHint: 'Kept with the publication record.' },
+  ta: { title: 'ஆன்லைன் கடை இப்போது வாடிக்கையாளர்களுக்குத் திறக்கப்படும்', detail: 'ஆன்லைன் எனக் குறித்த ஒவ்வொரு பட்டியலும், கடையின் விவரங்கள், விதிமுறைகள், குறைதீர் அலுவலருடன் பொதுமக்களுக்குக் காட்டப்பட்டு ஆர்டர் செய்யலாம். பின்னர் ஒரு பட்டியலைத் திரும்பப் பெற அதன் சொந்தக் காரணம் தேவை.', authority: 'உங்கள் பெயரில். சட்டம் கோரும் ஏதேனும் விவரம் அமைக்கப்படாத வரை தலைமை அலுவலகம் மறுக்கும்.', label: 'ஆன்லைன் கடையை வெளியிடு', why: 'இப்போது ஏன் திறக்கப்படுகிறது', whyHint: 'வெளியீட்டுப் பதிவுடன் வைக்கப்படும்.' },
+};
+const pair = (k) => ({ en: CONFIRM.en[k], ta: CONFIRM.ta[k] });
+el('publish-store').addEventListener('click', async () => {
+  const answer = await (await office()).confirm({ title: pair('title'), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary', reason: { label: pair('why'), hint: pair('whyHint'), required: true, minLength: 3 } });
+  if (!answer.ok) return;
+  await post('/v1/online-store/publish', { reason: answer.reason }, 'publish-store');
+  await refresh();
+});
 el('policy-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const reason = el('p-reason').value.trim();

@@ -77,7 +77,7 @@ function paintControls() {
     const li = text('li', `${r.action} · ${t('owner')} ${r.ownerUserId} · ${r.completedAt === undefined ? `${t('due')} ${r.dueOn}${late.has(r.remediationId) ? ` · ${t('late')}` : ''}` : `${t('done')} ${when(r.completedAt)}`}`);
     li.dataset.remediation = r.remediationId;
     if (r.completedAt === undefined && may.write_controls) {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet'; b.textContent = t('doneGo');
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('doneGo');
       b.addEventListener('click', async () => { b.disabled = true; const out = await session.markDone(r); say('ctl-status', out, t('remediationDone')); if (out.result === 'ok') await loadControls(); else b.disabled = false; });
       li.append(' ', b);
     }
@@ -137,12 +137,12 @@ function paintFindings() {
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
       const acts = document.createElement('div'); acts.className = 'acts';
       const ownerIn = document.createElement('input'); ownerIn.setAttribute('aria-label', t('nameOwner')); ownerIn.placeholder = t('nameOwner'); ownerIn.className = 'owner-in';
-      const ownerGo = document.createElement('button'); ownerGo.type = 'button'; ownerGo.className = 'quiet owner-go'; ownerGo.textContent = t('ownerGo');
+      const ownerGo = document.createElement('button'); ownerGo.type = 'button'; ownerGo.className = 'quiet owner-go sre-btn sre-btn-quiet'; ownerGo.textContent = t('ownerGo');
       ownerGo.addEventListener('click', async () => { ownerGo.disabled = true; const out = await session.nameOwner(f.findingId, ownerIn.value); say('fnd-status', out, t('ownerNamed')); status.textContent = out.result === 'ok' ? '' : api.outcomeWords(lang, out); if (out.result === 'ok') await loadFindings(); else ownerGo.disabled = false; });
       acts.append(ownerIn, ownerGo);
       if (f.byPerson) {
         const fixIn = document.createElement('input'); fixIn.setAttribute('aria-label', t('fixEvidence')); fixIn.placeholder = t('fixEvidence'); fixIn.className = 'fix-in';
-        const fixGo = document.createElement('button'); fixGo.type = 'button'; fixGo.className = 'fix-go'; fixGo.textContent = t('fixGo');
+        const fixGo = document.createElement('button'); fixGo.type = 'button'; fixGo.className = 'fix-go sre-btn'; fixGo.textContent = t('fixGo');
         fixGo.addEventListener('click', async () => { fixGo.disabled = true; const out = await session.markFixed(f.findingId, fixIn.value); say('fnd-status', out, t('findingFixed')); status.textContent = out.result === 'ok' ? '' : api.outcomeWords(lang, out); if (out.result === 'ok') await loadFindings(); else fixGo.disabled = false; });
         acts.append(fixIn, fixGo);
       }

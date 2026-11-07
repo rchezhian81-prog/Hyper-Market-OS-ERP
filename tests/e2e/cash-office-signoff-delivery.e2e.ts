@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 
 /**
  * **The cash office signs off an over/short, in a real browser (M14-FR-02 · API-05 · §28 — the E2E matrix).**
@@ -106,6 +106,13 @@ const reviewer = (userId: string, permissions: readonly string[]): Record<string
   userId, tenantId: 't1', permissions,
 });
 
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
+
 describe.skipIf(!HAVE_BROWSER)('the cash office signs off an over/short, end to end in a real browser (M14-FR-02)', () => {
   let browser: Browser;
 
@@ -141,6 +148,7 @@ describe.skipIf(!HAVE_BROWSER)('the cash office signs off an over/short, end to 
       await page.selectOption('#sign-disposition', 'change_error');
       await page.fill('#sign-note', 'gave a ₹500 note as change — matched the till roll');
       await page.click('#sign');
+      await confirmSheet(page);
 
       // The shift drops off because the worklist was re-READ (server re-derive), not shuffled client-side.
       await page.waitForFunction(

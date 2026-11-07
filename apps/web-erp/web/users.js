@@ -12,7 +12,7 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, cls, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = cls ?? 'quiet'; b.textContent = words; b.addEventListener('click', onClick); return b; }
+function button(words, cls, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.className = cls ?? 'quiet'; b.textContent = words; b.addEventListener('click', onClick); return b; }
 function field(labelWords, id) {
   const l = document.createElement('label'); l.htmlFor = id; l.append(text('span', labelWords));
   const i = document.createElement('input'); i.id = id; i.autocomplete = 'off'; l.append(i); return { label: l, input: i };

@@ -10,6 +10,64 @@ const session = window.countPlansSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
 
+// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
+// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
+// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
+// list cannot be read (head office down, no right) typing the id is the fallback, never a dead end (P-01, P-08).
+const pickers = [];
+function pickerBeside(input, kind, titleKey, extra = {}) {
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
+  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
+  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
+  host.after(btn, name);
+  btn.addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind, title: { en: session.text('en', titleKey), ta: session.text('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
+    if (!picked || picked.ok !== true) return;
+    input.value = picked.id;
+    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  pickers.push(btn);
+  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
+  return btn;
+}
+const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+/** The signed-in person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
+function myStore() {
+  const office = window.sreOffice;
+  const me = office && typeof office.me === 'function' ? office.me() : null;
+  return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
+/** The products chosen one by one with the picker: { id, name }. The bulk box (ids, one per line) stays the second path. */
+let pickedProducts = [];
+function paintPickedProducts() {
+  const list = $('product-list');
+  if (list === null) return;
+  list.replaceChildren(...(pickedProducts.length === 0 ? [node('li', { className: 'muted', textContent: t('noProductsYet') })] : pickedProducts.map((p) => {
+    const li = node('li', {}); li.dataset.product = p.id;
+    const remove = node('button', { type: 'button', className: 'sre-btn sre-btn-quiet', textContent: t('remove') });
+    remove.setAttribute('aria-label', `${t('remove')} ${p.name}`);
+    remove.addEventListener('click', () => { pickedProducts = pickedProducts.filter((x) => x.id !== p.id); paintPickedProducts(); });
+    li.append(node('span', { textContent: p.name === p.id ? p.id : `${p.name} (${p.id})` }), remove);
+    return li;
+  })));
+}
+/** Every product to count: the ones picked, then whatever the bulk box holds — one id per line for the session. */
+const productsText = () => [...pickedProducts.map((p) => p.id), $('products').value].join('\n');
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
+
 let plans = null;
 let current = null; // { planId, view, sheet }
 
@@ -210,7 +268,7 @@ function paintKinds() {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  const map = [['who', 'title'], ['title', 'title'], ['lede', 'lede'], ['new-h', 'newH'], ['new-lede', 'newLede'], ['l-place', 'place'], ['l-threshold', 'threshold'], ['l-products', 'products'],
+  const map = [['who', 'title'], ['title', 'title'], ['lede', 'lede'], ['new-h', 'newH'], ['new-lede', 'newLede'], ['l-place', 'place'], ['l-products-bulk', 'productsBulk'], ['add-product', 'addProduct'], ['l-threshold', 'threshold'], ['l-products', 'products'],
     ['l-freeze', 'freezeLegend'], ['f-default', 'freezeDefault'], ['f-custom', 'freezeCustom'], ['f-none', 'freezeNone'], ['l-note', 'note'], ['create', 'create'],
     ['reg-h', 'registerH'], ['reg-lede', 'registerLede'], ['c-plan', 'colPlan'], ['c-place', 'colPlace'], ['c-products', 'colProducts'], ['c-state', 'colState'], ['c-freeze', 'colFreeze'],
     ['d-open', 'open'], ['l-d-reason', 'reason'], ['d-approve', 'approve'], ['d-cancel', 'cancel'], ['d-sheet-h', 'sheetH'], ['d-sheet-lede', 'sheetLede'], ['d-lines-h', 'linesH'],
@@ -229,20 +287,38 @@ function paintWords() {
 
 if (session !== null) {
   for (const r of document.querySelectorAll('input[name="freeze"]')) r.addEventListener('change', paintKinds);
+  pickerBeside($('place'), 'place', 'whichPlace', () => ({ scope: { storeId: myStore() } }));
+  $('add-product').addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { $('create-status').className = 'status err'; $('create-status').textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind: 'product', title: { en: session.text('en', 'whichProduct'), ta: session.text('ta', 'whichProduct') }, allowCode: true });
+    if (!picked || picked.ok !== true) return;
+    if (!pickedProducts.some((p) => p.id === picked.id)) pickedProducts.push({ id: picked.id, name: picked.name || picked.id });
+    paintPickedProducts();
+  });
+  paintPickers(); paintPickedProducts();
   $('create').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status';
     const freeze = document.querySelector('input[name="freeze"]:checked')?.value ?? 'default';
     const out = await session.create({
-      locationId: $('place').value, productsText: $('products').value, thresholdRupees: $('threshold').value, freeze,
+      locationId: $('place').value, productsText: productsText(), thresholdRupees: $('threshold').value, freeze,
       kinds: [...document.querySelectorAll('#kinds input:checked')].map((i) => i.value), note: $('note').value,
     });
     say($('create-status'), out);
-    if (out.result === 'ok') { $('products').value = ''; $('note').value = ''; await loadList(); await openDrawer(out.planId); }
+    if (out.result === 'ok') { $('products').value = ''; pickedProducts = []; paintPickedProducts(); $('note').value = ''; await loadList(); await openDrawer(out.planId); }
   });
   $('d-open').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.open(current.planId); await refreshDrawer(); say($('d-status'), out); });
   $('d-approve').addEventListener('click', async () => {
-    $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.approve(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
+    $('d-status').textContent = ''; $('d-status').className = 'status';
+    // U1 · OB-698: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
+    const tt = current?.view?.totals;
+    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : '—').replace('{gain}', tt ? session.rupees(tt.gainMinor) : '—');
+    // With no reason written the session says so, and nothing is sent — no sheet for that.
+    const answer = $('d-reason').value.trim() === '' ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
+    if (answer === 'unavailable') { $('d-status').className = 'status err'; $('d-status').textContent = t('confirmUnavailable'); return; }
+    if (answer === null) return;
+    const out = await session.approve(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
   $('d-cancel').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.cancel(current.planId, $('d-reason').value); await refreshDrawer(); say($('d-status'), out); });
   $('adj-show').addEventListener('click', () => { void loadAdjustments(); });
@@ -253,6 +329,8 @@ if (session !== null) {
     lang = lang === 'en' ? 'ta' : 'en';
     document.documentElement.lang = lang;
     paintWords();
+    paintPickers();
+    paintPickedProducts();
     paintRegister();
     paintDrawer();
     paintAdjustments();

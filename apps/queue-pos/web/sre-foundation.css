@@ -310,6 +310,9 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-btn:hover { background: var(--hover); border-color: var(--line-strong); }
 .sre-btn:active { transform: translateY(1px); }
 .sre-btn-secondary { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.sre-btn[hidden] { display: none; }
+/* the reason a greyed button is greyed, beside it (U1 · G3): words a person must read, never under 14px */
+.sre-why { display: block; color: var(--muted); font-size: var(--fs-sm); margin-top: var(--space-1); }
 .sre-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; box-shadow: var(--shadow-sm); }
 .sre-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .sre-btn-primary:active { background: var(--accent-press); border-color: var(--accent-press); }
@@ -378,6 +381,46 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-entry { font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; background: var(--panel-2); border-radius: var(--radius); min-height: 68px; font-variant-numeric: tabular-nums; }
 .sre-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .sre-keypad .sre-btn { font-size: 22px; }
+/* The confirm sheet (OB-626): consequence · authority · the person's word, before money, stock, a price or a privilege
+   moves. Above the drawer and the menu, since it may be asked from inside either. Enters opaque (motion rule 3). */
+.sre-confirm { z-index: 45; }
+.sre-confirm .sre-sheet-inner { gap: var(--space-3); }
+.sre-confirm-kicker { margin: 0; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--strip-ink); font-weight: 700; }
+.sre-confirm h2 { margin: 0; font-size: var(--fs-lg); line-height: var(--leading-tight); color: var(--ink); font-variant-numeric: var(--numbers); }
+.sre-confirm-detail { margin: 0; font-size: var(--fs-base); color: var(--text); }
+.sre-confirm-authority { margin: 0; padding-top: var(--space-3); border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--strip-ink); }
+.sre-confirm-authority[hidden] { display: none; }
+.sre-confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; padding-top: var(--space-2); }
+.sre-confirm-actions .sre-btn { min-height: 44px; }
+.sre-confirm-actions .sre-btn-primary, .sre-confirm-actions .sre-btn-danger { min-height: 48px; }
+.sre-confirm .sre-field textarea.sre-input { min-height: 88px; }
+
+/* The picker (U2 · G5): pick a product, supplier, person, place, store, customer or approval by its NAME — one sheet
+   with a search box and a list; rows are 44px targets; the typed-code fallback sits below the list, never a dead end. */
+.sre-picker { z-index: 46; }
+.sre-picker .sre-sheet-inner { gap: var(--space-3); width: min(640px, 100%); }
+.sre-picker h2 { margin: 0; font-size: var(--fs-lg); line-height: var(--leading-tight); color: var(--ink); }
+.sre-picker-search .sre-input { width: 100%; }
+.sre-picker-count { margin: 0; font-size: var(--fs-sm); color: var(--strip-ink); min-height: 1.4em; }
+.sre-picker-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); max-height: min(48dvh, 420px); overflow-y: auto; }
+.sre-picker-list:empty { display: none; }
+.sre-picker-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-3); width: 100%; min-height: var(--tap); padding: var(--space-2) var(--space-3); text-align: left; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--fs-base); cursor: pointer; }
+.sre-picker-row:hover { background: var(--hover); border-color: var(--ink-2); }
+.sre-picker-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sre-picker-name { font-weight: 600; }
+.sre-picker-code-word { font-size: var(--fs-sm); color: var(--strip-ink); font-variant-numeric: var(--numbers); }
+.sre-picker-state:empty { display: none; }
+.sre-picker-state .sre-empty { margin: 0; }
+.sre-picker-code { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line-soft); }
+.sre-picker-code[hidden] { display: none; }
+.sre-picker-code .sre-btn { justify-self: start; min-height: 44px; }
+
+/* A pick field: "name (code)" shown read-only, Choose… beside it, the id kept in a hidden input (U2 · G5). */
+.sre-pick-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: stretch; }
+.sre-pick-row .sre-pick-shown { flex: 1 1 220px; min-width: 0; cursor: pointer; background: var(--field); }
+.sre-pick-row .sre-btn { min-height: var(--tap); }
+.sre-date .sre-input { max-width: 220px; font-variant-numeric: var(--numbers); }
+
 
 /* The banner that must not be missed: full width, top, stays until acknowledged (design system §1 rule 5). */
 .sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg); }
@@ -581,10 +624,13 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 
 /* The register (data table): a tool row (search, filters, the column choice), the table, then "Showing 1–10 of 24" and
    the pager. Every control is at least the tap height; the table scrolls inside its own box, never the page. */
-.sre-datatable { display: grid; gap: var(--space-3); min-width: 0; }
-/* UI-3: the register's parts are grid items — without this the table's own width widened the page on a phone instead of
-   scrolling inside its box. */
+.sre-datatable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); min-width: 0; }
+/* U0 (1 Nov 2026) and UI-3 (W2): a register never pushes its page wider than a phone — every part is a grid item that
+   gives way, the filter and the scroll box too, and the table scrolls in its box. */
 .sre-datatable > * { min-width: 0; }
+.sre-datatable-body, .sre-datatable-body > .sre-scroll-x { min-width: 0; max-width: 100%; }
+.sre-datatable-filter { min-width: 0; max-width: 100%; }
+.sre-datatable-filter > .sre-select { min-width: 0; max-width: 100%; }
 .sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
 .sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
 .sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }

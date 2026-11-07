@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **The QC operator releases a finished batch for sale, in a real browser (M11-FR-03 · API-04 · §28 — the E2E matrix).**
@@ -170,7 +171,8 @@ describe.skipIf(!HAVE_BROWSER)('the QC operator releases a batch for sale, end t
       expect(await page.locator('#rows button.release').count()).toBe(1);
       expect(await page.locator('#rows button.hold').count()).toBe(1);
 
-      await page.click('#rows button.release');
+      // U1 · OB-698: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(page, () => page.click('#rows button.release'), /Release batch .* for sale/, writeCounter(page));
 
       // The batch drops off because the board was re-READ (server re-derive: it now folds released:true),
       // not shuffled client-side.

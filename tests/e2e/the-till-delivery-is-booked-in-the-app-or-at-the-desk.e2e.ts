@@ -9,6 +9,9 @@ import { startCustomerShop, type CustomerShop } from './lib/customer-shop';
 import { startInboxShop, ok as okHo, type InboxShop } from './lib/ai-inbox-shop';
 import { listableProduct } from '../support/sell-online';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **OB-352 (owner, 24 Oct 2026, in writing) — the till delivery's address and slot, in a real browser.**
  *
@@ -152,7 +155,7 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
       expect(await page.textContent('#till-jobs-h')).toBe('Deliveries from the till');
       expect(await page.locator('#show-till-jobs svg').count()).toBe(1);
       await page.fill('#store', 'br-1');
-      await page.fill('#till-day', runDate);
+      await page.fill('#till-day', ddmm(runDate));
       await page.click('#show-till-jobs');
       const row = page.locator('#till-jobs li.row[data-order="till-S-DESK"]');
       await row.waitFor({ timeout: 15_000 });
@@ -183,7 +186,7 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
       page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(`${shop.base}/dispatch`, { waitUntil: 'load' });
       await page.fill('#store', 'br-1');
-      await page.fill('#till-day', runDate);
+      await page.fill('#till-day', ddmm(runDate));
       await page.click('#show-till-jobs');
       const row = page.locator('#till-jobs li.row[data-order="till-S-APPDESK"]');
       await row.waitFor({ timeout: 15_000 });

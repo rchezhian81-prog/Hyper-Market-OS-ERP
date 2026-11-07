@@ -179,7 +179,7 @@ function renderActions(view) {
     btn.type = 'button';
     btn.textContent = t(ACTION_LABEL_KEY[action] ?? action);
     // Offline disables every state change — the directive's hard line.
-    btn.disabled = !view.online;
+    btn.disabled = !view.online; whyDisabled(btn, view.online ? '' : 'offline');
     btn.addEventListener('click', () => {
       const opts = action === 'reverse' && reasonInput ? { reason: reasonInput.value } : undefined;
       const outcome = session.can(action, opts);
@@ -209,10 +209,10 @@ function renderReauth(view) {
     box.append(chip);
     return;
   }
-  const btn = document.createElement('button');
+  const btn = document.createElement('button'); btn.classList.add('sre-btn');
   btn.type = 'button';
   btn.textContent = t('reauthNeeded');
-  btn.disabled = !view.online;
+  btn.disabled = !view.online; whyDisabled(btn, view.online ? '' : 'offline');
   btn.addEventListener('click', () => {
     // Model the MFA success. The real MFA challenge is the API path; here it refreshes the client window.
     globalThis.payrollReauth?.();
@@ -338,7 +338,7 @@ function renderLive() {
   const icon = typeof window.sreIcon === 'function' ? window.sreIcon('search', 18) : null;
   if (icon !== null) btn.append(icon);
   const label = document.createElement('span'); label.textContent = w('show'); btn.append(label);
-  btn.disabled = !live.session.may.readRun;
+  btn.disabled = !live.session.may.readRun; whyDisabled(btn, live.session.may.readRun ? '' : 'role');
   el('live-status').textContent = liveStatus === null ? '' : live.outcome(lang, liveStatus);
   el('live-rows').replaceChildren(...(liveRun === null ? [] : live.runRows(lang, liveRun).map((r) => {
     const row = document.createElement('div'); row.className = 'row';
@@ -365,3 +365,25 @@ if (live !== null) {
 
 // NOTE: no `navigator.serviceWorker.register` here, by design — payroll is online-first and must never cache
 // sensitive data on the device (owner directive). Do not add one.
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}

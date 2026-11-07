@@ -9,10 +9,29 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }
@@ -37,7 +56,7 @@ async function verifyOne(c, status) {
 function startRenewal(c) {
   $('c-person').value = c.employeeId;
   $('c-kind').value = api.kinds.some((k) => k.kind === c.kind) ? c.kind : api.kinds[0].kind;
-  $('c-issued').value = api.today(); $('c-until').value = '';
+  setShopDate('c-issued', api.today()); setShopDate('c-until', '');
   renewing = true; $('c-renewing').hidden = false; $('c-renewing').textContent = t('renewing');
   $('c-status').textContent = '';
   $('c-until').focus();
@@ -85,10 +104,11 @@ function paintPeople() {
 }
 
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['record-h', 'recordH'], ['c-person-l', 'person'], ['c-kind-l', 'kind'], ['c-issued-l', 'issuedOn'], ['c-until-l', 'validUntil'],
-    ['c-seen-l', 'seen'], ['c-record-text', 'record'], ['list-h', 'listH'], ['l-reload-text', 'reload']]) $(id).textContent = t(key);
+    ['c-seen-l', 'seen'], ['c-record-text', 'record'], ['list-h', 'listH'], ['l-reload-text', 'reload']]) { const n = $(id); if (n) n.textContent = t(key); }
   if (api !== null) {
     const sel = $('c-kind'); const keep = sel.value;
     sel.replaceChildren(...api.kinds.map((k) => { const o = document.createElement('option'); o.value = k.kind; o.textContent = k[lang]; return o; }));
@@ -116,15 +136,17 @@ else {
   $('l-reload').addEventListener('click', () => { void load(); });
   if (may.manage) {
     $('record').hidden = false;
-    $('c-issued').value = api.today();
+    setShopDate('c-issued', api.today());
     $('c-record').addEventListener('click', async () => {
-      const out = await session.record({ employeeId: $('c-person').value, kind: $('c-kind').value, issuedOn: $('c-issued').value, validUntil: $('c-until').value, seen: $('c-seen').checked });
+      const out = await session.record({ employeeId: $('c-person').value, kind: $('c-kind').value, issuedOn: dateOf('c-issued'), validUntil: dateOf('c-until'), seen: $('c-seen').checked });
       const said = api.outcomeWords(lang, out, 'record');
       $('c-status').textContent = said;
-      if (out.result === 'ok') { renewing = false; $('c-renewing').hidden = true; $('c-seen').checked = false; $('c-until').value = ''; await load(); }
+      if (out.result === 'ok') { renewing = false; $('c-renewing').hidden = true; $('c-seen').checked = false; setShopDate('c-until', ''); await load(); }
     });
   } else {
     $('page-status').textContent = t('cannotManage');
   }
   void load();
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('c-issued', { en: wordsIn('en', 'issuedOn'), ta: wordsIn('ta', 'issuedOn') }); shopDate('c-until', { en: wordsIn('en', 'validUntil'), ta: wordsIn('ta', 'validUntil') }); paint(); }, { once: true });

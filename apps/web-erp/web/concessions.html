@@ -23,7 +23,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       textarea { min-height: 96px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -32,10 +32,12 @@
       .actions { display: flex; gap: 8px; flex-wrap: wrap; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
-      .meta { font-size: 13px; color: var(--muted); }
+      .meta { font-size: var(--fs-sm); color: var(--muted); }
       .figs { display: flex; gap: 16px; flex-wrap: wrap; }
       .figs > div { display: grid; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -56,7 +58,7 @@
         <h3 id="counters-h"></h3>
         <ul class="rows" id="c-rows"></ul>
         <ul class="rows" id="c-asked"></ul>
-        <button id="raise" type="button" class="quiet" hidden><span id="raise-text"></span></button>
+        <button id="raise" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="raise-text"></span></button>
         <p class="status" id="c-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -78,8 +80,8 @@
           <label for="f-lic"><span id="f-lic-l"></span><input id="f-lic" type="date" /></label>
         </div>
         <div class="actions">
-          <button id="f-save" type="button" class="quiet"><span id="f-save-text"></span></button>
-          <button id="f-ask" type="button"><span id="f-ask-text"></span></button>
+          <button id="f-save" type="button" class="quiet sre-btn sre-btn-quiet"><span id="f-save-text"></span></button>
+          <button id="f-ask" type="button" class="sre-btn sre-btn-primary"><span id="f-ask-text"></span></button>
         </div>
         <p class="status" id="f-status" role="status" aria-live="polite"></p>
       </section>
@@ -91,7 +93,7 @@
           <label for="d-kind"><span id="d-kind-l"></span><select id="d-kind"><option value="received" id="d-kind-in"></option><option value="refunded" id="d-kind-out"></option><option value="forfeited" id="d-kind-forfeit"></option></select></label>
           <label for="d-amount"><span id="d-amount-l"></span><input id="d-amount" inputmode="decimal" autocomplete="off" /></label>
         </div>
-        <button id="d-save" type="button"><span id="d-save-text"></span></button>
+        <button id="d-save" type="button" class="sre-btn"><span id="d-save-text"></span></button>
         <p class="status" id="d-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -105,8 +107,8 @@
           <label for="m-banked"><span id="m-banked-l"></span><input id="m-banked" inputmode="decimal" autocomplete="off" /></label>
         </div>
         <div class="actions">
-          <button id="m-charge" type="button" class="quiet"><span id="m-charge-text"></span></button>
-          <button id="m-settle" type="button"><span id="m-settle-text"></span></button>
+          <button id="m-charge" type="button" class="quiet sre-btn sre-btn-quiet"><span id="m-charge-text"></span></button>
+          <button id="m-settle" type="button" class="sre-btn"><span id="m-settle-text"></span></button>
         </div>
         <p class="status" id="m-status" role="status" aria-live="polite"></p>
         <div class="figs" id="m-figs"></div>

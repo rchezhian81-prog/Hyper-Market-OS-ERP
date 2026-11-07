@@ -25,7 +25,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
       button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: top; }
@@ -37,6 +37,15 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .wrap { overflow-x: auto; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -63,17 +72,17 @@
           <label for="new-id"><span id="l-new-id">Requisition number</span><input id="new-id" autocomplete="off" /></label>
         </form>
         <div id="new-lines" class="form-row"></div>
-        <div class="form-row"><button class="quiet" id="add-line" type="button">Add a line</button><button id="raise" type="button">Raise the requisition</button></div>
+        <div class="form-row"><button class="quiet sre-btn sre-btn-quiet" id="add-line" type="button">Add a line</button><button id="raise" type="button" class="sre-btn sre-btn-primary">Raise the requisition</button></div>
       </section>
       <section aria-labelledby="open-h" id="open-section" hidden>
         <h3 id="open-h"></h3>
         <h3 id="quote-h">Record a supplier's quote</h3>
         <div class="form-row">
           <label for="quote-id"><span id="l-quote-id">Quote number</span><input id="quote-id" autocomplete="off" /></label>
-          <label for="quote-supplier"><span id="l-quote-supplier">Supplier code</span><input id="quote-supplier" autocomplete="off" /></label>
+          <label for="quote-supplier"><span id="l-quote-supplier">Supplier</span><input id="quote-supplier" autocomplete="off" /></label>
         </div>
         <div id="quote-lines" class="form-row"></div>
-        <div class="form-row"><button id="record-quote" type="button">Record the quote</button></div>
+        <div class="form-row"><button id="record-quote" type="button" class="sre-btn">Record the quote</button></div>
         <h3 id="cmp-h">Comparison</h3>
         <p class="muted" id="no-quotes" hidden></p>
         <div class="wrap"><table id="cmp-table"><thead><tr><th id="th-product">Product code</th><th id="th-supplier">Supplier code</th><th id="th-unit">Price each (₹)</th><th id="th-line">Total</th><th id="th-lead">Lead time (days)</th><th></th></tr></thead><tbody id="cmp"></tbody></table></div>
@@ -82,9 +91,9 @@
         <h3 id="order-h">Raise the order from a quote</h3>
         <div class="form-row">
           <label for="order-quote"><span id="l-order-quote">Quote</span><select id="order-quote"></select></label>
-          <label for="order-store"><span id="l-order-store">Deliver to (store code)</span><input id="order-store" autocomplete="off" /></label>
+          <label for="order-store"><span id="l-order-store">Deliver to</span><input id="order-store" autocomplete="off" /></label>
           <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
-          <button id="raise-order" type="button">Propose the order</button>
+          <button id="raise-order" type="button" class="sre-btn">Propose the order</button>
         </div>
       </section>
     </main>

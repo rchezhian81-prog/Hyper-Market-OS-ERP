@@ -37,6 +37,45 @@
 
 const el = (id) => document.getElementById(id);
 
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
+
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -44,14 +83,15 @@ const inr = (minor) =>
 
 const WORDS = {
   en: {
-    title: 'Shelves and space',
+    title: 'Shelves & space',
     countTab: 'Count a shelf', refillTab: 'Refills', rangeTab: 'Range', spaceTab: 'Space',
     countLead: 'Count what is actually on the facing. You will not be shown what it should be — that is the point.',
-    shelf: 'Shelf', itemCode: 'Item code', howMany: 'How many are on the shelf',
+    shelf: 'Shelf', itemCode: 'Item', howMany: 'How many are on the shelf',
     saveCount: 'Save this count', countSaved: 'Count saved',
     stillToCount: 'Still to count',
     stillToCountLead: 'The ones nobody has ever counted come first — nothing can be said about those at all.',
-    neverCounted: 'never counted', minutesAgo: 'minutes ago', allCounted: 'Everything on the plan has been counted recently.',
+    neverCounted: 'never counted', minutesAgo: 'minutes ago', allCounted: 'Everything on the plan has been counted recently — all {n} facings.',
+    noPlanToCount: 'Nothing is on the list because this shop has no shelf plan yet — nothing has been counted, and nothing can be until the shelves are addressed and a plan is published.',
     refillLead: 'Shelves that need filling from the stockroom, in the order you walk them.',
     goFill: 'Go and fill these', everythingFound: 'Everything the check found',
     nothingToFill: 'Nothing needs filling from what has been counted.',
@@ -62,7 +102,7 @@ const WORDS = {
     meansLittle: 'This figure covers only what was counted. It says nothing about the rest of the shop.',
     bring: 'Bring', noCheck: 'The shelves cannot be checked',
     rangeLead: 'What this shop carries. Dropping something you still have stock of puts it on clearance rather than hiding it.',
-    why: 'Why', replacedBy: 'Replaced by (item code)', dropIt: 'Take it out of the range',
+    why: 'Why', replacedBy: 'Replaced by', dropIt: 'Take it out of the range',
     rangeDisagree: 'Where the range and the shop disagree', carriedToday: 'Carried today',
     nothingCarried: 'This screen has not been told what the shop carries.',
     rangeClean: 'The range and the shop agree.',
@@ -79,7 +119,7 @@ const WORDS = {
     noContracts: 'No display contracts.', owed: 'Owed',
     ok: 'OK', cancel: 'Cancel', read: 'Please read this',
     needCountFields: 'Pick a shelf, an item and a number.',
-    needDropFields: 'Give the item code and a reason.',
+    needDropFields: 'Choose the item and give a reason.',
     sampleData: 'Sample data — this is not your shop.',
     gapsTitle: 'This screen has not been told everything',
     savedCounts: 'Saved on this screen',
@@ -94,14 +134,15 @@ const WORDS = {
     askedToday: 'asked today',
   },
   ta: {
-    title: 'அலமாரிகளும் இடமும்',
+    title: 'அடுக்குகளும் இடமும்',
     countTab: 'அலமாரியை எண்ணு', refillTab: 'நிரப்புதல்', rangeTab: 'வரிசை', spaceTab: 'இடம்',
     countLead: 'அலமாரியில் உண்மையில் உள்ளதை எண்ணுங்கள். எவ்வளவு இருக்க வேண்டும் என்று காட்டப்படாது — அதுவே நோக்கம்.',
-    shelf: 'அலமாரி', itemCode: 'பொருள் குறியீடு', howMany: 'அலமாரியில் எத்தனை உள்ளன',
+    shelf: 'அலமாரி', itemCode: 'பொருள்', howMany: 'அலமாரியில் எத்தனை உள்ளன',
     saveCount: 'இந்த எண்ணிக்கையைச் சேமி', countSaved: 'எண்ணிக்கை சேமிக்கப்பட்டது',
     stillToCount: 'இன்னும் எண்ண வேண்டியவை',
     stillToCountLead: 'யாரும் இதுவரை எண்ணாதவை முதலில் — அவற்றைப் பற்றி எதுவும் சொல்ல முடியாது.',
-    neverCounted: 'இதுவரை எண்ணப்படவில்லை', minutesAgo: 'நிமிடங்களுக்கு முன்', allCounted: 'திட்டத்தில் உள்ள அனைத்தும் சமீபத்தில் எண்ணப்பட்டுள்ளன.',
+    neverCounted: 'இதுவரை எண்ணப்படவில்லை', minutesAgo: 'நிமிடங்களுக்கு முன்', allCounted: 'திட்டத்தில் உள்ள அனைத்தும் சமீபத்தில் எண்ணப்பட்டுள்ளன — மொத்தம் {n} இடங்கள்.',
+    noPlanToCount: 'இந்தக் கடைக்கு இன்னும் அலமாரித் திட்டம் இல்லை, எனவே பட்டியலில் எதுவும் இல்லை — எதுவும் எண்ணப்படவில்லை; அலமாரிகளுக்கு முகவரி கொடுத்து திட்டம் வெளியிடும் வரை எண்ண முடியாது.',
     refillLead: 'கிடங்கிலிருந்து நிரப்ப வேண்டிய அலமாரிகள், நீங்கள் நடக்கும் வரிசையில்.',
     goFill: 'இவற்றை நிரப்புங்கள்', everythingFound: 'சரிபார்ப்பில் கண்டறியப்பட்ட அனைத்தும்',
     nothingToFill: 'எண்ணப்பட்டவற்றில் நிரப்ப வேண்டியது எதுவும் இல்லை.',
@@ -112,7 +153,7 @@ const WORDS = {
     meansLittle: 'இந்த எண் எண்ணப்பட்டவற்றை மட்டுமே குறிக்கிறது. மீதமுள்ள கடையைப் பற்றி எதுவும் சொல்லவில்லை.',
     bring: 'கொண்டு வா', noCheck: 'அலமாரிகளைச் சரிபார்க்க முடியாது',
     rangeLead: 'இந்தக் கடை என்ன வைத்திருக்கிறது. இருப்பு இருக்கும் பொருளை நீக்கினால் அது மறைக்கப்படாமல் கிளியரன்ஸுக்குச் செல்லும்.',
-    why: 'ஏன்', replacedBy: 'இதற்கு பதிலாக (பொருள் குறியீடு)', dropIt: 'வரிசையிலிருந்து நீக்கு',
+    why: 'ஏன்', replacedBy: 'இதற்கு பதிலாக', dropIt: 'வரிசையிலிருந்து நீக்கு',
     rangeDisagree: 'வரிசையும் கடையும் வேறுபடும் இடங்கள்', carriedToday: 'இன்று வைத்திருப்பவை',
     nothingCarried: 'கடை என்ன வைத்திருக்கிறது என்று இந்தத் திரைக்குத் தெரியவில்லை.',
     rangeClean: 'வரிசையும் கடையும் பொருந்துகின்றன.',
@@ -129,7 +170,7 @@ const WORDS = {
     noContracts: 'காட்சி ஒப்பந்தங்கள் இல்லை.', owed: 'வர வேண்டியது',
     ok: 'சரி', cancel: 'ரத்து', read: 'இதைப் படிக்கவும்',
     needCountFields: 'அலமாரி, பொருள், எண்ணிக்கை — எல்லாவற்றையும் கொடுக்கவும்.',
-    needDropFields: 'பொருள் குறியீடும் ஒரு காரணமும் கொடுக்கவும்.',
+    needDropFields: 'பொருளைத் தேர்ந்தெடுத்து ஒரு காரணமும் கொடுக்கவும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     gapsTitle: 'இந்தத் திரைக்கு எல்லாத் தகவலும் வரவில்லை',
     savedCounts: 'இந்தத் திரையில் சேமிக்கப்பட்டவை',
@@ -327,6 +368,20 @@ function renderSavedCounts() {
   el('saved-counts').replaceChildren(...saved.map((w) => savedRow(`${w.productId} · ${w.countedMinor}`, `${w.locationId} · ${w.countId}`, w)));
 }
 
+/**
+ * U0 (P-08): an empty "still to count" is good news only when there IS a plan. With no shelf map or no plan the list is
+ * empty because nothing can be counted, and it says so — never "everything has been counted". Kept outside renderCount
+ * so the count form itself still carries no figure about what a facing should hold (the blind count).
+ */
+function stillToCountEmptyLine() {
+  const check = session.check();
+  const noPlan = 'why' in check || (window.merchandisingGaps ?? []).some((g) => g === 'where_the_shelves_are' || g === 'what_should_be_on_each_shelf');
+  const none = document.createElement('p');
+  none.className = noPlan ? 'empty unknown' : 'empty';
+  none.textContent = noPlan ? t('noPlanToCount') : t('allCounted').replace('{n}', String(check.plannedFacings ?? 0));
+  return none;
+}
+
 function renderCount() {
   el('count-title').textContent = t('countTab');
   el('count-lead').textContent = t('countLead');
@@ -350,9 +405,7 @@ function renderCount() {
 
   const list = session.countingList();
   if (list.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('allCounted');
+    const none = stillToCountEmptyLine();
     el('tocount-list').replaceChildren(none);
     return;
   }
@@ -711,6 +764,7 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintChrome();
+  repaintPickers();
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -743,3 +797,7 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+pickable('count-product', 'product', 'pickProduct');
+pickable('drop-product', 'product', 'pickProduct');
+pickable('drop-replacement', 'product', 'pickProduct');

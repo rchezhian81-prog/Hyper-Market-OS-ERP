@@ -27,7 +27,7 @@ function paintDocs() {
       const l = document.createElement('label'); const id = `why-${d.documentId}`; l.htmlFor = id; l.append(text('span', t('reason')));
       const why = document.createElement('input'); why.id = id; why.autocomplete = 'off'; why.maxLength = 500; l.append(why);
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet'; b.textContent = t('dispose');
+      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('dispose');
       form.append(l, b, status);
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

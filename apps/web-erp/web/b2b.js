@@ -5,6 +5,25 @@
 // Every word has a Tamil twin; every button carries an icon beside its word.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
+// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
+// carried over; the plain field stays until the chrome is there, so the page is never dead.
+const shopDates = new Map();
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
+  if (!field) return;
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+  repaintShopDates();
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 const api = window.b2bDesk ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, open: false, issue: false, readContracts: false, manageContracts: false, collect: false, readAccount: false, manageAccount: false, approveRecurring: false };
@@ -13,9 +32,32 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const money = (minor) => (api === null ? String(minor) : api.rupees(minor));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; b.className = quiet ? 'sre-btn sre-btn-quiet' : 'sre-btn'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 function field(labelWords, cls, value) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; if (value !== undefined) i.value = value; l.append(i); return { label: l, input: i }; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
+// OB-698: an invoice (money owed), a delivery challan (stock leaves) and an order placed over the credit limit (a privilege
+// used) each go to head office only after the shared confirm sheet (the chrome's) says what will happen, in whose name, and
+// the person confirms. Go back sends nothing.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const CONFIRM = {
+  en: {
+    invoiceTitle: 'A GST invoice will be raised to {customer} for document {doc}', invoiceDetail: 'The customer owes the shop the invoiced amount from today; it goes on their account and on the GST return. An invoice is corrected only by a credit note, never edited.', invoiceLabel: 'Raise the invoice',
+    challanTitle: 'A delivery challan will be raised to {customer} for document {doc}', challanDetail: 'The goods leave the shop\'s stock against this challan and travel on it. A challan is cancelled only with a reason head office records.', challanLabel: 'Raise the challan',
+    convertTitle: 'Order {doc} for {customer} will be placed over the credit limit, under approval {approval}', convertDetail: 'The customer\'s account goes past its limit by this order; the approval is used up by it. Stock is reserved for the order.', convertLabel: 'Place the order',
+    authority: 'In your name. Head office refuses it if your role may not, or if the approval is not for exactly this.',
+  },
+  ta: {
+    invoiceTitle: '{customer}-க்கு ஆவணம் {doc}-க்கான ஜிஎஸ்டி விலைப்பட்டியல் எழுப்பப்படும்', invoiceDetail: 'இன்றிலிருந்து வாடிக்கையாளர் விலைப்பட்டியல் தொகையைக் கடைக்குக் கடன்பட்டவர்; அது அவர்களின் கணக்கிலும் ஜிஎஸ்டி ரிட்டர்னிலும் சேரும். விலைப்பட்டியல் கிரெடிட் நோட்டால் மட்டுமே திருத்தப்படும், திருத்தி எழுதப்படாது.', invoiceLabel: 'விலைப்பட்டியலை எழுப்பு',
+    challanTitle: '{customer}-க்கு ஆவணம் {doc}-க்கான டெலிவரி சலான் எழுப்பப்படும்', challanDetail: 'இந்தச் சலானுக்கு எதிராகப் பொருட்கள் கடையின் சரக்கிலிருந்து வெளியேறி அதன் மீது பயணிக்கும். தலைமை அலுவலகம் பதிவு செய்யும் காரணத்துடன் மட்டுமே சலான் ரத்து செய்யப்படும்.', challanLabel: 'சலானை எழுப்பு',
+    convertTitle: '{customer}-க்கான ஆர்டர் {doc} கடன் வரம்பைத் தாண்டி, அனுமதி {approval}-இன் கீழ் வைக்கப்படும்', convertDetail: 'இந்த ஆர்டரால் வாடிக்கையாளரின் கணக்கு வரம்பைத் தாண்டும்; அனுமதி இதனால் பயன்படுத்தப்பட்டுவிடும். ஆர்டருக்குச் சரக்கு ஒதுக்கப்படும்.', convertLabel: 'ஆர்டரை வை',
+    authority: 'உங்கள் பெயரில். உங்கள் பங்கு அனுமதிக்காவிட்டாலோ, அனுமதி சரியாக இதற்கல்ல என்றாலோ தலைமை அலுவலகம் மறுக்கும்.',
+  },
+};
+const fillIn = (textIn, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), textIn);
+async function confirmed(kind, values) {
+  const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
+  return (await (await office()).confirm({ title: pair(`${kind}Title`), detail: pair(`${kind}Detail`), authority: pair('authority'), confirmLabel: pair(`${kind}Label`), tone: 'primary' })).ok;
+}
 
 let desk = null; let requests = null; let customerId = null; let customer = null; let ageing = null; let asked = []; let recurring = [];
 const quoteLines = [{ productId: '', description: '', qty: '', taxPercent: '5' }];
@@ -98,7 +140,7 @@ function paintAsked() {
     }
     if (r.status === 'approved' && r.kind === 'b2b_credit_override' && may.issue) {
       const go = button(t('withApproval'), 'shield-check', 'order-with-approval');
-      go.addEventListener('click', async () => { const out = await session.convertWithApproval(r); say('d-status', out); if (out.result === 'ok') await openCustomer(customerId); });
+      go.addEventListener('click', async () => { if (!(await confirmed('convert', { customer: customerId, doc: r.subjectRef, approval: r.requestId }))) return; const out = await session.convertWithApproval(r); say('d-status', out); if (out.result === 'ok') await openCustomer(customerId); });
       li.append(go);
     }
     ul.append(li);
@@ -147,9 +189,9 @@ function paintDocs() {
       const pf = button(t('proforma'), 'file-text', 'proforma', true);
       pf.addEventListener('click', async () => { const o = await session.proforma(customerId, d.documentId); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const dc = button(t('challan'), 'truck', 'challan');
-      dc.addEventListener('click', async () => { const map = {}; for (const [k, i] of Object.entries(sent)) map[k] = i.value; const o = await session.challan(customerId, d.documentId, map); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
+      dc.addEventListener('click', async () => { if (!(await confirmed('challan', { customer: customerId, doc: d.documentId }))) return; const map = {}; for (const [k, i] of Object.entries(sent)) map[k] = i.value; const o = await session.challan(customerId, d.documentId, map); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const inv = button(t('invoice'), 'receipt', 'invoice');
-      inv.addEventListener('click', async () => { const o = await session.invoice(customerId, d.documentId, st.input.value); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
+      inv.addEventListener('click', async () => { if (!(await confirmed('invoice', { customer: customerId, doc: d.documentId }))) return; const o = await session.invoice(customerId, d.documentId, st.input.value); say('d-status', o); if (o.result === 'ok') await openCustomer(customerId); });
       const acts = document.createElement('div'); acts.className = 'actions'; acts.append(pf, dc, inv);
       li.append(row, acts);
     }
@@ -234,7 +276,7 @@ function paint() {
     ['quote-h', 'quoteH'], ['q-note', 'priceNote'], ['q-store-l', 'storeL'], ['q-days-l', 'validDays'], ['q-add-text', 'addLine'], ['q-issue-text', 'issueQuote'],
     ['docs-h', 'docsH'], ['o-h', 'ordersH'], ['collect-h', 'collectH'], ['pay-amount-l', 'receivedL'], ['pay-save-text', 'recordPayment'],
     ['gstin-h', 'gstinH'], ['gstin-note', 'gstinNote'], ['g-gstin-l', 'gstinL'], ['g-name-l', 'gstinNameL'], ['g-reason-l', 'gstinReasonL'], ['g-save-text', 'gstinSave'], ['g-remove-text', 'removeGstin'], ['g-remove-note', 'removeGstinNote'],
-    ['rec-h', 'recurringH'], ['rec-lead', 'recurringLead'], ['rec-quote-l', 'recFromL'], ['rec-cadence-l', 'cadenceL'], ['rec-cadence-weekly', 'weekly'], ['rec-cadence-monthly', 'monthly'], ['rec-day-l', 'dayOfL'], ['rec-start-l', 'startsOnL'], ['rec-sp-l', 'salespersonL'], ['rec-save-text', 'recPropose']]) $(id).textContent = t(key);
+    ['rec-h', 'recurringH'], ['rec-lead', 'recurringLead'], ['rec-quote-l', 'recFromL'], ['rec-cadence-l', 'cadenceL'], ['rec-cadence-weekly', 'weekly'], ['rec-cadence-monthly', 'monthly'], ['rec-day-l', 'dayOfL'], ['rec-start-l', 'startsOnL'], ['rec-sp-l', 'salespersonL'], ['rec-save-text', 'recPropose']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintDesk(); paintRequests(); paintCustomer(); paintQuoteLines(); paintRecurring();
 }
 
@@ -257,10 +299,10 @@ async function openCustomer(id) {
   await loadRecurring();
   void loadDesk();
 }
-const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: $('k-from').value, validTo: $('k-to').value, onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
+const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: dateOf('k-from'), validTo: dateOf('k-to'), onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
 
 for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check'], ['g-remove', 'trash'], ['rec-save', 'repeat']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
 else if (!may.open) { $('page-status').textContent = t('cannotRead'); }
@@ -291,9 +333,11 @@ else {
     if (out.result === 'ok') { $('g-reason').value = ''; await openCustomer(customerId); }
   });
   $('rec-save').addEventListener('click', async () => {
-    const out = await session.proposeRecurring({ customerId: customerId ?? '', quotationId: $('rec-quote').value, cadence: $('rec-cadence').value, dayOf: $('rec-day').value, startsOn: $('rec-start').value, salespersonId: $('rec-sp').value });
+    const out = await session.proposeRecurring({ customerId: customerId ?? '', quotationId: $('rec-quote').value, cadence: $('rec-cadence').value, dayOf: $('rec-day').value, startsOn: dateOf('rec-start'), salespersonId: $('rec-sp').value });
     say('rec-status', out);
     if (out.result === 'ok') { $('rec-day').value = ''; $('rec-sp').value = ''; await loadRecurring(); }
   });
   $('pay-save').addEventListener('click', async () => { const out = await session.recordPayment(customerId ?? '', $('pay-amount').value); say('pay-status', out); if (out.result === 'ok') await openCustomer(customerId); });
 }
+
+if (api !== null) { shopDate('k-from', { en: api.words('en', 'validFrom'), ta: api.words('ta', 'validFrom') }); shopDate('k-to', { en: api.words('en', 'validTo'), ta: api.words('ta', 'validTo') }); shopDate('rec-start', { en: api.words('en', 'startsOnL'), ta: api.words('ta', 'startsOnL') }); }

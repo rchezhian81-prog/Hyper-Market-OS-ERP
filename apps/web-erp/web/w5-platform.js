@@ -17,11 +17,20 @@ function el(tag, words, attrs) {
   const n = document.createElement(tag);
   if (words !== undefined && words !== null) n.textContent = words;
   for (const [k, v] of Object.entries(attrs ?? {})) { if (k === 'class') n.className = v; else n.setAttribute(k, v); }
+  // Every control a section draws wears the foundation's class, so it is a 44px target with the one look (U0/U1 rules).
+  if (tag === 'button') n.classList.add('sre-btn');
+  else if (tag === 'select') n.classList.add('sre-select');
+  else if (tag === 'textarea' || (tag === 'input' && !['checkbox', 'radio', 'hidden'].includes(n.getAttribute('type') ?? 'text'))) n.classList.add('sre-input');
   return n;
 }
 function input(id, attrs) { return el('input', null, { id, autocomplete: 'off', ...(attrs ?? {}) }); }
 function select(id, options) { const s = el('select', null, { id }); for (const [v, words] of options) { const o = el('option', words); o.value = v; s.append(o); } return s; }
-function labelled(words, control) { const l = el('label'); l.append(el('span', words), control); return l; }
+function labelled(words, control) {
+  const l = el('label'); l.append(el('span', words), control);
+  // a tick box's wrapping label is the target a thumb hits — 44px, the control beside its words
+  if (control.getAttribute('type') === 'checkbox') { l.style.display = 'flex'; l.style.alignItems = 'center'; l.style.gap = '8px'; l.style.minHeight = 'var(--tap)'; }
+  return l;
+}
 function button(id, words, onClick) { const b = el('button', words, { id, type: 'button' }); b.addEventListener('click', onClick); return b; }
 function say(node, out, good) { node.textContent = H.w5OutcomeWords(lang, out, good); node.dataset.result = out.result; }
 function lines(ul, items, line, attr) {

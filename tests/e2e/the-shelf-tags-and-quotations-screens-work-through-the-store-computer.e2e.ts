@@ -405,7 +405,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
   it('quotations: made with a promised price, numbered, listed, voided with a reason; a cashier is refused the list by head office', async () => {
     const { page: p, errors } = await open(MANAGER, '/quotations/');
     await p.waitForSelector('#make:not([hidden])');
-    expect(await p.inputValue('#q-until')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(await p.inputValue('#q-until'), 'U2: a date a shop person reads').toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
     await p.fill('#q-store', STORE); await p.fill('#q-customer', 'Murugan Stores');
     await p.fill('#l-code', 'RICE-25'); await p.fill('#l-qty', '2'); await p.fill('#l-price', '1380');
     await p.click('#l-add');

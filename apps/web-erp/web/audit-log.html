@@ -25,7 +25,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -62,7 +62,7 @@
           <label for="q-action"><span id="q-action-l"></span><input id="q-action" autocomplete="off" /></label>
           <label for="q-from"><span id="q-from-l"></span><input id="q-from" type="date" /></label>
           <label for="q-until"><span id="q-until-l"></span><input id="q-until" type="date" /></label>
-          <button id="q-find" type="submit"><span id="q-find-text"></span></button>
+          <button id="q-find" type="submit" class="sre-btn sre-btn-primary"><span id="q-find-text"></span></button>
         </form>
         <p class="status" id="search-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="rows"></ul>
@@ -70,7 +70,7 @@
       <section id="verify" hidden aria-labelledby="verify-h">
         <h3 id="verify-h"></h3>
         <p class="meta" id="verify-lead"></p>
-        <button id="v-check" type="button" class="quiet"><span id="v-check-text"></span></button>
+        <button id="v-check" type="button" class="quiet sre-btn sre-btn-quiet"><span id="v-check-text"></span></button>
         <p class="status" id="verify-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="findings"></ul>
       </section>
@@ -80,7 +80,7 @@
         <form class="row-form" id="rebuild-form">
           <label for="r-type"><span id="r-type-l"></span><input id="r-type" autocomplete="off" /></label>
           <label for="r-id"><span id="r-id-l"></span><input id="r-id" autocomplete="off" /></label>
-          <button id="r-go" type="submit" class="quiet"><span id="r-go-text"></span></button>
+          <button id="r-go" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="r-go-text"></span></button>
         </form>
         <p class="status" id="rebuild-status" role="status" aria-live="polite"></p>
         <p id="rebuilt-state"></p>
@@ -100,13 +100,13 @@
           <label for="h-actor"><span data-w="holdActor"></span><input id="h-actor" autocomplete="off" /></label>
           <label for="h-from"><span data-w="holdFrom"></span><input id="h-from" type="date" /></label>
           <label for="h-until"><span data-w="holdUntil"></span><input id="h-until" type="date" /></label>
-          <button id="h-go" type="submit" data-w="placeGo"></button>
+          <button id="h-go" type="submit" data-w="placeGo" class="sre-btn"></button>
         </form>
       </section>
       <section id="plan" hidden aria-labelledby="plan-h">
         <h3 id="plan-h" data-w="planH"></h3>
         <p class="meta" data-w="planLead"></p>
-        <button id="p-go" type="button" class="quiet" data-w="planGo"></button>
+        <button id="p-go" type="button" class="quiet sre-btn sre-btn-quiet" data-w="planGo"></button>
         <p class="status" id="plan-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="plan-rows"></ul>
       </section>
@@ -116,10 +116,10 @@
         <form class="row-form" id="pack-form">
           <label for="k-from"><span data-w="packFrom"></span><input id="k-from" type="date" /></label>
           <label for="k-until"><span data-w="packUntil"></span><input id="k-until" type="date" /></label>
-          <button id="k-go" type="submit" data-w="packGo"></button>
+          <button id="k-go" type="submit" data-w="packGo" class="sre-btn"></button>
         </form>
         <p class="status" id="pack-status" role="status" aria-live="polite"></p>
-        <button id="k-again" type="button" class="quiet" data-w="download" hidden></button>
+        <button id="k-again" type="button" class="quiet sre-btn sre-btn-quiet" data-w="download" hidden></button>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

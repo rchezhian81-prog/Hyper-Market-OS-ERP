@@ -3,6 +3,60 @@
 // told. Nothing is read on open; every write is a click. Every word has a Tamil twin; every button its icon.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+const pickWords = {
+  en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
+  ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
+};
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+// A date a shop person reads (dd/mm/yyyy, the shop's calendar) through the chrome's shared field; read back as ISO.
+function dateable(inputId, label, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.dateable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, label, extra), { once: true }); return; }
+  const holder = input.closest('label') ?? input;
+  const was = input.value;
+  const field = office.dateField({ id: inputId, label: typeof label === 'function' ? label() : label, required: extra.required !== false, ...(extra.min ? { min: extra.min } : {}), ...(was === '' ? {} : { value: was }) });
+  if (!field) return;
+  holder.replaceWith(field);
+  field.dataset.dateable = 'on';
+}
+const dateOf = (fieldId) => {
+  const f = document.getElementById(fieldId);
+  if (f && f.tagName === 'INPUT' && f.type === 'date') return f.value;
+  const office = window.sreOffice;
+  return office && typeof office.dateValue === 'function' ? (office.dateValue(fieldId) ?? '') : (f && 'value' in f ? f.value : '');
+};
 const api = window.quotations ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, write: false };
@@ -11,11 +65,19 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }
 let lines = [];
+/** The person's own store, as the store computer or head office names it — filled in, never typed first (U2). */
+function fillStore() {
+  if ($('q-store').value !== '') return;
+  const fromBox = window.quotationsData && typeof window.quotationsData.storeId === 'string' ? window.quotationsData.storeId : '';
+  const me = window.sreOffice && typeof window.sreOffice.me === 'function' ? window.sreOffice.me() : null;
+  const mine = fromBox !== '' ? fromBox : me && typeof me.storeId === 'string' ? me.storeId : '';
+  if (mine !== '') $('q-store').value = mine;
+}
 let rows = null; // { kind: 'list' | 'follow', items }
 
 function paintLines() {
@@ -69,9 +131,9 @@ function paintRows() {
 function paint() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['make-h', 'makeH'], ['q-store-l', 'store'], ['q-customer-l', 'customer'], ['q-until-l', 'validUntil'], ['l-code-l', 'lineCode'], ['l-qty-l', 'lineQty'],
+  for (const [elId, key] of [['make-h', 'makeH'], ['q-store-l', 'store'], ['q-customer-l', 'customer'], ['q-until-l', 'validUntil'], ['l-code-l', 'lineCode'], ['l-qty-l', 'lineQty'],
     ['l-price-l', 'linePrice'], ['l-add-text', 'addLine'], ['lines-h', 'linesH'], ['q-approval-l', 'approval'], ['q-make-text', 'make'], ['q-ask-text', 'askApproval'],
-    ['list-h', 'listH'], ['s-state-l', 'state'], ['s-show-text', 'show'], ['s-follow-text', 'followUp']]) $(id).textContent = t(key);
+    ['list-h', 'listH'], ['s-state-l', 'state'], ['s-show-text', 'show'], ['s-follow-text', 'followUp']]) { const el = $(elId); if (el) el.textContent = t(key); } // U2: the date field's own label is the chrome's
   if (session !== null && session.needsOwner && session.needsOwner()) $('q-ask-text').textContent = t('askOwner'); // R9-A · OB-532
   if (session !== null && session.needsAccountant && session.needsAccountant()) $('q-ask-text').textContent = t('askAccountant'); // R10-A · OB-542
   if (api !== null) {
@@ -90,7 +152,7 @@ async function showList() {
 }
 
 for (const [id, name] of [['l-add', 'list-plus'], ['q-make', 'check'], ['q-ask', 'badge-check'], ['s-show', 'list'], ['s-follow', 'clock']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
@@ -105,6 +167,15 @@ else {
   if (may.write) {
     $('make').hidden = false;
     $('q-until').value = api.validUntil();
+    // U2: the store is the signed-in person's own (changeable); the customer, the item and the approval are picked by
+    // name; the date is the shared dd/mm field. The ids sent are exactly what they were.
+    fillStore();
+    document.addEventListener('sre:chrome', fillStore, { once: true });
+    pickable('q-store', 'store', 'pickStore');
+    pickable('q-customer', 'customer', 'pickCustomer', { idOf: (p) => String(p.id ?? '') });
+    pickable('l-code', 'product', 'pickProduct', { idOf: (p) => String(p.code ?? p.id ?? '') });
+    pickable('q-approval', 'approval', 'pickApproval', { scope: () => ($('q-store').value === '' ? {} : { storeId: $('q-store').value }) });
+    dateable('q-until', () => ({ en: api.words('en', 'validUntil'), ta: api.words('ta', 'validUntil') }));
     $('l-add').addEventListener('click', async () => {
       const out = await session.line({ code: $('l-code').value, qty: $('l-qty').value, priceRupees: $('l-price').value });
       if (out.result !== 'ok') { $('l-status').textContent = api.outcomeWords(lang, out); return; }
@@ -112,7 +183,7 @@ else {
     });
     $('q-make').addEventListener('click', async () => {
       $('q-number').hidden = true;
-      const out = await session.make({ storeId: $('q-store').value, customerRef: $('q-customer').value, validUntil: $('q-until').value, approvalId: $('q-approval').value, lines });
+      const out = await session.make({ storeId: $('q-store').value, customerRef: $('q-customer').value, validUntil: dateOf('q-until'), approvalId: $('q-approval').value, lines });
       $('q-status').textContent = api.outcomeWords(lang, out);
       // R8-B · OB-525: a price below its floor — offer to ask a second person for exactly this quotation.
       $('q-ask').hidden = session.belowFloor() === undefined; $('q-ask-status').textContent = '';

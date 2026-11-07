@@ -125,7 +125,7 @@ describe.skipIf(!HAVE_BROWSER)('Shelf labels and floor devices (W3 · D14-FR-05)
     await p.page.click('#dev-rows tr[data-id="esl-1"] button:has-text("Reinstate")');
     await says(p.page, '#dev-status', /^esl-1 is now Working\./);
     await p.page.click('#lang');
-    await says(p.page, '#page-h', /^அலமாரி லேபிள்கள், RFID, கேமராக்கள்$/);
+    await says(p.page, '#page-h', /^அலமாரி லேபிள்களும் தளச் சாதனங்களும்$/);
     expect(p.errors).toEqual([]);
     await p.close();
   });

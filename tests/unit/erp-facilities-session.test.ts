@@ -77,6 +77,29 @@ describe('the overdue list reads worst-first, with a word beside every colour', 
     expect(view.complianceRiskCount).toBe(1);
   });
 
+  // U0 (G6 · P-08): an empty overdue list is good news only when head office said how many schedules it judged, and
+  // that number is above nought. No schedule at all, or no answer at all, is "not known" in the warn tone.
+  it('an empty list with no schedule set up says so, not "every check is up to date"', () => {
+    const v = session({ worklist: () => ({ overdue: [], scheduledCount: 0 }) }).view('en');
+    expect(v.emptyReason).toBe('no_schedule');
+    expect(v.screenState.tone).toBe('degraded');
+    expect(v.screenState.label).toMatch(/No maintenance or food-safety schedule has been set up yet/);
+    expect(session({ worklist: () => ({ overdue: [], scheduledCount: 0 }) }).view('ta').screenState.label).toMatch(/[\u0B80-\u0BFF]/);
+  });
+
+  it('an empty list the shell never managed to read is "not known", never all clear', () => {
+    const v = session({ worklist: () => ({ overdue: [] }) }).view('en');
+    expect(v.emptyReason).toBe('not_known');
+    expect(v.screenState.tone).toBe('degraded');
+    expect(v.screenState.label).toMatch(/cannot say what is overdue/);
+  });
+
+  it('an empty list judged against real schedules is the one good empty', () => {
+    const v = session({ worklist: () => ({ overdue: [], scheduledCount: 3 }) }).view('en');
+    expect(v.emptyReason).toBe('none_overdue');
+    expect(v.screenState.label).toBe('Nothing overdue — every one of the 3 scheduled checks is up to date.');
+  });
+
   it('a task that is not escalated carries no escalate-to name', () => {
     const view = session().view('en');
     expect(view.tasks.find((t) => t.taskId === 't-clean')!.escalateTo).toBeNull();

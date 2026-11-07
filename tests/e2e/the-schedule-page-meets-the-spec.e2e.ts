@@ -5,6 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * D-9 (R3, OB-142 "A", OB-181) — the Staff schedule page, in a real browser, on the PRODUCTION API over real PostgreSQL:
  * staff needed per hour from eight weeks of the shop's own hourly sales; the Shops Act limits shown — two filled by the CA
@@ -75,11 +78,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Staff 
 
       // A week that is not a Monday is refused before anything is sent.
       await page.fill('#branch', 'S1');
-      await page.fill('#week', '2026-10-06');
+      await page.fill('#week', '06/10/2026');
       await page.click('#show');
       await expect.poll(() => page.textContent('#page-status')).toMatch(/pick a Monday/);
 
-      await page.fill('#week', WEEK);
+      await page.fill('#week', ddmm(WEEK));
       await page.click('#show');
       await page.locator('#hours .panel[data-role="cashier"]').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#hours .panel[data-role="cashier"] .v')).toBe('21 staff hours');
@@ -101,7 +104,17 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Staff 
       // The draft rostered nobody yet.
       expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toEqual([]);
 
+      // OB-698 A (U1): the commit goes through the shared confirm sheet — the week, the shifts and people, Go back sends nothing.
       await page.click('#commit');
+      await page.locator('#sre-confirm').waitFor({ timeout: 15_000 });
+      expect(await page.textContent('#sre-confirm-title')).toMatch(/The roster for the week of \d{4}-\d{2}-\d{2} will be committed: \d+ shifts, \d+ people, \d+ still uncovered\./);
+      expect(await page.textContent('#sre-confirm .sre-confirm-authority')).toMatch(/In your name as the store manager/);
+      await page.click('#sre-confirm-back');
+      await expect.poll(() => page.textContent('#commit-status')).toMatch(/Nothing was committed\./);
+      expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toEqual([]);
+      await page.click('#commit');
+      await page.locator('#sre-confirm').waitFor({ timeout: 15_000 });
+      await page.click('#sre-confirm-go');
       await expect.poll(() => page.textContent('#commit-status')).toMatch(/Committed to the roster by u-owner/);
       expect(await page.isDisabled('#commit')).toBe(true);
       expect(((await shop.cloud().request({ method: 'GET', path: '/v1/hr/workforce/roster', userId: OWNER })).body as { assignments: unknown[] }).assignments).toHaveLength(15);

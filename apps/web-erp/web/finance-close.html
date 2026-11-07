@@ -36,8 +36,7 @@
       label.check input { min-height: auto; width: 22px; height: 22px; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
-      button.quiet { background: var(--line); color: var(--ink); }
+      nav button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; cursor: pointer; padding: 0 16px; }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
       /* W1: each figure is the shared summary card (sre-foundation.css · .sre-summary-card) */
@@ -121,7 +120,7 @@
         <h3 id="blockers-h">What stops it posting</h3>
         <ul class="blockers" id="stock-blockers"></ul>
         <p class="note" id="stock-posted"></p>
-        <button id="post-adjustment" type="button">Post the month-end adjustment</button>
+        <button id="post-adjustment" type="button" class="sre-btn sre-btn-primary">Post the month-end adjustment</button>
         <p class="status" id="post-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -133,9 +132,9 @@
         <div id="budget-edit">
           <div id="budget-lines" class="row"></div>
           <div class="row">
-            <button id="budget-add-line" type="button" class="quiet">Add a line</button>
+            <button id="budget-add-line" type="button" class="sre-btn sre-btn-quiet">Add a line</button>
             <label for="budget-reason"><span id="l-budget-reason">Why</span><input id="budget-reason" autocomplete="off" maxlength="300" /></label>
-            <button id="budget-save" type="button">Save as a new version</button>
+            <button id="budget-save" type="button" class="sre-btn sre-btn-primary">Save as a new version</button>
           </div>
           <p class="status" id="budget-save-status" role="status" aria-live="polite"></p>
         </div>
@@ -156,13 +155,13 @@
             <label for="a-life"><span id="l-a-life">Useful life (months)</span><input id="a-life" inputmode="numeric" autocomplete="off" /></label>
             <label for="a-in"><span id="l-a-in">In service from</span><input id="a-in" type="date" /></label>
           </div>
-          <button id="asset-add-go" type="button">Add to the register</button>
+          <button id="asset-add-go" type="button" class="sre-btn">Add to the register</button>
           <p class="status" id="asset-add-status" role="status" aria-live="polite"></p>
         </details>
 
         <h2 id="run-h">Monthly depreciation</h2>
         <p class="lead" id="run-lede"></p>
-        <button id="run-depreciation" type="button">Run depreciation for this month</button>
+        <button id="run-depreciation" type="button" class="sre-btn">Run depreciation for this month</button>
         <p class="status" id="run-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -236,8 +235,8 @@
           <h3 id="close-title">Close and sign this month</h3>
           <p class="lead" id="close-lead"></p>
           <label for="close-why"><span id="close-why-label">A note for the person signing (optional)</span><textarea id="close-why" maxlength="300"></textarea></label>
-          <button id="ask-close" type="button">Ask for the signature</button>
-          <button id="close-month" type="button" class="quiet">Close the month</button>
+          <button id="ask-close" type="button" class="sre-btn sre-btn-primary">Ask for the signature</button>
+          <button id="close-month" type="button" class="sre-btn">Close the month</button>
           <p class="status" id="close-request" role="status" hidden></p>
           <p class="note" id="close-note"></p>
         </div>
@@ -245,8 +244,8 @@
           <h3 id="reopen-title">Reopen this month</h3>
           <p class="lead" id="reopen-lead"></p>
           <label for="reopen-reason"><span id="reopen-reason-label">Why does it need reopening?</span><textarea id="reopen-reason" maxlength="300"></textarea></label>
-          <button id="ask-reopen" type="button">Ask for approval</button>
-          <button id="reopen" type="button" class="quiet">Reopen the month</button>
+          <button id="ask-reopen" type="button" class="sre-btn">Ask for approval</button>
+          <button id="reopen" type="button" class="sre-btn">Reopen the month</button>
           <p class="status" id="reopen-request" role="status" hidden></p>
         </div>
       </section>

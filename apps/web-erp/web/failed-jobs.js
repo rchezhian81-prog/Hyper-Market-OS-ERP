@@ -27,7 +27,7 @@ function paintJobs() {
       text('p', `${t('error')}: ${j.lastError}`, 'meta'));
     if (may.retry) {
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('retry');
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('retry');
       b.addEventListener('click', async () => {
         b.disabled = true;
         status.textContent = t('reading');

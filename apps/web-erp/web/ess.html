@@ -27,7 +27,7 @@
       .row .cat { font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .detail { font-size:13px; color:var(--muted); }
+      .row .detail { font-size: var(--fs-sm); color:var(--muted); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.asof { margin:0; font-size:14px; color:var(--muted); }
@@ -36,7 +36,10 @@
       .att button { min-height:56px; min-width:56px; padding:0 18px; border-radius:12px; font:inherit; font-weight:600; display:inline-flex; align-items:center; gap:8px; cursor:pointer; }
       .att button .icon { font-size:20px; } .att .said { margin:0; font-size:15px; }
       .att ul { list-style:none; margin:0; padding:0; display:grid; gap:6px; } .att li { font-size:15px; display:flex; gap:8px; flex-wrap:wrap; }
-      .att li .why { color:var(--danger-text); font-size:13px; }
+      .att li .why { color:var(--danger-text); font-size: var(--fs-sm); }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -63,8 +66,8 @@
         <h2 id="att-title">My attendance</h2>
         <p class="lead" id="att-lead"></p>
         <div class="buttons">
-          <button type="button" id="att-in"><span class="icon" aria-hidden="true">▶</span><span id="att-in-text">I am starting work (in)</span></button>
-          <button type="button" id="att-out"><span class="icon" aria-hidden="true">■</span><span id="att-out-text">I am finishing work (out)</span></button>
+          <button type="button" id="att-in" class="sre-btn sre-btn-primary"><span class="icon" aria-hidden="true">▶</span><span id="att-in-text">I am starting work (in)</span></button>
+          <button type="button" id="att-out" class="sre-btn"><span class="icon" aria-hidden="true">■</span><span id="att-out-text">I am finishing work (out)</span></button>
         </div>
         <p class="said" id="att-said" role="status" aria-live="polite"></p>
         <ul id="att-marks" aria-label="My attendance marks"></ul>

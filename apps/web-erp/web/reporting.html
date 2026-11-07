@@ -53,7 +53,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { font-size: 18px; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
 
@@ -90,7 +90,7 @@
       .figure .asat { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 
       table { width: 100%; border-collapse: collapse; font-size: 15px; }
-      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 6px; }
+      th { text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; padding: 8px 6px; }
       td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
       .empty { color: var(--muted); padding: 20px 4px; }
 
@@ -104,6 +104,8 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
       /* UI-3: the report's source line and its chart (window.sreCharts, design system §4.3). */
       .report-covers { margin: 0; font-size: 15px; color: var(--muted); }
       .report-chart:empty { display: none; }
@@ -169,9 +171,9 @@
         <h3 id="rows-title">The rows behind these figures</h3>
         <div id="report-rows"></div>
 
-        <button id="export" class="primary wide" type="button">Write this out to a file</button>
+        <button id="export" class="primary wide sre-btn sre-btn-primary" type="button">Write this out to a file</button>
         <p class="lead" id="export-note">The file carries its own column list, and personal data is removed unless you are allowed to see it.</p>
-        <button id="back" type="button" class="wide">Back to the list</button>
+        <button id="back" type="button" class="wide sre-btn">Back to the list</button>
       </section>
     </main>
 

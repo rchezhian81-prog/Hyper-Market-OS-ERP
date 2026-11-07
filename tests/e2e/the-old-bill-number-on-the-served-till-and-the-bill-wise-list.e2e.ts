@@ -8,6 +8,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **OB-264 (owner, 20 Oct 2026, "Key old bill number") on the served till and the evening check, in a real Chromium against a
@@ -189,7 +191,7 @@ describe.skipIf(!HAVE_BROWSER)('the old bill number on the served till and on th
     await office.goto(`http://127.0.0.1:${edge.screens!.port}/migration/`, { waitUntil: 'load' });
     await office.waitForFunction(() => (globalThis as unknown as { migrationSession?: unknown }).migrationSession !== undefined, undefined, { timeout: 10_000 });
     await office.click('#tab-both');
-    await office.fill('#day-date', day);
+    await office.fill('#day-date', ddmm(day));
     await office.dispatchEvent('#day-date', 'change');
     await office.waitForSelector('#bills:not([hidden]) #bills-table');
     expect(await office.textContent('#bills-title')).toBe('Bill by bill (mirror pilot)');
@@ -199,10 +201,10 @@ describe.skipIf(!HAVE_BROWSER)('the old bill number on the served till and on th
     expect(rows[0]![2]).toMatch(/480/);
     expect(await office.$$eval('#bills-table thead th', (ths) => ths.map((th) => th.textContent))).toEqual(['New bill', 'Old bill', 'Amount', 'Refunded']);
     // Another day: none listed, said so.
-    await office.fill('#day-date', '2001-01-01');
+    await office.fill('#day-date', ddmm('2001-01-01'));
     await office.dispatchEvent('#day-date', 'change');
     await office.waitForFunction(() => (globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('bills-list')?.textContent?.includes('No sale keyed on the new till on this day yet.') === true);
-    await office.fill('#day-date', day);
+    await office.fill('#day-date', ddmm(day));
     await office.dispatchEvent('#day-date', 'change');
     await office.click('#lang');
     expect(await office.textContent('#bills-title')).toBe('பில் வாரியாக (மிரர் பைலட்)');

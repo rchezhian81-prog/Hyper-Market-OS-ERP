@@ -21,7 +21,7 @@
       main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
@@ -55,10 +55,10 @@
         <h3 id="draft-h"></h3>
         <p class="meta" id="draft-summary"></p>
         <ul class="rows" id="draft-kinds"></ul>
-        <button id="adopt-all" class="quiet" type="button"><span id="adopt-all-text"></span></button>
+        <button id="adopt-all" class="quiet sre-btn sre-btn-quiet" type="button"><span id="adopt-all-text"></span></button>
         <form id="draft-form" novalidate>
           <div id="draft-note"></div>
-          <button id="save-map" type="submit"><span id="save-map-text"></span></button>
+          <button id="save-map" type="submit" class="sre-btn sre-btn-primary"><span id="save-map-text"></span></button>
         </form>
         <p class="status" id="map-status" role="status" aria-live="polite"></p>
       </section>
@@ -69,7 +69,7 @@
           <div id="names-company"></div>
           <details id="voucher-types"><summary id="voucher-h"></summary><div id="voucher-fields"></div></details>
           <div id="names-note"></div>
-          <button id="save-names" class="quiet" type="submit"><span id="save-names-text"></span></button>
+          <button id="save-names" class="quiet sre-btn sre-btn-quiet" type="submit"><span id="save-names-text"></span></button>
         </form>
         <p class="status" id="names-status" role="status" aria-live="polite"></p>
       </section>
@@ -79,14 +79,14 @@
       <section id="classes" hidden aria-labelledby="classes-h">
         <h3 id="classes-h"></h3>
         <p class="meta" id="classes-lede"></p>
-        <button id="classes-show" type="button" class="quiet"><span id="classes-show-text"></span></button>
+        <button id="classes-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="classes-show-text"></span></button>
         <p class="status" id="classes-state" role="status" aria-live="polite"></p>
         <ul class="rows" id="classes-rows"></ul>
         <div id="classes-add" hidden>
           <label for="classes-new"><span id="classes-new-l"></span><input id="classes-new" autocomplete="off" /></label>
-          <button id="classes-add-go" type="button" class="quiet"><span id="classes-add-text"></span></button>
+          <button id="classes-add-go" type="button" class="quiet sre-btn sre-btn-quiet"><span id="classes-add-text"></span></button>
         </div>
-        <button id="classes-save" type="button" hidden><span id="classes-save-text"></span></button>
+        <button id="classes-save" type="button" hidden class="sre-btn"><span id="classes-save-text"></span></button>
         <p class="status" id="classes-status" role="status" aria-live="polite"></p>
       </section>
       <section id="history" hidden aria-labelledby="history-h">

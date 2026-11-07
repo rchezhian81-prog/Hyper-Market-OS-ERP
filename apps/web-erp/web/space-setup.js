@@ -5,6 +5,26 @@
 // written on open. Every word has a Tamil twin.
 
 const $ = (id) => document.getElementById(id);
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+const WHY_WORDS = {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+};
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (WHY_WORDS[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
 const who = window.spaceSetupData && typeof window.spaceSetupData === 'object' ? window.spaceSetupData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
@@ -15,7 +35,7 @@ let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 const WORDS = {
   en: {
-    lang: 'தமிழ்', title: 'Shelf and floor setup',
+    lang: 'தமிழ்', title: 'Set up shelves and floor plan',
     lead: 'Set up where things go in this store: the shelf places, what each shelf should hold (the planogram), and where each area sits on the floor. The Shelves and space page, "Which areas earn most" and "Shelves against the plan" all read what is published here. Every change is kept as a new version; nothing is overwritten.',
     store: 'Store', read: 'Read this store\'s setup',
     kPlaces: 'Shelf places', kMapV: 'Shelf map version', kPlans: 'Planograms', kInForce: 'Planogram in force today', kAreas: 'Floor areas', kStale: 'Planograms made on an older shelf map',
@@ -50,7 +70,7 @@ const WORDS = {
     refused: 'Head office refused:', unreachable: 'Head office could not be reached. Nothing was changed — try again.', notKnown: 'Not known',
   },
   ta: {
-    lang: 'English', title: 'அலமாரி மற்றும் தள அமைப்பு',
+    lang: 'English', title: 'அலமாரிகளையும் தளத் திட்டத்தையும் அமை',
     lead: 'இந்தக் கடையில் எது எங்கே என்பதை அமையுங்கள்: அலமாரி இடங்கள், ஒவ்வொரு அலமாரியிலும் எது இருக்க வேண்டும் (அலமாரித் திட்டம்), தளத்தில் ஒவ்வொரு பகுதியும் எங்கே. அடுக்குகளும் இடமும் பக்கம், "எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன", "திட்டத்துடன் அலமாரிகள்" — இவை அனைத்தும் இங்கு வெளியிடப்பட்டதையே படிக்கின்றன. ஒவ்வொரு மாற்றமும் புதிய பதிப்பாக வைக்கப்படும்; எதுவும் மேலெழுதப்படாது.',
     store: 'கடை', read: 'இந்தக் கடையின் அமைப்பைப் படி',
     kPlaces: 'அலமாரி இடங்கள்', kMapV: 'அலமாரி வரைபடப் பதிப்பு', kPlans: 'அலமாரித் திட்டங்கள்', kInForce: 'இன்று நடைமுறையில் உள்ள திட்டம்', kAreas: 'தளப் பகுதிகள்', kStale: 'பழைய அலமாரி வரைபடத்தில் செய்த திட்டங்கள்',
@@ -212,7 +232,7 @@ function ensureRegisters() {
           for (const a of p.assignments) { const li = document.createElement('li'); li.textContent = facingWords(a); ul.append(li); }
           box.append(ul);
           if (mayPublish) {
-            const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-primary'; b.dataset.action = 'edit-plan'; b.textContent = t('editThis');
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn'; b.dataset.action = 'edit-plan'; b.textContent = t('editThis');
             b.addEventListener('click', () => {
               o.closeDrawer();
               $('g-id').value = p.planogramId; $('g-from').value = p.effectiveFrom > shopToday() ? p.effectiveFrom : shopToday();
@@ -266,7 +286,7 @@ const facingWords = (a) => fill(t('facing'), { product: a.productId, place: a.lo
 function itemWithRemove(text, onRemove, label) {
   const li = document.createElement('li');
   const span = document.createElement('span'); span.textContent = text; li.append(span);
-  if (mayPublish) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t('remove'); b.setAttribute('aria-label', `${label}: ${text}`); b.addEventListener('click', onRemove); li.append(b); }
+  if (mayPublish) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('remove'); b.setAttribute('aria-label', `${label}: ${text}`); b.addEventListener('click', onRemove); li.append(b); }
   return li;
 }
 function paintFacings() {
@@ -293,7 +313,7 @@ function paint() {
   for (const z of ['ambient', 'chilled', 'frozen', 'secure']) { const opt = $('p-zone').querySelector(`option[value="${z}"]`); if (opt) opt.textContent = t(z); }
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
-  $('read').disabled = !mayRead;
+  $('read').disabled = !mayRead; whyDisabled($('read'), mayRead ? '' : 'role');
   for (const id of ['add-places', 'plan-form', 'floor-form']) $(id).hidden = !mayPublish;
   paintCards(); paintRegisters(); paintFacings(); paintAreas();
 }

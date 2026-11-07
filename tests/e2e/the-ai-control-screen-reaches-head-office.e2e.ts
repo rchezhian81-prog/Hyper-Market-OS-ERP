@@ -16,6 +16,8 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { simulatedTransport, type ModelTier, type TierPricing } from '../../packages/ai/src/index';
 import { EVALUATION_SET, EVALUATION_SIMULATOR } from '../../services/ai/src/evaluation-set';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **The AI control screen in a real browser, on the production API surface (OB-288 lane 4 · P1 · roadmap §27).**
@@ -165,7 +167,7 @@ describe.skipIf(!HAVE_BROWSER)('the AI control screen reaches head office, in a 
       await bannerSays(page, 'A limit is an amount in rupees');
       // The shop's limit: ₹1,000 until the end of the day chosen (the shop's clock).
       await page.fill('#cap', '1000');
-      await page.fill('#period', '2099-01-31');
+      await page.fill('#period', ddmm('2099-01-31'));
       n = await reads(page);
       await page.click('#set-cap');
       expect(await afterAct(page, n)).toMatch(/The shop’s AI limit is set/);

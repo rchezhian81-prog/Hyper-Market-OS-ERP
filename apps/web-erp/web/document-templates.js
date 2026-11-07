@@ -101,7 +101,7 @@ function versionNode(v) {
   }
   if (v.approveWithheldWhy) { const why = document.createElement('span'); why.className = 'why'; why.textContent = v.approveWithheldWhy; acts.append(why); }
   if (v.mayPublish) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'small act'; b.dataset.act = 'publish'; b.dataset.version = String(v.version); b.textContent = t('publishBtn');
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'small act sre-btn'; b.dataset.act = 'publish'; b.dataset.version = String(v.version); b.textContent = t('publishBtn');
     acts.append(b);
   }
   if (acts.childElementCount > 0) li.append(acts);

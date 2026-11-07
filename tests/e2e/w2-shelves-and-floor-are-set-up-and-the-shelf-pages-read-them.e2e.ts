@@ -97,7 +97,7 @@ describe.skipIf(!HAVE_BROWSER)('Shelf and floor setup feeds the shelf pages (Wav
     await says(m.page, '#plan-rows', /Made on an older shelf map/);
 
     await m.page.click('#lang');
-    await says(m.page, '#page-h', /^அலமாரி மற்றும் தள அமைப்பு$/);
+    await says(m.page, '#page-h', /^அலமாரிகளையும் தளத் திட்டத்தையும் அமை$/);
     expect(m.errors).toEqual([]);
     expect(m.writes.filter((w) => w.startsWith('PUT') || w.startsWith('POST'))).toEqual([
       `PUT /v1/merchandising/stores/${shop.store}/shelf-map`, `PUT /v1/merchandising/stores/${shop.store}/planograms/grocery`,

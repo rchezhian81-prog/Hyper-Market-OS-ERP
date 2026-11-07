@@ -34,7 +34,7 @@
       .form textarea { min-height:96px; resize:vertical; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
       .form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .form .row { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
-      .form .hint { font-size:13px; color:var(--muted); margin:0; }
+      .form .hint { font-size: var(--fs-sm); color:var(--muted); margin:0; }
       button.quiet { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
       button.small { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:14px; font-weight:700; background:var(--line); color:var(--ink); }
@@ -48,10 +48,10 @@
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row pre { margin:0; padding:8px 10px; background:var(--bg); border-radius:8px; font:13px/1.4 ui-monospace,Menlo,Consolas,monospace; color:var(--ink); white-space:pre-wrap; overflow-x:auto; }
       .row .acts { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-      .row .why { font-size:13px; color:var(--on-warn-surface); }
+      .row .why { font-size: var(--fs-sm); color:var(--on-warn-surface); }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
@@ -59,6 +59,8 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.muted { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -82,7 +84,7 @@
 
       <section class="picker" aria-label="Choose a document kind">
         <label for="kind"><span id="kind-label"></span><select id="kind"></select></label>
-        <button id="load" class="quiet" type="button"></button>
+        <button id="load" class="quiet sre-btn sre-btn-quiet" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
@@ -102,7 +104,7 @@
           <label for="note"><span id="note-label"></span><input id="note" type="text" maxlength="200" /></label>
         </div>
         <p class="hint" id="limits"></p>
-        <div><button id="draft" class="act" type="button"></button></div>
+        <div><button id="draft" class="act sre-btn sre-btn-primary" type="button"></button></div>
       </form>
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>

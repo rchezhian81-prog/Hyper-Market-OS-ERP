@@ -14,8 +14,8 @@ const real = window.unsellableSession;
 /** A stand-in with the same surface as the bundled session, announced whenever it is in use. */
 function sampleSession() {
   const words = {
-    en: { title: 'Products nobody can sell', lead: 'Sample data — this is not your shop.', asOf: 'From the catalogue the store computer received', sellable: 'products the till can sell' },
-    ta: { title: 'யாரும் விற்க முடியாத பொருட்கள்', lead: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', asOf: 'கடைக் கணினி பெற்ற பட்டியலின்படி', sellable: 'கல்லா விற்கக்கூடிய பொருட்கள்' },
+    en: { title: 'Products nobody can sell', lead: 'Sample data — this is not your shop.', notTold: 'Not known — the store computer has not been given the catalogue yet, so it cannot say what nobody can sell.', asOf: 'From the catalogue the store computer received', sellable: 'products the till can sell' },
+    ta: { title: 'யாரும் விற்க முடியாத பொருட்கள்', lead: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', notTold: 'தெரியாது — கடைக் கணினிக்கு இன்னும் பட்டியல் கொடுக்கப்படவில்லை, எனவே யாரும் விற்க முடியாதது எது என்று சொல்ல முடியாது.', asOf: 'கடைக் கணினி பெற்ற பட்டியலின்படி', sellable: 'கல்லா விற்கக்கூடிய பொருட்கள்' },
   };
   return {
     text: (lang, key) => words[lang]?.[key] ?? words.en[key] ?? key,
@@ -84,11 +84,27 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paint();
+  paintNotTold();
 });
 
-el('sample').hidden = real !== undefined;
-el('sample').textContent = real === undefined ? session.text(lang, 'lead') : '';
+// U0 (P-08): the box injects `shopTimeZone` on every screen it serves, payload or none — so no session AND that global is
+// a real store computer that was told nothing: the page says "not known", never the sample stand-in.
+const servedByBox = window.shopTimeZone !== undefined;
+el('sample').hidden = real !== undefined || servedByBox;
+el('sample').textContent = real === undefined && !servedByBox ? session.text(lang, 'lead') : '';
+function paintNotTold() {
+  if (real !== undefined || !servedByBox) return;
+  el('summary').textContent = '';
+  el('groups').replaceChildren();
+  const state = el('state');
+  state.hidden = false;
+  state.className = 'state tone-degraded';
+  el('state-icon').textContent = '?';
+  el('state-text').textContent = session.text(lang, 'notTold');
+  state.setAttribute('aria-label', session.text(lang, 'notTold'));
+}
 paint();
+paintNotTold();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

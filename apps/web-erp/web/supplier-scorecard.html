@@ -23,13 +23,13 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 4px; border-left: 6px solid var(--idle); }
       .panel.tone-ok { border-left-color: var(--ok); } .panel.tone-degraded { border-left-color: var(--degraded); }
       .panel .k { color: var(--muted); font-size: 14px; font-weight: 600; } .panel .v { font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
-      .panel .hint { color: var(--muted); font-size: 13px; }
+      .panel .hint { color: var(--muted); font-size: var(--fs-sm); }
       .panel[data-rated="false"] .v { font-size: 15px; font-weight: 600; }
       .status { font-size: 14px; min-height: 20px; margin: 0; } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
@@ -45,6 +45,12 @@
       td.over { color: var(--danger-text); font-weight: 700; }
       h4 { margin: 8px 0 0; font-size: 15px; display: flex; gap: 6px; align-items: center; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -59,10 +65,10 @@
         <h2 id="page-h">Supplier scorecard</h2>
         <p class="muted" id="lead"></p>
         <form class="form-row" id="ask">
-          <label for="supplier"><span id="l-supplier">Supplier code</span><input id="supplier" autocomplete="off" /></label>
+          <label for="supplier"><span id="l-supplier">Supplier</span><input id="supplier" autocomplete="off" /></label>
           <label for="from"><span id="l-from">From</span><input id="from" type="date" /></label>
           <label for="to"><span id="l-to">To</span><input id="to" type="date" /></label>
-          <button id="show" type="submit">Show the scorecard</button>
+          <button id="show" type="submit" class="sre-btn sre-btn-primary">Show the scorecard</button>
         </form>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -80,7 +86,7 @@
       <section aria-labelledby="ppv-h" id="ppv-section">
         <h3 id="ppv-h">Purchase price variance</h3>
         <p class="muted" id="ppv-lead"></p>
-        <div class="ppv-actions"><button id="ppv-show" type="button"><span id="ppv-show-text">Show the price variance</span></button></div>
+        <div class="ppv-actions"><button id="ppv-show" type="button" class="sre-btn"><span id="ppv-show-text">Show the price variance</span></button></div>
         <p class="status" id="ppv-status" role="status" aria-live="polite"></p>
         <div id="ppv-rollups" hidden>
           <p id="ppv-total"></p>
@@ -92,7 +98,7 @@
         </div>
         <div id="ppv-drill" hidden>
           <h4 id="ppv-drill-h"></h4>
-          <div class="ppv-actions"><button id="ppv-back" type="button"><span id="ppv-back-text">Back to the roll-ups</span></button></div>
+          <div class="ppv-actions"><button id="ppv-back" type="button" class="sre-btn"><span id="ppv-back-text">Back to the roll-ups</span></button></div>
           <div class="table-wrap"><table id="ppv-lines"><thead></thead><tbody></tbody></table></div>
         </div>
       </section>
@@ -101,7 +107,7 @@
            approval. The lead time is what the scorecard's "on time" is measured against. Session: apps/web-erp/src/supplier-terms-session.ts. -->
       <section aria-labelledby="contracts-h" id="contracts-section" hidden>
         <h3 id="contracts-h">Contracts to look at</h3>
-        <div class="ppv-actions"><button id="contracts-show" type="button"><span id="contracts-show-text">Show the contracts</span></button></div>
+        <div class="ppv-actions"><button id="contracts-show" type="button" class="sre-btn"><span id="contracts-show-text">Show the contracts</span></button></div>
         <p class="status" id="contracts-status" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table id="contracts"><tbody></tbody></table></div>
         <div id="contract-form" hidden>
@@ -115,8 +121,8 @@
             <label for="k-lead"><span id="k-lead-l"></span><input id="k-lead" inputmode="numeric" autocomplete="off" /></label>
           </div>
           <div class="ppv-actions">
-            <button id="k-ask" type="button"><span id="k-ask-text"></span></button>
-            <button id="k-record" type="button"><span id="k-record-text"></span></button>
+            <button id="k-ask" type="button" class="sre-btn"><span id="k-ask-text"></span></button>
+            <button id="k-record" type="button" class="sre-btn"><span id="k-record-text"></span></button>
           </div>
           <p class="status" id="k-status" role="status" aria-live="polite"></p>
         </div>

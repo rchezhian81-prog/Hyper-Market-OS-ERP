@@ -38,7 +38,7 @@ describe.skipIf(!HAVE_BROWSER)('Help and procedures: the manager tools on the st
     await m.page.click('#w-save');
     await says(m.page, '#w-status', /^Saved\.$/);
     await m.page.waitForSelector('#drills:not([hidden])');
-    await m.page.fill('#d-sop', 'EM-FIRE'); await m.page.fill('#d-branch', shop.store); await m.page.fill('#d-on', '2026-10-30');
+    await m.page.fill('#d-sop', 'EM-FIRE'); await m.page.fill('#d-branch', shop.store); await m.page.fill('#d-on', '30/10/2026');
     await m.page.fill('#d-who', 'u-mgr, u-cash'); await m.page.fill('#d-found', 'The back door was blocked by crates.');
     await m.page.click('#d-save');
     await says(m.page, '#d-status', /^Saved\.$/);

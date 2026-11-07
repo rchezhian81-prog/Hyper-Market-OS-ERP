@@ -11,6 +11,7 @@
 // its reason; a product with no contract price says so — never a zero.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -39,7 +40,7 @@ export const SCORECARD_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Supplier scorecard',
     lead: 'How a supplier really performed, built from its purchase orders, the goods received and the invoices checked against them. Nothing on this page is typed in.',
-    supplier: 'Supplier code', from: 'From', to: 'To', show: 'Show the scorecard',
+    supplier: 'Supplier', from: 'From', to: 'To', show: 'Show the scorecard',
     fillRate: 'Fill rate', onTimeInFull: 'On time in full', leadTimeReliability: 'Lead-time reliability', invoiceAccuracy: 'Invoice accuracy', rejectionRate: 'Rejection rate',
     fillRateHint: 'what arrived of what was ordered', onTimeInFullHint: 'order lines complete by the agreed date', leadTimeReliabilityHint: 'how steady the delivery time is',
     invoiceAccuracyHint: 'invoice lines at the agreed price', rejectionRateHint: 'of what arrived, held back or refused (lower is better)',
@@ -47,7 +48,7 @@ export const SCORECARD_COPY = {
     agreedLead: 'Agreed lead time', days: 'days', noContract: 'no contract lead time on file', averageLead: 'average', worstLead: 'slowest',
     nothingReceived: 'Orders with nothing received:', sources: 'Built from: purchase orders, goods receipts and matched invoices.', summary: 'In short',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read supplier scorecards.',
-    needSupplier: 'Type the supplier code first. Nothing was sent.', backwards: 'The period runs backwards — "From" must be on or before "To". Nothing was sent.',
+    needSupplier: 'Choose the supplier first. Nothing was sent.', backwards: 'The period runs backwards — "From" must be on or before "To". Nothing was sent.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing is shown rather than an old figure.',
     ppvTitle: 'Purchase price variance', ppvLead: 'What each delivery cost against the order\'s price and the contract price on the day. Above zero means the shop paid more than agreed.',
     ppvShow: 'Show the price variance', ppvByProduct: 'By product', ppvByReceipt: 'By goods receipt', ppvLines: 'The receipt lines behind it',
@@ -60,7 +61,7 @@ export const SCORECARD_COPY = {
   ta: {
     lang: 'English', title: 'விநியோகஸ்தர் மதிப்பெண் அட்டை',
     lead: 'ஒரு விநியோகஸ்தர் உண்மையில் எப்படிச் செயல்பட்டார் — கொள்முதல் ஆணைகள், பெறப்பட்ட சரக்கு, சரிபார்க்கப்பட்ட பில்களிலிருந்து கணக்கிடப்பட்டது. இந்தப் பக்கத்தில் எதுவும் தட்டச்சு செய்யப்படவில்லை.',
-    supplier: 'விநியோகஸ்தர் குறியீடு', from: 'முதல்', to: 'வரை', show: 'மதிப்பெண் அட்டையைக் காட்டு',
+    supplier: 'விநியோகஸ்தர்', from: 'முதல்', to: 'வரை', show: 'மதிப்பெண் அட்டையைக் காட்டு',
     fillRate: 'நிரப்பு விகிதம்', onTimeInFull: 'நேரத்தில் முழுமையாக', leadTimeReliability: 'விநியோக நேர நம்பகத்தன்மை', invoiceAccuracy: 'பில் துல்லியம்', rejectionRate: 'நிராகரிப்பு விகிதம்',
     fillRateHint: 'ஆணையிட்டதில் வந்தது', onTimeInFullHint: 'ஒப்புக்கொண்ட தேதிக்குள் முழுமையான ஆணை வரிகள்', leadTimeReliabilityHint: 'விநியோக நேரம் எவ்வளவு சீராக உள்ளது',
     invoiceAccuracyHint: 'ஒப்புக்கொண்ட விலையில் பில் வரிகள்', rejectionRateHint: 'வந்ததில் நிறுத்தப்பட்டது அல்லது மறுக்கப்பட்டது (குறைவு நல்லது)',
@@ -68,7 +69,7 @@ export const SCORECARD_COPY = {
     agreedLead: 'ஒப்புக்கொண்ட விநியோக நேரம்', days: 'நாட்கள்', noContract: 'ஒப்பந்த விநியோக நேரம் பதிவில் இல்லை', averageLead: 'சராசரி', worstLead: 'மிக மெதுவானது',
     nothingReceived: 'எதுவும் வராத ஆணைகள்:', sources: 'கணக்கிடப்பட்டது: கொள்முதல் ஆணைகள், சரக்கு வரவுகள், பொருத்திய பில்கள்.', summary: 'சுருக்கமாக',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு விநியோகஸ்தர் மதிப்பெண் அட்டைகளைப் படிக்க முடியாது.',
-    needSupplier: 'முதலில் விநியோகஸ்தர் குறியீட்டைத் தட்டச்சு செய்யவும். எதுவும் அனுப்பப்படவில்லை.', backwards: 'காலம் பின்னோக்கி உள்ளது — "முதல்" தேதி "வரை" தேதிக்கு முன் இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.',
+    needSupplier: 'முதலில் விநியோகஸ்தரைத் தேர்ந்தெடுக்கவும். எதுவும் அனுப்பப்படவில்லை.', backwards: 'காலம் பின்னோக்கி உள்ளது — "முதல்" தேதி "வரை" தேதிக்கு முன் இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — பழைய எண்ணிக்கைக்குப் பதிலாக எதுவும் காட்டப்படவில்லை.',
     ppvTitle: 'கொள்முதல் விலை மாறுபாடு', ppvLead: 'ஒவ்வொரு வரவும் ஆணை விலை மற்றும் அன்றைய ஒப்பந்த விலைக்கு எதிராக எவ்வளவு ஆனது. பூஜ்ஜியத்துக்கு மேல் என்றால் ஒப்புக்கொண்டதை விடக் கடை அதிகம் செலுத்தியது.',
     ppvShow: 'விலை மாறுபாட்டைக் காட்டு', ppvByProduct: 'பொருள் வாரியாக', ppvByReceipt: 'சரக்கு வரவு வாரியாக', ppvLines: 'அதன் பின்னுள்ள வரவு வரிகள்',
@@ -84,7 +85,7 @@ export type ScorecardCopyKey = keyof typeof SCORECARD_COPY.en;
 export const scorecardWords = (lang: Lang, key: ScorecardCopyKey | string): string =>
   (SCORECARD_COPY[lang] as Record<string, string>)[key] ?? (SCORECARD_COPY.en as Record<string, string>)[key] ?? key;
 export function scorecardOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${scorecardWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return scorecardWords(lang, out.why);
   if (out.result === 'lost_link') return scorecardWords(lang, 'unreachable');
   return '';

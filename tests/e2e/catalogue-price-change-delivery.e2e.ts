@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { auditPage } from './lib/a11y-audit';
+import { sheetOpens, goBack, confirmIt } from './lib/confirm-sheet';
 import {
   newHeadOffice, startPricingHeadOffice, decideAsSomeoneElse, posts, CALLER, type PricingHeadOffice,
 } from './lib/pricing-head-office';
@@ -31,6 +32,8 @@ import {
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
  */
 
+// U2b: the shared date field reads dd/mm/yyyy, as a shop person writes it
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const HAVE_BROWSER = existsSync(CHROMIUM);
 
@@ -93,14 +96,15 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
   const checkPrice = async (page: Page, sku: string, rupees: string) => {
     await page.fill('#price-item', sku);
     await page.fill('#new-price', rupees);
-    await page.fill('#price-from', '2026-10-07');
+    await page.fill('#price-from', ddmm('2026-10-07'));
     await page.click('#check-price');
     await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
   };
 
   /** Click, wait for the banner to say THIS click's answer, read it, and dismiss it (it covers the top of the page). */
-  const clickFor = async (page: Page, button: string, expected: RegExp): Promise<{ title: string; text: string; cls: string }> => {
+  const clickFor = async (page: Page, button: string, expected: RegExp, between?: (page: Page) => Promise<void>): Promise<{ title: string; text: string; cls: string }> => {
     await page.click(button);
+    if (between) await between(page);
     await page.waitForFunction(
       (source) => {
         const doc = (globalThis as unknown as BrowserGlobals).document;
@@ -135,16 +139,23 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(await page.inputValue('#price-item'), 'the form holds the item').toBe('SKU-DAL');
       expect(await hidden(page, 'price-limits'), 'its MRP and floor are shown before a price is typed').toBe(false);
       expect(await page.textContent('#mrp-value')).toBe('₹160.00');
-      await page.fill('#price-from', '2026-10-07'); // the default (today) made fixed for the test — a person does not type it
+      await page.fill('#price-from', ddmm('2026-10-07')); // the default (today) made fixed for the test — a person does not type it
       await taps.type('#new-price', '150'); // below MRP 160, above the 20% floor at cost 100
       await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
       expect(await hidden(page, 'price-approval'), 'a clean price shows no approval step').toBe(true);
       expect(await page.textContent('#save-price')).toBe('Save this price');
       expect(posts(ho, '/v1/prices/changes'), 'checking sends nothing').toHaveLength(0);
-      taps.count += 1; // Save, tapped by clickFor
-      const said = await clickFor(page, '#save-price', /starts on the day you gave/);
+      // U1 · OB-698: the consequence-and-confirm sheet says the product and the price; Go back sends nothing.
+      await page.click('#save-price');
+      expect(await sheetOpens(page)).toMatch(/Change the price of .* to ₹150\.00/);
+      await goBack(page);
+      expect(posts(ho, '/v1/prices/changes'), 'Go back sends nothing').toHaveLength(0);
+      taps.count += 2; // Save, tapped by clickFor, and Confirm on the sheet
+      const said = await clickFor(page, '#save-price', /starts on the day you gave/, confirmIt);
       expect(said.title).toBe('Price saved');
-      expect(taps.reset(), 'edit a price').toBeLessThanOrEqual(3);
+      // U1 · OB-698 (2 Nov 2026): the owner chose the consequence-and-confirm sheet on every price change — one tap more
+      // than the "open → new price → submit" budget, listed as a justified exception (design system §1.1).
+      expect(taps.reset(), 'edit a price').toBeLessThanOrEqual(4);
 
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
@@ -165,7 +176,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       await page.click('#tab-items');
       await page.click('button.price-this[data-sku="SKU-DAL"]');
       await page.waitForSelector('#view-price:not([hidden])');
-      await page.fill('#price-from', '2026-10-07');
+      await page.fill('#price-from', ddmm('2026-10-07'));
       await page.fill('#new-price', '170'); // above the ₹160 MRP
       await page.waitForSelector('#price-verdict:not([hidden])');
       expect(await hidden(page, 'save-price'), 'no Save for a price over the MRP').toBe(true);
@@ -213,7 +224,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(await page.locator('#sheet, #choices, #sheet-reason').count(), 'an approver picker is still on the page').toBe(0);
 
       // Save BEFORE asking: refused on the screen, nothing sent.
-      const early = await clickFor(page, '#save-price', /nobody has been asked/);
+      const early = await clickFor(page, '#save-price', /nobody has been asked/, confirmIt);
       expect(early.text).toBe('Not saved — nobody has been asked to approve exactly this yet. Write why and press “Ask for approval” first.');
       expect(posts(ho, '/v1/prices/changes')).toHaveLength(0);
 
@@ -240,7 +251,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(await page.getAttribute('#ask-price', 'class')).not.toContain('primary');
 
       // Save while it waits: says so, nothing sent.
-      expect((await clickFor(page, '#save-price', /still waiting/)).text)
+      expect((await clickFor(page, '#save-price', /still waiting/, confirmIt)).text)
         .toBe('Not saved — still waiting for a second person who may approve prices (not you) to approve it on their Approvals page.');
       expect(posts(ho, '/v1/prices/changes')).toHaveLength(0);
 
@@ -248,7 +259,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       decideAsSomeoneElse(ho, 'areq-1', 'approved', 'agreed — the batch expires on Friday');
 
       // Save — names the approved request; no approver, no reason, no name in the body. Head office accepts it.
-      const saved = await clickFor(page, '#save-price', /^Price saved/);
+      const saved = await clickFor(page, '#save-price', /^Price saved/, confirmIt);
       expect(saved.title).toBe('Price saved');
       expect(saved.text).toBe('Price saved: ₹90.00. The approval has now been used — another change needs a new approval.');
       const change = posts(ho, '/v1/prices/changes');
@@ -297,14 +308,14 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       await clickFor(page, '#ask-price', /Waiting for a second person/);
       decideAsSomeoneElse(ho, 'areq-1', 'rejected', 'dal is not short-dated');
 
-      expect((await clickFor(page, '#save-price', /rejected it/)).text)
+      expect((await clickFor(page, '#save-price', /rejected it/, confirmIt)).text)
         .toBe('Not saved — u-owner rejected it: “dal is not short-dated”. Change what they said and ask again.');
       expect(posts(ho, '/v1/prices/changes'), 'a rejected price must not be sent').toHaveLength(0);
 
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
       expect(await page.textContent('#ask-price')).toBe('அனுமதி கேள்');
-      const ta = await clickFor(page, '#save-price', /மறுத்தார்/);
+      const ta = await clickFor(page, '#save-price', /மறுத்தார்/, confirmIt);
       expect(ta.text).toBe('சேமிக்கப்படவில்லை — u-owner மறுத்தார்: “dal is not short-dated”. அவர் சொன்னதை மாற்றி மீண்டும் கேளுங்கள்.');
       expect(posts(ho, '/v1/prices/changes')).toHaveLength(0);
     } finally {
@@ -323,7 +334,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
 
       // The setter changes the price AFTER the approval was given.
       await checkPrice(page, 'SKU-DAL', '85');
-      expect((await clickFor(page, '#save-price', /not exactly what was approved/)).text)
+      expect((await clickFor(page, '#save-price', /not exactly what was approved/, confirmIt)).text)
         .toBe('Not saved — this is not exactly what was approved (a figure changed after you asked). Ask for approval again for exactly this.');
       expect(posts(ho, '/v1/prices/changes'), 'a changed price must not be sent under the old approval').toHaveLength(0);
     } finally {
@@ -342,7 +353,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       // Between the read and the save, the approver lost the authority — head office refuses by code.
       ho.forceRefusal = { code: 'checker_may_not_approve', whatHappened: 'u-owner no longer holds the authority to approve this.' };
 
-      expect((await clickFor(page, '#save-price', /no longer may approve prices/)).text)
+      expect((await clickFor(page, '#save-price', /no longer may approve prices/, confirmIt)).text)
         .toBe('Not saved — the person who approved it no longer may approve prices, so their approval does not count. Ask again.');
       expect(await hidden(page, 'save-price'), 'the button stays, so the person can ask again').toBe(false);
     } finally {

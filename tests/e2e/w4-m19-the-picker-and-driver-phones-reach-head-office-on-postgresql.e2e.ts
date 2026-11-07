@@ -37,6 +37,9 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
  * Needs DATABASE_URL and Chromium; else it SKIPS.
  */
 
+/** The shop's date field reads day/month/year (U2). */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 const STORE = 'br-1';
 const BOX = 'u-box';
 const PICKER = 'u-picker';
@@ -230,7 +233,7 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
     const o = await shop.open(OWNER, '/dispatch');
     expect(o.status).toBe(200);
     await o.page.fill('#store', STORE);
-    await o.page.fill('#run-date', runDate);
+    await o.page.fill('#run-date', ddmm(runDate));
     await o.page.click('#show-tolerance');
     const stateIs = (s: string) => o.page.waitForFunction((x) => (globalThis as unknown as Doc).document.getElementById('tolerance-state')?.dataset['state'] === x, s, { timeout: 15_000 });
     await stateIs('not_confirmed');

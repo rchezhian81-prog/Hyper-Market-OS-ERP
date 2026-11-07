@@ -41,10 +41,10 @@
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row .facts .mine { color:var(--on-ok-surface); font-weight:600; }
       .row .acts { display:flex; gap:10px; flex-wrap:wrap; }
-      button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--info); color:var(--on-info); }
+      button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700;   }
       .worker { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .worker label { font-size:14px; color:var(--muted); }
       .roles { display:flex; gap:14px; flex-wrap:wrap; font-size:14px; } .roles label { display:inline-flex; gap:6px; align-items:center; min-height:var(--tap); }
@@ -61,6 +61,8 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.nothing { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -106,8 +108,8 @@
           <input id="work-detail" type="text" autocomplete="off" />
         </div>
         <div class="buttons">
-          <button id="resolve" class="act" type="button"></button>
-          <button id="release" class="act quiet" type="button"></button>
+          <button id="resolve" class="act sre-btn sre-btn-primary" type="button"></button>
+          <button id="release" class="act quiet sre-btn sre-btn-quiet" type="button"></button>
         </div>
       </section>
       <p class="nothing" id="nothing-held" hidden></p>
@@ -118,8 +120,8 @@
         <h3 id="repeat-h">Repeat orders</h3>
         <p class="lead" id="repeat-lead"></p>
         <div class="buttons">
-          <button id="repeat-show" class="act quiet" type="button">Show the repeat orders</button>
-          <button id="repeat-run" class="act" type="button" hidden>Place the ones due now</button>
+          <button id="repeat-show" class="act quiet sre-btn sre-btn-quiet" type="button">Show the repeat orders</button>
+          <button id="repeat-run" class="act sre-btn sre-btn-primary" type="button" hidden>Place the ones due now</button>
         </div>
         <p id="repeat-status" role="status" aria-live="polite"></p>
         <h3 id="repeat-np-h" hidden></h3>

@@ -196,7 +196,11 @@ describe('the self-checkout lane', () => {
     lane.scan('RICE');
     await lane.pay('card');
     expect(await lane.confirmPayment('u-attend', '111111', 'approved')).toMatchObject({ ok: false, refusedBecause: 'machine_ref_required' });
-    expect(await lane.confirmPayment('u-attend', '111111', 'no_answer')).toMatchObject({ ok: false, refusedBecause: 'no_answer', words: WORDS.noAnswer });
+    // U0 · G19 (1 Nov 2026 · §1 rule 5): the colleague reads what happened, that the basket is recorded and NOT counted as paid, and what to do next.
+    const noAnswer = await lane.confirmPayment('u-attend', '111111', 'no_answer');
+    expect(noAnswer).toMatchObject({ ok: false, refusedBecause: 'no_answer', words: WORDS.noAnswerRecorded });
+    expect(WORDS.noAnswerRecorded.en).toMatch(/did not answer.*recorded on the store computer.*NOT counted as paid.*Check the machine/s);
+    expect(WORDS.noAnswerRecorded.ta).toMatch(/செலுத்தப்பட்டதாகக் கணக்கிடப்படவில்லை/);
     expect(state.committed).toEqual([]);
     expect(await lane.confirmPayment('u-attend', '111111', 'approved', ' 123456 ')).toMatchObject({ ok: true });
     expect(state.answers.at(-1)).toBe('PAY-1:approved:123456');

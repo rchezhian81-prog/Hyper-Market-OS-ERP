@@ -1,3 +1,4 @@
+import { confirmIt } from './lib/confirm-sheet';
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -141,6 +142,7 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
 
     // RELEASE head office's waiting batch — a decision saved the same way.
     await page.click('li.row[data-run-id="run-ho"] button.release');
+    await confirmIt(page); // U1 · OB-698: the release asks the consequence-and-confirm sheet first, with the line down too
     await waitText(page, '#result-text', 'Decision saved on this screen');
     await page.waitForFunction(() => (globalThis as unknown as ProdWindow).productionTasks!.view('en').saved.filter((w) => w.state === 'handed_to_box').length === 3, undefined, { timeout: 10_000 });
 

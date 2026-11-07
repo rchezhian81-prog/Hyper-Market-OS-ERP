@@ -29,7 +29,7 @@
       input[type="checkbox"] { min-height: 24px; width: 24px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -50,6 +50,9 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -98,8 +101,8 @@
           <div id="f-attrs"></div>
           <div class="row">
             <label for="f-why"><span id="l-f-why">Why (for the owner's approval)</span><input id="f-why" autocomplete="off" maxlength="300" /></label>
-            <button id="save" class="primary" type="button">Save the category</button>
-            <button id="ask" type="button" hidden>Ask the owner to approve</button>
+            <button id="save" class="primary sre-btn sre-btn-primary" type="button">Save the category</button>
+            <button id="ask" type="button" hidden class="sre-btn sre-btn-primary">Ask the owner to approve</button>
           </div>
           <p class="status" id="form-status" role="status" aria-live="polite"></p>
         </fieldset>
@@ -110,7 +113,7 @@
         <p class="lead" id="variants-lead"></p>
         <form class="row" id="variants-form">
           <label for="v-cat"><span id="l-v-cat">Category (and everything under it)</span><select id="v-cat"></select></label>
-          <button id="run" type="submit">Show the report</button>
+          <button id="run" type="submit" class="sre-btn sre-btn-primary">Show the report</button>
         </form>
         <p class="muted" id="v-summary"></p>
         <ul class="rows" id="v-makers" aria-label="By manufacturer"></ul>

@@ -81,7 +81,8 @@ describe('what both shells must hold, held by both', () => {
 
       it('announces sample work instead of passing it off as real', () => {
         expect(html).toContain('id="sample"');
-        expect(code(app)).toMatch(/el\('sample'\)\.hidden = real !== undefined/);
+        // U0: hidden with a real session, and on a real store computer that was told nothing (it then says "no work yet")
+        expect(code(app)).toMatch(/el\('sample'\)\.hidden = real !== undefined \|\| servedByBox/);
       });
 
       it('says when the device could not save the work, rather than swallowing it', () => {
@@ -178,6 +179,19 @@ describe('the picker’s three steps start at the bin, as the spec says (picker-
   it('a green banner yields to the next scan; a red one must be read first (rule 5)', () => {
     const handler = code(PICKER).slice(code(PICKER).indexOf("window.addEventListener('keydown'"));
     expect(handler).toMatch(/if \(!banner\.classList\.contains\('good'\)\) return; banner\.hidden = true;/);
+  });
+});
+
+describe('a greyed warehouse button says why it waits (U1 · UI/UX gap audit G3 · design system §4)', () => {
+  it('Count a bin and Adjust stock carry "needs the store computer" while they are disabled, in both languages', () => {
+    const paint = code(WAREHOUSE);
+    expect(paint).toMatch(/sayAction\(el\('count-bin'\), t\('countBin'\), 'calculator', real === undefined \? t\('waitsForBox'\) : ''\)/);
+    expect(paint).toMatch(/sayAction\(el\('adjust-stock'\), t\('adjustStock'\), 'sliders', real === undefined \? t\('waitsForBox'\) : ''\)/);
+    expect(paint).toMatch(/if \(el\(id\)\.disabled\) el\(id\)\.title = t\('waitsForBox'\)/);
+    const en = WAREHOUSE.slice(WAREHOUSE.indexOf('  en: {'), WAREHOUSE.indexOf('  ta: {'));
+    const ta = WAREHOUSE.slice(WAREHOUSE.indexOf('  ta: {'));
+    expect(en).toMatch(/waitsForBox: 'needs the store computer'/);
+    expect(ta).toMatch(/waitsForBox: '[஀-௿ ]+'/);
   });
 });
 

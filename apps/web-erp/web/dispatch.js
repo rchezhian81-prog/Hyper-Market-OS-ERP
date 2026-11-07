@@ -8,14 +8,80 @@
 // OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// the pickers' words and the shared fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); if (typeof repaintShopDates === 'function') repaintShopDates(); if (typeof ownStores !== 'undefined') for (const id of ownStores) ownStore(id); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.dispatch ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const store = () => $('store').value;
-const runDate = () => $('run-date').value;
+const runDate = () => dateOf('run-date');
 
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['show-orders', 'search'], ['show-waves', 'list-checks'], ['build', 'package'], ['plan', 'navigation'], ['off-road', 'rotate-ccw'],
@@ -27,7 +93,7 @@ function say(where, out) { $(where).className = 'status err'; $(where).textConte
 function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, onClick, cls) {
-  const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls;
+  const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls;
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
@@ -59,6 +125,8 @@ async function showOrders() {
 }
 async function build() {
   const orderIds = [...document.querySelectorAll('#ready input.choose:checked')].map((b) => b.value);
+  // U2b: the wave's number is given by the page when the person leaves it empty (the run date and the next number)
+  if ($('wave-id').value.trim() === '') $('wave-id').value = mintWaveId();
   const out = await session.buildWave({ waveId: $('wave-id').value, storeId: store(), pickerId: $('picker').value, orderIds });
   if (out.result !== 'ok') { say('waves-status', out); return; }
   const w = out.value;
@@ -70,6 +138,7 @@ async function showWaves() {
   const out = await session.waves(store());
   if (out.result !== 'ok') { say('waves-status', out); return; }
   $('waves').hidden = false;
+  wavesKnown = out.value.waves.length;
   $('waves').replaceChildren(...out.value.waves.map((w) => {
     const li = document.createElement('li');
     li.className = `row tone-${w.stage === 'packed' ? 'ok' : w.short + w.qualityFailed > 0 ? 'error' : 'degraded'}`;
@@ -125,6 +194,7 @@ async function showBoard() {
   if (out.result !== 'ok') { say('board-status', out); return; }
   $('board-status').className = 'status'; $('board-status').textContent = '';
   $('board').hidden = false;
+  const routeList = $('route-list'); if (routeList) routeList.replaceChildren(...out.value.routes.map((r) => { const o = document.createElement('option'); o.value = r.routeId; return o; }));
   // OB-676: the limit the cash differences below are judged against, said "not confirmed by the owner" until he confirms it.
   const tolWords = api.toleranceNote(lang, out.value.handoverTolerance);
   $('board-tolerance').hidden = tolWords === '';
@@ -287,7 +357,7 @@ async function showPack() {
     label.append(text('span', `${t('sealL')} — ${t('crateK')} ${crate}`), input);
     return label;
   }));
-  $('dispatch-order').disabled = !may.sendOrders;
+  $('dispatch-order').disabled = !may.sendOrders; whyDisabled($('dispatch-order'), may.sendOrders ? '' : 'role');
 }
 function toldBox(lineId) {
   const label = document.createElement('label'); label.className = 'pick';
@@ -323,7 +393,24 @@ function settled(out) {
   good('settle-status', `${s.routeId} · ${t('stage')}: ${s.stage}${s.proposed ? ` · ${api.rupees(s.proposed.amountMinor)} (${s.proposed.drops} ${t('drops')})` : ''}${s.differenceMinor !== null && s.differenceMinor !== 0 ? ` · ⚠ ${t('varianceK')} ${api.rupees(s.differenceMinor)}` : ''} · ${t('settleBooks')}: ${s.books}`);
 }
 
+
+// U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
+// the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
+// still change it. Off the box, or before the chrome has loaded, nothing is filled in.
+const ownStores = new Set();
+function ownStore(inputId) {
+  ownStores.add(inputId);
+  const me = window.sreOffice?.me?.() ?? null;
+  const input = $(inputId);
+  if (me === null || !me.storeId || input === null) return;
+  if (input.value.trim() === '') input.value = me.storeId;
+  let note = document.getElementById(`${inputId}-own`);
+  if (note === null) { note = document.createElement('small'); note.id = `${inputId}-own`; note.className = 'sre-why own-store'; input.after(note); }
+  note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
+}
 function paint() {
+  repaintShopDates();
+  ownStore('store');
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'storeL'], ['date-l', 'dateL'], ['waves-h', 'wavesH'],
     ['show-orders-text', 'showOrders'], ['show-waves-text', 'boardWaves'], ['ready-h', 'readyK'], ['held-orders-h', 'heldK'], ['on-wave-h', 'onWaveK'], ['wave-id-l', 'waveIdL'],
@@ -332,16 +419,26 @@ function paint() {
     ['show-held-text', 'showHeld'], ['controls-h', 'controlsH'], ['show-controls-text', 'showControls'],
     ['tolerance-h', 'toleranceH'], ['show-tolerance-text', 'showTolerance'], ['tolerance-value-l', 'toleranceL'], ['tolerance-note-l', 'toleranceReasonL'], ['confirm-tolerance-text', 'confirmTolerance'], ['tolerance-history-h', 'tolHistoryH'], ['settle-h', 'settleH'], ['settle-route-l', 'routeIdL'],
     ['send-h', 'sendH'], ['send-order-l', 'orderL'], ['show-pack-text', 'showPack'], ['dispatch-order-text', 'dispatchOrder'], ['show-manifest-text', 'showManifest'],
-    ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) $(id).textContent = t(k);
+    ['propose-text', 'propose'], ['approve-settle-text', 'approveSettle'], ['paid-amount-l', 'amountL'], ['voucher-l', 'voucherL'], ['paid-text', 'paid']]) { const n = $(id); if (n) n.textContent = t(k); } // a label the shared date field now owns (U2) is not on the page
   $('off-driver-l').textContent = lang === 'ta' ? 'டிரைவர்' : 'Driver';
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.dispatchData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('show-orders').disabled = !may.waves; $('show-waves').disabled = !may.waves; $('build').disabled = !may.waves;
+  for (const id of ['show-orders', 'show-waves', 'build']) whyDisabled($(id), may.waves ? '' : 'role');
   $('plan').disabled = !may.dispatch; $('off-road').disabled = !may.dispatch; $('propose').disabled = !may.dispatch;
+  for (const id of ['plan', 'off-road', 'propose']) whyDisabled($(id), may.dispatch ? '' : 'role');
   $('show-board').disabled = !may.read; $('show-held').disabled = !may.read; $('show-controls').disabled = !may.read; $('show-tolerance').disabled = !may.read;
+  for (const id of ['show-board', 'show-held', 'show-controls', 'show-tolerance']) whyDisabled($(id), may.read ? '' : 'role');
   $('approve-settle').disabled = !may.approveSettlement; $('paid').disabled = !may.approveSettlement;
+  whyDisabled($('approve-settle'), may.approveSettlement ? '' : 'role'); whyDisabled($('paid'), may.approveSettlement ? '' : 'role');
   $('show-pack').disabled = !may.readPacks; $('show-manifest').disabled = !may.readPacks; $('dispatch-order').disabled = !may.sendOrders;
+  whyDisabled($('show-pack'), may.readPacks ? '' : 'role'); whyDisabled($('show-manifest'), may.readPacks ? '' : 'role'); whyDisabled($('dispatch-order'), may.sendOrders ? '' : 'role');
+  for (const id of ['plan', 'off-road', 'propose']) whyDisabled($(id), may.dispatch ? '' : 'role');
+  for (const id of ['show-board', 'show-held', 'show-controls', 'show-tolerance']) whyDisabled($(id), may.read ? '' : 'role');
+  for (const id of ['approve-settle', 'paid']) whyDisabled($(id), may.approveSettlement ? '' : 'role');
+  for (const id of ['show-pack', 'show-manifest']) whyDisabled($(id), may.readPacks ? '' : 'role');
+  whyDisabled($('dispatch-order'), may.sendOrders ? '' : 'role');
 }
 
 $('show-orders').addEventListener('click', () => { void showOrders(); });
@@ -422,15 +519,15 @@ function paintTillJobs() {
 }
 async function showTillJobs(say = true) {
   if (desk === null || !desk.session.may.read) { $('till-jobs-status').className = 'status err'; $('till-jobs-status').textContent = dk('cannotRead'); return; }
-  const out = await desk.session.jobs(store(), $('till-day').value);
+  const out = await desk.session.jobs(store(), dateOf('till-day'));
   if (out.result !== 'ok') { deskSay(out); return; }
   tillJobs = out.value;
   if (say) { $('till-jobs-status').className = 'status'; $('till-jobs-status').textContent = `${tillJobs.waitingForDesk} ${dk('waitingDesk')} · ${tillJobs.waitingForCustomer} ${dk('waitingApp')}`; }
   paintTillJobs();
 }
 function paintDesk() {
-  for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) $(id).textContent = dk(k);
-  $('show-till-jobs').disabled = desk === null || !desk.session.may.read;
+  for (const [id, k] of [['till-jobs-h', 'tillJobsH'], ['till-jobs-lead', 'tillJobsLead'], ['till-day-l', 'dayL'], ['show-till-jobs-text', 'showTillJobs']]) { const n = $(id); if (n) n.textContent = dk(k); }
+  $('show-till-jobs').disabled = desk === null || !desk.session.may.read; whyDisabled($('show-till-jobs'), desk === null ? 'offline' : desk.session.may.read ? '' : 'role');
   paintTillJobs();
 }
 { const i = icon('truck'); if (i !== null) $('show-till-jobs').prepend(i, ' '); }
@@ -439,3 +536,33 @@ $('show-till-jobs').addEventListener('click', () => { void showTillJobs(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintDesk(); });
 if (api !== null) paint();
 paintDesk();
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+// the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
+document.addEventListener('sre:chrome', () => { if (desk !== null) shopDate('till-day', { en: desk.words('en', 'dayL'), ta: desk.words('ta', 'dayL') }); shopDate('run-date', { en: wordsIn('en', 'dateL'), ta: wordsIn('ta', 'dateL') }); paint(); }, { once: true });
+
+// ── U2b (G5): pick by name, never type a code
+let wavesKnown = 0;
+const mintWaveId = () => `W-${(runDate() || '').replace(/-/g, '')}-${String(wavesKnown + 1).padStart(2, '0')}`;
+pickable('picker', 'person', 'pickPerson', { scope: () => ({ storeId: store() }) });
+pickable('off-driver', 'person', 'pickPerson', { scope: () => ({ storeId: store() }) });

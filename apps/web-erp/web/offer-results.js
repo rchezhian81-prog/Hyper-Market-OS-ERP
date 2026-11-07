@@ -27,6 +27,11 @@ const WORDS = {
     kUnits: 'Units: offer · before', kUplift: 'Extra units', kMargin: 'Margin kept, with supplier money', kFunding: 'Supplier money received', kVerdict: 'Worth doing?',
     yes: 'Yes', no: 'No', notKnown: 'Not known', notMeasured: 'Not measured: {why}.', marginNotKnown: 'Not known — no buying cost for {list}',
     sWhy: 'Why stop it', stop: 'Stop this offer now', stoppedOk: 'Stopped. From now it does not apply at any till or in the app (from the next store pack).', needWhy: 'Write why first.',
+    // U1 · OB-698: the consequence-and-confirm sheet before a running offer is stopped
+    confirmTitle: 'Stop the offer {name} now',
+    confirmDetail: 'From the next store pack no till and not the app charges it. A stopped offer cannot be restarted — a new one is defined on the Products page. Its results stay on record.',
+    confirmAuthority: 'In your name, with the reason you wrote. Head office refuses it if your role may not stop offers.',
+    confirmLabel: 'Stop this offer', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     refused: 'Head office refused:', unreachable: 'Head office could not be reached. Nothing was changed — try again.', noRight: 'This account may not read offers.',
     readOnly: 'You can read the offers and their results. Stopping one is for those who launch offers.', nobody: 'Nobody is signed in on this computer, so nothing can be shown.',
   },
@@ -43,11 +48,33 @@ const WORDS = {
     kUnits: 'அலகுகள்: சலுகை · முன்', kUplift: 'கூடுதல் அலகுகள்', kMargin: 'விநியோகஸ்தர் பணத்துடன் கிடைத்த லாபம்', kFunding: 'பெற்ற விநியோகஸ்தர் பணம்', kVerdict: 'பயனுள்ளதா?',
     yes: 'ஆம்', no: 'இல்லை', notKnown: 'தெரியவில்லை', notMeasured: 'அளக்கப்படவில்லை: {why}.', marginNotKnown: 'தெரியவில்லை — {list}-க்கு வாங்கும் விலை இல்லை',
     sWhy: 'ஏன் நிறுத்துகிறீர்கள்', stop: 'இந்தச் சலுகையை இப்போதே நிறுத்து', stoppedOk: 'நிறுத்தப்பட்டது. இனி எந்தக் கவுண்டரிலும் செயலியிலும் பொருந்தாது (அடுத்த கடைப் பொதியிலிருந்து).', needWhy: 'முதலில் ஏன் என்று எழுதுங்கள்.',
+    confirmTitle: '{name} சலுகை இப்போதே நிறுத்தப்படும்',
+    confirmDetail: 'அடுத்த கடைப் பொதியிலிருந்து எந்தக் கவுண்டரும் செயலியும் அதை வசூலிக்காது. நிறுத்திய சலுகையை மீண்டும் தொடங்க முடியாது — பொருட்கள் பக்கத்தில் புதியது வரையறுக்கப்படும். அதன் முடிவுகள் பதிவில் இருக்கும்.',
+    confirmAuthority: 'நீங்கள் எழுதிய காரணத்துடன், உங்கள் பெயரில். சலுகைகளை நிறுத்தும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'இந்தச் சலுகையை நிறுத்து', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் மாற்றப்படவில்லை — மீண்டும் முயலவும்.', noRight: 'இந்தக் கணக்கு சலுகைகளைப் படிக்க முடியாது.',
     readOnly: 'சலுகைகளையும் அவற்றின் முடிவுகளையும் நீங்கள் படிக்கலாம். ஒன்றை நிறுத்துவது சலுகைகளைத் தொடங்குபவர்களுக்கு.', nobody: 'இந்தக் கணினியில் யாரும் உள்நுழையவில்லை, எனவே எதையும் காட்ட முடியாது.',
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 const rupees = (minor) => `₹${(minor / 100).toFixed(2)}`;
 // A date as the shop reads it: a calendar date stays as written; an instant is read on the shop's own clock (India), never its UTC date.
@@ -66,6 +93,15 @@ async function call(method, path, body) {
 }
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
 const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
 
 let offers = null;
 let open = null;
@@ -111,6 +147,7 @@ function paintRecord() {
 }
 
 function paint() {
+  repaintShopDates();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-active', 'kActive'], ['k-draft', 'kDraft'], ['k-stopped', 'kStopped'], ['list-h', 'listH'],
     ['c-id', 'cId'], ['c-kind', 'cKind'], ['c-on', 'cOn'], ['c-dates', 'cDates'], ['c-status', 'cStatus'], ['l-b-from', 'bFrom'], ['l-b-to', 'bTo'], ['measure', 'measure'],
@@ -131,7 +168,7 @@ async function load() {
 
 $('measure').addEventListener('click', async () => {
   if (open === null) return;
-  const from = $('b-from').value; const to = $('b-to').value;
+  const from = dateOf('b-from'); const to = dateOf('b-to');
   const q = from !== '' && to !== '' ? `?${new URLSearchParams({ baselineFrom: from, baselineTo: to })}` : '';
   const out = await call('GET', `/v1/promotions/${encodeURIComponent(open.id)}/results${q}`);
   if (!out.ok) { result = null; paintRecord(); say($('record-status'), out, ''); return; }
@@ -143,6 +180,11 @@ $('stop').addEventListener('click', async () => {
   const why = $('s-why').value.trim();
   if (why === '') { tell(st, false, t('needWhy')); return; }
   if (open === null) return;
+  // U1 · OB-698: the consequence-and-confirm sheet before a running offer stops — Go back sends nothing.
+  const name = open.name ?? open.id;
+  const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{name}', name), ta: String(WORDS.ta.confirmTitle).replace('{name}', name) }, detail: { en: WORDS.en.confirmDetail, ta: WORDS.ta.confirmDetail }, authority: { en: WORDS.en.confirmAuthority, ta: WORDS.ta.confirmAuthority }, confirmLabel: { en: WORDS.en.confirmLabel, ta: WORDS.ta.confirmLabel }, tone: 'danger' });
+  if (answer === 'unavailable') { tell(st, false, t('confirmUnavailable')); return; }
+  if (answer === null) return;
   const out = await call('POST', `/v1/promotions/${encodeURIComponent(open.id)}/stop`, { reason: why });
   if (!out.ok) { say(st, out, ''); return; }
   $('s-why').value = '';
@@ -158,3 +200,5 @@ if (named && mayRead) void load();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('b-from', { en: wordsIn('en', 'bFrom'), ta: wordsIn('ta', 'bFrom') }); shopDate('b-to', { en: wordsIn('en', 'bTo'), ta: wordsIn('ta', 'bTo') }); paint(); }, { once: true });

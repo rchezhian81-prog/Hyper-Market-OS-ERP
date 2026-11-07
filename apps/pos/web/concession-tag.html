@@ -45,16 +45,24 @@
       th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
       th:first-child, td:first-child { text-align: left; }
       .totals { font-weight: 700; }
-      .foot { color: var(--muted); font-size: 12px; }
+      .foot { color: var(--muted); font-size: 14px; }
+      /* U0 · G20 (UI/UX gap audit, 1 Nov 2026 · §1 rule 6): one language at a time, switched by the reader; the words of
+         the other language stay in the page (every label has both) and are hidden, never removed. */
+      html:not([lang="ta"]) [lang="ta"], html[lang="ta"] [lang="en"] { display: none; }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      #lang { min-height: 44px; }
     </style>
   </head>
   <body>
     <main>
       <section>
-        <h1>Concession line <span lang="ta">/ கூட்டுறவு வரி</span></h1>
-        <p class="lede">Record a partner-counter sale from the approved docket. <span lang="ta">அங்கீகரிக்கப்பட்ட ஆவணத்திலிருந்து பதிவு செய்யவும்.</span></p>
+        <div class="top">
+          <h1><span lang="en">Concession line</span><span lang="ta">கூட்டுறவு வரி</span></h1>
+          <button id="lang" type="button" class="secondary" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
+        </div>
+        <p class="lede"><span lang="en">Record a partner-counter sale from the approved docket.</span><span lang="ta">அங்கீகரிக்கப்பட்ட ஆவணத்திலிருந்து கூட்டாளர் கவுண்டர் விற்பனையைப் பதிவு செய்யவும்.</span></p>
 
-        <label for="role">You are <span lang="ta">/ நீங்கள்</span>
+        <label for="role"><span lang="en">You are</span><span lang="ta">நீங்கள்</span>
           <select id="role">
             <option value="cashier">Cashier / விற்பனையாளர்</option>
             <option value="supervisor">Supervisor / மேற்பார்வையாளர்</option>
@@ -62,65 +70,71 @@
         </label>
 
         <div class="grid2">
-          <label for="capturedBy">Your staff id <span lang="ta">/ உங்கள் பணியாளர் எண்</span>
+          <label for="capturedBy"><span lang="en">Your staff id</span><span lang="ta">உங்கள் பணியாளர் எண்</span>
             <input id="capturedBy" value="" autocomplete="off" />
           </label>
-          <label for="tillId">Till <span lang="ta">/ பணப்பெட்டி</span>
+          <label for="tillId"><span lang="en">Till</span><span lang="ta">பணப்பெட்டி</span>
             <input id="tillId" value="till-1" />
           </label>
-          <label for="shiftId">Shift <span lang="ta">/ பணி நேரம்</span>
+          <label for="shiftId"><span lang="en">Shift</span><span lang="ta">பணி நேரம்</span>
             <input id="shiftId" value="" />
           </label>
-          <label for="saleId">Bill / sale id <span lang="ta">/ பில் எண்</span>
+          <label for="saleId"><span lang="en">Bill / sale id</span><span lang="ta">பில் எண்</span>
             <input id="saleId" value="" autocomplete="off" />
           </label>
-          <label for="lineId">Line (blank = next) <span lang="ta">/ வரி</span>
+          <label for="lineId"><span lang="en">Line (blank = next)</span><span lang="ta">வரி (வெறுமை = அடுத்தது)</span>
             <input id="lineId" value="" autocomplete="off" />
           </label>
-          <label for="concessionaireId">Partner <span lang="ta">/ கூட்டாளர்</span>
+          <label for="concessionaireId"><span lang="en">Partner</span><span lang="ta">கூட்டாளர்</span>
             <input id="concessionaireId" value="" />
           </label>
-          <label for="contractId">Contract (if known) <span lang="ta">/ ஒப்பந்தம்</span>
+          <label for="contractId"><span lang="en">Contract (if known)</span><span lang="ta">ஒப்பந்தம் (தெரிந்தால்)</span>
             <input id="contractId" value="" />
           </label>
-          <label for="counterId">Counter <span lang="ta">/ கவுண்டர்</span>
+          <label for="counterId"><span lang="en">Counter</span><span lang="ta">கவுண்டர்</span>
             <input id="counterId" value="" />
           </label>
-          <label for="productId">Product <span lang="ta">/ பொருள்</span>
+          <label for="productId"><span lang="en">Product</span><span lang="ta">பொருள்</span>
             <input id="productId" value="" />
           </label>
-          <label for="qty">Qty <span lang="ta">/ அளவு</span>
+          <label for="qty"><span lang="en">Qty</span><span lang="ta">அளவு</span>
             <input id="qty" type="number" inputmode="numeric" value="1" min="1" />
           </label>
-          <label for="grossMinor">Gross (paise) <span lang="ta">/ மொத்தம்</span>
+          <label for="grossMinor"><span lang="en">Gross (paise)</span><span lang="ta">மொத்தம் (பைசா)</span>
             <input id="grossMinor" type="number" inputmode="numeric" value="0" />
           </label>
-          <label for="discountMinor">Discount (paise) <span lang="ta">/ தள்ளுபடி</span>
+          <label for="discountMinor"><span lang="en">Discount (paise)</span><span lang="ta">தள்ளுபடி (பைசா)</span>
             <input id="discountMinor" type="number" inputmode="numeric" value="0" />
           </label>
-          <label for="taxMinor">Tax (paise) <span lang="ta">/ வரி</span>
+          <label for="taxMinor"><span lang="en">Tax (paise)</span><span lang="ta">வரி (பைசா)</span>
             <input id="taxMinor" type="number" inputmode="numeric" value="0" />
           </label>
-          <label for="source">Approved source <span lang="ta">/ ஆதாரம்</span>
+          <label for="source"><span lang="en">Approved source</span><span lang="ta">அங்கீகரிக்கப்பட்ட ஆதாரம்</span>
             <input id="source" value="" />
           </label>
         </div>
-        <button id="record" type="button">Record line</button>
+        <button id="record" type="button"><span lang="en">Record line</span><span lang="ta">வரியைப் பதிவு செய்</span></button>
         <p class="status" id="status" role="status" aria-live="polite"></p>
       </section>
 
       <section>
-        <h2>Lines saved on this store computer <span lang="ta">/ சேமிக்கப்பட்ட வரிகள்</span></h2>
+        <h2><span lang="en">Lines saved on this store computer</span><span lang="ta">இந்தக் கடைக் கணினியில் சேமிக்கப்பட்ட வரிகள்</span></h2>
         <table>
           <thead>
-            <tr><th>Tag</th><th>Product</th><th>Gross</th><th>Net</th><th>State</th></tr>
+            <tr>
+              <th><span lang="en">Tag</span><span lang="ta">குறி</span></th>
+              <th><span lang="en">Product</span><span lang="ta">பொருள்</span></th>
+              <th><span lang="en">Gross</span><span lang="ta">மொத்தம்</span></th>
+              <th><span lang="en">Net</span><span lang="ta">நிகரம்</span></th>
+              <th><span lang="en">State</span><span lang="ta">நிலை</span></th>
+            </tr>
           </thead>
           <tbody id="rows"></tbody>
           <tfoot>
-            <tr class="totals"><td colspan="2">Totals (saved lines)</td><td id="t-gross">0</td><td id="t-net">0</td><td></td></tr>
+            <tr class="totals"><td colspan="2"><span lang="en">Totals (saved lines)</span><span lang="ta">மொத்தம் (சேமித்த வரிகள்)</span></td><td id="t-gross">0</td><td id="t-net">0</td><td></td></tr>
           </tfoot>
         </table>
-        <p class="foot">Saved lines reach head office when the connection is up; the partner's commission is worked out there from the contract. A saved line is never rewritten here — a supervisor reverses or adjusts it at head office.</p>
+        <p class="foot"><span lang="en">Saved lines reach head office when the connection is up; the partner's commission is worked out there from the contract. A saved line is never rewritten here — a supervisor reverses or adjusts it at head office.</span><span lang="ta">இணைப்பு இருக்கும்போது சேமித்த வரிகள் தலைமை அலுவலகத்தை அடையும்; கூட்டாளரின் கமிஷன் அங்கே ஒப்பந்தத்திலிருந்து கணக்கிடப்படும். சேமித்த வரி இங்கே மீண்டும் எழுதப்படாது — மேற்பார்வையாளர் தலைமை அலுவலகத்தில் திருப்பவோ திருத்தவோ செய்வார்.</span></p>
       </section>
     </main>
     <!--SCREEN-DATA-->

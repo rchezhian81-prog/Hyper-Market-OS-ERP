@@ -10,6 +10,9 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { makeEvent } from '../../packages/contracts/src/event';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * OB-288 fulfilment & delivery (M19-FR-01/03/04 · WF-14 · WF-15 · OB-294 · OB-313) — the Dispatch page, in a real browser,
  * on the PRODUCTION API over real PostgreSQL (synthetic data). Nothing is read on open. The dispatcher sees the confirmed
@@ -81,7 +84,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Dispat
     await page.goto(`${shop.base}/dispatch`, { waitUntil: 'load' });
     expect(reads, 'nothing is read on open').toEqual([]);
     await page.fill('#store', 'br-1');
-    await page.fill('#run-date', runDate);
+    await page.fill('#run-date', ddmm(runDate));
 
     // ── Waves from confirmed orders.
     await page.click('#show-orders');

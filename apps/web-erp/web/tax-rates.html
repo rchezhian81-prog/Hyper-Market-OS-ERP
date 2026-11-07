@@ -28,7 +28,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -49,6 +49,9 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -80,8 +83,8 @@
           <tbody id="rows"></tbody>
         </table></div>
         <form class="row" id="pick">
-          <label for="hsn"><span id="l-hsn">HSN code (4 to 8 digits)</span><input id="hsn" inputmode="numeric" autocomplete="off" /></label>
-          <button id="open" type="submit">Open this class</button>
+          <label for="hsn"><span id="l-hsn">HSN code (4 to 8 digits)</span><input id="hsn" inputmode="numeric" autocomplete="off" list="hsn-list" /><datalist id="hsn-list"></datalist></label>
+          <button id="open" type="submit" class="sre-btn">Open this class</button>
         </form>
       </section>
 
@@ -93,7 +96,7 @@
           <div class="row">
             <label for="g-from"><span id="l-g-from">From (date)</span><input id="g-from" type="date" /></label>
             <label for="g-rate"><span id="l-g-rate">Rate (%)</span><input id="g-rate" inputmode="decimal" autocomplete="off" /></label>
-            <button id="g-save" class="primary" type="button">Record the GST rate</button>
+            <button id="g-save" class="primary sre-btn sre-btn-primary" type="button">Record the GST rate</button>
           </div>
         </fieldset>
         <fieldset>
@@ -104,12 +107,12 @@
             <label for="c-adv"><span id="l-c-adv">Ad valorem (%)</span><input id="c-adv" inputmode="decimal" autocomplete="off" /></label>
             <label for="c-spec"><span id="l-c-spec">Specific (₹ per block, 0 for none)</span><input id="c-spec" inputmode="decimal" autocomplete="off" /></label>
             <label for="c-per"><span id="l-c-per">Block (units, e.g. 1000 sticks)</span><input id="c-per" inputmode="numeric" autocomplete="off" /></label>
-            <button id="c-save" type="button">Record the cess</button>
+            <button id="c-save" type="button" class="sre-btn">Record the cess</button>
           </div>
         </fieldset>
         <div class="row">
           <label for="why"><span id="l-why">Why (for the Finance approver)</span><input id="why" autocomplete="off" maxlength="300" /></label>
-          <button id="ask" type="button" hidden>Ask Finance to approve</button>
+          <button id="ask" type="button" hidden class="sre-btn">Ask Finance to approve</button>
         </div>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>
       </section>

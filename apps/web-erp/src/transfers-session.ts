@@ -11,6 +11,7 @@
 // No cost, approver or stock figure is ever typed on this screen: cost is head office's (server side). DOM-free and tested.
 
 import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
+import { refusalWords } from './refusal-words';
 import { rupees } from './head-office-http';
 
 export type Lang = 'en' | 'ta';
@@ -43,6 +44,11 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     proposed: 'Waiting to be sent', in_transit: 'On the road — not sellable yet', received: 'Received', shortOpen: 'Shortfall open', shortSettled: 'Shortfall settled', onIndent: 'Floor indent — settled on the indent',
     from: 'from', to: 'to', proposedBy: 'proposed by', sentBy: 'sent and approved by', countedBy: 'counted in by', costEach: 'head office cost', costUnknown: 'head office holds no cost',
     dispatch: 'Send it (I approve this transfer)', dispatchNote: 'You approve it by sending it; the person who proposed it cannot.',
+    // U1 · OB-698: the consequence-and-confirm sheet before stock leaves the store
+    confirmSendTitle: '{lines} will leave {route}',
+    confirmSendDetail: 'Stock leaves this store the moment it is sent and is sellable at the other end only once it is counted in. A sent transfer cannot be cancelled; anything short is settled afterwards with a reason.',
+    confirmSendAuthority: 'In your name, as the person who approves this transfer. Head office refuses it if your role may not move stock.',
+    confirmSendLabel: 'Send it', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     receiveH: 'Count it in', receiveNote: 'Write what actually arrived. Anything missing becomes a valued shortfall.', receive: 'Record what arrived', sent: 'sent',
     resolveH: 'Settle the shortfall', resolveNote: 'Say what turned up and where, and why the rest is gone. You must be neither the sender nor the counter.', resolve: 'Settle it',
     missing: 'missing', worth: 'worth', foundQty: 'Turned up', foundAt: 'Found at', destination: 'the receiving place', source: 'the sending place', reasonCode: 'Why the rest is gone', note: 'What was done to look for it',
@@ -61,6 +67,10 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     proposed: 'அனுப்பக் காத்திருக்கிறது', in_transit: 'வழியில் — இன்னும் விற்க முடியாது', received: 'வந்து சேர்ந்தது', shortOpen: 'குறைபாடு திறந்துள்ளது', shortSettled: 'குறைபாடு தீர்க்கப்பட்டது', onIndent: 'தளக் கோரிக்கை — கோரிக்கையிலேயே தீர்க்கப்படும்',
     from: 'இருந்து', to: 'க்கு', proposedBy: 'முன்மொழிந்தவர்', sentBy: 'அனுப்பி ஒப்புதல் தந்தவர்', countedBy: 'எண்ணி வரவு வைத்தவர்', costEach: 'தலைமை அலுவலக விலை', costUnknown: 'தலைமை அலுவலகத்திடம் விலை இல்லை',
     dispatch: 'அனுப்பு (இந்த இடமாற்றத்துக்கு நான் ஒப்புதல் தருகிறேன்)', dispatchNote: 'அனுப்புவதன் மூலம் நீங்கள் ஒப்புதல் தருகிறீர்கள்; முன்மொழிந்தவர் தர முடியாது.',
+    confirmSendTitle: '{lines} — {route} செல்லும்',
+    confirmSendDetail: 'அனுப்பிய கணத்திலேயே சரக்கு இந்தக் கடையிலிருந்து வெளியேறும்; மறுமுனையில் எண்ணிப் பதிந்த பிறகுதான் அங்கே விற்க முடியும். அனுப்பிய இடமாற்றத்தை ரத்து செய்ய முடியாது; குறைவாக வந்தது பின்னர் காரணத்துடன் தீர்க்கப்படும்.',
+    confirmSendAuthority: 'இந்த இடமாற்றத்தை ஒப்புதல் செய்பவராக உங்கள் பெயரில். சரக்கு நகர்த்தும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmSendLabel: 'அனுப்பு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     receiveH: 'எண்ணி வரவு வை', receiveNote: 'உண்மையில் வந்ததை எழுதுங்கள். காணாதவை மதிப்பிடப்பட்ட குறைபாடாகும்.', receive: 'வந்ததைப் பதிவு செய்', sent: 'அனுப்பியது',
     resolveH: 'குறைபாட்டைத் தீர்', resolveNote: 'என்ன கிடைத்தது, எங்கே, மீதி ஏன் போனது என்று சொல்லுங்கள். நீங்கள் அனுப்பியவரோ எண்ணியவரோ ஆக இருக்கக்கூடாது.', resolve: 'தீர்த்து வை',
     missing: 'காணவில்லை', worth: 'மதிப்பு', foundQty: 'கிடைத்தது', foundAt: 'கிடைத்த இடம்', destination: 'பெறும் இடம்', source: 'அனுப்பும் இடம்', reasonCode: 'மீதி ஏன் போனது', note: 'தேட என்ன செய்யப்பட்டது',
@@ -167,7 +177,7 @@ export function createTransfersSession(viewer: TransferViewer | undefined, http:
       if (out.result === 'ok') return { tone: 'good', words: text(lang, good) };
       if (out.result === 'lost_link') return { tone: 'err', words: text(lang, 'unreachable') };
       if (out.result === 'invalid') return { tone: 'err', words: text(lang, out.key) };
-      return { tone: 'err', words: `${text(lang, 'refused')} ${out.whatHappened === '' ? out.code : out.whatHappened}` };
+      return { tone: 'err', words: refusalWords(lang, out) }; // U0 · G10: what happened · nothing was changed · the next safe action
     },
   };
 }

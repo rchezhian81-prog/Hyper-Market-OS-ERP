@@ -54,6 +54,24 @@ function sampleSession() {
 let session = window.dayBookSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = el(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = el(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (el(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = el(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
+
 function statusNode(status) {
   const s = document.createElement('span');
   s.className = 'status';
@@ -106,14 +124,17 @@ function exceptionNode(e) {
   return li;
 }
 
+let lastView = null;
 function paint() {
+  repaintShopDates();
   const view = session.view(lang);
+  lastView = view;
 
   el('title').textContent = t('title');
   el('lead').textContent = t('lead');
   el('whoami').textContent = window.dayBookData?.userId ?? '';
   el('lang').textContent = t('langName');
-  el('day-label').textContent = t('dayLabel');
+  { const dayLabel = el('day-label'); if (dayLabel) dayLabel.textContent = t('dayLabel'); } // the shared date field owns its own label once the chrome has replaced the plain one (U2)
   el('load').textContent = t('loadBtn');
   el('post').textContent = t('postBtn');
 
@@ -178,9 +199,27 @@ function paintResult(presentation) {
 // The accountant's posting — a HUMAN write that runs ONLY on this explicit click, never on load. On success the
 // day is re-read (a GET) so the journals shown are the cloud's. The server needs a posting map and is idempotent
 // on the day; the screen never fakes a posting.
+// OB-698: before money moves, the shared confirm sheet (the chrome's) says what will be posted, in whose name, and asks
+// for the person's word. Go back sends nothing. A page that paints before the chrome waits for it.
+const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
+const MONTHS = { en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'] };
+/** The shop's day in words from its own digits (never the device's clock or zone, OB-606): 2026-10-01 → "1 October 2026". */
+const dayInWords = (iso, l) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso); if (!m) return iso; const name = MONTHS[l === 'ta' ? 'ta' : 'en'][Number(m[2]) - 1]; return name === undefined ? iso : `${Number(m[3])} ${name} ${m[1]}`; };
+const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
+function postSheet() {
+  const day = dateOf('day');
+  const total = lastView?.salesTotal ?? null;
+  const pair = (key, values) => ({ en: fillIn(session.text('en', key), values), ta: fillIn(session.text('ta', key), values) });
+  return {
+    title: { en: fillIn(session.text('en', total === null ? 'confirmTitleNoFigure' : 'confirmTitle'), { total, day: dayInWords(day, 'en') }), ta: fillIn(session.text('ta', total === null ? 'confirmTitleNoFigure' : 'confirmTitle'), { total, day: dayInWords(day, 'ta') }) },
+    detail: pair('confirmDetail', {}), authority: pair('confirmAuthority', {}), confirmLabel: pair('confirmLabel', {}), tone: 'primary',
+  };
+}
 el('post').addEventListener('click', () => {
   void (async () => {
-    const result = await session.post(el('day').value);
+    const answer = await (await office()).confirm(postSheet());
+    if (!answer.ok) return;
+    const result = await session.post(dateOf('day'));
     paintResult(session.presentPostResult(lang, result));
     if (result.result === 'posted' || result.result === 'nothing_new') await refresh();
   })();
@@ -201,7 +240,7 @@ function evidenceStatus(status) {
 function iconButton(icon, word, id) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'quiet';
+  b.className = 'quiet sre-btn sre-btn-quiet'; // the foundation's 44px quiet button (U1 · G3)
   b.id = id;
   if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word));
   else b.textContent = word;
@@ -223,7 +262,7 @@ async function paintEvidence() {
   section.hidden = false;
   el('evidence-heading').textContent = ev.text(lang, 'heading');
   el('evidence-lead').textContent = ev.text(lang, 'lead');
-  const { rows, status } = await ev.rows(lang, el('day').value);
+  const { rows, status } = await ev.rows(lang, dateOf('day'));
   el('evidence-rows').replaceChildren(...rows.map((r) => {
     const li = document.createElement('li');
     li.className = `row tone-${r.status.tone}`;
@@ -248,9 +287,9 @@ async function paintEvidence() {
   }));
   evidenceStatus(status);
 }
-el('day').addEventListener('change', () => { void paintEvidence(); });
+document.addEventListener('change', (ev) => { if (ev.target?.id === 'day') void paintEvidence(); });
 
-el('day').value = defaultDay();
+setShopDate('day', defaultDay());
 el('sample').hidden = window.dayBookSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
@@ -260,7 +299,7 @@ paint();
 async function refresh() {
   const api = window.dayBook;
   if (!api || typeof api.refresh !== 'function') return;
-  const data = await api.refresh(el('day').value);
+  const data = await api.refresh(dateOf('day'));
   if (data) { session = api.present(data); paint(); }
   await paintEvidence();
 }
@@ -271,3 +310,5 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('day', { en: session.text('en', 'dayLabel'), ta: session.text('ta', 'dayLabel') }, { required: true }); paint(); }, { once: true });

@@ -30,12 +30,12 @@
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
       li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-      .row .by { font-weight:600; } .row .when { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+      .row .by { font-weight:600; } .row .when { color:var(--muted); font-size: var(--fs-sm); font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .detail { font-size:13px; color:var(--danger-text); }
+      .row .detail { font-size: var(--fs-sm); color:var(--danger-text); }
       button.deliver {
-        min-height:var(--tap); padding:0 18px; border:0; border-radius:12px; background:var(--ok); color:var(--on-accent);
+        min-height:var(--tap); padding:0 18px; border:0; border-radius:12px;  
         font-size:18px; font-weight:700; justify-self:start;
       }
       button.deliver:disabled { background:var(--line); color:var(--muted); }
@@ -46,6 +46,9 @@
       p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -72,7 +75,7 @@
       <ul class="rows" id="rows" aria-label="Products waiting to publish"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
 
-      <button class="deliver" id="deliver" type="button" hidden></button>
+      <button class="deliver sre-btn sre-btn-primary" id="deliver" type="button" hidden></button>
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
     </main>
 

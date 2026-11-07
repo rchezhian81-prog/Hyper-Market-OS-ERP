@@ -311,7 +311,7 @@ describe('the sync badge is the chrome\'s (Stage G slice 5a) — this page adds 
 
 describe('the home screen has ONE primary action, and a decision is three taps from it (Stage G slice 2b · design system §1 rules 1 and 3 · store-manager.md)', () => {
   it('offers "clear the next approval" as the primary action — only when there is one this manager may clear', () => {
-    expect(HTML).toMatch(/<button id="next-approval" type="button" class="primary wide" hidden>/);
+    expect(HTML).toMatch(/<button id="next-approval" type="button" class="primary wide sre-btn sre-btn-primary" hidden>/);
     expect(code(APP)).toMatch(/next\.hidden = !\(clearable\.known && clearable\.count > 0\)/);
   });
 

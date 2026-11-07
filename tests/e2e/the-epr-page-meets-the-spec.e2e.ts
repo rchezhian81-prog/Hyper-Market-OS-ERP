@@ -102,7 +102,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('EPR regist
       await page.fill('#ho-note', 'HN-001');
       await page.click('#handover-go');
       await page.locator('#result.tone-error').waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#result')).toBe('Not recorded: recycler not registered: Street collector (test) has no registration number recorded');
+      expect(await page.textContent('#result')).toMatch(/^Head office refused: recycler not registered: Street collector \(test\) has no registration number recorded\.? Nothing was changed\. \S/); // U2 G10: the three-part refusal words;
       expect(await page.locator('#stock .row[data-stock="battery:lead-acid"]').getAttribute('data-on-hand')).toBe('1500');
 
       // To the registered recycler: recorded under its number; the take-back stock goes to nothing.

@@ -31,7 +31,7 @@
       input[type=checkbox] { min-height: 24px; width: 24px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field, var(--bg)); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       button:disabled { opacity: .6; cursor: not-allowed; }
       fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
@@ -47,7 +47,7 @@
   </head>
   <body>
     <header>
-      <h1 class="who" id="title">Shelf and floor setup</h1>
+      <h1 class="who" id="title">Set up shelves and floor plan</h1>
       <span class="sync"><button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button></span>
     </header>
     <!--SCREEN-DATA-->
@@ -58,7 +58,7 @@
         <p class="lead" id="lead"></p>
         <form class="row" id="pick">
           <label for="store"><span id="l-store">Store</span><input id="store" autocomplete="off" /></label>
-          <button id="read" class="primary" type="submit">Read this store's setup</button>
+          <button id="read" class="primary sre-btn sre-btn-primary" type="submit">Read this store's setup</button>
         </form>
         <div id="cards"></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
@@ -81,7 +81,7 @@
               <label for="p-zone"><span id="l-zone">Kept</span><select id="p-zone"><option value="ambient">Ambient</option><option value="chilled">Chilled</option><option value="frozen">Frozen</option><option value="secure">Locked case</option></select></label>
               <label for="p-label"><span id="l-label">Name on the shelf (optional)</span><input id="p-label" autocomplete="off" maxlength="60" /></label>
             </div>
-            <button id="add-places-go" class="primary" type="submit">Add these places to the shelf map</button>
+            <button id="add-places-go" class="primary sre-btn" type="submit">Add these places to the shelf map</button>
             <p class="status" id="map-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>
@@ -104,9 +104,9 @@
               <label for="f-place"><span id="l-fplace">Shelf place</span><select id="f-place"></select></label>
               <label for="f-cap"><span id="l-fcap">Holds (units)</span><input id="f-cap" type="number" min="1" inputmode="numeric" /></label>
               <label class="inline" for="f-primary"><input id="f-primary" type="checkbox" checked /><span id="l-fprimary">Its main place in this store</span></label>
-              <button id="f-add" type="button">Add this facing</button>
+              <button id="f-add" type="button" class="sre-btn sre-btn-quiet">Add this facing</button>
             </div>
-            <button id="plan-go" class="primary" type="submit">Publish this planogram</button>
+            <button id="plan-go" class="primary sre-btn sre-btn-primary" type="submit">Publish this planogram</button>
             <p class="status" id="plan-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>
@@ -136,11 +136,11 @@
               <label for="a-w"><span id="l-aw">Width (feet)</span><input id="a-w" type="number" min="1" inputmode="numeric" /></label>
               <label for="a-d"><span id="l-ad">Depth (feet)</span><input id="a-d" type="number" min="1" inputmode="numeric" /></label>
               <label for="a-places"><span id="l-aplaces">Shelf places in it (codes, separated by commas)</span><input id="a-places" autocomplete="off" /></label>
-              <button id="a-add" type="button">Add this area</button>
+              <button id="a-add" type="button" class="sre-btn sre-btn-quiet">Add this area</button>
             </div>
           </fieldset>
           <ul class="rows" id="areas" aria-label="Areas to publish"></ul>
-          <button id="floor-go" class="primary" type="submit">Publish the floor plan</button>
+          <button id="floor-go" class="primary sre-btn" type="submit">Publish the floor plan</button>
           <p class="status" id="floor-status" role="status" aria-live="polite"></p>
         </form>
       </section>

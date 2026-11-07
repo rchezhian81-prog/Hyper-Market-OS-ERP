@@ -74,7 +74,7 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
   const VIEW = RAW.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
   it('never calls alert / confirm / prompt (the note is a text input, not a browser dialog)', () => {
-    expect(/\b(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false);
+    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW), 'a bare browser dialog (the shared sheet is sreOffice.confirm, OB-698)').toBe(false);
   });
 
   it('renders from the bundled session rather than re-deciding what to show', () => {

@@ -171,7 +171,8 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'company-report': { en: 'all branches profit sales', ta: 'நிறுவன அறிக்கை' },
   'morning-brief': { en: 'summary yesterday owner brief', ta: 'காலைச் சுருக்கம்' },
   'users': { en: 'staff login role permission user', ta: 'பயனர் பங்கு' },
-  'audit': { en: 'audit trail history log who did', ta: 'தணிக்கை' },
+  'workforce': { en: 'workforce staff guidance assistant helper tasks findings', ta: 'பணியாளர் வழிகாட்டுதல் உதவியாளர்' },
+  'audit': { en: 'audit retention records kept legal hold history log who did', ta: 'தணிக்கை பதிவுகள்' },
   'fleet': { en: 'till device printer scanner', ta: 'கல்லா சாதனம்' },
   'scales': { en: 'weighing scale weight', ta: 'எடை தராசு' },
   'till': { en: 'billing pos checkout sell', ta: 'பில்லிங் விற்பனை' },
@@ -557,7 +558,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.
-  { id: 'migration', label: 'Migration', labelTa: 'தரவு மாற்றம்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },
+  { id: 'migration', label: 'Moving from the old system', labelTa: 'பழைய அமைப்பிலிருந்து மாறுதல்', path: '/migration/', requires: 'migration.cleaning.read', group: 'Administration' },
   // W3 (MG-01/03/07/08/09/11/12): head office's migration controls that had no screen — discovery, code mappings, records
   // left behind, two-export comparison, the switch-over night and window, undoing an opening load, switching the old system off.
   { id: 'old-system', label: 'Old system checks', labelTa: 'பழைய முறை சோதனைகள்', path: '/old-system', requires: 'migration.reconciliation.read', group: 'Administration' },  { id: 'store-setup', label: 'Store setup', labelTa: 'கடை அமைப்பு', path: '/setup', requires: 'platform.setup.read', group: 'Administration' },
@@ -672,7 +673,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Workforce — the A10 guidance inbox (the day's late staff tasks, a critical overdue one escalated to the
   // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).
-  { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
+  { id: 'workforce', label: 'Staff guidance (assistant)', labelTa: 'பணியாளர் வழிகாட்டுதல் (உதவியாளர்)', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
   // ── OB-288 LP/workforce package — begin
   // M25-FR-04 · D11-FR-06: the role help centre and emergency procedures — the box serves it (it works with the line down).
   { id: 'help', label: 'Help and procedures', labelTa: 'உதவி மற்றும் நடைமுறைகள்', path: '/help', requires: 'workforce.help.read', group: 'Mine' },

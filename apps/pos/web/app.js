@@ -179,6 +179,10 @@ const WORDS = {
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
     more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
+    find: 'Find', findTitle: 'Find an item', findHint: 'Type part of the name, or key the barcode or code. A scan still works here.',
+    findNone: 'Nothing in this till\'s price list matches that.', findMore: 'More match — type more letters.', findKg: 'sold by weight — weigh it and scan its label',
+    groupCash: 'Cash drawer', groupReturns: 'Returns & exchanges', groupBaskets: 'Baskets, quotations & this bill', groupBills: 'Bills & payments',
+    groupLine: 'This line & delivery', groupCustomer: 'Customer', groupTill: 'This till',
     countDrawer: 'Count the drawer', counted: 'Counted', closeTillNow: 'Close till',
     amountToSafe: 'How much is going to the safe?', movedToSafe: 'Moved to the safe',
     over: 'Over by', short: 'Short by', balanced: 'The drawer balances exactly.',
@@ -188,6 +192,15 @@ const WORDS = {
     // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
     takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
     cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
+    // OB-698 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
+    goBack: 'Go back', confirmFloatTitle: 'Record the float?', confirmSafeTitle: 'Record cash to the safe?',
+    confirmFloatWhat: '{amount} will be recorded as float put into this drawer.', confirmSafeWhat: '{amount} will be recorded as moved from this drawer to the safe.',
+    confirmCashDetail: 'The store computer records it before anything else happens; the cash office counts this shift against it. A wrong figure is corrected only by a second movement, never by changing this one.',
+    confirmCashWho: 'By {who} at {time} on this till.', confirmFloat: 'Record the float', confirmSafe: 'Record the move',
+    confirmCutTitle: 'Lower the price of this line?', confirmCutWhat: '{item}: from {from} to {to} for one unit — {cut} off this line ({pct}%).',
+    confirmCutFloor: 'The lowest price this item may be sold at is {floor}.',
+    confirmCutDetail: 'The store computer checks the cut against the approving manager\'s limit; above it the approval is refused and the line keeps its price.',
+    confirmCutWho: 'Recorded on this bill in your name and the manager\'s, with the reason the manager gives.', askManager: 'Ask the manager',
     whyOut: 'Why is the drawer out?', tillClosed: 'Till closed',
     pendingCash: 'A cash movement from before was still waiting — it has now been recorded.',
     cash_till_already_assigned: 'This till already has a float out. Close the till before another float is taken.',
@@ -446,6 +459,10 @@ const WORDS = {
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
     more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
+    find: 'தேடு', findTitle: 'பொருளைத் தேடு', findHint: 'பெயரின் ஒரு பகுதியைத் தட்டச்சு செய்யவும், அல்லது பார்கோடு / குறியீட்டை உள்ளிடவும். இங்கே ஸ்கேன் செய்தாலும் சேரும்.',
+    findNone: 'இந்த டில்லின் விலைப் பட்டியலில் அதற்குப் பொருந்துவது எதுவும் இல்லை.', findMore: 'இன்னும் பொருந்துகின்றன — மேலும் எழுத்துகளைத் தட்டச்சு செய்யவும்.', findKg: 'எடையால் விற்கப்படுவது — எடை போட்டு அதன் லேபிளை ஸ்கேன் செய்யவும்',
+    groupCash: 'பண டிராயர்', groupReturns: 'திரும்பப் பெறுதலும் மாற்றமும்', groupBaskets: 'கூடைகள், மேற்கோள்கள், இந்த பில்', groupBills: 'பில்களும் பணம் செலுத்தலும்',
+    groupLine: 'இந்த வரியும் டெலிவரியும்', groupCustomer: 'வாடிக்கையாளர்', groupTill: 'இந்த டில்',
     countDrawer: 'டிராயரை எண்ணவும்', counted: 'எண்ணப்பட்டது', closeTillNow: 'டில்லை மூடு',
     amountToSafe: 'பெட்டகத்திற்கு எவ்வளவு?', movedToSafe: 'பெட்டகத்திற்கு மாற்றப்பட்டது',
     over: 'அதிகம்', short: 'குறைவு', balanced: 'டிராயர் சரியாக உள்ளது.',
@@ -453,6 +470,14 @@ const WORDS = {
     countHint: 'டிராயரில் உள்ளதை எண்ணவும். எவ்வளவு இருக்க வேண்டும் என்பதை இந்தத் திரை சொல்லாது — அது வேண்டுமென்றே.',
     takeFloat: 'ஆரம்பப் பணம் எடு (டில்லைத் திற)', floatAmount: 'டிராயரில் எவ்வளவு ஆரம்பப் பணம் போகிறது?', floatTaken: 'ஆரம்பப் பணம் எடுக்கப்பட்டது — டில் திறந்துள்ளது',
     cashSaved: 'கடை கணினியில் பதிவு செய்யப்பட்டது', cashNotSaved: 'பதிவு செய்யப்படவில்லை. பணத்தை நகர்த்த வேண்டாம்.',
+    goBack: 'பின் செல்', confirmFloatTitle: 'ஆரம்பப் பணத்தைப் பதிவு செய்யவா?', confirmSafeTitle: 'பெட்டகத்திற்குப் பணத்தைப் பதிவு செய்யவா?',
+    confirmFloatWhat: '{amount} இந்த டிராயரில் போடப்பட்ட ஆரம்பப் பணமாகப் பதிவு செய்யப்படும்.', confirmSafeWhat: '{amount} இந்த டிராயரிலிருந்து பெட்டகத்திற்கு மாற்றப்பட்டதாகப் பதிவு செய்யப்படும்.',
+    confirmCashDetail: 'வேறு எதுவும் நடப்பதற்கு முன் கடை கணினி இதைப் பதிவு செய்கிறது; பண அலுவலகம் இந்த ஷிஃப்டை இதற்கு எதிராகக் கணக்கிடும். தவறான தொகை இரண்டாவது பதிவால் மட்டுமே திருத்தப்படும், இதை மாற்றுவதால் அல்ல.',
+    confirmCashWho: '{who} மூலம், {time} மணிக்கு, இந்த டில்லில்.', confirmFloat: 'ஆரம்பப் பணத்தைப் பதிவு செய்', confirmSafe: 'மாற்றத்தைப் பதிவு செய்',
+    confirmCutTitle: 'இந்த வரியின் விலையைக் குறைக்கவா?', confirmCutWhat: '{item}: ஒரு அலகுக்கு {from} இலிருந்து {to} வரை — இந்த வரியில் {cut} குறைவு ({pct}%).',
+    confirmCutFloor: 'இந்தப் பொருளை விற்கக்கூடிய குறைந்தபட்ச விலை {floor}.',
+    confirmCutDetail: 'அனுமதிக்கும் மேலாளரின் வரம்புக்கு எதிராகக் கடை கணினி இந்தக் குறைப்பைச் சரிபார்க்கிறது; அதற்கு மேல் அனுமதி மறுக்கப்பட்டு வரி அதன் விலையை வைத்திருக்கும்.',
+    confirmCutWho: 'மேலாளர் தரும் காரணத்துடன், உங்கள் பெயரிலும் மேலாளரின் பெயரிலும் இந்த பில்லில் பதிவு செய்யப்படும்.', askManager: 'மேலாளரிடம் கேள்',
     whyOut: 'டிராயர் ஏன் வித்தியாசமாக உள்ளது?', tillClosed: 'டில் மூடப்பட்டது',
     pendingCash: 'முன்பு காத்திருந்த பணப் பதிவு இப்போது பதிவு செய்யப்பட்டது.',
     cash_till_already_assigned: 'இந்த டில்லில் ஏற்கனவே ஆரம்பப் பணம் உள்ளது. மற்றொன்று எடுப்பதற்கு முன் டில்லை மூடவும்.',
@@ -1101,9 +1126,17 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, barcode = false, staffLetters = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
+  // OB-698 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
+  el('consequence').hidden = mode !== 'confirm';
+  if (mode === 'confirm' && consequence !== null) {
+    el('consequence-what').textContent = consequence.what;
+    el('consequence-detail').textContent = consequence.detail;
+    el('consequence-who').textContent = consequence.who;
+  }
+  el('sheet-ok').classList.toggle('danger', mode === 'confirm' && consequence !== null && consequence.tone === 'danger');
   // A bill number keyed by hand has letters in it: the letters pad shows first (a bill number starts with them), and the
   // switch key flips between letters and digits. Both pads keep the till's full-size keys.
   // A STAFF ID keyed by hand (store PC, 6 Nov 2026: the pilot cashier is `cashier-01`): the digits pad shows first (a
@@ -1124,9 +1157,13 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   el('reasons').hidden = mode !== 'choice';
   // A typed answer with letters (OB-264: the old system's bill number) — a text field, from the keyboard or a scanner.
   sheetMode = mode;
-  el('entry-text').hidden = mode !== 'text';
+  el('entry-text').hidden = mode !== 'text' && mode !== 'find';
   el('entry-text').value = mode === 'text' ? initial : '';
   el('entry-text').setAttribute('aria-label', title);
+  // U4: the find panel — the typed field, a list of matches under it, no OK (a row is the answer; Enter rings a scanned code).
+  el('finds').hidden = mode !== 'find';
+  el('sheet-ok').hidden = mode === 'find';
+  if (mode === 'find') paintFinds('');
   // The quick row (pos-cashier.md interaction budget): the values a cashier reaches for most, each ONE tap that
   // answers the question outright — a quantity of 3, the ₹500 note the customer is holding. The keypad below
   // stays for everything else, and a TYPED value still ends in OK: the quick tap is the confirm, because the
@@ -1139,8 +1176,8 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
     button.addEventListener('click', () => { closeSheet(String(option.value)); });
     return button;
   }));
-  el('sheet-cancel').textContent = t('cancel');
-  el('sheet-ok').textContent = t('ok');
+  el('sheet-cancel').textContent = mode === 'confirm' ? t('goBack') : t('cancel');
+  el('sheet-ok').textContent = mode === 'confirm' && consequence !== null ? consequence.confirmLabel : t('ok');
   onEntryChange = onChange;
   chosen = null;
 
@@ -1163,14 +1200,29 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   }
 
   el('sheet').hidden = false;
-  if (mode === 'text') el('entry-text').focus();
+  if (mode === 'text' || mode === 'find') el('entry-text').focus();
+  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-698).
+  if (mode === 'confirm') el('sheet-cancel').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
+}
+
+/**
+ * OB-698 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
+ * Says what will happen (with the figure), what it means and in whose name; the only ways on are the verb or Go back.
+ * Resolves `true` only when the verb was tapped. Nothing here sends anything — the caller sends only on `true`.
+ */
+function confirmAction({ title, what, detail, who, confirmLabel, tone = 'primary' }) {
+  return ask({ title, mode: 'confirm', consequence: { what, detail, who, confirmLabel, tone } }).then((answer) => answer === true);
 }
 
 function closeSheet(answer) {
   el('sheet').hidden = true;
+  el('consequence').hidden = true;
+  el('sheet-ok').classList.remove('danger');
   el('entry-text').value = '';
   el('entry-text').hidden = true;
+  el('finds').hidden = true;
+  el('sheet-ok').hidden = false;
   sheetMode = null;
   onEntryChange = null;
   // A PIN leaves this screen with the answer and nowhere else.
@@ -1222,12 +1274,67 @@ el('pad-switch').addEventListener('click', () => {
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
-  closeSheet(sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
+  closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
+// OB-698: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
+// by Enter on the verb itself once a person has moved the focus to it on purpose.)
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && sheetMode === 'confirm' && !el('sheet').hidden) { event.preventDefault(); event.stopPropagation(); closeSheet(null); }
+}, true);
 // Enter in the typed field is OK (a scanner ends its code with Enter); it never reaches the sale screen's scanner.
 el('entry-text').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); closeSheet(el('entry-text').value); }
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  event.stopPropagation();
+  // U4: in the find panel a scanner (digits, then Enter) rings the item exactly as a scan would; a lone match is picked;
+  // anything else keeps the panel open — Enter never picks a guess.
+  if (sheetMode === 'find') {
+    const typed = el('entry-text').value.trim();
+    if (/^[0-9]{6,}$/.test(typed)) { closeSheet(typed); return; }
+    const found = typeof session.findItems === 'function' ? session.findItems(typed, 2) : [];
+    if (found.length === 1) closeSheet(ringCodeOf(found[0]));
+    return;
+  }
+  closeSheet(el('entry-text').value);
 });
+el('entry-text').addEventListener('input', () => { if (sheetMode === 'find') paintFinds(el('entry-text').value); });
+
+/** U4: what a found row rings — its first barcode, else its SKU — through the scan path, so every gate still applies. */
+const ringCodeOf = (item) => item.barcode ?? item.sku;
+/** U4: the matches under the find box — at most 20 rows, name first, then code · price per unit; a weighed item says so. */
+function paintFinds(query) {
+  const host = el('finds');
+  if (query.trim() === '') { host.replaceChildren(); return; }
+  const found = typeof session.findItems === 'function' ? session.findItems(query, 21) : [];
+  if (found.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'find-note';
+    none.textContent = t('findNone');
+    host.replaceChildren(none);
+    return;
+  }
+  const nodes = found.slice(0, 20).map((item) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const name = document.createElement('span');
+    name.className = 'find-name';
+    name.textContent = item.name;
+    const facts = document.createElement('span');
+    facts.className = 'find-facts';
+    const weighed = item.baseUom === 'kg' || item.baseUom === 'l';
+    facts.textContent = `${item.sku} · ${inr(item.unitPriceMinor)} / ${item.baseUom}${weighed ? ` · ${t('findKg')}` : ''}`;
+    button.append(name, facts);
+    button.addEventListener('click', () => { closeSheet(ringCodeOf(item)); });
+    return button;
+  });
+  if (found.length > 20) {
+    const more = document.createElement('p');
+    more.className = 'find-note';
+    more.textContent = t('findMore');
+    nodes.push(more);
+  }
+  host.replaceChildren(...nodes);
+}
 
 /**
  * Ask how the customer is paying, or what the machine said.
@@ -1240,7 +1347,19 @@ function choose(title, options, kicker = null) {
   // What kind of question this is, said first when the till must stop the cashier (the age check): a label with its mark.
   el('pay-kicker').hidden = kicker === null;
   if (kicker !== null) { el('pay-kicker-text').textContent = kicker.words; setLeadIcon(el('pay-kicker'), kicker.icon, 18); }
-  el('pay-kinds').replaceChildren(...options.map((option) => {
+  const nodes = [];
+  let lastGroup = null;
+  for (const option of options) {
+    // U4 (UI/UX gap audit G18): the More list reads under plain headings a new cashier recognises — Cash drawer, Returns &
+    // exchanges, … Fewer than 24 choices, so every group stands open (the W1 rule for a short menu): a heading is words,
+    // never a button, so every choice stays ONE tap away and no budget moves.
+    if (option.group && option.group !== lastGroup) {
+      const head = document.createElement('p');
+      head.className = 'group-head';
+      head.textContent = t(option.group);
+      nodes.push(head);
+      lastGroup = option.group;
+    }
     const button = document.createElement('button');
     button.type = 'button';
     // An answer may carry the set's mark in front of its words (cash, card, yes, no); the words alone are the answer.
@@ -1252,8 +1371,9 @@ function choose(title, options, kicker = null) {
       button.textContent = option.label;
     }
     button.addEventListener('click', () => { el('pay').hidden = true; payResolve?.(option.value); payResolve = null; });
-    return button;
-  }));
+    nodes.push(button);
+  }
+  el('pay-kinds').replaceChildren(...nodes);
   el('pay-cancel').textContent = t('cancel');
   setLabel('more', t('more'));
   el('pay').hidden = false;
@@ -2273,52 +2393,61 @@ el('more').addEventListener('click', async () => {
   // What the till can do next depends on whether a float is out — asked of the STORE COMPUTER, which is the only thing
   // that knows after a reload (SP-4c). With no answer, everything is offered and the store computer says no if it must.
   const cash = await session.till.tillCash();
+  // U4 (G18): the same choices as before, under seven plain headings, the most-used first in each. The store computer's
+  // "what fits now" (a float out or not, the box's own options) is unchanged — only the grouping and the order.
   const options = [
-    ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat') }] : []),
-    ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup') }] : []),
-    { value: 'refund', label: t('refund') },
+    // ── Cash drawer ──
+    ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat'), group: 'groupCash' }] : []),
+    ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup'), group: 'groupCash' }] : []),
+    // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer first.
+    ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale'), group: 'groupCash' }] : []),
+    // ── Returns & exchanges ──
+    { value: 'refund', label: t('refund'), group: 'groupReturns' },
     // An EXCHANGE — goods back against a bill, new goods out, the difference settled (SP-9b-ii · M13-FR-03).
-    { value: 'exchange', label: t('exchange') },
+    { value: 'exchange', label: t('exchange'), group: 'groupReturns' },
     // A return WITHOUT a receipt is offered only when the store computer gave this till a no-receipt cap and a price
     // list to name the item from (SP-9b-i · M13-FR-01). Without them the option is not there — the till never guesses a limit.
-    ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
+    ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt'), group: 'groupReturns' }] : []),
+    // ── Baskets, quotations & this bill ──
     // PF-05: a held basket can be given up, with a reason — offered only when the store computer holds one for this till.
-    ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp') }] : []),
+    ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp'), group: 'groupBaskets' }] : []),
     // OB-350 scan-and-go: a customer's phone basket, by the code on their phone — onto an empty till; the till prices it.
     // Offered only where this box has a head-office link (a standalone box could never fetch one); offline it says so.
-    ...(session.recallPhoneBasketAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'phone_basket', label: t('phoneBasket'), icon: 'monitor-smartphone' }] : []),
+    ...(session.recallPhoneBasketAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'phone_basket', label: t('phoneBasket'), icon: 'monitor-smartphone', group: 'groupBaskets' }] : []),
     // D04-FR-05 queue-busting: a basket a queue handheld handed to this till's store computer — only while this lane's switch
     // (pos.queue_busting, from the signed pack) is on, and onto an empty till.
-    ...(session.recallQueueBasketAtTill && session.basket().length === 0 && window.posRollout && window.posRollout.isOn('pos.queue_busting') ? [{ value: 'queue_basket', label: t('queueBasket'), icon: 'scan-barcode' }] : []),
+    ...(session.recallQueueBasketAtTill && session.basket().length === 0 && window.posRollout && window.posRollout.isOn('pos.queue_busting') ? [{ value: 'queue_basket', label: t('queueBasket'), icon: 'scan-barcode', group: 'groupBaskets' }] : []),
     // R7-C · OB-506: a quotation by its number — onto an empty till, where this box has a head-office link (it converts there).
-    ...(session.ringQuotationAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'quotation', label: session.quotationWords(lang).option, icon: 'file-text' }] : []),
+    ...(session.ringQuotationAtTill && session.basket().length === 0 && box.status && box.status.cloud !== 'not_configured' ? [{ value: 'quotation', label: session.quotationWords(lang).option, icon: 'file-text', group: 'groupBaskets' }] : []),
     // R8-B · OB-523: cancel the whole bill (not yet paid) — offered while it has a line, or a quotation rung up on it.
-    ...(typeof session.cancelBillAtTill === 'function' && (session.basket().some((l) => !l.voided) || session.quotationsOnBill().length > 0) ? [{ value: 'cancel_bill', label: session.billCancelWords(lang).option, icon: 'x' }] : []),
-    ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
-    // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
-    ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
+    ...(typeof session.cancelBillAtTill === 'function' && (session.basket().some((l) => !l.voided) || session.quotationsOnBill().length > 0) ? [{ value: 'cancel_bill', label: session.billCancelWords(lang).option, icon: 'x', group: 'groupBaskets' }] : []),
+    // ── Bills & payments ──
     // OB-271: the last bill stays printable — a reprint is marked DUPLICATE once it has printed.
-    ...(realTradingOn() && lastInvoiceNumber() !== null ? [{ value: 'reprint', label: t('reprintOption') }] : []),
+    ...(realTradingOn() && lastInvoiceNumber() !== null ? [{ value: 'reprint', label: t('reprintOption'), group: 'groupBills' }] : []),
     // OB-373: a copy of ANY bill on this store computer by its number — a handheld queue till's above all (it has no printer).
-    ...(typeof session.printBillCopy === 'function' ? [{ value: 'bill_copy', label: t('billCopyOption'), icon: 'receipt-text' }] : []),
-    // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
-    // first. Changing a price needs a selected line.
-    ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
-    // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
-    ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity' }] : []),
-    // OB-299 (M12-FR-02): paid in full here, delivered — the owner's delivery-fee line, once; or taken off again.
-    ...(typeof session.deliverThisBill === 'function'
-      ? [session.isForDelivery() ? { value: 'undeliver', label: t('undeliverBill'), icon: 'truck' } : { value: 'deliver', label: t('deliverBill'), icon: 'truck' }] : []),
-    ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
+    ...(typeof session.printBillCopy === 'function' ? [{ value: 'bill_copy', label: t('billCopyOption'), icon: 'receipt-text', group: 'groupBills' }] : []),
+    // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
+    ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption'), group: 'groupBills' }] : []),
     // W3 · D06-FR-03 · OB-673: a coupon on this bill — checked by the store computer, so it works with the internet down.
     ...(typeof session.couponAtTill === 'function' && session.basket().some((l) => !l.voided)
-      ? [session.couponOnBill() === null ? { value: 'coupon', label: t('coupon'), icon: 'receipt-text' } : { value: 'coupon_remove', label: t('couponRemove').replace('{code}', session.couponOnBill().code), icon: 'x' }] : []),
+      ? [session.couponOnBill() === null ? { value: 'coupon', label: t('coupon'), icon: 'receipt-text', group: 'groupBills' } : { value: 'coupon_remove', label: t('couponRemove').replace('{code}', session.couponOnBill().code), icon: 'x', group: 'groupBills' }] : []),
     // W3 · D07-FR-04 · OB-677: sell a gift card — onto an empty till (it is its own record, never a goods bill).
-    ...(typeof session.sellGiftCard === 'function' && session.basket().length === 0 && !mirror() ? [{ value: 'sell_gift_card', label: t('sellGiftCard'), icon: 'wallet' }] : []),
+    ...(typeof session.sellGiftCard === 'function' && session.basket().length === 0 && !mirror() ? [{ value: 'sell_gift_card', label: t('sellGiftCard'), icon: 'wallet', group: 'groupBills' }] : []),
+    // ── This line & delivery ──
+    // Changing a price needs a selected line (PF-07 · M12-FR-04).
+    ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange'), group: 'groupLine' }] : []),
+    // OB-299 (M12-FR-02): paid in full here, delivered — the owner's delivery-fee line, once; or taken off again.
+    ...(typeof session.deliverThisBill === 'function'
+      ? [session.isForDelivery() ? { value: 'undeliver', label: t('undeliverBill'), icon: 'truck', group: 'groupLine' } : { value: 'deliver', label: t('deliverBill'), icon: 'truck', group: 'groupLine' }] : []),
+    // ── Customer ──
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
-    ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
-      ? [{ value: 'member', label: t('member') }]
-      : [{ value: 'member_remove', label: t('memberRemove').replace('{last4}', session.loyaltyMemberLast4()) }]),
+    ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption'), group: 'groupCustomer' }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
+      ? [{ value: 'member', label: t('member'), group: 'groupCustomer' }]
+      : [{ value: 'member_remove', label: t('memberRemove').replace('{last4}', session.loyaltyMemberLast4()), group: 'groupCustomer' }]),
+    // ── This till ──
+    ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill'), group: 'groupTill' }] : []),
+    // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
+    ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity', group: 'groupTill' }] : []),
   ];
   const what = await choose(t('more'), options);
   if (what === 'float') return takeFloat();
@@ -2347,6 +2476,19 @@ el('more').addEventListener('click', async () => {
   if (what === 'sell_gift_card') return sellGiftCardAtTill();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
+
+/**
+ * U4 (§27 POS "product search"): find an item by a few letters of its name, or by keying its barcode or code — a torn label
+ * no longer stops the sale. The list is this lane's own signed price list (works with the cable out); a row is rung through
+ * the scan path, so every legal gate applies exactly as it does to a scan. Find → letters → row = 3 interactions.
+ */
+async function findItem() {
+  if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
+  const code = await ask({ title: t('findTitle'), mode: 'find', hint: t('findHint') });
+  if (code === null || code === '') return;
+  scanCode(String(code), null);
+}
+el('find').addEventListener('click', () => { void findItem(); });
 
 /**
  * OB-299 (M12-FR-02): mark the bill for delivery — the delivery-fee line at its signed price, once. The customer then pays the
@@ -2396,6 +2538,19 @@ async function changeLinePrice() {
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
+  // OB-698 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
+  // knows — so the person who keys their PIN next approves a figure they have read, not a request they have not seen.
+  const lineFrom = value.fromUnitMinor * (value.quantityMinor || 1);
+  const pct = lineFrom > 0 ? Math.round((value.reductionMinor / lineFrom) * 100) : 0;
+  const onBill = session.basket().find((l) => l.lineId === lineId);
+  const confirmed = await confirmAction({
+    title: t('confirmCutTitle'),
+    what: t('confirmCutWhat').replace('{item}', (onBill && onBill.description) || descOf(value.productId)).replace('{from}', inr(value.fromUnitMinor)).replace('{to}', inr(toUnitMinor)).replace('{cut}', inr(value.reductionMinor)).replace('{pct}', String(pct)),
+    detail: `${typeof value.floorMinor === 'number' ? `${t('confirmCutFloor').replace('{floor}', inr(value.floorMinor))} ` : ''}${t(value.ownerOnly ? 'overrideOwnerOnly' : 'confirmCutDetail')}`,
+    who: t('confirmCutWho'),
+    confirmLabel: t('askManager'),
+  });
+  if (!confirmed) return;
   // OB-500 (R7-A): the product and the new price go with the request — the store computer judges its floor and the manager's limit.
   const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t(value.ownerOnly ? 'overrideOwnerOnly' : 'overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason', priceCut: { productId: value.productId, toUnitMinor, lineId: value.lineId, fromUnitMinor: value.fromUnitMinor, quantityMinor: value.quantityMinor, uom: value.uom } });
   if (!approval) return;
@@ -2492,8 +2647,19 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
+  // OB-698 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
+  const at = new Date().toISOString();
+  const float = kind === 'float_issue';
+  const confirmed = await confirmAction({
+    title: t(float ? 'confirmFloatTitle' : 'confirmSafeTitle'),
+    what: t(float ? 'confirmFloatWhat' : 'confirmSafeWhat').replace('{amount}', inr(minor)),
+    detail: t('confirmCashDetail'),
+    who: t('confirmCashWho').replace('{who}', (session.operator && session.operator()) || '—').replace('{time}', shopTimeOf(at) || '—'), // OB-607: the shop's clock, never this device's; '—' when the page has no shop clock
+    confirmLabel: t(float ? 'confirmFloat' : 'confirmSafe'),
+  });
+  if (!confirmed) return;
   try {
-    const outcome = await sendCash({ kind, amountMinor: minor, at: new Date().toISOString(), movementId: `cm-${kind}-${Date.now().toString(36)}` });
+    const outcome = await sendCash({ kind, amountMinor: minor, at, movementId: `cm-${kind}-${Date.now().toString(36)}` });
     if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`, SUCCESS);
     else tell(t('cashNotSaved'), cashWords(outcome), STOP);
   } catch (e) {
@@ -3098,6 +3264,7 @@ function paintWords() {
   setLabel('void', t('void'));
   setLabel('tender', t('tender'));
   setLabel('more', t('more'));
+  setLabel('find', t('find'));
   el('pay-cancel').textContent = t('cancel');
   setText('th-item', t('item'));
   setText('th-qty', t('qty'));
@@ -3107,7 +3274,7 @@ function paintWords() {
   paintScan();
 }
 // Each control takes its mark from the one set once, here; afterwards only its words change.
-for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['more', 'layout-grid'], ['tender', 'indian-rupee'], ['key-code', 'barcode']]) setLabel(id, undefined, icon);
+for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['find', 'search'], ['more', 'layout-grid'], ['tender', 'indian-rupee'], ['key-code', 'barcode']]) setLabel(id, undefined, icon);
 paintWords();
 
 el('lang').addEventListener('click', () => {
@@ -3243,8 +3410,9 @@ function lineAddedSince(before) {
 }
 
 /**
- * One code into the sale — from the scanner's Enter, or from the "Type a barcode" keypad (UI-2). Exactly the path a scan
- * always took: the same session call, the same questions, the same refusals in the gate's own words.
+ * One code into the sale — from the scanner's Enter, from the "Type a barcode" keypad (UI-2), or from a row picked on the
+ * Find panel (U4). Exactly the path a scan always took: the same session call, the same questions, the same refusals in
+ * the gate's own words (age, pack date, a recalled or banned item, a weighed item by a plain code — OB-570, a barred build).
  */
 function scanCode(code, startedAt) {
   if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }

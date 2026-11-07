@@ -11,6 +11,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **The four QG-02 screens in a real browser, served by the store computer, over head office's real routes (lane 1 R4 ·
  * M07-FR-01 · M06-FR-02 · M05-FR-04 · M01-FR-03 · OB-380).**
@@ -117,7 +120,7 @@ describe.skipIf(!HAVE_BROWSER)('the QG-02 screens through the store computer (la
     await page.fill('#b-from', `${d}T10:30`); await page.fill('#b-until', `${d}T11:30`);
     await page.click('#b-book');
     await says(page, '#b-status', /^Head office refused: /);
-    await page.fill('#d-store', 'store-1'); await page.fill('#d-date', d);
+    await page.fill('#d-store', 'store-1'); await page.fill('#d-date', ddmm(d));
     await page.click('#d-show');
     await page.waitForSelector('#day-rows li[data-status="booked"]');
     expect(await page.textContent('#day-rows li[data-status="booked"]')).toMatch(/Door dock-1 .* Booked/);
@@ -136,7 +139,7 @@ describe.skipIf(!HAVE_BROWSER)('the QG-02 screens through the store computer (la
     const buyer = await open(BUYER, '/blanket-orders/');
     await buyer.page.waitForSelector('#propose:not([hidden])');
     await buyer.page.fill('#p-supplier', 'sup-rice'); await buyer.page.fill('#p-ceiling', '10,000');
-    await buyer.page.fill('#p-from', day(-1)); await buyer.page.fill('#p-to', day(90)); await buyer.page.fill('#p-deliver', 'store-1');
+    await buyer.page.fill('#p-from', ddmm(day(-1))); await buyer.page.fill('#p-to', ddmm(day(90))); await buyer.page.fill('#p-deliver', 'store-1');
     await buyer.page.fill('#p-lines', 'rice-5kg, 400, 20\ndal-1kg, 120');
     await buyer.page.click('#p-propose');
     await says(buyer.page, '#p-status', /^Done — head office recorded it\.$/);

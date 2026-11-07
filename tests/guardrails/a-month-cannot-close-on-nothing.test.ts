@@ -350,8 +350,8 @@ describe('the screen somebody puts their name to', () => {
   });
 
   it('never interrupts anybody with a browser dialog', () => {
-    expect(code(VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
-    expect(code(ME_VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
+    expect(code(VIEW), 'a bare browser dialog (the shared sheet is sreOffice.confirm, OB-698)').not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
+    expect(code(ME_VIEW)).not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/);
   });
 
   it('is offered in Tamil everywhere it is offered in English', () => {

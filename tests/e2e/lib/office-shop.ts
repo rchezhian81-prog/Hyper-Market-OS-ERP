@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright-core';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../../support/api-harness';
+import type { IdentityDirectory } from '../../../services/identity/src/identity-directory';
 import { STORE_RULES } from '../../support/store-rules';
 import type { HttpRequest } from '../../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../../edge/store-edge/src/main';
@@ -35,8 +36,13 @@ export interface OfficeShop {
   stop(): Promise<void>;
 }
 
-export async function startOfficeShop(browser: Browser): Promise<OfficeShop> {
-  const h = apiHarness();
+export async function startOfficeShop(browser: Browser, options: {
+  /** More to post through the real routes before the store computer pulls its setup (U2: named people, a supplier, a barcode). */
+  readonly seed?: (ok: (path: string, userId: string, body: unknown) => Promise<unknown>, h: ApiHarness, tenantId: string) => Promise<void>;
+  /** The identity server's directory (a fake in tests), so `/v1/identity/people` can give a person a NAMED sign-in. */
+  readonly identityDirectory?: IdentityDirectory;
+} = {}): Promise<OfficeShop> {
+  const h = apiHarness(options.identityDirectory === undefined ? {} : { identityDirectory: options.identityDirectory });
   const T = randomUUID();
   let n = 0;
   const ok = async (path: string, userId: string, body: unknown): Promise<unknown> => {
@@ -76,6 +82,8 @@ export async function startOfficeShop(browser: Browser): Promise<OfficeShop> {
       summary: `Give ${who} the cashier role`, reason: `${who} starts on the tills on Monday`,
     });
   }
+
+  if (options.seed !== undefined) await options.seed(ok, h, T);
 
   // The store computer's line to head office (its machine credential).
   const savedFetch = globalThis.fetch;

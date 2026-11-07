@@ -9,6 +9,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'EPR registers', langName: 'தமிழ்',
@@ -120,7 +130,7 @@ function paint() {
 
   const cats = readFailed || plastic === null ? [] : plastic.categories;
   el('panels').replaceChildren(...cats.map((c) => panel(c.category, c.label, `${c.totalGrams.toLocaleString('en-IN')} ${t('grams')} · ${c.units} ${t('units')}`)));
-  el('csv').disabled = plastic === null || readFailed;
+  el('csv').disabled = plastic === null || readFailed; whyDisabled(el('csv'), plastic === null || readFailed ? { en: 'The plastic register could not be read, so there is no file to make.', ta: 'பிளாஸ்டிக் பதிவேட்டைப் படிக்க முடியவில்லை, எனவே உருவாக்கக் கோப்பு இல்லை.' } : '');
   const ex = readFailed || plastic === null ? [] : plastic.exceptions;
   el('plastic-exceptions').replaceChildren(...(plastic === null || readFailed ? [] : ex.length === 0
     ? [row('ok', t('noException'), undefined, [])]
@@ -177,7 +187,7 @@ async function post(path, body, slot) {
   pendingKeys.delete(slot);
   return { ok: res.ok, answer, status: res.status };
 }
-const refusal = (out) => `${t('refused')}: ${out.answer?.error?.whatHappened ?? out.status}`;
+const refusal = (out) => refusalLine(out.status, out.answer?.error);
 const newId = (what) => `${what}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 async function recordTakeBack(event) {
@@ -256,3 +266,37 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+
+// ── U2b (G14): the financial year is picked from a list (the shop's own clock says which year it is); the typed box stays only where the shop's clock is unknown
+(function fyList() {
+  const input = el('fy'); const today = window.sreShopDay?.today?.() ?? '';
+  if (!input || input.tagName !== 'INPUT' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return;
+  const y = Number(today.slice(0, 4)); const startYear = Number(today.slice(5, 7)) >= 4 ? y : y - 1;
+  const sel = document.createElement('select'); sel.id = 'fy'; sel.required = true; sel.className = input.className;
+  for (let k = 0; k < 5; k += 1) { const from = startYear - k; const o = document.createElement('option'); o.value = `${from}-${String((from + 1) % 100).padStart(2, '0')}`; o.textContent = `${from}–${from + 1}`; sel.append(o); }
+  if (input.value !== '' && ![...sel.options].some((o) => o.value === input.value)) { const o = document.createElement('option'); o.value = input.value; o.textContent = input.value; sel.prepend(o); }
+  sel.value = input.value !== '' ? input.value : sel.options[0].value;
+  input.replaceWith(sel);
+})();

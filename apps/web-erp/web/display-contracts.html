@@ -29,7 +29,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--field-line, var(--line)); border-radius: 10px; background: var(--field, var(--bg)); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field, var(--bg)); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .status { font-size: 15px; min-height: 20px; margin: 0; }
       .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
@@ -72,10 +72,10 @@
             <label for="c-from"><span id="l-from">Starts on</span><input id="c-from" type="date" /></label>
             <label for="c-to"><span id="l-to">Ends on</span><input id="c-to" type="date" /></label>
           </div>
-          <button id="record" class="primary" type="submit">Record the contract</button>
+          <button id="record" class="primary sre-btn sre-btn-primary" type="submit">Record the contract</button>
           <div class="row" id="ask-row" hidden>
             <label for="why"><span id="l-why">Why (for the Finance approver)</span><input id="why" autocomplete="off" maxlength="300" /></label>
-            <button id="ask" type="button">Ask Finance to approve these terms</button>
+            <button id="ask" type="button" class="sre-btn">Ask Finance to approve these terms</button>
           </div>
           <p class="status" id="form-status" role="status" aria-live="polite"></p>
         </form>

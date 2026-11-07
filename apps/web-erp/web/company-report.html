@@ -27,7 +27,7 @@
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
       h2 { margin: 0; font-size: 17px; }
       p.lede { margin: 0; color: var(--muted); font-size: 14px; }
-      label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+      label { display: grid; gap: 6px; font-size: var(--fs-sm); font-weight: 600; }
       select {
         font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
         background: var(--bg); color: var(--ink); min-height: 44px;
@@ -35,15 +35,15 @@
       .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
       .controls select { min-width: 0; max-width: 100%; }
       button {
-        font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 0;
-        background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px;
+        font: inherit; font-weight: 600; min-height: 44px; border-radius: 10px; border: 1px solid var(--line);
+        background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px;
       }
       button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
       .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
       .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; }
-      .kpi .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      .kpi .k { font-size: var(--fs-label); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
       .kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--line); }
+      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 700; border: 1px solid var(--line); }
       .badge.fresh { color: var(--good); } .badge.stale { color: var(--warn); } .badge.missing { color: var(--danger-text); }
       .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
       .flag { font-size: 14px; }
@@ -53,9 +53,11 @@
       th:first-child, td:first-child { text-align: left; }
       .status { font-size: 14px; min-height: 20px; }
       .status.good { color: var(--good); } .status.warn { color: var(--warn); } .status.err { color: var(--danger-text); }
-      pre { margin: 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font-size: 12px; }
-      a.download { color: var(--accent); font-weight: 600; }
-      .foot { color: var(--muted); font-size: 12px; }
+      pre { margin: 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font-size: var(--fs-sm); }
+      a.download {  font-weight: 600; }
+      .foot { color: var(--muted); font-size: var(--fs-sm); }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -113,7 +115,7 @@
       <section aria-labelledby="exp-h">
         <h2 id="exp-h">Export</h2>
         <p class="lede" id="exp-lede">Take the numbers out as an open spreadsheet file (CSV). Only what your view allows.</p>
-        <button id="export" type="button">Export CSV</button>
+        <button id="export" type="button" class="sre-btn sre-btn-primary">Export CSV</button>
         <p class="status" id="export-status" role="status" aria-live="polite"></p>
         <a id="download" class="download" hidden download="company-report.csv">Download the file</a>
         <pre id="preview" hidden aria-label="CSV preview"></pre>

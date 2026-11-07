@@ -130,7 +130,7 @@ describe('posting the day — refused locally before any POST unless permitted a
     expect(s.presentPostResult('en', { result: 'no_posting_map' }).label).toMatch(/posting map is not defined/);
     expect(s.presentPostResult('ta', { result: 'no_posting_map' }).label).toMatch(/பதிவு வரைபடம்/);
     expect(s.presentPostResult('en', { result: 'refused' })).toMatchObject({ tone: 'error', needsAttention: true });
-    expect(s.presentPostResult('en', { result: 'lost_link' })).toMatchObject({ tone: 'degraded', label: 'No connection — not saved. Try again.' });
+    expect(s.presentPostResult('en', { result: 'lost_link' })).toMatchObject({ tone: 'degraded', label: 'No connection — not saved. Try again when head office answers; nothing was posted.' });
     const all: PostResult[] = [{ result: 'posted', body: POSTED }, { result: 'nothing_new', body: POSTED }, { result: 'no_posting_map' }, { result: 'refused' }, { result: 'lost_link' }];
     for (const r of all) { const p = s.presentPostResult('en', r); expect(p.icon.trim().length).toBeGreaterThan(0); expect(p.label.length).toBeGreaterThan(0); }
   });

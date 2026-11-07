@@ -38,7 +38,7 @@ function paintList() {
       const action = document.createElement('input'); action.autocomplete = 'off'; action.maxLength = 1000; action.className = 'c-action';
       const on = document.createElement('input'); on.type = 'date'; on.className = 'c-authority';
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet'; b.textContent = t('close');
+      const b = document.createElement('button'); b.type = 'submit'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('close');
       form.append(field(`c-action-${r.incidentId}`, t('actionTaken'), action));
       if (r.severity === 'reportable') form.append(field(`c-on-${r.incidentId}`, t('authorityOn'), on));
       form.append(b, status);

@@ -11,6 +11,7 @@
 import { translator, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { outcomeOf, type HttpAnswer, type Outcome } from './finance-close-session';
 import { shopDateOf } from '../../../packages/calendar/src/shop-day';
+import { refusalWords } from './refusal-words';
 
 export const SCALE_VALUE_KINDS = Object.freeze(['weight', 'price', 'expiry'] as const);
 export type ScaleValueKind = (typeof SCALE_VALUE_KINDS)[number];
@@ -129,7 +130,7 @@ export function scaleRuleOutcomeWords(lang: Lang, o: Outcome<{ unchanged?: boole
   const w = scaleRuleWords(lang);
   switch (o.kind) {
     case 'done': return { ok: true, text: o.body.unchanged === true ? w('unchanged') : o.body.rule?.state === 'withdrawn' ? w('withdrawn') : w('saved') };
-    case 'refused': return { ok: false, text: `${w('refused')} ${o.whatHappened}${o.nextSafeAction === '' ? '' : ` ${o.nextSafeAction}`}` };
+    case 'refused': return { ok: false, text: refusalWords(lang, o) };
     case 'not_allowed': return { ok: false, text: w('notAllowed') };
     case 'invalid': return { ok: false, text: o.detail === 'reason' ? w('needReason') : w('needFields') };
     case 'unreachable': return { ok: false, text: w('unreachable') };

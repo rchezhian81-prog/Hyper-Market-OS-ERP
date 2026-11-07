@@ -285,6 +285,8 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
   /** Click, wait for the result line to say THIS click's answer, and read it. */
   const clickFor = async (page: Page, button: string, expected: RegExp): Promise<{ text: string; cls: string }> => {
     await page.click(button);
+    // U1 · OB-698: recording a loss asks the shared consequence-and-confirm sheet first — the person's word is given here.
+    if (button === '#record') await page.waitForSelector('#sre-confirm-go', { timeout: 3_000 }).then(() => page.click('#sre-confirm-go')).catch(() => { /* an incomplete draft gets the session's own words with no sheet */ });
     await page.waitForFunction(
       (source) => {
         const doc = (globalThis as unknown as BrowserGlobals).document;

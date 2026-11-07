@@ -62,7 +62,7 @@ describe('the transfers session', () => {
 
   it('a refusal is head office\'s words; a nobody reads and sends nothing; a role without the movement right is offered no act', async () => {
     const s = createTransfersSession(MGR, fakeHttp({ result: 'refused', status: 422, code: 'dispatcher_cannot_receive', whatHappened: 'u-mgr dispatched transfer t1 and cannot also count it in at br-1 (§28).' }).http);
-    expect(s.say('en', await s.receive(T, ['10', '4'])).words).toBe('Head office refused: u-mgr dispatched transfer t1 and cannot also count it in at br-1 (§28).');
+    expect(s.say('en', await s.receive(T, ['10', '4'])).words).toBe('Head office refused: u-mgr dispatched transfer t1 and cannot also count it in at br-1 (§28). Nothing was changed. Check what you typed and try again.'); // U0 · G10
     const { http, sent } = fakeHttp();
     const nobody = createTransfersSession(undefined, http);
     expect(await nobody.list()).toEqual({ result: 'invalid', key: 'nobody' });

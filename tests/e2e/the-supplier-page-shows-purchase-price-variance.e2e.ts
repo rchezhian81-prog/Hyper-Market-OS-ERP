@@ -82,7 +82,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the purcha
 
       // Nothing named → refused before anything is sent.
       await page.click('#ppv-show');
-      await expect.poll(() => page.textContent('#ppv-status')).toMatch(/Type the supplier code first/);
+      await expect.poll(() => page.textContent('#ppv-status')).toMatch(/Choose the supplier first/); // U2b: the supplier is picked by name;
 
       await page.fill('#supplier', 's-rice');
       // OB-517: no bill matched yet — counted, "not yet billed", never compared at the typed ₹5.50.

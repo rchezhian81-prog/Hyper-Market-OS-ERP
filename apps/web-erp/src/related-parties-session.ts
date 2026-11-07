@@ -9,33 +9,34 @@
 // Every write is a person's explicit click, in their own name; head office re-checks every act.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
 export const RELATED_PARTIES_COPY = {
   en: {
     title: 'Related parties and staff buying', lead: 'The owner\'s list of related people and firms, the staff-buying rules, and staff salary accounts. A supplier on the list needs the owner\'s written approval before a purchase order.',
-    partiesH: 'Related parties (the owner\'s list)', partyId: 'Entry id', name: 'Name', kind: 'Person or firm', person: 'Person', firm: 'Firm', relation: 'How related', gstins: 'GSTINs (comma between)', phones: 'Phones (comma between)', accounts: 'Bank accounts (comma between)',
+    partiesH: 'Related parties (the owner\'s list)', partyId: 'Entry code (given for a new one)', name: 'Name', kind: 'Person or firm', person: 'Person', firm: 'Firm', relation: 'How related', gstins: 'GSTINs (comma between)', phones: 'Phones (comma between)', accounts: 'Bank accounts (comma between)',
     saveParty: 'Save the entry', takeOff: 'Take off the list', takeOffWhy: 'Why it comes off (required)', needReason: 'Write why it comes off the list first.', listEmpty: 'Nobody is on the list yet.', matchesH: 'Suppliers matching the list now', matchesNone: 'No supplier matches the list.', inactive: 'taken off',
     on_gstin: 'GSTIN', on_phone: 'phone', on_bank_account: 'bank account',
     staffH: 'Staff buying (the owner\'s rules)', cap: 'Staff discount, at most (%)', desk: 'Service-desk till(s) (comma between)', notSet: 'not set', savePolicy: 'Save the rules', policyNow: 'In force:',
-    accountsH: 'Staff members\' own customer accounts', employee: 'Staff id', customerRef: 'Their customer account (member code)', saveAccount: 'Record it', accountsNone: 'No staff account is recorded.',
+    accountsH: 'Staff members\' own customer accounts', employee: 'Staff member', customerRef: 'Their customer account (member code)', saveAccount: 'Record it', accountsNone: 'No staff account is recorded.',
     salaryH: 'Staff salary accounts', accountRef: 'Salary account', saveSalary: 'Record it', salaryNone: 'No salary account is recorded.',
     read: 'Read', saved: 'Saved.', nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot open this page.',
     needName: 'Write the name, how they are related, and at least one GSTIN, phone or bank account.', needPercent: 'The discount is a percentage from 0 to 100, or empty for "not set".',
-    needEmployee: 'Type the staff id and their account.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
+    needEmployee: 'Choose the staff member and type their account.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
   ta: {
     title: 'தொடர்புடையவர்கள் மற்றும் பணியாளர் வாங்கல்', lead: 'உரிமையாளரின் தொடர்புடைய நபர்கள் மற்றும் நிறுவனங்களின் பட்டியல், பணியாளர் வாங்கல் விதிகள், பணியாளர் சம்பளக் கணக்குகள். பட்டியலில் உள்ள சப்ளையருக்கு கொள்முதல் ஆணைக்கு முன் உரிமையாளரின் எழுத்துப்பூர்வ ஒப்புதல் வேண்டும்.',
-    partiesH: 'தொடர்புடையவர்கள் (உரிமையாளரின் பட்டியல்)', partyId: 'பதிவு எண்', name: 'பெயர்', kind: 'நபர் அல்லது நிறுவனம்', person: 'நபர்', firm: 'நிறுவனம்', relation: 'எப்படித் தொடர்பு', gstins: 'GSTIN-கள் (இடையே கமா)', phones: 'தொலைபேசிகள் (இடையே கமா)', accounts: 'வங்கிக் கணக்குகள் (இடையே கமா)',
+    partiesH: 'தொடர்புடையவர்கள் (உரிமையாளரின் பட்டியல்)', partyId: 'பதிவுக் குறியீடு (புதியதற்குத் தரப்படும்)', name: 'பெயர்', kind: 'நபர் அல்லது நிறுவனம்', person: 'நபர்', firm: 'நிறுவனம்', relation: 'எப்படித் தொடர்பு', gstins: 'GSTIN-கள் (இடையே கமா)', phones: 'தொலைபேசிகள் (இடையே கமா)', accounts: 'வங்கிக் கணக்குகள் (இடையே கமா)',
     saveParty: 'பதிவைச் சேமி', takeOff: 'பட்டியலிலிருந்து நீக்கு', takeOffWhy: 'ஏன் நீக்கப்படுகிறது (தேவை)', needReason: 'முதலில் பட்டியலிலிருந்து ஏன் நீக்கப்படுகிறது என்று எழுதவும்.', listEmpty: 'பட்டியலில் இன்னும் யாரும் இல்லை.', matchesH: 'இப்போது பட்டியலுடன் பொருந்தும் சப்ளையர்கள்', matchesNone: 'எந்த சப்ளையரும் பட்டியலுடன் பொருந்தவில்லை.', inactive: 'நீக்கப்பட்டது',
     on_gstin: 'GSTIN', on_phone: 'தொலைபேசி', on_bank_account: 'வங்கிக் கணக்கு',
     staffH: 'பணியாளர் வாங்கல் (உரிமையாளரின் விதிகள்)', cap: 'பணியாளர் தள்ளுபடி, அதிகபட்சம் (%)', desk: 'சேவை மேசைக் கவுண்டர்(கள்) (இடையே கமா)', notSet: 'அமைக்கப்படவில்லை', savePolicy: 'விதிகளைச் சேமி', policyNow: 'நடைமுறையில்:',
-    accountsH: 'பணியாளர்களின் சொந்த வாடிக்கையாளர் கணக்குகள்', employee: 'பணியாளர் எண்', customerRef: 'அவரின் வாடிக்கையாளர் கணக்கு (உறுப்பினர் குறியீடு)', saveAccount: 'பதிவு செய்', accountsNone: 'எந்தப் பணியாளர் கணக்கும் பதிவாகவில்லை.',
+    accountsH: 'பணியாளர்களின் சொந்த வாடிக்கையாளர் கணக்குகள்', employee: 'பணியாளர்', customerRef: 'அவரின் வாடிக்கையாளர் கணக்கு (உறுப்பினர் குறியீடு)', saveAccount: 'பதிவு செய்', accountsNone: 'எந்தப் பணியாளர் கணக்கும் பதிவாகவில்லை.',
     salaryH: 'பணியாளர் சம்பளக் கணக்குகள்', accountRef: 'சம்பளக் கணக்கு', saveSalary: 'பதிவு செய்', salaryNone: 'எந்தச் சம்பளக் கணக்கும் பதிவாகவில்லை.',
     read: 'படி', saved: 'சேமிக்கப்பட்டது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு இந்தப் பக்கத்தைத் திறக்க முடியாது.',
     needName: 'பெயர், எப்படித் தொடர்பு, குறைந்தது ஒரு GSTIN, தொலைபேசி அல்லது வங்கிக் கணக்கை எழுதவும்.', needPercent: 'தள்ளுபடி 0 முதல் 100 வரை ஒரு சதவீதம், அல்லது "அமைக்கப்படவில்லை" என்பதற்குக் காலியாக விடவும்.',
-    needEmployee: 'பணியாளர் எண்ணையும் அவரின் கணக்கையும் தட்டச்சு செய்யவும்.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
+    needEmployee: 'பணியாளரைத் தேர்ந்தெடுத்து அவரின் கணக்கைத் தட்டச்சு செய்யவும்.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
 } as const;
 
@@ -44,7 +45,7 @@ export const relatedPartiesWords = (lang: Lang, key: string): string =>
 
 export function relatedPartiesOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => relatedPartiesWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out); // U0 · G10: never a raw code; nothing was changed; the next safe action
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

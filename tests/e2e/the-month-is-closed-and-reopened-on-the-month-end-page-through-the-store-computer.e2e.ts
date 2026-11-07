@@ -48,6 +48,13 @@ const BATCH = {
 const CSV = ['Date,Reference,Narrative,Debit,Credit', '03/09/2026,UTR778899 PB-0903,ACQUIRER SETTLEMENT,,"1,485.00"', '15/09/2026,CHQ001,Rent,"20,000.00",'].join('\n');
 const STATEMENT = { statementId: 'HDFC-2026-09', accountRef: 'HDFC-current-1', fromDate: '2026-09-01', toDate: '2026-09-30', openingMinor: 5_000_000, closingMinor: 5_000_000 + 148_500 - 2_000_000, sourceName: 'hdfc-sep.csv', csv: CSV };
 
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
+
 describe.skipIf(!HAVE_BROWSER)('OB-567 — the month is closed and reopened on the Month-end page, through the store computer', () => {
   let browser: Browser;
   let ho: ApiHarness;
@@ -144,6 +151,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-567 — the month is closed and reopened on t
 
     // Nothing checked at head office: refused BY head office, in its words; the month stays open; the signature unspent.
     await page.click('#close-month');
+    await confirmSheet(page);
     await says(page, '#month-status', /Not closed — head office has no figures to check for this month, so it cannot be signed\./);
     expect(await stateAtHeadOffice()).not.toBe('closed');
     expect(await isHidden(page, 'close-box')).toBe(false);
@@ -156,6 +164,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-567 — the month is closed and reopened on t
 
     // The same, still-unspent signature closes it now.
     await page.click('#close-month');
+    await confirmSheet(page);
     await says(page, '#month-status', /Closed and signed\. u-acct signed it/);
     expect(await stateAtHeadOffice()).toBe('closed');
     await says(page, '#month-state', /closed and signed at head office/);
@@ -168,6 +177,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-567 — the month is closed and reopened on t
     await says(page, '#month-status', /Asked\. .*The month stays closed until then\./);
     await accountantDecides('approved');
     await page.click('#reopen');
+    await confirmSheet(page);
     await says(page, '#month-status', /Reopened\. u-acct approved it/);
     expect(await stateAtHeadOffice()).toBe('open');
     await says(page, '#month-state', /This month is open at head office\./);

@@ -22,7 +22,7 @@ function say(where, out) { $(where).className = 'status err'; $(where).textConte
 function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, onClick, cls) {
-  const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls;
+  const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls;
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
@@ -56,7 +56,34 @@ function row(p) {
   return li;
 }
 
+// U2 · G14 (UI/UX gap audit): the month is PICKED from the last 24 months, named in the reader's language — never typed as
+// "YYYY-MM". The value the page sends stays "YYYY-MM"; the choice survives a language change.
+const MONTHS = {
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'],
+};
+function monthChoices() {
+  // The SHOP's today (the store computer's clock, OB-606) — never the device's clock. With no shop clock (the page opened
+  // off the box) there is no honest month to anchor on, and the plain month field stays as it was.
+  const shopToday = window.sreShopDay?.today?.() ?? null;
+  if (shopToday === null) return null;
+  const y = Number(shopToday.slice(0, 4)); const m = Number(shopToday.slice(5, 7));
+  return Array.from({ length: 24 }, (_, i) => { const n = y * 12 + (m - 1) - i; return `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, '0')}`; });
+}
+function paintMonthList() {
+  const was = $('tb-month');
+  const choices = monthChoices();
+  if (was === null || choices === null) return;
+  const chosen = was.value;
+  const select = was.tagName === 'SELECT' ? was : Object.assign(document.createElement('select'), { id: 'tb-month' });
+  select.className = 'sre-select';
+  select.replaceChildren(...choices.map((ym) => { const o = document.createElement('option'); o.value = ym; o.textContent = `${(MONTHS[lang] ?? MONTHS.en)[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`; return o; }));
+  if (was !== select) was.replaceWith(select);
+  if ([...select.options].some((o) => o.value === chosen)) select.value = chosen;
+}
+
 function paint() {
+  paintMonthList();
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['read-text', 'read'], ['run-text', 'run'],
     ['posted-k', 'postedK'], ['queued-k', 'queuedK'], ['dead-k', 'deadK'], ['company-k', 'companyK'], ['dead-h', 'deadH'], ['files-h', 'filesH'],
@@ -67,6 +94,7 @@ function paint() {
   $('whoami').textContent = window.tallyFilesData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('read').disabled = !may.read; $('tb-read').disabled = !may.read; $('run').disabled = !may.configure;
+  whyDisabled($('read'), may.read ? '' : 'role'); whyDisabled($('tb-read'), may.read ? '' : 'role'); whyDisabled($('run'), may.configure ? '' : 'role');
   $('tiles').hidden = outbox === null; $('dead-section').hidden = outbox === null; $('files-section').hidden = outbox === null;
   if (outbox !== null) {
     $('posted-n').textContent = `✓ ${outbox.counts.posted}`;
@@ -158,4 +186,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

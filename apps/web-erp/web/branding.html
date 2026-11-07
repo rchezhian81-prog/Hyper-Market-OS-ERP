@@ -29,7 +29,7 @@
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 4px; min-width: 0; }
@@ -74,7 +74,7 @@
           <label for="b-logo"><span id="l-b-logo">Logo (the stored file's reference)</span><input id="b-logo" autocomplete="off" maxlength="200" /></label>
           <label for="b-primary"><span id="l-b-primary">Main colour</span><input id="b-primary" type="color" value="#1f2933" /></label>
           <label for="b-on"><span id="l-b-on">Writing on the main colour</span><input id="b-on" type="color" value="#ffffff" /></label>
-          <button id="save" class="primary" type="submit">Save the brand</button>
+          <button id="save" class="primary sre-btn sre-btn-primary" type="submit">Save the brand</button>
         </form>
         <p class="status" id="edit-status" role="status" aria-live="polite"></p>
       </section>

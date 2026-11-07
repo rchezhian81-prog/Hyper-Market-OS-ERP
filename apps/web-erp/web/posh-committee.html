@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>SRE Committee: the annual report</title>
+    <title>SRE Committee: make the annual report</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#192f27" />
     <!--
@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -40,14 +40,14 @@
   </head>
   <body>
     <header>
-      <h1 class="who" id="title"><span id="title-text">Committee: the annual report</span> <small id="whoami"></small></h1>
+      <h1 class="who" id="title"><span id="title-text">Committee: make the annual report</span> <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
     <!--SCREEN-DATA-->
     <p class="nobody" id="nobody" hidden></p>
     <main>
       <section id="page-intro" aria-labelledby="page-h">
-        <h2 id="page-h">Committee: the annual report</h2>
+        <h2 id="page-h">Committee: make the annual report</h2>
         <p class="lead" id="lead"></p>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -58,7 +58,7 @@
         <h4 id="other-h"></h4>
         <form class="row-form" id="other-form">
           <label for="other-year"><span id="other-year-l"></span><input id="other-year" inputmode="numeric" maxlength="4" autocomplete="off" /></label>
-          <button id="other-show" type="submit" class="quiet"><span id="other-show-text"></span></button>
+          <button id="other-show" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="other-show-text"></span></button>
         </form>
         <p class="status" id="other-status" role="status" aria-live="polite"></p>
         <div id="other-report"></div>
@@ -69,7 +69,7 @@
         <p class="meta" id="reg-lead"></p>
         <p class="status" id="reg-status" role="status" aria-live="polite"></p>
         <div id="reg-body" hidden>
-          <button id="reg-show" type="button" class="quiet"><span id="reg-show-text"></span></button>
+          <button id="reg-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="reg-show-text"></span></button>
           <p class="meta" id="reg-count"></p>
           <ul class="rows" id="reg-rows"></ul>
           <div id="receive" hidden>
@@ -79,12 +79,12 @@
               <label for="rc-c"><span id="rc-c-l"></span><input id="rc-c" autocomplete="off" /></label>
               <label for="rc-r"><span id="rc-r-l"></span><input id="rc-r" autocomplete="off" /></label>
               <label for="rc-s"><span id="rc-s-l"></span><textarea id="rc-s" rows="3"></textarea></label>
-              <button id="rc-save" type="button"><span id="rc-save-text"></span></button>
+              <button id="rc-save" type="button" class="sre-btn sre-btn-primary"><span id="rc-save-text"></span></button>
             </div>
             <p class="status" id="rc-status" role="status" aria-live="polite"></p>
           </div>
           <h4 id="log-h"></h4>
-          <button id="log-show" type="button" class="quiet"><span id="log-show-text"></span></button>
+          <button id="log-show" type="button" class="quiet sre-btn sre-btn-quiet"><span id="log-show-text"></span></button>
           <p class="status" id="log-status" role="status" aria-live="polite"></p>
           <ul class="rows" id="log-rows"></ul>
         </div>

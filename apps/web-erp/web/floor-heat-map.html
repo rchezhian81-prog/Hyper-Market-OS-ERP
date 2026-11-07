@@ -22,18 +22,18 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
       button.toggle { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button.toggle[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 1 1 160px; }
       .measures { display: flex; gap: 8px; flex-wrap: wrap; }
-      .meta { font-size: 13px; color: var(--muted); }
+      .meta { font-size: var(--fs-sm); color: var(--muted); }
       /* The floor, seen from above: each area a box at its own coordinates (percent of the floor), its colour the
          foundation's one-hue heat scale (--heat-0 … --heat-4), its words in the colour paired with that step. */
       .floor { position: relative; width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-      .floor .area { position: absolute; box-sizing: border-box; border: 2px solid var(--panel); border-radius: 6px; display: block; text-align: center; padding: 4px 2px; font-size: 12px; font-weight: 600; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
+      .floor .area { position: absolute; box-sizing: border-box; border: 2px solid var(--panel); border-radius: 6px; display: block; text-align: center; padding: 4px 2px; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
       .floor .area:hover, .floor .area:focus-visible { border-color: var(--ink); }
       .floor .area[data-band="unknown"] { background: var(--heat-unknown); color: var(--on-heat-unknown); border-style: dashed; border-color: var(--line-strong); }
       .floor .area[data-band="0"] { background: var(--heat-0); color: var(--on-heat-0); }
@@ -41,8 +41,8 @@
       .floor .area[data-band="2"] { background: var(--heat-2); color: var(--on-heat-2); }
       .floor .area[data-band="3"] { background: var(--heat-3); color: var(--on-heat-3); }
       .floor .area[data-band="4"] { background: var(--heat-4); color: var(--on-heat-4); }
-      .floor .front { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12px; color: var(--muted); }
-      .legend { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+      .floor .front { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: var(--fs-sm); color: var(--muted); }
+      .legend { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--muted); }
       .legend .sw { width: 28px; height: 14px; border-radius: 3px; display: inline-block; }
       .legend .sw[data-band="0"] { background: var(--heat-0); } .legend .sw[data-band="1"] { background: var(--heat-1); } .legend .sw[data-band="2"] { background: var(--heat-2); }
       .legend .sw[data-band="3"] { background: var(--heat-3); } .legend .sw[data-band="4"] { background: var(--heat-4); }
@@ -51,8 +51,11 @@
       table { border-collapse: collapse; width: 100%; font-size: 15px; }
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
       td.num { font-variant-numeric: tabular-nums; }
-      .tip { position: fixed; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: var(--shadow-md); max-width: 260px; }
+      .tip { position: fixed; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: var(--fs-sm); box-shadow: var(--shadow-md); max-width: 260px; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -74,7 +77,7 @@
         <div class="measures" role="group" aria-label="Measure">
           <button class="toggle" id="m-sales" type="button" aria-pressed="true"><span id="m-sales-text">Sales per sq ft</span></button>
           <button class="toggle" id="m-margin" type="button" aria-pressed="false"><span id="m-margin-text">Margin per sq ft</span></button>
-          <button id="show" type="button"><span id="show-text">Show which areas earn most</span></button>
+          <button id="show" type="button" class="sre-btn sre-btn-primary"><span id="show-text">Show which areas earn most</span></button>
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>

@@ -26,7 +26,7 @@
       label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
       label.tick input { width: 24px; height: 24px; }
       input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -40,6 +40,9 @@
       .tier-row > label { flex: 1 1 160px; }
       .facts { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -71,7 +74,7 @@
         </form>
         <label class="tick" for="enrol-yes"><input id="enrol-yes" type="checkbox" /><span id="l-enrol-yes">The customer said yes to joining</span></label>
         <label class="tick" for="enrol-seen"><input id="enrol-seen" type="checkbox" /><span id="l-enrol-seen">I saw this number on the customer's own phone</span></label>
-        <div><button id="enrol" type="button"><span id="enrol-text">Enrol</span></button></div>
+        <div><button id="enrol" type="button" class="sre-btn sre-btn-primary"><span id="enrol-text">Enrol</span></button></div>
         <p class="status" id="enrol-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -79,7 +82,7 @@
         <h3 id="find-h">Find a member</h3>
         <div class="row-form">
           <label for="find-mobile"><span id="l-find-mobile">Mobile number</span><input id="find-mobile" inputmode="tel" autocomplete="off" /></label>
-          <button id="find" type="button"><span id="find-text">Find</span></button>
+          <button id="find" type="button" class="sre-btn"><span id="find-text">Find</span></button>
         </div>
         <p class="status" id="find-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="found"></ul>
@@ -88,7 +91,7 @@
           <h4 id="confirm-h">Confirm this member's phone number</h4>
           <p class="meta" id="confirm-lead"></p>
           <label class="tick" for="confirm-seen"><input id="confirm-seen" type="checkbox" /><span id="l-confirm-seen">I saw this number on the customer's own phone</span></label>
-          <button id="confirm" type="button"><span id="confirm-text">Confirm the phone number</span></button>
+          <button id="confirm" type="button" class="sre-btn"><span id="confirm-text">Confirm the phone number</span></button>
         </div>
         <p class="status" id="confirm-status" role="status" aria-live="polite"></p>
       </section>
@@ -100,7 +103,7 @@
           <label for="link-ref"><span id="l-link-ref">App reference</span><input id="link-ref" autocomplete="off" /></label>
         </div>
         <label class="tick" for="link-seen"><input id="link-seen" type="checkbox" /><span id="l-link-seen">I saw this number on the customer's own phone</span></label>
-        <div><button id="link" type="button"><span id="link-text">Tie the app</span></button></div>
+        <div><button id="link" type="button" class="sre-btn"><span id="link-text">Tie the app</span></button></div>
         <p class="status" id="link-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -112,9 +115,9 @@
         <p class="status" id="tiers-say"></p>
         <div id="tier-rows"></div>
         <div class="row-form">
-          <button id="add-tier" type="button" class="quiet"><span id="add-tier-text">Add a tier</span></button>
+          <button id="add-tier" type="button" class="quiet sre-btn sre-btn-quiet"><span id="add-tier-text">Add a tier</span></button>
           <label for="tiers-reason"><span id="l-tiers-reason">Why</span><input id="tiers-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="save-tiers" type="button"><span id="save-tiers-text">Save the tiers</span></button>
+          <button id="save-tiers" type="button" class="sre-btn"><span id="save-tiers-text">Save the tiers</span></button>
         </div>
         <p class="status" id="tiers-status" role="status" aria-live="polite"></p>
         <h3 id="expiry-h">Points expiry</h3>
@@ -123,8 +126,8 @@
         <div class="row-form">
           <label for="expiry-months"><span id="l-expiry-months">Months after earning</span><input id="expiry-months" inputmode="numeric" autocomplete="off" /></label>
           <label for="expiry-reason"><span id="l-expiry-reason">Why</span><input id="expiry-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="save-expiry" type="button"><span id="save-expiry-text">Save expiry</span></button>
-          <button id="run-expiry" type="button" class="quiet"><span id="run-expiry-text">Run expiry now</span></button>
+          <button id="save-expiry" type="button" class="sre-btn"><span id="save-expiry-text">Save expiry</span></button>
+          <button id="run-expiry" type="button" class="quiet sre-btn sre-btn-quiet"><span id="run-expiry-text">Run expiry now</span></button>
         </div>
         <p class="status" id="expiry-status" role="status" aria-live="polite"></p>
       </section>
@@ -138,7 +141,7 @@
           <label for="referrer-rupees"><span id="l-referrer-rupees">The customer who referred earns (₹)</span><input id="referrer-rupees" inputmode="decimal" autocomplete="off" /></label>
           <label for="referred-rupees"><span id="l-referred-rupees">The new customer earns (₹)</span><input id="referred-rupees" inputmode="decimal" autocomplete="off" /></label>
           <label for="referral-reason"><span id="l-referral-reason">Why</span><input id="referral-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="save-referral" type="button"><span id="save-referral-text">Save the rewards</span></button>
+          <button id="save-referral" type="button" class="sre-btn"><span id="save-referral-text">Save the rewards</span></button>
         </div>
         <p class="status" id="referral-status" role="status" aria-live="polite"></p>
       </section>

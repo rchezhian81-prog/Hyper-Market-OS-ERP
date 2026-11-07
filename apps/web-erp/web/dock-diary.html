@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -34,6 +34,8 @@
       .meta { font-size: 14px; color: var(--muted); }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -52,9 +54,9 @@
       <section id="day" hidden aria-labelledby="day-h">
         <h3 id="day-h"></h3>
         <div class="row-form">
-          <label for="d-store"><span id="d-store-l"></span><input id="d-store" autocomplete="off" placeholder="store-1" /></label>
-          <label for="d-date"><span id="d-date-l"></span><input id="d-date" inputmode="numeric" autocomplete="off" placeholder="2026-10-26" /></label>
-          <button id="d-show" type="button"><span id="d-show-text"></span></button>
+          <label for="d-store"><span id="d-store-l"></span><input id="d-store" autocomplete="off" /></label>
+          <label for="d-date"><span id="d-date-l"></span><input id="d-date" inputmode="numeric" autocomplete="off" /></label>
+          <button id="d-show" type="button" class="sre-btn"><span id="d-show-text"></span></button>
         </div>
         <label for="d-reason"><span id="d-reason-l"></span><input id="d-reason" autocomplete="off" /></label>
         <p class="status" id="d-status" role="status" aria-live="polite"></p>
@@ -65,7 +67,7 @@
       <section id="book" hidden aria-labelledby="book-h">
         <h3 id="book-h"></h3>
         <div class="row-form">
-          <label for="b-store"><span id="b-store-l"></span><input id="b-store" autocomplete="off" placeholder="store-1" /></label>
+          <label for="b-store"><span id="b-store-l"></span><input id="b-store" autocomplete="off" /></label>
           <label for="b-door"><span id="b-door-l"></span><input id="b-door" autocomplete="off" placeholder="dock-1" /></label>
           <label for="b-from"><span id="b-from-l"></span><input id="b-from" type="datetime-local" /></label>
           <label for="b-until"><span id="b-until-l"></span><input id="b-until" type="datetime-local" /></label>
@@ -74,7 +76,7 @@
           <label for="b-supplier"><span id="b-supplier-l"></span><input id="b-supplier" autocomplete="off" /></label>
           <label for="b-orders"><span id="b-orders-l"></span><input id="b-orders" autocomplete="off" /></label>
         </div>
-        <button id="b-book" type="button"><span id="b-book-text"></span></button>
+        <button id="b-book" type="button" class="sre-btn sre-btn-primary"><span id="b-book-text"></span></button>
         <p class="status" id="b-status" role="status" aria-live="polite"></p>
       </section>
     </main>

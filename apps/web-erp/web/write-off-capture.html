@@ -39,10 +39,10 @@
       .material-hint .icon { font-size:16px; }
       .material-hint.tone-degraded { border-left:4px solid var(--degraded); } .material-hint.tone-idle { border-left:4px solid var(--idle); color:var(--muted); }
       .material-hint[hidden] { display:none; }
-      .threshold { font-size:13px; color:var(--muted); }
+      .threshold { font-size: var(--fs-sm); color:var(--muted); }
       /* One primary action at a time (design system §1 rule 3): the next step is filled, the other is outlined. */
-      button.act { min-height:var(--tap); padding:0 16px; border:2px solid var(--line); border-radius:10px; font-size:16px; font-weight:700; background:var(--bg); color:var(--ink); }
-      button.act.primary { border-color:var(--degraded); background:var(--degraded); color:var(--on-warn); }
+      button.act { min-height:var(--tap); padding:0 16px; border:2px solid var(--line); border-radius:10px; font-size:16px; font-weight:700; }
+      button.act.primary {    }
       /* A big loss's two-person step: write why, then ask — the second person approves on their own Approvals page. */
       .approval-step { display:grid; gap:12px; padding:12px; border-radius:10px; background:var(--bg); border-left:4px solid var(--degraded); }
       .approval-step[hidden] { display:none; }
@@ -62,7 +62,7 @@
       .loss-status { display:inline-flex; gap:8px; align-items:center; font-size:14px; }
       .loss-status.tone-ok { color:var(--ink); } .loss-status.tone-error { color:var(--danger-text); }
       .loss-why { font-size:14px; color:var(--muted); }
-      button.carry { min-height:var(--tap); padding:0 16px; border:2px solid var(--info); border-radius:10px; font-size:15px; font-weight:600; background:var(--bg); color:var(--ink); justify-self:start; }
+      button.carry { min-height:var(--tap); padding:0 16px;  border-radius:10px; font-size:15px; font-weight:600; background:var(--bg); color:var(--ink); justify-self:start; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
@@ -70,6 +70,10 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
+      /* U2: a picked thing — the id the page sends, the Choose button, the name beside it */
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -78,7 +82,7 @@
     <p class="nobody" id="nobody" hidden></p>
 
     <header>
-      <h1 class="who" id="who">Record a loss <small id="whoami"></small></h1>
+      <h1 class="who" id="who">Record a write-off <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -136,9 +140,9 @@
             <label for="wo-why" id="why-label"></label>
             <textarea id="wo-why" maxlength="300"></textarea>
           </div>
-          <button id="ask" class="act" type="button"></button>
+          <button id="ask" class="act sre-btn" type="button"></button>
         </div>
-        <button id="record" class="act primary" type="button"></button>
+        <button id="record" class="act primary sre-btn sre-btn-primary" type="button"></button>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
@@ -161,7 +165,7 @@
           <label for="woq-type"><span id="woq-type-l"></span><select id="woq-type"></select></label>
           <label for="woq-reason"><span id="woq-reason-l"></span><select id="woq-reason"></select></label>
           <label for="woq-evidence"><span id="woq-evidence-l"></span><input id="woq-evidence" autocomplete="off" /></label>
-          <button id="woq-save" class="act primary" type="submit"><span id="woq-save-text"></span></button>
+          <button id="woq-save" class="act primary sre-btn" type="submit"><span id="woq-save-text"></span></button>
         </form>
         <p class="result" id="woq-result" hidden role="status" aria-live="polite"><span class="icon" id="woq-result-icon" aria-hidden="true"></span><span id="woq-result-text"></span></p>
         <h3 id="woq-saved-h"></h3>
@@ -185,7 +189,7 @@
           <label for="fs-qty"><span id="fs-qty-l"></span><input id="fs-qty" type="number" min="1" step="1" inputmode="numeric" /></label>
           <label for="fs-uom"><span id="fs-uom-l"></span><input id="fs-uom" value="ea" autocomplete="off" /></label>
           <label for="fs-note"><span id="fs-note-l"></span><input id="fs-note" maxlength="300" autocomplete="off" /></label>
-          <button id="fs-save" class="act" type="submit"><span id="fs-save-text"></span></button>
+          <button id="fs-save" class="act sre-btn" type="submit"><span id="fs-save-text"></span></button>
         </form>
         <p class="result" id="fs-result" role="status" aria-live="polite"></p>
       </section>
@@ -194,7 +198,7 @@
       <section class="losses" id="fsp" hidden aria-labelledby="fsp-title">
         <h3 id="fsp-title"></h3>
         <p class="lead" id="fsp-lead"></p>
-        <button id="fsp-load" class="act" type="button"><span id="fsp-load-text"></span></button>
+        <button id="fsp-load" class="act sre-btn" type="button"><span id="fsp-load-text"></span></button>
         <p class="result" id="fsp-said" role="status" aria-live="polite"></p>
         <ul class="rows" id="fsp-rows" aria-labelledby="fsp-title"></ul>
       </section>

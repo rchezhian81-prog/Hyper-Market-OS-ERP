@@ -97,7 +97,7 @@ export type CopyKey =
   | 'vOk' | 'vUpgradeAvailable' | 'vUpgradeRequired' | 'vVersionKilled' | 'vUnregistered' | 'vBlocked' | 'vIntegrityFailed' | 'vNoVersion'
   | 'silentBadge' | 'versionLabel' | 'lastSeenLabel' | 'branchLabel' | 'neverSeen'
   | 'tileTotal' | 'tileTrading' | 'tileMustUpgrade' | 'tileBlocked' | 'tileSilent'
-  | 'attentionLead' | 'allWell'
+  | 'attentionLead' | 'allWell' | 'noneRegistered'
   | 'canManage' | 'readOnly'
   | 'btnBlock' | 'btnRetire' | 'btnReinstate'
   | 'queuedPending' | 'queuedSent' | 'queuedFailed'
@@ -106,13 +106,14 @@ export type CopyKey =
 
 export const FLEET_COPY: BilingualCopy<CopyKey> = {
   en: {
-    title: 'Devices', langName: 'தமிழ்',
+    title: 'Tills & devices', langName: 'தமிழ்',
     lead: 'Every till, scanner, scale and kiosk this shop runs on, and its health. The ones that need a look come first: a machine that must update before it can trade, one pulled off a recalled build, or one that has gone quiet. A machine that stopped reporting in is a warning, not health.',
     vOk: 'Up to date', vUpgradeAvailable: 'Update available', vUpgradeRequired: 'Must update before trading', vVersionKilled: 'On a recalled build — moving back',
     vUnregistered: 'Not registered', vBlocked: 'Blocked', vIntegrityFailed: 'Device tampered', vNoVersion: 'No version reported',
     silentBadge: 'Gone quiet', versionLabel: 'Version', lastSeenLabel: 'Last seen', branchLabel: 'Branch', neverSeen: 'never checked in',
     tileTotal: 'Devices', tileTrading: 'Trading', tileMustUpgrade: 'Must update', tileBlocked: 'Blocked', tileSilent: 'Gone quiet',
     attentionLead: 'need a look', allWell: 'Every device is up to date and checking in.',
+    noneRegistered: 'Not known — no till or device is registered yet, so nothing can be checked. A till is registered when it is installed on the store computer (owner guide: installing a till); until then this page cannot say the fleet is well.',
     canManage: 'You can register, block or retire a device.', readOnly: 'You can see the fleet but not change it.',
     btnBlock: 'Block', btnRetire: 'Retire', btnReinstate: 'Bring back',
     queuedPending: 'Requested — it will be sent when there is a connection.',
@@ -124,13 +125,14 @@ export const FLEET_COPY: BilingualCopy<CopyKey> = {
     staleShell: 'Showing the last fleet this screen received.', sampleData: 'Sample fleet — no devices have been registered yet.',
   },
   ta: {
-    title: 'சாதனங்கள்', langName: 'English',
+    title: 'கல்லாக்களும் சாதனங்களும்', langName: 'English',
     lead: 'இந்தக் கடை இயங்கும் ஒவ்வொரு பில்லிங் இயந்திரம், ஸ்கேனர், தராசு, கியாஸ்க் மற்றும் அதன் நிலை. கவனம் தேவைப்படுபவை முதலில்: வர்த்தகம் செய்ய முன் புதுப்பிக்க வேண்டிய இயந்திரம், திரும்பப் பெறப்பட்ட பதிப்பில் உள்ளது, அல்லது அமைதியாகிவிட்டது. தகவல் அனுப்புவதை நிறுத்திய இயந்திரம் ஒரு எச்சரிக்கை, ஆரோக்கியம் அல்ல.',
     vOk: 'புதுப்பித்தது', vUpgradeAvailable: 'புதுப்பிப்பு உள்ளது', vUpgradeRequired: 'வர்த்தகத்திற்கு முன் புதுப்பிக்க வேண்டும்', vVersionKilled: 'திரும்பப் பெறப்பட்ட பதிப்பு — பின்செல்கிறது',
     vUnregistered: 'பதிவு செய்யப்படவில்லை', vBlocked: 'தடுக்கப்பட்டது', vIntegrityFailed: 'சாதனம் சேதப்படுத்தப்பட்டது', vNoVersion: 'பதிப்பு தெரிவிக்கப்படவில்லை',
     silentBadge: 'அமைதியாகிவிட்டது', versionLabel: 'பதிப்பு', lastSeenLabel: 'கடைசியாக பார்த்தது', branchLabel: 'கிளை', neverSeen: 'ஒருபோதும் தெரிவிக்கவில்லை',
     tileTotal: 'சாதனங்கள்', tileTrading: 'வர்த்தகம்', tileMustUpgrade: 'புதுப்பிக்க வேண்டும்', tileBlocked: 'தடுக்கப்பட்டது', tileSilent: 'அமைதி',
     attentionLead: 'கவனம் தேவை', allWell: 'ஒவ்வொரு சாதனமும் புதுப்பித்து தகவல் அனுப்புகிறது.',
+    noneRegistered: 'தெரியாது — எந்தக் கல்லாவும் சாதனமும் இன்னும் பதிவு செய்யப்படவில்லை, எனவே எதையும் சரிபார்க்க முடியாது. கல்லா கடைக் கணினியில் நிறுவப்படும்போது பதிவு செய்யப்படுகிறது (உரிமையாளர் வழிகாட்டி: கல்லா நிறுவுதல்); அதுவரை இந்தப் பக்கம் சாதனங்கள் நலமாக உள்ளன என்று சொல்ல முடியாது.',
     canManage: 'நீங்கள் ஒரு சாதனத்தை பதிவு செய்யலாம், தடுக்கலாம் அல்லது நீக்கலாம்.', readOnly: 'நீங்கள் கடற்படையைப் பார்க்கலாம் ஆனால் மாற்ற முடியாது.',
     btnBlock: 'தடு', btnRetire: 'நீக்கு', btnReinstate: 'மீண்டும் கொண்டுவா',
     queuedPending: 'கோரப்பட்டது — இணைப்பு கிடைக்கும்போது அனுப்பப்படும்.',

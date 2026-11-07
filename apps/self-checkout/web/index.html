@@ -45,6 +45,8 @@
       button:disabled { background: var(--panel-2); color: var(--muted); border-style: dashed; border-color: var(--line-strong); cursor: not-allowed; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       #lang, #colleague { min-height: 56px; font-size: 16px; }
+      .box { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px; border-radius: var(--radius, 6px); border: var(--hairline, 1px) solid var(--line); background: var(--ok-surface); color: var(--on-ok-surface); font-size: 14px; }
+      .box.down { background: var(--warn-surface); color: var(--on-warn-surface); }
       .stale { background: var(--warn-surface); color: var(--on-warn-surface); padding: var(--space-2) var(--space-4); margin: 0; font-size: 15px; font-weight: 600; }
       .stale[hidden] { display: none; }
 
@@ -101,6 +103,9 @@
       <h1 id="title">Self-checkout<small id="subtitle">—</small></h1>
       <button id="colleague" type="button"><span data-sre-icon="user-round"></span><span id="colleague-words">Colleague</span></button>
       <button id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
+      <!-- U0 · G19 (UI/UX gap audit, 1 Nov 2026 · design system §1 rule 4): the store computer's link and the unsent count,
+           read from the lane socket every ten seconds like the till's badge — never assumed, never a constant. -->
+      <span class="box" id="box" role="status"><span data-sre-icon="store" aria-hidden="true"></span><span id="box-text">—</span></span>
     </header>
     <p class="stale" id="stale" hidden role="status"></p>
 

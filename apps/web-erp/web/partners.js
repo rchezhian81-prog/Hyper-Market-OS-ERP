@@ -88,7 +88,7 @@ const verdicts = new Map(); // `${partnerId}\u001f${connectorId}` → status ans
 const currentVersions = () => (manifest?.apis ?? []).filter((a) => Array.isArray(a.routes) && a.routes.length > 0).map((a) => ({ contract: a.api, version: manifest.majorVersion, status: 'current' }));
 
 function cell(tr, text, warn = false) { const td = document.createElement('td'); td.textContent = text; if (warn) td.className = 'warn'; tr.append(td); return td; }
-function button(text, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', fn); return b; }
+function button(text, fn) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.addEventListener('click', fn); return b; }
 function emptyRow(tbody, cols, text) { const tr = document.createElement('tr'); const td = cell(tr, text); td.colSpan = cols; tbody.append(tr); }
 const stateWords = (c) => (c.state === 'active' ? t('stActive') : c.state === 'revoked' ? fill(t('stRevoked'), { d: c.revokedOn }) : c.state === 'expired' ? t('stExpired') : t('stNotYet'));
 

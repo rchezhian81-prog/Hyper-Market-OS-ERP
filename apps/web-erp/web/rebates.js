@@ -8,10 +8,28 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, claim: false, receipt: false, setPeriod: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, act, iconName, quiet) {
-  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet';
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet';
   const i = icon(iconName); if (i !== null) b.append(i);
   b.append(text('span', words)); return b;
 }
@@ -74,6 +92,9 @@ function paintRegister() {
   $('r-period').textContent = `${t('periodH')}: ${reg.answerPeriod.state === 'set' ? `${reg.answerPeriod.days} ${t('periodIs')}` : t('periodNotSet')}`;
   if (reg.schemes.length === 0) $('scheme-rows').append(text('li', `○ ${t('none')}`));
   for (const s of reg.schemes) $('scheme-rows').append(paintScheme(s));
+  // U2b (G5): the scheme and the claim are offered from the lists the page just read — the code stays typeable
+  $('scheme-list').replaceChildren(...reg.schemes.map((s) => Object.assign(document.createElement('option'), { value: s.schemeId, label: `${s.schemeId} · ${s.supplierId} · ${(s.rateBp / 100).toFixed(2)}%` })));
+  $('claim-list').replaceChildren(...reg.claims.map((c) => Object.assign(document.createElement('option'), { value: c.claimId, label: `${c.claimId} · ${c.schemeId} · ${c.supplierId}` })));
   $('claims-h').textContent = t('claimsH');
   if (reg.claims.length === 0) $('claim-rows').append(text('li', `○ ${t('noClaims')}`));
   for (const c of reg.claims) $('claim-rows').append(paintClaim(c));
@@ -103,11 +124,12 @@ function paintDocument() {
   for (const l of lines) $('doc-body').append(text('p', l));
 }
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['register-h', 'registerH'], ['r-show-text', 'show'], ['raise-h', 'raiseH'], ['c-scheme-l', 'schemeId'], ['c-amount-l', 'amountRs'], ['c-note-l', 'note'], ['c-raise-text', 'raise'],
     ['receipt-h', 'receiptH'], ['m-scheme-l', 'schemeId'], ['m-amount-l', 'amount'], ['m-on-l', 'receivedOn'], ['m-ref-l', 'reference'], ['m-claim-l', 'forClaim'], ['m-record-text', 'recordReceipt'],
-    ['period-h', 'periodH'], ['p-days-l', 'days'], ['p-why-l', 'why'], ['p-set-text', 'setPeriod'], ['p-clear-text', 'clearPeriod'], ['doc-print-text', 'printNow']]) $(id).textContent = t(key);
+    ['period-h', 'periodH'], ['p-days-l', 'days'], ['p-why-l', 'why'], ['p-set-text', 'setPeriod'], ['p-clear-text', 'clearPeriod'], ['doc-print-text', 'printNow']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintRegister(); paintDocument(); paintSchemeForm();
 }
 async function showRegister() {
@@ -144,9 +166,9 @@ const terms = window.supplierTerms ?? null;
 const tt = (k) => (terms === null ? k : terms.words(lang, k));
 function paintSchemeForm() {
   for (const [id, key] of [['scheme-h', 'schemeH'], ['scheme-lead', 'schemeLead'], ['s-id-l', 'schemeId'], ['s-supplier-l', 'supplier'], ['s-basis-l', 'basis'], ['s-b-pv', 'b_purchase_value'], ['s-b-vu', 'b_volume_units'], ['s-b-gb', 'b_growth_over_baseline'],
-    ['s-rate-l', 'ratePct'], ['s-threshold-l', 'thresholdRs'], ['s-starts-l', 'startsOn'], ['s-ends-l', 'endsOn'], ['s-ask-text', 'ask'], ['s-record-text', 'record']]) $(id).textContent = tt(key);
+    ['s-rate-l', 'ratePct'], ['s-threshold-l', 'thresholdRs'], ['s-starts-l', 'startsOn'], ['s-ends-l', 'endsOn'], ['s-ask-text', 'ask'], ['s-record-text', 'record']]) { const n = $(id); if (n) n.textContent = tt(key); }
 }
-const schemeForm = () => ({ schemeId: $('s-id').value, supplierId: $('s-supplier').value, basis: $('s-basis').value, ratePct: $('s-rate').value, thresholdRupees: $('s-threshold').value, startsOn: $('s-starts').value, endsOn: $('s-ends').value });
+const schemeForm = () => ({ schemeId: $('s-id').value, supplierId: $('s-supplier').value, basis: $('s-basis').value, ratePct: $('s-rate').value, thresholdRupees: $('s-threshold').value, startsOn: dateOf('s-starts'), endsOn: dateOf('s-ends') });
 if (terms !== null && terms.session.may.manage) {
   $('scheme').hidden = false;
   $('s-ask').addEventListener('click', async () => { $('s-status').textContent = terms.outcomeWords(lang, await terms.session.askScheme(schemeForm())); });
@@ -179,7 +201,7 @@ else {
   if (may.receipt) {
     $('receipt').hidden = false;
     $('m-record').addEventListener('click', async () => {
-      const out = await session.receipt({ schemeId: $('m-scheme').value, amountRupees: $('m-amount').value, receivedOn: $('m-on').value, reference: $('m-ref').value, claimId: $('m-claim').value });
+      const out = await session.receipt({ schemeId: $('m-scheme').value, amountRupees: $('m-amount').value, receivedOn: dateOf('m-on'), reference: $('m-ref').value, claimId: $('m-claim').value });
       say('m-status', out);
       if (out.result === 'ok') await showRegister();
     });
@@ -190,6 +212,8 @@ else {
     $('p-clear').addEventListener('click', async () => { const out = await session.clearPeriod($('p-why').value); say('p-status', out); if (out.result === 'ok') await showRegister(); });
   }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('s-starts', { en: wordsIn('en', 'startsOn'), ta: wordsIn('ta', 'startsOn') }); shopDate('s-ends', { en: wordsIn('en', 'endsOn'), ta: wordsIn('ta', 'endsOn') }); shopDate('m-on', { en: wordsIn('en', 'receivedOn'), ta: wordsIn('ta', 'receivedOn') }); paint(); }, { once: true });
 
 // W3 (D03-FR-03 · D10-FR-04): measure what a scheme earned, and put earned rebates in the books — its own tested session
 // (window.rebateAccruals, apps/web-erp/src/rebate-accruals-session.ts). Only the period is sent; head office folds the basis

@@ -17,6 +17,10 @@ const repaints = []; // a section's results, repainted on a language switch
 function el(tag, attrs, ...kids) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs ?? {})) { if (k === 'key') { words.push([n, v]); n.textContent = t(v); } else if (k === 'text') n.textContent = v; else n.setAttribute(k, v); }
+  // Every control a section draws wears the foundation's class, so it is a 44px target with the one look (U0/U1 rules).
+  if (tag === 'button') n.classList.add('sre-btn', ...(n.classList.contains('quiet') ? ['sre-btn-quiet'] : []));
+  else if (tag === 'select') n.classList.add('sre-select');
+  else if (tag === 'textarea' || (tag === 'input' && !['checkbox', 'radio', 'hidden'].includes(n.getAttribute('type') ?? 'text'))) n.classList.add('sre-input');
   n.append(...kids);
   return n;
 }

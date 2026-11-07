@@ -9,6 +9,46 @@
 const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+// the pickers' words follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 const WORDS = {
@@ -20,8 +60,15 @@ const WORDS = {
     held: 'Held', atRepair: 'Out for repair', restocked: 'Back on sale', writtenOff: 'Written off', returnedToSupplier: 'Back to the supplier',
     returnLabel: 'Return', batchLabel: 'Batch', noBatch: 'no batch', conditionLabel: 'Condition', placeLabel: 'Place', noPlace: 'not named', sinceLabel: 'Held since', byLabel: 'by',
     decisionLabel: 'Decision', restock: 'Put back on sale', writeOff: 'Write off', toSupplier: 'Return to supplier', repair: 'Send for repair',
-    reasonLabel: 'Reason', supplierLabel: 'Supplier', supplierRefLabel: 'Supplier reference', evidenceLabel: 'Photo or witness reference', approvalLabel: 'Approval id (big loss)',
+    reasonLabel: 'Reason', supplierLabel: 'Supplier', supplierRefLabel: 'Supplier reference', evidenceLabel: 'Photo or witness reference', approvalLabel: 'Approval (big loss)',
     record: 'Record decision', recorded: 'Recorded', refused: 'Not recorded', unreachable: 'Head office could not be reached. Nothing was recorded — try again.',
+    // U1 · OB-698: the consequence-and-confirm sheet before a unit is written off or sent back
+    confirmWriteOffTitle: 'Write off {product} × {qty} as {reason}',
+    confirmWriteOffDetail: 'The unit leaves stock as a loss in the books; head office values it. A big loss needs the approval named on the form. A write-off is never undone — a mistake is corrected by a new entry.',
+    confirmReturnTitle: 'Send {product} × {qty} back to supplier {supplier}',
+    confirmReturnDetail: 'The unit leaves stock and is set against the supplier. A return cannot be taken back from this screen.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not decide held goods.',
+    confirmWriteOffLabel: 'Write it off', confirmReturnLabel: 'Send it back', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     cannotRead: 'The list could not be read from head office. Nothing here is current.', needReason: 'Give a reason first.',
     valueLabel: 'Loss value', approvedByLabel: 'approved by',
     wasteReasonLabel: 'Why it is lost', noteLabel: 'Note (your own words)', needWasteReason: 'Choose why it is lost from the list first.',
@@ -35,8 +82,14 @@ const WORDS = {
     held: 'நிறுத்தப்பட்டது', atRepair: 'பழுதுபார்ப்பில்', restocked: 'மீண்டும் விற்பனைக்கு', writtenOff: 'தள்ளுபடி செய்யப்பட்டது', returnedToSupplier: 'சப்ளையருக்குத் திருப்பப்பட்டது',
     returnLabel: 'திருப்பம்', batchLabel: 'தொகுதி', noBatch: 'தொகுதி இல்லை', conditionLabel: 'நிலை', placeLabel: 'இடம்', noPlace: 'குறிப்பிடப்படவில்லை', sinceLabel: 'முதல்', byLabel: 'மூலம்',
     decisionLabel: 'முடிவு', restock: 'மீண்டும் விற்பனைக்கு வை', writeOff: 'தள்ளுபடி செய்', toSupplier: 'சப்ளையருக்குத் திருப்பு', repair: 'பழுதுபார்க்க அனுப்பு',
-    reasonLabel: 'காரணம்', supplierLabel: 'சப்ளையர்', supplierRefLabel: 'சப்ளையர் குறிப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி குறிப்பு', approvalLabel: 'ஒப்புதல் எண் (பெரிய இழப்பு)',
+    reasonLabel: 'காரணம்', supplierLabel: 'சப்ளையர்', supplierRefLabel: 'சப்ளையர் குறிப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி குறிப்பு', approvalLabel: 'அனுமதி (பெரிய இழப்பு)',
     record: 'முடிவைப் பதிவு செய்', recorded: 'பதிவு செய்யப்பட்டது', refused: 'பதிவு செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் பதிவு செய்யப்படவில்லை — மீண்டும் முயலவும்.',
+    confirmWriteOffTitle: '{product} × {qty} — {reason} எனக் கழித்து எழுதப்படும்',
+    confirmWriteOffDetail: 'அந்த அலகு இழப்பாகக் கணக்கிலிருந்து வெளியேறும்; தலைமை அலுவலகம் அதன் மதிப்பைக் கணக்கிடும். பெரிய இழப்புக்குப் படிவத்தில் குறிப்பிட்ட அனுமதி தேவை. கழித்து எழுதியதைத் திரும்பப் பெற முடியாது — தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmReturnTitle: '{product} × {qty} — விநியோகஸ்தர் {supplier}க்குத் திருப்பி அனுப்பப்படும்',
+    confirmReturnDetail: 'அந்த அலகு சரக்கிலிருந்து வெளியேறி விநியோகஸ்தர் கணக்கில் வைக்கப்படும். இந்தத் திரையில் திருப்பலைத் திரும்பப் பெற முடியாது.',
+    confirmAuthority: 'உங்கள் பெயரில். நிறுத்தி வைத்த சரக்கை முடிவு செய்யும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmWriteOffLabel: 'கழித்து எழுது', confirmReturnLabel: 'திருப்பி அனுப்பு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     cannotRead: 'தலைமை அலுவலகத்திலிருந்து பட்டியலைப் படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', needReason: 'முதலில் காரணம் கொடுங்கள்.',
     valueLabel: 'இழப்பு மதிப்பு', approvedByLabel: 'ஒப்புதல் அளித்தவர்',
     wasteReasonLabel: 'ஏன் இழப்பு', noteLabel: 'குறிப்பு (உங்கள் சொற்களில்)', needWasteReason: 'முதலில் பட்டியலிலிருந்து இழப்புக் காரணத்தைத் தேர்ந்தெடுக்கவும்.',
@@ -92,12 +145,34 @@ function decisionForm(item) {
     approvalField.hidden = select.value !== 'write_off';
   };
   select.addEventListener('change', sync);
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record'; button.textContent = t('record');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record sre-btn sre-btn-primary'; button.textContent = t('record');
   form.append(field('decisionLabel', select), wasteReasonField, reasonField, supplierField, supplierRefField, evidenceField, approvalField, button);
   sync();
+  // U2b: the supplier and the approval are PICKED by name (the typed code stays the fallback)
+  pickableEl(supplier, 'supplier', 'pickSupplier');
+  pickableEl(approval, 'approval', 'pickApproval', { scope: () => ({ storeId: window.sreOffice?.me?.()?.storeId }) });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void send(item, { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() }, button);
+    const values = { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() };
+    void (async () => {
+      // U1 · OB-698: a write-off or a return to the supplier moves stock — the consequence-and-confirm sheet first; Go back
+      // sends nothing. Restock and repair keep the goods and need no sheet.
+      if (values.decision === 'write_off' || values.decision === 'return_to_supplier') {
+        if (values.decision === 'write_off' && values.wasteReason === '') { tell(false, t('needWasteReason')); return; }
+        if (values.decision !== 'write_off' && values.reasonCode === '') { tell(false, t('needReason')); return; }
+        const off = values.decision === 'write_off';
+        const sub = (l, key) => String(WORDS[l][key]).replace('{product}', item.productId).replace('{qty}', qtyText(item.quantityMinor, item.uom)).replace('{reason}', WORDS[l][values.wasteReason] ?? values.wasteReason).replace('{supplier}', values.supplierId);
+        const answer = await confirmFirst({
+          title: { en: sub('en', off ? 'confirmWriteOffTitle' : 'confirmReturnTitle'), ta: sub('ta', off ? 'confirmWriteOffTitle' : 'confirmReturnTitle') },
+          detail: { en: sub('en', off ? 'confirmWriteOffDetail' : 'confirmReturnDetail'), ta: sub('ta', off ? 'confirmWriteOffDetail' : 'confirmReturnDetail') },
+          authority: { en: WORDS.en.confirmAuthority, ta: WORDS.ta.confirmAuthority },
+          confirmLabel: { en: WORDS.en[off ? 'confirmWriteOffLabel' : 'confirmReturnLabel'], ta: WORDS.ta[off ? 'confirmWriteOffLabel' : 'confirmReturnLabel'] }, tone: off ? 'danger' : 'primary',
+        });
+        if (answer === 'unavailable') { tell(false, t('confirmUnavailable')); return; }
+        if (answer === null) return;
+      }
+      await send(item, values, button);
+    })();
   });
   return form;
 }
@@ -109,10 +184,12 @@ function rowNode(item, open) {
   const head = document.createElement('div'); head.className = 'head';
   const headline = document.createElement('span'); headline.className = 'headline';
   headline.textContent = `${item.productId} × ${qtyText(item.quantityMinor, item.uom)}`;
-  const state = document.createElement('span'); state.className = 'state';
-  const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true'); icon.textContent = open ? '⚠' : '✓';
-  const word = document.createElement('span'); word.textContent = t(STATE_WORD[item.state] ?? 'held');
-  state.append(icon, word);
+  // U1 · L: the state as a chip from the one icon set — the tone's shape AND the word, never a character or colour alone.
+  const stateLabel = t(STATE_WORD[item.state] ?? 'held');
+  const state = window.sreIcon && typeof window.sreIcon.chip === 'function'
+    ? window.sreIcon.chip({ tone: open ? 'degraded' : 'ok', label: stateLabel })
+    : Object.assign(document.createElement('span'), { className: 'sre-chip', textContent: stateLabel });
+  state.classList.add('state');
   head.append(headline, state);
   const facts = document.createElement('div'); facts.className = 'facts';
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
@@ -146,6 +223,15 @@ function paint() {
   el('done-heading').hidden = done.length === 0; el('done-heading').textContent = t('doneHeading');
   el('rows').replaceChildren(...open.map((i) => rowNode(i, true)));
   el('done-rows').replaceChildren(...done.map((i) => rowNode(i, false)));
+}
+
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
 }
 
 function tell(ok, text) {

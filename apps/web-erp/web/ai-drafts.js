@@ -47,6 +47,16 @@ const WORDS = {
   },
 };
 let lang = 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 const t = (k) => WORDS[lang][k] ?? WORDS.en[k] ?? k;
 const idem = () => ((crypto.randomUUID && crypto.randomUUID()) || `act-${Date.now()}-${Math.random()}`);
 
@@ -74,7 +84,7 @@ function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
   if (out.ok && out.body?.drafted === false) { el.className = 'status err'; el.textContent = `${t('notDrafted')} ${out.body.detail ?? ''}`; return; }
   el.textContent = out.ok ? (good ?? t('done'))
-    : out.status === 0 ? t('unreachable') : out.status === 503 || out.status === 429 ? notRunWords(out) : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
+    : out.status === 0 ? t('unreachable') : out.status === 503 || out.status === 429 ? notRunWords(out) : refusalLine(out.status, out.body?.error);
 }
 
 function paintWords() {
@@ -83,8 +93,8 @@ function paintWords() {
     const el = $(id);
     if (el) el.textContent = t(k);
   }
-  $('ask-campaign').disabled = !mayDraftWords;
-  $('ask-summary').disabled = !mayAskSummary;
+  $('ask-campaign').disabled = !mayDraftWords; whyDisabled($('ask-campaign'), mayDraftWords ? '' : 'role');
+  $('ask-summary').disabled = !mayAskSummary; whyDisabled($('ask-summary'), mayAskSummary ? '' : 'role');
   const nobody = $('nobody');
   nobody.hidden = who !== null;
   nobody.textContent = t('nobody');
@@ -107,8 +117,8 @@ function renderTemplates() {
     q.textContent = v.body;
     card.append(meta, q);
     if (v.state === 'draft') {
-      const b = document.createElement('button');
-      b.type = 'button'; b.textContent = t('approve'); b.disabled = !mayDraftWords;
+      const b = document.createElement('button'); b.classList.add('sre-btn');
+      b.type = 'button'; b.textContent = t('approve'); b.disabled = !mayDraftWords; whyDisabled(b, mayDraftWords ? '' : 'role');
       b.addEventListener('click', async () => {
         const out = await post(`/v1/notifications/templates/${encodeURIComponent(v.templateId)}/approval`, { version: v.version });
         say($('camp-status'), out);
@@ -182,4 +192,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

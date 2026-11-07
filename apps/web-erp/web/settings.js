@@ -10,7 +10,7 @@ const may = session?.may ?? { named: false, read: false, write: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, cls, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = words; b.addEventListener('click', onClick); return b; }
+function button(words, cls, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.className = cls; b.textContent = words; b.addEventListener('click', onClick); return b; }
 
 let settings = null;
 const open = new Map(); // key -> versions shown

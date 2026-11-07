@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { says } from './lib/r4c-box-page';
+import { confirmIt } from './lib/confirm-sheet';
 
 /**
  * **W3 (M11-FR-01 · M11-FR-03 · M11-FR-04) — production from a NEW shop, in a real browser, on the PRODUCTION API over real
@@ -108,6 +109,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('production
     const run = runs.runs.find((x) => x.outputBatchId === 'CAKE-1');
     expect(run, JSON.stringify(runs)).toBeDefined();
     await p.page.click('#rows button.release');
+    await confirmIt(p.page); // U1 · OB-698: "Release batch … for sale" asks the sheet first
     await p.page.waitForFunction(() => (globalThis as unknown as { document: { querySelectorAll(s: string): { length: number } } }).document.querySelectorAll('#rows button.release').length === 0, undefined, { timeout: 15_000 });
     const after = (await call('GET', '/v1/production/runs', OWNER)).body as { runs: { runId: string; released?: boolean }[] };
     expect(after.runs.find((x) => x.runId === run!.runId)?.released).toBe(true);

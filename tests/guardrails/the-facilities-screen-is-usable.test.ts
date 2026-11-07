@@ -71,6 +71,18 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
   const RAW = readFileSync('apps/web-erp/web/facilities.js', 'utf8');
   const VIEW = RAW.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
+  // U0 (UI/UX gap audit, 1 Nov 2026): the page is called what the menu calls it, the empty line comes from the
+  // session's reason (never a flat "all up to date"), and nothing a person must read is under 14px.
+  it('is named "Facilities" like its menu item, draws the empty line from the session\'s reason, and has no 13px words', () => {
+    const html = readFileSync('apps/web-erp/web/facilities.html', 'utf8');
+    expect(html).toMatch(/<h1 class="who" id="who">Facilities /);
+    expect(html).not.toMatch(/font-size:\s*1[0-3]px/);
+    expect(VIEW).toMatch(/view\.emptyReason/);
+    expect(VIEW).not.toMatch(/overdueCount === 0 \? t\('allDone'\)/);
+    expect(FACILITIES_COPY.en.title).toBe('Facilities');
+    expect(FACILITIES_COPY.ta.title).toBe('வசதிகள்');
+  });
+
   it('never calls alert / confirm / prompt', () => {
     expect(/\b(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false);
   });

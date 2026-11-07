@@ -10,6 +10,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
  * **The Scrap and recycling page (M28-FR-02) and the Packaging and crates page (M28-FR-03) in a real browser, served by the
@@ -55,7 +56,7 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
     const packFile = join(dir, 'store-pack.json');
     const everything = [...new Set(['identity.self.read', 'scrap.sale.record', 'scrap.review.read', 'inventory.movement.append', ...ERP_NAVIGATION.map((i) => i.requires)])];
     await writeFile(packFile, JSON.stringify({
-      version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1' },
+      version: 1, lossPreventionRules: [], policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Store 1', warehouseId: 'store-1-back' },
       roles: [
         { id: 'owner', name: 'Owner', permissions: everything },
         { id: 'manager', name: 'Store manager', permissions: ['identity.self.read', 'scrap.review.read', 'inventory.availability.read', 'inventory.movement.append'] },
@@ -108,11 +109,14 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
   it('scrap: recorded without evidence (flagged, never refused), reviewed, marked into the books; a manager reviews only her branch', async () => {
     const { page: p, errors } = await open(OWNER, '/scrap/');
     await p.waitForSelector('#record:not([hidden])');
-    expect(await p.inputValue('#v-from')).toBe(TODAY);
+    // U2 · G14: the day is shown as dd/mm/yyyy (the shop's calendar) and carried as ISO behind it
+    expect(await p.getAttribute('#v-from', 'data-iso')).toBe(TODAY);
+    expect(await p.inputValue('#v-from')).toBe(`${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)}`);
     expect(await p.inputValue('#s-by')).toBe(OWNER);
     await p.fill('#s-branch', 'store-1'); await p.selectOption('#s-category', 'cardboard'); await p.selectOption('#s-disposal', 'sold');
     await p.fill('#s-kg', '12.5'); await p.fill('#s-proceeds', '250');
-    await p.click('#s-record');
+    // U1 · OB-698: the consequence-and-confirm sheet names the weight and the money; Go back sends nothing; Confirm sends once.
+    await askedThenConfirmed(p, () => p.click('#s-record'), /Record 12\.5 kg of cardboard disposed as sold, ₹250\.00 received/, writeCounter(p));
     await says(p, '#s-status', /^Recorded at head office\. It is NOT in the books until finance takes it up/);
 
     await p.fill('#v-branch', 'store-1');
@@ -149,7 +153,7 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
     const { page: p, errors } = await open(MANAGER, '/packaging/');
     await p.waitForSelector('#register:not([hidden])');
     await p.click('#q-show');
-    await says(p, '#q-status', /^Write the item code and the branch code\.$/);
+    await says(p, '#q-status', /^Say which packaging item and which branch\.$/);
 
     await p.fill('#i-item', 'crate-blue'); await p.fill('#i-name', 'Blue crate'); await p.selectOption('#i-kind', 'reusable_crate');
     await p.check('#i-returnable'); await p.fill('#i-deposit', '50');
@@ -159,7 +163,7 @@ describe.skipIf(!HAVE_BROWSER)('the Scrap and Packaging pages through the store 
     const move = async (kind: string, qty: string): Promise<void> => {
       await p.fill('#m-item', 'crate-blue'); await p.fill('#m-branch', 'store-1'); await p.selectOption('#m-kind', kind); await p.fill('#m-qty', qty);
       await p.evaluate(() => { (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } } }).document.getElementById('m-status').textContent = ''; });
-      await p.click('#m-record');
+      await askedThenConfirmed(p, () => p.click('#m-record'), new RegExp(`Record ${qty} × crate-blue`), writeCounter(p)); // U1 · OB-698
       await says(p, '#m-status', /^Recorded at head office\.$/);
     };
     await move('received', '10');

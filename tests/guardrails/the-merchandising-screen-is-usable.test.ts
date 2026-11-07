@@ -104,7 +104,7 @@ describe('the view renders from the tested session and re-decides nothing', () =
   });
 
   it('the refill button is hidden until the session says this reader may raise, and says "already asked" instead of asking twice', () => {
-    expect(HTML).toMatch(/<button id="raise-refill" class="primary wide" type="button" hidden>/);
+    expect(HTML).toMatch(/<button id="raise-refill" class="primary wide sre-btn sre-btn-primary" type="button" hidden>/);
     expect(VIEW).toMatch(/el\('raise-refill'\)\.hidden = !refills\.canRaise/);
     expect(VIEW).toMatch(/el\('raise-refill'\)\.disabled = refills\.alreadySaved/);
     expect(HTML).toMatch(/<ul class="saved" id="saved-counts"/);

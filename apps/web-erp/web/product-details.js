@@ -7,12 +7,61 @@
 // own Approvals page, and then saved naming that approval. Every word has a Tamil twin; nothing is written on open.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 const who = window.productDetailsData && typeof window.productDetailsData === 'object' ? window.productDetailsData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
 const mayRead = perms.has('catalogue.pack.read');
 const mayEdit = perms.has('catalogue.pack.publish');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 
 const NUTRIENTS = [['energyKcal', 'energy (kcal)', 'ஆற்றல் (கிலோ கலோரி)'], ['proteinG', 'protein (g)', 'புரதம் (கி)'], ['carbohydrateG', 'carbohydrate (g)', 'கார்போஹைட்ரேட் (கி)'],
   ['totalSugarsG', 'total sugars (g)', 'மொத்த சர்க்கரை (கி)'], ['addedSugarsG', 'added sugars (g)', 'சேர்க்கப்பட்ட சர்க்கரை (கி)'], ['totalFatG', 'total fat (g)', 'மொத்த கொழுப்பு (கி)'],
@@ -22,10 +71,10 @@ const WORDS = {
   en: {
     lang: 'தமிழ்', title: 'Product details',
     lead: 'Everything head office holds about one product: its record, its barcodes and packs, the bundle it is sold as and what may stand in for it. Each change is a new version with your name; head office checks it and says exactly what still blocks it.',
-    product: 'Product id', show: 'Show', kState: 'Where it stands', kCodes: 'Barcodes', kPack: 'Pack', kBundle: 'Bundle', kSubs: 'Substitutes',
+    product: 'Product', show: 'Show', kState: 'Where it stands', kCodes: 'Barcodes', kPack: 'Pack', kBundle: 'Bundle', kSubs: 'Substitutes',
     tabRecord: 'Record', tabCodes: 'Barcodes and packs', tabBundle: 'Bundle', tabSubs: 'Substitutes',
     recordLead: 'What the tills, the app and the reports read about this product. A draft keeps whatever you know; head office will not put it on sale until the category, tax class and the safety facts its category needs are there.',
-    name: 'Name', sku: 'SKU', baseUom: 'Unit it is counted in', category: 'Category', noCategory: 'Not chosen', brand: 'Brand', manufacturer: 'Manufacturer', parent: 'A variant of (parent product id)',
+    name: 'Name', sku: 'SKU', baseUom: 'Unit it is counted in', category: 'Category', noCategory: 'Not chosen', brand: 'Brand', manufacturer: 'Manufacturer', parent: 'A variant of (the parent product)',
     taxClass: 'Tax (HSN) class', lifecycle: 'Lifecycle', draft: 'Draft', new: 'New', active: 'Active', clearance: 'Clearance', discontinued: 'Discontinued',
     mrpH: 'MRP', mrpFrom: 'New MRP from (date)', mrpRupees: 'New MRP (₹)', noMrp: 'No MRP on record yet.', mrpLine: 'from',
     safetyH: 'Safety and label', ingredients: 'Ingredients', allergens: 'Allergens it contains (comma between)', none: 'Contains none of the allergens (declared)',
@@ -39,10 +88,10 @@ const WORDS = {
     levelName: 'Level', holds: 'Holds (of the level below)', levelCode: 'Barcode on this level (optional)', savePack: 'Save the pack', noPack: 'not defined',
     cvQty: 'How many', cvLevel: 'Of which level', convert: 'Work out the units', converted: '{q} {level} = {n} {uom}',
     bundleLead: 'If this product is a bundle with its own barcode (OB-306), what one bundle holds. Selling one takes stock off each component. (A "3 for ₹199" price offer is made on the Offer tab instead.)',
-    notBundle: 'This product is not a bundle.', bundleIs: 'Version {v} in force, set by {by}.', component: 'Component product id', compQty: 'How many (in its own unit: pieces, grams or ml)', saveBundle: 'Save what the bundle holds',
+    notBundle: 'This product is not a bundle.', bundleIs: 'Version {v} in force, set by {by}.', component: 'Component product', compQty: 'How many (in its own unit: pieces, grams or ml)', saveBundle: 'Save what the bundle holds',
     subsLead: 'The products a picker may offer in its place, in the order to try them. No age-limited or unsellable product can be on it. The customer app shows the same list.',
     subsNotSet: 'No list has been set.', subsSetNone: 'Set to none — nothing stands in for it.', subsIs: 'Version {v}, set by {by}: {why}', subsList: 'Product ids, in the order to try them (comma between; empty clears it)', saveSubs: 'Save the list',
-    needWhy: 'Write the reason first.', needId: 'Write the product id first.', saved: 'Saved.', refused: 'Head office refused:', unreachable: 'Head office could not be reached. Nothing was saved — try again.',
+    needWhy: 'Write the reason first.', needId: 'Choose the product first.', saved: 'Saved.', refused: 'Head office refused:', unreachable: 'Head office could not be reached. Nothing was saved — try again.',
     cannotRead: 'This product could not be read from head office.', isNew: 'Head office has no product with this id yet. Fill in what you know and save it — it is kept as a draft until it is complete.',
     readOnly: 'You can read this product. Changes are made by the person who keeps the catalogue.', noRight: 'This account may not read the product master.', nobody: 'Nobody is signed in on this computer, so nothing can be shown.',
     needsApproval: 'This needs a second person: {why} Press “Ask for approval”; once they approve it on their Approvals page, press “Save as a new version” again.',
@@ -60,7 +109,7 @@ const WORDS = {
   ta: {
     lang: 'English', title: 'பொருள் விவரங்கள்',
     lead: 'ஒரு பொருளைப் பற்றி தலைமை அலுவலகம் வைத்திருப்பவை அனைத்தும்: அதன் பதிவு, பார்கோடுகளும் பொதிகளும், அது விற்கப்படும் தொகுப்பு, அதற்குப் பதிலாக வரக்கூடியவை. ஒவ்வொரு மாற்றமும் உங்கள் பெயருடன் புதிய பதிப்பு; தலைமை அலுவலகம் சரிபார்த்து, இன்னும் தடுப்பது என்ன என்று சொல்லும்.',
-    product: 'பொருள் எண்', show: 'காட்டு', kState: 'நிலை', kCodes: 'பார்கோடுகள்', kPack: 'பொதி', kBundle: 'தொகுப்பு', kSubs: 'மாற்றுப் பொருட்கள்',
+    product: 'பொருள்', show: 'காட்டு', kState: 'நிலை', kCodes: 'பார்கோடுகள்', kPack: 'பொதி', kBundle: 'தொகுப்பு', kSubs: 'மாற்றுப் பொருட்கள்',
     tabRecord: 'பதிவு', tabCodes: 'பார்கோடுகளும் பொதிகளும்', tabBundle: 'தொகுப்பு', tabSubs: 'மாற்றுப் பொருட்கள்',
     recordLead: 'இந்தப் பொருளைப் பற்றி கவுண்டர்கள், செயலி, அறிக்கைகள் படிப்பது. வரைவு உங்களுக்குத் தெரிந்ததை வைத்துக்கொள்ளும்; வகை, வரி வகுப்பு, அதன் வகைக்குத் தேவையான பாதுகாப்புத் தகவல்கள் இருக்கும் வரை தலைமை அலுவலகம் அதை விற்பனைக்கு வைக்காது.',
     name: 'பெயர்', sku: 'SKU', baseUom: 'எண்ணப்படும் அலகு', category: 'வகை', noCategory: 'தேர்வு செய்யவில்லை', brand: 'பிராண்ட்', manufacturer: 'உற்பத்தியாளர்', parent: 'இதன் வகைமாறு (தாய் பொருள் எண்)',
@@ -77,10 +126,10 @@ const WORDS = {
     levelName: 'நிலை', holds: 'கொண்டிருப்பது (கீழுள்ள நிலையில்)', levelCode: 'இந்த நிலையின் பார்கோடு (விருப்பம்)', savePack: 'பொதியைச் சேமி', noPack: 'வரையறுக்கப்படவில்லை',
     cvQty: 'எத்தனை', cvLevel: 'எந்த நிலை', convert: 'அலகுகளைக் கணக்கிடு', converted: '{q} {level} = {n} {uom}',
     bundleLead: 'இந்தப் பொருள் சொந்த பார்கோடு கொண்ட தொகுப்பு எனில் (OB-306), ஒரு தொகுப்பில் இருப்பவை. ஒன்றை விற்றால் ஒவ்வொரு கூறிலிருந்தும் சரக்கு குறையும். ("3 ₹199" விலைச் சலுகை சலுகை தாவலில் செய்யப்படும்.)',
-    notBundle: 'இந்தப் பொருள் தொகுப்பு அல்ல.', bundleIs: 'பதிப்பு {v} நடைமுறையில், அமைத்தவர் {by}.', component: 'கூறுப் பொருள் எண்', compQty: 'எத்தனை (அதன் அலகில்: எண்ணிக்கை, கிராம் அல்லது மி.லி)', saveBundle: 'தொகுப்பில் இருப்பதைச் சேமி',
+    notBundle: 'இந்தப் பொருள் தொகுப்பு அல்ல.', bundleIs: 'பதிப்பு {v} நடைமுறையில், அமைத்தவர் {by}.', component: 'கூறுப் பொருள்', compQty: 'எத்தனை (அதன் அலகில்: எண்ணிக்கை, கிராம் அல்லது மி.லி)', saveBundle: 'தொகுப்பில் இருப்பதைச் சேமி',
     subsLead: 'இதற்குப் பதிலாக எடுப்பவர் வழங்கக்கூடிய பொருட்கள், முயற்சிக்க வேண்டிய வரிசையில். வயது வரம்புள்ள அல்லது விற்க முடியாத பொருள் இதில் இருக்க முடியாது. வாடிக்கையாளர் செயலியும் இதே பட்டியலைக் காட்டும்.',
     subsNotSet: 'பட்டியல் அமைக்கப்படவில்லை.', subsSetNone: 'எதுவுமில்லை என அமைக்கப்பட்டது — இதற்குப் பதில் எதுவும் வராது.', subsIs: 'பதிப்பு {v}, அமைத்தவர் {by}: {why}', subsList: 'பொருள் எண்கள், முயற்சிக்கும் வரிசையில் (காற்புள்ளியால் பிரிக்கவும்; காலியெனில் அழிக்கும்)', saveSubs: 'பட்டியலைச் சேமி',
-    needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.', needId: 'முதலில் பொருள் எண்ணை எழுதுங்கள்.', saved: 'சேமிக்கப்பட்டது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் சேமிக்கப்படவில்லை — மீண்டும் முயலவும்.',
+    needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.', needId: 'முதலில் பொருளைத் தேர்ந்தெடுங்கள்.', saved: 'சேமிக்கப்பட்டது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் சேமிக்கப்படவில்லை — மீண்டும் முயலவும்.',
     cannotRead: 'இந்தப் பொருளைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை.', isNew: 'இந்த எண்ணில் தலைமை அலுவலகத்தில் இன்னும் பொருள் இல்லை. தெரிந்ததை நிரப்பிச் சேமியுங்கள் — முழுமையாகும் வரை வரைவாக வைக்கப்படும்.',
     readOnly: 'இந்தப் பொருளை நீங்கள் படிக்கலாம். பட்டியலைப் பராமரிப்பவர் மாற்றங்களைச் செய்வார்.', noRight: 'இந்தக் கணக்கு பொருள் பதிவேட்டைப் படிக்க முடியாது.', nobody: 'இந்தக் கணினியில் யாரும் உள்நுழையவில்லை, எனவே எதையும் காட்ட முடியாது.',
     needsApproval: 'இதற்கு இரண்டாம் நபர் தேவை: {why} “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும், மீண்டும் “புதிய பதிப்பாகச் சேமி” அழுத்துங்கள்.',
@@ -97,6 +146,25 @@ const WORDS = {
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 
 // ── head office, in the person's own session ────────────────────────────────────────────────────────────────────────
@@ -113,7 +181,7 @@ async function call(method, path, body) {
 }
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
-  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`;
+  el.textContent = out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error);
 }
 function tell(el, ok, text) { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; }
 
@@ -232,7 +300,7 @@ function fillRecord() {
   const n = s.nutrition ?? {};
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
-  $('m-from').value = ''; $('m-rupees').value = ''; $('r-why').value = ''; $('s-why').value = '';
+  setShopDate('m-from', ''); $('m-rupees').value = ''; $('r-why').value = ''; $('s-why').value = '';
   if (!safetyConflict) { $('safety-status').className = 'status'; $('safety-status').textContent = held === null && mayEdit ? t('safetyFirst') : ''; }
   paintAttributes();
 }
@@ -286,7 +354,7 @@ function recordFromForm(freshSafety) {
   // read just before this save (`freshSafety`), never this form's, so a full publish cannot overwrite a newer safety edit.
   const s = held === null ? safetyFromForm() : freshSafety;
   if (s === undefined || Object.keys(s).length === 0) delete p.safety; else p.safety = s;
-  const from = $('m-from').value; const rupees = text('m-rupees');
+  const from = dateOf('m-from'); const rupees = text('m-rupees');
   if (from !== '' || rupees !== '') {
     const minor = Math.round(Number(rupees) * 100);
     p.mrpHistory = [...(Array.isArray(p.mrpHistory) ? p.mrpHistory : []), { value: { minor: Number.isFinite(minor) ? minor : rupees, currency: 'INR' }, effectiveFrom: from }];
@@ -354,6 +422,7 @@ function paintBundle() {
     }
   }
   for (const span of rows.querySelectorAll('[data-word]')) span.textContent = t(span.dataset.word);
+  for (let i = 0; i < 6; i += 1) pickable(`bd-prod-${i}`, 'product', 'pickProduct');
   const comps = b?.components ?? [];
   for (let i = 0; i < 6; i += 1) { $(`bd-prod-${i}`).value = comps[i]?.productId ?? ''; $(`bd-qty-${i}`).value = comps[i] === undefined ? '' : String(comps[i].quantityMinor); }
 }
@@ -385,6 +454,7 @@ function paintWords() {
 }
 
 function paint() {
+  repaintShopDates();
   paintWords();
   const shown = productId !== '' && !readFailed && mayRead;
   $('tabs').hidden = false; // the tiles always say what the page holds; a section opens once a product is shown
@@ -394,10 +464,11 @@ function paint() {
     if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !mayEdit;
     else for (const c of el.querySelectorAll('input, select, textarea, button')) c.disabled = !mayEdit;
   }
+  for (const id of ['save', 'add-barcode', 'save-pack', 'convert', 'save-bundle', 'save-subs']) whyDisabled($(id), mayEdit ? '' : 'role');
   for (const el of document.querySelectorAll('#view-record fieldset input, #view-record fieldset select, #view-record fieldset textarea, #pack-rows input')) el.disabled = !mayEdit;
   $('ask-approval').hidden = pendingAsk === null || !mayEdit;
   $('ask-safety-approval').hidden = pendingSafetyAsk === null || !mayEdit;
-  $('save-safety').disabled = !mayEdit || held === null;
+  $('save-safety').disabled = !mayEdit || held === null; whyDisabled($('save-safety'), !mayEdit ? 'role' : held === null ? { en: WORDS.en.safetyFirst, ta: WORDS.ta.safetyFirst } : '');
   $('safety-reload').hidden = !safetyConflict;
   if (safetyConflict) tell($('safety-status'), false, t('changedMeanwhile'));
   paintCategories(); paintMrp(); paintPanels();
@@ -594,7 +665,7 @@ $('save-subs').addEventListener('click', async () => {
   $('sb-why').value = ''; await load(); showTab('subs'); tell($('subs-status'), true, `${t('saved')}${warn}`);
 });
 for (const v of ['record', 'codes', 'bundle', 'subs']) $(`tab-${v}`).addEventListener('click', () => showTab(v));
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
 paint();
 if (named && !mayRead) tell($('result'), false, t('noRight'));
@@ -607,3 +678,30 @@ if (named && mayRead) {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
 }
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('m-from', { en: wordsIn('en', 'mrpFrom'), ta: wordsIn('ta', 'mrpFrom') }); paint(); }, { once: true });
+
+pickable('product', 'product', 'pickProduct');
+pickable('r-parent', 'product', 'pickProduct');

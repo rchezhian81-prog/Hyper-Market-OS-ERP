@@ -24,7 +24,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -52,7 +52,7 @@
         <h2 id="page-h">Users &amp; roles</h2>
         <p class="lead" id="lead"></p>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
-        <button id="reload" type="button" class="quiet" hidden><span id="reload-text"></span></button>
+        <button id="reload" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="reload-text"></span></button>
       </section>
       <section id="pending" hidden aria-labelledby="pending-h">
         <h3 id="pending-h"></h3>
@@ -74,7 +74,7 @@
           <label for="g-role"><span id="g-role-l"></span><select id="g-role"></select></label>
           <label for="g-stores"><span id="g-stores-l"></span><input id="g-stores" autocomplete="off" /></label>
           <label for="g-reason"><span id="g-reason-l"></span><input id="g-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="g-ask" type="submit"><span id="g-ask-text"></span></button>
+          <button id="g-ask" type="submit" class="sre-btn sre-btn-primary"><span id="g-ask-text"></span></button>
         </form>
         <p class="status" id="give-status" role="status" aria-live="polite"></p>
       </section>
@@ -87,7 +87,7 @@
           <label for="l-dimension"><span id="l-dimension-l"></span><select id="l-dimension"></select></label>
           <label for="l-values"><span id="l-values-l"></span><input id="l-values" autocomplete="off" /></label>
           <label for="l-reason"><span id="l-reason-l"></span><input id="l-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="l-ask" type="submit" class="quiet"><span id="l-ask-text"></span></button>
+          <button id="l-ask" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="l-ask-text"></span></button>
         </form>
         <p class="status" id="limit-status" role="status" aria-live="polite"></p>
       </section>
@@ -109,13 +109,13 @@
         <form class="row-form" id="signin-form">
           <label for="s-name"><span id="s-name-l"></span><input id="s-name" autocomplete="off" maxlength="80" /></label>
           <label for="s-signin"><span id="s-signin-l"></span><input id="s-signin" autocomplete="off" maxlength="40" /></label>
-          <button id="s-issue" type="submit" class="quiet"><span id="s-issue-text"></span></button>
+          <button id="s-issue" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="s-issue-text"></span></button>
         </form>
         <p class="status" id="signins-status" role="status" aria-live="polite"></p>
         <div id="handover" hidden>
           <p id="handover-words"></p>
           <p><strong id="handover-password"></strong></p>
-          <button id="handed" type="button" class="quiet"><span id="handed-text"></span></button>
+          <button id="handed" type="button" class="quiet sre-btn sre-btn-quiet"><span id="handed-text"></span></button>
         </div>
         <ul class="rows" id="signin-rows"></ul>
       </section>

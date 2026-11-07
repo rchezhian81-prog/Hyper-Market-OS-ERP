@@ -21,6 +21,7 @@
 // writes on open.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -107,7 +108,7 @@ export const SCALES_COPY = {
     needsApproval: 'A later stamp date needs a second person. Ask for approval with exactly this change.',
     reqWaiting: 'Waiting for a second person', reqApproved: 'Approved by {by} — ready to save', reqRejected: 'Rejected by {by}: {why}', reqExpired: 'Approval expired — ask again', reqUsed: 'Saved',
     saveApproved: 'Save with this approval', reqLine: '{asset}: stamp valid to {valid}, certificate {certificate}',
-    needAll: 'Fill in every field first. Nothing was sent.', notDate: 'Write the dates as YYYY-MM-DD. Nothing was sent.', notGrams: 'Write the capacity as a whole number of grams. Nothing was sent.',
+    needAll: 'Fill in every field first. Nothing was sent.', notDate: 'Pick both dates first. Nothing was sent.', notGrams: 'Write the capacity as a whole number of grams. Nothing was sent.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     cannotRead: 'Your role cannot read the scale register.', readOnly: 'You can read the register. Adding or updating a scale is for the owner and the store manager.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', asOf: 'As of {day}',
@@ -131,7 +132,7 @@ export const SCALES_COPY = {
     needsApproval: 'பிந்தைய முத்திரைத் தேதிக்கு இரண்டாம் நபர் தேவை. இதே மாற்றத்துடன் அனுமதி கேளுங்கள்.',
     reqWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது', reqApproved: '{by} அனுமதித்தார் — சேமிக்கத் தயார்', reqRejected: '{by} மறுத்தார்: {why}', reqExpired: 'அனுமதி காலாவதியானது — மீண்டும் கேளுங்கள்', reqUsed: 'சேமிக்கப்பட்டது',
     saveApproved: 'இந்த அனுமதியுடன் சேமி', reqLine: '{asset}: முத்திரை {valid} வரை, சான்றிதழ் {certificate}',
-    needAll: 'முதலில் எல்லாப் புலங்களையும் நிரப்புங்கள். எதுவும் அனுப்பப்படவில்லை.', notDate: 'தேதிகளை YYYY-MM-DD என எழுதுங்கள். எதுவும் அனுப்பப்படவில்லை.', notGrams: 'கொள்ளளவை முழு கிராம் எண்ணாக எழுதுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    needAll: 'முதலில் எல்லாப் புலங்களையும் நிரப்புங்கள். எதுவும் அனுப்பப்படவில்லை.', notDate: 'முதலில் இரண்டு தேதிகளையும் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.', notGrams: 'கொள்ளளவை முழு கிராம் எண்ணாக எழுதுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     cannotRead: 'உங்கள் பங்கால் தராசுப் பதிவேட்டைப் படிக்க முடியாது.', readOnly: 'நீங்கள் பதிவேட்டைப் படிக்கலாம். தராசைச் சேர்ப்பதும் புதுப்பிப்பதும் உரிமையாளருக்கும் கடை மேலாளருக்கும் மட்டும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', asOf: '{day} நிலவரப்படி',
@@ -147,7 +148,7 @@ export function wordsFor(lang: Lang, key: CopyKey, slots: Readonly<Record<string
 
 /** How a refusal, a bad form or a lost link reads to a person (a success reads its own word). */
 export function outcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return out.code === 'scale_stamp_change_needs_approval' ? wordsFor(lang, 'needsApproval') : `${wordsFor(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.code === 'scale_stamp_change_needs_approval' ? wordsFor(lang, 'needsApproval') : refusalWords(lang, out);
   if (out.result === 'invalid') return wordsFor(lang, out.why);
   if (out.result === 'lost_link') return wordsFor(lang, 'unreachable');
   return '';

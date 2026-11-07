@@ -10,7 +10,12 @@ const sections = Array.isArray(window.w5Sections) ? window.w5Sections : [];
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const painters = [];
 
-function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+function el(tag, cls, text) {
+  const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text;
+  // Every control a section draws wears the foundation's class, so it is a 44px target with the one look (U0/U1 rules).
+  if (tag === 'button') n.classList.add('sre-btn'); else if (tag === 'select') n.classList.add('sre-select'); else if (tag === 'textarea' || tag === 'input') n.classList.add('sre-input');
+  return n;
+}
 
 function inputFor(f, id) {
   let box;

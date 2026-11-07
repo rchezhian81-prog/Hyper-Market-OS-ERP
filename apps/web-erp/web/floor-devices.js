@@ -18,7 +18,7 @@ let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 const WORDS = {
   en: {
-    lang: 'தமிழ்', title: 'Shelf labels, RFID and cameras',
+    lang: 'தமிழ்', title: 'Shelf labels and floor devices',
     lead: 'The electronic shelf labels, RFID readers, temperature sensors and camera event sources on this store\'s floor: whether each is switched on, when it was last heard, what it reported and what was refused. None of them can change a price, the stock or a bill.',
     standin: 'No device maker is connected yet: every device here works through a stand-in, not verified on real hardware.',
     kDevices: 'Devices', kSilent: 'Never heard from', kPushes: 'Prices not confirmed on the shelf', kRfid: 'RFID counts to check', kRefused: 'Refused', refresh: 'Refresh',
@@ -44,7 +44,7 @@ const WORDS = {
     noStore: 'This store computer\'s pack names no store, so there is nothing to show.', noRight: 'This account may not read the floor devices.', nobody: 'Nobody is signed in on this computer, so nothing can be shown.', notKnown: 'Not known',
   },
   ta: {
-    lang: 'English', title: 'அலமாரி லேபிள்கள், RFID, கேமராக்கள்',
+    lang: 'English', title: 'அலமாரி லேபிள்களும் தளச் சாதனங்களும்',
     lead: 'இந்தக் கடைத் தளத்திலுள்ள மின்னணு அலமாரி லேபிள்கள், RFID வாசிப்பான்கள், வெப்ப உணரிகள், கேமரா நிகழ்வு மூலங்கள்: ஒவ்வொன்றும் இயக்கத்திலா, கடைசியாக எப்போது கேட்டது, என்ன தெரிவித்தது, எது மறுக்கப்பட்டது. இவற்றில் எதுவும் விலை, சரக்கு, பில் எதையும் மாற்ற முடியாது.',
     standin: 'இன்னும் எந்தச் சாதன உற்பத்தியாளரும் இணைக்கப்படவில்லை: இங்குள்ள ஒவ்வொரு சாதனமும் மாற்று வழியில் இயங்குகிறது, உண்மைக் கருவியில் சரிபார்க்கப்படவில்லை.',
     kDevices: 'சாதனங்கள்', kSilent: 'ஒருமுறையும் கேட்கவில்லை', kPushes: 'அலமாரியில் உறுதியாகாத விலைகள்', kRfid: 'சரிபார்க்க வேண்டிய RFID எண்ணிக்கைகள்', kRefused: 'மறுக்கப்பட்டவை', refresh: 'புதுப்பி',
@@ -96,7 +96,7 @@ let fleet = null; let pushes = null; let rfid = null; let exceptions = null; let
 const answers = { fleet: null, pushes: null, rfid: null, exceptions: null };
 
 function cell(tr, text, warn = false) { const td = document.createElement('td'); td.textContent = text; if (warn) td.className = 'warn'; tr.append(td); return td; }
-function button(text, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', fn); return b; }
+function button(text, fn) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.addEventListener('click', fn); return b; }
 function li(text, extra) { const el = document.createElement('li'); const s = document.createElement('span'); s.textContent = text; el.append(s); if (extra) el.append(extra); return el; }
 const boundWords = (b) => fill(t(`bound_${b.kind}`), { ...b, lanes: Array.isArray(b.laneIds) ? b.laneIds.join(', ') : '' });
 const labelOf = (id) => fleet?.devices.find((d) => d.deviceId === id)?.label ?? id;

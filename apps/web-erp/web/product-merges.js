@@ -5,6 +5,45 @@
 // reversible link, never a deletion. Every word has a Tamil twin; nothing is written on open.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+// (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
+const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
+  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
+  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = kindNow(); if (k === null) return;
+    const tk = titleNow();
+    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+}
 const who = window.productMergesData && typeof window.productMergesData === 'object' ? window.productMergesData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
@@ -12,6 +51,16 @@ const mayRead = perms.has('catalogue.pack.read');
 const mayPropose = perms.has('catalogue.merge.propose');
 const mayDecide = perms.has('catalogue.merge.approve');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 
 const WORDS = {
   en: {
@@ -66,7 +115,7 @@ async function call(method, path, body) {
   } catch { return { ok: false, status: 0, body: null }; }
 }
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
-const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
 
 let products = null;
 let pairs = null;
@@ -107,7 +156,7 @@ function paintMerges() {
     const acts = document.createElement('div'); acts.className = 'acts';
     const line = document.createElement('p'); line.className = 'status'; line.setAttribute('role', 'status');
     const act = (word, path, body, good) => {
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t(word); b.dataset.act = word;
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t(word); b.dataset.act = word;
       b.addEventListener('click', async () => {
         const out = await call('POST', path, body);
         if (out.ok) { await load(); tell($('merges-status'), true, t(good)); } else say(line, out, '');
@@ -171,7 +220,7 @@ $('propose').addEventListener('click', async () => {
   if (out.ok) { $('m-keep').value = ''; $('m-drop').value = ''; $('m-why').value = ''; await load(); tell($('propose-status'), true, t('proposed')); } else say(st, out, '');
 });
 for (const v of ['dupes', 'merges']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
 paint();
 if (named && !mayRead) tell($('page-status'), false, t('noRight'));
@@ -180,3 +229,6 @@ if (named && mayRead) void load();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
 }
+
+pickable('m-keep', 'product', 'pickProduct');
+pickable('m-drop', 'product', 'pickProduct');

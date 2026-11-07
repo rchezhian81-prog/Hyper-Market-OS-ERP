@@ -21,7 +21,7 @@
       main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       form.grid, .ingredient { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
@@ -66,8 +66,8 @@
           <div id="recipe-fields" style="display: contents"></div>
           <h4 id="inputs-h"></h4>
           <div id="ingredients"></div>
-          <button id="add-ingredient" class="quiet" type="button"><span id="add-ingredient-text"></span></button>
-          <button id="save-recipe" type="submit"><span id="save-recipe-text"></span></button>
+          <button id="add-ingredient" class="quiet sre-btn sre-btn-quiet" type="button"><span id="add-ingredient-text"></span></button>
+          <button id="save-recipe" type="submit" class="sre-btn sre-btn-primary"><span id="save-recipe-text"></span></button>
         </form>
         <p class="status" id="recipe-status" role="status" aria-live="polite"></p>
       </section>

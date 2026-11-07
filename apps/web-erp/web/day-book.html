@@ -29,8 +29,6 @@
       .picker { background:var(--panel); border-radius:12px; padding:14px; display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
       .picker label { font-size:14px; color:var(--muted); display:grid; gap:4px; }
       .picker input { min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
-      button.quiet { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
       button:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--danger-text); }
@@ -43,8 +41,8 @@
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
-      .row .lines { font-size:13px; color:var(--muted); display:grid; gap:2px; font-variant-numeric:tabular-nums; }
+      .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
+      .row .lines { font-size: var(--fs-sm); color:var(--muted); display:grid; gap:2px; font-variant-numeric:tabular-nums; }
       .row .lines span { display:flex; justify-content:space-between; gap:12px; }
       table.accounts { width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; font-variant-numeric:tabular-nums; }
       table.accounts th, table.accounts td { padding:8px 12px; text-align:right; border-bottom:1px solid var(--line); font-size:14px; }
@@ -77,8 +75,8 @@
 
       <section class="picker" aria-label="Choose a trading day">
         <label for="day"><span id="day-label"></span><input id="day" type="date" /></label>
-        <button id="load" class="quiet" type="button"></button>
-        <button id="post" class="act" type="button" hidden></button>
+        <button id="load" class="sre-btn" type="button"></button>
+        <button id="post" class="sre-btn sre-btn-primary" type="button" hidden></button>
       </section>
 
       <div class="summary" role="status" aria-live="polite">
@@ -115,8 +113,8 @@
         <h3 id="ap-heading"></h3>
         <p class="muted" id="ap-lead"></p>
         <div class="picker">
-          <button id="ap-show" class="quiet" type="button"></button>
-          <button id="ap-post" class="act" type="button" hidden></button>
+          <button id="ap-show" class="quiet sre-btn sre-btn-quiet" type="button"></button>
+          <button id="ap-post" class="act sre-btn" type="button" hidden></button>
         </div>
         <p class="muted" id="ap-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="ap-suppliers" aria-label="Supplier accounts against the books"></ul>

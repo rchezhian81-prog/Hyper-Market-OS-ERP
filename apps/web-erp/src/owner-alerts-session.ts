@@ -11,6 +11,7 @@
 // Nothing is read before the person may see it; every write is a person's explicit click, in their own name.
 
 import { makeCaller, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export type AlertKind = 'large_discount' | 'voided_bill' | 'price_override' | 'after_hours_login' | 'cash_short' | 'failed_sign_in';
@@ -23,7 +24,7 @@ export const ALERT_INPUT: Readonly<Record<AlertKind, 'rupees' | 'count' | 'hours
 
 export const OWNER_ALERTS_COPY = {
   en: {
-    title: 'Owner alerts and scheduled reports', lead: 'Your six exception alerts reach your alert inbox by themselves, even when you are away. Each fires only once you set its number. Your scheduled reports and exports are prepared at the shop\'s time with nobody pressing anything.',
+    title: 'Owner alerts and schedules', lead: 'Your six exception alerts reach your alert inbox by themselves, even when you are away. Each fires only once you set its number. Your scheduled reports and exports are prepared at the shop\'s time with nobody pressing anything.',
     thresholdsH: 'Your six alerts', todayH: 'Today', schedulesH: 'Scheduled reports and exports',
     large_discount: 'Large discount on one bill (₹)', voided_bill: 'Voided bills by one person in a day', price_override: 'Price overrides by one person in a day', after_hours_login: 'After-hours sign-in (trading hours, e.g. 8-23)', cash_short: 'Till short at its close (₹)', failed_sign_in: 'Failed till sign-ins by one staff ID in a day',
     notSet: 'Not set — this alert does not fire until you enter it.', setTo: 'Set to', setBy: 'by', cannotFire: 'Set, but it cannot fire:',
@@ -46,7 +47,7 @@ export const OWNER_ALERTS_COPY = {
     needWatch: 'Type the per cent (0 to 100, e.g. 3), the basket value in rupees (e.g. 2000), and two whole numbers from 1 to 100.',
   },
   ta: {
-    title: 'உரிமையாளர் எச்சரிக்கைகள் மற்றும் திட்டமிட்ட அறிக்கைகள்', lead: 'உங்கள் ஆறு விதிவிலக்கு எச்சரிக்கைகள் நீங்கள் கடையில் இல்லாதபோதும் தானாகவே உங்கள் எச்சரிக்கைப் பெட்டிக்கு வரும். ஒவ்வொன்றும் அதன் எண்ணை நீங்கள் அமைத்த பிறகே செயல்படும். உங்கள் திட்டமிட்ட அறிக்கைகளும் ஏற்றுமதிகளும் கடையின் நேரத்தில் யாரும் அழுத்தாமலேயே தயாராகும்.',
+    title: 'உரிமையாளர் எச்சரிக்கைகளும் திட்டங்களும்', lead: 'உங்கள் ஆறு விதிவிலக்கு எச்சரிக்கைகள் நீங்கள் கடையில் இல்லாதபோதும் தானாகவே உங்கள் எச்சரிக்கைப் பெட்டிக்கு வரும். ஒவ்வொன்றும் அதன் எண்ணை நீங்கள் அமைத்த பிறகே செயல்படும். உங்கள் திட்டமிட்ட அறிக்கைகளும் ஏற்றுமதிகளும் கடையின் நேரத்தில் யாரும் அழுத்தாமலேயே தயாராகும்.',
     thresholdsH: 'உங்கள் ஆறு எச்சரிக்கைகள்', todayH: 'இன்று', schedulesH: 'திட்டமிட்ட அறிக்கைகள் மற்றும் ஏற்றுமதிகள்',
     large_discount: 'ஒரு பில்லில் பெரிய தள்ளுபடி (₹)', voided_bill: 'ஒருவர் ஒரு நாளில் ரத்து செய்த பில்கள்', price_override: 'ஒருவர் ஒரு நாளில் செய்த விலை மாற்றங்கள்', after_hours_login: 'நேரம் கடந்த உள்நுழைவு (வணிக நேரம், எ.கா. 8-23)', cash_short: 'மூடும்போது கல்லாவில் குறைவு (₹)', failed_sign_in: 'ஒரு பணியாளர் எண் ஒரு நாளில் தவறிய கல்லா உள்நுழைவுகள்',
     notSet: 'அமைக்கப்படவில்லை — இதை நீங்கள் உள்ளிடும் வரை இந்த எச்சரிக்கை செயல்படாது.', setTo: 'அமைக்கப்பட்டது', setBy: 'அமைத்தவர்', cannotFire: 'அமைக்கப்பட்டது, ஆனால் செயல்பட முடியாது:',
@@ -75,7 +76,7 @@ export const ownerAlertsWords = (lang: Lang, key: string): string =>
 
 export function ownerAlertsOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => ownerAlertsWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

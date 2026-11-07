@@ -23,7 +23,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       textarea { min-height: 96px; resize: vertical; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -57,7 +57,7 @@
       </section>
       <section id="reading" hidden aria-labelledby="reading-h">
         <h3 id="reading-h"></h3>
-        <button id="refresh" type="button" class="quiet"><span id="refresh-text"></span></button>
+        <button id="refresh" type="button" class="quiet sre-btn sre-btn-quiet"><span id="refresh-text"></span></button>
         <p class="meta" id="as-at"></p>
         <ul class="rows" id="roles"></ul>
       </section>

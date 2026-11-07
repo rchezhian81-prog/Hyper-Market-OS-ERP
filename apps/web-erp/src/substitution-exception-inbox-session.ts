@@ -57,6 +57,7 @@ export interface SubExceptionWorklistData {
 export type ExceptionAction = 'claim' | 'release' | 'resolve';
 /** The outcome of an act — recorded, refused by the server (not your queue / already resolved / permission), or a lost link. */
 export type ActionResult = 'done' | 'refused' | 'lost_link';
+type RefusalKey = 'refusedNoRight' | 'refusedNotOpen' | 'refusedNotHeld' | 'refusedGone' | 'refusedNeedsReason' | 'refusedNeedsWords' | 'refusedByHeadOffice';
 
 /** The authenticated POST of a queue member's act. Injected, so the model never opens a socket itself; the
  *  server appends the act to the exception's history in the caller's own name and re-checks queue rights. */
@@ -92,6 +93,8 @@ export type CopyKey =
   | 'claimBtn'
   | 'workHeading' | 'whichLabel' | 'reasonCodeLabel' | 'reasonCodePlaceholder' | 'detailLabel' | 'detailPlaceholder' | 'resolveBtn' | 'releaseBtn' | 'nothingHeld'
   | 'claimDone' | 'releaseDone' | 'resolveDone' | 'actionRefused' | 'actionLostLink'
+  | 'refusedNoRight' | 'refusedNotOpen' | 'refusedNotHeld' | 'refusedGone' | 'refusedNeedsReason' | 'refusedNeedsWords' | 'refusedByHeadOffice'
+  | 'actClaim' | 'actRelease' | 'actResolve'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -110,6 +113,15 @@ export const SUB_EXCEPTION_INBOX_COPY: BilingualCopy<CopyKey> = {
     nothingHeld: 'You hold nothing — claim an exception above to work it.',
     claimDone: 'Claimed — it is yours.', releaseDone: 'Released back to the queue.', resolveDone: 'Resolved.',
     actionRefused: 'Could not do that — the exception may be resolved already, this may not be your queue, a resolve needs a reason code and the words, or you do not have permission.',
+    // U0 · G10 (1 Nov 2026): the ONE real cause, nothing was changed, the next step — the catch-all above is kept for a refusal with no known cause.
+    actClaim: 'claim', actRelease: 'release', actResolve: 'resolve',
+    refusedNoRight: 'Could not {act} it — you do not hold the right to work delivery exceptions. Nothing was changed. Ask a person who holds it.',
+    refusedNotOpen: 'Could not {act} it — it is already being worked by somebody. Nothing was changed. Refresh the list.',
+    refusedNotHeld: 'Could not {act} it — you are not holding it. Nothing was changed. Claim it first, or refresh the list.',
+    refusedGone: 'Could not {act} it — it is not on the list any more. Nothing was changed. Refresh the list.',
+    refusedNeedsReason: 'Could not {act} it — a reason code is needed. Nothing was changed. Pick the reason code and try again.',
+    refusedNeedsWords: 'Could not {act} it — the words are needed. Nothing was changed. Say what was done and try again.',
+    refusedByHeadOffice: 'Head office refused it — it may be resolved already, or this may not be your queue. Nothing was changed. Refresh the list and try again.',
     actionLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the open delivery exceptions', scrEmpty: 'No open delivery exceptions — nothing outstanding.',
     stateNotPermitted: 'You do not have permission to see delivery exceptions.',
@@ -130,6 +142,14 @@ export const SUB_EXCEPTION_INBOX_COPY: BilingualCopy<CopyKey> = {
     nothingHeld: 'நீங்கள் எதையும் வைத்திருக்கவில்லை — கையாள மேலே ஒரு விதிவிலக்கைக் கோருங்கள்.',
     claimDone: 'கோரப்பட்டது — இது உங்களுடையது.', releaseDone: 'வரிசைக்குத் திருப்பி விடப்பட்டது.', resolveDone: 'தீர்க்கப்பட்டது.',
     actionRefused: 'செய்ய முடியவில்லை — விதிவிலக்கு ஏற்கனவே தீர்க்கப்பட்டிருக்கலாம், இது உங்கள் வரிசை இல்லாமல் இருக்கலாம், தீர்வுக்குக் காரணக் குறியீடும் வார்த்தைகளும் தேவை, அல்லது உங்களுக்கு அனுமதி இல்லை.',
+    actClaim: 'எடுத்துக்கொள்ள', actRelease: 'விடுவிக்க', actResolve: 'தீர்க்க',
+    refusedNoRight: '{act} முடியவில்லை — டெலிவரி விதிவிலக்குகளைக் கையாளும் உரிமை உங்களிடம் இல்லை. எதுவும் மாற்றப்படவில்லை. அந்த உரிமை உள்ள ஒருவரிடம் கேளுங்கள்.',
+    refusedNotOpen: '{act} முடியவில்லை — அதை ஏற்கனவே ஒருவர் கையாளுகிறார். எதுவும் மாற்றப்படவில்லை. பட்டியலைப் புதுப்பிக்கவும்.',
+    refusedNotHeld: '{act} முடியவில்லை — அது உங்களிடம் இல்லை. எதுவும் மாற்றப்படவில்லை. முதலில் அதை எடுத்துக்கொள்ளுங்கள், அல்லது பட்டியலைப் புதுப்பிக்கவும்.',
+    refusedGone: '{act} முடியவில்லை — அது இனி பட்டியலில் இல்லை. எதுவும் மாற்றப்படவில்லை. பட்டியலைப் புதுப்பிக்கவும்.',
+    refusedNeedsReason: '{act} முடியவில்லை — காரணக் குறியீடு தேவை. எதுவும் மாற்றப்படவில்லை. காரணக் குறியீட்டைத் தேர்ந்தெடுத்து மீண்டும் முயற்சிக்கவும்.',
+    refusedNeedsWords: '{act} முடியவில்லை — வார்த்தைகள் தேவை. எதுவும் மாற்றப்படவில்லை. என்ன செய்யப்பட்டது என்று சொல்லி மீண்டும் முயற்சிக்கவும்.',
+    refusedByHeadOffice: 'தலைமை அலுவலகம் மறுத்தது — அது ஏற்கனவே தீர்க்கப்பட்டிருக்கலாம், அல்லது இது உங்கள் வரிசை இல்லாமல் இருக்கலாம். எதுவும் மாற்றப்படவில்லை. பட்டியலைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     actionLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'திறந்த டெலிவரி விதிவிலக்குகளைக் காட்டுகிறது', scrEmpty: 'திறந்த டெலிவரி விதிவிலக்குகள் இல்லை — நிலுவையில் எதுவும் இல்லை.',
     stateNotPermitted: 'டெலிவரி விதிவிலக்குகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -242,6 +262,11 @@ export function createSubExceptionInboxSession(config: SubExceptionInboxConfig, 
     };
   };
 
+  // U0 · G10: the cause of the last refusal, for the words the shell shows after it.
+  let lastRefusal: RefusalKey | null = null;
+  const refuse = (key: RefusalKey): ActionResult => { lastRefusal = key; return 'refused'; };
+  const sent = (result: ActionResult): ActionResult => { lastRefusal = result === 'refused' ? 'refusedByHeadOffice' : null; return result; };
+
   return {
     text,
     view: (lang) => {
@@ -272,23 +297,32 @@ export function createSubExceptionInboxSession(config: SubExceptionInboxConfig, 
     // Each act refuses BEFORE any POST when this user may not work exceptions or the row is not in the state the
     // act needs — a local refusal, not a round trip. The server decides again (queue rights, §28, already
     // resolved) and appends the act to the exception's history in the caller's own name.
+    // U0 · G10: each local refusal remembers its ONE cause, so the status after it names that cause (never a list of
+    // four maybes). A refusal from head office is remembered as head office's. The result stays 'refused' for the shell.
     claim: async (exceptionId) => {
       const e = find(exceptionId);
-      if (!ports.mayWork() || e === undefined || e.state !== 'open') return 'refused';
-      return ports.actionPort().post({ action: 'claim', exceptionId });
+      if (!ports.mayWork()) return refuse('refusedNoRight');
+      if (e === undefined) return refuse('refusedGone');
+      if (e.state !== 'open') return refuse('refusedNotOpen');
+      return sent(await ports.actionPort().post({ action: 'claim', exceptionId }));
     },
     release: async (exceptionId, reasonCode) => {
       const e = find(exceptionId);
-      if (!ports.mayWork() || e === undefined || e.state !== 'in_progress') return 'refused';
+      if (!ports.mayWork()) return refuse('refusedNoRight');
+      if (e === undefined) return refuse('refusedGone');
+      if (e.state !== 'in_progress') return refuse('refusedNotHeld');
       const reason = reasonCode.trim();
-      return ports.actionPort().post({ action: 'release', exceptionId, ...(reason === '' ? {} : { body: { reasonCode: reason } }) });
+      return sent(await ports.actionPort().post({ action: 'release', exceptionId, ...(reason === '' ? {} : { body: { reasonCode: reason } }) }));
     },
     resolve: async (exceptionId, reasonCode, detail) => {
       const e = find(exceptionId);
       const reason = reasonCode.trim();
       const words = detail.trim();
-      if (!ports.mayWork() || e === undefined || e.state === 'resolved' || reason === '' || words === '') return 'refused';
-      return ports.actionPort().post({ action: 'resolve', exceptionId, body: { reasonCode: reason, detail: words } });
+      if (!ports.mayWork()) return refuse('refusedNoRight');
+      if (e === undefined || e.state === 'resolved') return refuse('refusedGone');
+      if (reason === '') return refuse('refusedNeedsReason');
+      if (words === '') return refuse('refusedNeedsWords');
+      return sent(await ports.actionPort().post({ action: 'resolve', exceptionId, body: { reasonCode: reason, detail: words } }));
     },
 
     presentActionResult: (lang, action, result) => {
@@ -297,7 +331,9 @@ export function createSubExceptionInboxSession(config: SubExceptionInboxConfig, 
         return presentStatus({ tone: 'ok', icon: '✓', label: t(action === 'claim' ? 'claimDone' : action === 'release' ? 'releaseDone' : 'resolveDone'), needsAttention: false });
       }
       if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('actionLostLink'), needsAttention: true });
-      return presentStatus({ tone: 'error', icon: '✕', label: t('actionRefused'), needsAttention: true });
+      const act = t(action === 'claim' ? 'actClaim' : action === 'release' ? 'actRelease' : 'actResolve');
+      const label = lastRefusal === null ? t('actionRefused') : t(lastRefusal).replace('{act}', act);
+      return presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
     },
   };
 }

@@ -73,7 +73,7 @@ function buildForm(formId) {
   const kept = new Map([...form.querySelectorAll('input, select, textarea')].map((i) => [i.id, i.type === 'checkbox' ? i.checked : i.value]));
   form.replaceChildren();
   for (const f of FORMS[formId]()) {
-    if (f.button) { const b = el('button', t(f.label)); b.type = 'submit'; b.id = f.button; form.append(b); continue; }
+    if (f.button) { const b = el('button', t(f.label), 'sre-btn sre-btn-primary'); b.type = 'submit'; b.id = f.button; form.append(b); continue; }
     if (f.fits) {
       const fs = el('fieldset', undefined, 'fits'); fs.id = f.fits; fs.append(el('legend', t('fits')));
       for (const a of assetsList()) { const l = el('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = a.assetId; cb.id = `fit-${a.assetId}`; cb.checked = kept.get(cb.id) === true; l.append(cb, document.createTextNode(a.name)); fs.append(l); }
@@ -120,7 +120,7 @@ function register(part, opts) {
 }
 
 function drawerActions(box, ...buttons) { const acts = el('div'); acts.style.display = 'flex'; acts.style.gap = '8px'; acts.style.flexWrap = 'wrap'; acts.append(...buttons); box.append(acts); }
-function editButton(onClick) { const b = el('button', t('editThis'), 'quiet'); b.type = 'button'; b.id = 'edit-this'; b.addEventListener('click', () => { office().closeDrawer(); onClick(); }); return b; }
+function editButton(onClick) { const b = el('button', t('editThis'), 'quiet sre-btn sre-btn-quiet'); b.type = 'button'; b.id = 'edit-this'; b.addEventListener('click', () => { office().closeDrawer(); onClick(); }); return b; }
 
 function assetDrawer(a) {
   const o = office(); const box = el('div');
@@ -148,7 +148,7 @@ function assetDrawer(a) {
   if (fitting.length === 0) form.append(el('p', t('noFittingSpares'), 'status'));
   for (const p of fitting) form.append(o.field({ id: `sv-spare-${p.sparePartId}`, label: `${p.name} (${t('colOnHand')}: ${p.onHand} ${p.unit})`, inputmode: 'numeric' }));
   const status = el('p', '', 'status'); status.id = 'service-status'; status.setAttribute('role', 'status');
-  const b = el('button', t('logService')); b.type = 'submit'; b.id = 'log-service';
+  const b = el('button', t('logService'), 'sre-btn'); b.type = 'submit'; b.id = 'log-service';
   form.append(b, status);
   form.addEventListener('submit', async (e) => {
     e.preventDefault(); if (!o.check(form)) return;
@@ -182,7 +182,7 @@ function spareDrawer(p) {
       o.field({ id: `${kind}-on`, label: both('on'), type: 'date', required: true, value: today() }));
     if (kind === 'correction') f.append(o.field({ id: 'correction-reason', label: both('reason'), required: true }));
     const st = el('p', '', 'status'); st.id = `${kind}-status`; st.setAttribute('role', 'status');
-    const b = el('button', t(kind === 'received' ? 'recordReceived' : 'recordCorrection'), kind === 'received' ? '' : 'quiet'); b.type = 'submit'; b.id = `${kind}-save`;
+    const b = el('button', t(kind === 'received' ? 'recordReceived' : 'recordCorrection'), kind === 'received' ? 'sre-btn' : 'quiet sre-btn sre-btn-quiet'); b.type = 'submit'; b.id = `${kind}-save`;
     f.append(b, st);
     f.addEventListener('submit', async (e) => {
       e.preventDefault(); if (!o.check(f)) return;

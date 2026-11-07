@@ -32,7 +32,7 @@
       form.ask { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); align-items:end; }
       label { display:grid; gap:2px; font-size:14px; color:var(--muted); }
       input, select { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); min-width:0; }
-      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
+      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px;   padding:0 16px; cursor:pointer; }
       button.act.quiet { background:var(--line); color:var(--ink); }
       button.act:disabled { background:var(--line); color:var(--muted); cursor:default; }
       button.act:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
@@ -50,6 +50,9 @@
       p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
       p.note { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -72,8 +75,8 @@
       <h3 id="plastic-heading"></h3>
       <form class="ask" id="ask">
         <label for="fy"><span id="l-fy">Financial year</span><input id="fy" type="text" inputmode="numeric" placeholder="2026-27" pattern="\d{4}-\d{2}" required /></label>
-        <button class="act" id="show" type="submit">Show</button>
-        <button class="act quiet" id="csv" type="button" disabled>Download file for the CPCB portal</button>
+        <button class="act sre-btn" id="show" type="submit">Show</button>
+        <button class="act quiet sre-btn sre-btn-quiet" id="csv" type="button" disabled>Download file for the CPCB portal</button>
       </form>
       <p class="note" id="filing"></p>
       <div class="panels" id="panels"></div>
@@ -90,7 +93,7 @@
         <label for="tb-description"><span id="l-description">What was brought back</span><input id="tb-description" type="text" autocomplete="off" /></label>
         <label for="tb-weight"><span id="l-weight">Weight (grams)</span><input id="tb-weight" type="number" min="1" step="1" inputmode="numeric" /></label>
         <label for="tb-type"><span id="l-type">Battery type</span><input id="tb-type" type="text" autocomplete="off" placeholder="lead-acid" /></label>
-        <button class="act" id="record-go" type="submit">Record take-back</button>
+        <button class="act sre-btn sre-btn-primary" id="record-go" type="submit">Record take-back</button>
       </form>
 
       <h3 id="handover-heading"></h3>
@@ -100,7 +103,7 @@
         <label for="ho-weight"><span id="l-ho-weight">Weight (grams)</span><input id="ho-weight" type="number" min="1" step="1" inputmode="numeric" /></label>
         <label for="ho-type"><span id="l-ho-type">Battery type</span><input id="ho-type" type="text" autocomplete="off" placeholder="lead-acid" /></label>
         <label for="ho-note"><span id="l-note">Handover note number</span><input id="ho-note" type="text" autocomplete="off" /></label>
-        <button class="act" id="handover-go" type="submit">Hand over</button>
+        <button class="act sre-btn" id="handover-go" type="submit">Hand over</button>
       </form>
 
       <!-- W5 (OB-212): the records a person keeps — answers confirmed, own-brand packaging, recyclers, the shop's own e-waste,

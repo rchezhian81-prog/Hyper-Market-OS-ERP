@@ -18,10 +18,11 @@ let lang = 'en';
 function sampleSession() {
   const CHROME = {
     en: {
-      title: 'Maintenance & compliance', langName: 'தமிழ்',
+      title: 'Facilities', langName: 'தமிழ்',
       lead: 'Sample checks. Connect the store computer to see the overdue checks in your own shop.',
-      listHeading: 'Overdue', overdueCount: 'overdue', allDone: 'Nothing overdue — every scheduled check is up to date.',
-      notKnown: 'This store computer has not been told the maintenance schedules yet.',
+      listHeading: 'Overdue', overdueCount: 'overdue', allDone: 'Nothing overdue — every one of the {n} scheduled checks is up to date.',
+      notKnown: 'Not known — the overdue list could not be read from head office, so this page cannot say what is overdue.',
+      noSchedule: 'No maintenance or food-safety schedule has been set up yet, so nothing can be due — this is not a shop that is up to date.',
       complianceRiskCount: 'a regulator would care about',
       categoryLabel: 'Kind', dueLabel: 'Was due', lateLabel: 'Late by', escalatedToLabel: 'Escalated to',
       catCleaning: 'Cleaning', catPestControl: 'Pest control', catFireSafety: 'Fire safety', catElectricalSafety: 'Electrical safety', catMaintenance: 'Maintenance', catStatutory: 'Statutory',
@@ -32,16 +33,17 @@ function sampleSession() {
       completeRecorded: 'Marked done and recorded.', completeAwaiting: 'Recorded in your name. It now waits for a second person to verify it.', completeRefused: 'Not accepted — this check needs its evidence attached, or you do not have permission.', completeLostLink: 'No connection — not saved. Try again.',
       awaitingWord: 'Waiting for a second person', doneByLabel: 'Done by', verifyBtn: 'Verify', verifyHint: 'Verifying records, in your name, that you checked this work.',
       cannotVerifyOwn: 'You did this check, so a different person must verify it.', verifyRecorded: 'Verified and recorded in your name.', verifyRefused: 'Not accepted.', verifyLostLink: 'No connection — not saved. Try again.',
-      scrReady: 'Showing the overdue checks', scrEmpty: 'Nothing overdue — every scheduled check is up to date.',
+      scrReady: 'Showing the overdue checks', scrEmpty: 'Nothing overdue — every one of the {n} scheduled checks is up to date.',
       stateNotPermitted: 'You do not have permission to see maintenance and compliance.', noComplete: 'You can see the overdue checks, but marking one done needs the facilities-record permission.',
       nobodyNamed: 'This store computer has not been told who is using this screen.',
       sampleData: 'Sample data — this is not your shop.',
     },
     ta: {
-      title: 'பராமரிப்பு & இணக்கம்', langName: 'English',
+      title: 'வசதிகள்', langName: 'English',
       lead: 'மாதிரிச் சோதனைகள். உங்கள் கடையில் தாமதமான சோதனைகளைப் பார்க்க கடை கணினியை இணைக்கவும்.',
-      listHeading: 'தாமதமானவை', overdueCount: 'தாமதம்', allDone: 'தாமதம் எதுவும் இல்லை — ஒவ்வொரு சோதனையும் புதுப்பித்த நிலையில்.',
-      notKnown: 'பராமரிப்பு அட்டவணைகள் இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை.',
+      listHeading: 'தாமதமானவை', overdueCount: 'தாமதம்', allDone: 'தாமதம் எதுவும் இல்லை — திட்டமிடப்பட்ட {n} சோதனைகளும் புதுப்பித்த நிலையில்.',
+      notKnown: 'தெரியாது — தாமதப் பட்டியலைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை, எனவே எது தாமதம் என்று இந்தப் பக்கம் சொல்ல முடியாது.',
+      noSchedule: 'பராமரிப்பு அல்லது உணவுப் பாதுகாப்பு அட்டவணை இன்னும் அமைக்கப்படவில்லை, எனவே எதுவும் தாமதமாக முடியாது — இது புதுப்பித்த நிலையில் உள்ள கடை அல்ல.',
       complianceRiskCount: 'ஒழுங்குமுறை அதிகாரி கவலைப்படுவார்',
       categoryLabel: 'வகை', dueLabel: 'தேதி இருந்தது', lateLabel: 'தாமதம்', escalatedToLabel: 'மேலிடம்',
       catCleaning: 'சுத்தம்', catPestControl: 'பூச்சிக் கட்டுப்பாடு', catFireSafety: 'தீ பாதுகாப்பு', catElectricalSafety: 'மின் பாதுகாப்பு', catMaintenance: 'பராமரிப்பு', catStatutory: 'சட்டப்பூர்வம்',
@@ -52,7 +54,7 @@ function sampleSession() {
       completeRecorded: 'முடிந்ததெனக் குறிக்கப்பட்டு பதிவு செய்யப்பட்டது.', completeAwaiting: 'உங்கள் பெயரில் பதிவு செய்யப்பட்டது. இப்போது இரண்டாம் நபரின் சரிபார்ப்புக்காகக் காத்திருக்கிறது.', completeRefused: 'ஏற்கப்படவில்லை — ஆதாரம் தேவை, அல்லது அனுமதி இல்லை.', completeLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
       awaitingWord: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது', doneByLabel: 'செய்தவர்', verifyBtn: 'சரிபார்', verifyHint: 'சரிபார்த்தல் உங்கள் பெயரில் பதிவு செய்யப்படும்.',
       cannotVerifyOwn: 'இந்தச் சோதனையை நீங்கள் செய்தீர்கள், எனவே வேறொருவர் சரிபார்க்க வேண்டும்.', verifyRecorded: 'சரிபார்க்கப்பட்டு உங்கள் பெயரில் பதிவு செய்யப்பட்டது.', verifyRefused: 'ஏற்கப்படவில்லை.', verifyLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-      scrReady: 'தாமதமான சோதனைகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — ஒவ்வொரு சோதனையும் புதுப்பித்த நிலையில்.',
+      scrReady: 'தாமதமான சோதனைகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — திட்டமிடப்பட்ட {n} சோதனைகளும் புதுப்பித்த நிலையில்.',
       stateNotPermitted: 'பராமரிப்பு & இணக்கத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noComplete: 'தாமதமான சோதனைகளைப் பார்க்கலாம், ஆனால் ஒன்றை முடிந்ததெனக் குறிக்க facilities-record அனுமதி தேவை.',
       nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -71,7 +73,7 @@ function sampleSession() {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
     view: (l) => ({
       screenState: { tone: 'error', icon: '✕', label: '', announcement: '', needsAttention: true },
-      tasks: [sampleTask(l)], overdueCount: 1, complianceRiskCount: 1, nobodyNamed: false, mayComplete: true,
+      emptyReason: null, tasks: [sampleTask(l)], overdueCount: 1, complianceRiskCount: 1, nobodyNamed: false, mayComplete: true,
     }),
     complete: async () => 'lost_link',
     verify: async () => 'lost_link',
@@ -139,7 +141,7 @@ function rowNode(r) {
     if (r.mayVerify) {
       const actions = document.createElement('div'); actions.className = 'actions';
       const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('verifyHint');
-      const verify = document.createElement('button'); verify.className = 'act verify'; verify.type = 'button'; verify.dataset.taskId = r.taskId; verify.textContent = t('verifyBtn');
+      const verify = document.createElement('button'); verify.className = 'act verify sre-btn'; verify.type = 'button'; verify.dataset.taskId = r.taskId; verify.textContent = t('verifyBtn');
       actions.append(hint, verify);
       li.append(actions);
     }
@@ -153,7 +155,7 @@ function rowNode(r) {
     const actions = document.createElement('div'); actions.className = 'actions';
     const fields = document.createElement('div'); fields.className = 'fields';
     fields.append(labelledInput(t('evidenceLabel'), 'evidence'));
-    const complete = document.createElement('button'); complete.className = 'act complete'; complete.type = 'button'; complete.dataset.taskId = r.taskId; complete.textContent = t('completeBtn');
+    const complete = document.createElement('button'); complete.className = 'act complete sre-btn'; complete.type = 'button'; complete.dataset.taskId = r.taskId; complete.textContent = t('completeBtn');
     actions.append(fields, complete);
     li.append(actions);
   }
@@ -169,7 +171,13 @@ function paint() {
   el('whoami').textContent = window.facilitiesData?.userId ?? '';
   el('lang').textContent = t('langName');
 
-  el('overdue-count').textContent = view.overdueCount === 0 ? t('allDone') : `${view.overdueCount} ${t('overdueCount')}`;
+  // U0 (P-08): the empty line is the session's reason — an empty list over no schedule, or one never read, is said
+  // in the warn tone, never as "every check is up to date".
+  const count = el('overdue-count');
+  count.textContent = view.emptyReason === null ? `${view.overdueCount} ${t('overdueCount')}`
+    : view.emptyReason === 'none_overdue' ? view.screenState.label
+    : t(view.emptyReason === 'no_schedule' ? 'noSchedule' : 'notKnown');
+  count.className = view.emptyReason === null ? 'count attention' : view.emptyReason === 'none_overdue' ? 'count' : 'count unknown';
   const risk = el('risk-count');
   risk.hidden = view.complianceRiskCount === 0;
   risk.textContent = view.complianceRiskCount === 0 ? '' : `${view.complianceRiskCount} ${t('complianceRiskCount')}`;
@@ -253,7 +261,7 @@ function fsForm(row) {
     selects[item.itemId] = sel; parts.push(fsField(item.label, sel));
   }
   const action = document.createElement('textarea'); action.className = 'fs-action'; parts.push(fsField(ft('fsAction'), action));
-  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save'; save.textContent = `✓ ${ft('fsSave')}`;
+  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save sre-btn'; save.textContent = `✓ ${ft('fsSave')}`;
   form.append(...parts, save);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -306,7 +314,7 @@ setInterval(() => { void syncFoodSafety(); }, 15_000);
 const qhq = window.qualityReleaseQueue ?? null;
 const qt = (key) => (qhq === null ? key : qhq.text(lang, key));
 function qhButton(word, cls = 'qh-release', icon = 'shield-check') {
-  const b = document.createElement('button'); b.type = 'submit'; b.className = cls;
+  const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'submit'; b.className = cls;
   if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word)); else b.textContent = word;
   return b;
 }

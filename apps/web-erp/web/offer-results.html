@@ -28,7 +28,7 @@
       input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -81,7 +81,7 @@
         <div class="row">
           <label for="b-from"><span id="l-b-from">Compare with the days from</span><input id="b-from" type="date" /></label>
           <label for="b-to"><span id="l-b-to">to</span><input id="b-to" type="date" /></label>
-          <button id="measure" class="primary" type="button">Measure the offer</button>
+          <button id="measure" class="primary sre-btn sre-btn-primary" type="button">Measure the offer</button>
         </div>
         <p class="muted" id="baseline-say"></p>
         <div class="panels" id="result-panels" aria-live="polite">
@@ -94,7 +94,7 @@
         <p class="muted" id="result-say"></p>
         <div class="row" id="stop-row">
           <label for="s-why"><span id="l-s-why">Why stop it</span><input id="s-why" autocomplete="off" maxlength="300" /></label>
-          <button id="stop" type="button">Stop this offer now</button>
+          <button id="stop" type="button" class="sre-btn sre-btn-danger">Stop this offer now</button>
         </div>
         <p class="status" id="record-status" role="status" aria-live="polite"></p>
       </section>

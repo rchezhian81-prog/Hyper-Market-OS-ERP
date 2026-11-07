@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>SRE Devices</title>
+    <title>SRE Tills &amp; devices</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#192f27" />
     <!--
@@ -26,10 +26,10 @@
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
       .tiles { display:flex; gap:12px; flex-wrap:wrap; } .tiles[hidden], .vx-status[hidden] { display:none; }
       .tile { background:var(--panel); border-radius:12px; padding:10px 14px; min-width:110px; border-left:6px solid var(--idle); }
-      .tile b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .tile span { color:var(--muted); font-size:13px; }
+      .tile b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .tile span { color:var(--muted); font-size:14px; }
       .tile.attention { border-left-color:var(--degraded); } .tile.bad { border-left-color:var(--error); } .tile.good { border-left-color:var(--ok); }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); } .summary .count.unknown { color:var(--warn); font-weight:600; }
       .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
       .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
@@ -45,20 +45,20 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); } p.state[hidden] { display:none; }
       .pending { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
       .pending[hidden] { display:none; }
-      .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
+      .send { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
       .send:disabled { opacity:.6; } .send[hidden] { display:none; }
       #deliver-msg { color:var(--muted); font-size:14px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
       .act { min-height: var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
       .act:disabled { opacity:.5; }
       .act-block { background:var(--danger-surface); color:var(--on-danger); } .act-retire { background:var(--warn-surface); color:var(--on-warn-surface); } .act-reinstate { background:var(--ok-surface); color:var(--on-ok-surface); }
-      .act-note { color:var(--muted); font-size:13px; }
+      .act-note { color:var(--muted); font-size:14px; }
       .sheet h3 { margin:0; font-size:18px; } .sheet p { margin:0; color:var(--muted); font-size:14px; }
       .sheet input { min-height:44px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:16px; }
       .sheet .msg { color:var(--danger-text); min-height:1.2em; }
       .sheet .row2 { display:flex; gap:10px; justify-content:flex-end; }
       .sheet button { min-height:44px; padding:0 18px; border:0; border-radius:10px; font-size:15px; font-weight:600; }
-      .sheet .primary { background:var(--info); color:var(--on-info); } .sheet .ghost { background:var(--line); color:var(--ink); }
+      .sheet .primary {   } .sheet .ghost { background:var(--line); color:var(--ink); }
       /* R10-A · OB-540: handheld work on a withdrawn or too-old app version — read-only, from head office's register. */
       section.vx { display:grid; gap:10px; border-top:1px solid var(--line); padding-top:16px; }
       .vx-status { margin:0; padding:12px 14px; background:var(--panel); border-radius:12px; display:flex; gap:8px; align-items:flex-start; font-weight:600; border-left:6px solid var(--idle); }
@@ -70,6 +70,9 @@
       .vx-row dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; font-size:15px; }
       .vx-row dt { color:var(--muted); } .vx-row dd { margin:0; overflow-wrap:anywhere; }
       .vx-row .vx-detail { margin:0; color:var(--muted); font-size:14px; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
       /* Round 4c: the register form. */
       .reg-form { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
       .reg-form label { display:grid; gap:4px; font-size:14px; font-weight:600; flex:1 1 180px; }
@@ -84,12 +87,12 @@
     <p class="manage" id="manage" hidden></p>
     <div class="manage pending" id="pending" role="status" aria-live="polite" hidden>
       <span id="pending-count"></span>
-      <button class="send" id="send" type="button" hidden></button>
+      <button class="send sre-btn" id="send" type="button" hidden></button>
       <span id="deliver-msg"></span>
     </div>
 
     <header>
-      <h1 class="who" id="who">Devices <small id="whoami"></small></h1>
+      <h1 class="who" id="who">Tills &amp; devices <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -151,8 +154,8 @@
         <input id="reason" type="text" autocomplete="off" aria-label="Reason" />
         <p class="msg" id="sheet-msg" role="alert"></p>
         <div class="row2">
-          <button class="ghost" id="sheet-cancel" type="button"></button>
-          <button class="primary" id="sheet-confirm" type="button"></button>
+          <button class="ghost sre-btn sre-btn-quiet" id="sheet-cancel" type="button"></button>
+          <button class="primary sre-btn sre-btn-primary" id="sheet-confirm" type="button"></button>
         </div>
       </div>
     </div>

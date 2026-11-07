@@ -34,7 +34,7 @@ function paintList() {
         const l = document.createElement('label'); const id = `lift-${e.customerId}-${ch}`; l.htmlFor = id; l.append(text('span', `${t('reason')} (${t(`ch_${ch}`)})`));
         const why = document.createElement('input'); why.id = id; why.autocomplete = 'off'; l.append(why);
         const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet'; b.textContent = t('lift');
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet sre-btn sre-btn-quiet'; b.textContent = t('lift');
         b.addEventListener('click', async () => {
           status.textContent = t('reading');
           const out = await session.lift(e.customerId, ch, why.value);

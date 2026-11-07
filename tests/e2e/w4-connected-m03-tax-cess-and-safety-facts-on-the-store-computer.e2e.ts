@@ -77,14 +77,14 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     await page.locator('#rows tr[data-id="10063020"]').waitFor();
     await page.fill('#hsn', HSN); await page.click('#open');
     await says(page, '#record-h', /^HSN 24039910$/);
-    await page.fill('#g-from', '2017-07-01'); await page.fill('#g-rate', '28');
+    await page.fill('#g-from', '01/07/2017'); await page.fill('#g-rate', '28'); // U2: dd/mm on the shared date field
     await page.click('#g-save');
     await says(page, '#record-status', /^Recorded\.$/);
-    await page.fill('#c-from', '2017-07-01'); await page.fill('#c-adv', '61'); await page.fill('#c-spec', '0'); await page.fill('#c-per', '1');
+    await page.fill('#c-from', '01/07/2017'); await page.fill('#c-adv', '61'); await page.fill('#c-spec', '0'); await page.fill('#c-per', '1');
     await page.click('#c-save');
     await says(page, '#record-status', /^Recorded\.$/);
     // A change of a rate already in force is a tax change: Finance approves it first.
-    await page.fill('#g-from', '2026-12-01'); await page.fill('#g-rate', '40');
+    await page.fill('#g-from', '01/12/2026'); await page.fill('#g-rate', '40');
     await page.click('#g-save');
     await says(page, '#record-status', /^This is a tax change/);
     await page.fill('#why', 'GST 2.0 slab (synthetic)');
@@ -95,7 +95,7 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     await page.click('#g-save');
     await says(page, '#record-status', new RegExp(`^Recorded with the approval of ${ACCT}\\.$`));
     await page.locator('#gst-list li[data-from="2026-12-01"]').waitFor();
-    await page.fill('#c-from', '2026-12-01'); await page.fill('#c-adv', '0');
+    await page.fill('#c-from', '01/12/2026'); await page.fill('#c-adv', '0');
     await page.click('#c-save');
     await says(page, '#record-status', /^This is a tax change/);
     await page.locator('#ask').waitFor({ state: 'visible', timeout: 30_000 }); // it appears once the refusal is drawn

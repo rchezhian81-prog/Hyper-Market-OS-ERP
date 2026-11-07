@@ -134,7 +134,7 @@ describe('the Requisitions page session', () => {
     const refusing = fakeHeadOffice(() => ({ status: 409, body: { error: { code: 'requisition_exists', whatHappened: 'rq-1 is already raised.' } } }));
     const out = await createRequisitionsSession({ viewer: BUYER, fetch: refusing.fetch }).raise('rq-1', [{ productId: 'rice', quantity: '1' }]);
     expect(out).toEqual({ result: 'refused', status: 409, code: 'requisition_exists', whatHappened: 'rq-1 is already raised.' });
-    expect(requisitionsOutcomeWords('en', out)).toBe('Head office refused: rq-1 is already raised.');
+    expect(requisitionsOutcomeWords('en', out)).toMatch(/^Head office refused: rq-1 is already raised\. Nothing was changed\. .+/); // U1: the three parts
     const down = (async () => { throw new TypeError('offline'); }) as unknown as typeof globalThis.fetch;
     const lost = await createRequisitionsSession({ viewer: BUYER, fetch: down }).list();
     expect(lost).toEqual({ result: 'lost_link' });

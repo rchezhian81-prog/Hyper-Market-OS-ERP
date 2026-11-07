@@ -222,7 +222,7 @@ describe.skipIf(!CONNECTED)('WF-01 connected: a new product goes from a real dra
     const price = await shop.open(MGR, `/price-lists/?product=${P}`);
     expect(price.status).toBe(200);
     await price.page.fill('#p-ref', STORE);
-    await price.page.fill('#p-from', today);
+    await price.page.fill('#p-from', `${today.slice(8, 10)}/${today.slice(5, 7)}/${today.slice(0, 4)}`); // U2: the shop's dd/mm/yyyy field; ISO sits behind it
     await price.page.click('#read-basis');
     await says(price.page, '#v-mrp', /^₹125\.00$/);
     await says(price.page, '#v-cost', /^₹70\.00$/);

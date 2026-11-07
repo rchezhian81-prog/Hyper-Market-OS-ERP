@@ -9,6 +9,8 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { issueTillPins, pinOf, signInTill } from '../support/till-operator';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **OB-263 (owner, 21 Oct 2026, "Item-wise + bill-wise") — the whole evening check in a real Chromium, against a real store
@@ -100,7 +102,7 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     `(document.getElementById(${JSON.stringify(id)})?.textContent ?? '').includes(${JSON.stringify(words)})`, undefined, { timeout: 15_000 },
   );
   const chooseDay = async (page: Page, day: string): Promise<void> => {
-    await page.fill('#ec-date', day);
+    await page.fill('#ec-date', ddmm(day));
     await page.dispatchEvent('#ec-date', 'change');
   };
   const mapItemWise = async (page: Page): Promise<void> => {

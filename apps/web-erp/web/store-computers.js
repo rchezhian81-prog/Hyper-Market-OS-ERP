@@ -6,6 +6,52 @@
 // Nothing is written on open; after each act everything is read again. Every word has a Tamil twin and follows the toggle.
 
 const $ = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// the pickers' words follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.storeComputers ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false };
@@ -32,7 +78,11 @@ function paintSummary() {
 }
 
 function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
-function button(text, act, onClick) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
+
+// U2 · G16 (UI/UX gap audit): a NAME where an id was shown — the store's name, the store computer's name, the time zone in
+// words — through the chrome (`sreOffice.nameOf`); the id itself when no name is known, never blank.
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
+function button(text, act, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
 
 function paintBindings() {
   const body = $('binding-rows');
@@ -43,7 +93,7 @@ function paintBindings() {
   for (const b of rows) {
     const tr = document.createElement('tr');
     tr.dataset.store = b.storeId; tr.dataset.prefix = b.prefix; tr.dataset.computer = b.computer; tr.dataset.via = b.via;
-    tr.append(cell(b.storeId), cell(b.prefix), cell(b.computer), cell(b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')), cell(when(b.since)));
+    tr.append(cell(nameOf('store', b.storeId)), cell(b.prefix), cell(nameOf('person', b.computer)), cell(b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')), cell(when(b.since)));
     if (you().mayReplace) {
       // Open the drawer for this till, the old store computer already filled in.
       tr.tabIndex = 0;
@@ -65,7 +115,7 @@ function paintUnused() {
   for (const u of rows) {
     const tr = document.createElement('tr');
     tr.dataset.store = u.storeId; tr.dataset.prefix = u.prefix; tr.dataset.day = u.day; tr.dataset.count = String(u.count);
-    tr.append(cell(u.storeId), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
+    tr.append(cell(nameOf('store', u.storeId)), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
     body.append(tr);
   }
 }
@@ -81,7 +131,7 @@ function paintZones() {
     const tr = document.createElement('tr');
     tr.dataset.store = z.storeId; tr.dataset.verdict = z.verdict;
     if (z.verdict === 'differs') tr.className = 'attention';
-    tr.append(cell(z.storeId), cell(z.computer ?? ''), cell(z.machineTimeZone), cell(`${z.shopTimeZone}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
+    tr.append(cell(nameOf('store', z.storeId)), cell(nameOf('person', z.computer ?? '')), cell(nameOf('zone', z.machineTimeZone)), cell(`${nameOf('zone', z.shopTimeZone)}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
     body.append(tr);
   }
 }
@@ -96,7 +146,7 @@ function paintFindings() {
     const li = document.createElement('li');
     li.dataset.kind = f.kind; li.dataset.store = f.storeId; li.dataset.prefix = f.prefix;
     const head = document.createElement('strong');
-    head.textContent = `${api.findingWords(lang, f)} — ${f.storeId} · ${f.prefix}`;
+    head.textContent = `${api.findingWords(lang, f)} — ${nameOf('store', f.storeId)} · ${f.prefix}`;
     const detail = document.createElement('span');
     detail.textContent = f.detail;
     li.append(head, detail);
@@ -123,7 +173,7 @@ function paintRequests() {
     li.dataset.requestId = r.requestId; li.dataset.status = r.status;
     const d = r.details;
     const head = document.createElement('strong');
-    head.textContent = `${d.prefix} · ${d.storeId}: ${d.fromComputer} → ${d.toComputer}`;
+    head.textContent = `${d.prefix} · ${nameOf('store', d.storeId)}: ${nameOf('person', d.fromComputer)} → ${nameOf('person', d.toComputer)}`;
     const state = document.createElement('span');
     state.textContent = `${api.requestWords(lang, r)} — ${d.reason}`;
     li.append(head, state);
@@ -227,3 +277,6 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+
+// ── U2b (G5): the store is picked by name
+pickable('f-store', 'store', 'pickStore');

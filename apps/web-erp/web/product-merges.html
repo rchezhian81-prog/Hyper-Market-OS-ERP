@@ -27,7 +27,7 @@
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -43,6 +43,11 @@
       .muted { color: var(--muted); font-size: 14px; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -80,7 +85,7 @@
           <label for="m-keep"><span id="l-m-keep">Keep this record</span><input id="m-keep" list="product-list" autocomplete="off" /></label>
           <label for="m-drop"><span id="l-m-drop">It replaces this one</span><input id="m-drop" list="product-list" autocomplete="off" /></label>
           <label for="m-why"><span id="l-m-why">Why</span><input id="m-why" autocomplete="off" maxlength="300" /></label>
-          <button id="propose" class="primary" type="button">Propose the merge</button>
+          <button id="propose" class="primary sre-btn sre-btn-primary" type="button">Propose the merge</button>
         </div>
         <datalist id="product-list"></datalist>
         <p class="status" id="propose-status" role="status" aria-live="polite"></p>

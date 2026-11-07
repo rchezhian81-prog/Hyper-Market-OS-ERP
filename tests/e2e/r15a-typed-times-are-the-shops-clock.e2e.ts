@@ -10,6 +10,9 @@ import { shopDay } from '../../packages/calendar/src/shop-day';
 import { instantOf } from '../../packages/calendar/src/trading-day';
 import { theEvening } from '../support/evening-clock';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **OB-608 (owner, 29 Oct 2026 · round 15, R15-A) — the five forms that take a date-time typed by hand read what is typed
  * as the SHOP's clock, on a device that is NOT set to India time.**
@@ -240,8 +243,8 @@ describe.skipIf(!HAVE_BROWSER)(`OB-608: a date-time typed on a device in New Yor
       bodies = await recordPosts(page, '**/v1/promotions/*/definition');
     });
     try {
-      await p.page.fill('#from', today);
-      await p.page.fill('#to', today);
+      await p.page.fill('#from', ddmm(today));
+      await p.page.fill('#to', ddmm(today));
       await p.page.fill('#min', '3');
       await p.page.click('#show');
       const row = '#pairs li[data-pair="p-biscuit+p-tea"]';

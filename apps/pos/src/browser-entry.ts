@@ -311,7 +311,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
  * first price, quantity and unit the store computer needs to work the cut out itself; or why it cannot be lowered.
  */
 export type PriceChangeValue =
-  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true }
+  | { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number; readonly productId: string; readonly lineId: string; readonly quantityMinor: number; readonly uom: string; readonly ownerOnly?: true; /** OB-698: the lowest allowed price the pack gives, for the confirm step to show. */ readonly floorMinor?: number }
   | { readonly ok: false; readonly laneMessage: string; readonly laneMessageTa?: string };
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
@@ -978,6 +978,19 @@ export interface RefundLookup {
   };
 }
 
+/** U4: an item the cashier found by name or code — a candidate to ring through the scan path, never a priced line. */
+export interface FoundItem {
+  readonly productId: string;
+  readonly name: string;
+  readonly sku: string;
+  readonly baseUom: string;
+  readonly unitPriceMinor: number;
+  readonly mrpMinor?: number;
+  /** The first barcode the pack carries for it — what the row rings through `scanBarcode`; absent → the SKU is rung. */
+  readonly barcode?: string;
+  readonly status: string;
+}
+
 /** An item named for a return with no receipt — from the lane's catalogue, never judged for sale (SP-9b-i). */
 export interface NoReceiptItem {
   readonly productId: string;
@@ -1409,6 +1422,32 @@ export function bootPos(config?: {
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
   catalogueRef.cache = catalogue;
+  // U4 (§27 POS "product search"): find an item by a few letters of its NAME, or by keying a barcode / SKU digit by digit —
+  // from this lane's own signed snapshot, so it works with the cable out (P-01). It only NAMES candidates: ringing one goes
+  // through `scanBarcode`, the same path a scan takes, so every legal gate (age, recall, a weighed item by a plain code —
+  // OB-570, MRP) applies unchanged. Nothing here prices or judges a sale.
+  const findItems = (query: string, limit = 20): readonly FoundItem[] => {
+    const snapshot = config?.catalogue;
+    if (snapshot === undefined) return [];
+    const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+    if (words.length === 0) return [];
+    const digits = /^[0-9]+$/.test(query.trim()) ? query.trim() : null;
+    const barcodesOf = new Map<string, string[]>();
+    for (const b of snapshot.barcodes) { const list = barcodesOf.get(b.productId) ?? []; list.push(b.code); barcodesOf.set(b.productId, list); }
+    const out: FoundItem[] = [];
+    for (const p of snapshot.products) {
+      const codes = barcodesOf.get(p.productId) ?? [];
+      // A pack built from the store pack's own product rows carries no SKU; the id stands in for it.
+      const sku = typeof p.sku === 'string' && p.sku !== '' ? p.sku : p.productId;
+      const hay = `${p.name} ${sku} ${p.productId}`.toLowerCase();
+      const byName = words.every((w) => hay.includes(w));
+      const byCode = digits !== null && (codes.some((c) => c.startsWith(digits)) || sku.startsWith(digits));
+      if (!byName && !byCode) continue;
+      out.push({ productId: p.productId, name: p.name, sku, baseUom: p.baseUom, unitPriceMinor: p.unitPriceMinor, ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }), ...(codes[0] === undefined ? {} : { barcode: codes[0] }), status: p.status });
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
   // SF-01: the switched-on offers the signed pack carried — applied at checkout from the lane's own copy (P-01).
   session.loadPromotions(config?.catalogue?.promotions ?? []);
   // OB-403 "A": a till opened while the store computer's clock is 5+ minutes out starts with the box's hold on new offers.
@@ -1846,7 +1885,8 @@ export function bootPos(config?: {
       const floors = config?.priceFloors;
       const ownerOnly = floors !== undefined && floors !== null && value.reductionMinor > 0 && floors[productId] === undefined;
       // OB-500: the line, its first price, its quantity and unit go with the request — the store computer works out the cut itself.
-      return { ok: true, ...value, productId, lineId, quantityMinor: onBill?.quantityMinor ?? 0, uom: onBill?.uom ?? '', ...(ownerOnly ? { ownerOnly: true as const } : {}) };
+      const floorMinor = floors?.[productId];
+      return { ok: true, ...value, productId, lineId, quantityMinor: onBill?.quantityMinor ?? 0, uom: onBill?.uom ?? '', ...(ownerOnly ? { ownerOnly: true as const } : {}), ...(typeof floorMinor === 'number' ? { floorMinor } : {}) };
     } catch (e) {
       // B19: a carry bag cannot be made free — said in the gate's own words.
       if (e instanceof TillRuleRefusedError) return { ok: false, laneMessage: e.laneMessage };
@@ -2394,7 +2434,7 @@ export function bootPos(config?: {
   });
   const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
   // ── R8-B · OB-523 — end ──
-  return Object.assign(cancellableView, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
+  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

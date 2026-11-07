@@ -124,7 +124,7 @@ describe.skipIf(!HAVE_BROWSER)('Round A — the office pages through the store c
 
   it('Category rules: head office\'s category is listed and flagged "no rules in force"', async () => {
     const { page, errors } = await open(OWNER, '/category-policy');
-    await says(page, '#rows', /grocery/);
+    await says(page, '#rows', /Grocery/); // U2 (G16): the category's NAME, never its bare id
     await says(page, '#rows', /No rules in force/);
     await says(page, '#attention-count', /^1 need attention$/);
     expect(errors).toEqual([]);

@@ -32,7 +32,7 @@
       .checks { display: flex; flex-wrap: wrap; gap: 14px; }
       .checks label { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
       .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
@@ -71,7 +71,7 @@
           <div class="panel"><span class="k" id="k-dead">Dead letters</span><span class="v" id="v-dead">—</span></div>
           <div class="panel"><span class="k" id="k-sender">Sender</span><span class="v" id="v-sender">—</span></div>
         </div>
-        <div class="row"><button id="refresh" type="button">Refresh</button><button id="drain" type="button">Send what is due now</button></div>
+        <div class="row"><button id="refresh" type="button" class="sre-btn sre-btn-quiet">Refresh</button><button id="drain" type="button" class="sre-btn">Send what is due now</button></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -88,14 +88,14 @@
       <section id="record" aria-labelledby="record-h" hidden>
         <h3 id="record-h"></h3>
         <ul class="rows" id="facts" aria-label="This subscription"></ul>
-        <div class="row"><button id="off" type="button">Switch it off</button></div>
+        <div class="row"><button id="off" type="button" class="sre-btn sre-btn-danger">Switch it off</button></div>
         <h3 id="dead-h">Dead letters</h3>
         <p class="lead" id="dead-lead"></p>
         <ul class="rows" id="dead-list" aria-label="Dead letters"></ul>
         <h3 id="recon-h">Every message since</h3>
         <div class="row">
           <label for="recon-from"><span id="l-recon-from">From (date)</span><input id="recon-from" type="date" /></label>
-          <button id="recon" type="button">Read the messages</button>
+          <button id="recon" type="button" class="sre-btn">Read the messages</button>
         </div>
         <p class="muted" id="recon-totals"></p>
         <ul class="rows" id="recon-list" aria-label="Messages"></ul>
@@ -114,9 +114,9 @@
         </form>
         <fieldset class="checks" id="s-events" aria-labelledby="l-s-events"><legend id="l-s-events">Events to send</legend></fieldset>
         <div class="row">
-          <button id="s-save" class="primary" type="button">Set up the subscription</button>
+          <button id="s-save" class="primary sre-btn sre-btn-primary" type="button">Set up the subscription</button>
           <label for="s-why"><span id="l-s-why">Why (for the second person)</span><input id="s-why" autocomplete="off" maxlength="300" /></label>
-          <button id="s-ask" type="button" hidden>Ask a second person to approve</button>
+          <button id="s-ask" type="button" hidden class="sre-btn">Ask a second person to approve</button>
         </div>
         <p class="status" id="new-status" role="status" aria-live="polite"></p>
       </section>
@@ -127,7 +127,7 @@
         <form id="q-form" class="row">
           <label for="q-id"><span id="l-q-id">Connector</span><input id="q-id" autocomplete="off" list="q-known" maxlength="80" /></label>
           <datalist id="q-known"></datalist>
-          <button id="q-read" type="submit">Read its queue</button>
+          <button id="q-read" type="submit" class="sre-btn">Read its queue</button>
         </form>
         <p class="muted" id="q-totals"></p>
         <ul class="rows" id="q-list" aria-label="Connector queue"></ul>

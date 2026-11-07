@@ -106,14 +106,11 @@ describe.skipIf(!HAVE_BROWSER)('OB-504: the receiving screens ask for the month 
     await says(page, '#banner-text', 'This is a packed product: type the month and year of manufacture');
     await page.click('#banner-ok');
     expect(await page.isHidden('#receive-empty')).toBe(false); // nothing was added
-    // A month it cannot read is refused too.
-    await page.fill('#grn-mfg', '09/2026');
-    await page.click('#add-line');
-    await bannerUp(page);
-    await says(page, '#banner-text', 'year-month, for example 2026-09');
-    await page.click('#banner-ok');
-
-    await page.fill('#grn-mfg', '2026-09');
+    // U2b: the month is PICKED from a list of the last 36 months (the shop's own day decides which), so a month the
+    // screen cannot read can no longer be typed; the list's values are the same 'YYYY-MM' the receipt line always carried.
+    expect(await page.$eval('#grn-mfg', (el) => el.tagName)).toBe('SELECT');
+    expect(await page.$$eval('#grn-mfg option', (os) => os.map((o) => (o as unknown as { value: string }).value).filter((v) => v !== '').every((v) => /^\d{4}-(0[1-9]|1[0-2])$/.test(v)))).toBe(true);
+    await page.selectOption('#grn-mfg', '2026-09');
     await page.click('#add-line');
     await says(page, '#receive-lines', 'made 2026-09');
     await page.click('#save-receipt');

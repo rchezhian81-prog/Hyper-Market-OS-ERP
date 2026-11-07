@@ -5,14 +5,80 @@
 // button carries an icon beside its word.
 
 const $ = (id) => document.getElementById(id);
+// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
+// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
+// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
+// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
+// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
+// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
+const u2bRepaints = [];
+const repaintPickers = () => { for (const f of u2bRepaints) f(); };
+/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+function pickableEl(input, kind, titleKey, extra = {}) {
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
+  paint(); u2bRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
+    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
+    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  pickableEl(input, kind, titleKey, extra);
+}
+// the pickers' words and the shared fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintPickers(); if (typeof repaintShopDates === 'function') repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.adoption ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, open: false, gate: false, approve: false, train: false, champion: false, productivity: false, homeDepartment: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+
+// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
+// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
+const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
+const shopDates = new Map();
+/** The shared fields' labels follow the language toggle like the page's own words do. */
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = $(id);
+  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, cls) { const b = document.createElement('button'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, cls) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let gate = null; let cur = null; let training = null; let champs = null; let access = null; let prod = null;
 const titleOf = (i) => (lang === 'ta' && i.titleTa ? i.titleTa : i.title);
@@ -45,6 +111,7 @@ function paintCurriculum() {
     for (const i of all) {
       const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.checked = chosen.has(i.itemId); c.disabled = !may.approve; c.dataset.item = i.itemId;
       l.append(c, text('span', `${i.itemId} — ${titleOf(i)}`)); block.append(l); boxes.push([c, i]);
+      itemOption(i.itemId, titleOf(i));
     }
     if (may.approve) {
       const b = button(t('approve'), 'badge-check'); b.dataset.approve = r.roleId;
@@ -121,9 +188,10 @@ function paintHomeDepartments() {
 }
 
 function paint() {
+  repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity'], ['hd-h', 'homeH'], ['hd-emp-l', 'homeEmployee'], ['hd-dept-l', 'homeDept'], ['hd-set-text', 'homeSet']]) $(id).textContent = t(key);
+  for (const [id, key] of [['gate-h', 'gateH'], ['th-role', 'role'], ['th-people', 'people'], ['th-cur', 'curriculum'], ['th-missing', 'missing'], ['gate-read-text', 'readGate'], ['cur-h', 'curriculumH'], ['train-h', 'trainingH'], ['t-emp-l', 'employee'], ['t-item-l', 'item'], ['t-due-l', 'due'], ['t-assign-text', 'assign'], ['champ-h', 'championsH'], ['access-h', 'accessH'], ['x-read-text', 'checkAccess'], ['prod-h', 'productivityH'], ['pr-from-l', 'from'], ['pr-to-l', 'to'], ['pr-read-text', 'readProductivity'], ['hd-h', 'homeH'], ['hd-emp-l', 'homeEmployee'], ['hd-dept-l', 'homeDept'], ['hd-set-text', 'homeSet']]) { const n = $(id); if (n) n.textContent = t(key); }
   paintGate(); paintCurriculum(); paintTraining(); paintChampions(); paintAccess(); paintProductivity(); paintHomeDepartments();
 }
 async function loadGate() { if (!may.gate) return; const o = await session.gate(); if (o.result === 'ok') gate = o.value; else say('page-status', o); paintGate(); }
@@ -141,16 +209,26 @@ else {
   $('cur').hidden = false; void loadCurriculum();
   $('train').hidden = false; void loadTraining();
   $('train-form').hidden = !may.train; $('t-assign').hidden = !may.train;
-  $('t-assign').addEventListener('click', async () => { const out = await session.assign({ employeeId: $('t-emp').value, itemId: $('t-item').value, title: '', dueOn: $('t-due').value }); say('t-status', out); if (out.result === 'ok') { await loadTraining(); await loadGate(); } });
+  $('t-assign').addEventListener('click', async () => { const out = await session.assign({ employeeId: $('t-emp').value, itemId: $('t-item').value, title: '', dueOn: dateOf('t-due') }); say('t-status', out); if (out.result === 'ok') { await loadTraining(); await loadGate(); } });
   $('champ').hidden = false; void loadChampions();
   $('access').hidden = false;
   $('x-read').addEventListener('click', async () => { const o = await session.access(); if (o.result === 'ok') { access = o.value; $('x-status').textContent = ''; } else say('x-status', o); paintAccess(); });
   if (may.productivity) {
     $('prod').hidden = false;
-    $('pr-read').addEventListener('click', async () => { const o = await session.productivity($('pr-from').value, $('pr-to').value); if (o.result === 'ok') { prod = o.value; $('pr-status').textContent = ''; } else say('pr-status', o); paintProductivity(); });
+    $('pr-read').addEventListener('click', async () => { const o = await session.productivity(dateOf('pr-from'), dateOf('pr-to')); if (o.result === 'ok') { prod = o.value; $('pr-status').textContent = ''; } else say('pr-status', o); paintProductivity(); });
   }
   if (may.homeDepartment) {
     $('home-dept').hidden = false;
     $('hd-set').addEventListener('click', async () => { const out = await session.setHomeDepartment($('hd-emp').value, $('hd-dept').value); say('hd-status', out); });
   }
 }
+// the chrome loads after this script: its shared date fields replace the plain ones once it is there
+document.addEventListener('sre:chrome', () => { shopDate('t-due', { en: wordsIn('en', 'due'), ta: wordsIn('ta', 'due') }); shopDate('pr-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('pr-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+
+// ── U2b (G5): pick by name, never type a code; the curriculum item from the list this page shows
+function itemOption(itemId, title) {
+  const list = $('t-item-list'); if (!list || [...list.options].some((o) => o.value === itemId)) return;
+  const o = document.createElement('option'); o.value = itemId; o.label = title; list.append(o);
+}
+pickable('t-emp', 'person', 'pickPerson');
+pickable('hd-emp', 'person', 'pickPerson');

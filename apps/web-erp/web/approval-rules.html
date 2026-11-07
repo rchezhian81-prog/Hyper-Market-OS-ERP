@@ -23,20 +23,23 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .table-wrap { overflow-x: auto; }
       table { border-collapse: collapse; width: 100%; font-size: 15px; }
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
       td input { width: 9em; }
-      .now { display: block; font-size: 13px; color: var(--muted); }
+      .now { display: block; font-size: var(--fs-sm); color: var(--muted); }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 1 1 200px; }
-      .meta { font-size: 13px; color: var(--muted); }
+      .meta { font-size: var(--fs-sm); color: var(--muted); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
       li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error); }
       [hidden] { display: none !important; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -50,7 +53,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Approval rules</h2>
         <p class="lead" id="lead"></p>
-        <button id="read" type="button"><span id="read-text">Show the rules</span></button>
+        <button id="read" type="button" class="sre-btn"><span id="read-text">Show the rules</span></button>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -60,7 +63,7 @@
         <p class="meta" id="limits-meta"></p>
         <div class="table-wrap"><table><thead><tr id="limits-head"></tr></thead><tbody id="limits-body"></tbody></table></div>
         <label for="limits-reason"><span id="limits-reason-l">Why this change</span><textarea id="limits-reason" rows="2"></textarea></label>
-        <button id="limits-ask" type="button" data-propose><span id="limits-ask-text">Ask the owner to approve this change</span></button>
+        <button id="limits-ask" type="button" data-propose class="sre-btn"><span id="limits-ask-text">Ask the owner to approve this change</span></button>
         <p class="status" id="limits-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -70,7 +73,7 @@
         <p class="meta" id="waits-meta"></p>
         <div class="row-form" id="waits-form"></div>
         <label for="waits-reason"><span id="waits-reason-l">Why this change</span><textarea id="waits-reason" rows="2"></textarea></label>
-        <button id="waits-ask" type="button" data-propose><span id="waits-ask-text">Ask the owner to approve this change</span></button>
+        <button id="waits-ask" type="button" data-propose class="sre-btn"><span id="waits-ask-text">Ask the owner to approve this change</span></button>
         <p class="status" id="waits-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -83,7 +86,7 @@
           <label for="price-amount"><span id="price-amount-l">More than (rupees a unit)</span><input id="price-amount" inputmode="decimal" autocomplete="off" /></label>
         </div>
         <label for="price-reason"><span id="price-reason-l">Why this change</span><textarea id="price-reason" rows="2"></textarea></label>
-        <button id="price-ask" type="button" data-propose><span id="price-ask-text">Ask the owner to approve this change</span></button>
+        <button id="price-ask" type="button" data-propose class="sre-btn"><span id="price-ask-text">Ask the owner to approve this change</span></button>
         <p class="status" id="price-status" role="status" aria-live="polite"></p>
       </section>
 

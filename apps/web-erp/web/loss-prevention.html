@@ -36,7 +36,7 @@
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .closer { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .closer label { font-size:14px; color:var(--muted); }
       .closer select, .closer input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
@@ -50,7 +50,12 @@
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
-    </style>
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <p class="stale" id="stale" hidden></p>
@@ -93,7 +98,7 @@
           <label for="close-note" id="close-note-label"></label>
           <input id="close-note" class="note" type="text" autocomplete="off" />
         </div>
-        <button id="close" class="act" type="button"></button>
+        <button id="close" class="act sre-btn" type="button"></button>
       </section>
 
       <!-- R4 Lane 4 · D-21 (OB-217) — begin: "Seen together" — till exceptions, waste and shrink, count differences for a
@@ -106,7 +111,7 @@
         <div><label for="together-id" id="together-id-label"></label><input id="together-id" type="text" autocomplete="off" /></div>
         <div><label for="together-from" id="together-from-label"></label><input id="together-from" type="date" /></div>
         <div><label for="together-to" id="together-to-label"></label><input id="together-to" type="date" /></div>
-        <button id="together-show" class="act" type="button"></button>
+        <button id="together-show" class="act sre-btn" type="button"></button>
         <p class="lead" id="together-status" role="status" aria-live="polite"></p>
         <div id="together-result" hidden>
           <h3 id="till-heading"></h3><ul class="rows" id="till-rows"></ul>
@@ -117,17 +122,17 @@
           <div id="open-form" hidden>
             <div><label for="open-case-id" id="open-case-id-label"></label><input id="open-case-id" type="text" autocomplete="off" /></div>
             <div><label for="open-assignee" id="open-assignee-label"></label><input id="open-assignee" type="text" autocomplete="off" /></div>
-            <button id="open-case" class="act" type="button"></button>
+            <button id="open-case" class="act sre-btn sre-btn-primary" type="button"></button>
           </div>
         </div>
         <div id="cctv-form" hidden>
           <h3 id="cctv-heading"></h3>
-          <div><label for="cctv-case" id="cctv-case-label"></label><input id="cctv-case" type="text" autocomplete="off" /></div>
+          <div><label for="cctv-case" id="cctv-case-label"></label><input id="cctv-case" type="text" autocomplete="off" list="case-list" /><datalist id="case-list"></datalist></div>
           <div><label for="cctv-camera" id="cctv-camera-label"></label><input id="cctv-camera" type="text" autocomplete="off" /></div>
           <div><label for="cctv-from" id="cctv-from-label"></label><input id="cctv-from" type="datetime-local" /></div>
           <div><label for="cctv-to" id="cctv-to-label"></label><input id="cctv-to" type="datetime-local" /></div>
           <div><label for="cctv-by" id="cctv-by-label"></label><input id="cctv-by" type="text" autocomplete="off" /></div>
-          <button id="cctv-add" class="act" type="button"></button>
+          <button id="cctv-add" class="act sre-btn" type="button"></button>
           <p class="lead" id="cctv-status" role="status" aria-live="polite"></p>
         </div>
       </section>
@@ -141,7 +146,7 @@
         <p class="lead" id="rec-lead"></p>
         <div><label for="rec-from" id="rec-from-label"></label><input id="rec-from" type="date" /></div>
         <div><label for="rec-to" id="rec-to-label"></label><input id="rec-to" type="date" /></div>
-        <button id="rec-read" class="act" type="button"></button>
+        <button id="rec-read" class="act sre-btn" type="button"></button>
         <p class="lead" id="rec-status" role="status" aria-live="polite"></p>
         <div id="rec-result" hidden>
           <h3 id="rec-signals-h"></h3>

@@ -31,7 +31,9 @@
       .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       .stale[hidden] { display: none; }
 
-      main { flex: 1; padding: 16px; display: grid; gap: 20px; align-content: start; max-width: 960px; }
+      main { flex: 1; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-content: start; max-width: 960px; }
+      main > section { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+      #bins, #stock { min-width: 0; } /* U0: a wide bin table scrolls in its own box; the page never scrolls sideways */
       h2 { margin: 0 0 4px; font-size: 20px; }
       p.lead { margin: 0 0 10px; color: var(--muted); font-size: 15px; }
       /* "I have not been told" is not "all clear" — said plainly, never a blank table (P-08). */
@@ -60,7 +62,7 @@
       .appr .blocked { color: var(--warn); font-size: 14px; }
       .appr .buttons { display: flex; gap: 10px; }
       .appr button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; }
-      .appr button.approve { background: var(--good); color: var(--on-accent); }
+      
       .appr button.reject { background: var(--danger-surface); color: var(--on-danger); }
 
       /* Reason picker — on-screen choices, never a browser prompt. */
@@ -79,8 +81,13 @@
       .field { display: grid; gap: 4px; }
       .field label { color: var(--muted); font-size: 14px; }
       .field input, .field select { background: var(--field); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; min-height: var(--tap); padding: 0 12px; font-size: 15px; }
-      .card button.do { min-height: 46px; border: 0; border-radius: 10px; background: var(--info); color: var(--on-info); font-size: 15px; font-weight: 600; }
-    </style>
+      .card button.do { min-height: 46px; border: 0; border-radius: 10px;   font-size: 15px; font-weight: 600; } /* U0: the one action colour, not the information tone */
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -95,12 +102,12 @@
       <section>
         <h2 id="bins-heading">—</h2>
         <p class="lead" id="bins-lead"></p>
-        <div id="bins"></div>
+        <div id="bins" class="sre-scroll-x"></div>
       </section>
 
       <section>
         <h2 id="stock-heading">—</h2>
-        <div id="stock"></div>
+        <div id="stock" class="sre-scroll-x"></div>
       </section>
 
       <section>
@@ -123,7 +130,7 @@
             <div class="field"><label id="l-product" for="t-product">—</label><input id="t-product" type="text" autocomplete="off" /></div>
             <div class="field"><label id="l-qty" for="t-qty">—</label><input id="t-qty" type="number" min="1" step="1" /></div>
             <div class="field"><label id="l-cost" for="t-cost">—</label><input id="t-cost" type="number" min="0" step="0.01" /></div>
-            <button class="do" id="t-do" type="button">—</button>
+            <button class="do sre-btn sre-btn-primary" id="t-do" type="button">—</button>
           </div>
 
           <div class="card">
@@ -132,7 +139,7 @@
             <div class="field"><label id="l-assignee" for="k-assignee">—</label><input id="k-assignee" type="text" autocomplete="off" /></div>
             <div class="field"><label id="l-tproduct" for="k-product">—</label><input id="k-product" type="text" autocomplete="off" /></div>
             <div class="field"><label id="l-bin" for="k-bin">—</label><input id="k-bin" type="text" autocomplete="off" /></div>
-            <button class="do" id="k-do" type="button">—</button>
+            <button class="do sre-btn" id="k-do" type="button">—</button>
           </div>
         </div>
       </section>
@@ -143,7 +150,7 @@
       <div class="sheet-inner">
         <h3 id="reason-title">—</h3>
         <div class="choices" id="reason-choices"></div>
-        <button class="sheet-cancel" id="reason-cancel" type="button">Cancel</button>
+        <button class="sheet-cancel sre-btn sre-btn-quiet" id="reason-cancel" type="button">Cancel</button>
       </div>
     </div>
 

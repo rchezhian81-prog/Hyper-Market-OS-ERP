@@ -8,6 +8,41 @@
 // own idempotency key, so a double click is one act. Every word has a Tamil twin and follows the one language toggle.
 
 const $ = (id) => document.getElementById(id);
+
+// ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
+// The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
+// no right — so the form is never a dead end, P-01 · P-08); the chrome's sheet finds it by name, code or barcode and the
+// name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
+const pickWords = {
+  en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
+  ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
+};
+const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
+const pickRepaints = [];
+const repaintPickers = () => { for (const f of pickRepaints) f(); };
+function pickable(inputId, kind, titleKey, extra = {}) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.pickable === 'on') return;
+  const office = window.sreOffice;
+  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  input.dataset.pickable = 'on';
+  const row = document.createElement('div'); row.className = 'pick-row';
+  input.replaceWith(row); row.append(input);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+  row.append(btn, name);
+  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+  paint(); pickRepaints.push(paint);
+  btn.addEventListener('click', async () => {
+    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+    if (!picked || picked.ok !== true) return;
+    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof extra.onPick === 'function') extra.onPick(picked);
+  });
+  input.addEventListener('input', () => { name.textContent = ''; });
+}
 const who = window.serviceDeskData && typeof window.serviceDeskData === 'object' ? window.serviceDeskData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const mayAct = perms.has('service.case.manage');
@@ -16,7 +51,7 @@ const WORDS = {
   en: {
     title: 'Customer cases', casesH: 'Open and recent cases', casesLede: 'Breaching cases first. Pick one to work it.',
     case: 'Case', kind: 'Kind', priority: 'Priority', state: 'State', first: 'First reply', resolution: 'Resolution',
-    openH: 'Open a case', caseNo: 'Case number', customer: 'Customer code', order: 'Order (optional)', said: 'What the customer said', openCase: 'Open the case',
+    openH: 'Open a case', caseNo: 'Case (its reference is given by the shop)', customer: 'Customer', order: 'Order (optional)', said: 'What the customer said', openCase: 'Open the case',
     complaint: 'Complaint', enquiry: 'Enquiry', warranty: 'Warranty', lost_and_found: 'Lost and found',
     low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent',
     open: 'open', waiting_on_customer: 'waiting on the customer', resolved: 'resolved', closed: 'closed',
@@ -37,20 +72,20 @@ const WORDS = {
     resolveH: 'Resolve', resolutionL: 'How it was resolved', resolve: 'Resolve the case',
     rcH: 'Root cause', rcLede: 'Why it happened, once it is resolved — so it does not happen again.', rcCause: 'Cause', rcNote: 'What happened', rcPrevent: 'What will stop it (optional)', rcSave: 'Record the root cause',
     summaryH: 'Why cases happen', summaryLede: 'Resolved cases by root cause — and the resolved ones nobody has explained yet.',
-    noRootCause: 'Resolved with no root cause yet:', allExplained: 'Every resolved case has a root cause.', cases: 'case(s)', complaints: 'complaint(s)',
+    noRootCause: 'Resolved with no root cause yet:', allExplained: 'Every resolved case has a root cause.', noneResolved: 'No case has been resolved yet, so there is no root cause to record.', cases: 'case(s)', complaints: 'complaint(s)',
     reportH: 'How the service is doing — every case', reportLede: 'Head office\'s count across all cases: how many were dealt with in time, which are late and must go up now, and what customers said.',
     rCases: 'Cases', rResolved: 'resolved', rMet: 'resolved within time', rBreached: 'past their time', rFirst: 'Not answered in time (first reply)',
     rEscalate: 'Late and still open — escalate now:', rNothingToEscalate: 'No open case is past its time.', rCsat: 'Satisfaction (out of 5)', rOfCases: 'of cases replied',
     rNoCsat: 'No customer has rated a case yet — there is no satisfaction score.', rUnreachable: 'The service report could not be read from head office.',
     done: 'Done.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', readOnly: 'You may read the cases; working them needs the service-desk role.',
-    none: 'No cases yet.', loading: 'Reading the cases from head office…',
+    none: 'No cases yet — head office holds no case for this shop.', loading: 'Reading the cases from head office…',
     product_quality: 'Product quality', stock_availability: 'Out of stock', pricing_or_billing: 'Price or bill', delivery: 'Delivery', staff_conduct: 'Staff conduct', store_process: 'Store process', system_or_app: 'System or app', customer_misunderstanding: 'Customer misunderstanding', other: 'Other',
   },
   ta: {
     title: 'வாடிக்கையாளர் வழக்குகள்', casesH: 'திறந்த மற்றும் சமீபத்திய வழக்குகள்', casesLede: 'காலம் மீறியவை முதலில். ஒன்றைத் தேர்ந்தெடுத்து வேலை செய்யுங்கள்.',
     case: 'வழக்கு', kind: 'வகை', priority: 'முன்னுரிமை', state: 'நிலை', first: 'முதல் பதில்', resolution: 'தீர்வு',
-    openH: 'வழக்கைத் திற', caseNo: 'வழக்கு எண்', customer: 'வாடிக்கையாளர் குறியீடு', order: 'ஆர்டர் (விருப்பம்)', said: 'வாடிக்கையாளர் சொன்னது', openCase: 'வழக்கைத் திற',
+    openH: 'வழக்கைத் திற', caseNo: 'வழக்கு (அதன் குறிப்பு கடை வழங்கியது)', customer: 'வாடிக்கையாளர்', order: 'ஆர்டர் (விருப்பம்)', said: 'வாடிக்கையாளர் சொன்னது', openCase: 'வழக்கைத் திற',
     complaint: 'புகார்', enquiry: 'விசாரணை', warranty: 'உத்தரவாதம்', lost_and_found: 'தொலைந்ததும் கண்டெடுத்ததும்',
     low: 'குறைவு', normal: 'சாதாரணம்', high: 'அதிகம்', urgent: 'அவசரம்',
     open: 'திறந்துள்ளது', waiting_on_customer: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', resolved: 'தீர்ந்தது', closed: 'மூடப்பட்டது',
@@ -70,14 +105,14 @@ const WORDS = {
     resolveH: 'தீர்வு', resolutionL: 'எப்படித் தீர்க்கப்பட்டது', resolve: 'வழக்கைத் தீர்',
     rcH: 'மூல காரணம்', rcLede: 'தீர்ந்த பிறகு, ஏன் நடந்தது — மீண்டும் நடக்காமல் இருக்க.', rcCause: 'காரணம்', rcNote: 'என்ன நடந்தது', rcPrevent: 'எது தடுக்கும் (விருப்பம்)', rcSave: 'மூல காரணத்தைப் பதிவு செய்',
     summaryH: 'வழக்குகள் ஏன் நடக்கின்றன', summaryLede: 'மூல காரணப்படி தீர்ந்த வழக்குகள் — விளக்கப்படாதவையும்.',
-    noRootCause: 'மூல காரணம் இல்லாமல் தீர்ந்தவை:', allExplained: 'தீர்ந்த ஒவ்வொரு வழக்கிற்கும் மூல காரணம் உள்ளது.', cases: 'வழக்கு(கள்)', complaints: 'புகார்(கள்)',
+    noRootCause: 'மூல காரணம் இல்லாமல் தீர்ந்தவை:', allExplained: 'தீர்ந்த ஒவ்வொரு வழக்கிற்கும் மூல காரணம் உள்ளது.', noneResolved: 'இன்னும் எந்த வழக்கும் தீர்க்கப்படவில்லை, எனவே பதிவு செய்ய மூல காரணம் எதுவும் இல்லை.', cases: 'வழக்கு(கள்)', complaints: 'புகார்(கள்)',
     reportH: 'சேவை எப்படி உள்ளது — எல்லா வழக்குகளும்', reportLede: 'எல்லா வழக்குகளிலும் தலைமை அலுவலகத்தின் கணக்கு: நேரத்தில் தீர்ந்தவை எத்தனை, தாமதமாகி இப்போதே மேலே அனுப்ப வேண்டியவை எவை, வாடிக்கையாளர்கள் என்ன சொன்னார்கள்.',
     rCases: 'வழக்குகள்', rResolved: 'தீர்ந்தவை', rMet: 'நேரத்திற்குள் தீர்ந்தவை', rBreached: 'நேரம் மீறியவை', rFirst: 'நேரத்தில் பதில் இல்லாதவை (முதல் பதில்)',
     rEscalate: 'தாமதமாகி இன்னும் திறந்துள்ளவை — இப்போதே மேலே அனுப்புங்கள்:', rNothingToEscalate: 'நேரம் மீறிய திறந்த வழக்கு எதுவும் இல்லை.', rCsat: 'திருப்தி (5-க்கு)', rOfCases: 'வழக்குகளில் பதில் வந்தவை',
     rNoCsat: 'இன்னும் எந்த வாடிக்கையாளரும் மதிப்பிடவில்லை — திருப்தி மதிப்பெண் இல்லை.', rUnreachable: 'சேவை அறிக்கையைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை.',
     done: 'முடிந்தது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', readOnly: 'நீங்கள் வழக்குகளைப் படிக்கலாம்; அவற்றில் வேலை செய்ய சேவை மேசைப் பங்கு தேவை.',
-    none: 'இன்னும் வழக்குகள் இல்லை.', loading: 'தலைமை அலுவலகத்திலிருந்து வழக்குகளைப் படிக்கிறது…',
+    none: 'இன்னும் வழக்குகள் இல்லை — இந்தக் கடைக்கு தலைமை அலுவலகத்தில் வழக்கு எதுவும் இல்லை.', loading: 'தலைமை அலுவலகத்திலிருந்து வழக்குகளைப் படிக்கிறது…',
     product_quality: 'பொருளின் தரம்', stock_availability: 'இருப்பு இல்லை', pricing_or_billing: 'விலை அல்லது பில்', delivery: 'டெலிவரி', staff_conduct: 'ஊழியர் நடத்தை', store_process: 'கடை நடைமுறை', system_or_app: 'அமைப்பு அல்லது செயலி', customer_misunderstanding: 'வாடிக்கையாளர் தவறான புரிதல்', other: 'மற்றவை',
   },
 };
@@ -138,7 +173,7 @@ function paintWords() {
   const nobody = $('nobody');
   nobody.hidden = mayAct;
   nobody.textContent = who === null ? t('nobody') : t('readOnly');
-  for (const id of ['open-case', 'ask-draft', 'resolve', 'rc-save']) $(id).disabled = !mayAct;
+  for (const btn of ['open-case', 'ask-draft', 'resolve', 'rc-save']) { $(btn).disabled = !mayAct; whyDisabled($(btn), mayAct ? '' : 'role'); }
   $('open-section').hidden = !mayAct;
 }
 
@@ -176,8 +211,8 @@ function renderCase() {
     b.textContent = clock === undefined ? '…' : t(clock.status);
   }
   const resolved = picked.state === 'resolved' || picked.state === 'closed';
-  $('resolve').disabled = !mayAct || resolved;
-  $('rc-save').disabled = !mayAct || !resolved;
+  $('resolve').disabled = !mayAct || resolved; whyDisabled($('resolve'), !mayAct ? 'role' : resolved ? { en: 'This case is already resolved.', ta: 'இந்த வழக்கு ஏற்கனவே தீர்க்கப்பட்டது.' } : '');
+  $('rc-save').disabled = !mayAct || !resolved; whyDisabled($('rc-save'), !mayAct ? 'role' : !resolved ? { en: 'Resolve the case first.', ta: 'முதலில் வழக்கைத் தீர்க்கவும்.' } : '');
   const list = $('draft-list');
   list.replaceChildren();
   for (const d of drafts) {
@@ -200,7 +235,7 @@ function renderCase() {
       const edit = document.createElement('textarea'); edit.value = d.text; edit.setAttribute('aria-label', t('editLabel'));
       const row = document.createElement('div'); row.className = 'row';
       const btn = (label, cls, decision) => {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = t(label); if (cls) b.className = cls; b.disabled = !mayAct;
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = t(label); if (cls) b.className = `${cls} sre-btn`; b.disabled = !mayAct; whyDisabled(b, mayAct ? '' : 'role');
         b.addEventListener('click', async () => {
           const body = decision === 'edited_and_approved' ? { decision, finalText: edit.value } : { decision };
           const out = await post(`/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}/decision`, body);
@@ -215,7 +250,7 @@ function renderCase() {
       // reply sent by that channel. Two acts at head office, each re-checked; if the send is refused the approval stands,
       // the refusal is shown, and the draft offers "Send it" with the channel to choose.
       if (CHANNELS.includes(picked.channel)) {
-        const both = document.createElement('button'); both.type = 'button'; both.className = 'approve-send'; both.disabled = !mayAct;
+        const both = document.createElement('button'); both.type = 'button'; both.className = 'approve-send sre-btn'; both.disabled = !mayAct; whyDisabled(both, mayAct ? '' : 'role');
         both.textContent = `${t('approveSend')} ${t(picked.channel)}`;
         both.addEventListener('click', async () => {
           const base = `/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}`;
@@ -234,7 +269,7 @@ function renderCase() {
       for (const c of CHANNELS) { const o = document.createElement('option'); o.value = c; o.textContent = t(c); sel.append(o); }
       // OB-390: the case's own channel is chosen already; the person may still pick another.
       if (CHANNELS.includes(picked.channel)) sel.value = picked.channel;
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('send'); b.disabled = !mayAct; b.className = 'send';
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('send'); b.disabled = !mayAct; b.className = 'send sre-btn'; whyDisabled(b, mayAct ? '' : 'role');
       b.addEventListener('click', async () => {
         const out = await post(`/v1/service/cases/${encodeURIComponent(picked.caseId)}/drafts/${encodeURIComponent(d.draftId)}/send`, { channel: sel.value });
         say($('draft-status'), out);
@@ -260,8 +295,11 @@ function renderSummary() {
     ul.append(li);
   }
   const missing = $('rc-missing');
-  missing.className = `status ${summary.resolvedWithoutRootCause.length === 0 ? 'good' : 'err'}`;
-  missing.textContent = summary.resolvedWithoutRootCause.length === 0 ? t('allExplained') : `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}`;
+  // U0 (P-08): "every resolved case has a root cause" is a claim about resolved cases — with none resolved it is not said.
+  const resolved = summary.byCause.reduce((n, row) => n + Number(row.cases ?? 0), 0) + summary.resolvedWithoutRootCause.length;
+  const unexplained = summary.resolvedWithoutRootCause.length > 0;
+  missing.className = `status ${unexplained ? 'err' : resolved === 0 ? 'muted' : 'good'}`;
+  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained');
 }
 
 // W4 · M21-FR-04: head office's service report over every case — the figures exactly as it sends them, nothing worked out here.
@@ -316,19 +354,38 @@ async function loadCases() {
   if (picked !== null) picked = { ...picked, ...(cases.find((c) => c.caseId === picked.caseId) ?? {}) };
   renderCases();
   renderCase();
+  if (mayAct && $('new-id').value.trim() === '') proposeCaseNumber();
   renderSummary();
   void loadReport();
 }
 
+/** U2: the case number is GIVEN by the page — the shop's day and the next free number in head office's own list — never
+ *  typed by the desk. Head office refuses a number that exists; then the next one is proposed. */
+function proposeCaseNumber() {
+  // OB-606: the SHOP's day, never the UTC date of "now"; without the bundle's shop day no number is proposed (the open refuses).
+  const shopDay = window.sreShopDay && typeof window.sreShopDay.today === 'function' ? window.sreShopDay.today() : null;
+  if (shopDay === null) return;
+  const day = shopDay.replace(/-/g, '');
+  const prefix = `C-${day}-`;
+  const taken = new Set(cases.map((c) => c.caseId));
+  let n = 1;
+  while (taken.has(`${prefix}${String(n).padStart(3, '0')}`)) n += 1;
+  $('new-id').value = `${prefix}${String(n).padStart(3, '0')}`;
+}
+
 $('open-case').addEventListener('click', async () => {
+  if ($('new-id').value.trim() === '') proposeCaseNumber();
   const caseId = $('new-id').value.trim();
   const body = { kind: $('new-kind').value, priority: $('new-priority').value, customerRef: $('new-customer').value.trim(), summary: $('new-summary').value.trim(), assignedTo: who?.userId ?? '' };
   const orderRef = $('new-order').value.trim();
   const channel = $('new-channel').value;
   const out = await post(`/v1/service/cases/${encodeURIComponent(caseId)}`, { ...body, ...(orderRef === '' ? {} : { orderRef }), ...(channel === '' ? {} : { channel }) });
   say($('open-status'), out);
-  if (out.ok) { await loadCases(); await pick(caseId); }
+  if (out.ok) { await loadCases(); await pick(caseId); $('new-id').value = ''; proposeCaseNumber(); }
+  else if (out.status === 409) { $('new-id').value = ''; proposeCaseNumber(); }
 });
+// U2: the customer is picked by name; the number is proposed, never typed.
+pickable('new-customer', 'customer', 'pickCustomer', { idOf: (p) => String(p.id ?? '') });
 
 $('ask-draft').addEventListener('click', async () => {
   if (picked === null) return;
@@ -370,6 +427,7 @@ $('lang').addEventListener('click', () => {
   renderCases();
   renderCase();
   renderSummary();
+  repaintPickers();
   renderReport();
 });
 
@@ -381,4 +439,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     // No offline copy this time; the screen still works online.
   });
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

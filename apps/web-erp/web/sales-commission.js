@@ -29,7 +29,7 @@ function paintView() {
       text('p', `${t('proposedBy')} ${r.proposedBy} · ${when(r.proposedAt)}${r.approvedBy === undefined ? '' : ` · ${t('approvedBy')} ${r.approvedBy}`}`, 'meta'));
     if (r.approvedBy === undefined && may.approve) {
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('approve');
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('approve');
       b.addEventListener('click', async () => {
         status.textContent = t('reading');
         const out = await session.approve(view.salespersonId, r.ruleId);

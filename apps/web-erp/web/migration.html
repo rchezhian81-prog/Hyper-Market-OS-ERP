@@ -59,7 +59,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary { font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); font-size: 18px; }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -81,10 +81,10 @@
       .row.clean { border-left: 5px solid var(--good); }
       .row.held { border-left: 5px solid var(--info); }
       .row.done { border-left: 5px solid var(--line); opacity: 0.75; }
-      .chip { background: var(--panel-2); border-radius: 999px; padding: 2px 10px; font-size: 13px; margin-right: 6px; margin-top: 4px; display: inline-block; }
+      .chip { background: var(--panel-2); border-radius: 999px; padding: 2px 10px; font-size: 14px; margin-right: 6px; margin-top: 4px; display: inline-block; }
       .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
       .sides span { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
-      .sides small { display: block; color: var(--muted); font-size: 13px; }
+      .sides small { display: block; color: var(--muted); font-size: 14px; }
 
       .verdict { border-radius: 14px; padding: 16px; font-weight: 600; margin-bottom: 12px; font-size: 18px; }
       .verdict.go { background: var(--ok-surface); color: var(--on-ok-surface); border: 2px solid var(--good); }
@@ -149,6 +149,8 @@
       .ec input[type=file] { padding: 8px 0; min-height: var(--tap); border: 0; background: transparent; }
       /* A hidden control stays hidden whatever its own display (a labelled button is a flex box). */
       .ec [hidden] { display: none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -188,7 +190,7 @@
           <option value="owner_decision" id="trigger-owner">My decision</option>
           <option value="time_window_exceeded" id="trigger-time">We have run out of time tonight</option>
         </select>
-        <button id="rollback" class="danger wide" type="button">Go back to the old system now</button>
+        <button id="rollback" class="danger wide sre-btn sre-btn-danger" type="button">Go back to the old system now</button>
       </section>
 
       <section id="view-figures" hidden>
@@ -210,7 +212,7 @@
             <input id="sign-statement" type="text" autocomplete="off" />
           </div>
         </div>
-        <button id="sign" class="primary wide" type="button">Sign it</button>
+        <button id="sign" class="primary wide sre-btn sre-btn-primary" type="button">Sign it</button>
 
         <!-- STEP-1 §4 item 5: the six witness checks' figures, as the cloud last sent them (MG-06 / QG-07). -->
         <h3 id="witness-title">What the outside evidence says</h3>
@@ -244,7 +246,7 @@
         <select id="survivor"></select>
         <label for="decide-reason" id="decide-reason-label">Why (this is what anybody reads a year from now)</label>
         <textarea id="decide-reason"></textarea>
-        <button id="decide" class="primary wide" type="button">Record my decision</button>
+        <button id="decide" class="primary wide sre-btn sre-btn-primary" type="button">Record my decision</button>
       </section>
 
       <section id="view-both" hidden>
@@ -264,8 +266,8 @@
           <input id="ec-date" type="date" autocomplete="off" />
           <h4 id="ec-templates-title">Our templates (what each column means)</h4>
           <div class="actions">
-            <button id="ec-template-item_wise" type="button">Item-wise template</button>
-            <button id="ec-template-bill_wise" type="button">Bill-wise template</button>
+            <button id="ec-template-item_wise" type="button" class="sre-btn">Item-wise template</button>
+            <button id="ec-template-bill_wise" type="button" class="sre-btn">Bill-wise template</button>
           </div>
           <div class="file" id="ec-box-item_wise">
             <label for="ec-file-item_wise" id="ec-file-item_wise-label">1. The old system's item-wise sales report for the day (CSV)</label>
@@ -298,8 +300,8 @@
               <select id="ec-map-lines-tax"></select>
             </div>
             <div class="actions">
-              <button id="ec-map-save" class="primary" type="button">Save the mapping</button>
-              <button id="ec-map-cancel" type="button">Cancel</button>
+              <button id="ec-map-save" class="primary sre-btn" type="button">Save the mapping</button>
+              <button id="ec-map-cancel" type="button" class="sre-btn">Cancel</button>
             </div>
           </div>
           <h4 id="ec-mappings-title">Which column is which (saved on this store computer)</h4>
@@ -315,17 +317,17 @@
             </div>
           </div>
           <div class="actions">
-            <button id="ec-load" class="primary" type="button">Load and compare</button>
+            <button id="ec-load" class="primary sre-btn sre-btn-primary" type="button">Load and compare</button>
           </div>
           <div id="ec-result"></div>
           <div id="ec-reasons"></div>
           <div class="actions">
-            <button id="ec-reasons-save" class="primary" type="button">Save the reasons</button>
+            <button id="ec-reasons-save" class="primary sre-btn" type="button">Save the reasons</button>
           </div>
           <label for="ec-statement" id="ec-statement-label">What you checked (in your own words)</label>
           <textarea id="ec-statement"></textarea>
           <div class="actions">
-            <button id="ec-sign" class="primary" type="button">Sign the day</button>
+            <button id="ec-sign" class="primary sre-btn sre-btn-primary" type="button">Sign the day</button>
           </div>
           <div id="ec-history"></div>
         </section>
@@ -341,13 +343,13 @@
         <input id="day-import" type="file" accept=".csv,text/csv" />
         <div id="day-areas"></div>
         <div class="actions">
-          <button id="day-save" class="primary" type="button">Save the day</button>
+          <button id="day-save" class="primary sre-btn" type="button">Save the day</button>
         </div>
         <div id="day-view"></div>
         <label for="day-statement" id="day-statement-label">What you checked (in your own words)</label>
         <textarea id="day-statement"></textarea>
         <div class="actions">
-          <button id="day-sign" class="primary" type="button">Sign the day</button>
+          <button id="day-sign" class="primary sre-btn sre-btn-primary" type="button">Sign the day</button>
         </div>
         <h3 id="days-title">Days so far</h3>
         <div id="days-list"></div>

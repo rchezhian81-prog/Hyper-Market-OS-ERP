@@ -100,7 +100,8 @@ async function startShell(h: ApiHarness, tenantId: string, extra: (file: string)
 }
 
 /** Wait until a field holds exactly the value (never read in the same tick as the change). */
-const holds = (page: Page, id: string, value: string) => page.waitForFunction(`document.getElementById(${JSON.stringify(id)})?.value === ${JSON.stringify(value)}`, undefined, { timeout: 10_000 });
+/** Wait until a field holds the day — a plain field as its value, the chrome's shared dd/mm field (U2) as the ISO it keeps behind the shown text. */
+const holds = (page: Page, id: string, value: string) => page.waitForFunction(`(() => { const el = document.getElementById(${JSON.stringify(id)}); return el !== null && (el.value === ${JSON.stringify(value)} || el.dataset.iso === ${JSON.stringify(value)}); })()`, undefined, { timeout: 10_000 });
 /** Wait until an element's text (or a data attribute) is exactly the value. */
 const reads = (page: Page, js: string, value: string) => page.waitForFunction(`${js} === ${JSON.stringify(value)}`, undefined, { timeout: 10_000 });
 

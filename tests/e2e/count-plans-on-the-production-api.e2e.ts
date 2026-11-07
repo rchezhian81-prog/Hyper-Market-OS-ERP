@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { storeSealer } from '../support/store-seal';
+import { askedThenConfirmed, confirmIt } from './lib/confirm-sheet';
 
 /**
  * **The Count plans page, in a real browser, on the PRODUCTION API over real PostgreSQL (WF-08 · D05-FR-05 · M09-FR-04 ·
@@ -148,6 +149,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Count 
       // Approving now is refused in head office's own words — nothing posts.
       await s.page.fill('#d-reason', 'aisle 4 done');
       await s.page.click('#d-approve');
+      await confirmIt(s.page); // U1 · OB-698
       await says(s.page, 'd-status', /^Head office refused: Not every line is ready: P1 recount_required \(moved_during_freeze\); P2 recount_required \(over_recount_threshold\)/);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
@@ -177,6 +179,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Count 
       }
       await s.page.fill('#d-reason', 'aisle 4 done');
       await s.page.click('#d-approve');
+      await confirmIt(s.page); // U1 · OB-698
       await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR2} counted P1, P2 and cannot approve their own variance \\(§28\\)\\.`));
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
@@ -194,7 +197,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Count 
       expect(await s.page.locator('#d-lines li[data-product="P2"]').innerText()).toMatch(/Expected 25 · Counted 24 · Difference -1 · Value −₹10\.00[\s\S]*Cause: Theft suspected — one tin missing from the front/);
       const answered = s.page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/approve'));
       await s.page.fill('#d-reason', 'aisle 4 done');
-      await s.page.click('#d-approve');
+      // U1 · OB-698: the consequence-and-confirm sheet names the count and its loss and gain; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(s.page, () => s.page.click('#d-approve'), /Approve count .* at br-1: .* counted, loss ₹/, () => s.writes.length);
       const body = (await (await answered).json()) as { posted: { productId: string; varianceMinor: number }[]; heldWriteOffsApplied: { heldId: string }[]; plan: PlanRec };
       expect(body.plan).toMatchObject({ state: 'approved', approvedBy: MGR });
       expect(body.posted.map((p) => [p.productId, p.varianceMinor])).toEqual([['P1', -3], ['P2', -1]]);

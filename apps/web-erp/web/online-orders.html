@@ -25,7 +25,7 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, textarea, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       textarea { min-height: 96px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -56,14 +56,14 @@
         <h3 id="order-h">One order</h3>
         <div class="row-form">
           <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
-          <button id="show-order" type="button"><span id="show-order-text">Show the order</span></button>
+          <button id="show-order" type="button" class="sre-btn sre-btn-primary"><span id="show-order-text">Show the order</span></button>
         </div>
         <p class="status" id="order-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="order"></ul>
       </section>
       <section aria-labelledby="pay-h">
         <h3 id="pay-h">Payments waiting for the bank</h3>
-        <div><button id="show-pay" type="button"><span id="show-pay-text">Show what is waiting</span></button></div>
+        <div><button id="show-pay" type="button" class="sre-btn"><span id="show-pay-text">Show what is waiting</span></button></div>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="pay"></ul>
       </section>
@@ -71,7 +71,7 @@
         <h3 id="res-h">Stock held for online orders</h3>
         <div class="row-form">
           <label for="res-store"><span id="l-res-store">Store</span><input id="res-store" autocomplete="off" /></label>
-          <button id="show-res" type="button"><span id="show-res-text">Show the stock held</span></button>
+          <button id="show-res" type="button" class="sre-btn"><span id="show-res-text">Show the stock held</span></button>
         </div>
         <p class="status" id="res-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="res"></ul>
@@ -81,14 +81,14 @@
         <p class="lead" id="buf-lead"></p>
         <div class="row-form">
           <label for="buf-store"><span id="l-buf-store">Store</span><input id="buf-store" autocomplete="off" /></label>
-          <button id="show-avail" type="button"><span id="show-avail-text">Show what the app may promise</span></button>
+          <button id="show-avail" type="button" class="sre-btn"><span id="show-avail-text">Show what the app may promise</span></button>
         </div>
         <ul class="rows" id="avail"></ul>
         <div class="row-form">
           <label for="buf-product"><span id="l-buf-product">Product</span><input id="buf-product" autocomplete="off" /></label>
           <label for="buf-units"><span id="l-buf-units">How many to keep back</span><input id="buf-units" inputmode="numeric" autocomplete="off" /></label>
           <label for="buf-reason"><span id="l-buf-reason">Why</span><input id="buf-reason" autocomplete="off" maxlength="300" /></label>
-          <button id="set-buffer" type="button"><span id="set-buffer-text">Save the buffer</span></button>
+          <button id="set-buffer" type="button" class="sre-btn"><span id="set-buffer-text">Save the buffer</span></button>
         </div>
         <p class="status" id="buf-status" role="status" aria-live="polite"></p>
       </section>
@@ -97,7 +97,7 @@
         <label for="rec-channel"><span id="l-rec-channel">Channel name</span><input id="rec-channel" autocomplete="off" /></label>
         <label for="rec-theirs"><span id="l-rec-theirs">The channel's list</span><textarea id="rec-theirs" autocomplete="off"></textarea></label>
         <label for="rec-ours"><span id="l-rec-ours">Our list</span><textarea id="rec-ours" autocomplete="off"></textarea></label>
-        <div><button id="compare" type="button"><span id="compare-text">Compare</span></button></div>
+        <div><button id="compare" type="button" class="sre-btn"><span id="compare-text">Compare</span></button></div>
         <p class="status" id="rec-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="rec"></ul>
       </section>

@@ -193,8 +193,10 @@ describe.skipIf(!HAVE_BROWSER)('the served till checks pack dates, BIS licences 
       const labels = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent));
       const i = labels.findIndex((l) => l === 'Scan speed' || l === 'ஸ்கேன் வேகம்');
       expect(i, labels.join(' | ')).toBeGreaterThanOrEqual(0);
-      expect(await page.$eval(`#pay-kinds button:nth-child(${i + 1})`, (b) => b.querySelector('svg') !== null), 'an icon beside the word').toBe(true);
-      await page.click(`#pay-kinds button:nth-child(${i + 1})`);
+      // U4: the More list carries headings between its buttons, so the i-th BUTTON is addressed by its own index, not nth-child.
+      const option = page.locator('#pay-kinds button').nth(i);
+      expect(await option.evaluate((b) => b.querySelector('svg') !== null), 'an icon beside the word').toBe(true);
+      await option.click();
       await panelOpen(page, 'refusal');
     };
     await openScanSpeed();

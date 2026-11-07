@@ -78,7 +78,7 @@ describe('Scrap and recycling — the session (M28-FR-02)', () => {
   it('says head office\'s refusal in its words (another branch), and a lost line as unreachable', async () => {
     const refusing = headOffice(() => ({ status: 403, body: { error: { code: 'branch_not_in_scope', whatHappened: 'Branch store-2 is outside your access.' } } }));
     const out = await createScrapSession({ viewer: MANAGER, fetch: refusing.fetch }).review({ branchId: 'store-2', from: '2026-10-01', to: '2026-10-01' });
-    expect(scrapOutcomeWords('en', out)).toBe('Head office refused: Branch store-2 is outside your access.');
+    expect(scrapOutcomeWords('en', out)).toBe('Head office refused: Branch store-2 is outside your access. Nothing was changed. Ask a person who holds that right.'); // U0 · G10: the three parts
     const lost = await createScrapSession({ viewer: MANAGER, fetch: headOffice(() => 'throw').fetch }).review({ branchId: 's', from: '2026-10-01', to: '2026-10-01' });
     expect(scrapOutcomeWords('ta', lost)).toMatch(TAMIL);
     expect(scrapOutcomeWords('en', { result: 'ok', value: { postedToFinance: false } })).toMatch(/NOT in the books until finance takes it up/);

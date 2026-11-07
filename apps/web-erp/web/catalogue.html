@@ -69,7 +69,7 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button.primary {   font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       button:disabled { opacity: .45; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
@@ -95,8 +95,9 @@
 
       /* ── The two limits, shown BEFORE a price is typed ──────────────────── */
       .limits { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+      @media (max-width: 600px) { .two, .limits { grid-template-columns: minmax(0, 1fr); } } /* U0: one column on a phone, no sideways scroll */
       .limits div { background: var(--panel-2); border-radius: 12px; padding: 10px 14px; }
-      .limits .label { color: var(--muted); font-size: 13px; display: block; }
+      .limits .label { color: var(--muted); font-size: var(--fs-sm); display: block; }
       .limits .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
       .verdict {
@@ -109,7 +110,7 @@
       .verdict .why { color: var(--muted); font-size: 15px; }
 
       table { width: 100%; border-collapse: collapse; font-size: 15px; }
-      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 6px; }
+      th { text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; padding: 8px 6px; }
       td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
       td.amount, th.amount { text-align: right; }
       tr.blocked td { color: var(--warn); }
@@ -200,11 +201,11 @@
         <div class="score" id="item-score"></div>
 
         <h3 id="item-actions-title">What you can do</h3>
-        <button id="publish" class="primary wide" type="button">Put this on sale</button>
+        <button id="publish" class="primary wide sre-btn sre-btn-primary" type="button">Put this on sale</button>
         <p class="lead"></p>
-        <button id="recall" class="danger wide" type="button">Stop selling this everywhere</button>
+        <button id="recall" class="danger wide sre-btn sre-btn-danger" type="button">Stop selling this everywhere</button>
         <p class="lead" id="recall-note">A recall block stops the till and the app at once, and keeps working with no internet.</p>
-        <button id="back-to-items" type="button" class="wide">Back to the list</button>
+        <button id="back-to-items" type="button" class="wide sre-btn">Back to the list</button>
       </section>
 
       <!-- A price change: the limits BEFORE the field, not after the refusal. -->
@@ -239,7 +240,7 @@
           </div>
         </div>
 
-        <button id="check-price" class="primary wide" type="button">Check this price</button>
+        <button id="check-price" class="primary wide sre-btn sre-btn-primary" type="button">Check this price</button>
 
         <div id="price-verdict" hidden></div>
         <!--
@@ -253,9 +254,9 @@
             <label for="price-why" id="price-why-label">Why this is needed (the person approving reads it)</label>
             <textarea id="price-why" maxlength="300"></textarea>
           </div>
-          <button id="ask-price" class="primary wide" type="button">Ask for approval</button>
+          <button id="ask-price" class="primary wide sre-btn sre-btn-primary" type="button">Ask for approval</button>
         </div>
-        <button id="save-price" class="primary wide" type="button" hidden>Save this price</button>
+        <button id="save-price" class="primary wide sre-btn sre-btn-primary" type="button" hidden>Save this price</button>
 
         <!--
           OB-512: an MRP on record that is NOT YET IN FORCE may be replaced — with a reason and a second person's approval
@@ -279,8 +280,8 @@
             <label for="mrp-replace-why" id="mrp-replace-why-label">Why it is replaced (the person approving reads it)</label>
             <textarea id="mrp-replace-why" maxlength="300"></textarea>
           </div>
-          <button id="mrp-replace-ask" class="primary wide" type="button">Ask for approval</button>
-          <button id="mrp-replace-save" class="wide" type="button">Replace it</button>
+          <button id="mrp-replace-ask" class="primary wide sre-btn sre-btn-primary" type="button">Ask for approval</button>
+          <button id="mrp-replace-save" class="wide sre-btn" type="button">Replace it</button>
         </div>
 
         <h3 id="history-title">What this item has been priced at</h3>
@@ -311,7 +312,7 @@
           <label for="shelf-capacity" id="shelf-capacity-label">How many fit on that facing</label>
           <input id="shelf-capacity" type="number" inputmode="numeric" min="1" step="1" />
         </div>
-        <button id="assign-shelf" class="primary wide" type="button">Put it here</button>
+        <button id="assign-shelf" class="primary wide sre-btn sre-btn-primary" type="button">Put it here</button>
 
         <h3 id="unmapped-title">Items with no shelf address</h3>
         <p class="lead" id="unmapped-lead">Each of these sends the picker back across the shop.</p>
@@ -362,7 +363,7 @@
           </div>
         </div>
 
-        <button id="simulate" class="primary wide" type="button">Work out what it costs</button>
+        <button id="simulate" class="primary wide sre-btn sre-btn-primary" type="button">Work out what it costs</button>
         <div id="promo-verdict" hidden></div>
         <!-- M05-FR-03/04 (re-audit 30 Oct 2026): the offer's RULE, recorded at head office before it can start. Head office
              refuses to start an offer it has no rule for; the rule is a draft that applies to nothing until started. -->
@@ -468,7 +469,7 @@
             <label for="rule-cap" id="rule-cap-label">Most times it applies on one bill (optional)</label>
             <input id="rule-cap" type="number" inputmode="numeric" min="1" step="1" />
           </div>
-          <button id="define-offer" class="primary wide" type="button">Record this rule at head office</button>
+          <button id="define-offer" class="primary wide sre-btn sre-btn-primary" type="button">Record this rule at head office</button>
           <p class="lead" id="define-status" role="status" aria-live="polite"></p>
         </div>
         <!-- An offer that loses margin needs a SECOND person's own approval, asked for here (ADR-0024 · §28). -->
@@ -478,9 +479,9 @@
             <label for="promo-why" id="promo-why-label">Why this is needed (the person approving reads it)</label>
             <textarea id="promo-why" maxlength="300"></textarea>
           </div>
-          <button id="ask-launch" class="primary wide" type="button">Ask for approval</button>
+          <button id="ask-launch" class="primary wide sre-btn sre-btn-primary" type="button">Ask for approval</button>
         </div>
-        <button id="launch" class="primary wide" type="button" hidden>Start this offer</button>
+        <button id="launch" class="primary wide sre-btn sre-btn-primary" type="button" hidden>Start this offer</button>
       </section>
 
       <!-- D06-FR-05: competitor price capture and comparison — over head office's own routes (/v1/prices/competitor*),
@@ -520,7 +521,7 @@
               <input id="rival-note" type="text" autocomplete="off" maxlength="200" />
             </div>
           </div>
-          <button id="rival-record" class="primary wide" type="button">Record this price</button>
+          <button id="rival-record" class="primary wide sre-btn sre-btn-primary" type="button">Record this price</button>
           <p class="lead" id="rival-record-status" role="status" aria-live="polite"></p>
         </div>
         <div id="rivals-list"></div>
@@ -536,7 +537,7 @@
               <div class="field"><label for="rule-age" id="rule-age-label"></label><input id="rule-age" type="text" inputmode="numeric" autocomplete="off" /></div>
             </div>
             <div class="field"><label for="rule-why" id="rule-why-label"></label><input id="rule-why" type="text" autocomplete="off" maxlength="200" /></div>
-            <button id="rule-save" class="wide" type="button"></button>
+            <button id="rule-save" class="sre-btn wide" type="button"></button>
           </div>
           <p class="lead" id="rule-status" role="status" aria-live="polite"></p>
         </div>
@@ -600,7 +601,7 @@
             <label for="scale-reason" id="scale-reason-label">Why (optional to add a rule; needed to stop one)</label>
             <input id="scale-reason" type="text" autocomplete="off" maxlength="200" />
           </div>
-          <button id="scale-save" class="primary wide" type="button">Save this rule at head office</button>
+          <button id="scale-save" class="primary wide sre-btn sre-btn-primary" type="button">Save this rule at head office</button>
           <p class="lead" id="scale-save-status" role="status" aria-live="polite"></p>
         </div>
         <p class="lead" id="scale-note">A change reaches the tills with the next price update.</p>

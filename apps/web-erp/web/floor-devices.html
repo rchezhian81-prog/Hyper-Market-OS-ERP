@@ -33,7 +33,7 @@
       textarea { min-height: 96px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 10px; align-items: end; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
-      button.primary { background: var(--accent); color: var(--on-accent); border: 0; }
+      button.primary {   border: 0; }
       td button { margin: 2px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
@@ -57,7 +57,7 @@
   </head>
   <body>
     <header>
-      <h1 class="who" id="title">Shelf labels, RFID and cameras</h1>
+      <h1 class="who" id="title">Shelf labels and floor devices</h1>
       <span class="sync">
         <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
       </span>
@@ -76,7 +76,7 @@
           <div class="panel"><span class="k" id="k-rfid">RFID counts to check</span><span class="v" id="v-rfid">—</span></div>
           <div class="panel"><span class="k" id="k-refused">Refused</span><span class="v" id="v-refused">—</span></div>
         </div>
-        <div class="row"><button id="refresh" type="button">Refresh</button></div>
+        <div class="row"><button id="refresh" type="button" class="sre-btn sre-btn-quiet">Refresh</button></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -109,7 +109,7 @@
           <label for="r-lanes" data-for="cctv_source"><span id="l-r-lanes">Tills it looks at (names, commas)</span><input id="r-lanes" autocomplete="off" /></label>
         </form>
         <label for="r-key"><span id="l-r-key">The device's public key (from the maker's set-up tool — never a password)</span><textarea id="r-key" spellcheck="false" autocomplete="off"></textarea></label>
-        <div class="row"><button id="r-save" class="primary" type="button">Register it</button></div>
+        <div class="row"><button id="r-save" class="primary sre-btn sre-btn-primary" type="button">Register it</button></div>
         <p class="status" id="reg-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -132,7 +132,7 @@
         <p class="lead" id="cam-lead"></p>
         <form id="cam-form" class="row">
           <label for="cam-day"><span id="l-cam-day">Day</span><input id="cam-day" type="date" /></label>
-          <button id="cam-read" type="submit">Read that day</button>
+          <button id="cam-read" type="submit" class="sre-btn">Read that day</button>
         </form>
         <ul class="rows" id="cam-list" aria-label="Camera links"></ul>
         <p class="status" id="cam-status" role="status" aria-live="polite"></p>

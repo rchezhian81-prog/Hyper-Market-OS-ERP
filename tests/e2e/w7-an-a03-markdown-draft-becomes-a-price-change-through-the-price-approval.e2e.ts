@@ -8,6 +8,7 @@ import { says } from './lib/r4c-box-page';
 import { STORE_RULES } from '../support/store-rules';
 import { shiftDate } from '../../packages/calendar/src/trading-day';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { confirmIt } from './lib/confirm-sheet';
 
 /**
  * **W7 · A03 (Inventory agent: markdown SUGGESTIONS — a manager commits) · P-05 · hard rule #5 · D06-FR-05 — ONE connected run:
@@ -139,6 +140,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('A03: a mar
     await ok(call('POST', `/v1/approvals/requests/${request.requestId}/decide`, OWNER, { decision: 'approved', reason: 'the batch has two days left' }), 'owner approves');
     await c.page.click('#banner-ok');
     await c.page.click('#save-price');
+    await confirmIt(c.page); // U1 · OB-698: the consequence-and-confirm sheet before the price is saved
     await says(c.page, '#banner-title', /^Price saved$/);
     expect(c.writes).toEqual(['POST /v1/approvals/requests', 'POST /v1/prices/changes']);
     await expect.poll(shelf).toBe(3_750);

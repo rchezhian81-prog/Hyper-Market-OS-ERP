@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
+import { askedThenConfirmed, confirmIt } from './lib/confirm-sheet';
 
 /**
  * **A person starts and closes a product recall, in a real browser (M10-FR-04, ADR-0013 — the E2E matrix).**
@@ -143,7 +144,8 @@ describe.skipIf(!HAVE_BROWSER)('operator recall delivery, end to end in a real b
     try {
       await page.fill('#batch', 'B-1');
       await page.fill('#reason', 'supplier notice: glass');
-      await page.click('#start');
+      // U1 · OB-698: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      await askedThenConfirmed(page, () => page.click('#start'), /Recall batch B-1/, () => rec.requests.length);
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
 
       // The recall reached the cloud, at the batch's own route, under the operator's own session.
@@ -172,6 +174,7 @@ describe.skipIf(!HAVE_BROWSER)('operator recall delivery, end to end in a real b
       await page.fill('#batch', 'B-1');
       await page.fill('#reason', 'supplier notice: glass');
       await page.click('#start');
+      await confirmIt(page);
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
 
       // The cloud WAS asked, and refused.

@@ -19,6 +19,9 @@ import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-s
  * Needs DATABASE_URL and Chromium; else it SKIPS.
  */
 
+/** The shop's date field reads day/month/year (U2). */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['ob676', 'dispatch', 'e2e', 'signing', 'key'].join('-').padEnd(48, '0');
@@ -60,7 +63,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-676 —
     try {
       expect(s.reads, 'nothing is read on open').toEqual([]);
       await s.page.fill('#store', 'br-1');
-      await s.page.fill('#run-date', day);
+      await s.page.fill('#run-date', ddmm(day));
       await s.page.click('#show-tolerance');
       await stateIs(s.page, 'not_confirmed');
       expect(await s.page.innerText('#tolerance-state')).toBe('⚠ In force at this store: ₹100.00 — NOT CONFIRMED by the owner — drivers and the store computer keep using it until he confirms or changes it. Starting suggestion: ₹100.00.');

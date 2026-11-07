@@ -6,6 +6,28 @@
 // again. Every word has a Tamil twin and follows the toggle.
 
 const $ = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+/** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
+function setShopDate(id, iso) { const n = document.getElementById(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; }
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 const api = window.scales ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
@@ -14,7 +36,8 @@ let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
 let reg = null; // Register | null
 const FIELDS = [['assetId', 'f-asset'], ['storeId', 'f-store'], ['lanes', 'f-lanes'], ['approvalNo', 'f-approval-no'], ['capacityGrams', 'f-capacity'], ['lastStampedOn', 'f-stamped'], ['reverificationDueOn', 'f-valid'], ['certificateRef', 'f-certificate']];
-const form = () => Object.fromEntries(FIELDS.map(([k, id]) => [k, $(id).value]));
+const DATE_FIELDS = new Set(['f-stamped', 'f-valid']);
+const form = () => Object.fromEntries(FIELDS.map(([k, id]) => [k, DATE_FIELDS.has(id) ? dateOf(id) : $(id).value]));
 
 function say(el, out, good) {
   el.className = `status ${out.result === 'ok' ? 'good' : 'err'}`;
@@ -67,7 +90,7 @@ function paintRequests() {
     li.append(head, state);
     if (r.status === 'approved' && may.manage) {
       const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status');
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = t('saveApproved'); b.dataset.act = 'save-approved';
+      const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('saveApproved'); b.dataset.act = 'save-approved';
       b.addEventListener('click', async () => {
         const out = await session.saveApproved(r);
         say(status, out, t('saved'));
@@ -112,7 +135,7 @@ function showTab(which) {
 
 function edit(s) {
   const f = api.formOf(s);
-  for (const [k, id] of FIELDS) $(id).value = f[k];
+  for (const [k, id] of FIELDS) { if (DATE_FIELDS.has(id)) setShopDate(id, f[k]); else $(id).value = f[k]; }
   $('f-ask').hidden = true;
   $('edit-status').textContent = '';
   showTab('edit');
@@ -156,4 +179,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+// ── U2b (G14): a date a shop person reads — the stamp dates on the shared dd/mm field, ISO sent as before
+if (api !== null) {
+  shopDate('f-stamped', { en: api.words('en', 'fStamped'), ta: api.words('ta', 'fStamped') });
+  shopDate('f-valid', { en: api.words('en', 'fValid'), ta: api.words('ta', 'fValid') });
 }

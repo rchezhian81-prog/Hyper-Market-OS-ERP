@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { startScreenServer, SCREEN_HOST, APP_SHELL, screenOfPath, type ScreenServer } from '../../edge/store-edge/src/screen-server';
+import { startScreenServer, SCREEN_HOST, APP_SHELL, screenOfPath, permissionsForScreen, type ScreenServer } from '../../edge/store-edge/src/screen-server';
 import type { ScreenInput } from '../../edge/store-edge/src/screen-data';
 import { HEAD_OFFICE_PAGES, headOfficePagePayload } from '../../edge/store-edge/src/head-office-pages';
 import { readPack } from '../../edge/store-edge/src/store-pack';
 import { SyncOutbox } from '../../packages/sync/src/index';
-import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
+import { ERP_NAVIGATION, permissionsOpening } from '../../apps/web-erp/src/navigation';
 
 /**
  * **Every menu item marked as the store computer's is ANSWERED by the store computer's own server (OB-380 · P-07 · P-08).**
@@ -72,6 +72,19 @@ describe('every menu item the store computer may offer is answered by its server
       expect(titleOf(got.body), `${item.id} is served its own page (${shell.file}), not another screen's`).toBe(titleOf(onDisk));
       // Only the ERP's pages carry the menu; the till and the handhelds under Devices are one job each.
       if (shell.dir === 'web-erp') expect(got.body, `${item.id}: the box drew the menu into the page`).toContain('window.sreNavigation = ');
+    }
+  });
+
+  // U0 (UI/UX gap audit, 1 Nov 2026): the box checked the FIRST menu item's words for a screen, so a person the menu
+  // offered a second item for (the accountant's "Audit log" → the Admin screen's records tab; a pricing-only person's
+  // "Pricing" → the catalogue screen) was refused with 403 on the link they were offered. Every word that opens an item
+  // must be a word the box accepts for that item's screen — the menu and the box agree, item by item.
+  it('every word the menu opens an item with is a word the box accepts for that item\'s screen (no offered link the box refuses)', () => {
+    for (const item of boxItems) {
+      const screen = screenOfPath(item.path);
+      expect(screen, `${item.id} names a screen`).not.toBeNull();
+      const boxWords = permissionsForScreen(screen!) ?? [];
+      for (const word of permissionsOpening(item)) expect(boxWords, `${item.id} (${item.path}) is offered with "${word}", which the box does not accept for ${screen}`).toContain(word);
     }
   });
 

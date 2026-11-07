@@ -5,6 +5,26 @@
 // an icon AND words; every word has a Tamil twin. No prompt/confirm/alert; nothing on a timer.
 
 const $ = (id) => document.getElementById(id);
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+const WHY_WORDS = {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+};
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (WHY_WORDS[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
 const api = window.onlineOrders ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, move: false, backorder: false, settle: false, reservations: false, availability: false, buffer: false };
@@ -47,13 +67,13 @@ function paintOrder() {
     const b = document.createElement('button'); b.type = 'button'; b.className = `${ev === 'cancel' ? 'quiet ' : ''}step step-${ev}`; b.dataset.event = ev;
     const i = icon(ev === 'cancel' ? 'x' : 'circle-check'); if (i !== null) b.append(i);
     b.append(text('span', t(`ev_${ev}`)));
-    b.disabled = !may.move;
+    b.disabled = !may.move; whyDisabled(b, may.move ? '' : 'role');
     b.addEventListener('click', () => { void move(ev); });
     steps.append(b);
   }
   if (!finished && (o.backorders ?? []).length === 0) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet backorder';
-    b.append(text('span', t('backorder'))); b.disabled = !may.backorder;
+    b.append(text('span', t('backorder'))); b.disabled = !may.backorder; whyDisabled(b, may.backorder ? '' : 'role');
     b.addEventListener('click', () => { void backorder(); });
     steps.append(b);
   }
@@ -72,9 +92,9 @@ function paintPay() {
     const label = document.createElement('label'); const input = document.createElement('input'); input.className = 'statement'; input.autocomplete = 'off';
     label.append(text('span', t('statement')), input);
     const mk = (result, words, iconName) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = `quiet settle-${result}`;
+      const b = document.createElement('button'); b.type = 'button'; b.className = `quiet settle-${result} sre-btn sre-btn-quiet`;
       const i = icon(iconName); if (i !== null) b.append(i);
-      b.append(text('span', words)); b.disabled = !may.settle;
+      b.append(text('span', words)); b.disabled = !may.settle; whyDisabled(b, may.settle ? '' : 'role');
       b.addEventListener('click', () => { void settle(p.orderId, result, input.value); });
       return b;
     };
@@ -131,9 +151,13 @@ function paint() {
   $('whoami').textContent = window.onlineOrdersData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   for (const id of ['show-order', 'order-id', 'show-pay', 'compare', 'rec-channel', 'rec-theirs', 'rec-ours']) $(id).disabled = !may.read;
+  for (const id of ['show-order', 'show-pay', 'compare']) whyDisabled($(id), may.read ? '' : 'role');
   for (const id of ['show-res', 'res-store']) $(id).disabled = !may.reservations;
+  whyDisabled($('show-res'), may.reservations ? '' : 'role');
   for (const id of ['show-avail']) $(id).disabled = !may.availability;
+  whyDisabled($('show-avail'), may.availability ? '' : 'role');
   for (const id of ['set-buffer', 'buf-product', 'buf-units', 'buf-reason']) $(id).disabled = !may.buffer;
+  whyDisabled($('set-buffer'), may.buffer ? '' : 'role');
   $('buf-store').disabled = !may.availability && !may.buffer;
   paintOrder(); paintPay(); paintHeld(); paintAvail(); paintRec();
 }

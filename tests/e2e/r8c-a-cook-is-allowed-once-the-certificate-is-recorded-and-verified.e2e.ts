@@ -11,6 +11,9 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { addDays } from '../../packages/workforce/src/working-time';
 
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 /**
  * **Round 8 · OB-522 (M25-FR-03 · OB-502) in a real browser: the Staff certificates page, served by the store computer, over
  * head office's real certificate routes (OB-380).**
@@ -145,8 +148,8 @@ describe.skipIf(!HAVE_BROWSER)('the Staff certificates page through the store co
     // ── Asha records it from a photocopy, WITHOUT ticking "I have seen it": not verified, still blocked ──
     await a.page.selectOption('#c-person', COOK);
     await a.page.selectOption('#c-kind', 'fostac');
-    await a.page.fill('#c-issued', TODAY);
-    await a.page.fill('#c-until', UNTIL);
+    await a.page.fill('#c-issued', ddmm(TODAY));
+    await a.page.fill('#c-until', ddmm(UNTIL));
     await a.page.click('#c-record');
     await says(a.page, '#c-status', /^Recorded at head office\.$/);
     await a.page.waitForSelector(`${kumar} li[data-standing="unverified"]`);

@@ -29,6 +29,28 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+/** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
+function setShopDate(id, iso) { const n = document.getElementById(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; }
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 
 const money = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -163,6 +185,16 @@ const WORDS = {
   },
 };
 let lang = 'en';
+
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
 /** Why the page itself did not send an act — one entry per `ACT_REFUSAL_KINDS`, both languages. */
@@ -259,7 +291,7 @@ async function act(check, good) {
   if (!out.ok) {
     // OB-557: the switched-on list changed since this screen read it — said in plain words, and the latest is shown.
     if (out.body?.error?.code === 'enabled_list_changed') { tell(t('read'), t('listChanged')); await refresh(); return false; }
-    tell(t('read'), out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
+    tell(t('read'), out.status === 0 ? t('unreachable') : refusalLine(out.status, out.body?.error));
     return false;
   }
   tell(t('done'), good(out.body), true);
@@ -319,11 +351,11 @@ function field(tag = 'textarea') {
   return f;
 }
 function button(word, icon, cls, onClick, enabled = true) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.classList.add('sre-btn');
   b.type = 'button';
-  if (cls) b.className = cls;
+  if (cls) b.className = `${cls} sre-btn`;
   label(b, icon, word);
-  b.disabled = !enabled;
+  b.disabled = !enabled; whyDisabled(b, enabled ? '' : 'role');
   b.addEventListener('click', onClick);
   return b;
 }
@@ -372,7 +404,7 @@ function renderSwitch() {
   const single = el('scope').value === 'single_agent';
   el('which').hidden = !single;
   el('which-label').hidden = !single;
-  el('pull').disabled = !view.may.stop;
+  el('pull').disabled = !view.may.stop; whyDisabled(el('pull'), view.may.stop ? '' : 'role');
 
   // OB-390 · ai-control.md "pull an agent's kill switch ≤2": one button per RUNNING assistant, beside the reason. Write why,
   // press its button — two acts. The reason is never defaulted (a stop with a made-up reason cannot be reviewed); an empty
@@ -617,11 +649,11 @@ function renderLimitForm() {
   const form = el('limit-form');
   form.hidden = view === null || !view.may.setBudget;
   if (form.hidden) return;
-  if (el('period').value === '') el('period').value = endOfShopMonth();
+  if (dateOf('period') === '') setShopDate('period', endOfShopMonth());
 }
 
 el('set-cap').addEventListener('click', () => {
-  const day = el('period').value;
+  const day = dateOf('period');
   // The end of the chosen day on the SHOP's clock (its zone, as the store computer told the page) — never this device's.
   const periodEnds = day === '' ? '' : (window.sreShopDay?.instantOfField(`${day}T23:59`) ?? '');
   const check = kit === undefined ? { ok: false, refusal: 'nobody_is_named_at_this_desk' } : kit.budget(viewer, { cap: el('cap').value, periodEnds });
@@ -731,7 +763,7 @@ function renderIncidents() {
     o.textContent = a.agentId === '' ? a.name : `${a.agentId} — ${a.name}`;
     return o;
   }));
-  el('raise').disabled = view === null || !view.may.manageIncidents;
+  el('raise').disabled = view === null || !view.may.manageIncidents; whyDisabled(el('raise'), view === null ? 'offline' : view.may.manageIncidents ? '' : 'role');
 }
 
 el('raise').addEventListener('click', () => {
@@ -809,3 +841,28 @@ if ('serviceWorker' in navigator) {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
+
+// ── U2b (G14): the day the limit runs until, on the shared dd/mm field
+shopDate('period', { en: WORDS.en.periodLabel, ta: WORDS.ta.periodLabel });

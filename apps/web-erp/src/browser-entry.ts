@@ -22,6 +22,7 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { wireLpWorkforcePages } from './lpw-browser-wiring';
+import { refusalWords as refusalWordsOf, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid } from './refusal-words'; // U2: the one source of the three-part refusal words, for the chrome too
 import { wireR7dPages } from './r7d-browser-wiring'; // Round 7 · OB-507 attendance, OB-502 food-handling check
 import { wireCommercialDeskPages } from './commercial-desks-browser-wiring'; // OB-288 commercial desks
 import { createFreeSampleSession, freeSampleWords, freeSampleOutcomeWords } from './free-sample-session'; // FG-4 · OB-386 free samples
@@ -2307,8 +2308,12 @@ export async function fetchFacilitiesBoard(): Promise<FacilitiesData | null> {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
     });
     if (res.status >= 400) return null;
-    const body = (await res.json()) as { overdue?: unknown };
-    return { overdue: Array.isArray(body.overdue) ? (body.overdue as readonly OverdueTask[]) : [] };
+    const body = (await res.json()) as { overdue?: unknown; scheduledCount?: unknown };
+    return {
+      overdue: Array.isArray(body.overdue) ? (body.overdue as readonly OverdueTask[]) : [],
+      // U0 (P-08): absent from an older head office → the session reads "not known", never "all clear".
+      ...(typeof body.scheduledCount === 'number' ? { scheduledCount: body.scheduledCount } : {}),
+    };
   } catch {
     return null;
   }
@@ -7585,3 +7590,8 @@ if (browserWindow !== undefined) {
   wireW5StoreOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · store operations sections
   wireW5Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W5 · customers, privacy, service desk and online orders
 }
+
+// U2 (G10): the chrome's `sreOffice.refusalWords(outcome)` turns an outcome into the three parts in the reader's language.
+// The words have ONE source — `refusal-words.ts` — so the chrome (plain JS, no bundler) reads them from this bundle, which
+// every office page loads; a guardrail keeps the chrome delegating here rather than carrying a copy that could drift.
+(globalThis as { sreRefusalWords?: unknown }).sreRefusalWords = Object.freeze({ refusalWords: refusalWordsOf, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid });

@@ -8,6 +8,16 @@
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
+// U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
+// chrome's shared words (apps/web-erp/src/refusal-words.ts), never a raw code or HTTP status. The page's own prefix with
+// head office's sentence stands in only until the chrome has loaded.
+const refusalLine = (status, err) => {
+  const office = window.sreOffice;
+  if (office && typeof office.refusalWords === 'function') return office.refusalWords({ status, code: err?.code, whatHappened: err?.whatHappened, nextSafeAction: err?.nextSafeAction });
+  const said = `${err?.whatHappened ?? ''} ${err?.nextSafeAction ?? ''}`.trim();
+  return said === '' ? t('refused') : `${t('refused')} ${said}`;
+};
+
 const WORDS = {
   en: {
     title: 'Committee annual report', langName: 'தமிழ்',
@@ -74,7 +84,7 @@ function filingForm(year) {
   form.className = 'file';
   const on = document.createElement('input'); on.type = 'date'; on.className = 'filed-on'; on.name = 'filedOn'; on.value = today();
   const ref = document.createElement('input'); ref.className = 'reference'; ref.name = 'reference'; ref.autocomplete = 'off';
-  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record'; button.textContent = t('record');
+  const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record sre-btn'; button.textContent = t('record');
   form.append(field('filedOnLabel', on), field('referenceLabel', ref), button);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -179,7 +189,7 @@ async function send(year, values, button) {
     // Answered: recorded or refused, the key is done with — a new attempt is a new filing request.
     pendingKeys.delete(year);
     if (res.ok) tell(true, `${t('recorded')}: ${year} — ${answer.onTime ? t('onTime') : t('late')}`);
-    else tell(false, `${t('refused')}: ${answer?.error?.whatHappened ?? res.status} ${answer?.error?.nextSafeAction ?? ''}`.trim());
+    else tell(false, refusalLine(res.status, answer?.error));
   } catch {
     tell(false, t('unreachable'));
   } finally {

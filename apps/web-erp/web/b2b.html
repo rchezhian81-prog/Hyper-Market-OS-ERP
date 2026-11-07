@@ -24,8 +24,6 @@
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
       textarea { min-height: 96px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
-      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -33,7 +31,7 @@
       .actions { display: flex; gap: 8px; flex-wrap: wrap; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
-      .meta { font-size: 13px; color: var(--muted); }
+      .meta { font-size: var(--fs-sm); color: var(--muted); }
       .figs { display: flex; gap: 16px; flex-wrap: wrap; }
       .figs > div { display: grid; }
       [hidden] { display: none !important; }
@@ -58,7 +56,7 @@
         <div class="row-form">
           <label for="c-id"><span id="c-id-l"></span><input id="c-id" autocomplete="off" /></label>
         </div>
-        <button id="c-open" type="button"><span id="c-open-text"></span></button>
+        <button id="c-open" type="button" class="sre-btn sre-btn-primary"><span id="c-open-text"></span></button>
         <ul class="rows" id="c-rows"></ul>
         <h3 id="r-h"></h3>
         <ul class="rows" id="r-rows"></ul>
@@ -77,8 +75,8 @@
             <label for="g-name"><span id="g-name-l"></span><input id="g-name" autocomplete="off" /></label>
             <label for="g-reason"><span id="g-reason-l"></span><input id="g-reason" autocomplete="off" /></label>
           </div>
-          <button id="g-save" type="button"><span id="g-save-text"></span></button>
-          <button id="g-remove" type="button" class="quiet" hidden><span id="g-remove-text"></span></button>
+          <button id="g-save" type="button" class="sre-btn"><span id="g-save-text"></span></button>
+          <button id="g-remove" type="button" class="sre-btn sre-btn-quiet" hidden><span id="g-remove-text"></span></button>
           <p class="meta" id="g-remove-note" hidden></p>
           <p class="status" id="g-status" role="status" aria-live="polite"></p>
         </div>
@@ -100,8 +98,8 @@
         <label for="k-prices"><span id="k-prices-l"></span><textarea id="k-prices"></textarea></label>
         <label for="k-note"><span id="k-note-l"></span><input id="k-note" autocomplete="off" /></label>
         <div class="actions">
-          <button id="k-save" type="button" class="quiet"><span id="k-save-text"></span></button>
-          <button id="k-ask" type="button"><span id="k-ask-text"></span></button>
+          <button id="k-save" type="button" class="sre-btn sre-btn-quiet"><span id="k-save-text"></span></button>
+          <button id="k-ask" type="button" class="sre-btn"><span id="k-ask-text"></span></button>
         </div>
         <p class="status" id="k-status" role="status" aria-live="polite"></p>
       </section>
@@ -115,8 +113,8 @@
         </div>
         <ul class="rows" id="q-lines"></ul>
         <div class="actions">
-          <button id="q-add" type="button" class="quiet"><span id="q-add-text"></span></button>
-          <button id="q-issue" type="button"><span id="q-issue-text"></span></button>
+          <button id="q-add" type="button" class="sre-btn sre-btn-quiet"><span id="q-add-text"></span></button>
+          <button id="q-issue" type="button" class="sre-btn"><span id="q-issue-text"></span></button>
         </div>
         <p class="status" id="q-status" role="status" aria-live="polite"></p>
       </section>
@@ -141,7 +139,7 @@
             <label for="rec-start"><span id="rec-start-l"></span><input id="rec-start" type="date" /></label>
             <label for="rec-sp"><span id="rec-sp-l"></span><input id="rec-sp" autocomplete="off" /></label>
           </div>
-          <button id="rec-save" type="button"><span id="rec-save-text"></span></button>
+          <button id="rec-save" type="button" class="sre-btn"><span id="rec-save-text"></span></button>
         </div>
         <p class="status" id="rec-status" role="status" aria-live="polite"></p>
       </section>
@@ -152,7 +150,7 @@
         <div class="row-form" id="pay-form">
           <label for="pay-amount"><span id="pay-amount-l"></span><input id="pay-amount" inputmode="decimal" autocomplete="off" /></label>
         </div>
-        <button id="pay-save" type="button"><span id="pay-save-text"></span></button>
+        <button id="pay-save" type="button" class="sre-btn"><span id="pay-save-text"></span></button>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -162,7 +160,7 @@
       <section id="tn" hidden aria-labelledby="tn-h">
         <h3 id="tn-h"></h3>
         <p class="meta" id="tn-lead"></p>
-        <button id="tn-show" type="button"><span id="tn-show-text"></span></button>
+        <button id="tn-show" type="button" class="sre-btn"><span id="tn-show-text"></span></button>
         <p class="status" id="tn-summary" role="status" aria-live="polite"></p>
         <ul class="rows" id="tn-list"></ul>
         <p class="status" id="tn-status" role="status" aria-live="polite"></p>
@@ -174,7 +172,7 @@
       <section id="cn" hidden aria-labelledby="cn-h">
         <h3 id="cn-h"></h3>
         <p class="meta" id="cn-lead"></p>
-        <button id="cn-show" type="button"><span id="cn-show-text"></span></button>
+        <button id="cn-show" type="button" class="sre-btn"><span id="cn-show-text"></span></button>
         <ul class="rows" id="cn-invoices"></ul>
         <p class="status" id="cn-status" role="status" aria-live="polite"></p>
         <h3 id="cn-asked-h"></h3>
@@ -188,7 +186,7 @@
         <div class="row-form">
           <label for="cnr-period"><span id="cnr-period-l"></span><input id="cnr-period" type="month" autocomplete="off" /></label>
         </div>
-        <button id="cnr-show" type="button"><span id="cnr-show-text"></span></button>
+        <button id="cnr-show" type="button" class="sre-btn"><span id="cnr-show-text"></span></button>
         <p class="status" id="cnr-status" role="status" aria-live="polite"></p>
         <div class="figs" id="cnr-figs"></div>
         <ul class="rows" id="cnr-missing"></ul>
@@ -206,10 +204,10 @@
           <label for="bk-order"><span id="bk-order-l"></span><input id="bk-order" autocomplete="off" /></label>
         </div>
         <div class="actions">
-          <button id="bk-dunning" type="button" class="quiet"><span id="bk-dunning-text"></span></button>
-          <button id="bk-reconcile" type="button" class="quiet"><span id="bk-reconcile-text"></span></button>
-          <button id="bk-chain" type="button" class="quiet"><span id="bk-chain-text"></span></button>
-          <button id="bk-probing" type="button" class="quiet"><span id="bk-probing-text"></span></button>
+          <button id="bk-dunning" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-dunning-text"></span></button>
+          <button id="bk-reconcile" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-reconcile-text"></span></button>
+          <button id="bk-chain" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-chain-text"></span></button>
+          <button id="bk-probing" type="button" class="quiet sre-btn sre-btn-quiet"><span id="bk-probing-text"></span></button>
         </div>
         <p class="status" id="bk-status" role="status" aria-live="polite"></p>
         <div class="figs" id="bk-figs"></div>
@@ -222,7 +220,7 @@
           <label for="bk-steps-remind"><span id="bk-steps-remind-l"></span><input id="bk-steps-remind" inputmode="numeric" autocomplete="off" /></label>
           <label for="bk-steps-final"><span id="bk-steps-final-l"></span><input id="bk-steps-final" inputmode="numeric" autocomplete="off" /></label>
           <label for="bk-steps-stop"><span id="bk-steps-stop-l"></span><input id="bk-steps-stop" inputmode="numeric" autocomplete="off" /></label>
-          <button id="bk-steps-save" type="button"><span id="bk-steps-save-text"></span></button>
+          <button class="sre-btn" id="bk-steps-save" type="button"><span id="bk-steps-save-text"></span></button>
         </div>
         <p class="status" id="bk-steps-status" role="status" aria-live="polite"></p>
       </section>

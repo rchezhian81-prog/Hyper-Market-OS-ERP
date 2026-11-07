@@ -22,7 +22,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -62,7 +62,7 @@
             <label for="c-category"><span id="c-category-l"></span><input id="c-category" autocomplete="off" /></label>
             <label for="c-noticed"><span id="c-noticed-l"></span><input id="c-noticed" type="datetime-local" /></label>
             <label for="c-reason"><span id="c-reason-l"></span><input id="c-reason" autocomplete="off" /></label>
-            <button id="c-save" type="submit"><span id="c-save-text"></span></button>
+            <button id="c-save" type="submit" class="sre-btn"><span id="c-save-text"></span></button>
           </form>
           <p class="status" id="classify-status" role="status" aria-live="polite"></p>
           <h4 id="report-h"></h4>
@@ -71,7 +71,7 @@
             <label for="r-at"><span id="r-at-l"></span><input id="r-at" type="datetime-local" /></label>
             <label for="r-reference"><span id="r-reference-l"></span><input id="r-reference" autocomplete="off" /></label>
             <label for="r-channel"><span id="r-channel-l"></span><input id="r-channel" autocomplete="off" /></label>
-            <button id="r-save" type="submit" class="quiet"><span id="r-save-text"></span></button>
+            <button id="r-save" type="submit" class="quiet sre-btn sre-btn-primary"><span id="r-save-text"></span></button>
           </form>
           <p class="status" id="report-status" role="status" aria-live="polite"></p>
         </div>
@@ -86,7 +86,7 @@
           <form class="row-form" id="plan-form">
             <label for="p-growth"><span id="p-growth-l"></span><input id="p-growth" inputmode="numeric" autocomplete="off" /></label>
             <div id="p-measures" class="row-form"></div>
-            <button id="p-save" type="submit" class="quiet"><span id="p-save-text"></span></button>
+            <button id="p-save" type="submit" class="quiet sre-btn sre-btn-quiet"><span id="p-save-text"></span></button>
           </form>
           <p class="status" id="plan-status" role="status" aria-live="polite"></p>
         </div>

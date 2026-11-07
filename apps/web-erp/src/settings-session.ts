@@ -18,7 +18,7 @@ export type Lang = 'en' | 'ta';
 
 export const SETTINGS_COPY = {
   en: {
-    title: 'Settings and their history',
+    title: 'Settings',
     lead: 'Each setting in force, every value it has had — who chose it, when and why — and a way to put an earlier value back. Going back adds a new version; nothing is ever erased. A high-impact setting goes back only with the owner\'s approval. To answer the shop\'s setup questions, use Store setup.',
     listH: 'Settings in force', history: 'Show its history', hide: 'Hide its history',
     inForce: 'In force', onDefault: 'on the safe default', version: 'version', by: 'by', at: 'on', why: 'why', restoredFrom: 'put back from version',
@@ -33,7 +33,7 @@ export const SETTINGS_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or changed.', reading: 'Reading from head office…',
   },
   ta: {
-    title: 'அமைப்புகளும் அவற்றின் வரலாறும்',
+    title: 'அமைப்புகள்',
     lead: 'நடைமுறையில் உள்ள ஒவ்வொரு அமைப்பும், அதற்கு இருந்த ஒவ்வொரு மதிப்பும் — யார் தேர்ந்தெடுத்தார், எப்போது, ஏன் — முந்தைய மதிப்பைத் திரும்ப வைக்கும் வழியும். திரும்பச் செல்வது புதிய பதிப்பைச் சேர்க்கிறது; எதுவும் அழிக்கப்படுவதில்லை. அதிக தாக்கமுள்ள அமைப்பு உரிமையாளரின் ஒப்புதலுடன் மட்டுமே திரும்பும். கடையின் அமைப்புக் கேள்விகளுக்குப் பதில் அளிக்க, கடை அமைப்பைப் பயன்படுத்துங்கள்.',
     listH: 'நடைமுறையில் உள்ள அமைப்புகள்', history: 'அதன் வரலாற்றைக் காட்டு', hide: 'வரலாற்றை மறை',
     inForce: 'நடைமுறையில்', onDefault: 'பாதுகாப்பான இயல்பு மதிப்பில்', version: 'பதிப்பு', by: 'செய்தவர்', at: 'அன்று', why: 'ஏன்', restoredFrom: 'பதிப்பிலிருந்து திரும்ப வைக்கப்பட்டது',

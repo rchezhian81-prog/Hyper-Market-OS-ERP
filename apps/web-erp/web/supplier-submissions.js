@@ -15,7 +15,7 @@ let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
+function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; if (quiet) b.className = 'quiet sre-btn sre-btn-quiet'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let queue = null; let looked = null;
 
@@ -91,7 +91,7 @@ function paintVmi() {
   if (vmi === null) return;
   for (const [id, key] of [['vmi-h', 'vmiH'], ['vmi-lead', 'vmiLead'], ['vmi-supplier-l', 'supplier'], ['vmi-show-text', 'show'], ['vmi-store-l', 'store'], ['vmi-product-l', 'product'], ['vmi-min-l', 'min'], ['vmi-max-l', 'max'], ['vmi-uom-l', 'uom'], ['vmi-set-text', 'setLimit'], ['vmi-q-h', 'proposalsH']]) $(id).textContent = vt(key);
   for (const [id, name] of [['vmi-h', 'package'], ['vmi-q-h', 'list-checks']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); } // the text was just reset: one icon each
-  $('vmi-set').disabled = !vmiMay.decide;
+  $('vmi-set').disabled = !vmiMay.decide; whyDisabled($('vmi-set'), vmiMay.decide ? '' : 'role');
   const items = $('vmi-items'); items.replaceChildren();
   if (vmiItems !== null) {
     if (vmiItems.length === 0) items.append(text('li', vt('itemsNone')));
@@ -114,7 +114,7 @@ function paintVmi() {
     const whyLab = document.createElement('label'); whyLab.append(text('span', vt('reason'))); const reason = document.createElement('input'); reason.autocomplete = 'off'; reason.className = 'reason'; whyLab.append(reason); form.append(whyLab);
     const yes = button(vt('accept'), 'circle-check', 'vmi-accept');
     const no = button(vt('reject'), 'circle-alert', 'vmi-reject', true);
-    yes.disabled = !vmiMay.decide; no.disabled = !vmiMay.decide;
+    yes.disabled = !vmiMay.decide; no.disabled = !vmiMay.decide; whyDisabled(yes, vmiMay.decide ? '' : 'role'); whyDisabled(no, vmiMay.decide ? '' : 'role');
     const decide = async (d) => {
       const typed = Object.fromEntries(Object.entries(costs).map(([k, v]) => [k, v.value]));
       const out = await vmi.session.decide(p, d, reason.value, po.value, typed);
@@ -151,4 +151,26 @@ if (vmi !== null && vmiMay.read) {
   $('lang').addEventListener('click', () => { paintVmi(); });
   paintVmi();
   void loadVmi();
+}
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+function whyWords() {
+  return {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+  };
+}
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (whyWords()[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }

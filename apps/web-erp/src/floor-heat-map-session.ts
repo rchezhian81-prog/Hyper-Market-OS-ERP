@@ -8,6 +8,7 @@
 // products named, never a colour; a product sold with no shelf place on the plan is listed under the map. Read-only.
 
 import type { ViewerIdentity } from './browser-entry';
+import { refusalWords } from './refusal-words';
 import type { Outcome } from './r4-insight-call';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { servedShopZone } from '../../../packages/calendar/src/shop-day';
@@ -37,7 +38,7 @@ export const HEAT_MAP_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Which areas earn most',
     lead: 'Each shelf area on the shop floor, coloured by what it earns per square foot — from the bills, the buying cost and the shelf plans head office holds. Darker earns more. Nothing here is typed.',
-    store: 'Store', from: 'From', to: 'To', sales: 'Sales per sq ft', margin: 'Margin per sq ft', show: 'Show which areas earn most',
+    store: 'Store', yourStore: 'your store', from: 'From', to: 'To', sales: 'Sales per sq ft', margin: 'Margin per sq ft', show: 'Show which areas earn most',
     area: 'Area', sqft: 'Sq ft', perSqFt: 'per sq ft', heat: 'Heat', note: 'Note', earned: 'Taken', marginK: 'Margin',
     notKnown: 'Not known', marginNotKnown: 'Margin not known — no buying cost for', noSpace: 'No floor space recorded', nothingSold: 'Nothing sold here',
     underperforming: 'Earns less than its share of space', offPlan: 'Sold but not on the floor plan', offPlanNone: 'Every product sold has a place on the floor plan.',
@@ -49,7 +50,7 @@ export const HEAT_MAP_COPY = {
   ta: {
     lang: 'English', title: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன',
     lead: 'கடைத் தளத்தின் ஒவ்வொரு அலமாரிப் பகுதியும், சதுர அடிக்கு அது ஈட்டுவதைப் பொறுத்து வண்ணமிடப்பட்டுள்ளது — தலைமை அலுவலகத்தின் பில்கள், கொள்முதல் விலை மற்றும் அலமாரித் திட்டங்களிலிருந்து. அடர்ந்த வண்ணம் அதிகம் ஈட்டுகிறது. இங்கு எதுவும் தட்டச்சு செய்யப்படவில்லை.',
-    store: 'கடை', from: 'முதல்', to: 'வரை', sales: 'சதுர அடிக்கு விற்பனை', margin: 'சதுர அடிக்கு லாபம்', show: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன என்று காட்டு',
+    store: 'கடை', yourStore: 'உங்கள் கடை', from: 'முதல்', to: 'வரை', sales: 'சதுர அடிக்கு விற்பனை', margin: 'சதுர அடிக்கு லாபம்', show: 'எந்தப் பகுதிகள் அதிகம் ஈட்டுகின்றன என்று காட்டு',
     area: 'பகுதி', sqft: 'சதுர அடி', perSqFt: 'சதுர அடிக்கு', heat: 'வெப்பம்', note: 'குறிப்பு', earned: 'வசூல்', marginK: 'லாபம்',
     notKnown: 'தெரியவில்லை', marginNotKnown: 'லாபம் தெரியவில்லை — கொள்முதல் விலை இல்லை:', noSpace: 'தள இடம் பதிவு செய்யப்படவில்லை', nothingSold: 'இங்கு எதுவும் விற்கப்படவில்லை',
     underperforming: 'இடத்தின் பங்கை விடக் குறைவாக ஈட்டுகிறது', offPlan: 'விற்கப்பட்டது, ஆனால் தளத் திட்டத்தில் இல்லை', offPlanNone: 'விற்கப்பட்ட ஒவ்வொரு பொருளுக்கும் தளத் திட்டத்தில் இடம் உள்ளது.',
@@ -64,7 +65,7 @@ export const heatMapWords = (lang: Lang, key: string): string =>
   (HEAT_MAP_COPY[lang] as Record<string, string>)[key] ?? (HEAT_MAP_COPY.en as Record<string, string>)[key] ?? key;
 
 export function heatMapOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return out.status === 404 && /floor plan/.test(out.whatHappened) ? heatMapWords(lang, 'noPlan') : `${heatMapWords(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return out.status === 404 && /floor plan/.test(out.whatHappened) ? heatMapWords(lang, 'noPlan') : refusalWords(lang, out); // U0 · G10
   if (out.result === 'invalid') return heatMapWords(lang, out.why);
   if (out.result === 'lost_link') return heatMapWords(lang, 'unreachable');
   return '';

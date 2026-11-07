@@ -10,7 +10,7 @@ const may = session?.may ?? { named: false, read: false, change: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function button(words, cls, onClick) { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = words; b.addEventListener('click', onClick); return b; }
+function button(words, cls, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.className = cls; b.textContent = words; b.addEventListener('click', onClick); return b; }
 function field(labelWords, id, type) { const l = document.createElement('label'); l.htmlFor = id; l.append(text('span', labelWords)); const i = document.createElement('input'); i.id = id; i.autocomplete = 'off'; if (type) i.type = type; l.append(i); return { label: l, input: i }; }
 
 let branches = null;

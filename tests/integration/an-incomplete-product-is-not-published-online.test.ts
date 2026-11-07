@@ -121,7 +121,9 @@ describe.each(backings)('B23 · A26 — an incomplete product is not published o
 
     // ── The gate opens only once a grievance officer is set — proven here with a SYNTHETIC officer, not the owner's ──
     await ok(req('POST', '/v1/online-store/details', { grievanceOfficerName: 'Synthetic Officer (test only)', grievanceOfficerContact: 'grievance@example.invalid', reason: 'test: prove the gate opens' }), 'details v2');
-    await ok(req('POST', '/v1/online-store/publish'), 'store publish');
+    // OB-698: the reason the person wrote on the confirm sheet rides with the ask and stays on the publication record.
+    const published = (await ok(req('POST', '/v1/online-store/publish', { reason: 'test: the Diwali range is ready' }), 'store publish')).body as { publication: { version: number; by: string; reason?: string } };
+    expect(published.publication.reason).toBe('test: the Diwali range is ready');
     expect((await ok(req('POST', '/v1/online-store/listings/MILK', { action: 'publish' }), 'MILK online')).status).toBe(201);
     // BROOM has no country of origin: refused by name.
     const b = await req('POST', '/v1/online-store/listings/BROOM', { action: 'publish' });

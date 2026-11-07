@@ -70,12 +70,16 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Delega
   const lend = async (page: Page, from: string, to: string, cap: string, reason: string): Promise<void> => {
     await page.fill('#from', from);
     await page.fill('#to', to);
-    await page.fill('#from-date', TODAY);
-    await page.fill('#until-date', UNTIL);
+    // U2: the shared dd/mm date field
+    await page.fill('#from-date', `${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)}`);
+    await page.fill('#until-date', `${UNTIL.slice(8, 10)}/${UNTIL.slice(5, 7)}/${UNTIL.slice(0, 4)}`);
     await page.fill('#cap', cap);
     await page.check('input[name="kind"][value="refund"]');
     await page.fill('#reason', reason);
     await page.click('#lend');
+    // OB-698 A (U1): the privilege moves only through the shared confirm sheet.
+    await page.locator('#sre-confirm-go').waitFor({ timeout: 15_000 });
+    await page.click('#sre-confirm-go');
   };
 
   it('the owner lends the manager\'s refund authority, time-boxed and capped; head office records it as the owner\'s act', async () => {

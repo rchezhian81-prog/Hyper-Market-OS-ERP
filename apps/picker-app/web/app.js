@@ -956,7 +956,10 @@ window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = real !== undefined;
+// U0 (P-08): the box injects `shopTimeZone` on every screen it serves, payload or none — a bare shell with that global
+// and no work is a real store computer with nothing assigned, and says so; the sample stays for a file opened off the box.
+const servedByBox = window.shopTimeZone !== undefined;
+el('sample').hidden = real !== undefined || servedByBox;
 el('sample').textContent = t('sampleWave');
 paintIconSlots();
 
@@ -964,7 +967,7 @@ const storageProblem = window.pickerStorageProblem;
 el('storage').hidden = !storageProblem;
 if (storageProblem) el('storage').textContent = storageProblem;
 
-if (real === undefined && window.pickerData !== undefined) {
+if (real === undefined && (window.pickerData !== undefined || servedByBox)) {
   // The bundle is there and a payload arrived, but it carried no wave. Said plainly rather than
   // shown as an empty list, which reads like a wave already finished.
   el('empty').hidden = false;

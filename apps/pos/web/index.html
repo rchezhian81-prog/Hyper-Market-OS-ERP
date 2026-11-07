@@ -156,7 +156,7 @@
       .total-label { color: var(--ink-2); font-size: var(--fs-lg); font-weight: 600; }
       .total { font-size: clamp(48px, 5.4vw, 76px); line-height: 1.05; font-weight: 700; letter-spacing: var(--tracking-tight); font-variant-numeric: var(--numbers); white-space: nowrap; }
       /* One row: the line's actions (Qty, Void), the basket's (Hold, More), then Tender — wide, green, last. */
-      .actions { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 2fr; gap: var(--space-3); margin-top: var(--space-3); }
+      .actions { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 2fr; gap: var(--space-3); margin-top: var(--space-3); }
       .actions #hold, .actions #tender { margin-left: var(--space-3); }
       button {
         min-height: var(--tap); border-radius: var(--radius-lg); border: var(--hairline) solid var(--line-strong);
@@ -198,13 +198,30 @@
       .entry-text:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
       .entry-text[hidden] { display: none; }
       .hint { color: var(--ink-2); font-size: var(--fs-md); font-weight: 600; min-height: 22px; }
+      /* OB-698: the consequence block — what will happen (the figure, big), what it means, in whose name. No motion. */
+      .consequence { display: grid; gap: 8px; padding: 12px 16px; background: var(--panel-2); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); }
+      .consequence[hidden] { display: none; }
+      .consequence p { margin: 0; line-height: 1.35; }
+      .consequence-what { font-size: 22px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .consequence-detail { font-size: var(--fs-md); color: var(--ink-2); }
+      .consequence-who { font-size: var(--fs-md); font-weight: 600; }
+      .sheet-actions .danger { background: var(--danger-surface); color: var(--on-danger); border-color: var(--danger-surface); }
       .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
       .quick button { min-height: var(--tap); font-size: 20px; border: var(--hairline) solid var(--accent); border-radius: var(--radius-lg); background: var(--mint); color: var(--on-ok-surface); font-weight: 700; font-variant-numeric: var(--numbers); }
       .quick button:hover { background: var(--ok-surface); }
       .quick[hidden] { display: none; }
       /* An author `display: grid` beats the browser's own `[hidden] { display: none }`, so without these the keypad stayed
          on screen above the reason chips and pushed OK below a 720px viewport (found by the SP-4c close e2e). */
-      .keypad[hidden], .reasons[hidden], .entry[hidden] { display: none; }
+      .keypad[hidden], .reasons[hidden], .entry[hidden], .finds[hidden] { display: none; }
+      /* U4 (G18): the More list under plain headings — words, never a button (uppercase letter-spaced labels may be 12.5px). */
+      .group-head { margin: 6px 0 -4px; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--strip-ink); font-weight: 700; }
+      /* U4: the find panel's rows — 56px each, the name first, the code and price under it. */
+      .finds { display: grid; gap: 10px; max-height: 46dvh; overflow-y: auto; }
+      .finds button { min-height: var(--tap); font-size: 18px; text-align: left; padding: 8px 16px; border-radius: var(--radius-lg); font-weight: 600; display: grid; gap: 2px; }
+      .finds .find-facts { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 500; font-variant-numeric: var(--numbers); }
+      .find-note { margin: 0; font-size: var(--fs-md); color: var(--ink-2); font-weight: 600; }
+      .sheet-actions #sheet-ok[hidden] { display: none; }
+      .sheet-actions:has(#sheet-ok[hidden]) { grid-template-columns: 1fr; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
       /* A bill number's letters: seven to a row, every key the till's full 56px. */
       .keypad.letterpad { grid-template-columns: repeat(7, 1fr); gap: 8px; }
@@ -286,7 +303,7 @@
       @media (max-width: 900px) {
         header { grid-template-columns: minmax(0, 1fr) auto auto; }
         .conn { grid-column: 1 / -1; grid-row: 2; }
-        .actions { grid-template-columns: repeat(4, 1fr); }
+        .actions { grid-template-columns: repeat(5, 1fr); }
         .actions #tender { grid-column: 1 / -1; margin-left: 0; }
         .actions #hold { margin-left: 0; }
         .refusal { grid-template-columns: 1fr; }
@@ -385,6 +402,8 @@
         <button id="qty" type="button">Qty</button>
         <button id="void" type="button">Void</button>
         <button id="hold" type="button">Hold</button>
+        <!-- U4 (§27 POS "product search"): an item by a few letters of its name, or a keyed code — a torn label never stops the sale. -->
+        <button id="find" type="button">Find</button>
         <button id="more" type="button">More</button>
         <!-- The one dominant primary action. -->
         <button id="tender" class="primary" type="button">Tender</button>
@@ -403,6 +422,15 @@
         <!-- OB-264: a typed answer with letters — the old system's bill number — from the keyboard or a scanner. -->
         <input class="entry-text" id="entry-text" type="text" hidden autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" aria-label="Old bill number">
         <div class="hint" id="entry-hint"></div>
+        <!-- U4: the matches under the find box — name, then code · price; a row rings the item as a scan would. -->
+        <div class="finds" id="finds" hidden></div>
+        <!-- OB-698 (U1): a money, price or stock action says what will happen, in whose name, before it is sent — then
+             the cashier confirms with the verb, or goes back. Nothing is sent on Go back, Escape or a closed sheet. -->
+        <div class="consequence" id="consequence" hidden>
+          <p class="consequence-what" id="consequence-what"></p>
+          <p class="consequence-detail" id="consequence-detail"></p>
+          <p class="consequence-who" id="consequence-who"></p>
+        </div>
         <!-- One-tap answers (pos-cashier.md interaction budget): 2–6 for a quantity, the note in hand for cash. -->
         <div class="quick" id="quick" hidden></div>
         <!-- A bill number keyed by hand (letters and digits): the switch flips between the letters pad and the digits. -->

@@ -19,6 +19,11 @@ export const LOSS_TYPES = ['wastage', 'damage', 'expiry', 'donation', 'destructi
 export const WRITE_OFF_QUEUE_COPY = {
   en: {
     queueH: 'Line down? Save the loss on this screen', queueLead: 'Head office cannot be reached. Save the loss here; the store computer carries it to head office, which values it. A big loss waits there for a second person.',
+    // U1 · OB-698: the consequence-and-confirm sheet before a loss is saved on this screen for sending
+    confirmTitle: 'Save a loss of {qty} of {product} on this screen, to be sent to head office',
+    confirmDetail: 'It is sent as soon as head office can be reached and then falls off stock in the books, in your name; head office values it. A loss is never undone — a mistake is corrected by a new entry.',
+    confirmAuthority: 'In your name. Head office re-checks it when it arrives and refuses it if your role may not record a loss.',
+    confirmLabel: 'Save the loss', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     product: 'Product', location: 'Where', qty: 'How many', uom: 'Unit', lossType: 'Kind of loss', reason: 'Why it is lost', evidence: 'Photo reference (needed for a big loss)', choose: '— choose —', save: 'Save the loss here',
     wastage: 'Wastage', damage: 'Damage', expiry: 'Expiry', donation: 'Donation', destruction: 'Destruction', shrinkage: 'Shrinkage', preparation: 'Preparation', customer_return: 'Customer return', recall: 'Recall',
     savedH: 'Saved on this screen', noneSaved: 'Nothing saved on this screen.',
@@ -29,6 +34,10 @@ export const WRITE_OFF_QUEUE_COPY = {
   },
   ta: {
     queueH: 'இணைப்பு இல்லையா? இழப்பை இந்தத் திரையில் சேமியுங்கள்', queueLead: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. இழப்பை இங்கே சேமியுங்கள்; கடைக் கணினி அதைத் தலைமை அலுவலகத்திற்குக் கொண்டு செல்லும், அங்கே மதிப்பிடப்படும். பெரிய இழப்பு இரண்டாவது நபருக்காகக் காத்திருக்கும்.',
+    confirmTitle: '{product} — {qty} இழப்பு இந்தத் திரையில் சேமிக்கப்பட்டு, தலைமை அலுவலகத்திற்கு அனுப்பப்படும்',
+    confirmDetail: 'தலைமை அலுவலகத்தை அடைந்ததும் அனுப்பப்பட்டு, கணக்கில் சரக்கு குறையும், உங்கள் பெயரில்; தலைமை அலுவலகம் மதிப்பைக் கணக்கிடும். இழப்பைத் திரும்பப் பெற முடியாது — தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். வந்தடைந்ததும் தலைமை அலுவலகம் மீண்டும் சரிபார்க்கும்; இழப்பைப் பதியும் உரிமை இல்லையெனில் மறுக்கும்.',
+    confirmLabel: 'இழப்பைச் சேமி', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     product: 'பொருள்', location: 'எங்கே', qty: 'எத்தனை', uom: 'அலகு', lossType: 'இழப்பின் வகை', reason: 'ஏன் இழப்பு', evidence: 'புகைப்படக் குறிப்பு (பெரிய இழப்புக்குத் தேவை)', choose: '— தேர்ந்தெடுக்கவும் —', save: 'இழப்பை இங்கே சேமி',
     wastage: 'வீணானது', damage: 'சேதம்', expiry: 'காலாவதி', donation: 'நன்கொடை', destruction: 'அழிப்பு', shrinkage: 'குறைவு', preparation: 'தயாரிப்பு', customer_return: 'வாடிக்கையாளர் திருப்பம்', recall: 'திரும்பப் பெறுதல்',
     savedH: 'இந்தத் திரையில் சேமிக்கப்பட்டவை', noneSaved: 'இந்தத் திரையில் எதுவும் சேமிக்கப்படவில்லை.',

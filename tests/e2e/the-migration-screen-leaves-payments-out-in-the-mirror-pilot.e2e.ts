@@ -6,6 +6,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { MIRROR_PILOT_NOT_COMPARED } from '../../edge/store-edge/src/screen-data';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **MG-10 in the mirror pilot (OB-256, owner 20 Oct 2026), on the migration screen in a real browser, English and Tamil.**
@@ -115,7 +117,7 @@ describe.skipIf(!HAVE_BROWSER)('the migration screen leaves payments and loyalty
         expect(await page.isDisabled(`#day-${area}-old`)).toBe(true);
       }
       for (const area of ['sales_value', 'sales_count', 'stock_movement', 'tax']) expect(await page.isVisible(`#day-${area}-old`)).toBe(true);
-      await page.fill('#day-date', DAY);
+      await page.fill('#day-date', ddmm(DAY));
       for (const [area, old, now] of [['sales_value', '2100.00', '2100.00'], ['sales_count', '12', '12'], ['stock_movement', '30', '30'], ['tax', '100.00', '100.00']] as const) {
         await page.fill(`#day-${area}-old`, old);
         await page.fill(`#day-${area}-new`, now);

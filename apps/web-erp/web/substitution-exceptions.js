@@ -86,7 +86,7 @@ function rowNode(r) {
   // The one act on a row: CLAIM an open exception — offered only when the session says so, run only on the click.
   if (r.offer === 'claim') {
     const acts = document.createElement('div'); acts.className = 'acts';
-    const claim = document.createElement('button'); claim.type = 'button'; claim.className = 'claim'; claim.textContent = t('claimBtn');
+    const claim = document.createElement('button'); claim.type = 'button'; claim.className = 'claim sre-btn'; claim.textContent = t('claimBtn');
     claim.setAttribute('aria-label', `${t('claimBtn')}: ${r.kindLabel} ${r.amount}`);
     claim.addEventListener('click', () => { void act('claim', r.exceptionId); });
     acts.append(claim);

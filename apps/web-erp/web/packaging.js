@@ -8,6 +8,54 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, move: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
+
+
+// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
+// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
+// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
+// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
+const pickers = [];
+function pickerBeside(input, kind, titleKey, extra = {}) {
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
+  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
+  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
+  host.after(btn, name);
+  btn.addEventListener('click', async () => {
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
+    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
+    if (!picked || picked.ok !== true) return;
+    input.value = picked.id;
+    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  pickers.push(btn);
+  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
+  return btn;
+}
+const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+/** U2 · G5: the person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
+function myStore() {
+  const office = window.sreOffice;
+  const me = office && typeof office.me === 'function' ? office.me() : null;
+  return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
+/** The branch fields start as the person's own store (changeable); the chrome may load after this page. */
+function prefillBranches() {
+  const id = myStore(); if (id === '') return;
+  for (const f of ['q-branch', 'm-branch']) if ($(f).value.trim() === '') $(f).value = id;
+}
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 let position = null;
@@ -39,6 +87,7 @@ function paint() {
     ['register-h', 'registerH'], ['i-item-l', 'item'], ['i-name-l', 'name'], ['i-kind-l', 'kind'], ['i-charge-l', 'charge'], ['i-tax-l', 'tax'], ['i-deposit-l', 'deposit'], ['i-returnable-l', 'returnable'], ['i-save-text', 'register'],
     ['move-h', 'moveH'], ['m-item-l', 'item'], ['m-branch-l', 'branch'], ['m-kind-l', 'move'], ['m-qty-l', 'qty'], ['m-ref-l', 'reference'], ['m-record-text', 'recordMove']]) $(id).textContent = t(key);
   if (api !== null) { fillSelect('i-kind', api.kinds, 'k_'); fillSelect('m-kind', api.moves, 'm_'); }
+  paintPickers();
   paintPosition();
 }
 async function showPosition() {
@@ -50,18 +99,30 @@ async function showPosition() {
 for (const [id, name] of [['q-show', 'search'], ['i-save', 'check'], ['m-record', 'list-plus']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+prefillBranches();
+document.addEventListener('sre:chrome', prefillBranches);
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
 else {
   $('position').hidden = false;
+  pickerBeside($('q-branch'), 'store', 'whichBranch');
   $('q-show').addEventListener('click', () => { void showPosition(); });
   if (may.move) {
     $('register').hidden = false; $('move').hidden = false;
+    pickerBeside($('m-branch'), 'store', 'whichBranch');
     $('i-save').addEventListener('click', async () => {
       const out = await session.register({ packagingId: $('i-item').value, name: $('i-name').value, kind: $('i-kind').value, returnable: $('i-returnable').checked, chargeRupees: $('i-charge').value, taxPercent: $('i-tax').value, depositRupees: $('i-deposit').value });
       $('i-status').textContent = api.outcomeWords(lang, out);
     });
     $('m-record').addEventListener('click', async () => {
+      // U1 · OB-698: the consequence-and-confirm sheet before the movement is recorded — Go back sends nothing.
+      const kindWord = (l) => { const k = $('m-kind'); const opt = k.selectedOptions ? k.selectedOptions[0] : null; return l === lang && opt ? opt.textContent.trim() : (api.words(l, k.value) === k.value ? k.value : api.words(l, k.value)); };
+      const sub = (l, key) => String(api.words(l, key)).replace('{qty}', $('m-qty').value).replace('{item}', $('m-item').value).replace('{kind}', kindWord(l)).replace('{branch}', $('m-branch').value);
+      // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
+      const complete = $('m-item').value.trim() !== '' && $('m-branch').value.trim() !== '' && $('m-kind').value !== '' && /^[1-9][0-9]*$/.test($('m-qty').value.trim());
+      const answer = !complete ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
+      if (answer === 'unavailable') { $('m-status').textContent = t('confirmUnavailable'); return; }
+      if (answer === null) return;
       const out = await session.move({ packagingId: $('m-item').value, branchId: $('m-branch').value, kind: $('m-kind').value, qty: $('m-qty').value, reference: $('m-ref').value });
       $('m-status').textContent = api.outcomeWords(lang, out);
       if (out.result === 'ok' && position !== null && position.packagingId === $('m-item').value.trim()) await showPosition();

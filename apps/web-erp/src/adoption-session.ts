@@ -12,6 +12,7 @@
 // Every act is a person's click in their own name; head office re-checks it.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 
@@ -22,9 +23,9 @@ export const ADOPTION_COPY = {
     role: 'Role', people: 'People', curriculum: 'Curriculum', approvedV: 'approved, version', notApproved: 'not approved', missing: 'Missing',
     notCompetent: 'not signed competent:', notAcknowledged: 'not acknowledged:',
     curriculumH: 'Role curriculum (the owner approves)', proposed: 'Proposed from the shop\'s sheets', approve: 'Approve this list', approvedBy: 'Approved by',
-    trainingH: 'Training', employee: 'Staff id', item: 'Curriculum item', due: 'Due day', assign: 'Assign', done: 'Record done', competent: 'Sign competent', notYet: 'Not yet',
+    trainingH: 'Training', employee: 'Staff member', item: 'Curriculum item', due: 'Due day', assign: 'Assign', done: 'Record done', competent: 'Sign competent', notYet: 'Not yet',
     s_assigned: 'Assigned', s_overdue: 'Overdue', s_completed: 'Done — waiting for a second person', s_competent: 'Competent', s_not_yet_competent: 'Not yet competent',
-    trainingNone: 'No training is assigned.', championsH: 'Floor champions', champion: 'Champion (staff id)', name: 'Name it', notSet: 'not set', championLeft: 'has left the staff list',
+    trainingNone: 'No training is assigned.', championsH: 'Floor champions', champion: 'Champion', name: 'Name it', notSet: 'not set', championLeft: 'has left the staff list',
     accessH: 'Access against the staff list', checkAccess: 'Check access', accessClear: 'Everyone\'s access matches their assignment.', critical: 'Critical', warning: 'Warning', info: 'Note',
     productivityH: 'Sales per labour hour', from: 'From', to: 'To', readProductivity: 'Work it out', store: 'Whole store', perHour: 'per labour hour', hours: 'rostered hours', notAttributed: 'hours not attributed to a department',
     notAttributedH: 'Not attributed — no home department on the staff record:', notLive: 'home department closed', homeH: 'Home department (on the staff record)', homeEmployee: 'Staff id', homeDept: 'Department', homeNone: 'None — hours not attributed', homeSet: 'Set home department',
@@ -38,9 +39,9 @@ export const ADOPTION_COPY = {
     role: 'பணி', people: 'நபர்கள்', curriculum: 'பாடத்திட்டம்', approvedV: 'ஒப்புதல், பதிப்பு', notApproved: 'ஒப்புதல் இல்லை', missing: 'குறைவு',
     notCompetent: 'திறமை கையொப்பம் இல்லை:', notAcknowledged: 'ஏற்கவில்லை:',
     curriculumH: 'பணிப் பாடத்திட்டம் (உரிமையாளர் ஒப்புதல்)', proposed: 'கடையின் தாள்களிலிருந்து முன்மொழியப்பட்டது', approve: 'இந்தப் பட்டியலுக்கு ஒப்புதல்', approvedBy: 'ஒப்புதல் அளித்தவர்',
-    trainingH: 'பயிற்சி', employee: 'பணியாளர் எண்', item: 'பாடத்திட்ட உருப்படி', due: 'கடைசி நாள்', assign: 'ஒதுக்கு', done: 'முடிந்தது எனப் பதிவு', competent: 'திறமை என கையொப்பம்', notYet: 'இன்னும் இல்லை',
+    trainingH: 'பயிற்சி', employee: 'பணியாளர்', item: 'பாடத்திட்ட உருப்படி', due: 'கடைசி நாள்', assign: 'ஒதுக்கு', done: 'முடிந்தது எனப் பதிவு', competent: 'திறமை என கையொப்பம்', notYet: 'இன்னும் இல்லை',
     s_assigned: 'ஒதுக்கப்பட்டது', s_overdue: 'தாமதம்', s_completed: 'முடிந்தது — இரண்டாவது நபருக்காகக் காத்திருக்கிறது', s_competent: 'திறமையானவர்', s_not_yet_competent: 'இன்னும் திறமை இல்லை',
-    trainingNone: 'எந்தப் பயிற்சியும் ஒதுக்கப்படவில்லை.', championsH: 'தளச் சாம்பியன்கள்', champion: 'சாம்பியன் (பணியாளர் எண்)', name: 'பெயரிடு', notSet: 'அமைக்கப்படவில்லை', championLeft: 'பணியாளர் பட்டியலில் இல்லை',
+    trainingNone: 'எந்தப் பயிற்சியும் ஒதுக்கப்படவில்லை.', championsH: 'தளச் சாம்பியன்கள்', champion: 'சாம்பியன்', name: 'பெயரிடு', notSet: 'அமைக்கப்படவில்லை', championLeft: 'பணியாளர் பட்டியலில் இல்லை',
     accessH: 'பணியாளர் பட்டியலுக்கு எதிரான அணுகல்', checkAccess: 'அணுகலைச் சரிபார்', accessClear: 'அனைவரின் அணுகலும் அவர்களின் பணியுடன் பொருந்துகிறது.', critical: 'அவசரம்', warning: 'எச்சரிக்கை', info: 'குறிப்பு',
     productivityH: 'உழைப்பு மணிக்கு விற்பனை', from: 'முதல்', to: 'வரை', readProductivity: 'கணக்கிடு', store: 'முழுக் கடை', perHour: 'ஒரு உழைப்பு மணிக்கு', hours: 'பணி முறை மணிகள்', notAttributed: 'மணிகள் எந்தப் பிரிவுக்கும் ஒதுக்கப்படவில்லை',
     notAttributedH: 'ஒதுக்கப்படவில்லை — பணியாளர் பதிவில் சொந்தப் பிரிவு இல்லை:', notLive: 'சொந்தப் பிரிவு மூடப்பட்டது', homeH: 'சொந்தப் பிரிவு (பணியாளர் பதிவில்)', homeEmployee: 'பணியாளர் எண்', homeDept: 'பிரிவு', homeNone: 'இல்லை — மணிகள் ஒதுக்கப்படாது', homeSet: 'சொந்தப் பிரிவை அமை',
@@ -55,7 +56,7 @@ export const adoptionWords = (lang: Lang, key: string): string =>
 
 export function adoptionOutcomeWords(lang: Lang, out: Outcome<unknown>): string {
   const w = (k: string) => adoptionWords(lang, k);
-  if (out.result === 'refused') return `${w('refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return w(out.why);
   if (out.result === 'lost_link') return w('unreachable');
   return w('saved');

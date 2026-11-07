@@ -23,7 +23,7 @@
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
       input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:disabled { opacity: .6; cursor: default; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -31,7 +31,7 @@
       .row-form > label { flex: 1 1 200px; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
-      .meta { font-size: 13px; color: var(--muted); }
+      .meta { font-size: var(--fs-sm); color: var(--muted); }
       .verdict { font-weight: 700; font-size: 17px; margin: 0; }
       .table-wrap { overflow-x: auto; }
       table { border-collapse: collapse; width: 100%; font-size: 15px; }
@@ -44,7 +44,12 @@
       .sop .words { white-space: pre-wrap; margin: 0; }
       textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: 96px; box-sizing: border-box; width: 100%; }
       [hidden] { display: none !important; }
-    </style>
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+</style>
   </head>
   <body>
     <header>
@@ -82,30 +87,30 @@
           <label for="w-cat"><span id="w-cat-l"></span><select id="w-cat"><option value="procedure" id="w-cat-p"></option><option value="emergency" id="w-cat-e"></option></select></label>
           <label for="w-title"><span id="w-title-l"></span><input id="w-title" autocomplete="off" /></label>
           <label for="w-title-ta"><span id="w-title-ta-l"></span><input id="w-title-ta" autocomplete="off" lang="ta" /></label>
-          <label for="w-roles"><span id="w-roles-l"></span><input id="w-roles" autocomplete="off" /></label>
+          <label for="w-roles"><span id="w-roles-l"></span><input id="w-roles" autocomplete="off" list="w-roles-list" /><datalist id="w-roles-list"></datalist></label>
         </div>
         <label for="w-en"><span id="w-en-l"></span><textarea id="w-en"></textarea></label>
         <label for="w-ta"><span id="w-ta-l"></span><textarea id="w-ta" lang="ta"></textarea></label>
-        <button id="w-save" type="button"><span id="w-save-text"></span></button>
+        <button id="w-save" type="button" class="sre-btn sre-btn-primary"><span id="w-save-text"></span></button>
         <p class="status" id="w-status" role="status" aria-live="polite"></p>
       </section>
       <section id="set-contacts" hidden aria-labelledby="sc-h">
         <h3 id="sc-h"></h3>
         <label for="sc-lines"><span id="sc-lines-l"></span><textarea id="sc-lines"></textarea></label>
-        <button id="sc-save" type="button"><span id="sc-save-text"></span></button>
+        <button id="sc-save" type="button" class="sre-btn"><span id="sc-save-text"></span></button>
         <p class="status" id="sc-status" role="status" aria-live="polite"></p>
       </section>
       <section id="drills" hidden aria-labelledby="drill-h">
         <h3 id="drill-h"></h3>
         <ul class="rows" id="drill-rows"></ul>
         <div class="row-form">
-          <label for="d-sop"><span id="d-sop-l"></span><input id="d-sop" autocomplete="off" /></label>
+          <label for="d-sop"><span id="d-sop-l"></span><input id="d-sop" autocomplete="off" list="d-sop-list" /><datalist id="d-sop-list"></datalist></label>
           <label for="d-branch"><span id="d-branch-l"></span><input id="d-branch" autocomplete="off" /></label>
           <label for="d-on"><span id="d-on-l"></span><input id="d-on" type="date" /></label>
           <label for="d-who"><span id="d-who-l"></span><input id="d-who" autocomplete="off" /></label>
         </div>
         <label for="d-found"><span id="d-found-l"></span><textarea id="d-found"></textarea></label>
-        <button id="d-save" type="button"><span id="d-save-text"></span></button>
+        <button id="d-save" type="button" class="sre-btn"><span id="d-save-text"></span></button>
         <p class="status" id="d-status" role="status" aria-live="polite"></p>
       </section>
     </main>

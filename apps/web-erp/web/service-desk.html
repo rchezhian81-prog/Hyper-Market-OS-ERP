@@ -25,14 +25,14 @@
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       textarea { min-height: 96px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       table { width: 100%; border-collapse: collapse; font-size: 14px; }
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
       tr.pick { cursor: pointer; }
       tr[aria-selected='true'] { background: var(--line); }
-      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--line); }
+      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; border: 1px solid var(--line); }
       .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
       .badge.breached { color: var(--danger-text); } .badge.at_risk { color: var(--warn); } .badge.within, .badge.met { color: var(--good); }
       .draft { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
@@ -41,8 +41,15 @@
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .off-r8 { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
-      .muted { color: var(--muted); font-size: 13px; }
+      .muted { color: var(--muted); font-size: 14px; }
       .stack { display: grid; gap: 10px; }
+          .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
+      /* U2: a picked thing — the id the page sends, the Choose button, the name beside it */
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -72,7 +79,7 @@
       <section aria-labelledby="open-h" id="open-section">
         <h2 id="open-h">Open a case</h2>
         <div class="row">
-          <label for="new-id"><span id="l-new-id">Case number</span><input id="new-id" autocomplete="off" /></label>
+          <label for="new-id"><span id="l-new-id">Case number</span><input id="new-id" autocomplete="off" readonly aria-describedby="l-new-id" /></label>
           <label for="new-kind"><span id="l-new-kind">Kind</span>
             <select id="new-kind"><option value="complaint" id="o-complaint">Complaint</option><option value="enquiry" id="o-enquiry">Enquiry</option><option value="warranty" id="o-warranty">Warranty</option><option value="lost_and_found" id="o-lost_and_found">Lost and found</option></select>
           </label>
@@ -86,7 +93,7 @@
           </label>
         </div>
         <label for="new-summary"><span id="l-new-summary">What the customer said</span><textarea id="new-summary"></textarea></label>
-        <button id="open-case" type="button">Open the case</button>
+        <button id="open-case" type="button" class="sre-btn sre-btn-primary">Open the case</button>
         <p class="status" id="open-status" role="status" aria-live="polite"></p>
       </section>
 
@@ -98,13 +105,13 @@
         <h2 id="drafts-h">Reply</h2>
         <p class="lede" id="drafts-lede">The assistant drafts from the case's own records. Nothing reaches the customer until a person approves it and a person sends it.</p>
         <label for="ask-note"><span id="l-ask-note">A note for the assistant (optional)</span><input id="ask-note" autocomplete="off" /></label>
-        <button id="ask-draft" type="button">Ask the assistant for a reply</button>
+        <button id="ask-draft" type="button" class="sre-btn">Ask the assistant for a reply</button>
         <p class="status" id="draft-status" role="status" aria-live="polite"></p>
         <div id="draft-list" class="stack"></div>
 
         <h2 id="resolve-h">Resolve</h2>
         <label for="resolution"><span id="l-resolution">How it was resolved</span><input id="resolution" autocomplete="off" /></label>
-        <button id="resolve" type="button">Resolve the case</button>
+        <button id="resolve" type="button" class="sre-btn">Resolve the case</button>
         <p class="status" id="resolve-status" role="status" aria-live="polite"></p>
 
         <h2 id="rc-h">Root cause</h2>
@@ -114,7 +121,7 @@
           <label for="rc-note"><span id="l-rc-note">What happened</span><input id="rc-note" autocomplete="off" /></label>
           <label for="rc-prevent"><span id="l-rc-prevent">What will stop it (optional)</span><input id="rc-prevent" autocomplete="off" /></label>
         </div>
-        <button id="rc-save" type="button">Record the root cause</button>
+        <button id="rc-save" type="button" class="sre-btn">Record the root cause</button>
         <p class="status" id="rc-status" role="status" aria-live="polite"></p>
       </section>
 

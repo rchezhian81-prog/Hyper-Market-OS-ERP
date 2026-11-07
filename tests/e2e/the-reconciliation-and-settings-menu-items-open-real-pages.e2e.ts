@@ -72,7 +72,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
       // Round 4c: Settings is its own page now (every setting's history), no longer a second door to Store setup.
       await (await menuLink(page, 'Settings')).click();
       await page.waitForURL(/\/settings\/$/, { timeout: 15_000 });
-      await page.waitForFunction(`document.title === 'SRE Settings and their history' && ${MARKED}`, undefined, { timeout: 15_000 });
+      await page.waitForFunction(`document.title === 'SRE Settings' && ${MARKED}`, undefined, { timeout: 15_000 });
       expect(await current(page)).toEqual(['Settings']);
 
       // Reached by its own item, each page marks only that item.

@@ -21,6 +21,7 @@
 import type { ViewerIdentity } from './browser-entry';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { shopDay, servedShopZone, instantOfTyped } from '../../../packages/calendar/src/shop-day';
+import { refusalWords } from './refusal-words';
 
 /** Today in the shop's own zone (packages/calendar shop-clock), never the browser's or UTC — the reading window's default
  *  last day (its first day is the 1st of that month). From 18:30 UTC, and in a browser on UTC, the browser's own date is
@@ -108,7 +109,7 @@ export const STORE_OPS_COPY = {
     tkTitle: 'Store tasks', tkLead: 'Every task assigned to a named person, worst first: a critical task past its deadline is escalated to whoever assigned it. A re-assigned task keeps the deadline it missed.',
     tkEscalated: 'Escalated', tkOverdue: 'Overdue', tkPending: 'To do', tkDoneLate: 'Done late', tkDone: 'Done on time',
     tkColTask: 'Task', tkColWho: 'Assigned to', tkColDue: 'Deadline', tkColState: 'Where it stands',
-    tkNone: 'No task has been assigned.', tkAssign: 'Assign a task', tkTask: 'What to do', tkPerson: 'Who does it (their sign-in id)', tkBranch: 'Store',
+    tkNone: 'No task has been assigned.', tkAssign: 'Assign a task', tkTask: 'What to do', tkPerson: 'Who does it', tkBranch: 'Store',
     tkDueAt: 'Deadline', tkCritical: 'Critical — escalate if late', tkEvidence: 'Needs evidence (a photo or document)', tkSteps: 'Steps (one per line, optional)',
     tkSave: 'Assign it', tkSaved: 'Assigned in your name.', tkReadOnly: 'You can read the board; assigning a task needs the rota permission.',
     tkMissedWas: 'missed its deadline of', tkLate: '{m} minute(s) late',
@@ -146,7 +147,7 @@ export const STORE_OPS_COPY = {
     tkTitle: 'கடைப் பணிகள்', tkLead: 'பெயரிடப்பட்ட நபருக்கு ஒதுக்கப்பட்ட ஒவ்வொரு பணியும், மோசமானது முதலில்: கெடுவைத் தாண்டிய முக்கியப் பணி ஒதுக்கியவருக்குத் தெரிவிக்கப்படும். மீண்டும் ஒதுக்கப்பட்ட பணி தவறிய கெடுவை வைத்திருக்கும்.',
     tkEscalated: 'தெரிவிக்கப்பட்டது', tkOverdue: 'கெடு தாண்டியது', tkPending: 'செய்ய வேண்டியது', tkDoneLate: 'தாமதமாக முடிந்தது', tkDone: 'நேரத்தில் முடிந்தது',
     tkColTask: 'பணி', tkColWho: 'யாருக்கு', tkColDue: 'கெடு', tkColState: 'நிலை',
-    tkNone: 'எந்தப் பணியும் ஒதுக்கப்படவில்லை.', tkAssign: 'ஒரு பணியை ஒதுக்கு', tkTask: 'என்ன செய்ய வேண்டும்', tkPerson: 'யார் செய்வார் (அவரது உள்நுழைவு அடையாளம்)', tkBranch: 'கடை',
+    tkNone: 'எந்தப் பணியும் ஒதுக்கப்படவில்லை.', tkAssign: 'ஒரு பணியை ஒதுக்கு', tkTask: 'என்ன செய்ய வேண்டும்', tkPerson: 'யார் செய்வார்', tkBranch: 'கடை',
     tkDueAt: 'கெடு', tkCritical: 'முக்கியம் — தாமதமானால் தெரிவி', tkEvidence: 'சான்று தேவை (புகைப்படம் அல்லது ஆவணம்)', tkSteps: 'படிகள் (ஒரு வரிக்கு ஒன்று, விருப்பம்)',
     tkSave: 'ஒதுக்கு', tkSaved: 'உங்கள் பெயரில் ஒதுக்கப்பட்டது.', tkReadOnly: 'நீங்கள் பலகையைப் படிக்கலாம்; பணியை ஒதுக்க பணி முறை அனுமதி தேவை.',
     tkMissedWas: 'தவறிய கெடு', tkLate: '{m} நிமிடம் தாமதம்',
@@ -172,7 +173,7 @@ export function wordsFor(lang: Lang, key: CopyKey, slots: Readonly<Record<string
 
 /** How a refusal, a page-side refusal or a lost link reads to a person (a success reads its own word). */
 export function outcomeWords(lang: Lang, out: Outcome<unknown>): string {
-  if (out.result === 'refused') return `${wordsFor(lang, 'refused')} ${out.whatHappened}`;
+  if (out.result === 'refused') return refusalWords(lang, out);
   if (out.result === 'invalid') return wordsFor(lang, out.why);
   if (out.result === 'lost_link') return wordsFor(lang, 'unreachable');
   return '';

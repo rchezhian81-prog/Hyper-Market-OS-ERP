@@ -13,7 +13,7 @@ const PERMS = Array.isArray(DATA.permissions) ? DATA.permissions : null; // null
 
 const WORDS = {
   en: {
-    title: 'Recalls and trace', langName: 'தமிழ்',
+    title: 'Recalls & trace', langName: 'தமிழ்',
     lead: 'Start a recall and see what head office did at once: the tills stop selling it, the owners are alerted, open orders are listed. Trace a batch forward to the customers, or a bill or a customer back to the lots and suppliers. Call every customer the shop knows bought it.',
     tabRecalls: 'Recalls', tabTrace: 'Trace', tabCalls: 'Call list', tabMessages: 'SMS notices',
     recallsH: 'Start or open a recall', batchLabel: 'Batch (as printed)', reasonLabel: 'Why (the supplier\'s notice, the inspector\'s order)',
@@ -26,6 +26,11 @@ const WORDS = {
     alreadyOpen: 'This batch is already under recall — nothing new was started.', started: 'Recall started', closedOk: 'Recall closed with evidence.',
     refused: 'Not done', unreachable: 'Head office could not be reached. Nothing was changed — try again.', cannotRead: 'Head office could not be read. Nothing here is current.',
     needBatch: 'Key the batch first.', needReason: 'Give the reason first.', needEvidence: 'Give the closure evidence first.',
+    // U1 · OB-698: the consequence-and-confirm sheet before a recall starts
+    confirmTitle: 'Recall batch {batch}: every till of every store will refuse it from the next store pack',
+    confirmDetail: 'Customers who bought it and can be reached are listed afterwards and the owner is told. A recall cannot be withdrawn from this screen — it is closed with evidence once the goods are back.',
+    confirmAuthority: 'In your name. Head office refuses it if your role may not start a recall.',
+    confirmLabel: 'Start the recall', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     traceH: 'Trace a batch, a bill or a customer', kindLabel: 'Trace from', kindBatch: 'A batch → who bought it (forward)', kindSale: 'A bill → lots and suppliers (backward)', kindCustomer: 'A customer → lots and suppliers (backward)',
     refLabel: 'Batch, bill (sale id) or customer reference', run: 'Trace', gapsH: 'What the shop cannot say (gaps)',
     colHop: 'Step', colDate: 'Date', colFrom: 'From', colTo: 'To', colRef: 'Record', colQty: 'Quantity',
@@ -69,6 +74,10 @@ const WORDS = {
     alreadyOpen: 'இந்தத் தொகுதி ஏற்கனவே திரும்பப்பெறலில் உள்ளது — புதிதாக எதுவும் தொடங்கப்படவில்லை.', started: 'திரும்பப்பெறல் தொடங்கப்பட்டது', closedOk: 'திரும்பப்பெறல் சான்றுடன் மூடப்பட்டது.',
     refused: 'செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் மாறவில்லை — மீண்டும் முயலவும்.', cannotRead: 'தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.',
     needBatch: 'முதலில் தொகுதியை உள்ளிடவும்.', needReason: 'முதலில் காரணத்தைக் கொடுக்கவும்.', needEvidence: 'முதலில் மூடுவதற்கான சான்றைக் கொடுக்கவும்.',
+    confirmTitle: 'தொகுதி {batch} திரும்பப்பெறல்: அடுத்த கடைப் பொதியிலிருந்து எல்லாக் கடைகளின் எல்லாக் கவுண்டர்களும் அதை மறுக்கும்',
+    confirmDetail: 'அதை வாங்கியவர்களில் தொடர்பு கொள்ளக்கூடியவர்கள் பின்னர் பட்டியலிடப்படுவர்; உரிமையாளருக்குத் தெரிவிக்கப்படும். இந்தத் திரையில் திரும்பப்பெறலைத் திரும்பப் பெற முடியாது — சரக்கு திரும்பியதும் ஆதாரத்துடன் மூடப்படும்.',
+    confirmAuthority: 'உங்கள் பெயரில். திரும்பப்பெறலைத் தொடங்கும் உரிமை உங்கள் பங்கிற்கு இல்லையெனில் தலைமை அலுவலகம் மறுக்கும்.',
+    confirmLabel: 'திரும்பப்பெறலைத் தொடங்கு', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     traceH: 'ஒரு தொகுதி, பில் அல்லது வாடிக்கையாளரைத் தடமறி', kindLabel: 'எங்கிருந்து தடமறிவது', kindBatch: 'ஒரு தொகுதி → யார் வாங்கினார்கள் (முன்னோக்கி)', kindSale: 'ஒரு பில் → தொகுதிகளும் சப்ளையர்களும் (பின்னோக்கி)', kindCustomer: 'ஒரு வாடிக்கையாளர் → தொகுதிகளும் சப்ளையர்களும் (பின்னோக்கி)',
     refLabel: 'தொகுதி, பில் (விற்பனை எண்) அல்லது வாடிக்கையாளர் குறிப்பு', run: 'தடமறி', gapsH: 'கடைக்குத் தெரியாதவை (இடைவெளிகள்)',
     colHop: 'படி', colDate: 'தேதி', colFrom: 'இருந்து', colTo: 'வரை', colRef: 'பதிவு', colQty: 'அளவு',
@@ -121,6 +130,15 @@ const pending = new Map(); // action → idempotency key, kept until head office
 
 const keyFor = (action) => { if (!pending.has(action)) pending.set(action, `${action}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`); return pending.get(action); };
 
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
+async function confirmFirst(spec) {
+  const office = window.sreOffice;
+  if (!office || typeof office.confirm !== 'function') return 'unavailable';
+  const answer = await office.confirm(spec);
+  return answer && answer.ok === true ? answer : null;
+}
+
 function tell(ok, text) {
   const r = el('result');
   r.hidden = false;
@@ -170,6 +188,10 @@ async function startRecall() {
   const reason = el('r-reason').value.trim();
   if (batch === '') { tell(false, t('needBatch')); return; }
   if (reason === '') { tell(false, t('needReason')); return; }
+  // U1 · OB-698: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
+  const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{batch}', batch), ta: String(WORDS.ta.confirmTitle).replace('{batch}', batch) }, detail: { en: String(WORDS.en.confirmDetail), ta: String(WORDS.ta.confirmDetail) }, authority: { en: String(WORDS.en.confirmAuthority), ta: String(WORDS.ta.confirmAuthority) }, confirmLabel: { en: String(WORDS.en.confirmLabel), ta: String(WORDS.ta.confirmLabel) }, tone: 'danger' });
+  if (answer === 'unavailable') { tell(false, t('confirmUnavailable')); return; }
+  if (answer === null) return;
   el('r-start').disabled = true;
   try {
     const r = await call('POST', `/v1/quality/recalls/${enc(batch)}`, { reason }, `recall-${batch}`);
@@ -307,7 +329,7 @@ function callRow(c) {
   const mayTick = PERMS === null || PERMS.includes('quality.recall.notice.phoned');
   if (!c.phoned && mayTick && callReply?.recall?.status === 'open') {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'quiet tick-phoned'; b.id = `phoned-${c.customerRef}`;
+    b.type = 'button'; b.className = 'quiet tick-phoned sre-btn sre-btn-quiet'; b.id = `phoned-${c.customerRef}`;
     label(b, 'check-square', 'markPhoned');
     b.addEventListener('click', () => { void tickPhoned(c.customerRef, b); });
     li.append(b);
@@ -337,7 +359,7 @@ function callRow(c) {
       why.type = 'text'; why.id = `untick-reason-${c.customerRef}`; why.className = 'untick-reason';
       why.setAttribute('aria-label', t('untickReasonLabel')); why.placeholder = t('untickReasonLabel');
       const u = document.createElement('button');
-      u.type = 'button'; u.className = 'quiet untick-phoned'; u.id = `untick-${c.customerRef}`;
+      u.type = 'button'; u.className = 'quiet untick-phoned sre-btn sre-btn-quiet'; u.id = `untick-${c.customerRef}`;
       label(u, 'rotate-ccw', 'untickPhoned');
       u.addEventListener('click', () => { void untickPhoned(c.customerRef, why, u); });
       li.append(why, u);

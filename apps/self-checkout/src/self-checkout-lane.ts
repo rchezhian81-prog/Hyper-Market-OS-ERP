@@ -149,6 +149,8 @@ export const WORDS = Object.freeze({
   nothingToPay: W('Scan an item first.', 'முதலில் ஒரு பொருளை ஸ்கேன் செய்யவும்.'),
   paidThanks: W('Thank you! Your bill is saved.', 'நன்றி! உங்கள் பில் சேமிக்கப்பட்டது.'),
   declined: W('The payment did not go through. You can try again, or a colleague will help.', 'கட்டணம் நடைபெறவில்லை. மீண்டும் முயற்சிக்கலாம், அல்லது எங்கள் ஊழியர் உதவுவார்.'),
+  // U0 · G19 (1 Nov 2026 · §1 rule 5): what happened · whether it is saved · the next safe action — for the colleague, who decides.
+  noAnswerRecorded: W('The machine did not answer. The basket is recorded on the store computer and is NOT counted as paid. Check the machine\'s slip before the customer pays again.', 'இயந்திரம் பதிலளிக்கவில்லை. கூடை கடை கணினியில் பதிவாகியுள்ளது, ஆனால் செலுத்தப்பட்டதாகக் கணக்கிடப்படவில்லை. வாடிக்கையாளர் மீண்டும் செலுத்தும் முன் இயந்திரத்தின் சீட்டைச் சரிபார்க்கவும்.'),
   noAnswer: W('The machine has not answered. Please wait — do not pay again. A colleague will help.', 'இயந்திரம் பதில் தரவில்லை. காத்திருங்கள் — மீண்டும் செலுத்த வேண்டாம். எங்கள் ஊழியர் உதவுவார்.'),
   removed: W('Removed.', 'நீக்கப்பட்டது.'),
   notRemoved: W('That item could not be taken off. A colleague will help.', 'அந்தப் பொருளை நீக்க முடியவில்லை. எங்கள் ஊழியர் உதவுவார்.'),
@@ -419,7 +421,7 @@ export function createSelfCheckoutLane(till: TillEngine, config: SelfCheckoutLan
       if (!answered.ok) return { ok: false, words: WORDS.colleague, refusedBecause: answered.refusedBecause ?? 'answer_not_recorded', detail: answered.laneMessage };
       settled = [...settled, { kind: 'payment', blocking: true, outcome, settledBy: who.userId, at }];
       if (outcome === 'declined') { payment = null; return { ok: false, words: WORDS.declined, refusedBecause: 'declined' }; }
-      if (outcome === 'no_answer') return { ok: false, words: WORDS.noAnswer, refusedBecause: 'no_answer', detail: answered.laneMessage };
+      if (outcome === 'no_answer') return { ok: false, words: WORDS.noAnswerRecorded, refusedBecause: 'no_answer', detail: answered.laneMessage }; // U0 · G19: the colleague reads all three parts
       // Approved: the bill number from the store computer, then the sale onto its disk — the till's own path (hard rule #1).
       let number: string;
       try { number = await till.nextReceipt(); } catch (e) {

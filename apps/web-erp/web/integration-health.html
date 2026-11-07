@@ -43,11 +43,13 @@
       .row .headline { font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
+      .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .muted { color:var(--muted); font-size:14px; margin:0; }
       [hidden] { display:none !important; }
+          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
+      .sre-btn[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -55,7 +57,7 @@
     <p class="sample" id="sample" hidden></p>
 
     <header>
-      <h1 class="who" id="who">Integration health <small id="whoami"></small></h1>
+      <h1 class="who" id="who">Connections <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
@@ -67,7 +69,7 @@
 
       <div class="bar">
         <span class="asof" id="asof" role="status" aria-live="polite"></span>
-        <button class="refresh" id="refresh" type="button"></button>
+        <button class="refresh sre-btn sre-btn-primary" id="refresh" type="button"></button>
       </div>
 
       <p class="reassure" id="till-safe" hidden><span class="icon" id="till-safe-icon" aria-hidden="true">✓</span><span id="till-safe-text"></span></p>

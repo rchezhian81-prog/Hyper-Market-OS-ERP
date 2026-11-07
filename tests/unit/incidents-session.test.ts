@@ -75,7 +75,7 @@ describe('the incidents session', () => {
     const s = createIncidentsSession({ viewer: OPS, fetch: ho.fetch, ...ids });
     const out = await s.close('inc-1', 'done');
     expect(out).toEqual({ result: 'refused', status: 422, code: 'incident_needs_postmortem', whatHappened: 'Incident inc-1 has no post-mortem yet.' });
-    expect(outcomeWords('en', out)).toBe('Head office refused: Incident inc-1 has no post-mortem yet.');
+    expect(outcomeWords('en', out)).toMatch(/^Head office refused: Incident inc-1 has no post-mortem yet\. Nothing was changed\. .+/); // U1: head office's sentence kept, the two parts after it
     const dead = createIncidentsSession({ viewer: OPS, fetch: (async () => { throw new Error('down'); }) as unknown as typeof globalThis.fetch, ...ids });
     expect(outcomeWords('ta', await dead.board())).toBe(INCIDENTS_COPY.ta.unreachable);
   });

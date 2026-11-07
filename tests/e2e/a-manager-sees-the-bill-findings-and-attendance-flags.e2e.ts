@@ -140,7 +140,9 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
     await says(m.page, '#s-rows li[data-sale="S-101"]', /Material.*Difference: ₹60\.00.*What to do: Ask the manager\. The sale stands\./);
     await says(m.page, '#s-counts', /^1 · 1 · 1 /);
 
-    expect(await m.page.inputValue('#a-day')).toBe(TODAY);
+    // U2: the day is the shop's dd/mm/yyyy field; the ISO day sits behind it.
+    expect(await m.page.inputValue('#a-day')).toBe(`${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)}`);
+    expect(await m.page.evaluate(() => (globalThis as unknown as { sreOffice: { dateValue(id: string): string | null } }).sreOffice.dateValue('a-day'))).toBe(TODAY);
     await m.page.waitForSelector(`#a-rows li[data-person="${RAVI}"]`);
     await says(m.page, `#a-rows li[data-person="${RAVI}"]`, /Ravi \(u-ravi\).*out.*Out, but no in to pair with/);
     expect(await m.page.$$(`#a-rows li[data-person="${ANU}"]`)).toHaveLength(0);

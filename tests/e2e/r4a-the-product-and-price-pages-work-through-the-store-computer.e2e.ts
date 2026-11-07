@@ -11,6 +11,10 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { decide } from '../support/approval-request';
 import { deliveryPlaces } from '../support/approved-supplier';
 import { STREAM, streamName } from '../../services/api/src/adapters';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
+
+/** U2: the shared date field is read as a shop person writes it (dd/mm/yyyy); the page sends ISO. */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **Round 4a — the product-master and price-list pages, in a real browser, served by the store computer, over head office's
@@ -329,13 +333,13 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await page.locator('#rows tr[data-id="10063020"]').waitFor();
     await page.fill('#hsn', '24039910'); await page.click('#open');
     await says(page, 'record-h', /^HSN 24039910$/);
-    await page.fill('#g-from', '2017-07-01'); await page.fill('#g-rate', '28');
+    await page.fill('#g-from', '01/07/2017'); await page.fill('#g-rate', '28');
     await page.click('#g-save');
     await says(page, 'record-status', /^Recorded\.$/);
-    await page.fill('#c-from', '2017-07-01'); await page.fill('#c-adv', '61'); await page.fill('#c-spec', '0'); await page.fill('#c-per', '1');
+    await page.fill('#c-from', '01/07/2017'); await page.fill('#c-adv', '61'); await page.fill('#c-spec', '0'); await page.fill('#c-per', '1');
     await page.click('#c-save');
     await says(page, 'record-status', /^Recorded\.$/);
-    await page.fill('#g-from', '2026-12-01'); await page.fill('#g-rate', '40');
+    await page.fill('#g-from', '01/12/2026'); await page.fill('#g-rate', '40');
     await page.click('#g-save');
     await says(page, 'record-status', /^This is a tax change/);
     await page.fill('#why', 'GST 2.0 slab (synthetic)');
@@ -346,7 +350,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await says(page, 'record-status', new RegExp(`^Recorded with the approval of ${ACCOUNTANT}\\.$`));
     await page.locator('#gst-list li[data-from="2026-12-01"]').waitFor();
     // The cess change goes the same way.
-    await page.fill('#c-from', '2026-12-01'); await page.fill('#c-adv', '0');
+    await page.fill('#c-from', '01/12/2026'); await page.fill('#c-adv', '0');
     await page.click('#c-save');
     await says(page, 'record-status', /^This is a tax change/);
     await page.click('#ask');
@@ -368,7 +372,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     const { page, errors, status } = await open(MANAGER, '/price-lists/?product=DAL');
     expect(status).toBe(200);
     await page.fill('#p-ref', STORE);
-    await page.fill('#p-from', today);
+    await page.fill('#p-from', ddmm(today));
     await page.click('#read-basis');
     await says(page, 'v-mrp', /^₹100\.00$/);
     await says(page, 'v-cost', /^₹70\.00$/);
@@ -379,7 +383,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await says(page, 'price-status', new RegExp(`^Saved\\. ₹90\\.00 from ${today}`));
     await page.locator('#history tr td', { hasText: '₹90.00' }).first().waitFor();
     // A move beyond the owner's set size: from ₹90 to ₹100 is 11.1% (more than 10%).
-    await page.fill('#p-from', '2030-01-01');
+    await page.fill('#p-from', '01/01/2030');
     await page.fill('#p-price', '100');
     await page.click('#save');
     await says(page, 'price-status', /^This needs a second person: .*OB-291/);
@@ -444,7 +448,8 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await o.page.click('#stop');
     await says(o.page, 'record-status', /^Write why first\.$/);
     await o.page.fill('#s-why', 'ended early (synthetic)');
-    await o.page.click('#stop');
+    // U1 · OB-698: the consequence-and-confirm sheet names the offer; Go back sends nothing; Confirm sends once.
+    await askedThenConfirmed(o.page, () => o.page.click('#stop'), /Stop the offer rice-10 now/, writeCounter(o.page));
     await says(o.page, 'record-status', /^Stopped\./);
     await o.page.locator('#rows tr[data-id="rice-10"][data-status="stopped"]').waitFor();
     expect(((await req('GET', '/v1/promotions/rice-10/definition')).body as { status: string }).status).toBe('stopped');

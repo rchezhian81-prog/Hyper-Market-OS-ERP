@@ -12,7 +12,7 @@ export type Lang = 'en' | 'ta';
 
 export const POSH_COMMITTEE_COPY = {
   en: {
-    title: 'Committee: the annual report',
+    title: 'Committee: make the annual report',
     lead: 'The Internal Committee makes its report for each calendar year from its own register — counts only, never a complaint or a name — for the owner to file with the District Officer by 31 January. Every make and read is recorded in the committee\'s access log.',
     yearsH: 'Years to report', none: 'No ended year is waiting for a report.',
     year: 'Year', dueBy: 'due by', due: 'due', overdue: 'OVERDUE', made: 'made', notMade: 'not made yet', filed: 'filed with the District Officer on',
@@ -26,7 +26,7 @@ export const POSH_COMMITTEE_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was made or read.', reading: 'Reading from head office…',
   },
   ta: {
-    title: 'குழு: ஆண்டு அறிக்கை',
+    title: 'குழு: ஆண்டு அறிக்கை தயாரி',
     lead: 'உள் குழு ஒவ்வொரு நாள்காட்டி ஆண்டுக்கான அறிக்கையைத் தனது பதிவேட்டிலிருந்து தயாரிக்கிறது — எண்ணிக்கைகள் மட்டும், எந்தப் புகாரோ பெயரோ அல்ல — உரிமையாளர் ஜனவரி 31-க்குள் மாவட்ட அலுவலரிடம் சமர்ப்பிக்க. ஒவ்வொரு தயாரிப்பும் வாசிப்பும் குழுவின் அணுகல் பதிவில் பதிவாகும்.',
     yearsH: 'அறிக்கையிட வேண்டிய ஆண்டுகள்', none: 'முடிந்த எந்த ஆண்டும் அறிக்கைக்காகக் காத்திருக்கவில்லை.',
     year: 'ஆண்டு', dueBy: 'கடைசி நாள்', due: 'நிலுவை', overdue: 'தாமதம்', made: 'தயாரிக்கப்பட்டது', notMade: 'இன்னும் தயாரிக்கப்படவில்லை', filed: 'மாவட்ட அலுவலரிடம் சமர்ப்பித்த நாள்',

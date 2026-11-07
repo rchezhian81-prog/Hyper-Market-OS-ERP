@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 import { auditPage } from './lib/a11y-audit';
+// U2b: a date is written as the shop writes it (dd/mm/yyyy) on the chrome's shared field; the page still sends ISO.
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **OB-154 "A" — the Weighing scales page, in a real browser, on the PRODUCTION API over real PostgreSQL (B6 · B7 · L2).**
@@ -69,7 +71,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Weighi
       await says(s.page, 'no-scales', /Every till scale must be on it/);
       expect(s.writes, 'nothing is written on open').toEqual([]);
       await s.page.click('#tab-edit');
-      await fill(s.page, { 'f-asset': 'SCALE-1', 'f-store': 'br-1', 'f-lanes': 'lane-1, lane-2', 'f-approval-no': 'LM/TN/APP/0042', 'f-capacity': '30000', 'f-stamped': day(-300), 'f-valid': day(20), 'f-certificate': 'LM/VC/2025/0042' });
+      await fill(s.page, { 'f-asset': 'SCALE-1', 'f-store': 'br-1', 'f-lanes': 'lane-1, lane-2', 'f-approval-no': 'LM/TN/APP/0042', 'f-capacity': '30000', 'f-stamped': ddmm(day(-300)), 'f-valid': ddmm(day(20)), 'f-certificate': 'LM/VC/2025/0042' });
       await s.page.click('#f-save');
       await s.page.locator('#scale-rows tr[data-asset="SCALE-1"][data-level="due_soon"]').waitFor({ timeout: 15_000 });
       expect(await s.page.locator('#scale-rows tr[data-asset="SCALE-1"]').innerText()).toMatch(/LM\/VC\/2025\/0042[\s\S]*Due soon — book the re-verification/);
@@ -86,7 +88,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Weighi
       await s.page.locator('#scale-rows tr[data-asset="SCALE-1"]').waitFor({ timeout: 15_000 });
       await s.page.click('#scale-rows tr[data-asset="SCALE-1"]'); // opens "Add or update" with the scale as it stands
       expect(await s.page.inputValue('#f-certificate')).toBe('LM/VC/2025/0042');
-      await fill(s.page, { 'f-stamped': day(0), 'f-valid': day(365), 'f-certificate': 'LM/VC/2026/0107' });
+      await fill(s.page, { 'f-stamped': ddmm(day(0)), 'f-valid': ddmm(day(365)), 'f-certificate': 'LM/VC/2026/0107' });
       await s.page.click('#f-save');
       await says(s.page, 'edit-status', /A later stamp date needs a second person/);
       await s.page.locator('#f-ask').waitFor({ state: 'visible' });

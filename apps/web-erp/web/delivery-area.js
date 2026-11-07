@@ -4,6 +4,26 @@
 // head office's standard 10 km is never shown as his own number. Every word has a Tamil twin. Nothing on a timer.
 
 const $ = (id) => document.getElementById(id);
+
+/** A greyed button says why (U1 · G3 · design system §4 "disabled state explains why"): the reason is the button's tooltip
+ *  and the words beside it, in the reader's language. `why` is 'role' (your role may not), 'offline' (head office cannot
+ *  be reached), a page's own { en, ta } pair or sentence; '' takes the words away. */
+const WHY_WORDS = {
+  role: { en: 'Your role may not do this.', ta: 'உங்கள் பங்குக்கு இதைச் செய்ய அனுமதி இல்லை.' },
+  offline: { en: 'Head office cannot be reached, so this cannot be done now.', ta: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே இப்போது இதைச் செய்ய முடியாது.' },
+};
+function whyDisabled(btn, why) {
+  const tongue = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const words = why === '' || why === undefined || why === null ? '' : typeof why === 'string' ? (WHY_WORDS[why]?.[tongue] ?? why) : (why[tongue] ?? why.en);
+  let note = btn.nextElementSibling;
+  if (!(note && note.classList.contains('sre-why'))) {
+    note = document.createElement('small'); note.className = 'sre-why';
+    note.id = `${btn.id || `b${Math.random().toString(36).slice(2, 7)}`}-why`;
+    btn.after(note);
+  }
+  note.textContent = words; note.hidden = words === '';
+  if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
+}
 const api = window.deliveryArea ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, set: false };
@@ -90,8 +110,11 @@ function paint() {
   $('whoami').textContent = window.deliveryAreaData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   for (const id of ['show-area', 'area-on', 'show-history', 'show-slots', 'slots-day', 'show-places']) $(id).disabled = !may.read;
+  for (const id of ['show-area', 'show-history', 'show-slots', 'show-places']) whyDisabled($(id), may.read ? '' : 'role');
   for (const id of ['save-place', 'p-id', 'p-kind', 'p-lat', 'p-lon', 'p-radius', 'p-express', 'p-slot', 'p-pickup', 'p-delivery']) $(id).disabled = !may.set;
+  whyDisabled($('save-place'), may.set ? '' : 'role');
   for (const id of ['save-area', 'a-from', 'a-radius', 'a-minimum', 'a-fee', 'a-free', 'save-slots', 's-lat', 's-lon', 's-count', 's-open', 's-close', 's-capacity', 's-lead']) $(id).disabled = !may.set;
+  whyDisabled($('save-area'), may.set ? '' : 'role'); whyDisabled($('save-slots'), may.set ? '' : 'role');
   paintArea(); paintHistory(); paintSlots(); paintPlaces();
 }
 

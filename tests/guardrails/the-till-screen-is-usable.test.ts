@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 
 const APP = readFileSync('apps/pos/web/app.js', 'utf8');
 const HTML = readFileSync('apps/pos/web/index.html', 'utf8');
+const ENTRY = readFileSync('apps/pos/src/browser-entry.ts', 'utf8');
 
 /** Comments discuss these on purpose, so only real code counts. */
 const code = (source: string): string => source
@@ -114,6 +115,109 @@ describe('the frequent actions fit the spec\'s budget by construction (Stage G s
     const ta = APP.slice(APP.indexOf('  ta: {'));
     expect(en).toMatch(/\bexact:/);
     expect(ta).toMatch(/\bexact:/);
+  });
+});
+
+describe('OB-698 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
+  // The owner decided (2 Nov 2026) that a money, price or stock action shows what will happen, in whose name, and asks
+  // for the verb before anything is sent. At the till that is the same on-screen panel in a `'confirm'` mode — never a
+  // browser dialog (the first test in this file still forbids those).
+  it('the panel has a confirm mode: the consequence block, Go back as the safe default, the verb on the button', () => {
+    expect(HTML).toContain('id="consequence"');
+    expect(HTML).toContain('id="consequence-what"');
+    expect(code(APP)).toMatch(/function confirmAction\(\{ title, what, detail, who, confirmLabel, tone = 'primary' \}\)/);
+    expect(code(APP)).toMatch(/mode: 'confirm'/);
+    expect(code(APP)).toMatch(/if \(mode === 'confirm'\) el\('sheet-cancel'\)\.focus\(\);/);
+    expect(code(APP)).toMatch(/mode === 'confirm' \? t\('goBack'\) : t\('cancel'\)/);
+  });
+
+  it('Escape on the confirm panel is Go back, and only the verb resolves true', () => {
+    expect(code(APP)).toMatch(/event\.key === 'Escape' && sheetMode === 'confirm' && !el\('sheet'\)\.hidden\) \{[^}]*closeSheet\(null\)/);
+    expect(code(APP)).toMatch(/closeSheet\(sheetMode === 'confirm' \? true : /);
+    expect(code(APP)).toMatch(/\.then\(\(answer\) => answer === true\)/);
+  });
+
+  it('the float and cash to safe are confirmed with the figure, the name and the time BEFORE sendCash; Go back sends nothing', () => {
+    const move = code(APP).slice(code(APP).indexOf('async function moveCashToBox'), code(APP).indexOf('const takeFloat ='));
+    const confirmAt = move.indexOf('await confirmAction({');
+    const sendAt = move.indexOf('await sendCash({ kind, amountMinor: minor');
+    expect(confirmAt).toBeGreaterThan(-1);
+    expect(sendAt).toBeGreaterThan(confirmAt);
+    expect(move).toMatch(/if \(!confirmed\) return;/);
+    expect(move).toContain("replace('{amount}', inr(minor))");
+    expect(move).toContain("replace('{who}', (session.operator && session.operator()) || '—')");
+    expect(move).toContain("replace('{time}', shopTimeOf(at) || '—')"); // OB-607: the shop's clock, never this device's
+  });
+
+  it('a price cut shows from, to, how much off and the lowest price BEFORE the manager is asked; Go back asks nobody', () => {
+    const cut = code(APP).slice(code(APP).indexOf('async function changeLinePrice'), code(APP).indexOf('async function nameLoyaltyMember'));
+    const confirmAt = cut.indexOf('await confirmAction({');
+    const managerAt = cut.indexOf('await managerApproves({');
+    expect(confirmAt).toBeGreaterThan(-1);
+    expect(managerAt).toBeGreaterThan(confirmAt);
+    expect(cut).toMatch(/if \(!confirmed\) return;/);
+    for (const slot of ['{item}', '{from}', '{to}', '{cut}', '{pct}']) expect(cut).toContain(`replace('${slot}'`);
+    expect(cut).toContain("t('confirmCutFloor').replace('{floor}', inr(value.floorMinor))");
+  });
+
+  it('every confirm word has its Tamil twin (the Tamil-for-every-word test below covers them; the keys are named here so a rename cannot drop one)', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['goBack', 'confirmFloatTitle', 'confirmSafeTitle', 'confirmFloatWhat', 'confirmSafeWhat', 'confirmCashDetail', 'confirmCashWho', 'confirmFloat', 'confirmSafe', 'confirmCutTitle', 'confirmCutWhat', 'confirmCutFloor', 'confirmCutDetail', 'confirmCutWho', 'askManager']) {
+      expect(en, `${key} (en)`).toMatch(new RegExp(`\\b${key}: '`));
+      expect(ta, `${key} (ta)`).toMatch(new RegExp(`\\b${key}: '`));
+    }
+  });
+});
+
+/**
+ * U4 (UI/UX gap audit 1 Nov 2026, G18 and §27 POS "product search"): the till's second layer. The More list reads under plain
+ * headings (words, never a button — every choice stays one tap); an item can be found by a few letters of its name or a keyed
+ * code, from this lane's own snapshot, and a found row is rung through the ONE path a scan takes, so no gate is skipped.
+ */
+describe('U4: More under headings, and Find an item through the scan path', () => {
+  it('the More list is grouped under seven headings a cashier recognises, and a heading is words, never a button', () => {
+    for (const group of ['groupCash', 'groupReturns', 'groupBaskets', 'groupBills', 'groupLine', 'groupCustomer', 'groupTill']) {
+      expect(code(APP), `${group} is used on the More list`).toContain(`group: '${group}'`);
+    }
+    // The heading is a <p>, drawn inside choose() before the first option of each group — fewer than 24 choices, so every
+    // group stands open (the W1 rule); nothing becomes a second tap.
+    expect(code(APP)).toMatch(/const head = document\.createElement\('p'\);\s*head\.className = 'group-head';/);
+    expect(HTML).toContain('.group-head {');
+    expect(HTML).not.toMatch(/\.group-head \{[^}]*font-size:\s*1[0-1](?:\.\d+)?px/); // an uppercase label at --fs-label (12.5px), never smaller
+  });
+
+  it('Find sits on the bar with its mark; the find panel is the one #sheet in a "find" mode with no OK — a row is the answer', () => {
+    expect(HTML).toContain('<button id="find" type="button">Find</button>');
+    expect(HTML).toContain('id="finds"');
+    expect(code(APP)).toContain("['find', 'search']");
+    expect(code(APP)).toMatch(/async function findItem\(\)/);
+    expect(code(APP)).toMatch(/mode: 'find'/);
+    expect(code(APP)).toContain("el('sheet-ok').hidden = mode === 'find';");
+    expect(code(APP)).toContain("if (mode === 'text' || mode === 'find') el('entry-text').focus();");
+  });
+
+  it('a found row and a scanned code ring through ONE path (scanCode, shared with the UI-2 keyed barcode), so every gate applies the same way; the list comes from the lane\'s own snapshot', () => {
+    expect(code(APP)).toMatch(/function scanCode\(code, startedAt\) \{\s*if \(!session\.hasCatalogue\(\)\)/);
+    expect(code(APP)).toContain('scanCode(code, startedAt);'); // the scanner's Enter
+    expect(code(APP)).toContain('scanCode(String(code), null);'); // the found row
+    expect(code(APP)).toContain('session.scanBarcode(code);'); // inside scanCode — the till itself still prices nothing
+    expect(code(APP)).toContain('session.findItems(');
+    expect(ENTRY).toContain('const findItems = (query: string, limit = 20): readonly FoundItem[] =>');
+    expect(ENTRY).toMatch(/const snapshot = config\?\.catalogue;/); // the signed snapshot, no network
+    // The scanner-as-keyboard rule holds in the panel: a code of six digits or more, then Enter, rings as a scan; a lone match
+    // is picked; otherwise Enter does nothing — it never picks a guess.
+    expect(code(APP)).toMatch(/if \(sheetMode === 'find'\) \{\s*const typed = el\('entry-text'\)\.value\.trim\(\);\s*if \(\/\^\[0-9\]\{6,\}\$\/\.test\(typed\)\) \{ closeSheet\(typed\); return; \}/);
+    expect(code(APP)).toContain('if (found.length === 1) closeSheet(ringCodeOf(found[0]));');
+  });
+
+  it('every new word has its Tamil twin (named here so a rename cannot drop one)', () => {
+    const en = APP.slice(APP.indexOf('  en: {'), APP.indexOf('  ta: {'));
+    const ta = APP.slice(APP.indexOf('  ta: {'));
+    for (const key of ['find', 'findTitle', 'findHint', 'findNone', 'findMore', 'findKg', 'groupCash', 'groupReturns', 'groupBaskets', 'groupBills', 'groupLine', 'groupCustomer', 'groupTill']) {
+      expect(en, `${key} (en)`).toMatch(new RegExp(`\\b${key}: '`));
+      expect(ta, `${key} (ta)`).toMatch(new RegExp(`\\b${key}: '`));
+    }
   });
 });
 

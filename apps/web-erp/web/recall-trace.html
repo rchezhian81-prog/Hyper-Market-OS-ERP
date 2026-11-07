@@ -28,7 +28,7 @@
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       textarea { min-height: 72px; resize: vertical; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; }
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -52,7 +52,7 @@
   </head>
   <body>
     <header>
-      <h1 class="who" id="title">Recalls and trace <small id="whoami"></small></h1>
+      <h1 class="who" id="title">Recalls &amp; trace <small id="whoami"></small></h1>
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
     <!--SCREEN-DATA-->
@@ -75,15 +75,15 @@
         <div class="row">
           <label for="r-batch"><span id="l-r-batch"></span><input id="r-batch" autocomplete="off" /></label>
           <label for="r-reason"><span id="l-r-reason"></span><input id="r-reason" autocomplete="off" /></label>
-          <button id="r-start" type="button"></button>
-          <button id="r-open" type="button" class="quiet"></button>
+          <button id="r-start" type="button" class="sre-btn sre-btn-danger"></button>
+          <button id="r-open" type="button" class="quiet sre-btn sre-btn-quiet"></button>
         </div>
         <div id="r-detail" hidden>
           <h3 id="r-detail-h"></h3>
           <div class="facts" id="r-facts"></div>
           <div class="row" id="r-close-row">
             <label for="r-evidence"><span id="l-r-evidence"></span><input id="r-evidence" autocomplete="off" /></label>
-            <button id="r-close" type="button" class="quiet"></button>
+            <button id="r-close" type="button" class="quiet sre-btn sre-btn-quiet"></button>
           </div>
         </div>
         <h3 id="r-list-h"></h3>
@@ -102,7 +102,7 @@
         <div class="row">
           <label for="t-kind"><span id="l-t-kind"></span><select id="t-kind"></select></label>
           <label for="t-ref"><span id="l-t-ref"></span><input id="t-ref" autocomplete="off" /></label>
-          <button id="t-run" type="button"></button>
+          <button id="t-run" type="button" class="sre-btn sre-btn-primary"></button>
         </div>
         <p class="status" id="t-summary" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table aria-labelledby="trace-h">
@@ -118,7 +118,7 @@
         <p class="basis" id="c-basis"></p>
         <div class="row">
           <label for="c-batch"><span id="l-c-batch"></span><input id="c-batch" autocomplete="off" /></label>
-          <button id="c-load" type="button"></button>
+          <button id="c-load" type="button" class="sre-btn sre-btn-primary"></button>
         </div>
         <p class="status" id="c-summary" role="status" aria-live="polite"></p>
         <ul class="rows" id="c-rows" aria-labelledby="calls-h"></ul>
@@ -130,15 +130,15 @@
         <div id="m-switch-box" hidden>
           <div class="row">
             <label for="m-reason"><span id="l-m-reason"></span><input id="m-reason" autocomplete="off" /></label>
-            <button id="m-on" type="button"></button>
-            <button id="m-off" type="button" class="quiet"></button>
+            <button id="m-on" type="button" class="sre-btn"></button>
+            <button id="m-off" type="button" class="quiet sre-btn sre-btn-quiet"></button>
           </div>
         </div>
         <h3 id="m-send-h"></h3>
         <div class="row">
           <label for="m-batch"><span id="l-m-batch"></span><input id="m-batch" autocomplete="off" /></label>
           <label for="m-text"><span id="l-m-text"></span><textarea id="m-text"></textarea></label>
-          <button id="m-send" type="button"></button>
+          <button id="m-send" type="button" class="sre-btn sre-btn-primary"></button>
         </div>
       </section>
     </main>

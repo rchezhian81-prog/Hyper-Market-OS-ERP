@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 
 /**
@@ -16,6 +16,13 @@ import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-s
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['refunds', 'e2e', 'key'].join('-').padEnd(48, '0');
+
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+const confirmSheet = async (page: Page): Promise<void> => {
+  await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
+  await page.click('#sre-confirm-go');
+  await page.waitForSelector('#sre-confirm', { state: 'detached', timeout: 10_000 });
+};
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Order refunds page (M18-FR-04) on the production API, in a real browser', () => {
   let browser: Browser;
@@ -73,10 +80,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Order 
       expect(requestId).not.toBe('');
       // Issued before the second person decides: head office refuses it.
       await page.click('#issue');
+      await confirmSheet(page);
       await page.locator('#refund-status', { hasText: '⚠ Head office refused:' }).waitFor({ timeout: 15_000 });
       // Nothing moved. Once the owner approves that same request in his own session, the page's kept draft goes.
       await approve(requestId);
       await page.click('#issue');
+      await confirmSheet(page);
       await page.locator('#refund-status[data-state="issued"]').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#refund-status')).toMatch(/^✓ Refund rf-\w+ · ₹40\.00 — refunded$/);
       await page.locator('#money .refundable', { hasText: '₹60.00' }).waitFor({ timeout: 15_000 });
@@ -91,6 +100,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Order 
       await page.locator('#refund-status', { hasText: '✓ Asked' }).waitFor({ timeout: 15_000 });
       await approve(await page.inputValue('#approval-id'));
       await page.click('#issue');
+      await confirmSheet(page);
       await page.locator('#refund-status[data-state="pending"]').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#refund-status')).toMatch(/^⏱ Refund rf-\w+ · ₹25\.00 — waiting for the bank$/);
       await page.click('#show-pending');

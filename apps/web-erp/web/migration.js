@@ -20,6 +20,28 @@
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
+const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
+// A date a shop person reads — dd/mm/yyyy in the chrome's shared field, while the page goes on sending ISO (`dateOf`).
+const shopDates = new Map();
+function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function shopDate(id, words, opts = {}) {
+  const office = window.sreOffice; const input = document.getElementById(id);
+  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (input === null || shopDates.has(id)) return;
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
+  const ownLabel = document.querySelector(`label[for="${id}"]`);
+  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
+  (input.closest('label') ?? input).replaceWith(field);
+  shopDates.set(id, words);
+}
+const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+/** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
+function setShopDate(id, iso) { const n = document.getElementById(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; }
+// ── U2b (UI/UX gap audit G14): the shared date fields' labels follow the language toggle like the page's own words
+new MutationObserver(() => { repaintShopDates(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// ── U2b end
 
 const money = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -75,6 +97,7 @@ const WORDS = {
     ok: 'OK', read: 'Please read this',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be signed, decided or rolled back — all three carry the name of whoever did them.',
     sampleData: 'Sample data — this is not your shop.',
+    notTold: 'Not known — the store computer has not been given the migration setup yet, so nothing here can be read, signed, decided or rolled back from this screen.',
     unsent: 'decision(s) made here and not yet sent to the store computer — they are saved and will be sent when the connection is back',
     // MG-10 day entry, witness figures and the first department's templates (cutover readiness, OB-239).
     witnessTitle: 'What the outside evidence says',
@@ -169,6 +192,7 @@ const WORDS = {
     ok: 'சரி', read: 'இதைப் படிக்கவும்',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. கையெழுத்திடவோ, முடிவு செய்யவோ, திரும்பவோ முடியாது — மூன்றும் செய்தவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    notTold: 'தெரியாது — கடைக் கணினிக்கு இன்னும் இடமாற்ற அமைப்பு கொடுக்கப்படவில்லை, எனவே இந்தத் திரையிலிருந்து எதையும் படிக்கவோ, கையெழுத்திடவோ, முடிவு செய்யவோ, திரும்பவோ முடியாது.',
     unsent: 'முடிவு(கள்) இங்கே எடுக்கப்பட்டு இன்னும் கடைக் கணினிக்கு அனுப்பப்படவில்லை — அவை சேமிக்கப்பட்டுள்ளன, இணைப்பு திரும்பியதும் அனுப்பப்படும்',
     witnessTitle: 'வெளிச் சான்று என்ன சொல்கிறது',
     witnessLead: 'பன்னிரண்டு வகைப் பதிவுகள் ஒவ்வொன்றும் பழைய அமைப்புக்கு வெளியே உள்ள ஒன்றுடன் சரிபார்க்கப்படுகிறது — இருப்பு எண்ணிக்கை, வங்கி, வரி அறிக்கைகள், கணக்காளரின் கணக்குகள், விற்பனையாளர்கள், வாடிக்கையாளர்கள். கண்டுபிடிப்பு இல்லாத வகை "இல்லை" என்று காட்டப்படும், ஒருபோதும் "சரி" என்று அல்ல.',
@@ -807,7 +831,7 @@ el('day-import').addEventListener('change', async () => {
 });
 
 el('day-save').addEventListener('click', () => {
-  const outcome = session.enterDay({ businessDate: el('day-date').value, lines: linesFromForm() });
+  const outcome = session.enterDay({ businessDate: dateOf('day-date'), lines: linesFromForm() });
   // The rule's own sentence is English; in Tamil the screen's own words carry the refusal.
   if (!outcome.ok) { tell(t('notSaved'), `${t(`day_refusal_${outcome.refusal}`)}${lang === 'en' ? ` ${outcome.detail}` : ''}`); return; }
   enteredHere.add(outcome.day.businessDate);
@@ -818,7 +842,7 @@ el('day-save').addEventListener('click', () => {
 });
 
 el('day-sign').addEventListener('click', () => {
-  const outcome = session.signDay({ businessDate: el('day-date').value, statement: el('day-statement').value });
+  const outcome = session.signDay({ businessDate: dateOf('day-date'), statement: el('day-statement').value });
   if (!outcome.ok) {
     const named = outcome.unexplained.map((d) => `${t(`area_${d.area}`)} (${d.differenceId})`).join(', ');
     tell(t('cannotSign'), `${t(`day_refusal_${outcome.refusal}`)}${named === '' ? '' : ` — ${named}`}`);
@@ -829,10 +853,11 @@ el('day-sign').addEventListener('click', () => {
   tell(t('daySigned'), lang === 'en' ? outcome.detail : `${t('signedDay')} ${outcome.signature.signedBy}`, true);
   paintChrome();
 });
-el('day-date').addEventListener('change', () => { renderDay(); renderBills(); });
+// U2b: the shared date field replaces the input, so the listener is on the document (a 'change' bubbles from either input)
+document.addEventListener('change', (e) => { if (e.target && e.target.id === 'day-date') { renderDay(); renderBills(); } });
 
 function renderDay() {
-  const date = el('day-date').value;
+  const date = dateOf('day-date');
   const view = el('day-view');
   view.replaceChildren();
   if (date === '') return;
@@ -882,7 +907,7 @@ function renderBills() {
   if (box.hidden) return;
   el('bills-title').textContent = t('billsTitle');
   el('bills-lead').textContent = t('billsLead');
-  const day = el('day-date').value;
+  const day = dateOf('day-date');
   const bills = data.bills.filter((b) => b && b.tradingDay === day);
   const list = el('bills-list');
   if (bills.length === 0) { list.replaceChildren(emptyLine(t('billsNone')), ...(data.truncated ? [line(t('billsTruncated'))] : [])); return; }
@@ -910,7 +935,7 @@ function renderDays() {
     el(`day-${area}-name`).textContent = t(`area_${area}`);
   }
   for (const node of document.querySelectorAll('#day-areas [data-word]')) node.textContent = t(node.dataset.word);
-  if (el('day-date').value === '') el('day-date').value = today();
+  if (dateOf('day-date') === '') setShopDate('day-date', today());
   renderDay();
   renderBills();
   const list = el('days-list');
@@ -1439,7 +1464,7 @@ function ecPaintMappings() {
       const all = (ecState.mappings.history ?? []).filter((h) => h.report === kind);
       if (all.length > 1) what.append(line(`${ec('changedBefore')}: ${all.slice(0, -1).map((h) => `${h.setBy} · ${h.setAt}`).join('; ')}`));
     }
-    const button = document.createElement('button');
+    const button = document.createElement('button'); button.classList.add('sre-btn');
     button.type = 'button';
     button.id = `ec-map-change-${kind}`;
     labelled(button, 'list-checks', ec('change'));
@@ -1456,7 +1481,7 @@ el('ec-load').addEventListener('click', async () => {
   const value = ecPaise(el('ec-tol-value').value);
   const tax = ecPaise(el('ec-tol-tax').value);
   if (Number.isNaN(value) || Number.isNaN(tax)) { tell(ec('notSaved'), ec('tolBad')); return; }
-  const out = await ecCall('load', { businessDate: el('ec-date').value, itemWise: ecState.files.item_wise.text, billWise: ecState.files.bill_wise.text, tolerance: { valueMinor: value, taxMinor: tax } });
+  const out = await ecCall('load', { businessDate: dateOf('ec-date'), itemWise: ecState.files.item_wise.text, billWise: ecState.files.bill_wise.text, tolerance: { valueMinor: value, taxMinor: tax } });
   if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
   ecState.day = out.day;
   ecPaintDay();
@@ -1596,14 +1621,14 @@ el('ec-reasons-save').addEventListener('click', async () => {
     .filter((r) => r.explanation !== '')
     .map((r) => ({ differenceId: r.differenceId, explanation: r.explanation, ...(r.side === '' ? {} : { wrongSide: r.side }) }));
   if (reasons.length === 0) { tell(ec('notSaved'), ec('noReasonTyped')); return; }
-  const out = await ecCall('reasons', { businessDate: el('ec-date').value, reasons });
+  const out = await ecCall('reasons', { businessDate: dateOf('ec-date'), reasons });
   if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
   ecState.day = out.day;
   ecPaintDay();
   tell(ec('reasonsSaved'), `${out.day.unexplained.length} ${ec('stillNeeds')}${out.relayed ? '' : ` · ${ec('relayLater')}`}`, out.day.unexplained.length === 0);
 });
 el('ec-sign').addEventListener('click', async () => {
-  const out = await ecCall('sign', { businessDate: el('ec-date').value, statement: el('ec-statement').value });
+  const out = await ecCall('sign', { businessDate: dateOf('ec-date'), statement: el('ec-statement').value });
   if (!out.ok) { ecTellRefusal(ec('cannotSign'), out); return; }
   el('ec-statement').value = '';
   ecState.day = out.day;
@@ -1626,15 +1651,16 @@ for (const kind of EC_KINDS) {
   });
 }
 async function ecLoadDay() {
-  const date = el('ec-date').value;
+  const date = dateOf('ec-date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ecState.day = undefined; ecPaintDay(); return; }
   const out = await ecCall(`day?date=${encodeURIComponent(date)}`);
   ecState.day = out.ok ? out.day : undefined;
   ecPaintDay();
 }
-el('ec-date').addEventListener('change', () => {
+document.addEventListener('change', (e) => {
+  if (!e.target || e.target.id !== 'ec-date') return;
   // The same day below, so the bill-wise list and the typed day follow it.
-  el('day-date').value = el('ec-date').value;
+  setShopDate('day-date', dateOf('ec-date'));
   renderDay();
   renderBills();
   void ecLoadDay();
@@ -1653,7 +1679,7 @@ function renderEvening() {
   labelled(el('ec-load'), 'git-compare-arrows', ec('load'));
   labelled(el('ec-reasons-save'), 'clipboard-check', ec('reasonsSave'));
   labelled(el('ec-sign'), 'badge-check', ec('sign'));
-  if (el('ec-date').value === '') el('ec-date').value = el('day-date').value || today();
+  if (dateOf('ec-date') === '') setShopDate('ec-date', dateOf('day-date') || today());
   if (ecState.mapping) ecOpenMapping(ecState.mapping);
   ecPaintFiles();
   ecPaintMappings();
@@ -1700,8 +1726,11 @@ function paintChrome() {
   labelled(el('day-sign'), 'badge-check', t('daySign'));
 
   const nobody = el('nobody');
-  nobody.hidden = window.migrationData?.userId !== undefined;
-  nobody.textContent = nobody.hidden ? '' : t('nobodyNamed');
+  // U0 (P-08): on a real store computer that was given no migration setup there is nothing to show — the page says so
+  // and draws none of the sample figures. (Why the box is not given it is a head-office question, left to U5.)
+  nobody.hidden = window.migrationData?.userId !== undefined && !notTold;
+  nobody.textContent = nobody.hidden ? '' : notTold ? t('notTold') : t('nobodyNamed');
+  for (const view of VIEWS) if (notTold) el(`view-${view}`).hidden = true;
 
   // What this page has decided and not yet managed to send. A screen that draws a signature it
   // could not record is the failure P-08 exists to refuse, so this is never hidden when it is > 0.
@@ -1730,12 +1759,18 @@ el('lang').addEventListener('click', () => {
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 
-el('sample').hidden = real !== undefined;
+const servedByBox = window.shopTimeZone !== undefined;
+const notTold = real === undefined && servedByBox;
+el('sample').hidden = real !== undefined || servedByBox;
 paintChrome();
-show('where');
+if (!notTold) show('where');
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
 }
+
+// ── U2b (G14): a date a shop person reads — the evening check's day and the parallel day on the shared dd/mm field
+shopDate('ec-date', { en: EC_WORDS.en.date, ta: EC_WORDS.ta.date });
+shopDate('day-date', { en: WORDS.en.dayDate, ta: WORDS.ta.dayDate });
