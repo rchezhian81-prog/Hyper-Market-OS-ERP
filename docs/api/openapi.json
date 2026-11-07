@@ -73723,6 +73723,424 @@
         }
       }
     },
+    "/v1/migration/old-system-imports": {
+      "get": {
+        "operationId": "getMigrationOldSystemImports",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "migration.load.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMigrationOldSystemImportsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"migration.load.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/migration/old-system-imports/{importId}": {
+      "get": {
+        "operationId": "getMigrationOldSystemImportsByImportId",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "migration.load.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMigrationOldSystemImportsByImportIdReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"migration.load.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postMigrationOldSystemImportsByImportId",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "migration.load.record",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"migration.load.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/migration/old-system-imports/{importId}/fixes": {
+      "post": {
+        "operationId": "postMigrationOldSystemImportsByImportIdFixes",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "migration.load.record",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdFixesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdFixesReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"migration.load.record\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/migration/old-system-imports/{importId}/for-finance": {
+      "get": {
+        "operationId": "getMigrationOldSystemImportsByImportIdForFinance",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.tax.approve",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMigrationOldSystemImportsByImportIdForFinanceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.tax.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/migration/old-system-imports/{importId}/tax-fixes": {
+      "post": {
+        "operationId": "postMigrationOldSystemImportsByImportIdTaxFixes",
+        "tags": [
+          "API-12 Migration"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.tax.approve",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdTaxFixesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMigrationOldSystemImportsByImportIdTaxFixesReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.tax.approve\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/migration/opening-events": {
       "post": {
         "operationId": "postMigrationOpeningEvents",
@@ -150615,6 +151033,65 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/migration/src/load-records.ts"
       },
+      "GetMigrationOldSystemImportsByImportIdForFinanceReply": {
+        "type": "object",
+        "required": [
+          "import",
+          "fixes"
+        ],
+        "properties": {
+          "import": {
+            "$ref": "#/components/schemas/OldSystemImportRecord"
+          },
+          "fixes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportFix"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "GetMigrationOldSystemImportsByImportIdReply": {
+        "type": "object",
+        "required": [
+          "import",
+          "fixes"
+        ],
+        "properties": {
+          "import": {
+            "$ref": "#/components/schemas/OldSystemImportRecord"
+          },
+          "fixes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportFix"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "GetMigrationOldSystemImportsReply": {
+        "type": "object",
+        "required": [
+          "imports"
+        ],
+        "properties": {
+          "imports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OldSystemImportRecord"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
       "GetMigrationOpeningReversalsByLoadIdReply": {
         "type": "object",
         "required": [
@@ -223482,6 +223959,284 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/migration/src/index.ts"
       },
+      "PostMigrationOldSystemImportsByImportIdFixesReply": {
+        "type": "object",
+        "required": [
+          "fix"
+        ],
+        "properties": {
+          "fix": {
+            "$ref": "#/components/schemas/ImportFix"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdFixesRequest": {
+        "type": "object",
+        "required": [
+          "itemId",
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "barcodes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cost": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "excluded": {
+                "type": "boolean"
+              },
+              "gstPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "hsn": {
+                "type": "string"
+              },
+              "mrp": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "sell": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdReply200": {
+        "type": "object",
+        "required": [
+          "import",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "import": {
+            "$ref": "#/components/schemas/OldSystemImportRecord"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdReply201": {
+        "type": "object",
+        "required": [
+          "import"
+        ],
+        "properties": {
+          "import": {
+            "$ref": "#/components/schemas/OldSystemImportRecord"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdRequest": {
+        "type": "object",
+        "required": [
+          "backupRestoredOn",
+          "files",
+          "items",
+          "ratesFrom",
+          "readDigest",
+          "source"
+        ],
+        "properties": {
+          "backupRestoredOn": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "bytes",
+                "digest",
+                "name",
+                "role"
+              ],
+              "properties": {
+                "bytes": {
+                  "type": "integer"
+                },
+                "digest": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "items": {
+            "type": "integer"
+          },
+          "ratesFrom": {
+            "type": "string"
+          },
+          "readDigest": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdTaxFixesReply": {
+        "type": "object",
+        "required": [
+          "fix"
+        ],
+        "properties": {
+          "fix": {
+            "$ref": "#/components/schemas/ImportFix"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
+      "PostMigrationOldSystemImportsByImportIdTaxFixesRequest": {
+        "type": "object",
+        "required": [
+          "itemId",
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "barcodes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cost": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "excluded": {
+                "type": "boolean"
+              },
+              "gstPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "hsn": {
+                "type": "string"
+              },
+              "mrp": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "sell": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/migration/src/old-system-imports.ts"
+      },
       "PostMigrationOpeningEventsReply": {
         "type": "object",
         "required": [
@@ -287905,6 +288660,52 @@
         },
         "additionalProperties": true
       },
+      "ImportFix": {
+        "type": "object",
+        "required": [
+          "importId",
+          "itemId",
+          "kind",
+          "value",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "importId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "barcode",
+              "exclude",
+              "label",
+              "price",
+              "tax"
+            ]
+          },
+          "value": {
+            "type": "object",
+            "additionalProperties": {
+              "x-untyped": "unknown"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "ImportPreview": {
         "type": "object",
         "required": [
@@ -294714,6 +295515,74 @@
             "type": "string"
           },
           "rejectReason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "OldSystemImportRecord": {
+        "type": "object",
+        "required": [
+          "importId",
+          "source",
+          "readDigest",
+          "files",
+          "items",
+          "ratesFrom",
+          "backupRestoredOn",
+          "recordedBy",
+          "recordedAt"
+        ],
+        "properties": {
+          "importId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "readDigest": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "name",
+                "bytes",
+                "digest"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "bytes": {
+                  "type": "number"
+                },
+                "digest": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "items": {
+            "type": "number"
+          },
+          "ratesFrom": {
+            "type": "string"
+          },
+          "backupRestoredOn": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
             "type": "string"
           }
         },

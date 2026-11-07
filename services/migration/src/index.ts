@@ -52,6 +52,8 @@ import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type 
 import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
 import { loadRecordRoutes, type LoadRecord, type LoadApplied } from './load-records';
+import { oldSystemImportRoutes, type OldSystemImportRecord } from './old-system-imports';
+import type { ImportFix } from '../../../packages/migration/src/old-system-import';
 import { parallelDayRoutes } from './parallel-day-routes';
 import type { SliceAcceptance } from '../../../packages/migration/src/slice-import';
 import type { ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
@@ -442,6 +444,15 @@ export interface MigrationDeps {
   readonly recordSliceAcceptance?: (tenantId: string, loadId: string, acceptance: SliceAcceptance) => Promise<void> | void;
   readonly loadsApplied?: (tenantId: string, loadId: string) => Promise<readonly LoadApplied[]> | readonly LoadApplied[];
   readonly recordLoadApplied?: (tenantId: string, applied: LoadApplied) => Promise<void> | void;
+  /**
+   * OB-704 — import from the old system, gaps fixed here (`old-system-imports.ts`): each import as the store PC read it
+   * (its fingerprint, files and the MG-02 backup day) and every person's fix, append-only. A writer that is absent
+   * refuses 503 rather than pretending.
+   */
+  readonly oldSystemImports?: (tenantId: string) => Promise<readonly OldSystemImportRecord[]> | readonly OldSystemImportRecord[];
+  readonly recordOldSystemImport?: (tenantId: string, record: OldSystemImportRecord) => Promise<void> | void;
+  readonly importFixes?: (tenantId: string, importId: string) => Promise<readonly ImportFix[]> | readonly ImportFix[];
+  readonly recordImportFix?: (tenantId: string, fix: ImportFix) => Promise<void> | void;
   /** MG-10 — every signature a parallel-run day has had (`parallel-day-routes.ts`). Append-only. */
   readonly parallelDaySignatures?: (tenantId: string) => Promise<readonly ParallelDaySignature[]> | readonly ParallelDaySignature[];
   readonly recordParallelDaySignature?: (tenantId: string, signature: ParallelDaySignature) => Promise<void> | void;
@@ -1389,6 +1400,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
     ...migrationControlRoutes(deps), // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
     ...decisionRoutes(deps),
     ...loadRecordRoutes(deps),
+    ...oldSystemImportRoutes(deps),
     ...screenRoutes(deps),
   ];
 }

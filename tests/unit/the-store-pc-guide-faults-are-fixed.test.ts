@@ -124,3 +124,21 @@ describe('OB-257 — the setup commands are handed to the setup tool, in this wi
     expect(ran.at(-1)!.stdio).toBe('inherit');
   });
 });
+
+describe('OB-704 — "import" opens the import page: built, then started with this copy\'s settings, the till\'s and the data folder', () => {
+  it('refuses before prepare and before the till is installed (it signs people in with their till PIN); then starts the page in this window', async () => {
+    const seen: { args: readonly string[] }[] = [];
+    const w = world({}, { sliceStdout: (args) => { seen.push({ args }); return { status: 0, stdout: '' }; } });
+    expect(await main(['import'], w.deps)).toBe(2);
+    expect(w.said.join('\n')).toMatch(/REFUSED — this copy has no settings file yet/);
+    expect(await prepare(w.deps)).toBe(0);
+    expect(await main(['import'], w.deps)).toBe(2);
+    expect(w.said.join('\n')).toMatch(/REFUSED — the till is not installed yet/);
+    mkdirSync(join(w.data, 'till'), { recursive: true });
+    writeFileSync(join(w.data, 'till', 'till.env'), 'EDGE_STORE_ID=S1\n');
+    expect(await main(['import'], w.deps)).toBe(0);
+    expect(seen.at(-1)!.args).toEqual([join('scripts', 'dist', 'import-server.js'), '--settings', join(w.data, '.env.real'), '--till-settings', join(w.data, 'till', 'till.env'), '--data', w.data]);
+    expect(w.calls.filter((c) => c.args[0] === join('scripts', 'dist', 'import-server.js')).at(-1)!.stdio).toBe('inherit');
+    expect(parseCommandLine(['import']).problems).toEqual([]);
+  });
+});

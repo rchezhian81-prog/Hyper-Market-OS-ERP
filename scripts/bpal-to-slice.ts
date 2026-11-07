@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { bpalToSlice, labelFactsFrom, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME } from '../packages/migration/src/bpal-slice';
 import { parseFlags } from './lib/operator-env';
 import { readXlsxTable } from './lib/xlsx-read.mjs';
+import { shopDateIn } from '../packages/calendar/src/shop-clock';
 
 const out = (s = ''): void => { process.stdout.write(`${s}\n`); };
 const fail = (s: string): never => { out(`REFUSED — ${s}`); process.exit(2); };
@@ -31,7 +32,8 @@ const purchaseFile = need('purchases', 'the Product wise Detail Report for the l
 const outDir = resolve(need('out', 'the slice folder, e.g. C:\\SRE-slice'));
 const ratesFrom = need('rates-from', 'the day the GST rates were read off the old ERP (YYYY-MM-DD) — each tax class is in force from it');
 if (!DAY.test(ratesFrom)) fail(`--rates-from "${ratesFrom}" is not a date like 2026-11-06`);
-const today = str('today') ?? new Date().toISOString().slice(0, 10);
+// The shop's day (India), never the UTC date of now (M01-FR-02).
+const today = str('today') ?? shopDateIn(new Date().toISOString());
 if (!DAY.test(today)) fail(`--today "${today}" is not a date like 2026-11-06`);
 
 const read = (file: string, header: string): Record<string, string>[] => {

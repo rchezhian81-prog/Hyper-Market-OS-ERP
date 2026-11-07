@@ -47,7 +47,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backup, drill, restoreCheck, tillFolders } from './store-computer-recovery.mjs';
 import { deviceDoorRow } from './store-computer-device-door.mjs';
-import { autostart, backupStatus, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup } from './store-computer-schedule.mjs';
+import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup, writeLauncher } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
 import {
@@ -1226,6 +1226,7 @@ export const USAGE = [
   '                                           or the whole data folder to another internal drive',
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
+  '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
   '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
   '                                           seal the old ERP\'s exported files (MG-02) — asks your OWN till PIN',
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
@@ -1269,6 +1270,44 @@ export async function ownerSetup(deps, step, cl) {
   const tillEnv = deps.fs.existsSync(L.tillEnv) ? ['--till-settings', L.tillEnv] : [];
   const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'owner-setup.js'), step, ...pass, '--settings', L.settings, ...tillEnv], { cwd: deps.repoRoot, env, stdio: 'inherit' });
   if (r.error !== undefined) { say('NOT DONE — the setup tool could not be started.'); return 1; }
+  return r.status ?? 1;
+}
+
+/**
+ * OB-704 (owner, 7 Nov 2026: "screens, not commands"): the "Import from the old system" page — built, then served on THIS
+ * PC only (127.0.0.1:8095) and opened in the browser; each person signs in on it with their staff ID and own till PIN.
+ * The first time it also puts "SRE Import" on the Windows desktop: a double-click opens the page of whichever release is
+ * live (it goes through run\launch.mjs, so an update never leaves the icon on an old release). No secret is in it.
+ */
+/** The launcher the desktop icon starts — written (naming this release live) only when the PC has none yet. */
+function writeLauncherIfMissing(deps, L) {
+  if (deps.fs.existsSync(pathFor(deps.platform).join(L.runDir, 'launch.mjs')) && currentRelease(deps, L) !== undefined) return;
+  writeLauncher(deps, L, currentRelease(deps, L)?.folder ?? deps.repoRoot);
+}
+
+export async function importPage(deps) {
+  const { say } = deps;
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+  if (L.dataRoot === undefined) { say('REFUSED — this copy keeps its data inside the release folder. Move it first: pnpm run store-computer -- migrate-data-folder'); return 2; }
+  if (!deps.fs.existsSync(L.tillEnv)) { say('REFUSED — the till is not installed yet (owner guide Part 13): the import page signs people in with their till PIN.'); return 2; }
+  const env = composeEnv(deps.env, {});
+  const built = deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
+  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the import page could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
+  const p = pathFor(deps.platform);
+  if (deps.platform === 'win32' && typeof deps.env.USERPROFILE === 'string' && deps.env.USERPROFILE !== '') {
+    try {
+      writeLauncherIfMissing(deps, L);
+      const desktop = p.join(deps.env.USERPROFILE, 'Desktop');
+      if (deps.fs.existsSync(desktop)) {
+        deps.fs.writeFileSync(p.join(desktop, 'SRE Import.cmd'), `@echo off\r\nrem Opens the SRE "Import from the old system" page (this computer only). No secret is in this file.\r\ntitle SRE Import - keep this window open while you work\r\nnode "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');
+        say('The desktop now has "SRE Import": double-click it next time.');
+      }
+    } catch { say('(The desktop icon could not be written; the page still opens now.)'); }
+  }
+  const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'import-server.js'), '--settings', L.settings, '--till-settings', L.tillEnv, '--data', L.dataRoot], { cwd: deps.repoRoot, env, stdio: 'inherit' });
+  if (r.error !== undefined) { say('NOT DONE — the import page could not be started.'); return 1; }
   return r.status ?? 1;
 }
 
@@ -1374,6 +1413,7 @@ export async function main(argv, given) {
     case 'autostart': return autostart(deps, { off: cl.off });
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
+    case 'import': return importPage(deps);
     case 'seal': return ownerStep(deps, 'seal', cl);
     case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
     // OB-257: head office's own jobs on this computer, each by the people whose act it is.
