@@ -418,13 +418,15 @@ export function aiAdapter(input: {
     },
 
     setBudget: async (tenantId, budget, by, at) => {
+      // Keyed on the moment AND the figures: a later cap is the owner changing the limit, latest wins; the same cap
+      // re-sent (a retry) collapses; a DIFFERENT cap at the same instant lands rather than vanishing behind a 200
+      // (7 Nov 2026: two different lists in one millisecond collapsed onto one row — see the enabled set below).
+      const key = `ai-budget-${tenantId}-${at}-${budget.capMinor}-${budget.periodEnds}`;
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: keyedEventId('ai-budget', `ai-budget-${tenantId}-${at}`),
+        id: keyedEventId('ai-budget', key),
         type: 'AiBudgetSet',
         occurredAt: at,
-        // Keyed on the moment it was set — a later cap is the owner changing the limit, latest wins;
-        // the same set re-sent (a retry) collapses.
-        idempotencyKey: `ai-budget-${tenantId}-${at}`,
+        idempotencyKey: key,
         source: 'api/ai',
         payload: { capMinor: budget.capMinor, periodEnds: budget.periodEnds, by, at },
       }));
@@ -437,13 +439,17 @@ export function aiAdapter(input: {
       ))?.agents ?? [],
 
     setEnabledAgents: async (tenantId, agents, by, at) => {
+      // The enabled SET as of this moment — latest wins, so enabling is declarative (the new list is the whole
+      // truth), not additive; a re-sent identical change collapses. Keyed on the moment AND the list: two DIFFERENT
+      // lists in the same millisecond are two changes, and the second must land. (7 Nov 2026: keyed on the moment
+      // alone, a second list written in the same millisecond was deduplicated as a retry and lost behind a 200 —
+      // the assistant the owner had just switched on stayed off.)
+      const key = `ai-enabled-${tenantId}-${at}-${[...agents].sort().join(',')}`;
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: keyedEventId('ai-enabled', `ai-enabled-${tenantId}-${at}`),
+        id: keyedEventId('ai-enabled', key),
         type: 'AiAgentsEnabled',
         occurredAt: at,
-        // The enabled SET as of this moment — latest wins, so enabling is declarative (the new list is
-        // the whole truth), not additive; a re-sent identical change collapses.
-        idempotencyKey: `ai-enabled-${tenantId}-${at}`,
+        idempotencyKey: key,
         source: 'api/ai',
         payload: { agents, by, at },
       }));
