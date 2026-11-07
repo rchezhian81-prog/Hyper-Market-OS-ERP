@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1700 | 979 | 979 | 194 | 444 |
+| 13 | 1706 | 982 | 982 | 194 | 445 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1711,6 +1711,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/migration/loads/:loadId/exception-list/acceptance` | `migration.load.accept` | core | yes |
 | POST | `/v1/migration/mapping/approve` | `migration.mapping.approve` | core | yes |
 | POST | `/v1/migration/mapping/coverage` | `migration.mapping.read` | core | yes |
+| GET | `/v1/migration/old-system-imports` | `migration.load.read` | core | — |
+| GET | `/v1/migration/old-system-imports/:importId` | `migration.load.read` | core | — |
+| POST | `/v1/migration/old-system-imports/:importId` | `migration.load.record` | core | yes |
+| POST | `/v1/migration/old-system-imports/:importId/fixes` | `migration.load.record` | core | yes |
+| GET | `/v1/migration/old-system-imports/:importId/for-finance` | `catalogue.tax.approve` | core | — |
+| POST | `/v1/migration/old-system-imports/:importId/tax-fixes` | `catalogue.tax.approve` | core | yes |
 | POST | `/v1/migration/opening-events` | `migration.opening.build` | core | yes |
 | GET | `/v1/migration/opening-reversals/:loadId` | `migration.parallel.read` | core | — |
 | POST | `/v1/migration/opening-reversals/:loadId` | `migration.cutover.decide` | core | yes |

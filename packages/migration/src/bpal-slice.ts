@@ -83,7 +83,8 @@ export interface BpalSliceOutput {
   };
 }
 
-const text = (row: SheetRow, ...names: string[]): string => {
+/** A cell by any of its header names (case and spaces aside); '' when blank or absent. */
+export const cellOf = (row: SheetRow, ...names: string[]): string => {
   for (const n of names) {
     const hit = Object.keys(row).find((k) => k.trim().toLowerCase() === n.toLowerCase());
     if (hit !== undefined && (row[hit] ?? '').trim() !== '') return row[hit]!.trim();
@@ -97,7 +98,8 @@ export function rupeesToPaise(raw: string): number | undefined {
   if (!/^-?\d+(\.\d+)?$/.test(t)) return undefined;
   return Math.round(Number(t) * 100);
 }
-const paiseText = (p: number): string => (p / 100).toFixed(2);
+const text = cellOf;
+export const paiseText = (p: number): string => (p / 100).toFixed(2);
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const validDay = (y: number, m: number, d: number): string | undefined => {
@@ -127,7 +129,7 @@ export function purchaseDay(raw: string): string | undefined {
 }
 
 /** The names the old ERP's purchase reports give each column this reads (the 12-month report names some differently). */
-const PURCHASE_COLUMNS = {
+export const PURCHASE_COLUMNS = {
   date: ['Purc Date', 'Purchase Date', 'Inv Date', 'Invoice Date', 'Bill Date', 'Date'],
   no: ['Purc No', 'Purchase No', 'Inv No', 'Invoice No', 'Bill No'],
   mrp: ['MRP'],
@@ -167,13 +169,13 @@ export function readPurchaseReport(rows: readonly SheetRow[]): PurchaseReportRea
   return { rows: rows.length, datedRows: days.length, ...(days.length === 0 ? {} : { oldest: days[0]!, newest: days[days.length - 1]! }), problems };
 }
 
-const minusOneYear = (day: string): string => `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
+export const minusOneYear = (day: string): string => `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
 
 /** A CSV cell: quoted when it holds a comma, a quote or a line break. */
 const csvCell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 /** A sheet a person opens in Excel: a UTF-8 byte-order mark first, or Excel shows "—" and Tamil names as "â€”". */
-const forExcel = (sheet: string): string => `\uFEFF${sheet}`;
-const csv = (header: readonly string[], rows: readonly (readonly string[])[]): string =>
+export const forExcel = (sheet: string): string => `\uFEFF${sheet}`;
+export const csv = (header: readonly string[], rows: readonly (readonly string[])[]): string =>
   [header.join(','), ...rows.map((r) => r.map(csvCell).join(','))].join('\r\n') + '\r\n';
 
 export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {

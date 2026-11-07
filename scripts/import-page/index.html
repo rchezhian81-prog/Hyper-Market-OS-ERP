@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SRE Import from the old system</title>
+<!--
+  The store PC's "Import from the old system" page (OB-704 · M30 · MG-02 · MG-05 · MG-06 · M03-FR-03). Served by
+  scripts/lib/import-app.ts on this PC only. Every write is a click; every person signs in with their own staff ID and
+  till PIN; the gaps in the old ERP's data are fixed here by the person whose job it is, never carried.
+-->
+<style>
+  :root { --bg: #f4f6f5; --panel: #fff; --ink: #1d2a24; --muted: #56635c; --line: #cfd8d2; --accent: #1f6b4f; --accent-ink: #fff;
+          --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #a3271f; --bad-bg: #fde9e7; --ok: #1f6b4f; --ok-bg: #e4f2ea; --focus: #2d7ff9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Segoe UI", system-ui, sans-serif; }
+  header { background: #192f27; color: #fff; padding: 12px 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 19px; }
+  header .who { font-size: 14px; display: flex; gap: 10px; align-items: center; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+  h2 { margin: 0; font-size: 18px; } h3 { margin: 0; font-size: 16px; }
+  p { margin: 0; } .muted { color: var(--muted); font-size: 14px; }
+  label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; min-width: 0; }
+  input, select, textarea { font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); min-height: 44px; min-width: 0; width: 100%; }
+  textarea { min-height: 70px; }
+  button { font: inherit; font-weight: 600; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.small { min-height: 36px; padding: 0 10px; font-size: 14px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); text-align: left; cursor: pointer; display: grid; gap: 2px; min-height: 0; }
+  .tile .k { color: var(--muted); font-size: 13px; font-weight: 600; } .tile .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile.on { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+  .tile.bad .v { color: var(--bad); } .tile.good .v { color: var(--ok); }
+  .msg { padding: 10px 12px; border-radius: 8px; font-size: 15px; white-space: pre-wrap; }
+  .msg.good { background: var(--ok-bg); color: var(--ok); } .msg.bad { background: var(--bad-bg); color: var(--bad); } .msg.info { background: var(--warn-bg); color: var(--warn); }
+  .items { display: grid; gap: 8px; }
+  .item { border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .item summary { list-style: none; cursor: pointer; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .item summary::-webkit-details-marker { display: none; }
+  .item .name { font-weight: 600; overflow-wrap: anywhere; } .item .id { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+  .chip { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--bad-bg); color: var(--bad); white-space: nowrap; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); } .chip.grey { background: #eceeed; color: var(--muted); }
+  .item .body { padding: 0 12px 12px; display: grid; gap: 12px; }
+  .gap { border-left: 4px solid var(--bad); background: #fffafa; padding: 8px 10px; border-radius: 6px; display: grid; gap: 8px; }
+  .gap .why { font-size: 14px; }
+  .facts { font-size: 14px; color: var(--muted); }
+  .pager { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .lines { font: 13px/1.45 Consolas, monospace; background: #f7f8f7; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 260px; overflow: auto; white-space: pre-wrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Import from the old system</h1>
+  <div class="who"><span id="who"></span><button id="signout" class="small" hidden>Sign out</button></div>
+</header>
+<main>
+  <div id="msg" class="msg" hidden role="status" aria-live="polite"></div>
+
+  <!-- 1. Sign in -->
+  <section id="signin">
+    <h2>Sign in</h2>
+    <p class="muted">Use your own staff ID and your own six-digit till PIN. Every fix is saved in your name.</p>
+    <form id="signin-form" class="row" autocomplete="off">
+      <label>Staff ID <input id="staff" placeholder="for example owner-01" required /></label>
+      <label>Till PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required /></label>
+      <button class="primary" type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <!-- 2. Imports -->
+  <section id="start" hidden>
+    <h2>Read the old system's reports</h2>
+    <p class="muted">Export these three reports from the old system to Excel (.xlsx), then choose them here. They are read on this computer and kept here; nothing is sent to the internet.</p>
+    <form id="read-form" class="row">
+      <label>Barcodes report (EANCODE) <input id="f-ean" type="file" accept=".xlsx,.xls" required /></label>
+      <label>HSN report <input id="f-hsn" type="file" accept=".xlsx,.xls" required /></label>
+      <label>Product wise Detail Report, last 12 months <input id="f-buys" type="file" accept=".xlsx,.xls" required /></label>
+      <label>Day the reports were exported <input id="rates-from" type="date" required /></label>
+      <label>Day the old system's backup was restored on another PC and checked <input id="backup-on" type="date" required /></label>
+      <button class="primary" type="submit">Read the reports</button>
+    </form>
+    <h3>Imports already read</h3>
+    <div id="imports" class="items"></div>
+  </section>
+
+  <!-- 3. One import -->
+  <section id="work" hidden>
+    <div class="row" style="grid-template-columns: 1fr auto;">
+      <div><h2 id="work-title"></h2><p class="muted" id="work-sub"></p></div>
+      <button id="back" class="small">All imports</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="row" style="grid-template-columns: 2fr 1fr 1fr;">
+      <label>Find an item (name, item code or barcode) <input id="find" /></label>
+      <button id="dl-items" class="small" type="button">Download all items (Excel)</button>
+      <button id="dl-gaps" class="small" type="button">Download the gaps (Excel)</button>
+    </div>
+    <p class="muted" id="list-note"></p>
+    <div id="items" class="items"></div>
+    <div class="pager"><button id="prev" class="small">Previous</button><span id="page"></span><button id="next" class="small">Next</button></div>
+  </section>
+
+  <!-- 4. Loads -->
+  <section id="loads" hidden>
+    <h2>Load the ready items</h2>
+    <p class="muted">Three steps by two people: the person running the load prepares it (the files are sealed and checked), a second person (the store manager or the owner) reads the list and accepts it, then the first person loads it. Each step asks the person's own PIN again.</p>
+    <form id="prepare-form" class="row">
+      <label>Your till PIN <input id="prep-pin" type="password" inputmode="numeric" maxlength="6" required /></label>
+      <button class="primary" type="submit" id="prepare-btn">Prepare a load</button>
+    </form>
+    <div id="load-list" class="items"></div>
+    <div id="lines" class="lines" hidden></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const PAGE = 40;
+const LABELS = { allergens: 'Allergens (write "none" when the pack declares none)', country_of_origin: 'Country of origin', net_quantity: 'Net quantity (e.g. 500 g)', packer: 'Packer / manufacturer / importer, and town', consumer_care: 'Consumer care phone or email' };
+const GAP_NAMES = { barcode: 'Barcode', tax: 'GST rate (Finance)', price: 'Price', label: 'Label facts' };
+const SLABS = [0, 0.25, 3, 5, 12, 18, 28, 40];
+let me = null; let current = null; let view = 'gap:any'; let page = 0;
+
+function say(text, tone = 'info') { const m = $('msg'); m.textContent = text; m.className = `msg ${tone}`; m.hidden = false; m.scrollIntoView({ block: 'nearest' }); }
+function quiet() { $('msg').hidden = true; }
+function showLines(lines) { const l = $('lines'); l.textContent = (lines || []).join('\n'); l.hidden = !lines || lines.length === 0; }
+const rupees = (p) => (p / 100).toFixed(2);
+
+async function api(method, path, body) {
+  let res;
+  try { res = await fetch(path, { method, headers: { 'x-sre-import': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
+  catch { throw Object.assign(new Error('The import page on this computer did not answer. Is its window still open? Start it again from the desktop icon "SRE Import".'), { lines: [] }); }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) { if (res.status === 401 && path !== '/session') signedOut(); throw Object.assign(new Error(j.error || `Refused (${res.status}).`), { lines: j.lines || [] }); }
+  return j;
+}
+const run = (fn) => async (e) => { if (e) e.preventDefault(); quiet(); try { await fn(e); } catch (err) { say(err.message, 'bad'); if (err.lines && err.lines.length) showLines(err.lines); } };
+
+function signedOut() { me = null; current = null; $('who').textContent = ''; $('signout').hidden = true; for (const id of ['start', 'work', 'loads']) $(id).hidden = true; $('signin').hidden = false; }
+function signedIn(userId) { me = userId; $('who').textContent = `Signed in: ${userId}`; $('signout').hidden = false; $('signin').hidden = true; }
+
+$('signin-form').addEventListener('submit', run(async () => {
+  const r = await api('POST', '/session', { staffId: $('staff').value.trim(), pin: $('pin').value });
+  $('pin').value = ''; signedIn(r.userId); await showImports();
+}));
+$('signout').addEventListener('click', run(async () => { await api('POST', '/session/end', {}); signedOut(); say('Signed out.', 'good'); }));
+
+async function showImports() {
+  $('work').hidden = true; $('loads').hidden = true; $('start').hidden = false; current = null;
+  const r = await api('GET', '/api/imports');
+  const box = $('imports'); box.replaceChildren();
+  if (r.imports.length === 0) { box.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'None yet.' })); return; }
+  for (const i of r.imports) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tile';
+    b.innerHTML = `<span class="k"></span><span></span>`;
+    b.firstChild.textContent = i.recordedAt ? `Read ${i.recordedAt.slice(0, 16).replace('T', ' ')} by ${i.recordedBy}` : 'Import';
+    b.lastChild.textContent = `${i.importId}${i.items === undefined ? '' : ` — ${i.items} items`}`;
+    b.addEventListener('click', run(() => openImport(i.importId)));
+    box.append(b);
+  }
+}
+
+const asBase64 = (file) => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => bad(new Error(`${file.name} could not be read.`)); r.readAsDataURL(file); });
+$('read-form').addEventListener('submit', run(async () => {
+  const pick = async (id) => { const f = $(id).files[0]; return { name: f.name, base64: await asBase64(f) }; };
+  say('Reading the reports… this takes up to a minute for a big file.', 'info');
+  const r = await api('POST', '/api/imports', { files: { ean: await pick('f-ean'), hsn: await pick('f-hsn'), purchases: await pick('f-buys') }, ratesFrom: $('rates-from').value, backupRestoredOn: $('backup-on').value });
+  say(`Read: ${r.items} packaged-grocery items. Purchase report: ${r.purchaseRows} rows, from ${r.purchasesFrom || '?'} to ${r.purchasesTo || '?'}.`, 'good');
+  await openImport(r.importId);
+}));
+$('back').addEventListener('click', run(showImports));
+
+async function openImport(importId) {
+  current = await api('GET', `/api/imports/${encodeURIComponent(importId)}`);
+  $('start').hidden = true; $('work').hidden = false; $('loads').hidden = current.finance;
+  $('work-title').textContent = `Import ${current.importId}`;
+  const rec = current.record;
+  $('work-sub').textContent = `Read by ${rec.recordedBy} on ${String(rec.recordedAt).slice(0, 10)} · rates from ${rec.ratesFrom} · old system's backup checked ${rec.backupRestoredOn} · ${current.fixes} fix(es) so far` + (current.finance ? ' · you are signed in as Finance: you fix GST rates.' : '');
+  if (current.finance && view === 'gap:any') view = 'gap:tax';
+  drawTiles(); drawItems(); drawLoads();
+}
+async function refresh() { if (current) await openImport(current.importId); }
+
+function drawTiles() {
+  const s = current.summary; const t = $('tiles'); t.replaceChildren();
+  const tile = (key, label, n, tone) => { const b = document.createElement('button'); b.type = 'button'; b.className = `tile ${tone || ''} ${view === key ? 'on' : ''}`; b.innerHTML = '<span class="k"></span><span class="v"></span>'; b.firstChild.textContent = label; b.lastChild.textContent = n; b.addEventListener('click', () => { view = key; page = 0; drawTiles(); drawItems(); }); t.append(b); };
+  tile('gap:any', 'Need a fix', s.items - s.ready - s.loaded - s.excluded, 'bad');
+  for (const k of ['barcode', 'tax', 'price', 'label']) tile(`gap:${k}`, GAP_NAMES[k], s.gaps[k], s.gaps[k] > 0 ? 'bad' : 'good');
+  tile('ready', 'Ready to load', s.ready, 'good');
+  tile('loaded', 'Loaded', s.loaded, 'good');
+  tile('excluded', 'Not in this department', s.excluded);
+}
+
+function listFor() {
+  const q = $('find').value.trim().toLowerCase();
+  return current.items.filter((it) => {
+    if (q !== '' && !(it.name.toLowerCase().includes(q) || it.itemId.includes(q) || it.barcodes.some((c) => c.includes(q)))) return false;
+    if (view === 'ready') return !it.excluded && !it.loaded && it.gaps.length === 0;
+    if (view === 'loaded') return it.loaded;
+    if (view === 'excluded') return it.excluded;
+    if (it.excluded || it.loaded || it.gaps.length === 0) return false;
+    return view === 'gap:any' || it.gaps.some((g) => `gap:${g.kind}` === view);
+  });
+}
+$('find').addEventListener('input', () => { page = 0; drawItems(); });
+$('prev').addEventListener('click', () => { if (page > 0) { page -= 1; drawItems(); } });
+$('next').addEventListener('click', () => { page += 1; drawItems(); });
+
+function drawItems() {
+  const all = listFor(); const pages = Math.max(1, Math.ceil(all.length / PAGE)); if (page >= pages) page = pages - 1;
+  $('list-note').textContent = `${all.length} item(s), best sellers first.`;
+  $('page').textContent = `Page ${page + 1} of ${pages}`; $('prev').disabled = page === 0; $('next').disabled = page >= pages - 1;
+  const box = $('items'); box.replaceChildren();
+  for (const it of all.slice(page * PAGE, page * PAGE + PAGE)) box.append(itemCard(it));
+}
+
+function field(label, value = '', attrs = {}) { const l = document.createElement('label'); l.textContent = label; const i = document.createElement('input'); i.value = value; Object.assign(i, attrs); l.append(i); return [l, i]; }
+
+function itemCard(it) {
+  const d = document.createElement('details'); d.className = 'item';
+  const s = document.createElement('summary');
+  const left = document.createElement('div'); left.innerHTML = '<div class="name"></div><div class="id"></div>';
+  left.firstChild.textContent = it.name; left.lastChild.textContent = `Item ${it.itemId} · sold ${it.sold}${it.barcodes.length ? ` · ${it.barcodes.join(', ')}` : ''}`;
+  const chips = document.createElement('div'); chips.className = 'chips';
+  const chip = (text, cls = '') => { const c = document.createElement('span'); c.className = `chip ${cls}`; c.textContent = text; chips.append(c); };
+  if (it.loaded) chip('Loaded', 'ok'); else if (it.excluded) chip('Not in this department', 'grey'); else if (it.gaps.length === 0) chip('Ready', 'ok'); else for (const k of new Set(it.gaps.map((g) => g.kind))) chip(GAP_NAMES[k]);
+  s.append(left, chips); d.append(s);
+  const body = document.createElement('div'); body.className = 'body';
+  const facts = document.createElement('p'); facts.className = 'facts';
+  facts.textContent = [it.hsn ? `HSN ${it.hsn} at ${it.gstBps / 100}%` : 'HSN/GST not settled', it.price ? `MRP ${rupees(it.price.mrp)} · selling ${rupees(it.price.sell)} · cost ${rupees(it.price.cost)}` : 'no price yet',
+    Object.entries(it.fixedBy).map(([k, v]) => `${k} fixed by ${v.by}`).join(' · ')].filter(Boolean).join('  |  ');
+  body.append(facts);
+  if (!it.loaded) {
+    for (const g of it.gaps) body.append(gapForm(it, g));
+    if (it.gaps.length === 0 && !it.excluded) body.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Nothing left to fix: this item goes into the next load.' }));
+    if (!current.finance) body.append(excludeForm(it));
+  }
+  d.append(body);
+  return d;
+}
+
+function saveButton(it, kind, read) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'primary small'; b.textContent = 'Save this fix';
+  b.addEventListener('click', run(async () => {
+    const { value, reason } = read();
+    await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/fix`, { itemId: it.itemId, kind, value, reason });
+    say(`Saved for ${it.name}.`, 'good'); await refresh();
+  }));
+  return b;
+}
+
+function gapForm(it, g) {
+  const box = document.createElement('div'); box.className = 'gap';
+  box.append(Object.assign(document.createElement('p'), { className: 'why', textContent: `${GAP_NAMES[g.kind]}: ${g.why}` }));
+  const row = document.createElement('div'); row.className = 'row';
+  if (g.kind === 'barcode') {
+    const [l, i] = field('Barcode(s) as printed on the pack — scan, or type; separate several with a space', it.barcodes.join(' '));
+    const [rl, r] = field('Why', 'scanned from the pack'); row.append(l, rl);
+    row.append(saveButton(it, 'barcode', () => ({ value: { barcodes: i.value.split(/[\s,]+/).filter(Boolean) }, reason: r.value })));
+  } else if (g.kind === 'tax') {
+    const reading = it.hsn || '';
+    const [l, i] = field('HSN code (4, 6 or 8 digits)', reading);
+    const sl = document.createElement('label'); sl.textContent = 'GST rate'; const sel = document.createElement('select');
+    sel.append(new Option('— choose —', '')); for (const v of SLABS) sel.append(new Option(`${v}%`, String(v), false, it.gstBps !== undefined && it.gstBps / 100 === v)); sl.append(sel);
+    const [rl, r] = field('Why (for the record)', ''); row.append(l, sl, rl);
+    row.append(saveButton(it, 'tax', () => ({ value: { hsn: i.value.trim(), gstPercent: Number(sel.value) }, reason: r.value })));
+    if (!current.finance) box.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Only Finance (the accountant or the owner) can save a GST rate. Ask them to open this page and sign in as themselves.' }));
+  } else if (g.kind === 'price') {
+    const [ml, m] = field('MRP (₹, as printed)', it.price ? rupees(it.price.mrp) : '', { inputMode: 'decimal' });
+    const [sl, s] = field('Selling price (₹)', it.price ? rupees(it.price.sell) : '', { inputMode: 'decimal' });
+    const [cl, c] = field('Cost (₹, what the shop pays)', it.price ? rupees(it.price.cost) : '', { inputMode: 'decimal' });
+    const [rl, r] = field('Why', 'checked against the pack and the supplier bill'); row.append(ml, sl, cl, rl);
+    row.append(saveButton(it, 'price', () => ({ value: { mrp: m.value.trim(), sell: s.value.trim(), cost: c.value.trim() }, reason: r.value })));
+  } else if (g.kind === 'label') {
+    const inputs = {};
+    for (const k of Object.keys(LABELS)) { const [l, i] = field(LABELS[k], it.facts[k] || ''); inputs[k] = i; row.append(l); }
+    const [rl, r] = field('Why', 'read off the pack'); row.append(rl);
+    row.append(saveButton(it, 'label', () => ({ value: Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()])), reason: r.value })));
+  }
+  box.append(row);
+  return box;
+}
+
+function excludeForm(it) {
+  const row = document.createElement('div'); row.className = 'row';
+  const [rl, r] = field(it.excluded ? 'Why take it back in' : 'Not in this department? Say why (for example "loose goods, weighed")', '');
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = it.excluded ? 'Take it back in' : 'Leave it out of this department';
+  b.addEventListener('click', run(async () => {
+    await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/fix`, { itemId: it.itemId, kind: 'exclude', value: { excluded: !it.excluded }, reason: r.value });
+    say(it.excluded ? `${it.name} is back in.` : `${it.name} is left out.`, 'good'); await refresh();
+  }));
+  row.append(rl, b);
+  return row;
+}
+
+function drawLoads() {
+  if (current.finance) return;
+  $('prepare-btn').textContent = `Prepare a load (${current.summary.ready} ready item(s))`;
+  $('prepare-btn').disabled = current.summary.ready === 0;
+  const box = $('load-list'); box.replaceChildren();
+  for (const l of [...current.loads].reverse()) {
+    const card = document.createElement('div'); card.className = 'gap'; card.style.borderLeftColor = l.applied ? 'var(--ok)' : 'var(--warn)';
+    card.append(Object.assign(document.createElement('p'), { textContent: `${l.loadId} — ${l.itemIds.length} item(s), prepared by ${l.preparedBy} on ${l.preparedAt.slice(0, 16).replace('T', ' ')} — ${l.applied ? 'LOADED' : 'waiting: a second person accepts, then it is loaded'}` }));
+    const dl = document.createElement('a'); dl.href = `/api/imports/${encodeURIComponent(current.importId)}/loads/${encodeURIComponent(l.loadId)}/exceptions.csv`; dl.textContent = 'Download what was set aside (Excel)'; card.append(dl);
+    if (!l.applied) {
+      const row = document.createElement('div'); row.className = 'row';
+      const [sl, st] = field('Second person: what you read and decided (a full sentence)', '');
+      const [pl, pin] = field('Your till PIN', '', { type: 'password', inputMode: 'numeric', maxLength: 6 });
+      const acc = document.createElement('button'); acc.type = 'button'; acc.className = 'small'; acc.textContent = 'Accept (second person)';
+      acc.addEventListener('click', run(async () => { const r = await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/loads/${encodeURIComponent(l.loadId)}/accept`, { statement: st.value, pin: pin.value }); pin.value = ''; showLines(r.lines); say('Accepted. The person who prepared the load now loads it.', 'good'); }));
+      const app = document.createElement('button'); app.type = 'button'; app.className = 'primary small'; app.textContent = 'Load (person who prepared)';
+      app.addEventListener('click', run(async () => { const r = await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/loads/${encodeURIComponent(l.loadId)}/apply`, { pin: pin.value }); pin.value = ''; showLines(r.lines); say('Loaded. Publish the price list to the till next (owner guide Part 24).', 'good'); await refresh(); }));
+      row.append(sl, pl, acc, app); card.append(row);
+    }
+    box.append(card);
+  }
+}
+$('prepare-form').addEventListener('submit', run(async () => {
+  say('Preparing: writing the files, sealing them and checking every row…', 'info');
+  const r = await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/prepare`, { pin: $('prep-pin').value });
+  $('prep-pin').value = ''; showLines(r.lines);
+  say(`Prepared ${r.loadId} with ${r.items} item(s). Now a second person signs in on this page and accepts it.`, 'good'); await refresh();
+}));
+$('dl-items').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/items.csv`; });
+$('dl-gaps').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/gaps.csv`; });
+
+(async () => { try { const r = await api('GET', '/api/me'); signedIn(r.userId); await showImports(); } catch { signedOut(); } })();
+</script>
+</body>
+</html>
