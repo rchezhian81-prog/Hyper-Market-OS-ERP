@@ -1,4 +1,4 @@
-// The shared consequence-and-confirm sheet (U1 · OB-694 · design system §1.3, §27.1), as a browser test drives it: the sheet
+// The shared consequence-and-confirm sheet (U1 · OB-698 · design system §1.3, §27.1), as a browser test drives it: the sheet
 // the chrome draws (`sreOffice.confirm`) opens with the action's own figure in its title, "Go back" sends nothing, and
 // "Confirm" sends the action once. Every page test that moves money, stock, a price or a privilege uses these three.
 

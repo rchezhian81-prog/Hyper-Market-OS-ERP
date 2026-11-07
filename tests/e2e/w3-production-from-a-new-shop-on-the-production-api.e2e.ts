@@ -109,7 +109,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('production
     const run = runs.runs.find((x) => x.outputBatchId === 'CAKE-1');
     expect(run, JSON.stringify(runs)).toBeDefined();
     await p.page.click('#rows button.release');
-    await confirmIt(p.page); // U1 · OB-694: "Release batch … for sale" asks the sheet first
+    await confirmIt(p.page); // U1 · OB-698: "Release batch … for sale" asks the sheet first
     await p.page.waitForFunction(() => (globalThis as unknown as { document: { querySelectorAll(s: string): { length: number } } }).document.querySelectorAll('#rows button.release').length === 0, undefined, { timeout: 15_000 });
     const after = (await call('GET', '/v1/production/runs', OWNER)).body as { runs: { runId: string; released?: boolean }[] };
     expect(after.runs.find((x) => x.runId === run!.runId)?.released).toBe(true);

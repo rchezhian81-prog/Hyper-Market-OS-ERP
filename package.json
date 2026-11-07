@@ -61,6 +61,7 @@
     "tools:build": "node scripts/build-service.mjs tools",
     "migration:load": "node scripts/build-service.mjs tools --quiet && node scripts/dist/migration-load.js",
     "migration:slice": "node scripts/build-service.mjs tools --quiet && node scripts/dist/migration-slice.js",
+    "migration:from-bpal": "node scripts/build-service.mjs tools --quiet && node scripts/dist/bpal-to-slice.js",
     "tenant:bootstrap": "node scripts/build-service.mjs tools --quiet && node scripts/dist/bootstrap-tenant.js",
     "realm:for-shop": "node scripts/build-service.mjs tools --quiet && node scripts/dist/realm-for-shop.js",
     "shop:new": "node scripts/build-service.mjs tools --quiet && node scripts/dist/new-shop.js",

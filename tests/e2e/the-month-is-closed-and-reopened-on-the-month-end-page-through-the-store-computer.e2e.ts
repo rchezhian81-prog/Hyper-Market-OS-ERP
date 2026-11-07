@@ -48,7 +48,7 @@ const BATCH = {
 const CSV = ['Date,Reference,Narrative,Debit,Credit', '03/09/2026,UTR778899 PB-0903,ACQUIRER SETTLEMENT,,"1,485.00"', '15/09/2026,CHQ001,Rent,"20,000.00",'].join('\n');
 const STATEMENT = { statementId: 'HDFC-2026-09', accountRef: 'HDFC-current-1', fromDate: '2026-09-01', toDate: '2026-09-30', openingMinor: 5_000_000, closingMinor: 5_000_000 + 148_500 - 2_000_000, sourceName: 'hdfc-sep.csv', csv: CSV };
 
-/** OB-694: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');

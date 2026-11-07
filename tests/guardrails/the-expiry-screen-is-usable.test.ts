@@ -89,7 +89,7 @@ describe('the recall write reaches head office, and a dropped link is never a fa
 
 describe('the view defers to the session and issues no write verb of its own', () => {
   it('never calls alert / confirm / prompt (the reason/evidence are text inputs, not dialogs)', () => {
-    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-694: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
+    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-698: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
   });
 
   it('renders from the bundled session rather than re-deciding what to show', () => {

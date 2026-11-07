@@ -257,7 +257,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('A01, A02 a
       await s.page.locator('#loss-types button.chip', { hasText: 'Expired' }).click();
       await s.page.locator('#reasons button.chip', { hasText: 'Past its date' }).click();
       await s.page.click('#record');
-      await confirmIt(s.page); // U1 · OB-694: the sheet names the loss before it is recorded
+      await confirmIt(s.page); // U1 · OB-698: the sheet names the loss before it is recorded
       await says(s.page, '#result-text', /^Loss recorded/);
       expect(s.writes).toHaveLength(1);
       expect(s.writes[0]).toMatch(/^POST \/v1\/inventory\/write-off\//);

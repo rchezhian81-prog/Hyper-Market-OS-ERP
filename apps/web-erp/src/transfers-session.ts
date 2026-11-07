@@ -44,7 +44,7 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     proposed: 'Waiting to be sent', in_transit: 'On the road — not sellable yet', received: 'Received', shortOpen: 'Shortfall open', shortSettled: 'Shortfall settled', onIndent: 'Floor indent — settled on the indent',
     from: 'from', to: 'to', proposedBy: 'proposed by', sentBy: 'sent and approved by', countedBy: 'counted in by', costEach: 'head office cost', costUnknown: 'head office holds no cost',
     dispatch: 'Send it (I approve this transfer)', dispatchNote: 'You approve it by sending it; the person who proposed it cannot.',
-    // U1 · OB-694: the consequence-and-confirm sheet before stock leaves the store
+    // U1 · OB-698: the consequence-and-confirm sheet before stock leaves the store
     confirmSendTitle: '{lines} will leave {route}',
     confirmSendDetail: 'Stock leaves this store the moment it is sent and is sellable at the other end only once it is counted in. A sent transfer cannot be cancelled; anything short is settled afterwards with a reason.',
     confirmSendAuthority: 'In your name, as the person who approves this transfer. Head office refuses it if your role may not move stock.',

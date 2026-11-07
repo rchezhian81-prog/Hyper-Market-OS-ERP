@@ -27,7 +27,7 @@ const WORDS = {
     kUnits: 'Units: offer · before', kUplift: 'Extra units', kMargin: 'Margin kept, with supplier money', kFunding: 'Supplier money received', kVerdict: 'Worth doing?',
     yes: 'Yes', no: 'No', notKnown: 'Not known', notMeasured: 'Not measured: {why}.', marginNotKnown: 'Not known — no buying cost for {list}',
     sWhy: 'Why stop it', stop: 'Stop this offer now', stoppedOk: 'Stopped. From now it does not apply at any till or in the app (from the next store pack).', needWhy: 'Write why first.',
-    // U1 · OB-694: the consequence-and-confirm sheet before a running offer is stopped
+    // U1 · OB-698: the consequence-and-confirm sheet before a running offer is stopped
     confirmTitle: 'Stop the offer {name} now',
     confirmDetail: 'From the next store pack no till and not the app charges it. A stopped offer cannot be restarted — a new one is defined on the Products page. Its results stay on record.',
     confirmAuthority: 'In your name, with the reason you wrote. Head office refuses it if your role may not stop offers.',
@@ -94,7 +94,7 @@ async function call(method, path, body) {
 const tell = (el, ok, text) => { el.className = `status ${ok ? 'good' : 'err'}`; el.textContent = text; };
 const say = (el, out, good) => tell(el, out.ok, out.ok ? good : out.status === 0 ? t('unreachable') : `${t('refused')} ${out.body?.error?.whatHappened ?? out.status}`);
 
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -180,7 +180,7 @@ $('stop').addEventListener('click', async () => {
   const why = $('s-why').value.trim();
   if (why === '') { tell(st, false, t('needWhy')); return; }
   if (open === null) return;
-  // U1 · OB-694: the consequence-and-confirm sheet before a running offer stops — Go back sends nothing.
+  // U1 · OB-698: the consequence-and-confirm sheet before a running offer stops — Go back sends nothing.
   const name = open.name ?? open.id;
   const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{name}', name), ta: String(WORDS.ta.confirmTitle).replace('{name}', name) }, detail: { en: WORDS.en.confirmDetail, ta: WORDS.ta.confirmDetail }, authority: { en: WORDS.en.confirmAuthority, ta: WORDS.ta.confirmAuthority }, confirmLabel: { en: WORDS.en.confirmLabel, ta: WORDS.ta.confirmLabel }, tone: 'danger' });
   if (answer === 'unavailable') { tell(st, false, t('confirmUnavailable')); return; }

@@ -28,7 +28,7 @@ export const PACKAGING_COPY = {
     registerH: 'Register or restate an item', name: 'Name', kind: 'Kind', returnable: 'Comes back (returnable)', charge: 'Charge to the customer (₹, optional)', tax: 'Tax rate (%, optional)', deposit: 'Deposit (₹, optional)', register: 'Save the item',
     k_carry_bag: 'Carry bag', k_reusable_crate: 'Reusable crate', k_delivery_bag: 'Delivery bag', k_cold_box: 'Cold box', k_wrapping: 'Wrapping',
     moveH: 'Record a movement', move: 'What happened', qty: 'How many', reference: 'Reference (optional)', recordMove: 'Record it',
-    // U1 · OB-694: the consequence-and-confirm sheet before a packaging movement is recorded
+    // U1 · OB-698: the consequence-and-confirm sheet before a packaging movement is recorded
     confirmTitle: 'Record {qty} × {item}: {kind} at {branch}',
     confirmDetail: 'The packaging position at that branch moves from now, in your name. A wrong movement is reversed by recording the opposite one — nothing is deleted.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not move packaging.',

@@ -26,7 +26,7 @@ const WORDS = {
     alreadyOpen: 'This batch is already under recall — nothing new was started.', started: 'Recall started', closedOk: 'Recall closed with evidence.',
     refused: 'Not done', unreachable: 'Head office could not be reached. Nothing was changed — try again.', cannotRead: 'Head office could not be read. Nothing here is current.',
     needBatch: 'Key the batch first.', needReason: 'Give the reason first.', needEvidence: 'Give the closure evidence first.',
-    // U1 · OB-694: the consequence-and-confirm sheet before a recall starts
+    // U1 · OB-698: the consequence-and-confirm sheet before a recall starts
     confirmTitle: 'Recall batch {batch}: every till of every store will refuse it from the next store pack',
     confirmDetail: 'Customers who bought it and can be reached are listed afterwards and the owner is told. A recall cannot be withdrawn from this screen — it is closed with evidence once the goods are back.',
     confirmAuthority: 'In your name. Head office refuses it if your role may not start a recall.',
@@ -130,7 +130,7 @@ const pending = new Map(); // action → idempotency key, kept until head office
 
 const keyFor = (action) => { if (!pending.has(action)) pending.set(action, `${action}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`); return pending.get(action); };
 
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -188,7 +188,7 @@ async function startRecall() {
   const reason = el('r-reason').value.trim();
   if (batch === '') { tell(false, t('needBatch')); return; }
   if (reason === '') { tell(false, t('needReason')); return; }
-  // U1 · OB-694: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
+  // U1 · OB-698: the consequence-and-confirm sheet before the recall starts — Go back sends nothing.
   const answer = await confirmFirst({ title: { en: String(WORDS.en.confirmTitle).replace('{batch}', batch), ta: String(WORDS.ta.confirmTitle).replace('{batch}', batch) }, detail: { en: String(WORDS.en.confirmDetail), ta: String(WORDS.ta.confirmDetail) }, authority: { en: String(WORDS.en.confirmAuthority), ta: String(WORDS.ta.confirmAuthority) }, confirmLabel: { en: String(WORDS.en.confirmLabel), ta: String(WORDS.ta.confirmLabel) }, tone: 'danger' });
   if (answer === 'unavailable') { tell(false, t('confirmUnavailable')); return; }
   if (answer === null) return;

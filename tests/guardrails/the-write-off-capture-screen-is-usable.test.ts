@@ -125,7 +125,7 @@ describe('an unpermitted user is offered no capture action, and the model refuse
 
 describe('the view defers to the model, uses no browser dialogs, and only writes on an explicit click', () => {
   it('never calls alert / confirm / prompt (the fields are inputs, not browser dialogs)', () => {
-    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-694: `office.confirm(` is the chrome's on-screen sheet, not a browser dialog
+    expect(/(?<![.\w])(alert|confirm|prompt)\s*\(/.test(VIEW)).toBe(false); // U1 · OB-698: `office.confirm(` is the chrome's on-screen sheet, not a browser dialog
   });
 
   it('renders from the bundled session rather than re-deciding what to show', () => {

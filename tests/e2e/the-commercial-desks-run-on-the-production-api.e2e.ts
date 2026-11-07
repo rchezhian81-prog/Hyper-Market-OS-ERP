@@ -34,7 +34,7 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['desks', 'e2e', 'key'].join('-').padEnd(48, '0');
 const day = (n: number): string => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
-/** OB-694: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');

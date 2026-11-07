@@ -75,7 +75,7 @@ function sampleSession() {
 
 let session = window.goodsReceiptSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -409,7 +409,7 @@ function paint() {
 el('return').addEventListener('click', () => {
   void (async () => {
     const [grnId, lineId] = el('return-line').value.split('|');
-    // U1 · OB-694: the consequence-and-confirm sheet before stock goes back — Go back sends nothing.
+    // U1 · OB-698: the consequence-and-confirm sheet before stock goes back — Go back sends nothing.
     const chosen = el('return-line').selectedOptions[0];
     const lineWords = chosen ? chosen.textContent.trim() : `${grnId ?? ''} ${lineId ?? ''}`.trim();
     const sub = (l, key) => String(session.text(l, key)).replace('{line}', lineWords);

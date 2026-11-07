@@ -192,7 +192,7 @@ const WORDS = {
     // decided there. The words for each refusal are the store computer's own (English) and their Tamil twins.
     takeFloat: 'Take float (open the till)', floatAmount: 'How much float is going into the drawer?', floatTaken: 'Float taken — the till is open',
     cashSaved: 'Recorded on the store computer', cashNotSaved: 'NOT recorded. Do not move the money.',
-    // OB-694 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
+    // OB-698 (U1): the confirm step before money moves or a price is cut — what will happen, in whose name, then the verb.
     goBack: 'Go back', confirmFloatTitle: 'Record the float?', confirmSafeTitle: 'Record cash to the safe?',
     confirmFloatWhat: '{amount} will be recorded as float put into this drawer.', confirmSafeWhat: '{amount} will be recorded as moved from this drawer to the safe.',
     confirmCashDetail: 'The store computer records it before anything else happens; the cash office counts this shift against it. A wrong figure is corrected only by a second movement, never by changing this one.',
@@ -1129,7 +1129,7 @@ window.addEventListener('keydown', onPinKey, true);
 function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  // OB-694 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
+  // OB-698 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
   el('consequence').hidden = mode !== 'confirm';
   if (mode === 'confirm' && consequence !== null) {
     el('consequence-what').textContent = consequence.what;
@@ -1201,13 +1201,13 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
 
   el('sheet').hidden = false;
   if (mode === 'text' || mode === 'find') el('entry-text').focus();
-  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-694).
+  // The safe default takes the focus: a stray Enter or tap lands on Go back, never on the verb (OB-698).
   if (mode === 'confirm') el('sheet-cancel').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
 }
 
 /**
- * OB-694 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
+ * OB-698 (U1 · design system §1.3, §27.1): the confirm step before money moves, a price is cut or stock changes at the till.
  * Says what will happen (with the figure), what it means and in whose name; the only ways on are the verb or Go back.
  * Resolves `true` only when the verb was tapped. Nothing here sends anything — the caller sends only on `true`.
  */
@@ -1276,7 +1276,7 @@ el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
   closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
-// OB-694: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
+// OB-698: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
 // by Enter on the verb itself once a person has moved the focus to it on purpose.)
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && sheetMode === 'confirm' && !el('sheet').hidden) { event.preventDefault(); event.stopPropagation(); closeSheet(null); }
@@ -2538,7 +2538,7 @@ async function changeLinePrice() {
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
   if (!value.ok) { tell(t('read'), saidInLang(value), STOP); return; }
-  // OB-694 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
+  // OB-698 (U1): before a manager is asked, the cut is shown in full — from, to, how much off, the lowest price the till
   // knows — so the person who keys their PIN next approves a figure they have read, not a request they have not seen.
   const lineFrom = value.fromUnitMinor * (value.quantityMinor || 1);
   const pct = lineFrom > 0 ? Math.round((value.reductionMinor / lineFrom) * 100) : 0;
@@ -2647,7 +2647,7 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (amount === null) return;
   const minor = Math.round(Number(amount) * 100);
   if (minor <= 0) return;
-  // OB-694 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
+  // OB-698 (U1): the cashier sees what will be recorded, and in whose name, before the store computer is asked.
   const at = new Date().toISOString();
   const float = kind === 'float_issue';
   const confirmed = await confirmAction({

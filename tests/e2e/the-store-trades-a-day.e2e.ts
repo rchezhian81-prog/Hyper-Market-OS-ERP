@@ -131,7 +131,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.waitForSelector('#sheet:not([hidden])');
     for (const digit of rupees) await page.click(`#keypad button:text-is("${digit}")`);
     await page.click('#sheet-ok');
-    // OB-694 (U1): a cash movement is confirmed on screen before the box is asked — the verb, after the panel says the figure.
+    // OB-698 (U1): a cash movement is confirmed on screen before the box is asked — the verb, after the panel says the figure.
     await page.waitForSelector('#sheet:not([hidden]) #consequence:not([hidden])');
     await page.click('#sheet-ok');
   };

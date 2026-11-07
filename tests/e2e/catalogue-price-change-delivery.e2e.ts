@@ -145,7 +145,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       expect(await hidden(page, 'price-approval'), 'a clean price shows no approval step').toBe(true);
       expect(await page.textContent('#save-price')).toBe('Save this price');
       expect(posts(ho, '/v1/prices/changes'), 'checking sends nothing').toHaveLength(0);
-      // U1 · OB-694: the consequence-and-confirm sheet says the product and the price; Go back sends nothing.
+      // U1 · OB-698: the consequence-and-confirm sheet says the product and the price; Go back sends nothing.
       await page.click('#save-price');
       expect(await sheetOpens(page)).toMatch(/Change the price of .* to ₹150\.00/);
       await goBack(page);
@@ -153,7 +153,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       taps.count += 2; // Save, tapped by clickFor, and Confirm on the sheet
       const said = await clickFor(page, '#save-price', /starts on the day you gave/, confirmIt);
       expect(said.title).toBe('Price saved');
-      // U1 · OB-694 (2 Nov 2026): the owner chose the consequence-and-confirm sheet on every price change — one tap more
+      // U1 · OB-698 (2 Nov 2026): the owner chose the consequence-and-confirm sheet on every price change — one tap more
       // than the "open → new price → submit" budget, listed as a justified exception (design system §1.1).
       expect(taps.reset(), 'edit a price').toBeLessThanOrEqual(4);
 

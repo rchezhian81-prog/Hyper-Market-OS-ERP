@@ -140,7 +140,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('A03: a mar
     await ok(call('POST', `/v1/approvals/requests/${request.requestId}/decide`, OWNER, { decision: 'approved', reason: 'the batch has two days left' }), 'owner approves');
     await c.page.click('#banner-ok');
     await c.page.click('#save-price');
-    await confirmIt(c.page); // U1 · OB-694: the consequence-and-confirm sheet before the price is saved
+    await confirmIt(c.page); // U1 · OB-698: the consequence-and-confirm sheet before the price is saved
     await says(c.page, '#banner-title', /^Price saved$/);
     expect(c.writes).toEqual(['POST /v1/approvals/requests', 'POST /v1/prices/changes']);
     await expect.poll(shelf).toBe(3_750);

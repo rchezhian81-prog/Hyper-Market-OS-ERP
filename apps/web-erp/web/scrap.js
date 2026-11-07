@@ -8,7 +8,7 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, review: false, record: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -164,7 +164,7 @@ if (may.named && may.review) {
     pickerBeside($('s-branch'), 'store', 'whichBranch');
     $('s-by').value = session.userId ?? '';
     $('s-record').addEventListener('click', async () => {
-      // U1 · OB-694: the consequence-and-confirm sheet before the disposal is recorded — Go back sends nothing.
+      // U1 · OB-698: the consequence-and-confirm sheet before the disposal is recorded — Go back sends nothing.
       const proceeds = Number($('s-proceeds').value);
       const sub = (l, key) => String(api.words(l, key)).replace('{kg}', $('s-kg').value).replace('{category}', $('s-category').value).replace('{disposal}', $('s-disposal').value).replace('{proceeds}', Number.isFinite(proceeds) ? `₹${proceeds.toFixed(2)}` : $('s-proceeds').value);
       // An incomplete form skips the sheet and gets the session's own words on what is missing (nothing is sent either way).

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 /**
- * **U1 · OB-694 — every stock, price and money action on the pages group B owns asks the shared consequence-and-confirm
+ * **U1 · OB-698 — every stock, price and money action on the pages group B owns asks the shared consequence-and-confirm
  * sheet before it sends, and carries the sheet's words in English AND Tamil (design system §1.3, §27.1, §1 rule 6).**
  *
  * Static, so it holds without a browser: the page (or its session) names the title, the consequence, the authority and
@@ -41,7 +41,7 @@ function values(source: string, key: string): string[] {
   return [...source.matchAll(new RegExp(`\\b${key}:\\s*'((?:[^'\\\\]|\\\\.)*)'`, 'g'))].map((m) => m[1]!);
 }
 
-describe('U1 · OB-694: the stock, price and money actions carry their sheet\'s words in both languages', () => {
+describe('U1 · OB-698: the stock, price and money actions carry their sheet\'s words in both languages', () => {
   for (const p of PAGES) {
     it(`${p.page}: title, consequence, authority and verb, English and Tamil, the title with ${p.placeholder}`, () => {
       const src = read(p.words);

@@ -48,7 +48,7 @@ const TODAY = new Date().toISOString().slice(0, 10);
 
 interface Row { attemptId: string; state: string; conflicts: unknown[]; resolution: { paid: boolean } | null }
 
-/** OB-694: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
+/** OB-698: the action now asks on the shared confirm sheet first; the test gives the person's word as a person would. */
 const confirmSheet = async (page: Page): Promise<void> => {
   await page.waitForSelector('#sre-confirm', { timeout: 10_000 });
   await page.click('#sre-confirm-go');

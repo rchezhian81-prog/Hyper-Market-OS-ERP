@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2269,
+  "testFiles": 2270,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -277,7 +277,7 @@
       "id": "M03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 21,
+        "unit": 22,
         "integration": 23,
         "realDb": 6,
         "browser": 9,
@@ -307,6 +307,7 @@
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts",
+          "tests/unit/the-old-erps-reports-become-the-pilot-slice.test.ts",
           "tests/unit/two-scale-label-rule-changes-at-once-never-both-land.test.ts"
         ],
         "integration": [
@@ -6382,7 +6383,7 @@
       "id": "MG-05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 9,
         "realDb": 7,
         "browser": 1,
@@ -6398,6 +6399,7 @@
           "tests/unit/migration-slice-import.test.ts",
           "tests/unit/migration-trial-reconcile-route.test.ts",
           "tests/unit/migration-trial.test.ts",
+          "tests/unit/the-old-erps-reports-become-the-pilot-slice.test.ts",
           "tests/unit/the-pilot-department-rides-the-catalogue-and-the-register.test.ts",
           "tests/unit/w4-the-old-system-checks-load-steps-session.test.ts"
         ],

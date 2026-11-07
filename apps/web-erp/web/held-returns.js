@@ -62,7 +62,7 @@ const WORDS = {
     decisionLabel: 'Decision', restock: 'Put back on sale', writeOff: 'Write off', toSupplier: 'Return to supplier', repair: 'Send for repair',
     reasonLabel: 'Reason', supplierLabel: 'Supplier', supplierRefLabel: 'Supplier reference', evidenceLabel: 'Photo or witness reference', approvalLabel: 'Approval (big loss)',
     record: 'Record decision', recorded: 'Recorded', refused: 'Not recorded', unreachable: 'Head office could not be reached. Nothing was recorded — try again.',
-    // U1 · OB-694: the consequence-and-confirm sheet before a unit is written off or sent back
+    // U1 · OB-698: the consequence-and-confirm sheet before a unit is written off or sent back
     confirmWriteOffTitle: 'Write off {product} × {qty} as {reason}',
     confirmWriteOffDetail: 'The unit leaves stock as a loss in the books; head office values it. A big loss needs the approval named on the form. A write-off is never undone — a mistake is corrected by a new entry.',
     confirmReturnTitle: 'Send {product} × {qty} back to supplier {supplier}',
@@ -155,7 +155,7 @@ function decisionForm(item) {
     event.preventDefault();
     const values = { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() };
     void (async () => {
-      // U1 · OB-694: a write-off or a return to the supplier moves stock — the consequence-and-confirm sheet first; Go back
+      // U1 · OB-698: a write-off or a return to the supplier moves stock — the consequence-and-confirm sheet first; Go back
       // sends nothing. Restock and repair keep the goods and need no sheet.
       if (values.decision === 'write_off' || values.decision === 'return_to_supplier') {
         if (values.decision === 'write_off' && values.wasteReason === '') { tell(false, t('needWasteReason')); return; }
@@ -225,7 +225,7 @@ function paint() {
   el('done-rows').replaceChildren(...done.map((i) => rowNode(i, false)));
 }
 
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;

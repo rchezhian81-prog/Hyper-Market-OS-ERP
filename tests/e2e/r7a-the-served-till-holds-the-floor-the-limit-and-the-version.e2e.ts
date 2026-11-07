@@ -115,7 +115,7 @@ describe.skipIf(!HAVE_BROWSER)('R7-A: the served till holds the lowest price, th
     await page.waitForSelector('#sheet:not([hidden])', { timeout: 15_000 });
     for (const digit of rupees) await page.click(`#keypad button:text-is("${digit}")`);
     await page.click('#sheet-ok');
-    // OB-694 (U1): a cut the till allows is shown in full (from, to, off, the lowest price) and confirmed before a manager is
+    // OB-698 (U1): a cut the till allows is shown in full (from, to, off, the lowest price) and confirmed before a manager is
     // asked; a cut the till refuses itself (below the lowest price) never reaches the panel.
     await page.waitForFunction(`(() => { const s = document.getElementById('sheet'); const r = document.getElementById('refusal'); return (s !== null && !s.hidden && !document.getElementById('consequence').hidden) || (r !== null && !r.hidden); })()`, undefined, { timeout: 15_000 });
     if (await page.evaluate("!document.getElementById('consequence').hidden")) await page.click('#sheet-ok');

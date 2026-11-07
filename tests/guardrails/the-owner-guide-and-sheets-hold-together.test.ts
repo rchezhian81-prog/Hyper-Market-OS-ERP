@@ -93,6 +93,7 @@ function flagsReadBy(file: string, pattern: RegExp, extra: readonly string[] = [
 const TOKEN_FLAGS = flagsReadBy('scripts/issue-store-token.mjs', /args\['([a-z-]+)'\]/g, ['--no-store']);
 const BOOTSTRAP_FLAGS = flagsReadBy('scripts/bootstrap-tenant.ts', /flags\['([a-z-]+)'\]/g);
 const SLICE_FLAGS = flagsReadBy('scripts/migration-slice.ts', /flags\['([a-z-]+)'\]/g);
+const FROM_BPAL_FLAGS = flagsReadBy('scripts/bpal-to-slice.ts', /(?:str|need)\('([a-z-]+)'/g);
 const TILL_PIN_FLAGS = flagsReadBy('edge/store-edge/src/till-pin-command.ts', /arg\(argv, '([a-z-]+)'\)/g, ['--revoke', '--generate-and-show']);
 
 /** Why a command the reader is told to type would not be understood — empty when it would be. */
@@ -120,6 +121,7 @@ export function commandProblems(command: string, scripts: Readonly<Record<string
       case 'token:store': return unknown(TOKEN_FLAGS);
       case 'tenant:bootstrap': return unknown(BOOTSTRAP_FLAGS);
       case 'migration:slice': return unknown(SLICE_FLAGS);
+      case 'migration:from-bpal': return unknown(FROM_BPAL_FLAGS);
       // W-6: the package script hands its flags to the till's own PIN command.
       case 'till:pin': return unknown(TILL_PIN_FLAGS);
       default: return flags.length === 0 ? [] : [`${script}: this guardrail does not know where its flags are read — add it here`];

@@ -118,7 +118,7 @@ describe('the frequent actions fit the spec\'s budget by construction (Stage G s
   });
 });
 
-describe('OB-694 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
+describe('OB-698 "A" (U1): money moves and a price cut are confirmed on screen, before the store computer is asked', () => {
   // The owner decided (2 Nov 2026) that a money, price or stock action shows what will happen, in whose name, and asks
   // for the verb before anything is sent. At the till that is the same on-screen panel in a `'confirm'` mode — never a
   // browser dialog (the first test in this file still forbids those).

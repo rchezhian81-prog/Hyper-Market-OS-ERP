@@ -241,7 +241,7 @@ describe('the expiry and recall screen', () => {
 
   it('never interrupts anybody with a browser dialog', () => {
     // Least of all on this screen: a dialog cannot be read in Tamil and cannot be tested.
-    expect(code(VIEW)).not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/); // U1 · OB-694: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
+    expect(code(VIEW)).not.toMatch(/(?<![.\w])(prompt|confirm|alert)\s*\(/); // U1 · OB-698: `office.confirm(` is the chrome's on-screen consequence-and-confirm sheet, not a browser dialog
     expect(code(VIEW)).toMatch(/function tell\(/);
   });
 

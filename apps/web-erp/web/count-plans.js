@@ -58,7 +58,7 @@ function paintPickedProducts() {
 }
 /** Every product to count: the ones picked, then whatever the bulk box holds — one id per line for the session. */
 const productsText = () => [...pickedProducts.map((p) => p.id), $('products').value].join('\n');
-// U1 · OB-694 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
+// U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
   const office = window.sreOffice;
@@ -311,7 +311,7 @@ if (session !== null) {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.open(current.planId); await refreshDrawer(); say($('d-status'), out); });
   $('d-approve').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status';
-    // U1 · OB-694: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
+    // U1 · OB-698: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
     const tt = current?.view?.totals;
     const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : '—').replace('{gain}', tt ? session.rupees(tt.gainMinor) : '—');
     // With no reason written the session says so, and nothing is sent — no sheet for that.

@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       expect(await s.page.locator('#d-lines').innerText()).toMatch(/P1 — 10 EA[\s\S]*head office cost ₹2\.00[\s\S]*P2 — 4 EA[\s\S]*head office cost ₹5\.00/);
       expect(await s.page.locator('#drawer input:visible:not(#d-cancel-reason)').count(), 'no cost or approver is typed (the only box is a cancel reason)').toBe(0);
       const answered = s.page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/t-1/dispatch'));
-      // U1 · OB-694: the consequence-and-confirm sheet names the lines and the route; Go back sends nothing; Confirm sends once.
+      // U1 · OB-698: the consequence-and-confirm sheet names the lines and the route; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(s.page, () => s.page.click('#d-dispatch'), /P1 × 10 .*P2 × 4 .*will leave/, () => s.writes.length);
       expect(await (await answered).json()).toMatchObject({ state: 'in_transit', approvedBy: MGR, lineCostsMinor: [200, 500] });
       await says(s.page, 'd-state', /^On the road — not sellable yet/);

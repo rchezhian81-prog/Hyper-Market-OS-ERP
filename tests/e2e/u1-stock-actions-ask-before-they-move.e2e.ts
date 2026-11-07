@@ -6,7 +6,7 @@ import { startOfficeShop, PEOPLE, S1, type OfficeShop } from './lib/office-shop'
 import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 
 /**
- * **U1 · OB-694 — five stock-moving office actions ask the consequence-and-confirm sheet before anything moves, on the
+ * **U1 · OB-698 — five stock-moving office actions ask the consequence-and-confirm sheet before anything moves, on the
  * REAL store computer fed by the REAL head office (in memory), in a real browser (design system §1.3, §27.1).**
  *
  * The five pages' own browser tests run on PostgreSQL in CI; this one proves the sheet on this box too, with the same

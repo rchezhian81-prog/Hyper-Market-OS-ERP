@@ -144,7 +144,7 @@ describe.skipIf(!HAVE_BROWSER)('operator recall delivery, end to end in a real b
     try {
       await page.fill('#batch', 'B-1');
       await page.fill('#reason', 'supplier notice: glass');
-      // U1 · OB-694: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
+      // U1 · OB-698: the consequence-and-confirm sheet names the batch; Go back sends nothing; Confirm sends once.
       await askedThenConfirmed(page, () => page.click('#start'), /Recall batch B-1/, () => rec.requests.length);
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
 

@@ -196,7 +196,7 @@ async function loadStock() {
   renderStock();
 }
 
-// OB-694: before money or stock moves, the shared confirm sheet (the chrome's) says what will happen in the person's own
+// OB-698: before money or stock moves, the shared confirm sheet (the chrome's) says what will happen in the person's own
 // words and asks for their word. Go back sends nothing. The words live here, in both languages, filled with the month.
 const officeWithSheet = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);

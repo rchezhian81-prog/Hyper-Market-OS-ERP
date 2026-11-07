@@ -151,7 +151,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-204 · 
       // 5. Recorded as gone back — head office's record carries the e-way bill number.
       await page.fill('#return-reason', 'collected by the supplier lorry TN-01-AB-1234');
       await page.click('#return');
-      await confirmIt(page); // U1 · OB-694: "Send … back to the supplier" asks the sheet first
+      await confirmIt(page); // U1 · OB-698: "Send … back to the supplier" asks the sheet first
       await page.locator('#result.tone-ok').filter({ hasText: 'Recorded' }).waitFor({ timeout: 15_000 });
       await expect.poll(() => line(page).locator('.r-word').textContent(), { timeout: 15_000 }).toBe('Gone back to the supplier');
       expect(await line(page).locator('.sre-chip.ewb').textContent()).toBe(`Dispatched under e-way bill ${EWB}`);

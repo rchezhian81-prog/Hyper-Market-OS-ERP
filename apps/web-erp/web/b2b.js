@@ -35,7 +35,7 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; b.className = quiet ? 'sre-btn sre-btn-quiet' : 'sre-btn'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 function field(labelWords, cls, value) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; if (value !== undefined) i.value = value; l.append(i); return { label: l, input: i }; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
-// OB-694: an invoice (money owed), a delivery challan (stock leaves) and an order placed over the credit limit (a privilege
+// OB-698: an invoice (money owed), a delivery challan (stock leaves) and an order placed over the credit limit (a privilege
 // used) each go to head office only after the shared confirm sheet (the chrome's) says what will happen, in whose name, and
 // the person confirms. Go back sends nothing.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));

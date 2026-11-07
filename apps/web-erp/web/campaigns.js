@@ -176,7 +176,7 @@ async function planIt() {
   plan = out.value; $('plan-status').className = 'status'; $('plan-status').textContent = '';
   paintPlan();
 }
-// OB-694: messages leave the shop only after the shared confirm sheet (the chrome's) says how many customers, which campaign,
+// OB-698: messages leave the shop only after the shared confirm sheet (the chrome's) says how many customers, which campaign,
 // and in whose name — and the person confirms. Go back sends nothing. The plan's count is the figure; with no plan the sheet
 // says so and head office decides.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));

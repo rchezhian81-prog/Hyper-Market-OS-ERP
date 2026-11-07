@@ -314,7 +314,7 @@ function lineRow(line) {
 
 // ── Putting it through ──────────────────────────────────────────────────────
 
-// OB-694: money goes back across the desk only after the shared confirm sheet (the chrome's) says how much, how, for which
+// OB-698: money goes back across the desk only after the shared confirm sheet (the chrome's) says how much, how, for which
 // bill, and in whose name — and the person confirms. Go back puts nothing through.
 const office = () => (window.sreOffice && typeof window.sreOffice.confirm === 'function' ? Promise.resolve(window.sreOffice) : new Promise((resolve) => document.addEventListener('sre:chrome', () => resolve(window.sreOffice), { once: true })));
 const CONFIRM = {

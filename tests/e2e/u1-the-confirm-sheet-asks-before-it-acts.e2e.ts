@@ -6,7 +6,7 @@ import { auditPage } from './lib/a11y-audit';
 import { startOfficeShop, PEOPLE, type OfficeShop } from './lib/office-shop';
 
 /**
- * **The confirm sheet (OB-694 · design system §1.3 · §27.1 · UI/UX gap audit G4), on a real office page in real Chromium.**
+ * **The confirm sheet (OB-698 · design system §1.3 · §27.1 · UI/UX gap audit G4), on a real office page in real Chromium.**
  *
  * Before money, stock, a price or a privilege moves, the page asks `sreOffice.confirm({ title, detail, authority,
  * confirmLabel, tone, reason? })`. Proven here on the rendered sheet:
