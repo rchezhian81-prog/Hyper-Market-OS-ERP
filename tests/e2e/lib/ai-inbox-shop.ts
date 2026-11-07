@@ -83,10 +83,19 @@ export async function startInboxShop(input: {
     return TEST_IDP.issue({ sub: who, tenantId: input.tenantId, ...(branch === undefined ? {} : { branchId: branch }) });
   };
 
+  // Every request the screen sends is counted while it is in flight, so stop() can let the last one finish before head
+  // office is switched off — otherwise the proxied call fails after the test has ended and the run reports an unhandled error.
+  const inFlight = new Set<Promise<void>>();
+  let stopping = false;
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    void (async () => {
+    const work = (async () => {
       const url = new URL(req.url ?? '/', 'http://x');
       const token = tokenFor(req);
+      if (stopping) {
+        res.writeHead(503, { 'content-type': 'text/plain' });
+        res.end('the test shop is closing');
+        return;
+      }
       if (url.pathname.startsWith('/v1/')) {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
@@ -124,7 +133,15 @@ export async function startInboxShop(input: {
         res.writeHead(404);
         res.end('not found');
       }
-    })();
+    })().catch(() => {
+      // Head office stopped (or the browser went away) while this request was being answered: answer what we can, never throw.
+      try {
+        if (!res.headersSent) res.writeHead(503, { 'content-type': 'text/plain' });
+        res.end();
+      } catch { /* the socket is already gone */ }
+    });
+    inFlight.add(work);
+    void work.finally(() => { inFlight.delete(work); });
   });
   const base = await new Promise<string>((resolve) => {
     server.listen(0, '127.0.0.1', () => {
@@ -146,7 +163,9 @@ export async function startInboxShop(input: {
       await context.addCookies([{ name: 'who', value: who, domain: host, path: '/' }, ...(branch === undefined ? [] : [{ name: 'branch', value: branch, domain: host, path: '/' }])]);
     },
     stop: async () => {
+      stopping = true;
       await new Promise<void>((done) => { server.close(() => { done(); }); server.closeAllConnections(); });
+      await Promise.allSettled([...inFlight]);
       await cloud.stop();
     },
   };
