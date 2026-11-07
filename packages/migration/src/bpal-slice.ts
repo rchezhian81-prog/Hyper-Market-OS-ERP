@@ -99,23 +99,80 @@ export function rupeesToPaise(raw: string): number | undefined {
 }
 const paiseText = (p: number): string => (p / 100).toFixed(2);
 
-/** A purchase date as the export wrote it: an Excel day number (46328) or dd/mm/yyyy, or yyyy-mm-dd → yyyy-mm-dd. */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const validDay = (y: number, m: number, d: number): string | undefined => {
+  const iso = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  return m >= 1 && m <= 12 && d >= 1 && !Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) && new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso ? iso : undefined;
+};
+
+/**
+ * A purchase date as the export wrote it → yyyy-mm-dd: an Excel day number (46328, with or without a time fraction),
+ * dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy, dd-Mon-yyyy (07-Nov-2026) or yyyy-mm-dd — each with or without a time after it
+ * (the old ERP's 12-month report writes "07/11/2026 13:27"). Day first, as Indian reports write it; anything else is
+ * not a date (undefined), never a guess.
+ */
 export function purchaseDay(raw: string): string | undefined {
-  const t = raw.trim();
+  const t = raw.trim().replace(/[ T]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?(\s*[AaPp][Mm])?$/, '').trim();
   if (/^\d{5}(\.\d+)?$/.test(t)) {
     const ms = Date.UTC(1899, 11, 30) + Math.floor(Number(t)) * 86_400_000;
     return new Date(ms).toISOString().slice(0, 10);
   }
   const dmy = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
-  if (dmy) return `${dmy[3]}-${dmy[2]!.padStart(2, '0')}-${dmy[1]!.padStart(2, '0')}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  if (dmy) return validDay(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
+  const dMony = /^(\d{1,2})[ /.-]([A-Za-z]{3})[A-Za-z]*[ /.-](\d{4})$/.exec(t);
+  if (dMony) { const m = MONTHS.indexOf(dMony[2]!.toLowerCase()); return m < 0 ? undefined : validDay(Number(dMony[3]), m + 1, Number(dMony[1])); }
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (ymd) return validDay(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
   return undefined;
+}
+
+/** The names the old ERP's purchase reports give each column this reads (the 12-month report names some differently). */
+const PURCHASE_COLUMNS = {
+  date: ['Purc Date', 'Purchase Date', 'Inv Date', 'Invoice Date', 'Bill Date', 'Date'],
+  no: ['Purc No', 'Purchase No', 'Inv No', 'Invoice No', 'Bill No'],
+  mrp: ['MRP'],
+  sell: ['Selling', 'Selling Rate', 'Sales Rate', 'Sale Rate', 'Selling Price'],
+  cost: ['NetCost', 'Net Cost', 'Cost', 'Net Rate', 'Purchase Rate', 'Purc Rate', 'Landing Cost'],
+} as const;
+
+export interface PurchaseReportReading {
+  readonly rows: number;
+  /** The rows whose date could be read, and the oldest and newest of them. */
+  readonly datedRows: number;
+  readonly oldest?: string;
+  readonly newest?: string;
+  /** Why the report cannot give prices — each in words, naming the columns it does have. Empty: it can. */
+  readonly problems: readonly string[];
+}
+
+/**
+ * Read the purchase report BEFORE anything is judged (P-08): a report whose date or price columns cannot be read would
+ * otherwise set every item aside as "no purchase", which says the wrong thing. This names what is missing and the
+ * columns the report does have, so the right report (or the right column) can be found.
+ */
+export function readPurchaseReport(rows: readonly SheetRow[]): PurchaseReportReading {
+  const headers = rows.length === 0 ? [] : Object.keys(rows[0]!);
+  const has = (names: readonly string[]): boolean => headers.some((h) => names.some((n) => n.toLowerCase() === h.trim().toLowerCase()));
+  const problems: string[] = [];
+  const columns = `its columns are: ${headers.join(', ')}`;
+  if (rows.length === 0) problems.push('the purchase report has no rows under its header');
+  for (const [what, names] of [['the purchase date', PURCHASE_COLUMNS.date], ['the MRP', PURCHASE_COLUMNS.mrp], ['the selling price', PURCHASE_COLUMNS.sell], ['the cost', PURCHASE_COLUMNS.cost]] as const) {
+    if (rows.length > 0 && !has(names)) problems.push(`no column for ${what} (looked for: ${names.join(', ')}) — ${columns}`);
+  }
+  const days = rows.map((r) => purchaseDay(text(r, ...PURCHASE_COLUMNS.date))).filter((d): d is string => d !== undefined).sort();
+  if (rows.length > 0 && has(PURCHASE_COLUMNS.date) && days.length === 0) {
+    const sample = rows.slice(0, 3).map((r) => `"${text(r, ...PURCHASE_COLUMNS.date)}"`).join(', ');
+    problems.push(`no purchase date could be read (the first ones read ${sample}) — a date is never guessed`);
+  }
+  return { rows: rows.length, datedRows: days.length, ...(days.length === 0 ? {} : { oldest: days[0]!, newest: days[days.length - 1]! }), problems };
 }
 
 const minusOneYear = (day: string): string => `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
 
 /** A CSV cell: quoted when it holds a comma, a quote or a line break. */
 const csvCell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** A sheet a person opens in Excel: a UTF-8 byte-order mark first, or Excel shows "—" and Tamil names as "â€”". */
+const forExcel = (sheet: string): string => `\uFEFF${sheet}`;
 const csv = (header: readonly string[], rows: readonly (readonly string[])[]): string =>
   [header.join(','), ...rows.map((r) => r.map(csvCell).join(','))].join('\r\n') + '\r\n';
 
@@ -200,14 +257,14 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
   for (const r of input.purchaseRows) {
     const id = text(r, 'Item Id');
     if (!dept.has(id)) continue;
-    const day = purchaseDay(text(r, 'Purc Date', 'Purchase Date'));
+    const day = purchaseDay(text(r, ...PURCHASE_COLUMNS.date));
     if (day === undefined || day < since || day > input.today) continue;
-    const no = Number(text(r, 'Purc No', 'Purchase No')) || 0;
+    const no = Number(text(r, ...PURCHASE_COLUMNS.no)) || 0;
     const prev = newest.get(id);
     if (prev !== undefined && (prev.day > day || (prev.day === day && prev.no >= no))) continue;
-    const mrp = rupeesToPaise(text(r, 'MRP'));
-    const sell = rupeesToPaise(text(r, 'Selling', 'Selling Rate'));
-    const cost = rupeesToPaise(text(r, 'NetCost', 'Net Cost', 'Cost'));
+    const mrp = rupeesToPaise(text(r, ...PURCHASE_COLUMNS.mrp));
+    const sell = rupeesToPaise(text(r, ...PURCHASE_COLUMNS.sell));
+    const cost = rupeesToPaise(text(r, ...PURCHASE_COLUMNS.cost));
     newest.set(id, { day, no, ...(mrp === undefined ? {} : { mrp }), ...(sell === undefined ? {} : { sell }), ...(cost === undefined ? {} : { cost }) });
   }
   const priced = new Map<string, { mrp: number; sell: number; cost: number }>();
@@ -250,17 +307,17 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
 
   // The staff's working sheet: every item not yet loaded, best sellers first, the facts already filled kept in it — so
   // the same file is filled, saved and given back with --label-facts as often as needed, and nothing typed is lost.
-  const labelFactsSheet = csv(['item_code', 'description', 'barcode', 'sold_qty', ...LABEL_FACTS, 'ready'],
+  const labelFactsSheet = forExcel(csv(['item_code', 'description', 'barcode', 'sold_qty', ...LABEL_FACTS, 'ready'],
     [...ready, ...waiting].sort(bySales).map((id) => {
       const d = dept.get(id)!; const f = facts.get(id) ?? {};
       return [id, d.name, codesOf.get(id)![0]!, String(d.sold), ...LABEL_FACTS.map((k) => (f[k] ?? '').trim()), ready.includes(id) ? 'yes' : 'no'];
-    }));
+    })));
   setAside.sort((a, b) => a.itemId.localeCompare(b.itemId, 'en', { numeric: true }));
-  const setAsideCsv = csv(['item_code', 'description', 'reason'], setAside.map((s) => [s.itemId, s.name, s.reason]));
+  const setAsideCsv = forExcel(csv(['item_code', 'description', 'reason'], setAside.map((s) => [s.itemId, s.name, s.reason])));
 
   return {
     files, labelFactsSheet, setAsideCsv, setAside,
-    hsnToCheckCsv: csv(['hsn_code', 'rate_percent', 'items', 'for_example'], hsnCheck),
+    hsnToCheckCsv: forExcel(csv(['hsn_code', 'rate_percent', 'items', 'for_example'], hsnCheck)),
     counts: {
       inDepartment: dept.size + [...asideIds].length, ready: ready.length, waitingForLabelFacts: waiting.length,
       setAside: setAside.length, alreadyLoaded, barcodes: ready.reduce((n, id) => n + codesOf.get(id)!.length, 0), taxClasses: hsnUsed.size,

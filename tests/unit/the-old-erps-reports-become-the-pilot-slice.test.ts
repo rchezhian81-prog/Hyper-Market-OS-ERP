@@ -4,7 +4,7 @@ import { deflateRawSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bpalToSlice, isGtin, inPilotDepartment, labelFactsFrom, purchaseDay, readCsv, PILOT_CATEGORY_ID, type SheetRow } from '../../packages/migration/src/bpal-slice';
+import { bpalToSlice, isGtin, inPilotDepartment, labelFactsFrom, purchaseDay, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, type SheetRow } from '../../packages/migration/src/bpal-slice';
 import { stageSlice } from '../../packages/migration/src/slice-import';
 import { readXlsxTable } from '../../scripts/lib/xlsx-read.mjs';
 
@@ -50,7 +50,7 @@ const HSN = [['serial_no', 'Item Id', 'Item Name', 'Hsn Code', 'Item Quantity', 
   ['6', '2001', 'TEST SOAP', '34011110', '70', '18', '1', '0', '0'],
   ['7', '1006', 'TEST BISCUIT', '19053100', '60', '5', '1', '0', '0'],
   ['8', '1007', 'TEST COOKIE', '19053100', '20', '18', '1', '0', '0']]; // one HSN, two rates → both set aside
-// Excel day 46328 = 2026-11-02; 46000 = 2025-12-09; 45500 = 2024-07-28 (over a year before 2026-11-06).
+// Excel day 46328 = 2026-11-02; 46000 = 2025-12-09; 45500 = 2024-07-27 (over a year before 2026-11-06).
 const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Item Name', 'Qty', 'Cost', 'NetCost', 'Selling', 'MRP'],
   ['46000', '7', '1001', 'TEST RICE 1KG', '10', '60', '60.0001', '70', '80'],
   ['46328', '3', '1001', 'TEST RICE 1KG', '10', '62', '61.999999999', '72', '82'], // newest → 72 / 82 / 62.00
@@ -133,6 +133,33 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(purchaseDay('02/11/2026')).toBe('2026-11-02');
     expect(purchaseDay('2026-11-02')).toBe('2026-11-02');
     expect(purchaseDay('yesterday')).toBeUndefined();
+    // The 12-month report (store PC, 7 Nov 2026) writes a time after the date, or the month as a word.
+    expect(purchaseDay('07/11/2026 13:27')).toBe('2026-11-07');
+    expect(purchaseDay('7-11-2026 1:27:05 PM')).toBe('2026-11-07');
+    expect(purchaseDay('07-Nov-2026')).toBe('2026-11-07');
+    expect(purchaseDay('2026-11-07 13:27:00')).toBe('2026-11-07');
+    expect(purchaseDay('46333.5625')).toBe('2026-11-07');
+    expect(purchaseDay('31/02/2026')).toBeUndefined(); // no such day: never rolled over to March
+  });
+
+  it('P-08: a purchase report whose date or price columns cannot be read is named, with its own columns — never "no purchase" for every item', () => {
+    const ok = readPurchaseReport(tableOf(BUYS));
+    expect(ok.problems).toEqual([]);
+    expect([ok.rows, ok.datedRows, ok.oldest, ok.newest]).toEqual([6, 6, '2024-07-27', '2026-11-02']);
+    // An invoice-style report: its own names for the date and prices are read the same.
+    const invoice = readPurchaseReport(tableOf([['Inv Date', 'Inv No', 'Item Id', 'MRP', 'Sales Rate', 'Purchase Rate'], ['07/11/2026 13:27', '9', '1001', '82', '72', '62']]));
+    expect(invoice.problems).toEqual([]);
+    const noPrices = readPurchaseReport(tableOf([['Purc Date', 'Item Id', 'Qty'], ['46328', '1001', '3']]));
+    expect(noPrices.problems.join(' | ')).toContain('no column for the MRP');
+    expect(noPrices.problems.join(' | ')).toContain('its columns are: Purc Date, Item Id, Qty');
+    const badDates = readPurchaseReport(tableOf([['Purc Date', 'Item Id', 'MRP', 'Selling', 'Cost'], ['last week', '1001', '82', '72', '62']]));
+    expect(badDates.problems.join(' | ')).toContain('no purchase date could be read (the first ones read "last week")');
+  });
+
+  it('the sheets a person opens in Excel carry the UTF-8 mark, so "—" and Tamil names read right (not "â€”")', () => {
+    const out = run();
+    for (const sheet of [out.labelFactsSheet, out.setAsideCsv, out.hsnToCheckCsv]) expect(sheet.charCodeAt(0)).toBe(0xfeff);
+    for (const f of Object.values(out.files)) expect(f.charCodeAt(0)).not.toBe(0xfeff); // the slice files stay plain
   });
 });
 
@@ -169,6 +196,16 @@ describe('the command on the store PC: three .xlsx reports in, the slice folder 
     expect(second.status, second.stdout).toBe(0);
     expect(second.stdout).toContain('Ready to load (barcode, HSN, price and all five label facts): 1 item(s), 2 barcode(s), 1 tax class(es).');
     expect(second.stdout).toContain('slice.json was already there and was kept as it is.');
+  });
+
+  it('a purchase report with no price columns is refused before anything is written, naming its columns', () => {
+    const dir = folder();
+    writeFileSync(join(dir, 'BUYS.xlsx'), xlsx([...SHOP, ['Purc Date', 'Item Id', 'Qty'], ['46328', '1001', '3']]));
+    const r = cmd(dir);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toContain('cannot give the prices. Nothing was written');
+    expect(r.stdout).toContain('its columns are: Purc Date, Item Id, Qty');
+    expect(existsSync(join(dir, 'slice', 'products.csv'))).toBe(false);
   });
 
   it('a sealed folder is never written into (hard rule #6), and a file that is not an .xlsx is refused by name', () => {

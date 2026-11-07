@@ -13,7 +13,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { bpalToSlice, labelFactsFrom, readCsv, PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME } from '../packages/migration/src/bpal-slice';
+import { bpalToSlice, labelFactsFrom, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME } from '../packages/migration/src/bpal-slice';
 import { parseFlags } from './lib/operator-env';
 import { readXlsxTable } from './lib/xlsx-read.mjs';
 
@@ -60,8 +60,18 @@ for (const f of (str('already') ?? '').split(',').map((s) => s.trim()).filter((s
   for (const r of readCsv(readFileSync(p, 'utf8'))) if ((r['item_code'] ?? '') !== '') already.add(r['item_code']!);
 }
 
+const purchaseRows = read(purchaseFile, 'Item Id');
+// The purchase report is read first: one whose dates or prices cannot be read is refused, naming its columns — never
+// every item set aside as "no purchase", which would say the wrong thing (P-08).
+const purchases = readPurchaseReport(purchaseRows);
+if (purchases.problems.length > 0) {
+  out(`REFUSED — ${resolve(purchaseFile)} cannot give the prices. Nothing was written:`);
+  for (const p of purchases.problems) out(`  • ${p}`);
+  out('Send a photo of this window: the converter is told the column\'s name, or the right report is exported.');
+  process.exit(2);
+}
 const result = bpalToSlice({
-  eanRows: read(eanFile, 'Item Id'), hsnRows: read(hsnFile, 'Item Id'), purchaseRows: read(purchaseFile, 'Item Id'),
+  eanRows: read(eanFile, 'Item Id'), hsnRows: read(hsnFile, 'Item Id'), purchaseRows,
   ...(labelFacts === undefined ? {} : { labelFacts }), alreadyLoaded: already, ratesFrom, today,
 });
 
@@ -86,6 +96,7 @@ if (!manifestExists) {
 
 const c = result.counts;
 out(`Read the old ERP's reports into ${outDir} (the old ERP itself was not touched).`);
+out(`  Purchase report: ${purchases.rows} row(s), ${purchases.datedRows} with a date, from ${purchases.oldest ?? '?'} to ${purchases.newest ?? '?'}; prices are taken from the 12 months to ${today}.`);
 out(`  In the pilot department (packaged groceries, OB-694): ${c.inDepartment} item(s).`);
 out(`  Ready to load (barcode, HSN, price and all five label facts): ${c.ready} item(s), ${c.barcodes} barcode(s), ${c.taxClasses} tax class(es).`);
 out(`  Waiting for their label facts: ${c.waitingForLabelFacts} item(s) — label-facts.csv, best sellers first.`);
