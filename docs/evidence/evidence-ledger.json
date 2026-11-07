@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2270,
+  "testFiles": 2271,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4121,7 +4121,7 @@
       "id": "A01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 14,
         "realDb": 9,
         "browser": 3,
@@ -4141,7 +4141,8 @@
           "tests/unit/api-manifest.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-control.test.ts",
-          "tests/unit/erp-ai-session.test.ts"
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/a01-says-why-the-takings-fell.test.ts",
@@ -4190,7 +4191,7 @@
       "id": "A02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 10,
         "realDb": 5,
         "browser": 1,
@@ -4207,7 +4208,8 @@
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/replenishment-session.test.ts",
-          "tests/unit/service-governance.test.ts"
+          "tests/unit/service-governance.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/ai-agents-draft-for-people.test.ts",
@@ -4244,7 +4246,7 @@
       "id": "A03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 7,
+        "unit": 8,
         "integration": 10,
         "realDb": 5,
         "browser": 2,
@@ -4260,7 +4262,8 @@
           "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
-          "tests/unit/fefo-near-expiry.test.ts"
+          "tests/unit/fefo-near-expiry.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
@@ -4408,7 +4411,7 @@
       "id": "A06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 7,
+        "unit": 8,
         "integration": 6,
         "realDb": 4,
         "browser": 6,
@@ -4424,7 +4427,8 @@
           "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts",
           "tests/unit/erp-operations-inbox-session.test.ts",
           "tests/unit/evidence-ledger.test.ts",
-          "tests/unit/ops-operations-advisor.test.ts"
+          "tests/unit/ops-operations-advisor.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/ai-governance-controls.test.ts",
@@ -4509,7 +4513,7 @@
       "id": "A08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
+        "unit": 9,
         "integration": 8,
         "realDb": 4,
         "browser": 8,
@@ -4526,7 +4530,8 @@
           "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-data-quality-inbox-session.test.ts",
           "tests/unit/import-mapping-quality.test.ts",
-          "tests/unit/product-data-quality.test.ts"
+          "tests/unit/product-data-quality.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts"
         ],
         "integration": [
           "tests/integration/ai-data-quality-worklist.test.ts",
@@ -4614,7 +4619,7 @@
       "id": "A10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 7,
         "realDb": 3,
         "browser": 6,
@@ -4636,6 +4641,7 @@
           "tests/unit/finance-inclusive-tax.test.ts",
           "tests/unit/merchandising-shelf.test.ts",
           "tests/unit/the-real-trading-bill-is-a-legal-tax-invoice.test.ts",
+          "tests/unit/two-ai-switch-changes-at-the-same-instant-both-land.test.ts",
           "tests/unit/workforce.test.ts"
         ],
         "integration": [

@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2270. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 2271. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 100 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 102 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 101 · INTEGRATION_TESTED 3.
 - Labels that do NOT hold: none.
@@ -77,16 +77,16 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | D12 | E2E_VERIFIED | 3 | 4 | 2 | 2 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | D13 | E2E_VERIFIED | 9 | 11 | 8 | 3 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | D14 | E2E_VERIFIED | 8 | 9 | 5 | 5 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A01 | E2E_VERIFIED | 11 | 14 | 9 | 3 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A02 | E2E_VERIFIED | 8 | 10 | 5 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A03 | E2E_VERIFIED | 7 | 10 | 5 | 2 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A01 | E2E_VERIFIED | 12 | 14 | 9 | 3 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A02 | E2E_VERIFIED | 9 | 10 | 5 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A03 | E2E_VERIFIED | 8 | 10 | 5 | 2 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A04 | E2E_VERIFIED | 9 | 8 | 6 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A05 | E2E_VERIFIED | 3 | 8 | 5 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A06 | E2E_VERIFIED | 7 | 6 | 4 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A06 | E2E_VERIFIED | 8 | 6 | 4 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A07 | E2E_VERIFIED | 6 | 4 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A08 | E2E_VERIFIED | 8 | 8 | 4 | 8 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A08 | E2E_VERIFIED | 9 | 8 | 4 | 8 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A09 | E2E_VERIFIED | 4 | 4 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A10 | E2E_VERIFIED | 13 | 7 | 3 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A10 | E2E_VERIFIED | 14 | 7 | 3 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-01 | E2E_VERIFIED | · | 10 | 3 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-02 | E2E_VERIFIED | 1 | 4 | 2 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-03 | E2E_VERIFIED | 3 | 14 | 8 | 6 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
