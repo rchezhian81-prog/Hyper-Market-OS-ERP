@@ -7,6 +7,7 @@ import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-s
 import { says } from './lib/r4c-box-page';
 import { STORE_RULES } from '../support/store-rules';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { confirmIt } from './lib/confirm-sheet';
 
 /**
  * **W3 (D06-FR-05 "markdown ladder and competitor capture" · D-4 · D-16 · D-18) — a markdown worked out on the Expiry page goes
@@ -134,6 +135,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a markdown
     await ok(call('POST', `/v1/approvals/requests/${request!.requestId}/decide`, OWNER, { decision: 'approved', reason: 'the batch expires in two days' }), 'owner approves');
     await c.page.click('#banner-ok');
     await c.page.click('#save-price');
+    await confirmIt(c.page); // U1 · OB-694: the consequence-and-confirm sheet before the price is saved
     await says(c.page, '#banner-title', /^Price saved$/);
     expect(c.writes).toEqual(['POST /v1/approvals/requests', 'POST /v1/prices/changes']);
     expect(await shelf('p-bread')).toBe(3_750);

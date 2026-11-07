@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { ERP_NAVIGATION } from '../../apps/web-erp/src/navigation';
 import { APP_SHELL, screenOfPath } from '../../edge/store-edge/src/screen-server';
 import { HEAD_OFFICE_PAGES } from '../../edge/store-edge/src/head-office-pages';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **A page is called what the menu calls it (U0 · G12 of the UI/UX gap audit, 1 Nov 2026 · P-07 · design system §4.2).**
@@ -62,7 +62,7 @@ describe('every office page is named as its menu item names it', () => {
   it('bites: the pages as they were before U0 fail it by name (git HEAD~0 of the audit day is enough to show the rule is not vacuous)', () => {
     // The rule must find at least one mismatch somewhere in history, or it tests nothing. The audit's own commit holds
     // the old headings: "Rostering" for Rota, "Integration health" for Connections.
-    const old = (file: string): string => { try { return execFileSync('git', ['show', `be62d0a:apps/web-erp/web/${file}`], { encoding: 'utf8' }); } catch { return ''; } };
+    const old = (file: string): string => { try { return beforeFixture('be62d0a', `apps/web-erp/web/${file}`); } catch { return ''; } };
     const rostering = headingOf(old('rostering.html'));
     if (rostering === '') return; // shallow clone without that commit: nothing to compare, the rule above still holds
     expect(rostering).toBe('Rostering');

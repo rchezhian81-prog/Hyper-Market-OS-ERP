@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **U2 · G5 of the UI/UX gap audit (2 Nov 2026): on the HARD buying and stock pages a thing is PICKED by name, never
@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process';
 
 const web = (f: string): string => readFileSync(`apps/web-erp/web/${f}`, 'utf8');
 const src = (f: string): string => readFileSync(`apps/web-erp/src/${f}`, 'utf8');
-const before = (path: string): string => execFileSync('git', ['show', `be62d0a:${path}`], { encoding: 'utf8' });
+const before = (path: string): string => beforeFixture('be62d0a', path);
 
 const PAGES = [
   { page: 'buying.js', pickers: ["pickerBeside(el('po-supplier'), 'supplier'", "pickerBeside(el('po-product'), 'product'", "pickerBeside(el('po-store'), 'store'"], words: 'web/buying.js', store: "el('po-store').value = id" },

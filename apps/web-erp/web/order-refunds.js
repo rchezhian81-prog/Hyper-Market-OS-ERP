@@ -44,8 +44,7 @@ function outcomeForm(r) {
   const input = document.createElement('input'); input.className = 'statement'; input.autocomplete = 'off';
   label.append(text('span', t('statementRef')), input);
   const mk = (result, words, iconName) => {
-    const b = document.createElement('button'); b.type = 'button'; b.className = `quiet outcome-${result}`;
-    b.className = 'sre-btn';
+    const b = document.createElement('button'); b.type = 'button'; b.className = `quiet outcome-${result} sre-btn sre-btn-quiet`;
     const i = icon(iconName); if (i !== null) b.append(i);
     b.append(text('span', words));
     b.disabled = !may.issue;

@@ -81,8 +81,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     await page.goto(`${shop.base}/floor-heat-map`, { waitUntil: 'load' });
     expect(reads, 'nothing is read on open').toEqual([]);
     // The window opens on the SHOP's month so far — at 19:30 UTC the browser (on UTC) still says yesterday.
-    expect(await page.inputValue('#to')).toBe(today);
-    expect(await page.inputValue('#from')).toBe(`${today.slice(0, 7)}-01`);
+    // U2: the shop's dd/mm field shows the day; the ISO day sits behind it.
+    expect(await page.inputValue('#to')).toBe(ddmm(today));
+    expect(await page.inputValue('#from')).toBe(ddmm(`${today.slice(0, 7)}-01`));
+    expect(await page.evaluate(() => (globalThis as unknown as { sreOffice: { dateValue(id: string): string | null } }).sreOffice.dateValue('to'))).toBe(today);
     await page.fill('#store', STORE);
     await page.fill('#from', ddmm(today));
     await page.fill('#to', ddmm(today));

@@ -104,7 +104,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('competitor
       await s.page.fill('#rival-price', '115');
       await s.page.fill('#rival-seen', tomorrow);
       await s.page.click('#rival-record');
-      await says(s.page, '#rival-record-status', /^Head office refused: The sighting is dated after now\. Use the time you actually saw the price\./);
+      // U0/U1 (G10): the refusal carries its three parts — what happened, nothing was changed, the next safe action.
+      await says(s.page, '#rival-record-status', /^Head office refused: The sighting is dated after now\. Nothing was changed\. Use the time you actually saw the price\./);
       expect(await s.page.locator('#rivals-list [data-competitor="More Supermarket"]').count()).toBe(0);
       expect(s.writes).toEqual(['POST /v1/prices/competitor/:id', 'POST /v1/prices/competitor/:id']);
       expect(s.errors).toEqual([]);

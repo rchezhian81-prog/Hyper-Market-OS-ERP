@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **U2 (UI/UX gap audit, 2 Nov 2026) — group D's rules, held statically (G5 · G10 · G14 · G16 · P-07 · P-08 · NFR-08).**
@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process';
 
 const AUDIT_COMMIT = 'be62d0a';
 const read = (path: string): string => readFileSync(path, 'utf8');
-const was = (path: string): string => execFileSync('git', ['show', `${AUDIT_COMMIT}:${path}`], { encoding: 'utf8' });
+const was = (path: string): string => beforeFixture(AUDIT_COMMIT, path);
 
 const PLAIN_VIEWS = ['ai-drafts', 'ai', 'epr', 'gst-returns-ho', 'itc-review', 'organisation', 'posh-report', 'price-lists', 'product-categories', 'product-content', 'product-details', 'product-merges', 'tax-rates'];
 /** A refusal line that ends in the bare status when head office gave no sentence — the thing U2 removes. */

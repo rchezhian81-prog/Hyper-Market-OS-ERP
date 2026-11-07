@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **OB-694 (2 Nov 2026 · UI/UX gap audit G4 · design system §1.3 · §27.1): on the finance and customer pages, money moves
@@ -83,7 +83,7 @@ describe('money moves only after the confirm sheet (OB-694)', () => {
   });
 
   it('bites: before OB-694 the day book posted on the click alone', () => {
-    const before = code(execFileSync('git', ['show', '7fb2406:apps/web-erp/web/day-book.js'], { encoding: 'utf8' }));
+    const before = code(beforeFixture('7fb2406', 'apps/web-erp/web/day-book.js'));
     const at = before.indexOf("el('post').addEventListener('click'");
     const body = before.slice(at, before.indexOf('session.post(', at));
     expect(body).not.toMatch(/office\(\)\)\.confirm\(/);

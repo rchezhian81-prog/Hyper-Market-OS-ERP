@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **U2b (UI/UX gap audit G5, G14, G16) — the people and stock pages pick a thing by name instead of typing its code, and
@@ -129,9 +129,9 @@ describe('U2b: the people and stock pages pick things by name', () => {
   });
 
   it('bites: the pages as they were before U2b (commit 6bc69ed) typed the codes', () => {
-    const before = execFileSync('git', ['show', '6bc69ed:apps/web-erp/web/warehouse.js'], { encoding: 'utf8' });
+    const before = beforeFixture('6bc69ed', 'apps/web-erp/web/warehouse.js');
     expect(before).not.toMatch(/pickable\('t-from'/);
-    const session = execFileSync('git', ['show', '6bc69ed:apps/web-erp/src/incidents-session.ts'], { encoding: 'utf8' });
+    const session = beforeFixture('6bc69ed', 'apps/web-erp/src/incidents-session.ts');
     expect(session).toContain("aOwner: 'Who owns it (their sign-in id)'");
   });
 });

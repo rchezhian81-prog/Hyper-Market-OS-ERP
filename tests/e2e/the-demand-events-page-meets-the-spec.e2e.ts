@@ -71,14 +71,17 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await page.goto(`${shop.base}/demand-events`, { waitUntil: 'load' });
       await page.waitForFunction(() => (globalThis as unknown as { demandEvents?: unknown }).demandEvents !== undefined);
 
-      // Refused before anything is sent: no store, then no effect.
-      await page.click('#save');
-      await expect.poll(() => page.textContent('#record-status')).toMatch(/Fill in the store first/);
-      await page.fill('#store', 'br-1');
+      // Refused before anything is sent: no store, then no effect. U2 fills in the person's own store, so it is cleared to
+      // provoke the refusal; the shared date fields are required by the browser, so the days are typed first (dd/mm).
+      await page.waitForFunction(() => (globalThis as unknown as { sreOffice?: unknown }).sreOffice !== undefined);
       await page.fill('#label', 'Pongal');
       await page.selectOption('#kind', 'festival');
       await page.fill('#ev-from', ddmm(day(3)));
       await page.fill('#ev-to', ddmm(day(4)));
+      await page.fill('#store', '');
+      await page.click('#save');
+      await expect.poll(() => page.textContent('#record-status')).toMatch(/Fill in the store first/);
+      await page.fill('#store', 'br-1');
       await page.click('#save');
       await expect.poll(() => page.textContent('#record-status')).toMatch(/expected effect/);
       await page.fill('#effect', '1.5');

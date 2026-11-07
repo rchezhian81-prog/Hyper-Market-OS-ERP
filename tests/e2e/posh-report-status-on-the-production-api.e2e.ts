@@ -80,7 +80,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Committee 
       await row.locator('input.reference').fill('DO-ACK-SYNTH-1');
       await row.locator('button.record').click();
       await page.locator('#result.tone-error').waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#result')).toMatch(/Not recorded: No annual report has been generated/);
+      expect(await page.textContent('#result')).toMatch(/^Head office refused: No annual report has been generated.*Nothing was changed\. \S/); // U2 G10: the three-part refusal words;
       expect(await page.locator('#rows .row').count()).toBe(1);
 
       // The committee makes the report; the owner sees its counts — never the complaint's words.

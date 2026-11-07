@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **A shop person picks a thing by its NAME, never types its code; a date reads dd/mm/yyyy; an id is shown as a name
@@ -103,9 +103,9 @@ describe('the chrome carries the picker and the date field', () => {
   });
 
   it('bites: the pages as the audit found them (commit be62d0a) asked for ids and codes by name', () => {
-    const html = execFileSync('git', ['show', 'be62d0a:apps/web-erp/web/count-plans.html'], { encoding: 'utf8' });
-    const js = execFileSync('git', ['show', 'be62d0a:apps/web-erp/web/count-plans.js'], { encoding: 'utf8' });
-    const session = execFileSync('git', ['show', 'be62d0a:apps/web-erp/src/count-plans-session.ts'], { encoding: 'utf8' });
+    const html = beforeFixture('be62d0a', 'apps/web-erp/web/count-plans.html');
+    const js = beforeFixture('be62d0a', 'apps/web-erp/web/count-plans.js');
+    const session = beforeFixture('be62d0a', 'apps/web-erp/src/count-plans-session.ts');
     expect(typedIdLabels(html, `${js}\n${session}`).length).toBeGreaterThan(0);
   });
 });

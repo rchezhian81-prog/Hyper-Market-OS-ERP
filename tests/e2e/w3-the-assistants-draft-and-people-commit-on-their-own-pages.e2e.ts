@@ -8,6 +8,7 @@ import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../suppor
 import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { shiftDate } from '../../packages/calendar/src/trading-day';
 import { pinTheEveningClock, pinThePageClock, theEvening } from '../support/evening-clock';
+import { confirmIt } from './lib/confirm-sheet';
 
 /**
  * **The assistants draft on the AI page; PEOPLE act on their own pages — in a real browser, on the PRODUCTION API over real
@@ -256,6 +257,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('A01, A02 a
       await s.page.locator('#loss-types button.chip', { hasText: 'Expired' }).click();
       await s.page.locator('#reasons button.chip', { hasText: 'Past its date' }).click();
       await s.page.click('#record');
+      await confirmIt(s.page); // U1 · OB-694: the sheet names the loss before it is recorded
       await says(s.page, '#result-text', /^Loss recorded/);
       expect(s.writes).toHaveLength(1);
       expect(s.writes[0]).toMatch(/^POST \/v1\/inventory\/write-off\//);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **The confirm sheet is in the chrome, and it is never a browser dialog (OB-694 · design system §1.3 · §27.1).**
@@ -45,7 +45,7 @@ describe('the chrome carries the confirm sheet', () => {
   });
 
   it('bites: the chrome before OB-694 had no confirm sheet', () => {
-    const before = execFileSync('git', ['show', '7fb2406:apps/web-erp/web/sre-chrome.js'], { encoding: 'utf8' });
+    const before = beforeFixture('7fb2406', 'apps/web-erp/web/sre-chrome.js');
     expect(before).not.toMatch(/confirm: officeConfirm,/);
   });
 });

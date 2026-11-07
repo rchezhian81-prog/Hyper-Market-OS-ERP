@@ -240,7 +240,7 @@ function evidenceStatus(status) {
 function iconButton(icon, word, id) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'quiet';
+  b.className = 'quiet sre-btn sre-btn-quiet'; // the foundation's 44px quiet button (U1 · G3)
   b.id = id;
   if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word));
   else b.textContent = word;

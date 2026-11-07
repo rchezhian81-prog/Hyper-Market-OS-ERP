@@ -7,6 +7,8 @@ import { listableProduct } from '../support/sell-online';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { makeEvent } from '../../packages/contracts/src/event';
+/** The shop's dd/mm/yyyy, as a person types it into the shared date field (U2). */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **W3 · D09 (D09-FR-03 wave picking · D09-FR-04 dispatch · D09-FR-05 route/proof/geofence · D09-FR-06 contribution stop
@@ -76,7 +78,7 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     expect(o.status).toBe(200);
     expect([...o.reads, ...o.writes], 'nothing is read on open').toEqual([]);
     await page.fill('#store', 'br-1');
-    await page.fill('#run-date', runDate);
+    await page.fill('#run-date', ddmm(runDate)); // U2: the run date is the shop's dd/mm field
 
     // ── Waves from confirmed orders.
     await page.click('#show-orders');

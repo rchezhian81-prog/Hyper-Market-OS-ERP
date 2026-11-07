@@ -129,7 +129,7 @@ describe.skipIf(!CONNECTED)('D14 connected: shelf labels and floor devices on th
     expect(p.writes.filter((w) => w.startsWith('POST /v1/devices/floor/')).length, 'three registrations, a block and a reinstate').toBe(5);
     expect(p.writes.filter((w) => /^POST \/v1\/devices\/esl\/pushes\/.+\/retry$/.test(w)).length, 'the same price sent again, once').toBe(1);
     await p.page.click('#lang');
-    await says(p.page, '#page-h', /^அலமாரி லேபிள்கள், RFID, கேமராக்கள்$/);
+    await says(p.page, '#page-h', /^அலமாரி லேபிள்களும் தளச் சாதனங்களும்$/ /* named as the menu names it (navigation.ts) */);
     expect(p.errors).toEqual([]);
     await p.close();
   }, 180_000);

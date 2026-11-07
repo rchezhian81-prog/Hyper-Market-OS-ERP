@@ -6,6 +6,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
 import { instantOf, wallClockIn } from '../../packages/calendar/src/trading-day';
+/** The shop's dd/mm/yyyy, as a person types it into the shared date field (U2). */
+const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 /**
  * **OB-154 (owner, 16 Oct 2026, "Add screens before pilot") — the store-operations screens, in a real browser, on the
@@ -184,8 +186,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
     try {
       // The window opens on the SHOP's month so far: at 19:30 UTC the browser (on UTC) still says yesterday, and the bread
       // wasted "now" is on the shop's today — a window ending on the browser's date would leave it out.
-      expect(await page.inputValue('#to')).toBe(EVENING.shopDate);
-      expect(await page.inputValue('#from')).toBe(`${EVENING.shopDate.slice(0, 7)}-01`);
+      // U2: the shop's dd/mm field shows the days; the ISO day sits behind it.
+      expect(await page.inputValue('#to')).toBe(ddmm(EVENING.shopDate));
+      expect(await page.inputValue('#from')).toBe(ddmm(`${EVENING.shopDate.slice(0, 7)}-01`));
+      expect(await page.evaluate(() => (globalThis as unknown as { sreOffice: { dateValue(id: string): string | null } }).sreOffice.dateValue('to'))).toBe(EVENING.shopDate);
       // UI-3: the breakdown is the shared register (its host carries data-breakdown) or, without the chrome, the plain table.
       await page.locator('[data-breakdown="wo-reason"] tr[data-key="expiry"]').waitFor({ timeout: 15_000 });
       expect(await page.locator('[data-breakdown="wo-reason"] tr[data-key="expiry"]').textContent()).toMatch(/Past its date.*₹100\.00/);

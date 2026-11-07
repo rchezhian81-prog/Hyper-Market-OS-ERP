@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { beforeFixture } from '../support/before-fixture';
 
 /**
  * **U2b · G5 and G14 of the UI/UX gap audit (4 Nov 2026): the product and purchase pages pick a thing by NAME, never
@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process';
 
 const web = (f: string): string => readFileSync(`apps/web-erp/web/${f}`, 'utf8');
 const src = (f: string): string => readFileSync(`apps/web-erp/src/${f}`, 'utf8');
-const before = (path: string): string => execFileSync('git', ['show', `6bc69ed:${path}`], { encoding: 'utf8' });
+const before = (path: string): string => beforeFixture('6bc69ed', path);
 
 /** A label that asks a shop person to type an id or a code (a bare "HSN code" is the class itself and is allowed). */
 const TYPED_ID_LABEL = /'[A-Z][^']*\b(?:product|supplier|store|branch|item|customer|scheme)\s+(?:id|ids|code|codes)\b[^']*'|\((?:parent product|store|item|location) (?:id|code)\)/;

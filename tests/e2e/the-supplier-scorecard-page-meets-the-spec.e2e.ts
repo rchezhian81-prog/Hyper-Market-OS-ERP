@@ -77,7 +77,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
 
       // Nothing named → refused before anything is sent.
       await page.click('#show');
-      await expect.poll(() => page.textContent('#page-status')).toMatch(/Type the supplier code first/);
+      await expect.poll(() => page.textContent('#page-status')).toMatch(/Choose the supplier first/); // U2b: the supplier is picked by name;
 
       await page.fill('#supplier', 's-rice');
       await page.click('#show');

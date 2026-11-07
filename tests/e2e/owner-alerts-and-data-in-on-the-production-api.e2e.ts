@@ -112,7 +112,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('owner aler
     await waitText(page, '#s-rows li[data-schedule="s-daily"]', 'Prepared, not sent');
     expect(await auditPage(page, { expectLang: 'en', minTarget: 56 }), 'the owner alerts page').toEqual([]);
     await page.click('#lang');
-    expect(await page.textContent('#page-h')).toBe('உரிமையாளர் எச்சரிக்கைகள் மற்றும் திட்டமிட்ட அறிக்கைகள்');
+    expect(await page.textContent('#page-h')).toBe('உரிமையாளர் எச்சரிக்கைகளும் திட்டங்களும்'); // U0 G12: the page is named as the menu names it (navigation.ts);
     await waitText(page, '#t-rows li[data-kind="cash_short"]', 'அமைக்கப்படவில்லை');
     expect(errors).toEqual([]);
     await close();
