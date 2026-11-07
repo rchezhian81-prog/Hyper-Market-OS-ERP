@@ -257,6 +257,14 @@ jobs:
           # in a committed file — the repository's secret scan refuses it anywhere, and "it is
           # only CI" is exactly how the first real one gets in.
           printf 'DATABASE_URL=%s://%s:%s@db:5432/%s\n' postgres sre_app "$PW" sre_retail_os >> .env
+          # The registry's CDN cuts a download off now and then ("read: connection reset by peer" mid-pull,
+          # 7 Nov 2026) — a pull that never reached a container is not the stack failing to come up. Pull the
+          # images first, up to three times, so the readiness check below judges the stack and not the network.
+          for attempt in 1 2 3; do
+            if docker compose pull --quiet; then break; fi
+            if [ "$attempt" = 3 ]; then echo "::error::the images could not be pulled after three attempts"; exit 1; fi
+            echo "image pull attempt $attempt failed — the registry cut the download; trying again in 20s"; sleep 20
+          done
           docker compose up -d --build
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
