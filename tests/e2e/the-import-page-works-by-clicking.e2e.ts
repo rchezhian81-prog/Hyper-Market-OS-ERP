@@ -62,15 +62,13 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.waitForSelector('#start:not([hidden])');
     expect(await page.textContent('#who')).toBe('Signed in: owner-01');
 
-    await page.setInputFiles('#f-ean', join(dir, 'EANCODE.xlsx'));
-    await page.setInputFiles('#f-hsn', join(dir, 'HSN.xlsx'));
-    // OB-705: the 3-month files are chosen together, in one box.
-    await page.setInputFiles('#f-buys', [join(dir, 'Purchases-1.xlsx'), join(dir, 'Purchases-2.xlsx')]);
-    await page.fill('#rates-from', '2026-11-06');
+    // OB-706: every file in ONE choice, any order; the page tells them apart. The backup day is asked the first time only.
+    expect(await page.isVisible('#backup-label')).toBe(true);
+    await page.setInputFiles('#f-all', [join(dir, 'Purchases-2.xlsx'), join(dir, 'HSN.xlsx'), join(dir, 'Purchases-1.xlsx'), join(dir, 'EANCODE.xlsx')]);
     await page.fill('#backup-on', '2026-11-06');
     await page.click('#read-form button[type=submit]');
     await page.waitForSelector('#work:not([hidden])');
-    expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Purchase report: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
+    expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
     expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (0 ready item(s))');
 
     // The rice waits only for its label facts: open it, type them, save.
@@ -88,6 +86,10 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await dal.getByLabel(/Barcode\(s\) as printed/).fill('8901234567911');
     await dal.locator('.gap', { hasText: 'Barcode:' }).getByRole('button', { name: 'Save this fix' }).click();
     await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('msg')?.textContent ?? '').includes('not a pack barcode'));
+    await page.click('#back');
+    await page.waitForSelector('#backup-known:not([hidden])');
+    expect(await page.isVisible('#backup-label')).toBe(false);
+    expect(await page.textContent('#backup-known')).toContain('last restored and checked on 2026-11-06');
     expect(errors).toEqual([]);
   });
 });

@@ -94,17 +94,26 @@ describe.each(backings)('the import page fixes every gap, then two people load �
 
       // ── read the three reports ─────────────────────────────────────────────────────────────────────────────
       const b64 = (rows: string[][]) => xlsx([...SHOP, ...rows]).toString('base64');
-      const files = (purchases: unknown) => ({ files: { ean: { name: 'EANCODE.xlsx', base64: b64(EAN) }, hsn: { name: 'HSN.xlsx', base64: b64(HSN) }, purchases }, ratesFrom: '2026-11-06', backupRestoredOn: '2026-11-06' });
-      // The same 3-month file chosen twice, and a file that is not the price report, are refused by name — nothing read.
-      const twice = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Purchases-1 copy.xlsx', base64: b64(BUYS_EARLY) }]));
+      // OB-706: every file in ONE choice, in any order — each recognised by its own columns; the backup day asked once.
+      const f = (name: string, rows: string[][]) => ({ name, base64: b64(rows) });
+      const ALL = [f('Purchases-5.xlsx', BUYS_LATE), f('HSN.xlsx', HSN), f('Purchases-1.xlsx', BUYS_EARLY), f('EANCODE.xlsx', EAN)];
+      const firstTime = await call(owner, 'POST', '/api/imports', { files: ALL });
+      expect(firstTime.status).toBe(400);
+      expect(String(firstTime.body['error'])).toContain('First time only');
+      // The same file chosen twice, and a file that is none of the three reports, are refused by name — nothing read.
+      const twice = await call(owner, 'POST', '/api/imports', { files: [...ALL, f('Purchases-1 copy.xlsx', BUYS_EARLY)], backupRestoredOn: '2026-11-06' });
       expect(twice.status).toBe(400);
       expect(String(twice.body['error'])).toContain('are the same file');
-      const wrongOne = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Distributor Invoice.xlsx', base64: b64([['Grn No', 'Item Id', 'Purchase Qty'], ['1', '11', '5']]) }]));
-      expect(wrongOne.status).toBe(422);
-      expect(String(wrongOne.body['error'])).toMatch(/^Distributor Invoice\.xlsx cannot give the prices/);
-      const read = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Purchases-5.xlsx', base64: b64(BUYS_LATE) }]));
+      const stranger = await call(owner, 'POST', '/api/imports', { files: [...ALL, f('Distributor Invoice.xlsx', [['Grn No', 'Item Id', 'Purchase Qty'], ['1', '11', '5']])], backupRestoredOn: '2026-11-06' });
+      expect(stranger.status).toBe(422);
+      expect(String(stranger.body['error'])).toBe('Distributor Invoice.xlsx is not a report this page reads (its columns are: Grn No, Item Id, Purchase Qty). Choose the barcode (EANCODE), HSN and Product wise Detail reports. Nothing was read.');
+      const noHsn = await call(owner, 'POST', '/api/imports', { files: ALL.filter((x) => x.name !== 'HSN.xlsx'), backupRestoredOn: '2026-11-06' });
+      expect(String(noHsn.body['error'])).toContain('The HSN report (Item Id, Hsn Code, Gst %) is not among the files chosen');
+      const read = await call(owner, 'POST', '/api/imports', { files: ALL, backupRestoredOn: '2026-11-06' });
       expect(read.status, JSON.stringify(read.body)).toBe(201);
-      expect(read.body).toMatchObject({ purchaseFiles: 2, purchaseRows: 4, purchasesFrom: '2025-12-15', purchasesTo: '2026-11-01' });
+      expect(read.body).toMatchObject({ files: { barcodes: ['EANCODE.xlsx'], hsn: ['HSN.xlsx'], purchases: ['Purchases-5.xlsx', 'Purchases-1.xlsx'] }, purchaseFiles: 2, purchaseRows: 4, purchasesFrom: '2025-12-15', purchasesTo: '2026-11-01', backupRestoredOn: '2026-11-06' });
+      // The rates are in force from the day they were read; never a day typed by hand.
+      expect(((await req('GET', `/v1/migration/old-system-imports/${read.body['importId'] as string}`, undefined, OWNER)).body as { import: { ratesFrom: string } }).import.ratesFrom).toBe('2026-11-07');
       const id = read.body['importId'] as string;
       expect(read.body['items']).toBe(4);
       expect(existsSync(join(dataDir, id, 'read.json'))).toBe(true);
