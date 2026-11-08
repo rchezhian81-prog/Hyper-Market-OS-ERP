@@ -186,6 +186,100 @@ jobs:
             --target "postgres://sre@localhost:5432/sre_core"
 
 
+  store-pc-windows:
+    name: Store PC on a clean Windows — database, API and till as Windows services, no Docker (ADR-0032)
+    # CR-01 step 1 (OB-708 "2A"): on the store computer the shop database, the office API and the till run as Windows
+    # services, not containers. This job is the clean Windows machine the change record names: it sets the copy up the way
+    # the owner does (prepare, then the till), installs the three services with the store-computer tool, and asks WINDOWS
+    # whether each claim holds (tests/windows/store-pc-on-windows.check.mjs). GitHub's Windows machines are Windows Server,
+    # which the tool refuses (OB-282) unless GitHub itself says this is one of its own throw-away machines AND the job
+    # asks (SRE_TEST_ON_HOSTED_RUNNER) — a shop's server can never be that.
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      SRE_TEST_ON_HOSTED_RUNNER: '1'
+      # PostgreSQL 16 — the same major version the containers run (postgres:16-alpine). The binaries archive is fetched
+      # from EnterpriseDB, the project's own Windows build; WinSW is the service host for the two Node services (MIT).
+      # Each download's SHA-256 is printed; once pinned here, a different file fails the job by name.
+      PG_VERSION: 16.4-1
+      PG_ZIP_SHA256: ''
+      WINSW_VERSION: v2.12.0
+      WINSW_SHA256: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $pgZip = Join-Path $dir 'postgresql.zip'
+          $winsw = Join-Path $dir 'WinSW-x64.exe'
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
+            $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
+            Write-Output "$($f.what) SHA-256: $got"
+            if ($f.want -ne '' -and $f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (want $($f.want))" }
+          }
+          tar -xf $pgZip -C $dir
+          "PG_BIN=$dir\pgsql\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "WINSW=$winsw" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Set this copy up as the owner does — its settings, then the till
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/store-computer.mjs prepare
+          if ($LASTEXITCODE -ne 0) { throw 'prepare did not finish' }
+          node scripts/install-till.mjs --settings C:\SRE-data\.env.real --lane lane-1
+          if ($LASTEXITCODE -ne 0) { throw 'till:install did not finish' }
+
+      - name: Install the shop database, the office API and the till as Windows services
+        shell: pwsh
+        run: |
+          node scripts/store-computer.mjs install-services --pg-bin $env:PG_BIN --service-host $env:WINSW
+          if ($LASTEXITCODE -ne 0) { throw "install-services exit $LASTEXITCODE" }
+          node scripts/store-computer.mjs services-status
+          if ($LASTEXITCODE -ne 0) { throw "services-status exit $LASTEXITCODE" }
+
+      - name: Prove it — ask Windows about every claim (tests/windows/store-pc-on-windows.check.mjs)
+        shell: pwsh
+        run: |
+          node tests/windows/store-pc-on-windows.check.mjs "$env:RUNNER_TEMP\store-pc-windows-proof.json" C:\SRE-data
+          if ($LASTEXITCODE -ne 0) { throw 'a claim did not hold' }
+
+      - name: Keep the proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-pc-windows-proof
+          path: ${{ runner.temp }}/store-pc-windows-proof.json
+          if-no-files-found: warn
+
+      - name: On failure — the services' last words (the services never print a secret)
+        if: failure()
+        shell: pwsh
+        run: |
+          foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n; sc.exe qc $n }
+          Get-ChildItem C:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
+          Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Postgre|SRE' } | Format-List TimeCreated, ProviderName, Message
+
   deploy:
     name: The container builds, starts, and refuses a bad configuration
     runs-on: ubuntu-latest

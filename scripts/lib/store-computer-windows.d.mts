@@ -7,6 +7,7 @@ export declare function powershellPath(env: Record<string, string | undefined> |
 export declare function ask(deps: Deps, script: string, vars?: Record<string, string>): string[][] | undefined;
 export interface Edition { readonly applies: boolean; readonly known: boolean; readonly server: boolean; readonly productType?: number; readonly caption?: string }
 export declare function windowsEdition(deps: Deps): Edition;
+export declare function hostedTestMachine(deps: Pick<Deps, 'env'>): boolean;
 export declare function refusedOnServer(deps: Deps, edition?: Edition): boolean;
 export declare function driveLetterOf(dir: string | undefined): string | undefined;
 export type DriveKindName = 'removable' | 'usb' | 'internal' | 'network' | 'optical' | 'ram' | 'none' | 'unknown';
