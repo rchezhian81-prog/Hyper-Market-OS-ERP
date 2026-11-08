@@ -48,3 +48,31 @@ setup program (CR-01 OI-08): its data folder is adopted, its containers retired 
 ## Reconsider-when
 
 A shop's store computer is a Linux server, or the store PC must run several stores' services at once.
+
+## Implementation — CR-01 step 1 (8 November 2026)
+
+How the decision is carried out. Nothing here changes the decision; each point is an implementation choice inside it.
+
+- **Three services, each under its own account.** `SRE-Database` (PostgreSQL 16, registered by its own
+  `pg_ctl register`), `SRE-API` and `SRE-Till` (the two Node programs). Each runs as its Windows *virtual service
+  account* (`NT SERVICE\<name>`): an account nobody can sign in as, with no password anywhere. Folder rights are given by
+  that account's SID (worked out from the service name, the same in every language of Windows): the database its
+  database folder; the API the settings file, read-only; the till its till folder; each its own log folder. The
+  data-folder lock check (OB-284) counts these three as the shop's own; every other reader is still a FIX.
+- **The service host for the Node programs is WinSW 2.12** (MIT licence, one small program, no installer). Node cannot
+  answer Windows' service manager by itself; WinSW does that and restarts the program after 10 s, 30 s and 60 s if it
+  stops. The service definitions hold only paths; each program reads its settings file when it starts
+  (`scripts/store-computer-service.mjs`), so no secret is ever in a definition, a command line or a log (hard rule #4).
+- **This PC only.** PostgreSQL listens on 127.0.0.1 (its own `sre-store-computer.conf`); the API on 127.0.0.1 (the new
+  `API_LISTEN_HOST` setting, which accepts only a loopback address); the till's screens and save socket were already
+  loopback-only. The handheld door (OB-422) keeps its own deliberate, encrypted shop-network address.
+- **Order and independence.** The API depends on the database, so Windows starts the database first. The till depends
+  on nothing: with the API and the database stopped it still sells (P-01). The API's program brings the database tables
+  up to date (`scripts/migrate.mjs`) every time it starts, as compose's `migrate` did on every `up`.
+- **Proven on a clean Windows machine** by the `store-pc-windows` job in `.github/workflows/ci.yml`
+  (`tests/windows/store-pc-on-windows.check.mjs`). GitHub's Windows machines are Windows Server, which the tool refuses
+  (OB-282); the job is let through only when GitHub says the machine is one of its own throw-away hosted machines and the
+  job asks for it by name.
+- **Not in step 1** (CR-01 order of work): the setup program, adopting the existing Docker copy's data (OI-08 — the tool
+  refuses while the Docker copy runs), and moving `backup`, `check`, `status`, `autostart` and `update` from Docker to
+  the services. Those are steps 2 and 3.

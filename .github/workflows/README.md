@@ -6,6 +6,11 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
   every push to `main`).
 - **`integration`** — the stage-gate and migration suites against a real PostgreSQL, then backup → destroy →
   restore reconciled (QG-08).
+- **`store-pc-windows`** — CR-01 step 1 (ADR-0032): on a clean Windows machine, the store computer is set up as the
+  owner does it and its database, office API and till are installed as Windows services, no Docker; then Windows itself
+  is asked whether each claim holds (`tests/windows/store-pc-on-windows.check.mjs`): running, starting at boot, each on
+  its own account, this PC only, no secret in a definition or log, the API back by itself after being killed, the till
+  selling with the API and the database stopped. Its record is the job's artifact.
 - **`deploy`** — the API image builds, refuses a bad configuration by name, and the whole compose stack comes
   up READY and drains cleanly.
 - **`release`** — on a push to `main` only, after the three above passed on that commit: deploys exactly that

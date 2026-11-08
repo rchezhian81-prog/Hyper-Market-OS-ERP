@@ -10,6 +10,7 @@ export declare const OWN_KEYS: readonly string[];
 export declare const SEEDING_KEYS: readonly string[];
 export declare const THRESHOLDS: Readonly<{ ramBytes: number; diskBytes: number; systemDriveBytes: number; minNodeMajor: number; minWindowsBuild: number; timeZones: readonly string[] }>;
 export declare const READY_WAIT_MS: number;
+export declare const PLACEHOLDER: 'REPLACE_WITH';
 export declare const COMPOSE_BASE: readonly string[];
 export declare const CHECK_TITLES: readonly string[];
 export declare const USAGE: readonly string[];
@@ -170,7 +171,7 @@ export declare function doctorRows(deps: Deps, extra?: { edition?: import('./sto
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
-  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string;
   /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
   setup: Record<string, string>;
   problems: string[];

@@ -38,6 +38,11 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 
 export interface ServerOptions extends KernelOptions {
   readonly port: number;
+  /**
+   * The address to listen on. Absent: every address (a container's own network, which publishes only what compose
+   * says). The store computer's Windows service sets 127.0.0.1, so nothing outside the PC reaches it (ADR-0032).
+   */
+  readonly host?: string;
   /** Answers the readiness probe. Liveness never asks it — see `probes()`. */
   readonly dependenciesReachable: () => Promise<boolean> | boolean;
   /** A request-metrics snapshot served at `/metricz`, before authentication. Optional. */
@@ -138,7 +143,8 @@ export function startHttpServer(opts: ServerOptions): RunningServer {
     })();
   });
 
-  server.listen(opts.port, () => { started = true; });
+  if (opts.host === undefined) server.listen(opts.port, () => { started = true; });
+  else server.listen(opts.port, opts.host, () => { started = true; });
 
   return {
     server,

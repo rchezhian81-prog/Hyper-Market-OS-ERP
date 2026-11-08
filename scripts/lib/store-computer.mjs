@@ -50,6 +50,7 @@ import { deviceDoorRow } from './store-computer-device-door.mjs';
 import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup, writeLauncher } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
+import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -96,7 +97,7 @@ export const THRESHOLDS = Object.freeze({
 /** How long `up` waits for the API to say ready (the first start builds the API, which is the slow part). */
 export const READY_WAIT_MS = 5 * 60_000;
 
-const PLACEHOLDER = 'REPLACE_WITH';
+export const PLACEHOLDER = 'REPLACE_WITH';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const sha256 = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex');
 const real = (v) => typeof v === 'string' && v.trim() !== '' && !v.includes(PLACEHOLDER);
@@ -1227,6 +1228,11 @@ export const USAGE = [
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
+  '  install-services --pg-bin <PostgreSQL bin folder> --service-host <WinSW.exe>',
+  '                                           Windows 10/11: the shop database, the office API and the till as Windows',
+  '                                           services that start by themselves, on this PC only, without Docker (ADR-0032)',
+  '  services-status                          the three Windows services: running, starting by themselves, answering',
+  '  remove-services                          stop and remove the three services; the shop\'s data is kept',
   '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
   '                                           seal the old ERP\'s exported files (MG-02) — asks your OWN till PIN',
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
@@ -1341,7 +1347,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1374,6 +1380,8 @@ export function parseCommandLine(argv) {
     else if (a === '--max-days') out.maxDays = value();
     else if (a === '--start') out.start = value();
     else if (a === '--data-drive') out.dataDrive = value();
+    else if (a === '--pg-bin') out.pgBin = value();
+    else if (a === '--service-host') out.serviceHost = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1414,6 +1422,9 @@ export async function main(argv, given) {
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'import': return importPage(deps);
+    case 'install-services': return installServices(deps, { pgBin: cl.pgBin, serviceHost: cl.serviceHost });
+    case 'services-status': return servicesStatus(deps);
+    case 'remove-services': return removeServices(deps);
     case 'seal': return ownerStep(deps, 'seal', cl);
     case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
     // OB-257: head office's own jobs on this computer, each by the people whose act it is.

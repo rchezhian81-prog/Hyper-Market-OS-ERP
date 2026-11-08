@@ -2731,6 +2731,9 @@ export async function startApi(
     credentialUse: secretUse.record,
     newTraceId: () => `t-${Math.random().toString(36).slice(2, 10)}`,
     port: Number(settings['PORT']),
+    // ADR-0032 (CR-01 step 1): on the store computer the API runs as a Windows service and listens on that PC only.
+    // Unset in a container, where compose decides what is published.
+    ...(settings['API_LISTEN_HOST'] === undefined ? {} : { host: settings['API_LISTEN_HOST'] }),
     dependenciesReachable: reachable,
   });
 
