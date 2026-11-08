@@ -280,6 +280,125 @@ jobs:
           Get-ChildItem C:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
           Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Postgre|SRE' } | Format-List TimeCreated, ProviderName, Message
 
+  store-pc-setup:
+    name: SRE-Setup.exe on a clean Windows — one setup program, no typed command (CR-01 OI-01)
+    # CR-01 step 2a: the release folder is built (scripts/build-store-pc-release.mjs), Inno Setup makes SRE-Setup.exe from
+    # it (infra/windows/sre-setup.iss), and the setup program is run ONCE, silently, on a clean Windows machine — no typed
+    # command, no Docker, nothing downloaded by the setup itself. Then Windows is asked about every claim, the same check as
+    # step 1 (tests/windows/store-pc-on-windows.check.mjs). It is run a second time (nothing replaced), then uninstalled:
+    # the three services go and the shop's data folder stays. The setup program is kept as this run's artifact.
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      SRE_TEST_ON_HOSTED_RUNNER: '1'
+      PG_VERSION: 16.4-1
+      PG_ZIP_SHA256: 3508d8f085bc3980f38211a82e3f31e5fcae9952105d3dc2f8be67b64a822baa
+      WINSW_VERSION: v2.12.0
+      WINSW_SHA256: 05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $pgZip = Join-Path $dir 'postgresql.zip'
+          $winsw = Join-Path $dir 'WinSW-x64.exe'
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
+            $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
+            if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
+          }
+          tar -xf $pgZip -C $dir
+          "PGSQL=$dir\pgsql" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "WINSW=$winsw" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build the release folder and SRE-Setup.exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'sre-release'
+          $out = Join-Path $env:RUNNER_TEMP 'sre-setup'
+          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)"
+          if ($LASTEXITCODE -ne 0) { throw 'the release folder was not built' }
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DStageDir=$stage" "/DAppVersion=0.0.0-ci.$($env:GITHUB_RUN_NUMBER)" "/DOutDir=$out" infra\windows\sre-setup.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup did not build SRE-Setup.exe' }
+          $setup = Join-Path $out 'SRE-Setup.exe'
+          Write-Output ("SRE-Setup.exe: {0:N0} MB" -f ((Get-Item $setup).Length / 1MB))
+          "SETUP_EXE=$setup" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Run SRE-Setup.exe once, silently — no typed command
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DATADRIVE=D:' -Wait -PassThru
+          Get-Content C:\ProgramData\SRE\setup.log
+          if ($p.ExitCode -ne 0) { throw "SRE-Setup.exe exit $($p.ExitCode)" }
+
+      - name: Prove it — ask Windows about every claim
+        shell: pwsh
+        run: |
+          $env:PG_BIN = 'C:\Program Files\SRE Retail OS\runtime\pgsql\bin'
+          node tests/windows/store-pc-on-windows.check.mjs "$env:RUNNER_TEMP\store-pc-setup-proof.json" D:\SRE-data
+          if ($LASTEXITCODE -ne 0) { throw 'a claim did not hold' }
+
+      - name: Run it again — nothing that is there is replaced
+        shell: pwsh
+        run: |
+          $before = (Get-FileHash D:\SRE-data\.env.real).Hash
+          $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content C:\ProgramData\SRE\setup.log -Tail 20; throw "second run exit $($p.ExitCode)" }
+          if ((Get-FileHash D:\SRE-data\.env.real).Hash -ne $before) { throw 'the settings file changed on the second run' }
+          Select-String -Path C:\ProgramData\SRE\setup.log -Pattern 'are KEPT' | Select-Object -Last 2
+          & 'C:\Program Files\SRE Retail OS\runtime\node\node.exe' 'C:\Program Files\SRE Retail OS\scripts\store-computer.mjs' services-status
+          if ($LASTEXITCODE -ne 0) { throw 'the services are not all running after the second run' }
+
+      - name: Uninstall — the services go, the shop's data stays
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'C:\Program Files\SRE Retail OS\unins000.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          Start-Sleep -Seconds 5
+          foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { if (Get-Service $n -ErrorAction SilentlyContinue) { throw "$n is still installed" } }
+          foreach ($f in 'D:\SRE-data\.env.real','D:\SRE-data\database\PG_VERSION','D:\SRE-data\till\till.env') { if (-not (Test-Path $f)) { throw "$f was removed" } }
+          Write-Output 'Uninstalled: the three services are gone; the settings, the database folder and the till data are kept.'
+
+      - name: Keep the setup program and the proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-pc-setup
+          path: |
+            ${{ runner.temp }}/sre-setup/SRE-Setup.exe
+            ${{ runner.temp }}/store-pc-setup-proof.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: On failure — the setup's own words and the services' last words
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content C:\ProgramData\SRE\setup.log -ErrorAction SilentlyContinue
+          foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
+          Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
+
   deploy:
     name: The container builds, starts, and refuses a bad configuration
     runs-on: ubuntu-latest

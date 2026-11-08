@@ -407,9 +407,9 @@ describe('migrate-data-folder --data-drive — a data folder already set up move
     expect(existsSync(join(w.data, '.env.real'))).toBe(true);
   });
 
-  it('--data-drive goes with doctor, prepare and migrate-data-folder only', async () => {
+  it('--data-drive goes with doctor, prepare, setup and migrate-data-folder only', async () => {
     const { w, deps, drive } = setUp();
     expect(await main(['status', '--data-drive', drive], deps)).toBe(2);
-    expect(said(w)).toMatch(/--data-drive goes with doctor, prepare and migrate-data-folder only/);
+    expect(said(w)).toMatch(/--data-drive goes with doctor, prepare, setup and migrate-data-folder only/);
   });
 });
