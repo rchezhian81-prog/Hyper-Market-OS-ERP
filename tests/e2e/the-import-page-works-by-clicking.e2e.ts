@@ -23,7 +23,8 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const SHOP = [['TEST SHOP'], ['1 Test Road']];
 const EAN = [['Item Id', 'Item Name', 'EanCode'], ['11', 'TEST RICE 1KG', '8901234567890'], ['12', 'TEST DAL 500G', '8901234567911']];
 const HSN = [['Item Id', 'Item Name', 'Hsn Code', 'Item Quantity', 'Gst %'], ['11', 'TEST RICE 1KG', '10063020', '500', '5'], ['12', 'TEST DAL 500G', '07133100', '300', '5']];
-const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/11/2026', '1', '11', '60', '60', '70', '80'], ['01/11/2026', '1', '12', '50', '50', '60', '65']];
+const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/11/2026', '1', '11', '60', '60', '70', '80']];
+const BUYS_EARLIER = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/09/2026', '1', '12', '50', '50', '60', '65']];
 
 describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-704)', () => {
   let browser: Browser; let server: Server; let base = ''; let dir = '';
@@ -41,7 +42,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     server = createServer((rq, rs) => { void app(rq, rs); });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    for (const [name, rows] of [['EANCODE.xlsx', EAN], ['HSN.xlsx', HSN], ['Product_wise_Detail_Report.xlsx', BUYS]] as const) writeFileSync(join(dir, name), xlsx([...SHOP, ...rows]));
+    for (const [name, rows] of [['EANCODE.xlsx', EAN], ['HSN.xlsx', HSN], ['Purchases-1.xlsx', BUYS_EARLIER], ['Purchases-2.xlsx', BUYS]] as const) writeFileSync(join(dir, name), xlsx([...SHOP, ...rows]));
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 90_000);
   afterAll(async () => { await browser?.close(); await new Promise<void>((r) => server.close(() => r())); });
@@ -61,14 +62,13 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.waitForSelector('#start:not([hidden])');
     expect(await page.textContent('#who')).toBe('Signed in: owner-01');
 
-    await page.setInputFiles('#f-ean', join(dir, 'EANCODE.xlsx'));
-    await page.setInputFiles('#f-hsn', join(dir, 'HSN.xlsx'));
-    await page.setInputFiles('#f-buys', join(dir, 'Product_wise_Detail_Report.xlsx'));
-    await page.fill('#rates-from', '2026-11-06');
+    // OB-706: every file in ONE choice, any order; the page tells them apart. The backup day is asked the first time only.
+    expect(await page.isVisible('#backup-label')).toBe(true);
+    await page.setInputFiles('#f-all', [join(dir, 'Purchases-2.xlsx'), join(dir, 'HSN.xlsx'), join(dir, 'Purchases-1.xlsx'), join(dir, 'EANCODE.xlsx')]);
     await page.fill('#backup-on', '2026-11-06');
     await page.click('#read-form button[type=submit]');
     await page.waitForSelector('#work:not([hidden])');
-    expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items');
+    expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
     expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (0 ready item(s))');
 
     // The rice waits only for its label facts: open it, type them, save.
@@ -86,6 +86,10 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await dal.getByLabel(/Barcode\(s\) as printed/).fill('8901234567911');
     await dal.locator('.gap', { hasText: 'Barcode:' }).getByRole('button', { name: 'Save this fix' }).click();
     await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('msg')?.textContent ?? '').includes('not a pack barcode'));
+    await page.click('#back');
+    await page.waitForSelector('#backup-known:not([hidden])');
+    expect(await page.isVisible('#backup-label')).toBe(false);
+    expect(await page.textContent('#backup-known')).toContain('last restored and checked on 2026-11-06');
     expect(errors).toEqual([]);
   });
 });

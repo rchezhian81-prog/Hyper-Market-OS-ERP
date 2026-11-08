@@ -76,14 +76,12 @@
   <!-- 2. Imports -->
   <section id="start" hidden>
     <h2>Read the old system's reports</h2>
-    <p class="muted">Export these three reports from the old system to Excel (.xlsx), then choose them here. They are read on this computer and kept here; nothing is sent to the internet.</p>
+    <p class="muted">Export the reports from the old system to Excel (.xlsx): the barcode report (EANCODE), the HSN report and the Product wise Detail Report (all its 3-month files for the last 12 months). Then choose <b>all of them together</b> below — hold Ctrl and click each. The page works out which file is which by itself. They are read on this computer and kept here; nothing is sent to the internet.</p>
     <form id="read-form" class="row">
-      <label>Barcodes report (EANCODE) <input id="f-ean" type="file" accept=".xlsx,.xls" required /></label>
-      <label>HSN report <input id="f-hsn" type="file" accept=".xlsx,.xls" required /></label>
-      <label>Product wise Detail Report, last 12 months <input id="f-buys" type="file" accept=".xlsx,.xls" required /></label>
-      <label>Day the reports were exported <input id="rates-from" type="date" required /></label>
-      <label>Day the old system's backup was restored on another PC and checked <input id="backup-on" type="date" required /></label>
-      <button class="primary" type="submit">Read the reports</button>
+      <label>The old system's Excel files — all of them, together <input id="f-all" type="file" accept=".xlsx,.xls" multiple required /></label>
+      <p class="muted" id="backup-known" hidden></p>
+      <label id="backup-label" hidden>First time only: the day the old system's backup was restored on another PC and checked <input id="backup-on" type="date" /></label>
+      <button class="primary" type="submit">Read the files</button>
     </form>
     <h3>Imports already read</h3>
     <div id="imports" class="items"></div>
@@ -156,6 +154,16 @@ async function showImports() {
   $('work').hidden = true; $('loads').hidden = true; $('start').hidden = false; current = null;
   const r = await api('GET', '/api/imports');
   const box = $('imports'); box.replaceChildren();
+  // MG-02: the backup check day is asked once, then remembered (the newest import's), with a way to give a newer one.
+  const lastBackup = r.imports.map((i) => i.backupRestoredOn).filter(Boolean).sort().at(-1);
+  $('backup-known').hidden = lastBackup === undefined;
+  $('backup-label').hidden = lastBackup !== undefined;
+  if (lastBackup !== undefined) {
+    $('backup-known').textContent = `The old system's backup was last restored and checked on ${lastBackup}. `;
+    const change = document.createElement('a'); change.href = '#'; change.textContent = 'A newer check was done? Change';
+    change.addEventListener('click', (e) => { e.preventDefault(); $('backup-label').hidden = false; $('backup-known').hidden = true; });
+    $('backup-known').append(change);
+  }
   if (r.imports.length === 0) { box.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'None yet.' })); return; }
   for (const i of r.imports) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'tile';
@@ -169,10 +177,10 @@ async function showImports() {
 
 const asBase64 = (file) => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => bad(new Error(`${file.name} could not be read.`)); r.readAsDataURL(file); });
 $('read-form').addEventListener('submit', run(async () => {
-  const pick = async (id) => { const f = $(id).files[0]; return { name: f.name, base64: await asBase64(f) }; };
-  say('Reading the reports… this takes up to a minute for a big file.', 'info');
-  const r = await api('POST', '/api/imports', { files: { ean: await pick('f-ean'), hsn: await pick('f-hsn'), purchases: await pick('f-buys') }, ratesFrom: $('rates-from').value, backupRestoredOn: $('backup-on').value });
-  say(`Read: ${r.items} packaged-grocery items. Purchase report: ${r.purchaseRows} rows, from ${r.purchasesFrom || '?'} to ${r.purchasesTo || '?'}.`, 'good');
+  const files = []; for (const f of $('f-all').files) files.push({ name: f.name, base64: await asBase64(f) });
+  say('Reading the files… this takes up to a minute for big files.', 'info');
+  const r = await api('POST', '/api/imports', { files, ...($('backup-label').hidden || $('backup-on').value === '' ? {} : { backupRestoredOn: $('backup-on').value }) });
+  say(`Read: ${r.items} packaged-grocery items. Barcodes: ${r.files.barcodes.length} file(s) · HSN: ${r.files.hsn.length} file(s) · prices: ${r.purchaseFiles} file(s), ${r.purchaseRows} rows, from ${r.purchasesFrom || '?'} to ${r.purchasesTo || '?'}.`, 'good');
   await openImport(r.importId);
 }));
 $('back').addEventListener('click', run(showImports));
