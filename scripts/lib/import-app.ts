@@ -187,40 +187,58 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
     }
 
     if (m === 'POST' && p === '/api/imports') {
-      // { files: { ean, hsn, purchases }: { name, base64 }, ratesFrom, backupRestoredOn }
+      // { files: { ean, hsn: { name, base64 }, purchases: [{ name, base64 }, …] }, ratesFrom, backupRestoredOn }. The old
+      // ERP exports its purchase report three months at a time (owner, 8 Nov 2026, OB-705): a year is several files, read
+      // together; a single { name, base64 } is still taken.
       const files = isObj(b['files']) ? b['files'] : {};
-      const got: Record<string, { name: string; bytes: Buffer }> = {};
-      for (const role of ['ean', 'hsn', 'purchases'] as const) {
-        const f = files[role];
-        if (!isObj(f) || typeof f['name'] !== 'string' || typeof f['base64'] !== 'string') throw new Said(400, `Choose the ${role === 'ean' ? 'barcode (EANCODE)' : role === 'hsn' ? 'HSN' : '12-month purchase (Product wise Detail)'} report.`);
-        got[role] = { name: f['name'], bytes: Buffer.from(f['base64'], 'base64') };
+      const one = (v: unknown): { name: string; bytes: Buffer } | undefined => (isObj(v) && typeof v['name'] === 'string' && typeof v['base64'] === 'string' ? { name: v['name'], bytes: Buffer.from(v['base64'], 'base64') } : undefined);
+      const ean = one(files['ean']);
+      const hsn = one(files['hsn']);
+      const buys = (Array.isArray(files['purchases']) ? files['purchases'] : [files['purchases']]).map(one);
+      if (ean === undefined) throw new Said(400, 'Choose the barcode (EANCODE) report.');
+      if (hsn === undefined) throw new Said(400, 'Choose the HSN report.');
+      if (buys.length === 0 || buys.some((f) => f === undefined)) throw new Said(400, 'Choose the Product wise Detail Report file(s) — all the 3-month files for the last 12 months, together.');
+      const purchases = buys as { name: string; bytes: Buffer }[];
+      if (purchases.length > 12) throw new Said(400, 'Choose at most 12 Product wise Detail Report files (a year in 3-month pieces is 4 or 5).');
+      const seenDigest = new Map<string, string>();
+      for (const f of purchases) {
+        const d = sha256(f.bytes);
+        if (seenDigest.has(d)) throw new Said(400, `${f.name} and ${seenDigest.get(d)} are the same file — each 3-month piece is chosen once. Nothing was read.`);
+        seenDigest.set(d, f.name);
       }
+      const got: { role: string; name: string; bytes: Buffer }[] = [{ role: 'ean', ...ean }, { role: 'hsn', ...hsn }, ...purchases.map((f, i) => ({ role: `purchases-${i + 1}`, ...f }))];
       const ratesFrom = typeof b['ratesFrom'] === 'string' ? b['ratesFrom'] : '';
       const backup = typeof b['backupRestoredOn'] === 'string' ? b['backupRestoredOn'] : '';
       if (!/^\d{4}-\d{2}-\d{2}$/.test(ratesFrom)) throw new Said(400, 'Give the day the reports were exported from the old system.');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(backup)) throw new Said(400, 'Give the day the old system\'s backup was restored on another PC and checked (MG-02).');
-      const table = (role: string, header: string): Record<string, string>[] => {
-        try { return readXlsxTable(got[role]!.bytes, header); } catch (e) { throw new Said(422, `${got[role]!.name}: ${e instanceof Error ? e.message : String(e)}`); }
+      const table = (f: { name: string; bytes: Buffer }, header: string): Record<string, string>[] => {
+        try { return readXlsxTable(f.bytes, header); } catch (e) { throw new Said(422, `${f.name}: ${e instanceof Error ? e.message : String(e)}`); }
       };
-      const purchaseRows = table('purchases', 'Item Id');
+      // Each purchase file is checked on its own, so a wrong one is named; then their rows are read as one report.
+      const purchaseRows: Record<string, string>[] = [];
+      for (const f of purchases) {
+        const rows = table(f, 'Item Id');
+        const check = readPurchaseReport(rows);
+        if (check.problems.length > 0) throw new Said(422, `${f.name} cannot give the prices: ${check.problems.join('; ')}. Choose the Product wise Detail Report (it has Purc Date, Cost, NetCost, Selling and MRP).`);
+        purchaseRows.push(...rows);
+      }
       const reading = readPurchaseReport(purchaseRows);
-      if (reading.problems.length > 0) throw new Said(422, `${got['purchases']!.name} cannot give the prices: ${reading.problems.join('; ')}. Choose the Product wise Detail Report (it has Purc Date, Cost, NetCost, Selling and MRP).`);
-      const analysis = analyseOldSystem({ eanRows: table('ean', 'Item Id'), hsnRows: table('hsn', 'Item Id'), purchaseRows, today: today() });
+      const analysis = analyseOldSystem({ eanRows: table(ean, 'Item Id'), hsnRows: table(hsn, 'Item Id'), purchaseRows, today: today() });
       if (analysis.items.length === 0) throw new Said(422, 'No packaged-grocery item was found in the HSN report. Is it the HSN report (Item Id, Hsn Code, Gst %)?');
       const importId = `bpal-${nowIso().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}`;
       const dir = dirOf(importId);
       if (existsSync(dir)) throw new Said(409, 'An import was read this same second — wait a moment and read again.');
       mkdirSync(join(dir, 'files'), { recursive: true });
-      for (const [role, f] of Object.entries(got)) writeOnce(join(dir, 'files', `${role}-${f.name.replace(/[^A-Za-z0-9._ -]/g, '_')}`), f.bytes);
+      for (const f of got) writeOnce(join(dir, 'files', `${f.role}-${f.name.replace(/[^A-Za-z0-9._ -]/g, '_')}`), f.bytes);
       const read: StoredRead = { importId, today: today(), ratesFrom, backupRestoredOn: backup, items: analysis.items };
       const readText = `${JSON.stringify(read)}\n`;
       writeOnce(join(dir, 'read.json'), readText);
       const r = await call('POST', `/v1/migration/old-system-imports/${encodeURIComponent(importId)}`, {
         source: 'bpal', readDigest: sha256(readText), items: analysis.items.length, ratesFrom, backupRestoredOn: backup,
-        files: Object.entries(got).map(([role, f]) => ({ role, name: f.name, bytes: f.bytes.length, digest: sha256(f.bytes) })),
+        files: got.map((f) => ({ role: f.role, name: f.name, bytes: f.bytes.length, digest: sha256(f.bytes) })),
       }, `old-import-${importId}`);
       if (r.status !== 201 && r.status !== 200) said(r, 'Head office did not record the import (the files stay on this PC)');
-      return { status: 201, json: { importId, items: analysis.items.length, purchaseRows: reading.rows, purchasesFrom: reading.oldest ?? null, purchasesTo: reading.newest ?? null } };
+      return { status: 201, json: { importId, items: analysis.items.length, purchaseFiles: purchases.length, purchaseRows: reading.rows, purchasesFrom: reading.oldest ?? null, purchasesTo: reading.newest ?? null } };
     }
 
     const im = /^\/api\/imports\/([A-Za-z0-9._-]+)(\/.*)?$/.exec(p);

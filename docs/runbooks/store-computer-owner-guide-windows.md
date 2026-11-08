@@ -679,8 +679,10 @@ When the GO is written:
      black window open while you work. The page is on this PC only: nobody else on the network can open it.
    - **Sign in** with your staff ID and your own till PIN. Every fix is saved in your name.
    - **Read the reports:** export from Bpal to Excel (.xlsx), from its report screens only — the **EANCODE** report, the
-     **HSN** report and the **Product wise Detail Report** for the last 12 months (in Bpal's date boxes the month comes
-     first: `11/01/2025` to `11/07/2026`). Choose the three files, give the day they were exported and the day Bpal's backup
+     **HSN** report and the **Product wise Detail Report** for the last 12 months. Bpal exports that one **three months
+     at a time**, so a year is 4 or 5 files (in Bpal's date boxes the month comes first: `11/01/2025`–`01/31/2026`,
+     `02/01/2026`–`04/30/2026`, `05/01/2026`–`07/31/2026`, `08/01/2026`–`10/31/2026`, `11/01/2026`–today); in the page's
+     price box choose **all of them together** (hold Ctrl and click each, OB-705). Choose the files, give the day they were exported and the day Bpal's backup
      was restored on another PC and checked (MG-02), and press **Read the reports**. They are kept on this PC
      (`<data folder>\imports`) and never sent to the internet.
    - **Fix the gaps**, best sellers first. The tiles count the items waiting on each kind of fix; open an item to fix it:

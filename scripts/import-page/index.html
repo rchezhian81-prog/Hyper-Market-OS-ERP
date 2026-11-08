@@ -80,7 +80,7 @@
     <form id="read-form" class="row">
       <label>Barcodes report (EANCODE) <input id="f-ean" type="file" accept=".xlsx,.xls" required /></label>
       <label>HSN report <input id="f-hsn" type="file" accept=".xlsx,.xls" required /></label>
-      <label>Product wise Detail Report, last 12 months <input id="f-buys" type="file" accept=".xlsx,.xls" required /></label>
+      <label>Product wise Detail Report — all the 3-month files for the last 12 months (hold Ctrl and click each) <input id="f-buys" type="file" accept=".xlsx,.xls" multiple required /></label>
       <label>Day the reports were exported <input id="rates-from" type="date" required /></label>
       <label>Day the old system's backup was restored on another PC and checked <input id="backup-on" type="date" required /></label>
       <button class="primary" type="submit">Read the reports</button>
@@ -171,8 +171,9 @@ const asBase64 = (file) => new Promise((ok, bad) => { const r = new FileReader()
 $('read-form').addEventListener('submit', run(async () => {
   const pick = async (id) => { const f = $(id).files[0]; return { name: f.name, base64: await asBase64(f) }; };
   say('Reading the reports… this takes up to a minute for a big file.', 'info');
-  const r = await api('POST', '/api/imports', { files: { ean: await pick('f-ean'), hsn: await pick('f-hsn'), purchases: await pick('f-buys') }, ratesFrom: $('rates-from').value, backupRestoredOn: $('backup-on').value });
-  say(`Read: ${r.items} packaged-grocery items. Purchase report: ${r.purchaseRows} rows, from ${r.purchasesFrom || '?'} to ${r.purchasesTo || '?'}.`, 'good');
+  const buys = []; for (const f of $('f-buys').files) buys.push({ name: f.name, base64: await asBase64(f) });
+  const r = await api('POST', '/api/imports', { files: { ean: await pick('f-ean'), hsn: await pick('f-hsn'), purchases: buys }, ratesFrom: $('rates-from').value, backupRestoredOn: $('backup-on').value });
+  say(`Read: ${r.items} packaged-grocery items. Purchase report: ${r.purchaseFiles} file(s), ${r.purchaseRows} rows, from ${r.purchasesFrom || '?'} to ${r.purchasesTo || '?'}.`, 'good');
   await openImport(r.importId);
 }));
 $('back').addEventListener('click', run(showImports));

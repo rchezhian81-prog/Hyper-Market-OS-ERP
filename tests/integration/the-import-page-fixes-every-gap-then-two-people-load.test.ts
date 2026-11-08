@@ -40,8 +40,10 @@ const HSN = [['serial_no', 'Item Id', 'Item Name', 'Hsn Code', 'Item Quantity', 
   ['1', '11', 'TEST RICE 1KG', '10063020', '500', '5', '0', '0'], ['2', '12', 'TEST DAL 500G', '07133100', '300', '5', '0', '0'],
   ['3', '13', 'TEST TEA 250G', '09023020', '200', '5', '0', '0'], ['4', '13', 'TEST TEA 250G', '09023020', '9', '0', '0', '0'],
   ['5', '14', 'TEST OIL 1L', '15079010', '100', '5', '0', '0']];
-const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Item Name', 'Qty', 'Cost', 'NetCost', 'Selling', 'MRP'],
-  ['01/11/2026', '1', '11', 'TEST RICE 1KG', '10', '60', '60', '70', '80'], ['01/11/2026', '1', '13', 'TEST TEA 250G', '10', '90', '90', '100', '110'], ['01/11/2026', '1', '14', 'TEST OIL 1L', '10', '150', '150', '170', '180']];
+const BUY_HEAD = ['Purc Date', 'Purc No', 'Item Id', 'Item Name', 'Qty', 'Cost', 'NetCost', 'Selling', 'MRP'];
+// OB-705: the old ERP exports its purchase report three months at a time — a year comes as several files.
+const BUYS_EARLY = [BUY_HEAD, ['15/12/2025', '7', '11', 'TEST RICE 1KG', '10', '55', '55', '65', '75'], ['15/12/2025', '7', '14', 'TEST OIL 1L', '10', '150', '150', '170', '180']];
+const BUYS_LATE = [BUY_HEAD, ['01/11/2026', '1', '11', 'TEST RICE 1KG', '10', '60', '60', '70', '80'], ['01/11/2026', '1', '13', 'TEST TEA 250G', '10', '90', '90', '100', '110']];
 const LABEL = { allergens: 'none', country_of_origin: 'India', net_quantity: '500 g', packer: 'Test Foods, Chennai', consumer_care: '1800 000 000' };
 
 function personClient(get: () => ApiHarness): SetupClient {
@@ -92,8 +94,17 @@ describe.each(backings)('the import page fixes every gap, then two people load �
 
       // ── read the three reports ─────────────────────────────────────────────────────────────────────────────
       const b64 = (rows: string[][]) => xlsx([...SHOP, ...rows]).toString('base64');
-      const read = await call(owner, 'POST', '/api/imports', { files: { ean: { name: 'EANCODE.xlsx', base64: b64(EAN) }, hsn: { name: 'HSN.xlsx', base64: b64(HSN) }, purchases: { name: 'Product_wise_Detail_Report.xlsx', base64: b64(BUYS) } }, ratesFrom: '2026-11-06', backupRestoredOn: '2026-11-06' });
+      const files = (purchases: unknown) => ({ files: { ean: { name: 'EANCODE.xlsx', base64: b64(EAN) }, hsn: { name: 'HSN.xlsx', base64: b64(HSN) }, purchases }, ratesFrom: '2026-11-06', backupRestoredOn: '2026-11-06' });
+      // The same 3-month file chosen twice, and a file that is not the price report, are refused by name — nothing read.
+      const twice = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Purchases-1 copy.xlsx', base64: b64(BUYS_EARLY) }]));
+      expect(twice.status).toBe(400);
+      expect(String(twice.body['error'])).toContain('are the same file');
+      const wrongOne = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Distributor Invoice.xlsx', base64: b64([['Grn No', 'Item Id', 'Purchase Qty'], ['1', '11', '5']]) }]));
+      expect(wrongOne.status).toBe(422);
+      expect(String(wrongOne.body['error'])).toMatch(/^Distributor Invoice\.xlsx cannot give the prices/);
+      const read = await call(owner, 'POST', '/api/imports', files([{ name: 'Purchases-1.xlsx', base64: b64(BUYS_EARLY) }, { name: 'Purchases-5.xlsx', base64: b64(BUYS_LATE) }]));
       expect(read.status, JSON.stringify(read.body)).toBe(201);
+      expect(read.body).toMatchObject({ purchaseFiles: 2, purchaseRows: 4, purchasesFrom: '2025-12-15', purchasesTo: '2026-11-01' });
       const id = read.body['importId'] as string;
       expect(read.body['items']).toBe(4);
       expect(existsSync(join(dataDir, id, 'read.json'))).toBe(true);
