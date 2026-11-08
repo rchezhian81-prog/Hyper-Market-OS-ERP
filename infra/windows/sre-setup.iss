@@ -42,6 +42,8 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=SRE Retail OS
 SetupLogging=yes
+; The services are stopped by PrepareToInstall below; Windows' own "close the applications" step is not needed.
+CloseApplications=no
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -63,6 +65,19 @@ begin
     Result := ''
   else
     Result := ' --data-drive ' + Drive;
+end;
+
+// Run again (a repair, or an update later): the three services hold this program's files open, and Windows refuses to
+// replace a file in use. So they are stopped first — the till, then the office API, then the database — and the setup
+// step below starts them again. A service that is not there is simply not stopped. Nothing of the shop's data is touched.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Till /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-API /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Database /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Result := '';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

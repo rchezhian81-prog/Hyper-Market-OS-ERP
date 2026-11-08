@@ -145,6 +145,11 @@ describe('SRE-Setup.exe\'s own definition (infra/windows/sre-setup.iss)', () => 
     expect(iss).toContain('function GetCustomSetupExitCode(): Integer;');
     expect(iss).toContain('""{app}\\scripts\\store-computer.mjs"" remove-services');
     expect(iss).toContain('PrivilegesRequired=admin');
+    // Run again: the services hold the program's files, so they are stopped first, till first (seen on the clean-Windows
+    // run: the second run was refused with exit 5 while they ran); the setup step starts them again.
+    const stops = [...iss.matchAll(/'stop (SRE-[A-Za-z]+) \/y'/g)].map((m) => m[1]);
+    expect(stops).toEqual(['SRE-Till', 'SRE-API', 'SRE-Database']);
+    expect(iss).toContain('function PrepareToInstall(var NeedsRestart: Boolean): String;');
     // Uninstalling never deletes anything beyond the program's own files: no extra delete section, no folder wipe.
     expect(iss).not.toMatch(/DelTree|\[UninstallDelete\]/);
   });
