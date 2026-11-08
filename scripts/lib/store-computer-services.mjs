@@ -283,8 +283,8 @@ export function serviceConfig(deps, name) {
   const r = deps.spawn(SC, ['qc', name], {});
   const text = String(r.stdout ?? '');
   const start = /START_TYPE\s*:\s*(\d+)/.exec(text);
-  const account = /SERVICE_START_NAME\s*:\s*(.+)/.exec(text);
-  const dep = /DEPENDENCIES\s*:\s*(.*)/.exec(text);
+  const account = /SERVICE_START_NAME[ \t]*:[ \t]*([^\r\n]+)/.exec(text);
+  const dep = /DEPENDENCIES[ \t]*:[ \t]*([^\r\n]*)/.exec(text);
   return { auto: start !== null && Number(start[1]) === 2, account: account?.[1]?.trim(), dependsOn: dep?.[1]?.trim() ?? '' };
 }
 
@@ -464,7 +464,7 @@ async function installDatabase(deps, P, db) {
   if (!(await waitForState(deps, name, 'running'))) { say(`NOT STARTED — the shop database did not start. Windows' Event Viewer (Application) has its words.`); return 1; }
   const deadline = deps.now().getTime() + START_WAIT_MS;
   for (;;) {
-    const r = deps.spawn(P.pgProgram('pg_isready.exe'), ['-h', '127.0.0.1', '-p', db.port], {});
+    const r = deps.spawn(P.pgProgram('pg_isready.exe'), ['-h', '127.0.0.1', '-p', db.port, '-U', db.admin, '-d', 'postgres'], {});
     if (ran(r)) break;
     if (deps.now().getTime() >= deadline) { say('NOT STARTED — the shop database is running but does not answer on this PC.'); return 1; }
     await deps.sleep(2_000);

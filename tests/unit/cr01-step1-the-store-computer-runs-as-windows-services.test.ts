@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join, win32 } from 'node:path';
 import { main, parseEnvText, type Deps, type SpawnResult } from '../../scripts/lib/store-computer.mjs';
 import {
-  API_KEYS, DB_CONF_INCLUDE, OWN_SERVICE_SIDS, SERVICES, accountOf, databaseSetupSql, hostDatabaseUrl, hostXml, serviceEnv,
+  API_KEYS, DB_CONF_INCLUDE, serviceConfig, OWN_SERVICE_SIDS, SERVICES, accountOf, databaseSetupSql, hostDatabaseUrl, hostXml, serviceEnv,
   servicePaths, serviceSid,
 } from '../../scripts/lib/store-computer-services.mjs';
 import { dataLockRow, hostedTestMachine } from '../../scripts/lib/store-computer-windows.mjs';
@@ -350,6 +350,11 @@ describe('what each service is handed when it starts (the launcher, scripts/stor
 });
 
 describe('the pieces, on their own', () => {
+  it('reads `sc qc` as Windows prints it — an empty DEPENDENCIES line is empty, not the next line (seen on the clean-Windows run)', () => {
+    const qc = (deps: string) => ({ say: () => {}, spawn: () => ({ status: 0, stdout: `[SC] QueryServiceConfig SUCCESS\r\n\r\nSERVICE_NAME: SRE-Till\r\n        START_TYPE         : 2   AUTO_START\r\n        DEPENDENCIES       : ${deps}\r\n        SERVICE_START_NAME : NT SERVICE\\SRE-Till\r\n` }) }) as unknown as Deps;
+    expect(serviceConfig(qc(''), 'SRE-Till')).toEqual({ auto: true, account: 'NT SERVICE\\SRE-Till', dependsOn: '' });
+    expect(serviceConfig(qc('SRE-Database'), 'SRE-API').dependsOn).toBe('SRE-Database');
+  });
   it('a service\'s SID is the one Windows makes (TrustedInstaller, as `sc showsid` prints it)', () => {
     expect(serviceSid('TrustedInstaller')).toBe('S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464');
     expect(serviceSid('trustedinstaller')).toBe(serviceSid('TrustedInstaller'));

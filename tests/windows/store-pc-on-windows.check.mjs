@@ -44,7 +44,7 @@ for (const name of SERVICE_ORDER) {
   check(`${name} runs, starts by itself at boot, as ${accountOf(name)}`, state(name) === 'RUNNING' && auto && account.toLowerCase() === accountOf(name).toLowerCase(), `state ${state(name)}; auto ${auto}; account ${account || 'unknown'}`);
   check(`${name}'s account SID is the one its folder rights were given to`, sid === serviceSid(name), `Windows: ${sid || 'none'}; ours: ${serviceSid(name)}`);
 }
-const deps = (name) => /DEPENDENCIES\s*:\s*([^\r\n]*)/.exec(sc('qc', name))?.[1]?.trim() ?? '';
+const deps = (name) => /DEPENDENCIES[ \t]*:[ \t]*([^\r\n]*)/.exec(sc('qc', name))?.[1]?.trim() ?? '';
 check('the API waits for the database; the till waits for nothing (P-01)', deps(SERVICES.api).includes(SERVICES.database) && deps(SERVICES.till) === '', `API depends on "${deps(SERVICES.api)}"; till on "${deps(SERVICES.till)}"`);
 
 // 2 — They answer, on this PC.

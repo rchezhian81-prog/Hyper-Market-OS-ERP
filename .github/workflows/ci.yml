@@ -200,11 +200,11 @@ jobs:
       SRE_TEST_ON_HOSTED_RUNNER: '1'
       # PostgreSQL 16 — the same major version the containers run (postgres:16-alpine). The binaries archive is fetched
       # from EnterpriseDB, the project's own Windows build; WinSW is the service host for the two Node services (MIT).
-      # Each download's SHA-256 is printed; once pinned here, a different file fails the job by name.
+      # Each download's SHA-256 is pinned here (first seen on run 1974, 8 Nov 2026): a different file fails the job by name.
       PG_VERSION: 16.4-1
-      PG_ZIP_SHA256: ''
+      PG_ZIP_SHA256: 3508d8f085bc3980f38211a82e3f31e5fcae9952105d3dc2f8be67b64a822baa
       WINSW_VERSION: v2.12.0
-      WINSW_SHA256: ''
+      WINSW_SHA256: 05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -266,7 +266,7 @@ jobs:
 
       - name: Keep the proof
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: store-pc-windows-proof
           path: ${{ runner.temp }}/store-pc-windows-proof.json
