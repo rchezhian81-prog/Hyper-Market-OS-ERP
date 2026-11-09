@@ -230,8 +230,8 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           $pgZip = Join-Path $dir 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             Write-Output "$($f.what) SHA-256: $got"
@@ -320,8 +320,8 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           $pgZip = Join-Path $dir 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
@@ -438,8 +438,8 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           $pgZip = Join-Path $dir 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
