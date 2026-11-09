@@ -221,6 +221,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Keep the two downloads between runs (PostgreSQL 16 and the service host, pinned by SHA-256)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sre-downloads
+          key: sre-downloads-${{ env.PG_ZIP_SHA256 }}-${{ env.WINSW_SHA256 }}
+
       - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
         shell: pwsh
         run: |
@@ -228,10 +234,15 @@ jobs:
           $ProgressPreference = 'SilentlyContinue'
           $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
           New-Item -ItemType Directory -Force $dir | Out-Null
-          $pgZip = Join-Path $dir 'postgresql.zip'
+          $cache = Join-Path $env:RUNNER_TEMP 'sre-downloads'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          $pgZip = Join-Path $cache 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
+          $winswDl = Join-Path $cache 'WinSW-x64.exe'
+          # Downloaded only when the job cache does not already hold them; the SHA-256 pins below check either way.
+          if (-not (Test-Path $pgZip)) { Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          if (-not (Test-Path $winswDl)) { Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winswDl -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          Copy-Item $winswDl $winsw -Force
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             Write-Output "$($f.what) SHA-256: $got"
@@ -311,6 +322,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Keep the two downloads between runs (PostgreSQL 16 and the service host, pinned by SHA-256)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sre-downloads
+          key: sre-downloads-${{ env.PG_ZIP_SHA256 }}-${{ env.WINSW_SHA256 }}
+
       - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
         shell: pwsh
         run: |
@@ -318,10 +335,15 @@ jobs:
           $ProgressPreference = 'SilentlyContinue'
           $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
           New-Item -ItemType Directory -Force $dir | Out-Null
-          $pgZip = Join-Path $dir 'postgresql.zip'
+          $cache = Join-Path $env:RUNNER_TEMP 'sre-downloads'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          $pgZip = Join-Path $cache 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
+          $winswDl = Join-Path $cache 'WinSW-x64.exe'
+          # Downloaded only when the job cache does not already hold them; the SHA-256 pins below check either way.
+          if (-not (Test-Path $pgZip)) { Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          if (-not (Test-Path $winswDl)) { Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winswDl -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          Copy-Item $winswDl $winsw -Force
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
@@ -429,6 +451,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Keep the two downloads between runs (PostgreSQL 16 and the service host, pinned by SHA-256)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sre-downloads
+          key: sre-downloads-${{ env.PG_ZIP_SHA256 }}-${{ env.WINSW_SHA256 }}
+
       - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
         shell: pwsh
         run: |
@@ -436,10 +464,15 @@ jobs:
           $ProgressPreference = 'SilentlyContinue'
           $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
           New-Item -ItemType Directory -Force $dir | Out-Null
-          $pgZip = Join-Path $dir 'postgresql.zip'
+          $cache = Join-Path $env:RUNNER_TEMP 'sre-downloads'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          $pgZip = Join-Path $cache 'postgresql.zip'
           $winsw = Join-Path $dir 'WinSW-x64.exe'
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw -MaximumRetryCount 4 -RetryIntervalSec 15
+          $winswDl = Join-Path $cache 'WinSW-x64.exe'
+          # Downloaded only when the job cache does not already hold them; the SHA-256 pins below check either way.
+          if (-not (Test-Path $pgZip)) { Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          if (-not (Test-Path $winswDl)) { Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winswDl -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          Copy-Item $winswDl $winsw -Force
           foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
             $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
             if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
