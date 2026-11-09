@@ -51,7 +51,7 @@ import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBacku
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
 import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
-import { driveChoices, firstRun, releaseInfo } from './store-computer-setup.mjs';
+import { driveChoices, firstRun, releaseInfo, writeShortcuts } from './store-computer-setup.mjs';
 import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
@@ -1254,6 +1254,7 @@ export const USAGE = [
   '                                           install a new release, keeping every sale, setting and record',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
   '  setup-screens                            the first-run screens in this PC\'s browser (what SRE-Setup.exe opens)',
+  '  shortcuts [--only till,office,import]    the desktop shortcuts: the till, the office pages, import & export',
   '  setup [--data-drive D:] [--lane lane-1]   what the setup program runs: this copy\'s settings (made once, or kept),',
   '                                           the till, and the three Windows services (CR-01 step 2)',
   '  install-services --pg-bin <PostgreSQL bin folder> --service-host <WinSW.exe>',
@@ -1327,15 +1328,16 @@ export async function importPage(deps) {
   if (L.dataRoot === undefined) { say('REFUSED — this copy keeps its data inside the release folder. Move it first: pnpm run store-computer -- migrate-data-folder'); return 2; }
   if (!deps.fs.existsSync(L.tillEnv)) { say('REFUSED — the till is not installed yet (owner guide Part 13): the import page signs people in with their till PIN.'); return 2; }
   const env = composeEnv(deps.env, {});
-  const built = deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
-  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the import page could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
   const p = pathFor(deps.platform);
+  // An installed release (release.json) brings the import page built, and has no build tools to build it with.
+  const built = deps.fs.existsSync(p.join(deps.repoRoot, 'release.json')) ? { status: 0 } : deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
+  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the import page could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
   if (deps.platform === 'win32' && typeof deps.env.USERPROFILE === 'string' && deps.env.USERPROFILE !== '') {
     try {
       writeLauncherIfMissing(deps, L);
       const desktop = p.join(deps.env.USERPROFILE, 'Desktop');
       if (deps.fs.existsSync(desktop)) {
-        deps.fs.writeFileSync(p.join(desktop, 'SRE Import.cmd'), `@echo off\r\nrem Opens the SRE "Import from the old system" page (this computer only). No secret is in this file.\r\ntitle SRE Import - keep this window open while you work\r\nnode "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');
+        deps.fs.writeFileSync(p.join(desktop, 'SRE Import.cmd'), `@echo off\r\nrem Opens the SRE "Import from the old system" page (this computer only). No secret is in this file.\r\ntitle SRE Import - keep this window open while you work\r\n"${deps.nodePath}" "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');
         say('The desktop now has "SRE Import": double-click it next time.');
       }
     } catch { say('(The desktop icon could not be written; the page still opens now.)'); }
@@ -1412,7 +1414,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1448,6 +1450,7 @@ export function parseCommandLine(argv) {
     else if (a === '--pg-bin') out.pgBin = value();
     else if (a === '--service-host') out.serviceHost = value();
     else if (a === '--lane') out.lane = value();
+    else if (a === '--only') out.only = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1490,6 +1493,7 @@ export async function main(argv, given) {
     case 'import': return importPage(deps);
     case 'setup-screens': return setupScreens(deps);
     case 'setup-state': return setupState(deps);
+    case 'shortcuts': return writeShortcuts(deps, { only: cl.only });
     case 'setup': return firstRun(deps, { dataDrive: cl.dataDrive, lane: cl.lane, pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'install-services': return installServices(deps, { pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'services-status': return servicesStatus(deps);

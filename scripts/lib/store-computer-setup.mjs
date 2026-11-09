@@ -15,7 +15,8 @@
 
 import { installServices } from './store-computer-services.mjs';
 import { adoptDockerCopy, dockerCopyToMove } from './store-computer-adopt.mjs';
-import { loadSettings, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
+import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
+import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
 
 /** The marker an installed release carries (written by scripts/build-store-pc-release.mjs). */
@@ -137,7 +138,57 @@ export async function firstRun(given, opts = {}) {
   const move = dockerCopyToMove(here, L);
   const done = move ? await adoptDockerCopy(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost }) : await installServices(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost });
   if (done !== 0) return done;
+  // An installed release is now the live one: the hourly backup, the red light and the import page's launcher run the
+  // store-computer tool from it (run\current-release.json), not from a release folder used before.
+  if (rel !== undefined) {
+    const before = currentRelease(here, L)?.folder;
+    writeLauncher(here, L, deps.repoRoot, before !== undefined && !sameFolder(deps.platform, before, deps.repoRoot) ? before : undefined);
+    if (before !== undefined && !sameFolder(deps.platform, before, deps.repoRoot)) say(`The live release is now ${deps.repoRoot} (it was ${before}); the automatic backup and the check run from it.`);
+  }
   say(`This shop's tenant id: ${now.settings.EDGE_TENANT_ID}  (${move || made === false ? 'kept' : 'made by this setup on this PC'}; a name, not a secret).`);
   say('SETUP DONE.');
+  return 0;
+}
+
+// ── Desktop shortcuts (CR-01 step 2d, OI-04) ─────────────────────────────────────────────────────────────────────────
+
+/** The three shortcuts the first-run screens offer, by the name `--only` takes. */
+export const SHORTCUTS = Object.freeze({
+  till: 'SRE Till.url',
+  office: 'SRE Office.url',
+  import: 'SRE Import & export.cmd',
+});
+
+/**
+ * `shortcuts [--only till,office,import]`: the chosen shortcuts on the desktop of the person running it — the till and the
+ * office pages (this PC's own screens, http://127.0.0.1:<screen port>), and the import & export page (the same launcher
+ * `import` writes). Re-writing one only renews it. No secret is in any of them.
+ */
+export function writeShortcuts(deps, opts = {}) {
+  const { say, fs } = deps;
+  if (deps.platform !== 'win32') { say('REFUSED — desktop shortcuts are for the store computer (Windows 10 or 11).'); return 2; }
+  const p = pathFor(deps.platform);
+  const L = resolveLayout(deps);
+  if (!fs.existsSync(L.settings) || L.dataRoot === undefined) { say('REFUSED — this PC is not set up yet. Run the setup first.'); return 2; }
+  const wanted = opts.only === undefined || String(opts.only).trim() === '' ? Object.keys(SHORTCUTS) : String(opts.only).split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const unknown = wanted.filter((w) => !Object.hasOwn(SHORTCUTS, w));
+  if (unknown.length > 0) { say(`REFUSED — not a shortcut this offers: ${unknown.join(', ')}. The shortcuts are: ${Object.keys(SHORTCUTS).join(', ')}.`); return 2; }
+  const profile = String(deps.env?.USERPROFILE ?? '').trim();
+  const desktop = profile === '' ? '' : p.join(profile, 'Desktop');
+  if (desktop === '' || !fs.existsSync(desktop)) { say('NOT DONE — this Windows account has no Desktop folder to put the shortcuts on.'); return 1; }
+  const till = fs.existsSync(L.tillEnv) ? parseEnvText(fs.readFileSync(L.tillEnv, 'utf8')) : {};
+  const screens = `http://127.0.0.1:${till.EDGE_SCREEN_PORT || '8091'}`;
+  const url = (address) => `[InternetShortcut]\r\nURL=${address}\r\n`;
+  for (const w of wanted) {
+    const file = p.join(desktop, SHORTCUTS[w]);
+    if (w === 'till') fs.writeFileSync(file, url(`${screens}/pos/`), 'utf8');
+    else if (w === 'office') fs.writeFileSync(file, url(`${screens}/manager/`), 'utf8');
+    else {
+      writeLauncher(deps, L, currentRelease(deps, L)?.folder ?? deps.repoRoot);
+      fs.writeFileSync(file, `@echo off\r\nrem Opens the SRE "Import & export" page (this computer only). No secret is in this file.\r\ntitle SRE Import and export - keep this window open while you work\r\n"${deps.nodePath}" "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');
+    }
+    say(`ON THE DESKTOP — "${SHORTCUTS[w].replace(/\.(url|cmd)$/, '')}".`);
+  }
+  say(`About this PC (its tenant id and release): ${screens}/about/`);
   return 0;
 }

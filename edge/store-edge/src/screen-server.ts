@@ -48,6 +48,7 @@ import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage
 import { rolesAtThisStore } from './office-sign-in';
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
+import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -461,6 +462,8 @@ export function startScreenServer(input: {
    * on the shop network. Absent: the panel's paths answer 404, as on a box with no screens for it.
    */
   readonly handheldSeal?: () => HandheldSealSource;
+  /** CR-01 step 2d (OI-03): what the About screen says — the shop's tenant id, the store, the till, the release. */
+  readonly about?: () => AboutFacts;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -681,6 +684,11 @@ export function startScreenServer(input: {
       }
       if (req.method !== 'GET') {
         send(res, 405, 'text/plain; charset=utf-8', 'this box serves screens, and only reads');
+        return;
+      }
+      // CR-01 step 2d (OI-03): the About screen — names only, on this loopback socket only.
+      if (input.about !== undefined && (doorPath === ABOUT_PATH || doorPath === ABOUT_PATH.slice(0, -1))) {
+        page(res, 200, aboutPage(input.about()));
         return;
       }
       const redirect = redirectFor(req.url ?? '/');

@@ -182,6 +182,11 @@ const handle = createSetupDoor({
   page: readFileSync(join(ROOT, 'scripts', 'setup-page', 'index.html'), 'utf8'),
   state,
   install: async (a, p) => { const ok = await install(a, steps, p); markDone(p); return ok; },
+  shortcuts: async (chosen) => {
+    const lines: string[] = [];
+    const code = await runTool(['shortcuts', '--only', chosen.join(',')], (l) => { lines.push(l); });
+    return { ok: code === 0, lines };
+  },
   keep: async (p) => {
     const code = await runTool(['setup'], (l) => { p.lines.push(l); });
     p.done = true;

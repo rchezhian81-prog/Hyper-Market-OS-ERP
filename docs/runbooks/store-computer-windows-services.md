@@ -63,7 +63,7 @@ Apps → SRE Retail OS → Uninstall) removes the program and the three services
 For a technician or a test, silently: `SRE-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DATADRIVE=D:`. Its exit
 code is 0 only when the setup said SETUP DONE.
 
-Not yet (CR-01 step 2d): desktop shortcuts and the About screen. 
+ 
 
 ## The first-run screens (CR-01 step 2b)
 
@@ -102,3 +102,14 @@ After the move the tool reaches the database as a service: `backup` (same one-sn
 `check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill and `update` refuse in plain words:
 their Windows versions come with the one-click update (CR-01 step 3). Docker Desktop can be uninstalled later; its stopped
 copy is the only thing it still holds.
+
+## Desktop shortcuts and the About screen (CR-01 step 2d)
+
+The first-run screens' last page offers three desktop shortcuts once the setup has finished well: **SRE Till** (the till,
+`http://127.0.0.1:8091/pos/`), **SRE Office** (the office pages, `/manager/`) and **SRE Import & export** (the import page,
+through the data folder's launcher). By hand: `pnpm run store-computer -- shortcuts [--only till,office,import]`.
+
+The **About** screen, `http://127.0.0.1:8091/about/` (this PC only, no sign-in, names only), shows the shop's tenant id
+(made by the setup program, never typed), the store, this till and the release.
+
+The owner's step-by-step for his store PC: `docs/runbooks/store-pc-move-checklist.md`.

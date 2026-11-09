@@ -171,7 +171,7 @@ export declare function doctorRows(deps: Deps, extra?: { edition?: import('./sto
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
-  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string; lane?: string;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string; lane?: string; only?: string;
   /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
   setup: Record<string, string>;
   problems: string[];

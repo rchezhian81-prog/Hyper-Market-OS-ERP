@@ -145,7 +145,9 @@ import { packRule, packTimeZone, packTradingDay, packCalendarDate, packWallClock
 import { foodHandlingRefusalAtTheDoor } from './workforce-pack'; // Round 7 · OB-502
 import { handlesFood } from '../../../packages/production/src/departments';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
 import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
@@ -2286,7 +2288,18 @@ export async function startEdge(
   const sealRelay: { current: () => HandheldSealSource } = {
     current: settings['EDGE_DEVICE_PORT'] === undefined ? () => ({ kind: 'no_door' }) : () => ({ kind: 'starting' }),
   };
+  // CR-01 step 2d (OI-03): the About screen — this shop's tenant id, its store, this till, the release this PC runs
+  // (release.json beside the release's apps folder, when this is an installed release).
+  const appsDirForAbout = settings['EDGE_APPS_DIR'] ?? 'apps';
+  const releaseText = (() => { try { return readFileSync(join(dirname(resolve(appsDirForAbout)), 'release.json'), 'utf8'); } catch { return undefined; } })();
+  const aboutFacts: AboutFacts = {
+    ...(settings['EDGE_TENANT_ID'] === undefined ? {} : { tenantId: settings['EDGE_TENANT_ID'] }),
+    ...(settings['EDGE_STORE_ID'] === undefined ? {} : { storeId: settings['EDGE_STORE_ID'] }),
+    ...(settings['EDGE_LANE_ID'] === undefined ? {} : { laneId: settings['EDGE_LANE_ID'] }),
+    ...releaseFrom(releaseText),
+  };
   const screens = screenPort === undefined ? null : await startScreenServer({
+    about: () => aboutFacts,
     handheldSeal: () => sealRelay.current(),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {
