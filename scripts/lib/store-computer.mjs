@@ -52,6 +52,7 @@ import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
 import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
 import { driveChoices, firstRun, releaseInfo } from './store-computer-setup.mjs';
+import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -594,6 +595,15 @@ export async function up(deps) {
   const placeholders = Object.entries(settings).filter(([k, v]) => v.includes(PLACEHOLDER) && !k.startsWith('KEYCLOAK_')).map(([k]) => k);
   if (placeholders.length > 0) { say(`REFUSED — the settings file still has a placeholder in ${placeholders.join(', ')}. Send me a photo of this screen (not of the file).`); return 2; }
 
+  // ADR-0032: a copy that runs as Windows services is started by Windows; `up` starts any service that is stopped.
+  if (readServicesMarker(deps, L) !== undefined) {
+    for (const name of ['SRE-Database', 'SRE-API', 'SRE-Till']) deps.spawn('sc.exe', ['start', name], {});
+    say('Starting the Windows services that are not running: the shop database, the office and the till.');
+    if (!(await waitReady(deps, settings.API_PORT || '8081'))) { say(`NOT READY — the office did not say ready within ${READY_WAIT_MS / 60_000} minutes. Run: pnpm run store-computer -- services-status, and send me a photo of the screen.`); return 1; }
+    say('READY — this copy is up on this computer, and needs no internet.');
+    return 0;
+  }
+
   const docker = dockerProblem(deps);
   if (docker !== undefined) { say(`NOT STARTED — ${docker.what}`); say(`  What to do: ${docker.fix}`); return 1; }
 
@@ -835,13 +845,23 @@ export async function runChecks(deps, settings, opts) {
   const L = resolveLayout(deps);
   const p = pathFor(deps.platform);
   const results = [];
-  const docker = dockerProblem(deps);
+  const native = readServicesMarker(deps, L);
+  const docker = databaseProblem(deps, L);
   const others = readOthers(deps, L);
   const port = settings.API_PORT || '8081';
 
   // 1 — own project, own storage.
   if (docker !== undefined) results.push(result(1, 'FAIL', `${docker.what} ${docker.fix}`));
-  else {
+  else if (native !== undefined) {
+    // ADR-0032: the copy's storage is its own database folder inside this copy's data folder, kept by its own service; and
+    // still no demo storage on this computer (asked of Docker too, if Docker is here at all).
+    const dbDir = p.join(L.dataRoot, 'database');
+    const vols = lines(deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {}).stdout ?? '');
+    const demo = vols.filter((v) => v.startsWith(`${DEMO_PROJECT}_`));
+    if (demo.length > 0) results.push(result(1, 'FAIL', `the demo's storage is on this computer (${demo.length} ${DEMO_PROJECT}_ volume(s)). The demo never lives here.`));
+    else if (!fs.existsSync(p.join(dbDir, 'PG_VERSION'))) results.push(result(1, 'FAIL', `this copy's database folder ${dbDir} is not there.`));
+    else results.push(result(1, 'PASS', `this copy's database lives in ${dbDir}, run by its own Windows service (SRE-Database); no ${DEMO_PROJECT}_ storage on this computer.`));
+  } else {
     const vols = lines(deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {}).stdout);
     const own = vols.filter((v) => v.startsWith(`${PROJECT}_`));
     const demo = vols.filter((v) => v.startsWith(`${DEMO_PROJECT}_`));
@@ -851,10 +871,13 @@ export async function runChecks(deps, settings, opts) {
   }
 
   // 2 — own database.
-  if (docker !== undefined) results.push(result(2, 'FAIL', 'Docker is not ready, so the database could not be asked.'));
+  if (docker !== undefined) results.push(result(2, 'FAIL', `the database could not be asked: ${docker.what}`));
   else {
     const user = settings.POSTGRES_USER || 'sre_admin';
-    const r = deps.spawn('docker', [...composeBase(L), 'exec', '-T', 'db', 'psql', '-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
+    const ask = ['-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'];
+    const r = native !== undefined
+      ? dbSpawn(deps, { L, settings, env: composeEnv(deps.env, settings), native }, 'psql', ask)
+      : deps.spawn('docker', [...composeBase(L), 'exec', '-T', 'db', 'psql', ...ask], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
     const names = lines(r.stdout);
     const ownDb = settings.POSTGRES_DB || 'sre_real';
     const demoDbs = new Set(['sre_pilot', ...others.map((o) => o.values.POSTGRES_DB).filter(real)]);
@@ -922,7 +945,8 @@ export async function runChecks(deps, settings, opts) {
   }
 
   // 7 and 8 — the real loader's own refusals, on a folder with no data in it.
-  const build = deps.spawn(deps.nodePath, [L.buildScript, 'tools'], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
+  // An installed release (release.json) brings the loader built, and has no build tools to build it with.
+  const build = fs.existsSync(p.join(deps.repoRoot, 'release.json')) ? { status: 0 } : deps.spawn(deps.nodePath, [L.buildScript, 'tools'], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
   if (build.error !== undefined || build.status !== 0) {
     results.push(result(7, 'FAIL', 'the loader could not be prepared for the check (the tools build failed). Send me a photo of this screen.'));
     results.push(result(8, 'FAIL', 'the loader could not be prepared for the check (the tools build failed).'));

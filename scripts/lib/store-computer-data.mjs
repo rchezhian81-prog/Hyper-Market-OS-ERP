@@ -300,6 +300,10 @@ export async function update(deps, opts) {
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
   if (!dataFolderReady(deps, ctx)) return 2;
+  if (ctx.native !== undefined) {
+    say('NOT YET — this copy runs as Windows services (ADR-0032). A new release is installed by running its SRE-Setup.exe; the one-click update with automatic rollback comes in CR-01 step 3. Nothing was changed.');
+    return 2;
+  }
   const L = ctx.L;
   const live = currentRelease(deps, L)?.folder;
   if (live !== undefined && !samePath(deps.platform, live, deps.repoRoot)) { say(`REFUSED — the live release is ${live}, not this folder. Run update from there: open PowerShell in ${live}.`); return 2; }

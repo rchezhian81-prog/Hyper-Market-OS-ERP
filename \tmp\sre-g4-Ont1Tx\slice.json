@@ -1,0 +1,11 @@
+{
+  "loadId": "g4-isolation-check",
+  "tenantId": "029aa519-e57f-4e70-9ce5-6b4497175f44",
+  "operator": "g4-isolation-check",
+  "storeId": "g4-isolation-check",
+  "department": {
+    "categoryId": "g4-isolation-check",
+    "name": "G4 isolation check (no data)"
+  },
+  "files": {}
+}

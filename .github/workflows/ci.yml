@@ -469,6 +469,12 @@ jobs:
           node tests/windows/store-pc-on-windows.check.mjs "$env:RUNNER_TEMP\store-pc-first-run-proof.json" D:\SRE-data
           if ($LASTEXITCODE -ne 0) { throw 'a claim did not hold' }
 
+      - name: Backup and restore check on the Windows services, then G4 checks 1 and 2 — no Docker (CR-01 step 2c)
+        shell: pwsh
+        run: |
+          & "$env:STAGE\runtime\node\node.exe" tests/windows/services-backup.drive.mjs $env:STAGE D:\sre-backup-test
+          if ($LASTEXITCODE -ne 0) { throw 'the backup or the restore check did not work on the Windows services' }
+
       - name: Keep the proof
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

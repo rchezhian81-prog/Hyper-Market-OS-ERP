@@ -33,6 +33,7 @@ import {
 } from './store-computer-recovery.mjs';
 import { ALERT_RULES, SCHEDULE_FILE, ageWords, backupRoom, readSchedule, status } from './store-computer-status.mjs';
 import { refusedOnServer } from './store-computer-windows.mjs';
+import { databaseProblem, readServicesMarker } from './store-computer-db.mjs';
 // Kept importable from here, where they were first written (OB-262 · OB-268 moved them beside the status check).
 export { daysOfRoom, driveTally } from './store-computer-status.mjs';
 
@@ -242,7 +243,7 @@ export async function scheduleBackup(deps, opts) {
   const refusal = folderRefusal(deps, dir);
   if (refusal !== undefined) { say(`REFUSED — ${refusal}`); return 2; }
   try { deps.fs.mkdirSync(dir, { recursive: true }); } catch (e) { say(`NOT DONE — the folder ${dir} could not be made (${e?.code ?? 'error'}). Plug in the backup drive that stays in this computer, check its letter, and run this again.`); return 1; }
-  const docker = dockerProblem(deps);
+  const docker = databaseProblem(deps, L);
   if (docker !== undefined) { say(`NOT DONE — ${docker.what}`); say(`  What to do: ${docker.fix}`); return 1; }
   const key = await ensureBackupKey(deps, L);
   if (key === undefined) return 1;
@@ -367,7 +368,7 @@ export async function scheduledBackup(deps) {
     if (ctx.code !== undefined) { recordBackupOutcome(d, L0, { kind: 'automatic', to: schedule.to, ok: false, problem: 'this copy\'s settings refused the backup (see the log)' }); return ctx.code; }
     const key = readBackupKey(d, ctx.L).key;
     const refusal = folderRefusal(d, schedule.to);
-    const docker = dockerProblem(d);
+    const docker = databaseProblem(d, ctx.L);
     const b = refusal !== undefined ? { ok: false, problem: refusal }
       : docker !== undefined ? { ok: false, problem: docker.what }
         : takeStoreBackup(d, ctx, schedule.to, key);
@@ -398,6 +399,16 @@ export async function autostart(deps, opts = {}) {
   const s = scheduling(deps);
   if (s.code !== undefined) return s.code;
   const { ctx, tasks } = s;
+  // ADR-0032: a copy that runs as Windows services is started by Windows itself at boot — no sign-in task, no Docker.
+  if (readServicesMarker(deps, ctx.L) !== undefined) {
+    if (tasks.exists(TASKS.start)) {
+      const r = tasks.remove(TASKS.start);
+      if (!r.ok) { say(`NOT DONE — Windows did not remove the old "${TASKS.start}": ${r.said}`); return 1; }
+      say(`The old sign-in task "${TASKS.start}" is removed: it started Docker, which this copy no longer uses.`);
+    }
+    say('NOTHING TO DO — this copy runs as Windows services: Windows starts the shop database, the office and the till when the computer starts, before anyone signs in, and restarts them if they stop. Check them with: pnpm run store-computer -- services-status');
+    return 0;
+  }
   if (opts.off === true) {
     if (tasks.exists(TASKS.start)) {
       const r = tasks.remove(TASKS.start);
@@ -460,6 +471,10 @@ export async function startAtSignIn(deps) {
   const say = (line) => { outer(line); try { deps.fs.appendFileSync(logFile, `${deps.now().toISOString()} ${line}\n`, 'utf8'); } catch { /* the log is a help */ } };
   const d = { ...deps, say };
   let code = 0;
+  if (readServicesMarker(deps, L) !== undefined) {
+    say('Nothing to start: this copy runs as Windows services, started by Windows itself (ADR-0032). This old sign-in task can be removed: pnpm run store-computer -- autostart');
+    return 0;
+  }
   try {
     // 1. Docker Desktop.
     if (dockerProblem(d) !== undefined) {

@@ -32,6 +32,7 @@
 // Every message is in English and Tamil. Nothing here reads or shows a secret.
 
 import { dockerProblem, lines, PROJECT, resolveLayout, pathFor } from './store-computer.mjs';
+import { readServicesMarker } from './store-computer-db.mjs';
 import { readLastBackup, tillFolders } from './store-computer-recovery.mjs';
 
 export const ALERT_RULES = Object.freeze({
@@ -236,8 +237,19 @@ export function diskCheck(deps, L) {
   return { name: 'Disk', ok: true, detail: `${gb(space.free)} free of ${gb(space.total)} (${pct}% full)` };
 }
 
+/** ADR-0032: a copy running as Windows services — the database, the office and the till services must all be running. */
+export function servicesCheck(deps) {
+  const named = { 'SRE-Database': ['the shop database', 'கடையின் தரவுத்தளம்'], 'SRE-API': ['the office (the books)', 'அலுவலகம் (கணக்குகள்)'], 'SRE-Till': ['the till', 'பணப்பெட்டி'] };
+  const down = Object.keys(named).filter((n) => !/STATE\s*:\s*4\b/.test(String(deps.spawn('sc.exe', ['query', n], {}).stdout ?? '')));
+  if (down.length === 0) return { name: 'Services', ok: true, detail: 'the shop database, the office and the till are running (Windows services)' };
+  const en = down.map((n) => named[n][0]).join(' and ');
+  const ta = down.map((n) => named[n][1]).join(', ');
+  return { name: 'Services', ok: false, detail: `not running: ${en}`, alert: { code: 'service_down', en: `Not running: ${en}. Restart the computer; if it is still red, run: pnpm run store-computer -- services-status`, ta: `இயங்கவில்லை: ${ta}. கணினியை மீண்டும் தொடங்கவும்; இன்னும் சிவப்பாக இருந்தால்: pnpm run store-computer -- services-status` } };
+}
+
 /** The database and the API containers of this copy must both be running. */
 export function containersCheck(deps) {
+  if (readServicesMarker(deps, resolveLayout(deps)) !== undefined) return servicesCheck(deps);
   const docker = dockerProblem(deps);
   if (docker !== undefined) return { name: 'Containers', ok: false, detail: docker.what, alert: { code: 'docker_not_running', en: 'Docker Desktop is not running, so the database and the books are stopped.', ta: 'Docker Desktop இயங்கவில்லை, எனவே தரவுத்தளமும் கணக்குகளும் நின்றுவிட்டன.' } };
   const r = deps.spawn('docker', ['ps', '--filter', `label=com.docker.compose.project=${PROJECT}`, '--format', '{{.Label "com.docker.compose.service"}}'], {});

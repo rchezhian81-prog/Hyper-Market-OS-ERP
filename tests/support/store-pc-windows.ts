@@ -4,10 +4,10 @@
 
 import { expect } from 'vitest';
 import * as nodeFs from 'node:fs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeSync } from 'node:fs';
 import { join, win32 } from 'node:path';
 import { main, parseEnvText, type Deps, type SpawnResult } from '../../scripts/lib/store-computer.mjs';
-import { world, type World } from './store-computer-world';
+import { DUMP_PREFIX, world, type PretendDb, type World } from './store-computer-world';
 
 /** This copy's settings, read on the pretend PC (C:\\SRE-data\\.env.real). */
 export const settingsIn = (fs: Deps['fs'], dataRoot = 'C:\\SRE-data'): Record<string, string> => parseEnvText(fs.readFileSync(`${dataRoot}\\.env.real`, 'utf8')) as Record<string, string>;
@@ -22,6 +22,12 @@ export interface PretendWin {
   hostInstalls: string[];
   psqlInputs: string[];
   tillInstalls: string[][];
+  /** The PC's own PostgreSQL (the SRE-Database service): its databases, by name. */
+  nativeDbs: Record<string, PretendDb>;
+  /** Rows the pretend native pg_restore loses from the first table — a move that must NOT be accepted. */
+  restoreLoses: number;
+  /** Docker compose commands seen (stop, up …), in order. */
+  composeSeen: string[][];
 }
 
 /**
@@ -39,7 +45,9 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
   };
   const onC = (...p: string[]): string => map(win32.join('C:\\', ...p)) as string;
   const fs = new Proxy(nodeFs, { get: (t, k) => { const f = (t as Record<string | symbol, unknown>)[k]; return typeof f === 'function' ? (...a: unknown[]) => (f as (...x: unknown[]) => unknown).apply(t, a.map(map)) : f; } }) as Deps['fs'];
-  const win: PretendWin = { services: new Map(), calls: [], started: [], grants: [], initdbRuns: 0, hostInstalls: [], psqlInputs: [], tillInstalls: [] };
+  // A new store PC: no Docker copy of a shop on it (the move from Docker has its own tests).
+  w.docker.volumes = [];
+  const win: PretendWin = { services: new Map(), calls: [], started: [], grants: [], initdbRuns: 0, hostInstalls: [], psqlInputs: [], tillInstalls: [], nativeDbs: {}, restoreLoses: 0, composeSeen: [] };
   const base = w.deps.spawn;
   const spawn = (cmd: string, args: readonly string[], o: { cwd?: string; env?: Record<string, string | undefined>; input?: string; stdio?: unknown } = {}): SpawnResult => {
     win.calls.push({ cmd, args: [...args], ...(o.env === undefined ? {} : { env: o.env }), ...(o.input === undefined ? {} : { input: o.input }) });
@@ -69,12 +77,16 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
     }
     if (exe === 'pg_ctl.exe') { win.services.set(args[args.indexOf('-N') + 1]!, { state: 'stopped', auto: true, account: 'LocalSystem' }); return { status: 0 }; }
     if (exe === 'pg_isready.exe') return { status: 0, stdout: '127.0.0.1:5432 - accepting connections\r\n' };
-    if (exe === 'psql.exe') { win.psqlInputs.push(o.input ?? ''); return { status: 0 }; }
+    if (exe === 'psql.exe' || exe === 'pg_restore.exe') return pretendNativePg(win, fs, exe, args, o);
     if (exe === 'sre-api.exe' || exe === 'sre-till.exe') {
       const name = win32.basename(cmd, '.exe');
       win.hostInstalls.push(name);
       win.services.set(name, { state: 'stopped', auto: true, account: 'LocalSystem' });
       return { status: 0, stdout: `Installing the service with id '${name}'` };
+    }
+    if (cmd === 'docker' && args[0] === 'compose' && (args.includes('stop') || args.includes('up'))) {
+      win.composeSeen.push([...args.slice(args.indexOf('--env-file') + 2)]);
+      if (args.includes('stop')) return { status: 0 };
     }
     if (cmd === process.execPath && String(args[0]).endsWith('build-service.mjs')) return { status: 0 };
     if (String(args[0]).endsWith('install-till.mjs')) {
@@ -86,6 +98,13 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
       win.tillInstalls.push([...args]);
       return { status: 0 };
     }
+    // G4 checks 7 and 8: the loader refuses production and the demo tenant before reading a row (its own tests prove that).
+    if (String(args[0]).replace(/\\/g, '/').endsWith('scripts/dist/migration-slice.js')) {
+      const settingsText = fs.readFileSync(args[args.indexOf('--settings') + 1]!, 'utf8');
+      return /^MIGRATION_TARGET_KIND=production$/m.test(settingsText) ? { status: 1, stdout: 'REFUSED (production_target) — pretend\n' } : { status: 1, stdout: 'REFUSED (demo_tenant) — pretend\n' };
+    }
+    // The tool's own Node programs (the loader in checks 7 and 8 …) are given Windows paths: the pretend reads them mapped.
+    if (cmd === process.execPath) return base(cmd, args.map((a) => map(a) as string), o);
     return base(cmd, args, o);
   };
   const d: Deps = {
@@ -118,4 +137,49 @@ export async function readyPc(over: Partial<Deps> = {}): Promise<{ w: World; d: 
   fs.writeFileSync('C:\\SRE-data\\till\\till.env', `EDGE_TENANT_ID=${settingsIn(fs)['EDGE_TENANT_ID']}\nPACK_SIGNING_KEY=${settingsIn(fs)['PACK_SIGNING_KEY']}\nEDGE_LANE_ID=lane-1\nEDGE_LANE_PORT=8090\nEDGE_SCREEN_PORT=8091\nEDGE_DATA_DIR=C:\\SRE-data\\till\\edge-data\n`);
   w.said.length = 0;
   return { w, ...pc };
+}
+
+/** The totals lines a database answers with (the same shape as the Docker pretend's). */
+const totalsOf = (d: PretendDb): string => [
+  ...Object.keys(d.tables).sort().map((t) => `ROWS|${t}|${d.tables[t]}`),
+  ...Object.keys(d.values).sort().map((t) => `VAL|${t}|${d.values[t]}`),
+  `SEQ|${d.maxSeq}`,
+  ...[...d.migrations].sort().map((m) => `MIG|${m}`),
+].join('\n');
+
+/** The PC's own psql and pg_restore (the SRE-Database service), as the tool drives them. */
+function pretendNativePg(win: PretendWin, fs: Deps['fs'], exe: string, args: readonly string[], o: { input?: string; stdio?: unknown; env?: Record<string, string | undefined> }): SpawnResult {
+  const target = args.includes('-d') ? args[args.indexOf('-d') + 1]! : 'postgres';
+  const fd = Array.isArray(o.stdio) ? o.stdio : [];
+  if (exe === 'pg_restore.exe') {
+    const text = readFileSync(fd[0] as number, 'latin1');
+    if (!text.startsWith(DUMP_PREFIX)) return { status: 1, stderr: 'pg_restore: error: input file does not appear to be a valid archive' };
+    const d = JSON.parse(text.slice(DUMP_PREFIX.length)) as PretendDb;
+    const first = Object.keys(d.tables).sort()[0];
+    if (win.restoreLoses > 0 && first !== undefined) d.tables[first] = d.tables[first]! - win.restoreLoses;
+    win.nativeDbs[target] = d;
+    return { status: 0 };
+  }
+  win.psqlInputs.push(o.input ?? '');
+  const sql = args.includes('-c') ? args[args.indexOf('-c') + 1]! : args.includes('-Atc') ? args[args.indexOf('-Atc') + 1]! : undefined;
+  if (sql !== undefined && /SELECT datname FROM pg_database/.test(sql)) return { status: 0, stdout: `${['postgres', ...Object.keys(win.nativeDbs)].join('\n')}\n` };
+  if (sql !== undefined && /^CREATE DATABASE "([a-z0-9_]+)"$/.test(sql)) { win.nativeDbs[/"([a-z0-9_]+)"/.exec(sql)![1]!] = { tables: {}, values: {}, maxSeq: 0, migrations: [] }; return { status: 0 }; }
+  if (sql !== undefined && /^DROP DATABASE "([a-z0-9_]+)"$/.test(sql)) { delete win.nativeDbs[/"([a-z0-9_]+)"/.exec(sql)![1]!]; return { status: 0 }; }
+  const input = o.input ?? '';
+  if (input.includes('pg_export_snapshot')) {
+    // The Windows backup script: totals to the \o file, the archive on standard output.
+    const d = win.nativeDbs[target]!;
+    const file = /\\o '([^']+)'/.exec(input)![1]!.replace(/\//g, '\\');
+    fs.writeFileSync(file, `SNAP|00000003-0000001B-1\n${totalsOf(d)}\nDUMPEXIT|0\nDONE|\n`);
+    writeSync(fd[1] as number, `${DUMP_PREFIX}${JSON.stringify(d)}`);
+    return { status: 0, stderr: '' };
+  }
+  if (input.includes("'ROWS|'")) {
+    const d = win.nativeDbs[target];
+    return d === undefined ? { status: 2, stderr: `FATAL:  database "${target}" does not exist` } : { status: 0, stdout: `${totalsOf(d)}\n` };
+  }
+  // The first set-up SQL makes the shop's database.
+  const made = /CREATE DATABASE %I', '([a-z0-9_]+)'/.exec(input);
+  if (made !== null && win.nativeDbs[made[1]!] === undefined) win.nativeDbs[made[1]!] = { tables: {}, values: {}, maxSeq: 0, migrations: [] };
+  return { status: 0 };
 }

@@ -37,6 +37,6 @@ export declare function serviceEnv(kind: 'api' | 'till', settings: Settings, bas
 export declare function serviceState(deps: Deps, name: string): 'missing' | 'running' | 'stopped' | 'starting' | 'stopping' | 'other';
 export declare function serviceConfig(deps: Deps, name: string): { auto: boolean; account?: string; dependsOn: string };
 export declare function preflight(deps: Deps, P: ServicePaths, settings: Settings): string[];
-export declare function installServices(deps: Deps, opts: { pgBin?: string; serviceHost?: string }): Promise<number>;
+export declare function installServices(deps: Deps, opts: { pgBin?: string; serviceHost?: string; afterDatabase?: (native: { pgBin: string; port: string }) => Promise<number> }): Promise<number>;
 export declare function servicesStatus(deps: Deps): Promise<number>;
 export declare function removeServices(deps: Deps): Promise<number>;

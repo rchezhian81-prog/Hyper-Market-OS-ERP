@@ -63,7 +63,7 @@ Apps → SRE Retail OS → Uninstall) removes the program and the three services
 For a technician or a test, silently: `SRE-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DATADRIVE=D:`. Its exit
 code is 0 only when the setup said SETUP DONE.
 
-Not yet (CR-01 steps 2c–2d): moving a Docker copy's database across, desktop shortcuts and the About screen. Until 2c, a PC whose shop still runs in Docker is refused, with nothing changed.
+Not yet (CR-01 step 2d): desktop shortcuts and the About screen. 
 
 ## The first-run screens (CR-01 step 2b)
 
@@ -80,3 +80,25 @@ Then, with every step shown as it happens: this PC is set up, the two people are
 fingerprint is kept), and the shop is prepared by the owner and approved by the accountant. On a PC already set up the
 screens say so and keep everything. The screens' server stops by itself ten minutes after the setup has run. By hand:
 `pnpm run store-computer -- setup-screens`.
+
+## Moving a shop that runs in Docker (CR-01 step 2c, OI-08)
+
+On a PC set up with Docker (the owner's own store PC, November 2026), `SRE-Setup.exe` (or `store-computer setup`) moves the
+shop onto the Windows services, keeping every record, setting and person. Docker Desktop must be running for this one time.
+
+1. The till started at sign-in, then the office (API container), are stopped: nothing writes to the database any more.
+2. One snapshot of the database is taken and counted — the hourly backup's own method.
+3. The Docker copy is **stopped, never removed**: its storage `sre-real_db-data` stays on the PC as the way back.
+4. The three services are installed; before the office starts, the snapshot is restored into the new database and counted
+   again: every table's rows, the money in every kind of event, the newest event's number.
+5. Only on an exact match: the move is recorded (`run\services\adopted-from-docker.json`), the old sign-in task is removed
+   and the plain snapshot deleted. The settings file, the tenant id, the till's data and its PINs are kept as they are.
+
+If anything does not match: the services are removed, the new database folder is moved aside (`database-unfinished-…`,
+kept), the Docker copy is started again and the snapshot is kept for a person to look at. Restart the computer to bring
+the till back.
+
+After the move the tool reaches the database as a service: `backup` (same one-snapshot guarantee), `restore-check`,
+`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill and `update` refuse in plain words:
+their Windows versions come with the one-click update (CR-01 step 3). Docker Desktop can be uninstalled later; its stopped
+copy is the only thing it still holds.
