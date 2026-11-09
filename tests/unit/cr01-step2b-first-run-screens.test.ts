@@ -3,15 +3,15 @@ import { readFileSync } from 'node:fs';
 import { main } from '../../scripts/lib/store-computer.mjs';
 import { driveChoices, newDataDriveRefusal } from '../../scripts/lib/store-computer-setup.mjs';
 import {
-  MANAGER_LOGIN, OWNER_LOGIN, answersFrom, checkAnswers, createSetupDoor, install, shopStepValues, storeCodeOf,
+  ACCOUNTANT_LOGIN, OWNER_LOGIN, answersFrom, checkAnswers, createSetupDoor, install, shopStepValues, storeCodeOf,
   type DriveChoice, type InstallSteps, type Progress, type SetupAnswers,
 } from '../../scripts/lib/setup-app';
 import { world, type World } from '../support/store-computer-world';
 import { settingsIn, storePc } from '../support/store-pc-windows';
 
 /**
- * **CR-01 step 2b · OI-02 — the first-run screens.** Decisions OB-715 "A" (two people at first setup: the store manager
- * prepares the shop, the owner approves it, each with their own PIN — M01-FR-01, §28) and OB-716 "A" (a new shop's data
+ * **CR-01 step 2b · OI-02 — the first-run screens.** Decisions OB-715 "A" (two people at first setup: the owner prepares
+ * the shop, the accountant approves it, each with their own PIN — M01-FR-01, §28, OB-613 · OB-659) and OB-716 "A" (a new shop's data
  * on a second disk inside the PC, never the disk Windows is on).
  *
  * Every answer is checked by the rules the commands use (the GSTIN's check digit, a six-digit PIN, a code the owner setup
@@ -31,7 +31,7 @@ const GSTIN = gstinFor('33ABCDE1234F1Z');
 const DRIVES: DriveChoice[] = [{ letter: 'C', ok: false, why: 'C: is the disk Windows is on; the shop\'s data goes on a second disk inside this PC.' }, { letter: 'D', ok: true, note: 'D: is a disk inside this computer (SATA)' }];
 const good = (over: Partial<SetupAnswers> = {}): SetupAnswers => ({
   dataDrive: 'D:', shopName: 'SRE Hyper Market', legalName: 'SRE Hyper Market Private Limited', gstin: GSTIN, shopCode: 'SRE',
-  owner: { name: 'Elanchezhian', pin: '482915', pinAgain: '482915' }, manager: { name: 'Ravi', pin: '730264', pinAgain: '730264' }, ...over,
+  owner: { name: 'Elanchezhian', pin: '482915', pinAgain: '482915' }, accountant: { name: 'Ravi', pin: '730264', pinAgain: '730264' }, ...over,
 });
 
 describe('the answers are checked by the commands\' own rules, all at once', () => {
@@ -41,7 +41,7 @@ describe('the answers are checked by the commands\' own rules, all at once', () 
   it('each wrong answer is named beside its field', () => {
     const p = checkAnswers(good({
       dataDrive: 'C:', shopName: '', legalName: 'X', gstin: `${GSTIN.slice(0, 14)}${GSTIN[14] === 'A' ? 'B' : 'A'}`, shopCode: 'sre shop',
-      owner: { name: 'E', pin: '12345', pinAgain: '12345' }, manager: { name: 'Ravi', pin: '730264', pinAgain: '730265' },
+      owner: { name: 'E', pin: '12345', pinAgain: '12345' }, accountant: { name: 'Ravi', pin: '730264', pinAgain: '730265' },
     }), DRIVES);
     expect(p['dataDrive']).toMatch(/disk Windows is on/);
     expect(p['shopName']).toMatch(/shop's name/);
@@ -50,21 +50,21 @@ describe('the answers are checked by the commands\' own rules, all at once', () 
     expect(p['shopCode']).toMatch(/2 to 10 capital letters or digits/);
     expect(p['owner.name']).toBeDefined();
     expect(p['owner.pin']).toBe('A PIN is 6 digits, 0 to 9, nothing else.');
-    expect(p['manager.pinAgain']).toMatch(/not the same/);
+    expect(p['accountant.pinAgain']).toMatch(/not the same/);
   });
   it('two different people with two different PINs (OB-715): the same name or the same PIN is refused', () => {
-    const p = checkAnswers(good({ manager: { name: 'elanchezhian', pin: '482915', pinAgain: '482915' } }), DRIVES);
-    expect(p['manager.name']).toMatch(/different person from the owner/);
-    expect(p['manager.pin']).toMatch(/own PIN/);
+    const p = checkAnswers(good({ accountant: { name: 'elanchezhian', pin: '482915', pinAgain: '482915' } }), DRIVES);
+    expect(p['accountant.name']).toMatch(/different person from the owner/);
+    expect(p['accountant.pin']).toMatch(/own PIN/);
   });
   it('the posted form is read field by field; anything else is ignored', () => {
     const a = answersFrom({ dataDrive: 'd:', gstin: ` ${GSTIN.toLowerCase()} `, shopCode: 'sre', extra: 'x', owner: { name: ' E ', pin: '1', pinAgain: '1' } });
-    expect(a).toMatchObject({ dataDrive: 'D:', gstin: GSTIN, shopCode: 'SRE', owner: { name: 'E' }, manager: { name: '', pin: '' } });
+    expect(a).toMatchObject({ dataDrive: 'D:', gstin: GSTIN, shopCode: 'SRE', owner: { name: 'E' }, accountant: { name: '', pin: '' } });
     expect(Object.keys(a)).not.toContain('extra');
   });
 });
 
-describe('the install, in order — and the shop is prepared by the manager and approved by the owner (OB-715)', () => {
+describe('the install, in order — and the shop is prepared by the owner and approved by the accountant (OB-715, OB-659)', () => {
   const fakeSteps = (fail?: 'pc' | 'people' | 'pin' | 'shop') => {
     const calls: string[] = [];
     const shopSeen: { values?: Record<string, string>; pins?: Record<string, string | undefined> } = {};
@@ -72,7 +72,7 @@ describe('the install, in order — and the shop is prepared by the manager and 
       setUpThisPc: async (drive, say) => { calls.push(`pc ${drive}`); say('SETUP DONE.'); return fail === 'pc' ? 1 : 0; },
       seedPeople: async (o, m) => { calls.push(`people ${o.login} ${m.login}:${m.role}`); return fail === 'people' ? { problem: 'no database' } : 'seeded'; },
       setPin: async (login) => { calls.push(`pin ${login}`); return fail !== 'pin'; },
-      shop: async (values, pinOf) => { calls.push('shop'); shopSeen.values = values; shopSeen.pins = { [OWNER_LOGIN]: pinOf(OWNER_LOGIN), [MANAGER_LOGIN]: pinOf(MANAGER_LOGIN), other: pinOf('someone-else') }; return fail !== 'shop'; },
+      shop: async (values, pinOf) => { calls.push('shop'); shopSeen.values = values; shopSeen.pins = { [OWNER_LOGIN]: pinOf(OWNER_LOGIN), [ACCOUNTANT_LOGIN]: pinOf(ACCOUNTANT_LOGIN), other: pinOf('someone-else') }; return fail !== 'shop'; },
     };
     return { steps, calls, shopSeen };
   };
@@ -81,9 +81,9 @@ describe('the install, in order — and the shop is prepared by the manager and 
     const f = fakeSteps();
     const progress: Progress = { lines: [], done: false, ok: false };
     expect(await install(good(), f.steps, progress)).toBe(true);
-    expect(f.calls).toEqual(['pc D:', `people ${OWNER_LOGIN} ${MANAGER_LOGIN}:store_manager`, `pin ${OWNER_LOGIN}`, `pin ${MANAGER_LOGIN}`, 'shop']);
-    expect(f.shopSeen.values).toEqual({ as: MANAGER_LOGIN, approver: OWNER_LOGIN, company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: GSTIN, store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' });
-    expect(f.shopSeen.pins).toEqual({ [OWNER_LOGIN]: '482915', [MANAGER_LOGIN]: '730264', other: undefined });
+    expect(f.calls).toEqual(['pc D:', `people ${OWNER_LOGIN} ${ACCOUNTANT_LOGIN}:accountant`, `pin ${OWNER_LOGIN}`, `pin ${ACCOUNTANT_LOGIN}`, 'shop']);
+    expect(f.shopSeen.values).toEqual({ as: OWNER_LOGIN, approver: ACCOUNTANT_LOGIN, company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: GSTIN, store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' });
+    expect(f.shopSeen.pins).toEqual({ [OWNER_LOGIN]: '482915', [ACCOUNTANT_LOGIN]: '730264', other: undefined });
     expect(progress).toMatchObject({ done: true, ok: true });
     expect(progress.lines.at(-1)).toMatch(/^SETUP DONE — this PC is ready\./);
     // No PIN in anything said.
@@ -91,7 +91,7 @@ describe('the install, in order — and the shop is prepared by the manager and 
   });
 
   it('stops at the first step that is not done, says which, and does nothing after it', async () => {
-    for (const [fail, last, stopped] of [['pc', 'pc D:', /STOPPED at step 1/], ['people', `people ${OWNER_LOGIN} ${MANAGER_LOGIN}:store_manager`, /STOPPED at step 2: no database/], ['pin', `pin ${OWNER_LOGIN}`, /STOPPED at step 3/], ['shop', 'shop', /STOPPED at step 4/]] as const) {
+    for (const [fail, last, stopped] of [['pc', 'pc D:', /STOPPED at step 1/], ['people', `people ${OWNER_LOGIN} ${ACCOUNTANT_LOGIN}:accountant`, /STOPPED at step 2: no database/], ['pin', `pin ${OWNER_LOGIN}`, /STOPPED at step 3/], ['shop', 'shop', /STOPPED at step 4/]] as const) {
       const f = fakeSteps(fail);
       const progress: Progress = { lines: [], done: false, ok: false };
       expect(await install(good(), f.steps, progress)).toBe(false);
@@ -196,7 +196,8 @@ describe('the screens themselves (scripts/setup-page/index.html)', () => {
     expect(page).toContain("'x-setup-key': KEY");
     expect(page).toContain("location.hash");
     expect(page).not.toMatch(/<script[^>]+src=/);
-    expect(page).toContain('store-manager-01');
+    expect(page).toContain('accountant-01');
+    expect(page).not.toContain('store-manager-01');
     expect(page).toContain('owner-01');
   });
   it('the PINs are cleared from the page once sent; they are password fields', () => {

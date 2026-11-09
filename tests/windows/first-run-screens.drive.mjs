@@ -6,7 +6,7 @@
 //
 // It starts the screens' server (no browser), reads the one-time key it prints, checks a wrong answer is refused, sends
 // the right answers (synthetic people and a made-up GSTIN with a correct check character), follows the progress to the
-// end, and passes only on SETUP DONE with the shop made active by the store manager and approved by the owner.
+// end, and passes only on SETUP DONE with the shop prepared by the owner and approved by the accountant (OB-659).
 // The synthetic PINs are this test's own; nothing here is a real shop's.
 
 import { spawn } from 'node:child_process';
@@ -46,7 +46,7 @@ if (st.body.drives.find((d) => d.letter === 'C')?.ok !== false) fail('C: (the di
 
 const answers = {
   dataDrive: drive, shopName: 'Test Hyper Market', legalName: 'Test Hyper Market Private Limited', gstin: gstinFor('33ABCDE1234F1Z'), shopCode: 'TST',
-  owner: { name: 'Test Owner', pin: '482915', pinAgain: '482915' }, manager: { name: 'Test Manager', pin: '730264', pinAgain: '730264' },
+  owner: { name: 'Test Owner', pin: '482915', pinAgain: '482915' }, accountant: { name: 'Test Accountant', pin: '730264', pinAgain: '730264' },
 };
 const wrong = await call('POST', 'install', { ...answers, gstin: `${answers.gstin.slice(0, 14)}${answers.gstin[14] === 'A' ? 'B' : 'A'}` });
 if (wrong.status !== 400 || wrong.body.problems?.gstin === undefined) fail('a GSTIN with a wrong check character was not refused');
@@ -63,8 +63,8 @@ for (const l of progress.lines) say(`  | ${l}`);
 const all = progress.lines.join('\n');
 if (all.includes('482915') || all.includes('730264')) fail('a PIN appeared in what the screens said');
 if (!progress.done || !progress.ok) fail('the setup did not finish');
-if (!/DONE — the shop is set up .*store TST-MAIN active\. Done as store-manager-01, approved by owner-01\./.test(all)) fail('the shop was not made active by the manager with the owner\'s approval');
+if (!/DONE — the shop is set up .*store TST-MAIN active\. Done as owner-01, approved by accountant-01\./.test(all)) fail('the shop was not made active by the owner with the accountant\'s approval');
 if ((await call('POST', 'install', answers)).status !== 409) fail('a second install on the same page was not refused');
-say('PASS — the first-run screens set this PC up: settings, till, services, the two people, their own PINs, and the shop, prepared by the store manager and approved by the owner.');
+say('PASS — the first-run screens set this PC up: settings, till, services, the two people, their own PINs, and the shop, prepared by the owner and approved by the accountant.');
 server.kill();
 process.exit(0);

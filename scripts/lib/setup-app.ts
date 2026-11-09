@@ -1,19 +1,21 @@
 // The FIRST-RUN SCREENS' engine — CR-01 step 2b (OI-02), decisions OB-715 (two people at first setup) and OB-716 (the
-// shop's data on a second disk inside the PC, never the system disk).
+// shop's data on a second disk inside the PC, never the system disk). The second person is the store's ACCOUNTANT: only the
+// owner (or a platform administrator) may record a company and a store (`platform.setup.write`), and when the owner raises
+// that change himself the accountant approves it (OB-613 · OB-659) — exactly how the owner's own shop was set up.
 //
 // The screens (scripts/setup-page/index.html, served by scripts/setup-server.ts on this PC only) ask:
-//   the data drive · the shop's name, legal name, GSTIN and short code · the owner's name and PIN · the store manager's
-//   name and PIN.
+//   the data drive · the shop's name, legal name, GSTIN and short code · the owner's name and PIN · the accountant's name
+//   and PIN.
 // Every answer is checked by the SAME rules the commands use (the GSTIN's check digit — validateGstin; a code as the
 // owner setup step takes it; a six-digit PIN — isTillPin), and nothing is done until everything is right.
 //
 // Then, in order, each step said on the screen as it happens:
 //   1. this PC: settings with a new tenant id, the till, the three Windows services (store-computer `setup`);
-//   2. the first two people, laid down once (owner-01, the owner; store-manager-01, the store manager — the logins OB-277
-//      fixed), exactly as tenant:bootstrap does;
+//   2. the first two people, laid down once (owner-01, the owner; accountant-01, the accountant — the logins OB-277 fixed),
+//      exactly as tenant:bootstrap does;
 //   3. each person's OWN till PIN, as till:pin sets it (only a fingerprint is kept; the PIN is never written or shown);
-//   4. the shop: the company, its GST registration and the store — PREPARED by the store manager with their own PIN and
-//      APPROVED by the owner with his (M01-FR-01, §28 maker-checker; OB-715 "A") — the same owner setup step `shop`.
+//   4. the shop: the company, its GST registration and the store — PREPARED by the owner with his own PIN and APPROVED by
+//      the accountant with theirs (M01-FR-01, §28 maker-checker; OB-715 "A", OB-659) — the same owner setup step `shop`.
 // Running again on a PC already set up changes nothing that is there: each step says it was already done.
 //
 // PINs live only in this process's memory for the length of one install, and are dropped at the end. No line said, no
@@ -24,8 +26,8 @@ import { isTillPin, TILL_PIN_LENGTH } from '../../packages/identity/src/till-pin
 
 /** The logins of the first two people (OB-277). Each belongs to one person only. */
 export const OWNER_LOGIN = 'owner-01';
-export const MANAGER_LOGIN = 'store-manager-01';
-export const MANAGER_ROLE = 'store_manager';
+export const ACCOUNTANT_LOGIN = 'accountant-01';
+export const ACCOUNTANT_ROLE = 'accountant';
 
 /** A short code as the owner setup step takes it (`--company`, `--store`). */
 const CODE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
@@ -40,7 +42,7 @@ export interface SetupAnswers {
   readonly gstin: string;
   readonly shopCode: string;
   readonly owner: Person;
-  readonly manager: Person;
+  readonly accountant: Person;
 }
 
 /** A drive the screens offer: its letter, whether it may hold the shop's data, and why not. */
@@ -65,7 +67,7 @@ export function answersFrom(body: unknown): SetupAnswers {
     gstin: text(b['gstin']).toUpperCase(),
     shopCode: text(b['shopCode']).toUpperCase(),
     owner: person(b['owner']),
-    manager: person(b['manager']),
+    accountant: person(b['accountant']),
   };
 }
 
@@ -84,15 +86,15 @@ export function checkAnswers(a: SetupAnswers, drives: readonly DriveChoice[]): P
   }
   if (!SHOP_CODE.test(a.shopCode)) p['shopCode'] = 'Type a short code for the shop: 2 to 10 capital letters or digits, for example SRE.';
   else if (!CODE.test(storeCodeOf(a.shopCode))) p['shopCode'] = 'This code cannot be used.';
-  for (const [key, who] of [['owner', a.owner], ['manager', a.manager]] as const) {
-    if (who.name.length < 2) p[`${key}.name`] = key === 'owner' ? 'Type your name.' : 'Type the store manager\'s name.';
+  for (const [key, who] of [['owner', a.owner], ['accountant', a.accountant]] as const) {
+    if (who.name.length < 2) p[`${key}.name`] = key === 'owner' ? 'Type your name.' : 'Type the accountant\'s name.';
     if (!isTillPin(who.pin)) p[`${key}.pin`] = `A PIN is ${TILL_PIN_LENGTH} digits, 0 to 9, nothing else.`;
     else if (who.pinAgain !== who.pin) p[`${key}.pinAgain`] = 'The two PINs are not the same. Type it again.';
   }
-  if (a.owner.name !== '' && a.owner.name.toLowerCase() === a.manager.name.toLowerCase()) {
-    p['manager.name'] = 'The store manager must be a different person from the owner: one prepares the shop, the other approves it.';
+  if (a.owner.name !== '' && a.owner.name.toLowerCase() === a.accountant.name.toLowerCase()) {
+    p['accountant.name'] = 'The accountant must be a different person from the owner: you prepare the shop, the accountant approves it.';
   }
-  if (isTillPin(a.owner.pin) && a.owner.pin === a.manager.pin) p['manager.pin'] = 'Each person chooses their own PIN; these two are the same.';
+  if (isTillPin(a.owner.pin) && a.owner.pin === a.accountant.pin) p['accountant.pin'] = 'Each person chooses their own PIN; these two are the same.';
   return p;
 }
 
@@ -102,7 +104,7 @@ export const storeCodeOf = (shopCode: string): string => `${shopCode}-MAIN`;
 /** The values the owner setup step `shop` is given (packages/migration/src/owner-steps-command.ts). */
 export function shopStepValues(a: SetupAnswers): Record<string, string> {
   return {
-    as: MANAGER_LOGIN, approver: OWNER_LOGIN, company: a.shopCode, 'legal-name': a.legalName, gstin: a.gstin,
+    as: OWNER_LOGIN, approver: ACCOUNTANT_LOGIN, company: a.shopCode, 'legal-name': a.legalName, gstin: a.gstin,
     store: storeCodeOf(a.shopCode), 'store-name': a.shopName,
   };
 }
@@ -114,7 +116,7 @@ export interface InstallSteps {
   /** store-computer `setup` on the chosen drive: 0 done · 1 not done · 2 refused. */
   setUpThisPc(dataDrive: string, say: (line: string) => void): Promise<number>;
   /** The first two people, once. 'seeded' · 'already' (this shop has people already) · a reason it could not. */
-  seedPeople(owner: { login: string; name: string }, manager: { login: string; name: string; role: string }, say: (line: string) => void): Promise<'seeded' | 'already' | { problem: string }>;
+  seedPeople(owner: { login: string; name: string }, second: { login: string; name: string; role: string }, say: (line: string) => void): Promise<'seeded' | 'already' | { problem: string }>;
   /** A person's own till PIN, as till:pin sets it. */
   setPin(login: string, pin: string, by: string, say: (line: string) => void): Promise<boolean>;
   /** The owner setup step `shop`, the PIN of each person given when asked. */
@@ -126,23 +128,23 @@ export interface Progress { readonly lines: string[]; done: boolean; ok: boolean
 /** Run the four steps in order; stop at the first that is not done, saying so. PINs are dropped at the end, whatever happens. */
 export async function install(a: SetupAnswers, steps: InstallSteps, progress: Progress): Promise<boolean> {
   const say = (line: string): void => { progress.lines.push(line); };
-  const pins = new Map<string, string>([[OWNER_LOGIN, a.owner.pin], [MANAGER_LOGIN, a.manager.pin]]);
+  const pins = new Map<string, string>([[OWNER_LOGIN, a.owner.pin], [ACCOUNTANT_LOGIN, a.accountant.pin]]);
   try {
     say('Step 1 of 4 — this PC: its settings, the till, and the shop database, office and till as Windows services. This takes a few minutes.');
     const pc = await steps.setUpThisPc(a.dataDrive, say);
     if (pc !== 0) { say('STOPPED at step 1. Nothing more was done. The lines above say why.'); return finish(progress, false); }
 
-    say(`Step 2 of 4 — the first two people: ${a.owner.name} (owner, login ${OWNER_LOGIN}) and ${a.manager.name} (store manager, login ${MANAGER_LOGIN}).`);
-    const seeded = await steps.seedPeople({ login: OWNER_LOGIN, name: a.owner.name }, { login: MANAGER_LOGIN, name: a.manager.name, role: MANAGER_ROLE }, say);
+    say(`Step 2 of 4 — the first two people: ${a.owner.name} (owner, login ${OWNER_LOGIN}) and ${a.accountant.name} (accountant, login ${ACCOUNTANT_LOGIN}).`);
+    const seeded = await steps.seedPeople({ login: OWNER_LOGIN, name: a.owner.name }, { login: ACCOUNTANT_LOGIN, name: a.accountant.name, role: ACCOUNTANT_ROLE }, say);
     if (typeof seeded === 'object') { say(`STOPPED at step 2: ${seeded.problem}`); return finish(progress, false); }
     say(seeded === 'seeded' ? 'The two people are recorded. Every later role needs one person to ask and another to approve.' : 'This shop already has its people; they are kept as they are.');
 
     say('Step 3 of 4 — each person\'s own till PIN (only a fingerprint of it is kept on this PC).');
-    for (const [login, who] of [[OWNER_LOGIN, a.owner], [MANAGER_LOGIN, a.manager]] as const) {
+    for (const [login, who] of [[OWNER_LOGIN, a.owner], [ACCOUNTANT_LOGIN, a.accountant]] as const) {
       if (!(await steps.setPin(login, who.pin, a.owner.name, say))) { say(`STOPPED at step 3: the PIN for ${login} was not set.`); return finish(progress, false); }
     }
 
-    say(`Step 4 of 4 — the shop: ${a.legalName}, GSTIN ${a.gstin}, store ${storeCodeOf(a.shopCode)} "${a.shopName}". Prepared by ${a.manager.name}, approved by ${a.owner.name}.`);
+    say(`Step 4 of 4 — the shop: ${a.legalName}, GSTIN ${a.gstin}, store ${storeCodeOf(a.shopCode)} "${a.shopName}". Prepared by ${a.owner.name}, approved by ${a.accountant.name}.`);
     if (!(await steps.shop(shopStepValues(a), (login) => pins.get(login), say))) { say('STOPPED at step 4: the shop was not made active. The lines above say why.'); return finish(progress, false); }
 
     say('SETUP DONE — this PC is ready. Sign in at the till or the office pages with your staff ID and your own PIN.');

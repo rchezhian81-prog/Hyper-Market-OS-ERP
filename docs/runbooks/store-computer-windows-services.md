@@ -74,9 +74,9 @@ On a new PC they ask, in English or Tamil:
 1. the disk for the shop's data — only disks inside the PC that are not the one Windows is on (OB-716);
 2. the shop's name, legal name (as on the GST certificate), GSTIN (its check character is checked) and short code;
 3. the owner's name and own six-digit PIN (staff ID `owner-01`);
-4. the store manager's name and own PIN (staff ID `store-manager-01`) — a second person (OB-715).
+4. the accountant's name and own PIN (staff ID `accountant-01`) — a second person (OB-715, OB-659).
 
 Then, with every step shown as it happens: this PC is set up, the two people are recorded, each one's PIN is set (only a
-fingerprint is kept), and the shop is prepared by the store manager and approved by the owner. On a PC already set up the
+fingerprint is kept), and the shop is prepared by the owner and approved by the accountant. On a PC already set up the
 screens say so and keep everything. The screens' server stops by itself ten minutes after the setup has run. By hand:
 `pnpm run store-computer -- setup-screens`.

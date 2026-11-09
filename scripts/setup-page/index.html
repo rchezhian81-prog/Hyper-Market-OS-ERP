@@ -67,15 +67,15 @@
       <label for="ownerPin2" data-t="pinAgain">The same PIN again</label><input id="ownerPin2" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="owner.pinAgain"></div>
     </section>
     <section>
-      <h2 data-t="mgrH">4. The store manager</h2>
-      <p class="help" data-t="mgrP">A second person, so no one sets the shop up alone: the store manager prepares the shop and you approve it. Their staff ID will be store-manager-01. Give them the keyboard and look away while they type their own PIN.</p>
-      <label for="mgrName" data-t="name">Name</label><input id="mgrName" type="text" maxlength="80"><div class="err" data-for="manager.name"></div>
-      <label for="mgrPin" data-t="pin">Six-digit PIN</label><input id="mgrPin" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="manager.pin"></div>
-      <label for="mgrPin2" data-t="pinAgain">The same PIN again</label><input id="mgrPin2" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="manager.pinAgain"></div>
+      <h2 data-t="mgrH">4. The accountant</h2>
+      <p class="help" data-t="mgrP">A second person, so no one sets the shop up alone: you prepare the shop and the store's accountant approves it. Their staff ID will be accountant-01. Give them the keyboard and look away while they type their own PIN.</p>
+      <label for="mgrName" data-t="name">Name</label><input id="mgrName" type="text" maxlength="80"><div class="err" data-for="accountant.name"></div>
+      <label for="mgrPin" data-t="pin">Six-digit PIN</label><input id="mgrPin" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="accountant.pin"></div>
+      <label for="mgrPin2" data-t="pinAgain">The same PIN again</label><input id="mgrPin2" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="accountant.pinAgain"></div>
     </section>
     <section>
       <h2 data-t="goH">5. Set up</h2>
-      <p class="help" data-t="goP">This sets up this PC, records the two of you, sets your PINs, and makes the shop active: prepared by the store manager, approved by you. It takes a few minutes.</p>
+      <p class="help" data-t="goP">This sets up this PC, records the two of you, sets your PINs, and makes the shop active: prepared by you, approved by the accountant. It takes a few minutes.</p>
       <div class="actions"><button class="primary" id="goBtn" type="submit" data-t="goBtn">Set up this shop</button></div>
     </section>
   </form>
@@ -98,8 +98,8 @@
     shopH: '2. கடை', shopName: 'கடையின் பெயர் (வாடிக்கையாளர்கள் அறிந்தபடி)', legalName: 'சட்டப் பெயர் (GST சான்றிதழில் உள்ளபடியே)', gstin: 'GSTIN (15 எழுத்துகள்)', shopCode: 'கடையின் சுருக்கக் குறியீடு (2–10 பெரிய எழுத்து அல்லது எண், எ.கா. SRE)',
     ownerH: '3. நீங்கள், உரிமையாளர்', ownerP: 'உங்கள் பணியாளர் எண் owner-01. உங்களுக்கென்று ஆறு இலக்க PIN தேர்ந்தெடுக்கவும்; வேறு யாரும் பார்க்கக்கூடாது.',
     name: 'பெயர்', pin: 'ஆறு இலக்க PIN', pinAgain: 'அதே PIN மீண்டும்',
-    mgrH: '4. கடை மேலாளர்', mgrP: 'யாரும் தனியாக கடையை அமைக்கக்கூடாது: கடை மேலாளர் தயார் செய்வார், நீங்கள் ஒப்புதல் தருவீர்கள். அவரது பணியாளர் எண் store-manager-01. அவர் தன் PIN-ஐ தட்டச்சு செய்யும்போது வேறு பக்கம் பாருங்கள்.',
-    goH: '5. அமை', goP: 'இது இந்த கணினியை அமைக்கும், உங்கள் இருவரையும் பதிவு செய்யும், PIN-களை அமைக்கும், கடையைச் செயல்படுத்தும்: மேலாளர் தயார் செய்து, நீங்கள் ஒப்புதல் தருவீர்கள். சில நிமிடங்கள் ஆகும்.',
+    mgrH: '4. கணக்காளர்', mgrP: 'யாரும் தனியாக கடையை அமைக்கக்கூடாது: நீங்கள் தயார் செய்வீர்கள், கடையின் கணக்காளர் ஒப்புதல் தருவார். அவரது பணியாளர் எண் accountant-01. அவர் தன் PIN-ஐ தட்டச்சு செய்யும்போது வேறு பக்கம் பாருங்கள்.',
+    goH: '5. அமை', goP: 'இது இந்த கணினியை அமைக்கும், உங்கள் இருவரையும் பதிவு செய்யும், PIN-களை அமைக்கும், கடையைச் செயல்படுத்தும்: நீங்கள் தயார் செய்து, கணக்காளர் ஒப்புதல் தருவார். சில நிமிடங்கள் ஆகும்.',
     goBtn: 'இந்தக் கடையை அமை', progH: 'அமைக்கிறது…',
   };
   const EN = {};
@@ -125,7 +125,7 @@
     dataDrive: (document.querySelector('input[name=drive]:checked') || {}).value || '',
     shopName: $('shopName').value, legalName: $('legalName').value, gstin: $('gstin').value, shopCode: $('shopCode').value,
     owner: { name: $('ownerName').value, pin: $('ownerPin').value, pinAgain: $('ownerPin2').value },
-    manager: { name: $('mgrName').value, pin: $('mgrPin').value, pinAgain: $('mgrPin2').value },
+    accountant: { name: $('mgrName').value, pin: $('mgrPin').value, pinAgain: $('mgrPin2').value },
   });
   const showProblems = (problems) => {
     document.querySelectorAll('.err').forEach((el) => { el.textContent = problems[el.dataset.for] || ''; });

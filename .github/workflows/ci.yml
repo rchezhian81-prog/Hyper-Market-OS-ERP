@@ -403,8 +403,8 @@ jobs:
     name: The first-run screens on a clean Windows — the shop set up by two people, nothing typed (CR-01 OI-02)
     # CR-01 step 2b (OB-715 "A", OB-716 "A"): the release folder is built and its first-run screens' server is started on a
     # clean Windows machine; tests/windows/first-run-screens.drive.mjs fills the screens in through the same door the browser
-    # uses (a wrong GSTIN refused first), and passes only on SETUP DONE with the shop prepared by the store manager and
-    # approved by the owner, each with their own PIN. Then Windows is asked the 18 questions of step 1.
+    # uses (a wrong GSTIN refused first), and passes only on SETUP DONE with the shop prepared by the owner and approved
+    # by the accountant (OB-659), each with their own PIN. Then Windows is asked the 18 questions of step 1.
     runs-on: windows-2022
     timeout-minutes: 60
     env:

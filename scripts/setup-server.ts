@@ -6,7 +6,7 @@
 // It listens on 127.0.0.1 only, and every call must carry the one-time key in the page's address (scripts/lib/setup-app.ts,
 // createSetupDoor). Everything it does is what the store-computer tool and the owner setup steps already do, joined in
 // order: `setup` (this PC), the first two people (as tenant:bootstrap), each person's own till PIN (as till:pin), and the
-// owner setup step `shop` (prepared by the store manager, approved by the owner, each with their own PIN). It never says,
+// owner setup step `shop` (prepared by the owner, approved by the accountant, each with their own PIN). It never says,
 // logs or writes a PIN, a token or a key.
 
 import { randomBytes } from 'node:crypto';
@@ -88,11 +88,11 @@ const steps: InstallSteps = {
     return runTool(['setup', '--data-drive', dataDrive], say);
   },
 
-  async seedPeople(owner, manager, say) {
+  async seedPeople(owner, second, say) {
     const s = settingsNow();
     if (s === undefined) return { problem: 'this PC\'s settings cannot be read' };
     const plan = planTenantBootstrap({
-      tenantId: s.settings['EDGE_TENANT_ID'] ?? '', owner: owner.login, admins: [{ userId: manager.login, roleId: manager.role }],
+      tenantId: s.settings['EDGE_TENANT_ID'] ?? '', owner: owner.login, admins: [{ userId: second.login, roleId: second.role }],
       targetKind: s.settings['MIGRATION_TARGET_KIND'], demoTenantIds: demoTenantIds(s.settings, undefined),
       knownRoleIds: ROLE_CATALOGUE.map((r) => r.id), operator: owner.name, ownerRoleId: OWNER_ROLE_ID,
     });
