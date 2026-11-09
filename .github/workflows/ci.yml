@@ -358,11 +358,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:RUNNER_TEMP 'sre-release'
           $out = Join-Path $env:RUNNER_TEMP 'sre-setup'
-          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)"
+          # CR-01 step 3a: a merge to main is a RELEASE (1.0.<run number>, published by store-pc-publish below); a pull
+          # request's build is a test build (0.0.0-ci.<run number>) that a store PC never updates to.
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') { $version = node scripts/store-pc-release.mjs version $env:GITHUB_RUN_NUMBER } else { $version = "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)" }
+          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version $version --commit $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'the release folder was not built' }
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc /Q "/DStageDir=$stage" "/DAppVersion=0.0.0-ci.$($env:GITHUB_RUN_NUMBER)" "/DOutDir=$out" infra\windows\sre-setup.iss
+          & $iscc /Q "/DStageDir=$stage" "/DAppVersion=$version" "/DOutDir=$out" infra\windows\sre-setup.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup did not build SRE-Setup.exe' }
           $setup = Join-Path $out 'SRE-Setup.exe'
           Write-Output ("SRE-Setup.exe: {0:N0} MB" -f ((Get-Item $setup).Length / 1MB))
@@ -420,6 +423,68 @@ jobs:
           Get-Content C:\ProgramData\SRE\setup.log -ErrorAction SilentlyContinue
           foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
           Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
+
+  store-pc-publish:
+    name: Publish the store PC release — SRE-Setup.exe and its signed update record (CR-01 step 3a, OB-717)
+    # CR-01 step 3a · OI-05 · OB-717 "A": on a merge to main, once every suite above is green on THIS commit, the exact
+    # SRE-Setup.exe that store-pc-setup ran on a clean Windows machine is published as a GitHub Release, tagged
+    # store-pc-v1.0.<run number>, beside update.json: its version, commit and SHA-256, signed with the release signing key
+    # (RELEASE_SIGNING_KEY, OB-342). With no key the record says signature null and the step says NOT SIGNED: the release
+    # is still published, and a store PC refuses to update to it (scripts/lib/store-pc-update.mjs). This job alone may
+    # write to the repository's releases; it can change no code (main is protected, hard rule #8).
+    needs: [verify, integration, store-pc-windows, store-pc-setup, store-pc-first-run, security-scans, browser, performance, identity]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: store-pc-publish
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Take the setup program that was proven on a clean Windows machine
+        uses: actions/download-artifact@v4
+        with:
+          name: store-pc-setup
+          path: published
+
+      - name: Write and sign the update record
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          version="$(node scripts/store-pc-release.mjs version "$GITHUB_RUN_NUMBER")"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          set +e
+          node scripts/store-pc-release.mjs record --setup published/sre-setup/SRE-Setup.exe --version "$version" --commit "$GITHUB_SHA" --out published/update.json | tee published/signing.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" = 2 ]; then echo "::notice::$(cat published/signing.txt)"; elif [ "$code" != 0 ]; then exit "$code"; fi
+          if [ "$code" = 0 ] && [ -f infra/deploy/release-signing.pub ]; then
+            node scripts/store-pc-release.mjs check --setup published/sre-setup/SRE-Setup.exe --record published/update.json --public-key infra/deploy/release-signing.pub
+          fi
+          cat published/update.json
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="store-pc-v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then echo "$tag is already published — nothing replaced."; exit 0; fi
+          {
+            echo "Store PC release $VERSION, built from $GITHUB_SHA by CI run $GITHUB_RUN_NUMBER."
+            echo
+            echo "- SRE-Setup.exe: the setup program that ran on a clean Windows machine in this run."
+            echo "- update.json: its version, commit and SHA-256 — $(grep -q '"signature": null' published/update.json && echo 'NOT SIGNED: a store PC will refuse to update to this release' || echo 'signed with the release signing key')."
+          } > published/notes.md
+          gh release create "$tag" published/sre-setup/SRE-Setup.exe published/update.json --target "$GITHUB_SHA" --title "Store PC $VERSION" --notes-file published/notes.md --latest
+          echo "Published $tag ($(grep -q '"signature": null' published/update.json && echo 'NOT SIGNED' || echo 'signed'))." >> "$GITHUB_STEP_SUMMARY"
 
   store-pc-first-run:
     name: The first-run screens on a clean Windows — the shop set up by two people, nothing typed (CR-01 OI-02)

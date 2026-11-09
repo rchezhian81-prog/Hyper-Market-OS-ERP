@@ -12,7 +12,9 @@
 //   • node_modules with the ONE library the shop PC needs at run time: pg, at the version the lockfile names;
 //   • runtime\node\node.exe, runtime\pgsql\{bin,lib,share} (PostgreSQL 16, without pgAdmin or StackBuilder) and
 //     runtime\winsw\WinSW-x64.exe — so nothing is downloaded on the shop's PC;
-//   • release.json — the version and commit, which the setup reads.
+//   • release.json — the version and commit, which the setup reads;
+//   • release-signing.pub — the PUBLIC release signing key, when one is committed at infra/deploy/release-signing.pub:
+//     the key this PC checks the NEXT release's signature with (CR-01 step 3a · OB-717). Not a secret.
 // Never: tests, documents, seed data, any settings file but the example, TypeScript sources, build tools.
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -60,6 +62,12 @@ export function releasePackageJson(root = ROOT) {
   return { name: 'sre-retail-os-store-pc', version: pkg.version ?? '0.0.0', private: true, type: 'module', dependencies: { pg: pgVersion(root) } };
 }
 
+/** The committed PUBLIC release signing key, if any — the next release's signature is checked with it. */
+export function releasePublicKey(root = ROOT) {
+  const p = join(root, 'infra', 'deploy', 'release-signing.pub');
+  return existsSync(p) ? p : undefined;
+}
+
 function arg(argv, name) { const i = argv.indexOf(name); return i === -1 ? undefined : argv[i + 1]; }
 
 async function main(argv) {
@@ -101,10 +109,13 @@ async function main(argv) {
   mkdirSync(join(out, 'runtime', 'winsw'), { recursive: true });
   cpSync(winsw, join(out, 'runtime', 'winsw', 'WinSW-x64.exe'));
 
+  const pub = releasePublicKey();
+  if (pub !== undefined) cpSync(pub, join(out, 'release-signing.pub'));
+
   const commit = arg(argv, '--commit') ?? (() => { try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return undefined; } })();
-  const release = { kind: 'sre-store-pc-release', version: arg(argv, '--version') ?? releasePackageJson().version, commit, builtAt: new Date().toISOString(), node: process.version, postgresql: 16 };
+  const release = { kind: 'sre-store-pc-release', version: arg(argv, '--version') ?? releasePackageJson().version, commit, builtAt: new Date().toISOString(), node: process.version, postgresql: 16, updatesChecked: pub !== undefined };
   writeFileSync(join(out, 'release.json'), `${JSON.stringify(release, null, 2)}\n`);
-  process.stdout.write(`store PC release written to ${out} (version ${release.version}${commit ? `, commit ${commit.slice(0, 8)}` : ''})\n`);
+  process.stdout.write(`store PC release written to ${out} (version ${release.version}${commit ? `, commit ${commit.slice(0, 8)}` : ''}; ${pub === undefined ? 'NO release public key — this PC will refuse every update until one is committed' : 'release public key included'})\n`);
   return 0;
 }
 

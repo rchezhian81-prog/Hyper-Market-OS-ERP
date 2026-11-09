@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
  * WF-20 · AID-08 "sign releases" guardrail (OB-288 P5). The automatic build self-tests the signing tool on every run and
  * signs each merged commit with the custodian's key (never a key in the repository); the box's release script checks a
  * signature BEFORE its backup or anything else when it holds the public key, and says out loud when it does not. This
- * fails if a step is removed, if the private key is ever named outside the CI secret, or if the box's check is weakened.
+ * fails if a step is removed, if the private key is ever named outside the CI secret or used by any job but these two, or if the box's check is weakened.
  */
 
 const CI = readFileSync('.github/workflows/ci.yml', 'utf8');
@@ -27,8 +27,14 @@ describe('releases are signed in the build and checked on the box (WF-20 · AID-
     expect(scans).toContain("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     expect(scans).toContain('NOT SIGNED');
     expect(scans).toContain('name: release-signature');
-    // The private key appears nowhere else in the workflow.
-    expect(CI.split('RELEASE_SIGNING_KEY').length - 1).toBe(scans.split('RELEASE_SIGNING_KEY').length - 1);
+    // The private key appears nowhere else in the workflow — but in the ONE other job that signs with it: the store PC
+    // release (CR-01 step 3a, OB-717), on main only, where it is handed to one step and never echoed.
+    const publish = job('store-pc-publish');
+    const count = (s: string): number => s.split('RELEASE_SIGNING_KEY').length - 1;
+    expect(count(CI)).toBe(count(scans) + count(publish));
+    expect(publish).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'");
+    expect(publish.split('${{ secrets.RELEASE_SIGNING_KEY }}').length - 1).toBe(1);
+    expect(publish).not.toMatch(/echo[^\n]*\$RELEASE_SIGNING_KEY/);
   });
 
   it('the signer reads its key from the environment only and never signs without one', () => {
