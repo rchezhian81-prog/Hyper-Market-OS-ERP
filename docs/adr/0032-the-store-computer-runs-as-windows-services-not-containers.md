@@ -76,3 +76,15 @@ How the decision is carried out. Nothing here changes the decision; each point i
 - **Not in step 1** (CR-01 order of work): the setup program, adopting the existing Docker copy's data (OI-08 — the tool
   refuses while the Docker copy runs), and moving `backup`, `check`, `status`, `autostart` and `update` from Docker to
   the services. Those are steps 2 and 3.
+
+## Implementation — CR-01 step 2c (9 November 2026)
+
+- **The move from Docker** (`scripts/lib/store-computer-adopt.mjs`, run by `setup`): one counted snapshot through the Docker
+  copy, the Docker copy stopped (its storage kept as the way back), the snapshot restored into the service's database
+  before the office starts, and reconciled table by table, money and newest event; any difference puts Docker back.
+- **One way to the database** (`scripts/lib/store-computer-db.mjs`): `install-services` records
+  `run\services\database.json` (the PostgreSQL folder and port, no secret); from then on backup, restore check, G4 checks 1
+  and 2, the red light, `up` and `autostart` use the PostgreSQL programs on 127.0.0.1, the administrator's password in
+  PGPASSWORD only. The backup's Windows script keeps the one-snapshot guarantee (GT-07) with psql's `\o` file for the totals
+  and the Windows shell's `%SRE_SNAPSHOT%` for pg_dump.
+- **Still Docker-only, said plainly:** the timed rollback drill and `update` — their Windows versions are CR-01 step 3.

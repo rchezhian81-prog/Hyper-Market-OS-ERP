@@ -36,6 +36,7 @@
 import { createHash } from 'node:crypto';
 import { guarded, loadSettings, parseEnvText, pathFor, PLACEHOLDER, waitReady, lines } from './store-computer.mjs';
 import { refusedOnServer } from './store-computer-windows.mjs';
+import { writeServicesMarker } from './store-computer-db.mjs';
 
 // ── Names ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -372,9 +373,16 @@ export async function installServices(deps, opts) {
   }
   for (const dir of [P.servicesDir, P.logsDir, P.scratchDir, ...SERVICE_ORDER.map((n) => P.logDirOf(n))]) fs.mkdirSync(dir, { recursive: true });
 
-  // 1 — The database.
+  // 1 — The database. From here on the tool reaches it as a Windows service (store-computer-db.mjs).
   const dbDone = await installDatabase(deps, P, db);
   if (dbDone !== 0) return dbDone;
+  writeServicesMarker(deps, P.dataRoot, { pgBin: P.pgBin, port: db.port });
+  // CR-01 step 2c (OI-08): a copy moved from Docker has its data restored HERE — into the new, empty database, before the
+  // office service starts (and runs the migrations) on it.
+  if (opts.afterDatabase !== undefined) {
+    const moved = await opts.afterDatabase({ pgBin: P.pgBin, port: db.port });
+    if (moved !== 0) return moved;
+  }
 
   // 2 — The API and the till, behind the service host.
   for (const name of [SERVICES.api, SERVICES.till]) {

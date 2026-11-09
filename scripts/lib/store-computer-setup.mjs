@@ -14,6 +14,7 @@
 // runtime\pgsql\bin and runtime\winsw — nothing is downloaded on the shop's PC (ADR-0032).
 
 import { installServices } from './store-computer-services.mjs';
+import { adoptDockerCopy, dockerCopyToMove } from './store-computer-adopt.mjs';
 import { loadSettings, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
 
@@ -93,6 +94,7 @@ export async function firstRun(given, opts = {}) {
 
   // 1 — Settings: kept when this PC already has them; otherwise made once, with this shop's own new tenant id.
   let here = deps;
+  let made = false;
   let now = loadSettings(here);
   if (now.settings !== undefined) {
     say(`This PC is already set up: its settings in ${now.L.settings} are KEPT, with every secret and its tenant id.`);
@@ -102,8 +104,9 @@ export async function firstRun(given, opts = {}) {
   } else {
     const refusal = newDataDriveRefusal(deps, opts.dataDrive);
     if (refusal !== undefined) { say(`REFUSED — ${refusal}. Nothing was changed.`); return 2; }
-    const made = await prepare(here, { dataDrive: opts.dataDrive });
-    if (made !== 0) return made;
+    const prepared = await prepare(here, { dataDrive: opts.dataDrive });
+    if (prepared !== 0) return prepared;
+    made = true;
     // prepare recorded where the data folder is; every later step reads it from there (OB-283).
     const found = resolveDataFolder(here);
     if (found.problem !== undefined) { say(`NOT DONE — ${found.problem}`); return 1; }
@@ -128,11 +131,13 @@ export async function firstRun(given, opts = {}) {
     say(`The till's settings in ${L.tillEnv} are KEPT.`);
   }
 
-  // 3 — The three Windows services.
+  // 3 — The three Windows services. A shop set up with Docker (the owner's own PC) is MOVED onto them, everything kept
+  // (CR-01 step 2c, OI-08 — store-computer-adopt.mjs).
   const runtime = bundledRuntime(deps);
-  const done = await installServices(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost });
+  const move = dockerCopyToMove(here, L);
+  const done = move ? await adoptDockerCopy(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost }) : await installServices(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost });
   if (done !== 0) return done;
-  say(`This shop's tenant id: ${now.settings.EDGE_TENANT_ID}  (made by this setup on this PC; a name, not a secret).`);
+  say(`This shop's tenant id: ${now.settings.EDGE_TENANT_ID}  (${move || made === false ? 'kept' : 'made by this setup on this PC'}; a name, not a secret).`);
   say('SETUP DONE.');
   return 0;
 }

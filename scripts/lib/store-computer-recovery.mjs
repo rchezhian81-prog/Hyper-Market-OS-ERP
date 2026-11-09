@@ -35,10 +35,11 @@
 // the drive. No secret is ever printed or written into a manifest or a record (hard rule #4). Every program is started
 // with an argument array and no shell.
 
+import { databaseProblem, dbSpawn, nativeBackupScript, otherLines, readServicesMarker } from './store-computer-db.mjs';
 import { createHash } from 'node:crypto';
 import { DRILL_TARGETS } from './rollback-drill.mjs';
 import {
-  DEMO_PROJECT, FINGERPRINT_KEYS, PROJECT, SETTINGS_NAME, composeBase, composeEnv, dockerProblem, fingerprintsOf, guarded, lines,
+  DEMO_PROJECT, FINGERPRINT_KEYS, PROJECT, SETTINGS_NAME, composeBase, composeEnv, fingerprintsOf, guarded, lines,
   loadSettings, ownDriveProblem, parseEnvText, pathFor, rel, stampOf, waitReady,
 } from './store-computer.mjs';
 import {
@@ -180,7 +181,7 @@ export function reconcile(expected, got) {
 
 /** `docker compose … exec -T -e PGOPTIONS=… db <program> <args>` — this copy's own database container, never another. */
 export const dbExec = (program, args, L) => [...composeBase(L), 'exec', '-T', '-e', PLATFORM_PGOPTIONS, 'db', program, ...args];
-const psqlArgs = (user, database) => ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database];
+export const psqlArgs = (user, database) => ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database];
 
 /** SHA-256 of a file, read in pieces (a backup can be larger than memory). */
 export function hashFile(fs, file) {
@@ -197,7 +198,7 @@ export function hashFile(fs, file) {
   return h.digest('hex');
 }
 
-function startsWithMagic(fs, file) {
+export function startsWithMagic(fs, file) {
   const fd = fs.openSync(file, 'r');
   try {
     const buf = Buffer.alloc(DUMP_MAGIC.length);
@@ -244,7 +245,9 @@ export function ready(deps) {
     deps.say('REFUSED — the database name or user in this copy\'s settings is not a plain name (small letters, digits and _ only). Send me a photo of this screen (never of the file).');
     return { code: 2 };
   }
-  return { L, settings, user, database, env: composeEnv(deps.env, settings) };
+  // ADR-0032 (CR-01 step 2c): a copy that runs as Windows services is reached on this PC's own PostgreSQL.
+  const native = readServicesMarker(deps, L);
+  return { L, settings, user, database, env: composeEnv(deps.env, settings), ...(native === undefined ? {} : { native }) };
 }
 
 /** A backup needs the data folder (its key, its scratch space). A copy still inside the release folder is moved first. */
@@ -255,13 +258,16 @@ export function dataFolderReady(deps, ctx) {
   return false;
 }
 
-export function dockerReady(deps) {
-  const docker = dockerProblem(deps);
-  if (docker === undefined) return true;
-  deps.say(`NOT DONE — ${docker.what}`);
-  deps.say(`  What to do: ${docker.fix}`);
+/** Is this copy's database there to be asked — in Docker, or as the Windows service (store-computer-db.mjs)? */
+export function databaseReady(deps, ctx) {
+  const problem = databaseProblem(deps, ctx?.L);
+  if (problem === undefined) return true;
+  deps.say(`NOT DONE — ${problem.what}`);
+  deps.say(`  What to do: ${problem.fix}`);
   return false;
 }
+/** Kept for the callers that only ever meant Docker. */
+export const dockerReady = (deps) => databaseReady(deps, undefined);
 
 // ── The backup key (OB-249: "encrypted, with a passphrase the owner types once") ─────────────────────────────────────
 
@@ -383,14 +389,25 @@ export function takeStoreBackup(deps, ctx, dir, key) {
     const fd = fs.openSync(plainDump, 'wx', 0o600);
     let r;
     try {
-      r = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, ctx.database), L), {
-        cwd: L.composeDir, env: ctx.env, input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'],
-      });
+      if (ctx.native !== undefined) {
+        // On the PC's own PostgreSQL: the same one snapshot; the totals go to a file psql writes, pg_dump to the archive.
+        const totalsFile = p.join(scratch, 'totals.txt');
+        r = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), {
+          input: nativeBackupScript({ user: ctx.user, database: ctx.database, pgDump: p.join(ctx.native.pgBin, deps.platform === 'win32' ? 'pg_dump.exe' : 'pg_dump'), totalsFile, port: ctx.native.port }),
+          stdio: ['pipe', fd, 'pipe'],
+        });
+        const totalsText = fs.existsSync(totalsFile) ? fs.readFileSync(totalsFile, 'utf8') : '';
+        r = { ...r, stderr: `${totalsText}\n${otherLines(r.stderr ?? '').join('\n')}` };
+      } else {
+        r = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), {
+          input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'],
+        });
+      }
       try { fs.fsyncSync(fd); } catch { /* the scratch copy is read back at once */ }
     } finally { fs.closeSync(fd); }
     const said = parseTotals(r.stderr ?? '');
     const bytes = fs.statSync(plainDump).size;
-    const why = r.error !== undefined ? `Docker could not be started (${r.error.code ?? r.error.message})`
+    const why = r.error !== undefined ? `${ctx.native !== undefined ? 'the database program' : 'Docker'} could not be started (${r.error.code ?? r.error.message})`
       : r.status !== 0 ? `the database did not finish the backup (it ended ${r.status}): ${firstProblem(said.other.join('\n')) || 'no reason given'}`
         : said.dumpExit !== 0 ? `pg_dump ended ${said.dumpExit === undefined ? 'without saying how' : said.dumpExit}: ${firstProblem(said.other.join('\n')) || 'no reason given'}`
           : !said.done || said.snapshot === undefined ? 'the database session did not finish cleanly'
@@ -477,7 +494,7 @@ export async function backup(deps, opts) {
   const refusal = folderRefusal(deps, dir);
   if (refusal !== undefined) { say(`REFUSED — ${refusal}`); return 2; }
   if (!dataFolderReady(deps, ctx)) return 2;
-  if (!dockerReady(deps)) return 1;
+  if (!databaseReady(deps, ctx)) return 1;
   const key = await ensureBackupKey(deps, ctx.L);
   if (key === undefined) return 1;
 
@@ -576,19 +593,19 @@ export function changedParts(deps, dir, manifest) {
  */
 function restoreIntoScratch(deps, ctx, dumpFile, expected) {
   const { fs } = deps;
-  const list = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', 'SELECT datname FROM pg_database'], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  const list = dbSpawn(deps, ctx, 'psql', [...psqlArgs(ctx.user, 'postgres'), '-c', 'SELECT datname FROM pg_database']);
   if (list.error !== undefined || list.status !== 0) return { differences: ['this copy\'s database did not answer (run: pnpm run store-computer -- up)'], outcome: 'restore_not_accepted' };
   const scratch = assertScratch(scratchName(deps.now(), lines(list.stdout)), ctx.settings);
-  const made = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `CREATE DATABASE "${assertScratch(scratch, ctx.settings)}"`], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  const made = dbSpawn(deps, ctx, 'psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `CREATE DATABASE "${assertScratch(scratch, ctx.settings)}"`]);
   if (made.error !== undefined || made.status !== 0) return { scratch, made: false, differences: [`the scratch database could not be made: ${firstProblem(made.stderr) || 'no reason given'}`], outcome: 'restore_not_accepted' };
   try {
     const fd = fs.openSync(dumpFile, 'r');
     let restored;
     try {
-      restored = deps.spawn('docker', dbExec('pg_restore', ['-U', ctx.user, '-d', assertScratch(scratch, ctx.settings), '--no-owner', '--no-privileges'], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env, stdio: [fd, 'pipe', 'pipe'] });
+      restored = dbSpawn(deps, ctx, 'pg_restore', ['-U', ctx.user, '-d', assertScratch(scratch, ctx.settings), '--no-owner', '--no-privileges'], { stdio: [fd, 'pipe', 'pipe'] });
     } finally { fs.closeSync(fd); }
     // Reconcile — the step that makes this a restore rather than a hope.
-    const counted = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, assertScratch(scratch, ctx.settings)), ctx.L), { cwd: ctx.L.composeDir, env: ctx.env, input: `${totalsScript().join('\n')}\n` });
+    const counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, assertScratch(scratch, ctx.settings)), { input: `${totalsScript().join('\n')}\n` });
     const got = parseTotals(counted.stdout ?? '');
     const differences = [];
     if (restored.error !== undefined || restored.status !== 0) differences.push(`the restore program ended ${restored.status ?? restored.error?.code}: ${firstProblem(restored.stderr) || 'no reason given'}`);
@@ -601,7 +618,7 @@ function restoreIntoScratch(deps, ctx, dumpFile, expected) {
 }
 
 function dropScratch(deps, ctx, scratch) {
-  const drop = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `DROP DATABASE "${assertScratch(scratch, ctx.settings)}"`], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  const drop = dbSpawn(deps, ctx, 'psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `DROP DATABASE "${assertScratch(scratch, ctx.settings)}"`]);
   return drop.error === undefined && drop.status === 0;
 }
 
@@ -727,7 +744,7 @@ export async function restoreCheck(deps, opts) {
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
   if (!deps.fs.existsSync(files.manifestPath) && !deps.fs.existsSync(files.dumpPath)) { say(`REFUSED — there is no backup at ${from}. Is your backup drive plugged in, and is its letter right?`); return 2; }
-  if (!dockerReady(deps)) return 1;
+  if (!databaseReady(deps, ctx)) return 1;
 
   const manifest = readJson(deps.fs, files.manifestPath);
   let privateKey;
@@ -892,6 +909,10 @@ export async function drill(deps, opts) {
   if (missing.length > 0) { say(`REFUSED — the drill needs: ${missing.join(', ')}`); say('  pnpm run store-computer -- drill --by "Your Name" --to E:\\sre-real --previous C:\\SRE-previous'); return 2; }
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
+  if (ctx.native !== undefined) {
+    say('NOT YET — this copy runs as Windows services (ADR-0032). The timed rollback drill for Windows services comes with the one-click update (CR-01 step 3); until then it runs on the Docker copy only. Nothing was changed.');
+    return 2;
+  }
   const { problems, plan } = drillPlan(deps, ctx, opts);
   if (problems.length > 0) { for (const pr of problems) say(`REFUSED — ${pr}`); say('  Nothing was changed.'); return 2; }
 
