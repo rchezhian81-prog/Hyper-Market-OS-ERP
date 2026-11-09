@@ -41,41 +41,41 @@ function installedRelease(): { w: World; d: Deps; win: PretendWin } {
 describe('setup — the first run SRE-Setup.exe does: settings, till, services, in one step', () => {
   it('on a new PC: makes the settings with a new tenant id, installs the till and the three services, says SETUP DONE', async () => {
     const { w, d, win } = installedRelease();
-    expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
-    const s = settingsIn(d.fs);
+    expect(await main(['setup', '--data-drive', 'F:'], d)).toBe(0);
+    const s = settingsIn(d.fs, 'F:\\SRE-data');
     expect(s['EDGE_TENANT_ID']).toMatch(/^[0-9a-f-]{36}$/);
     const out = said(w);
     expect(out).toMatch(/^SRE Retail OS setup — release 1\.0\.0 \(abcdef12\)\.$/m);
-    expect(out).toMatch(/^The till is installed in C:\\SRE-data\\till\.$/m);
+    expect(out).toMatch(/^The till is installed in F:\\SRE-data\\till\.$/m);
     expect(out).toContain(`This shop's tenant id: ${s['EDGE_TENANT_ID']}`);
     expect(out).toMatch(/^SETUP DONE\.$/m);
     for (const name of [SERVICES.database, SERVICES.api, SERVICES.till]) expect(win.services.get(name)?.state).toBe('running');
     // The release's own PostgreSQL and service host were used; nothing was built on the shop PC (no build tools there).
     expect(win.calls.find((c) => c.cmd.endsWith('initdb.exe'))?.cmd).toBe('C:\\SRE\\runtime\\pgsql\\bin\\initdb.exe');
     expect(win.calls.some((c) => c.args.some((a) => String(a).endsWith('build-service.mjs')))).toBe(false);
-    expect(win.tillInstalls[0]).toEqual(expect.arrayContaining(['--settings', 'C:\\SRE-data\\.env.real', '--lane', 'lane-1', '--skip-build']));
+    expect(win.tillInstalls[0]).toEqual(expect.arrayContaining(['--settings', 'F:\\SRE-data\\.env.real', '--lane', 'lane-1', '--skip-build']));
   });
 
   it('two installs make two different tenant ids (OI-03) — never typed, never copied', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 2; i += 1) {
       const { d } = installedRelease();
-      expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
-      ids.push(settingsIn(d.fs)['EDGE_TENANT_ID']!);
+      expect(await main(['setup', '--data-drive', 'F:'], d)).toBe(0);
+      ids.push(settingsIn(d.fs, 'F:\\SRE-data')['EDGE_TENANT_ID']!);
     }
     expect(ids[0]).not.toBe(ids[1]);
   });
 
   it('run again: the settings file is byte-for-byte the same, the till and the database are kept, nothing is installed twice', async () => {
     const { w, d, win } = installedRelease();
-    expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
-    const before = d.fs.readFileSync('C:\\SRE-data\\.env.real', 'utf8');
+    expect(await main(['setup', '--data-drive', 'F:'], d)).toBe(0);
+    const before = d.fs.readFileSync('F:\\SRE-data\\.env.real', 'utf8');
     w.said.length = 0;
     expect(await main(['setup'], d)).toBe(0);
-    expect(d.fs.readFileSync('C:\\SRE-data\\.env.real', 'utf8')).toBe(before);
+    expect(d.fs.readFileSync('F:\\SRE-data\\.env.real', 'utf8')).toBe(before);
     const out = said(w);
-    expect(out).toMatch(/^This PC is already set up: its settings in C:\\SRE-data\\\.env\.real are KEPT, with every secret and its tenant id\.$/m);
-    expect(out).toMatch(/^The till's settings in C:\\SRE-data\\till\\till\.env are KEPT\.$/m);
+    expect(out).toMatch(/^This PC is already set up: its settings in F:\\SRE-data\\\.env\.real are KEPT, with every secret and its tenant id\.$/m);
+    expect(out).toMatch(/^The till's settings in F:\\SRE-data\\till\\till\.env are KEPT\.$/m);
     expect(win.tillInstalls).toHaveLength(1);
     expect(win.initdbRuns).toBe(1);
     expect(win.hostInstalls).toEqual(['SRE-API', 'SRE-Till']);
@@ -83,18 +83,18 @@ describe('setup — the first run SRE-Setup.exe does: settings, till, services, 
 
   it('a PC already set up keeps its data where it is, even when another drive is asked for', async () => {
     const { w, d } = installedRelease();
-    expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
+    expect(await main(['setup', '--data-drive', 'F:'], d)).toBe(0);
     w.said.length = 0;
-    expect(await main(['setup', '--data-drive', 'D:'], d)).toBe(0);
-    expect(said(w)).toMatch(/^ {2}Its shop data stays in C:\\SRE-data; the drive asked for, D:, is not used\.$/m);
+    expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
+    expect(said(w)).toMatch(/^ {2}Its shop data stays in F:\\SRE-data; the drive asked for, C:, is not used\.$/m);
   });
 
   it('every line is also kept in C:\\ProgramData\\SRE\\setup.log — and no secret is in it', async () => {
     const { d } = installedRelease();
-    expect(await main(['setup', '--data-drive', 'C:'], d)).toBe(0);
+    expect(await main(['setup', '--data-drive', 'F:'], d)).toBe(0);
     const log = d.fs.readFileSync('C:\\ProgramData\\SRE\\setup.log', 'utf8');
     expect(log).toMatch(/Z {2}SETUP DONE\./);
-    const s = settingsIn(d.fs);
+    const s = settingsIn(d.fs, 'F:\\SRE-data');
     for (const k of ['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY']) expect(log).not.toContain(s[k]!);
   });
 
@@ -104,8 +104,8 @@ describe('setup — the first run SRE-Setup.exe does: settings, till, services, 
     expect(said(w)).toMatch(/REFUSED — the setup is for the store computer \(Windows 10 or 11\)\./);
     const r = installedRelease();
     r.w.windows.edition = { productType: 3, caption: 'Microsoft Windows Server 2022 Standard' };
-    expect(await main(['setup', '--data-drive', 'C:'], r.d)).toBe(2);
-    expect(r.d.fs.existsSync('C:\\SRE-data\\.env.real')).toBe(false);
+    expect(await main(['setup', '--data-drive', 'F:'], r.d)).toBe(2);
+    expect(r.d.fs.existsSync('F:\\SRE-data\\.env.real')).toBe(false);
     expect(r.win.services.size).toBe(0);
   });
 

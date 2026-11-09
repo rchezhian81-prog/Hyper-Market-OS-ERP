@@ -37,8 +37,8 @@ export function pgVersion(root = ROOT) {
 /** Is this file part of the shipped scripts? Only the runnable tool and its page — never TypeScript sources. */
 export function shipsScript(rel) {
   const r = rel.replace(/\\/g, '/');
-  if (['scripts', 'scripts/lib', 'scripts/dist', 'scripts/import-page'].includes(r)) return true;
-  if (r.startsWith('scripts/dist/') || r.startsWith('scripts/import-page/')) return true;
+  if (['scripts', 'scripts/lib', 'scripts/dist', 'scripts/import-page', 'scripts/setup-page'].includes(r)) return true;
+  if (r.startsWith('scripts/dist/') || r.startsWith('scripts/import-page/') || r.startsWith('scripts/setup-page/')) return true;
   return /^scripts\/(lib\/)?[^/]+\.mjs$/.test(r);
 }
 

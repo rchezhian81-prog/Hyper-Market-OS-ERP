@@ -15,7 +15,7 @@
 
 import { installServices } from './store-computer-services.mjs';
 import { loadSettings, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
-import { refusedOnServer } from './store-computer-windows.mjs';
+import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
 
 /** The marker an installed release carries (written by scripts/build-store-pc-release.mjs). */
 export const RELEASE_MARKER = 'release.json';
@@ -34,6 +34,37 @@ export function bundledRuntime(deps) {
 export function releaseInfo(deps) {
   const file = pathFor(deps.platform).join(deps.repoRoot, RELEASE_MARKER);
   try { return JSON.parse(deps.fs.readFileSync(file, 'utf8')); } catch { return undefined; }
+}
+
+/** The system disk's letter (where Windows is), from SystemDrive — C unless Windows says otherwise. */
+export const systemDriveLetter = (deps) => String(deps.env?.SystemDrive || 'C:').trim().charAt(0).toUpperCase() || 'C';
+
+/**
+ * OB-716 "A": a NEW shop's data goes on a disk inside this PC that is not the system disk — never C: (or wherever Windows
+ * is). A PC with no second internal disk is refused, in plain words. Undefined when the drive may be used.
+ */
+export function newDataDriveRefusal(deps, dataDrive) {
+  if (dataDrive === undefined || String(dataDrive).trim() === '') {
+    return 'name the disk the shop\'s data will be kept on (--data-drive D:): a disk inside this PC that is not the one Windows is on (OB-716)';
+  }
+  const letter = String(dataDrive).trim().charAt(0).toUpperCase();
+  if (letter === systemDriveLetter(deps)) {
+    return `${letter}: is the disk Windows is on. The shop's data goes on a SECOND disk inside this PC, so it survives Windows being reinstalled (OB-716). If this PC has no second disk, one must be fitted first`;
+  }
+  return undefined;
+}
+
+/** Every drive letter on this PC, and whether a new shop's data may go there (the first-run screens' list). */
+export function driveChoices(deps) {
+  const out = [];
+  for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+    if (!deps.fs.existsSync(`${letter}:\\`)) continue;
+    const system = newDataDriveRefusal(deps, `${letter}:`);
+    if (system !== undefined) { out.push({ letter, ok: false, why: `${letter}: is the disk Windows is on; the shop's data goes on a second disk inside this PC.` }); continue; }
+    const k = dataDriveProblem(deps, letter);
+    out.push(k.problem !== undefined ? { letter, ok: false, why: `${k.problem}.` } : { letter, ok: true, ...(k.note === undefined ? {} : { note: k.note }) });
+  }
+  return out;
 }
 
 /** `say`, and the same line kept in the setup log (best effort: a log that cannot be written never stops the setup). */
@@ -69,6 +100,8 @@ export async function firstRun(given, opts = {}) {
       say(`  Its shop data stays in ${now.L.dataRoot}; the drive asked for, ${opts.dataDrive}, is not used.`);
     }
   } else {
+    const refusal = newDataDriveRefusal(deps, opts.dataDrive);
+    if (refusal !== undefined) { say(`REFUSED — ${refusal}. Nothing was changed.`); return 2; }
     const made = await prepare(here, { dataDrive: opts.dataDrive });
     if (made !== 0) return made;
     // prepare recorded where the data folder is; every later step reads it from there (OB-283).

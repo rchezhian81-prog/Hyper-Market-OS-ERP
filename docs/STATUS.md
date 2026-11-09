@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CR-01 step 2b (9 November 2026): the first-run screens (OI-02), decisions OB-715 and OB-716
+- **What changed:** when a person runs SRE-Setup.exe, the first-run screens open in the browser (on this PC only, behind a one-time key), in English and Tamil. A new PC is asked for the data disk (only a disk inside the PC that is not the one Windows is on — OB-716 "A"), the shop's name, legal name, GSTIN and short code, and two people: the owner (owner-01) and the store manager (store-manager-01), each with their own PIN (OB-715 "A"). Everything is checked by the commands' own rules first. Then the screens set up this PC, record the two people, set each one's PIN, and make the shop active: prepared by the store manager, approved by the owner. A PC already set up keeps everything. `scripts/lib/setup-app.ts`, `scripts/setup-server.ts`, `scripts/setup-page/index.html`; new tool commands `setup-screens` and `setup-state`; `setup` now refuses a new shop's data on the Windows disk.
+- **Found on the way:** bundling the store-computer tool into the screens' server made three tool scripts run themselves; the server now runs the tool as its own program instead.
+- **Proof:** 15 unit tests; the new CI job `store-pc-first-run` fills the screens in on a clean Windows machine and checks the shop was prepared and approved, then the 18 questions.
+- **Next:** 2c — moving the store PC's Docker database across, data kept (OI-08). **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## CR-01 step 2a (8 November 2026): one setup program, SRE-Setup.exe, no typed command (OI-01, OI-03, OI-08 first half)
 - **What changed:** `SRE-Setup.exe` is built in CI from a release folder (`scripts/build-store-pc-release.mjs`, `infra/windows/sre-setup.iss`). It brings its own Node, PostgreSQL 16 and service host, copies itself to Program Files and runs the new `store-computer setup`: this PC's settings made once with a new tenant id made on the PC, or kept exactly when present; the till; the three Windows services. Every line is kept in `C:\ProgramData\SRE\setup.log`. Re-running replaces nothing; uninstalling removes the services and keeps all data.
 - **Proof:** 11 unit tests on a pretend Windows; the new CI job `store-pc-setup` builds the setup program, runs it silently on a clean Windows machine, asks Windows the 18 questions from step 1, runs it again, and uninstalls it.

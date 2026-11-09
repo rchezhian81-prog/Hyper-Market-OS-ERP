@@ -14,6 +14,9 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
 - **`store-pc-setup`** — CR-01 step 2a (OI-01): builds the release folder and `SRE-Setup.exe`, runs it once silently
   on a clean Windows machine (no typed command), asks Windows the same 18 questions, runs it again (nothing replaced)
   and uninstalls it (services gone, data kept). `SRE-Setup.exe` is kept as the run's artifact for 14 days.
+- **`store-pc-first-run`** — CR-01 step 2b (OI-02): the first-run screens on a clean Windows machine, filled in through
+  their own door (`tests/windows/first-run-screens.drive.mjs`): a wrong GSTIN refused, then SETUP DONE with the shop
+  prepared by the store manager and approved by the owner, then the 18 questions.
 - **`deploy`** — the API image builds, refuses a bad configuration by name, and the whole compose stack comes
   up READY and drains cleanly.
 - **`release`** — on a push to `main` only, after the three above passed on that commit: deploys exactly that

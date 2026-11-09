@@ -86,6 +86,16 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    // Run by a person: the first-run screens open in the browser (CR-01 step 2b, OI-02) and do the setup there; this
+    // program's part is done once its files are copied. Run silently (a technician, the tests): the setup runs here.
+    if not WizardSilent() then
+    begin
+      if not Exec(ExpandConstant('{app}\runtime\node\node.exe'), '"' + ExpandConstant('{app}\scripts\dist\setup-server.js') + '"',
+                  ExpandConstant('{app}'), SW_HIDE, ewNoWait, Code) then
+        MsgBox('The setup screens could not be opened. What happened is in C:\ProgramData\SRE\setup.log.', mbError, MB_OK);
+      SetupResult := 0;
+      exit;
+    end;
     WizardForm.StatusLabel.Caption := 'Setting up the shop database, the office and the till. This takes a few minutes...';
     if not Exec(ExpandConstant('{app}\runtime\node\node.exe'),
                 '"' + ExpandConstant('{app}\scripts\store-computer.mjs') + '" setup' + DataDriveArg(),
