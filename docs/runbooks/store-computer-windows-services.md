@@ -45,3 +45,23 @@ pnpm run store-computer -- remove-services
 
 Stops and removes the three services, the till first. The database folder, the settings file, the till's data and every
 log are kept untouched.
+
+## The setup program (CR-01 step 2a)
+
+`SRE-Setup.exe` does all of the above in one run, with nothing typed. It is built by the `store-pc-setup` CI job
+(`scripts/build-store-pc-release.mjs` makes the release folder, `infra/windows/sre-setup.iss` makes the setup program) and
+kept as that run's artifact. It brings its own Node, PostgreSQL 16 programs and service host, so nothing is downloaded on
+the shop's PC. It installs to `C:\Program Files\SRE Retail OS`, then runs `store-computer setup`:
+
+1. this PC's settings: made once with a new tenant id, or kept exactly when the PC already has them;
+2. the till, in the data folder (kept when already there);
+3. the three Windows services.
+
+Its words are kept in `C:\ProgramData\SRE\setup.log`. Running it again replaces nothing. Uninstalling (Windows Settings →
+Apps → SRE Retail OS → Uninstall) removes the program and the three services; the data folder is never touched.
+
+For a technician or a test, silently: `SRE-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DATADRIVE=D:`. Its exit
+code is 0 only when the setup said SETUP DONE.
+
+Not yet (CR-01 steps 2b–2d): the first-run screens, moving a Docker copy's database across, desktop shortcuts and the
+About screen. Until 2c, a PC whose shop still runs in Docker is refused, with nothing changed.

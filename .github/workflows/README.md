@@ -11,6 +11,9 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
   is asked whether each claim holds (`tests/windows/store-pc-on-windows.check.mjs`): running, starting at boot, each on
   its own account, this PC only, no secret in a definition or log, the API back by itself after being killed, the till
   selling with the API and the database stopped. Its record is the job's artifact.
+- **`store-pc-setup`** — CR-01 step 2a (OI-01): builds the release folder and `SRE-Setup.exe`, runs it once silently
+  on a clean Windows machine (no typed command), asks Windows the same 18 questions, runs it again (nothing replaced)
+  and uninstalls it (services gone, data kept). `SRE-Setup.exe` is kept as the run's artifact for 14 days.
 - **`deploy`** — the API image builds, refuses a bad configuration by name, and the whole compose stack comes
   up READY and drains cleanly.
 - **`release`** — on a push to `main` only, after the three above passed on that commit: deploys exactly that

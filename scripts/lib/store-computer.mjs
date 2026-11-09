@@ -51,6 +51,7 @@ import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBacku
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
 import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
+import { firstRun } from './store-computer-setup.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1228,6 +1229,8 @@ export const USAGE = [
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
+  '  setup [--data-drive D:] [--lane lane-1]   what the setup program runs: this copy\'s settings (made once, or kept),',
+  '                                           the till, and the three Windows services (CR-01 step 2)',
   '  install-services --pg-bin <PostgreSQL bin folder> --service-host <WinSW.exe>',
   '                                           Windows 10/11: the shop database, the office API and the till as Windows',
   '                                           services that start by themselves, on this PC only, without Docker (ADR-0032)',
@@ -1347,7 +1350,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1382,6 +1385,7 @@ export function parseCommandLine(argv) {
     else if (a === '--data-drive') out.dataDrive = value();
     else if (a === '--pg-bin') out.pgBin = value();
     else if (a === '--service-host') out.serviceHost = value();
+    else if (a === '--lane') out.lane = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1397,8 +1401,8 @@ export async function main(argv, given) {
     for (const l of USAGE) given.say(l);
     return 2;
   }
-  if (cl.dataDrive !== undefined && !['doctor', 'prepare', 'migrate-data-folder'].includes(cl.command)) {
-    given.say(`Not understood: --data-drive goes with doctor, prepare and migrate-data-folder only — every other command finds the data folder by itself.`);
+  if (cl.dataDrive !== undefined && !['doctor', 'prepare', 'migrate-data-folder', 'setup'].includes(cl.command)) {
+    given.say(`Not understood: --data-drive goes with doctor, prepare, setup and migrate-data-folder only — every other command finds the data folder by itself.`);
     return 2;
   }
   // OB-283: every command finds the shop's data folder the same way — where it is recorded.
@@ -1422,6 +1426,7 @@ export async function main(argv, given) {
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'import': return importPage(deps);
+    case 'setup': return firstRun(deps, { dataDrive: cl.dataDrive, lane: cl.lane, pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'install-services': return installServices(deps, { pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'services-status': return servicesStatus(deps);
     case 'remove-services': return removeServices(deps);

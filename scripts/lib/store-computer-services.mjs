@@ -363,8 +363,10 @@ export async function installServices(deps, opts) {
     }
   }
 
-  // The programs the two Node services run, built from this release (as the containers build them).
-  for (const what of ['api', 'edge']) {
+  // The programs the two Node services run, built from this release (as the containers build them). An installed release
+  // (release.json beside scripts/) brings them built, and has no build tools.
+  const prebuilt = fs.existsSync(pathFor(deps.platform).join(deps.repoRoot, 'release.json')) && fs.existsSync(P.apiBundle) && fs.existsSync(P.edgeBundle);
+  for (const what of prebuilt ? [] : ['api', 'edge']) {
     const b = deps.spawn(deps.nodePath, [P.buildScript, what, '--quiet'], { cwd: deps.repoRoot, env: deps.env });
     if (!ran(b)) { say(`NOT INSTALLED — this release's ${what === 'api' ? 'office API' : 'till'} program could not be built. ${said(b)}`); return 1; }
   }
