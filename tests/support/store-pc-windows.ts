@@ -44,7 +44,14 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
     return join(drives, `drive-${p[0]!.toLowerCase()}`, p.slice(3).replace(/\\/g, '/'));
   };
   const onC = (...p: string[]): string => map(win32.join('C:\\', ...p)) as string;
-  const fs = new Proxy(nodeFs, { get: (t, k) => { const f = (t as Record<string | symbol, unknown>)[k]; return typeof f === 'function' ? (...a: unknown[]) => (f as (...x: unknown[]) => unknown).apply(t, a.map(map)) : f; } }) as Deps['fs'];
+  const fs = new Proxy(nodeFs, {
+    get: (t, k) => {
+      // A temporary folder made under a Windows prefix is handed back as a Windows path, so the tool keeps working in it.
+      if (k === 'mkdtempSync') return (prefix: string) => { const real = nodeFs.mkdtempSync(map(prefix) as string); return `${prefix}${real.slice((map(prefix) as string).length)}`; };
+      const f = (t as Record<string | symbol, unknown>)[k];
+      return typeof f === 'function' ? (...a: unknown[]) => (f as (...x: unknown[]) => unknown).apply(t, a.map(map)) : f;
+    },
+  }) as Deps['fs'];
   // A new store PC: no Docker copy of a shop on it (the move from Docker has its own tests).
   w.docker.volumes = [];
   const win: PretendWin = { services: new Map(), calls: [], started: [], grants: [], initdbRuns: 0, hostInstalls: [], psqlInputs: [], tillInstalls: [], nativeDbs: {}, restoreLoses: 0, composeSeen: [] };
@@ -107,8 +114,10 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
     if (cmd === process.execPath) return base(cmd, args.map((a) => map(a) as string), o);
     return base(cmd, args, o);
   };
+  mkdirSync(join(drives, 'drive-c', 'Temp'), { recursive: true });
   const d: Deps = {
     ...w.deps,
+    tmpdir: () => 'C:\\Temp',
     platform: 'win32',
     repoRoot: 'C:\\SRE',
     dataRoot: 'C:\\SRE-data',

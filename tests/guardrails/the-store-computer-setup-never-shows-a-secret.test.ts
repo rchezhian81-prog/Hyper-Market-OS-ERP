@@ -138,7 +138,20 @@ describe('the store-computer setup never shows a secret (hard rule #4 · OB-244)
     // The scratch rule itself: only sre_restore_check_<14 digits>, never the copy's own database.
     expect(src).toMatch(/const SCRATCH = \/\^sre_restore_check_\\d\{14\}/);
     expect(src).not.toMatch(/--clean|--if-exists|DROP DATABASE IF EXISTS|WITH \(FORCE\)/);
-    // pg_restore runs only inside this copy's own db container, through dbExec (never a bare pg_restore on the computer).
-    expect(src).toMatch(/dbExec\('pg_restore'/);
+    // pg_restore runs only through dbSpawn: inside this copy's own db container, or (ADR-0032, CR-01 step 2c) the PC's own
+    // database service on 127.0.0.1 — never a bare pg_restore pointed anywhere else.
+    expect(src).toMatch(/dbSpawn\(deps, ctx, 'pg_restore'/);
+    const db = readFileSync('scripts/lib/store-computer-db.mjs', 'utf8');
+    expect(db).toMatch(/args: \['-h', '127\.0\.0\.1', '-p', ctx\.native\.port, \.\.\.args\]/);
+  });
+
+  it('the move from Docker restores ONCE, only into the new empty database, before the office starts — never with --clean', () => {
+    const src = readFileSync('scripts/lib/store-computer-adopt.mjs', 'utf8');
+    const restores = src.split('\n').filter((l) => /'pg_restore'/.test(l) && !/^\s*(\/\/|\*)/.test(l));
+    expect(restores).toHaveLength(1);
+    expect(restores[0]).toMatch(/dbSpawn\(deps, nctx, 'pg_restore', \['-U', ctx\.user, '-d', ctx\.database, '--exit-on-error', '--single-transaction'\]/);
+    // It lives in the hook install-services calls right after making the empty database, before the office starts.
+    expect(src).toMatch(/installServices\(deps, \{ pgBin: opts\.pgBin, serviceHost: opts\.serviceHost, afterDatabase: restoreAndCount \}\)/);
+    expect(src).not.toMatch(/--clean|--if-exists|DROP DATABASE|volume', 'rm'|'down'/);
   });
 });
