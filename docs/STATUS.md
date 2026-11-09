@@ -9,7 +9,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **What changed:** `SRE-Setup.exe` is built in CI from a release folder (`scripts/build-store-pc-release.mjs`, `infra/windows/sre-setup.iss`). It brings its own Node, PostgreSQL 16 and service host, copies itself to Program Files and runs the new `store-computer setup`: this PC's settings made once with a new tenant id made on the PC, or kept exactly when present; the till; the three Windows services. Every line is kept in `C:\ProgramData\SRE\setup.log`. Re-running replaces nothing; uninstalling removes the services and keeps all data.
 - **Proof:** 11 unit tests on a pretend Windows; the new CI job `store-pc-setup` builds the setup program, runs it silently on a clean Windows machine, asks Windows the 18 questions from step 1, runs it again, and uninstalls it.
 - **Step 2 is in four parts:** 2a this; 2b the first-run screens (shop details, data drive, owner name and PIN); 2c moving the Docker copy's database on the store PC across, data kept (OI-08); 2d desktop shortcuts and the About screen with the tenant id (OI-03, OI-04).
-- **Owner decision needed (not blocking):** the code-signing certificate. Without it, Windows shows "Windows protected your PC" when the setup program is opened.
+- **Decided:** no code-signing certificate for now (OB-714 "A"): the owner clicks "Run anyway" on his own PC; one is bought before the first sale to another shop. #887 was merged on the owner's "A" (OB-713), for that pull request only.
 - **Next:** 2b. **Blocked:** nothing.
 
 ## CR-01 step 1 (8 November 2026): the store computer runs as Windows services, no Docker (ADR-0032)
