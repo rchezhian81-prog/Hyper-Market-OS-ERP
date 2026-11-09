@@ -49,6 +49,8 @@ async function ownersPc(): Promise<{ w: World; d: Deps; win: PretendWin }> {
   const s = settingsIn(fs, 'F:\\SRE-data');
   fs.writeFileSync('F:\\SRE-data\\till\\till.env', `EDGE_TENANT_ID=${s['EDGE_TENANT_ID']}\nPACK_SIGNING_KEY=${s['PACK_SIGNING_KEY']}\nEDGE_LANE_ID=lane-1\nEDGE_LANE_PORT=8090\nEDGE_SCREEN_PORT=8091\nEDGE_DATA_DIR=F:\\SRE-data\\till\\edge-data\n`);
   fs.writeFileSync('F:\\SRE-data\\run\\till.json', JSON.stringify({ pid: 4242, startedAt: '2026-11-08T03:00:00.000Z' }));
+  // The release the owner set up with in November (the ZIP in C:\\SRE-2026-11) is the live one before the move.
+  fs.writeFileSync('F:\\SRE-data\\run\\current-release.json', JSON.stringify({ folder: 'C:\\SRE-2026-11', setAt: '2026-11-06T10:00:00.000Z' }));
   w.tasks.registered.set(TASKS.start, '<Task/>');
   w.said.length = 0;
   return { w, d, win };
@@ -84,6 +86,9 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     // The plain snapshot is deleted once the move matched.
     expect(d.fs.readdirSync('F:\\SRE-data\\scratch').filter((f) => f.startsWith('move-from-docker-'))).toEqual([]);
     for (const n of [SERVICES.database, SERVICES.api, SERVICES.till]) expect(win.services.get(n)?.state).toBe('running');
+    // The installed release is now the live one: the hourly backup and the check run from it; the old one is remembered.
+    expect(JSON.parse(d.fs.readFileSync('F:\\SRE-data\\run\\current-release.json', 'utf8'))).toMatchObject({ folder: 'C:\\SRE', previous: 'C:\\SRE-2026-11' });
+    expect(out).toMatch(/^The live release is now C:\\SRE \(it was C:\\SRE-2026-11\); the automatic backup and the check run from it\.$/m);
   });
 
   it('a new database that does not match is NOT accepted: services removed, the new folder kept aside, Docker started again', async () => {

@@ -9,3 +9,5 @@ export declare function firstRun(deps: Deps, opts?: { dataDrive?: string; lane?:
 export declare function systemDriveLetter(deps: Pick<Deps, 'env'>): string;
 export declare function newDataDriveRefusal(deps: Pick<Deps, 'env'>, dataDrive: string | undefined): string | undefined;
 export declare function driveChoices(deps: Deps): { letter: string; ok: boolean; why?: string; note?: string }[];
+export declare const SHORTCUTS: Readonly<{ till: string; office: string; import: string }>;
+export declare function writeShortcuts(deps: Deps, opts?: { only?: string }): number;

@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CR-01 step 2d (9 November 2026): desktop shortcuts and the About screen — CR-01 step 2 complete (OI-03, OI-04)
+- **What changed:** the first-run screens' last page offers SRE Till, SRE Office and SRE Import & export on the desktop, once the setup has finished well (`store-computer shortcuts`). The till's screen server has an About screen, `http://127.0.0.1:8091/about/`, with the shop's tenant id, store, till and release (names only, this PC only). The import page works from an installed release.
+- **Proof:** 7 unit tests and one integration test (a real till edge serving /about/); on a clean Windows machine the three shortcuts appear on the desktop and the About screen shows the tenant id.
+- **CR-01 step 2 is complete:** OI-01 (one setup program), OI-02 (first-run screens), OI-03 (tenant id made by setup, on About), OI-04 (shortcuts), OI-08 (the Docker copy moved, everything kept).
+- **Next for the owner:** run the setup program on the store PC with `docs/runbooks/store-pc-move-checklist.md`, at a quiet time, and send the photos it asks for. **Next for the build:** CR-01 step 3, one-click update with automatic rollback (OI-05), which also brings the rollback drill (G9) to the Windows services.
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## CR-01 step 2c (9 November 2026): the owner's Docker copy moves onto Windows services, everything kept (OI-08)
 - **What changed:** on a PC whose shop runs in Docker, `setup` (SRE-Setup.exe) now MOVES it: the till and the office stopped, one counted snapshot (the hourly backup's own method), the Docker copy stopped and KEPT as the way back, the snapshot restored into the new database before the office starts and counted again (every table's rows, the money, the newest event). Only on an exact match is the move recorded and the old sign-in start removed; any difference removes the services, keeps the new folder aside and starts Docker again. `scripts/lib/store-computer-adopt.mjs`.
 - **After the move, no Docker:** backup (same one-snapshot guarantee, Windows plumbing), restore check, G4 checks 1 and 2, the red light, `up` and `autostart` use the database service (`scripts/lib/store-computer-db.mjs`). The rollback drill and `update` refuse in plain words until step 3.

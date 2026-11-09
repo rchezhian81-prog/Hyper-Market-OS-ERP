@@ -10,6 +10,7 @@
 // The synthetic PINs are this test's own; nothing here is a real shop's.
 
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const [release, drive] = process.argv.slice(2);
@@ -65,6 +66,17 @@ if (all.includes('482915') || all.includes('730264')) fail('a PIN appeared in wh
 if (!progress.done || !progress.ok) fail('the setup did not finish');
 if (!/DONE — the shop is set up .*store TST-MAIN active\. Done as owner-01, approved by accountant-01\./.test(all)) fail('the shop was not made active by the owner with the accountant\'s approval');
 if ((await call('POST', 'install', answers)).status !== 409) fail('a second install on the same page was not refused');
+// CR-01 step 2d (OI-04): the last screen's shortcuts, all three ticked → on this account's desktop.
+const sc = await call('POST', 'shortcuts', { till: true, office: true, import: true });
+for (const l of sc.body.lines ?? []) say(`  | ${l}`);
+const desktop = join(process.env.USERPROFILE ?? '', 'Desktop');
+for (const f of ['SRE Till.url', 'SRE Office.url', 'SRE Import & export.cmd']) if (!existsSync(join(desktop, f))) fail(`the shortcut "${f}" is not on the desktop`);
+if (!readFileSync(join(desktop, 'SRE Till.url'), 'utf8').includes('URL=http://127.0.0.1:8091/pos/')) fail('the till shortcut does not open the till');
+// OI-03: the About screen says this shop's tenant id.
+const tenant = (await call('GET', 'state')).body.tenantId;
+const about = await fetch('http://127.0.0.1:8091/about/').then((r) => r.text(), () => '');
+if (tenant === undefined || !about.includes(`<code>${tenant}</code>`)) fail('the About screen does not show this shop\'s tenant id');
+say(`The desktop has the three shortcuts; the About screen shows tenant id ${tenant}.`);
 say('PASS — the first-run screens set this PC up: settings, till, services, the two people, their own PINs, and the shop, prepared by the owner and approved by the accountant.');
 server.kill();
 process.exit(0);

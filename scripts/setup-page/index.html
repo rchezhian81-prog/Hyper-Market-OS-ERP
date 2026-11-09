@@ -85,6 +85,17 @@
     <div class="banner" id="result" hidden></div>
     <pre id="lines"></pre>
   </section>
+
+  <section id="shortcuts" hidden>
+    <h2 data-t="scH">Shortcuts on the desktop</h2>
+    <p class="help" data-t="scP">Tick the ones you want for everyday use. You can come back for the others later.</p>
+    <label class="drive"><input type="checkbox" id="scTill" checked> <span data-t="scTill">Till — the selling screen</span></label>
+    <label class="drive"><input type="checkbox" id="scOffice" checked> <span data-t="scOffice">Office — the office pages</span></label>
+    <label class="drive"><input type="checkbox" id="scImport" checked> <span data-t="scImport">Import &amp; export — the old system's files in, Excel out</span></label>
+    <p></p><div class="actions"><button class="primary" id="scBtn" type="button" data-t="scBtn">Put them on the desktop</button></div>
+    <pre id="scLines" hidden></pre>
+    <p class="help"><span data-t="about">About this PC (its tenant id and release):</span> <a href="http://127.0.0.1:8091/about/" target="_blank" rel="noopener">http://127.0.0.1:8091/about/</a></p>
+  </section>
 </main>
 <script>
 (() => {
@@ -101,6 +112,7 @@
     mgrH: '4. கணக்காளர்', mgrP: 'யாரும் தனியாக கடையை அமைக்கக்கூடாது: நீங்கள் தயார் செய்வீர்கள், கடையின் கணக்காளர் ஒப்புதல் தருவார். அவரது பணியாளர் எண் accountant-01. அவர் தன் PIN-ஐ தட்டச்சு செய்யும்போது வேறு பக்கம் பாருங்கள்.',
     goH: '5. அமை', goP: 'இது இந்த கணினியை அமைக்கும், உங்கள் இருவரையும் பதிவு செய்யும், PIN-களை அமைக்கும், கடையைச் செயல்படுத்தும்: நீங்கள் தயார் செய்து, கணக்காளர் ஒப்புதல் தருவார். சில நிமிடங்கள் ஆகும்.',
     goBtn: 'இந்தக் கடையை அமை', progH: 'அமைக்கிறது…',
+    scH: 'மேசைக் கணினித் திரையில் குறுக்குவழிகள்', scP: 'தினசரி பயன்பாட்டுக்கு வேண்டியவற்றைத் தேர்ந்தெடுக்கவும். மற்றவற்றைப் பிறகு சேர்க்கலாம்.', scTill: 'பணப்பெட்டி — விற்பனைத் திரை', scOffice: 'அலுவலகம் — அலுவலகப் பக்கங்கள்', scImport: 'இறக்குமதி & ஏற்றுமதி — பழைய அமைப்பின் கோப்புகள் உள்ளே, Excel வெளியே', scBtn: 'திரையில் வை', about: 'இந்தக் கணினி பற்றி (டெனன்ட் எண், வெளியீடு):',
   };
   const EN = {};
   document.querySelectorAll('[data-t]').forEach((el) => { EN[el.dataset.t] = el.textContent; });
@@ -142,6 +154,7 @@
         $('result').hidden = false;
         $('result').className = `banner ${p.ok ? 'ok' : 'bad'}`;
         $('result').textContent = p.ok ? 'Done. This PC is ready. / முடிந்தது. இந்த கணினி தயார்.' : 'Not finished. Send a photo of this screen. / முடியவில்லை. இந்தத் திரையின் புகைப்படத்தை அனுப்பவும்.';
+        if (p.ok) $('shortcuts').hidden = false;
         return;
       }
       await new Promise((r) => setTimeout(r, 1500));
@@ -159,6 +172,13 @@
     ['ownerPin', 'ownerPin2', 'mgrPin', 'mgrPin2'].forEach((id) => { $(id).value = ''; });
     if (started.status !== 202) { showProblems(started.body.problems || {}); if (started.body.error) refuse(started.body.error); $('goBtn').disabled = false; return; }
     await follow();
+  };
+  $('scBtn').onclick = async () => {
+    $('scBtn').disabled = true;
+    const r = await call('POST', 'shortcuts', { till: $('scTill').checked, office: $('scOffice').checked, import: $('scImport').checked });
+    $('scLines').hidden = false;
+    $('scLines').textContent = (r.body.lines || [r.body.error || 'The shortcuts could not be made.']).join('\n');
+    $('scBtn').disabled = false;
   };
   $('keepBtn').onclick = async () => {
     $('keepBtn').disabled = true;

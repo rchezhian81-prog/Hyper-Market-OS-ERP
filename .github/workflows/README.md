@@ -18,7 +18,7 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
   their own door (`tests/windows/first-run-screens.drive.mjs`): a wrong GSTIN refused, then SETUP DONE with the shop
   prepared by the owner and approved by the accountant, then the 18 questions; then (CR-01 step 2c) a backup, a
   restore check reconciled, and G4 checks 1 and 2 on the Windows database service, with no Docker
-  (`tests/windows/services-backup.drive.mjs`).
+  (`tests/windows/services-backup.drive.mjs`); and (step 2d) the three desktop shortcuts and the About screen.
 - **`deploy`** — the API image builds, refuses a bad configuration by name, and the whole compose stack comes
   up READY and drains cleanly.
 - **`release`** — on a push to `main` only, after the three above passed on that commit: deploys exactly that

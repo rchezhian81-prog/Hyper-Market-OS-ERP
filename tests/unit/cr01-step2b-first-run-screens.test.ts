@@ -115,6 +115,7 @@ describe('the screens\' door: this PC only, the one-time key, one install', () =
       state: () => ({ setUp, drives: DRIVES, ...(setUp ? { tenantId: 't-1', dataRoot: 'D:\\SRE-data' } : {}) }),
       install: async (_a, p) => { runs.push('install'); p.done = true; p.ok = true; return true; },
       keep: async (p) => { runs.push('keep'); p.done = true; p.ok = true; return true; },
+      shortcuts: async (chosen) => { runs.push(`shortcuts ${chosen.join(',')}`); return { ok: true, lines: [] }; },
     });
     return { handle, runs };
   };

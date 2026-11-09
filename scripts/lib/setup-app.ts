@@ -183,6 +183,17 @@ export interface SetupDoor {
   install(a: SetupAnswers, progress: Progress): Promise<boolean>;
   /** A PC already set up: keep everything, bring this PC's programs up to date (store-computer `setup`). */
   keep(progress: Progress): Promise<boolean>;
+  /** OI-04: the chosen desktop shortcuts (store-computer `shortcuts --only …`). Returns the lines said. */
+  shortcuts(chosen: readonly Shortcut[]): Promise<{ ok: boolean; lines: string[] }>;
+}
+
+/** The desktop shortcuts the last screen offers (CR-01 step 2d, OI-04). */
+export const SHORTCUT_CHOICES = Object.freeze(['till', 'office', 'import'] as const);
+export type Shortcut = (typeof SHORTCUT_CHOICES)[number];
+/** The shortcuts ticked on the screen, in a fixed order; anything else is ignored. */
+export function shortcutsFrom(body: unknown): Shortcut[] {
+  const b = (body ?? {}) as Record<string, unknown>;
+  return SHORTCUT_CHOICES.filter((k) => b[k] === true);
 }
 
 export interface DoorReply { readonly status: number; readonly type: string; readonly body: string }
@@ -208,6 +219,13 @@ export function createSetupDoor(door: SetupDoor): (req: { method: string; path: 
       const st = door.state();
       if (st.setUp) return json(409, { error: 'This PC is already set up; its shop is kept as it is.' });
       return json(200, { problems: checkAnswers(answersFrom(req.body), st.drives) });
+    }
+    if (what === 'shortcuts') {
+      // Offered only once the setup on this page has finished well (OI-04: "the wizard's last screen offers each").
+      if (running === undefined || !running.done || !running.ok) return json(409, { error: 'The shortcuts are offered once the setup has finished.' });
+      const chosen = shortcutsFrom(req.body);
+      if (chosen.length === 0) return json(200, { ok: true, lines: ['No shortcut was chosen; nothing was put on the desktop.'] });
+      return json(200, await door.shortcuts(chosen));
     }
     if (what === 'install' || what === 'keep') {
       if (running !== undefined) return json(409, { error: 'The setup has already run on this page. Close it and open the setup program again to run it once more.' });
