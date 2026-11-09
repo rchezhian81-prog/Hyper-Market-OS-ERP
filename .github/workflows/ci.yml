@@ -399,6 +399,92 @@ jobs:
           foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
           Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
 
+  store-pc-first-run:
+    name: The first-run screens on a clean Windows — the shop set up by two people, nothing typed (CR-01 OI-02)
+    # CR-01 step 2b (OB-715 "A", OB-716 "A"): the release folder is built and its first-run screens' server is started on a
+    # clean Windows machine; tests/windows/first-run-screens.drive.mjs fills the screens in through the same door the browser
+    # uses (a wrong GSTIN refused first), and passes only on SETUP DONE with the shop prepared by the owner and approved
+    # by the accountant (OB-659), each with their own PIN. Then Windows is asked the 18 questions of step 1.
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      SRE_TEST_ON_HOSTED_RUNNER: '1'
+      PG_VERSION: 16.4-1
+      PG_ZIP_SHA256: 3508d8f085bc3980f38211a82e3f31e5fcae9952105d3dc2f8be67b64a822baa
+      WINSW_VERSION: v2.12.0
+      WINSW_SHA256: 05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch PostgreSQL 16 and the service host, and check their fingerprints
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $pgZip = Join-Path $dir 'postgresql.zip'
+          $winsw = Join-Path $dir 'WinSW-x64.exe'
+          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winsw
+          foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
+            $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
+            if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
+          }
+          tar -xf $pgZip -C $dir
+          "PGSQL=$dir\pgsql" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "WINSW=$winsw" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build the release folder
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'sre-release'
+          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)"
+          if ($LASTEXITCODE -ne 0) { throw 'the release folder was not built' }
+          "STAGE=$stage" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Fill in the first-run screens — two people, nothing typed at a command line
+        shell: pwsh
+        run: |
+          & "$env:STAGE\runtime\node\node.exe" tests/windows/first-run-screens.drive.mjs $env:STAGE D:
+          if ($LASTEXITCODE -ne 0) { throw 'the first-run screens did not set the shop up' }
+
+      - name: Prove it — ask Windows about every claim
+        shell: pwsh
+        run: |
+          $env:PG_BIN = "$env:STAGE\runtime\pgsql\bin"
+          node tests/windows/store-pc-on-windows.check.mjs "$env:RUNNER_TEMP\store-pc-first-run-proof.json" D:\SRE-data
+          if ($LASTEXITCODE -ne 0) { throw 'a claim did not hold' }
+
+      - name: Keep the proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-pc-first-run-proof
+          path: ${{ runner.temp }}/store-pc-first-run-proof.json
+          if-no-files-found: warn
+
+      - name: On failure — the setup's own words and the services' last words
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content C:\ProgramData\SRE\setup.log -ErrorAction SilentlyContinue
+          foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
+          Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
+
   deploy:
     name: The container builds, starts, and refuses a bad configuration
     runs-on: ubuntu-latest

@@ -45,7 +45,7 @@ const SERVICES = {
 
 /** Operator commands a person runs on the box; bundled together, each to its own file. */
 const TOOLS = {
-  entries: ['scripts/migration-load.ts', 'scripts/migration-slice.ts', 'scripts/bpal-to-slice.ts', 'scripts/import-server.ts', 'scripts/bootstrap-tenant.ts', 'scripts/owner-setup.ts', 'scripts/demo-smoke.ts', 'scripts/realm-for-shop.ts', 'scripts/new-shop.ts', 'scripts/shops.ts'],
+  entries: ['scripts/migration-load.ts', 'scripts/migration-slice.ts', 'scripts/bpal-to-slice.ts', 'scripts/import-server.ts', 'scripts/setup-server.ts', 'scripts/bootstrap-tenant.ts', 'scripts/owner-setup.ts', 'scripts/demo-smoke.ts', 'scripts/realm-for-shop.ts', 'scripts/new-shop.ts', 'scripts/shops.ts'],
   outdir: 'scripts/dist',
 };
 

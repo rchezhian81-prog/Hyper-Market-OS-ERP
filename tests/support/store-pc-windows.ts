@@ -10,7 +10,7 @@ import { main, parseEnvText, type Deps, type SpawnResult } from '../../scripts/l
 import { world, type World } from './store-computer-world';
 
 /** This copy's settings, read on the pretend PC (C:\\SRE-data\\.env.real). */
-export const settingsIn = (fs: Deps['fs']): Record<string, string> => parseEnvText(fs.readFileSync('C:\\SRE-data\\.env.real', 'utf8')) as Record<string, string>;
+export const settingsIn = (fs: Deps['fs'], dataRoot = 'C:\\SRE-data'): Record<string, string> => parseEnvText(fs.readFileSync(`${dataRoot}\\.env.real`, 'utf8')) as Record<string, string>;
 
 export interface PretendService { state: 'running' | 'stopped'; auto: boolean; account: string; startFails?: boolean }
 export interface PretendWin {
@@ -31,7 +31,7 @@ export interface PretendWin {
  */
 export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: PretendWin; onC: (...p: string[]) => string } {
   const drives = `${w.root}-drives`;
-  mkdirSync(join(drives, 'drive-c'), { recursive: true });
+  for (const l of ['c', 'f']) mkdirSync(join(drives, `drive-${l}`), { recursive: true });
   const map = (p: unknown): unknown => {
     if (typeof p !== 'string' || !/^[A-Za-z]:(\\|$)/.test(p)) return p;
     if (/^C:\\SRE(\\|$)/i.test(p)) return w.root + p.slice(6).replace(/\\/g, '/');
@@ -61,7 +61,7 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
       win.initdbRuns += 1;
       const dir = args[args.indexOf('-D') + 1]!;
       const pw = /^--pwfile=(.*)$/.exec(args.find((a) => a.startsWith('--pwfile='))!)![1]!;
-      expect(fs.readFileSync(pw, 'utf8').trim()).toBe(settingsIn(fs)['POSTGRES_PASSWORD']); // the password reached initdb …
+      expect(fs.readFileSync(pw, 'utf8').trim()).toBe(settingsIn(fs, win32.dirname(dir))['POSTGRES_PASSWORD']); // the password reached initdb …
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(win32.join(dir, 'PG_VERSION'), '16\n');
       fs.writeFileSync(win32.join(dir, 'postgresql.conf'), "#listen_addresses = 'localhost'\n");

@@ -51,7 +51,7 @@ import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBacku
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
 import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
-import { firstRun } from './store-computer-setup.mjs';
+import { driveChoices, firstRun, releaseInfo } from './store-computer-setup.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1229,6 +1229,7 @@ export const USAGE = [
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
+  '  setup-screens                            the first-run screens in this PC\'s browser (what SRE-Setup.exe opens)',
   '  setup [--data-drive D:] [--lane lane-1]   what the setup program runs: this copy\'s settings (made once, or kept),',
   '                                           the till, and the three Windows services (CR-01 step 2)',
   '  install-services --pg-bin <PostgreSQL bin folder> --service-host <WinSW.exe>',
@@ -1317,6 +1318,43 @@ export async function importPage(deps) {
   }
   const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'import-server.js'), '--settings', L.settings, '--till-settings', L.tillEnv, '--data', L.dataRoot], { cwd: deps.repoRoot, env, stdio: 'inherit' });
   if (r.error !== undefined) { say('NOT DONE — the import page could not be started.'); return 1; }
+  return r.status ?? 1;
+}
+
+/**
+ * `setup-state` (CR-01 step 2b): one line of JSON for the first-run screens' server — is this PC set up, where its files
+ * are, which drives may hold a new shop's data. Names and paths only: never a setting's value but the tenant id.
+ */
+export function setupState(deps) {
+  const { L, settings } = loadSettings(deps);
+  const rel = releaseInfo(deps);
+  const state = {
+    setUp: settings !== undefined,
+    ...(settings?.EDGE_TENANT_ID === undefined ? {} : { tenantId: settings.EDGE_TENANT_ID }),
+    ...(settings === undefined || L.dataRoot === undefined ? {} : { dataRoot: L.dataRoot }),
+    settingsPath: L.settings,
+    tillEnvPath: L.tillEnv,
+    drives: settings === undefined ? driveChoices(deps) : [],
+    ...(rel?.version === undefined ? {} : { release: rel.version }),
+  };
+  deps.say(JSON.stringify(state));
+  return 0;
+}
+
+/**
+ * `setup-screens` (CR-01 step 2b, OI-02): the first-run screens, served on this PC only and opened in its browser. An
+ * installed release brings the screens' server built; a copy from the repository builds it first, as `import` does.
+ */
+export async function setupScreens(deps) {
+  const { say } = deps;
+  const p = pathFor(deps.platform);
+  const server = p.join(deps.repoRoot, 'scripts', 'dist', 'setup-server.js');
+  if (!deps.fs.existsSync(p.join(deps.repoRoot, 'release.json'))) {
+    const built = deps.spawn(deps.nodePath, [p.join('scripts', 'build-service.mjs'), 'tools', '--quiet'], { cwd: deps.repoRoot, env: deps.env });
+    if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the setup screens could not be prepared (the tools build failed).'); return 1; }
+  }
+  const r = deps.spawn(deps.nodePath, [server], { cwd: deps.repoRoot, env: deps.env, stdio: 'inherit' });
+  if (r.error !== undefined) { say('NOT DONE — the setup screens could not be started.'); return 1; }
   return r.status ?? 1;
 }
 
@@ -1426,6 +1464,8 @@ export async function main(argv, given) {
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'import': return importPage(deps);
+    case 'setup-screens': return setupScreens(deps);
+    case 'setup-state': return setupState(deps);
     case 'setup': return firstRun(deps, { dataDrive: cl.dataDrive, lane: cl.lane, pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'install-services': return installServices(deps, { pgBin: cl.pgBin, serviceHost: cl.serviceHost });
     case 'services-status': return servicesStatus(deps);

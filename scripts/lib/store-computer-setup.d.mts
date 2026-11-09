@@ -6,3 +6,6 @@ export declare const SETUP_LOG: 'setup.log';
 export declare function bundledRuntime(deps: Deps): { pgBin?: string; serviceHost?: string };
 export declare function releaseInfo(deps: Deps): { version?: string; commit?: string; builtAt?: string } | undefined;
 export declare function firstRun(deps: Deps, opts?: { dataDrive?: string; lane?: string; pgBin?: string; serviceHost?: string }): Promise<number>;
+export declare function systemDriveLetter(deps: Pick<Deps, 'env'>): string;
+export declare function newDataDriveRefusal(deps: Pick<Deps, 'env'>, dataDrive: string | undefined): string | undefined;
+export declare function driveChoices(deps: Deps): { letter: string; ok: boolean; why?: string; note?: string }[];
