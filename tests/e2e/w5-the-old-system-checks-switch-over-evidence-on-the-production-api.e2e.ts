@@ -9,6 +9,13 @@ import { planLoyaltySample } from '../../packages/migration/src/loyalty-verifica
 import { STOCK, SUPPLIER_ITEMS, SLABS, GSTR1, GSTR3B, BANK_BODY, TB, CA_ONLY, ACCOUNTS, LOYALTY } from '../support/witness-fixtures';
 
 /**
+ * The shop's clock (Asia/Kolkata), to the second, as a datetime-local input writes it. Chromium drops ":00" seconds from
+ * the value it keeps, so a time typed with ":00" reads back different and Playwright refuses the fill ("Malformed value")
+ * — this test failed once a minute, on the minute (CI, 10 Nov 2026, 07:27:00). The same instant either way.
+ */
+const shopClock = (offsetMs: number): string => new Date(Date.now() + 330 * 60_000 + offsetMs).toISOString().slice(0, 19).replace(/:00$/, '');
+
+/**
  * W5 · MG-11 · OD-05 · MG-10 · GT-02 — the switch-over EVIDENCE sections of the Old system checks page, ONE connected run in
  * a real browser: the page served by the office front, on the PRODUCTION API over real PostgreSQL, synthetic data only.
  *
@@ -193,7 +200,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 on the 
       await o.page.fill('#rb-cutover', 'C-W5'); await o.page.fill('#rb-bill', 'OLD-W5-1');
       await o.page.click('#rb-confirm');
       await expect.poll(() => status(o.page, 'rb-confirm-status')).toBe('Choose the date and time on the shop\'s clock.');
-      const shopNow = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 19); // the shop's clock (Asia/Kolkata), to the second
+      const shopNow = shopClock(0); // the shop's clock (Asia/Kolkata), to the second
       await o.page.fill('#rb-from', shopNow);
       await o.page.click('#rb-confirm');
       await expect.poll(() => o.page.locator('#rb-confirm-status').getAttribute('data-state')).toBe('performed');
@@ -224,7 +231,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 on the 
     const o2 = await open(OWNER);
     try {
       // ── GT-02: a reconciliation that does not balance is KEPT and demonstrates nothing; the balancing one demonstrates it.
-      const from = new Date(Date.now() + 330 * 60_000 - 60 * 60_000).toISOString().slice(0, 19);
+      const from = shopClock(-60 * 60_000);
       await o2.page.fill('#rb-cutover', 'C-W5'); await o2.page.fill('#rb-newfrom', from);
       await o2.page.fill('#rb-count', '1'); await o2.page.fill('#rb-total', '120.00');
       await o2.page.click('#rb-reconcile');
