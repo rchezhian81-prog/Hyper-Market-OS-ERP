@@ -385,12 +385,21 @@ jobs:
           node tests/windows/store-pc-on-windows.check.mjs "$env:RUNNER_TEMP\store-pc-setup-proof.json" D:\SRE-data
           if ($LASTEXITCODE -ne 0) { throw 'a claim did not hold' }
 
-      - name: Run it again — nothing that is there is replaced
+      - name: Run it again — nothing that is there is replaced; an earlier run's setup screens still open do not block it
         shell: pwsh
         run: |
           $before = (Get-FileHash D:\SRE-data\.env.real).Hash
+          # The owner's PC, 2026-11-09: the first run's setup screens were still running (their node.exe held open) and the
+          # second run was refused, "DeleteFile failed; code 5". So they are started here first, as SRE-Setup.exe starts them.
+          $app = 'C:\Program Files\SRE Retail OS'
+          $sc = Join-Path $env:RUNNER_TEMP 'Finish SRE setup.url'
+          $screens = Start-Process -FilePath "$app\runtime\node\node.exe" -ArgumentList "`"$app\scripts\dist\setup-server.js`"","--shortcut","`"$sc`"","--log","C:\ProgramData\SRE\setup.log" -WorkingDirectory $app -WindowStyle Hidden -PassThru
+          for ($i = 0; $i -lt 120 -and -not (Test-Path $sc); $i++) { Start-Sleep -Milliseconds 500 }
+          if (-not (Select-String -Path $sc -Pattern '^URL=http://127\.0\.0\.1:8099/setup/#key=' -Quiet)) { throw 'the setup screens wrote no "Finish SRE setup" shortcut' }
           $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content C:\ProgramData\SRE\setup.log -Tail 20; throw "second run exit $($p.ExitCode)" }
+          if (Get-Process -Id $screens.Id -ErrorAction SilentlyContinue) { throw "the earlier run's setup screens were not stopped" }
+          Write-Output "The earlier run's setup screens (node.exe, process $($screens.Id)) were stopped and the second run replaced every file."
           if ((Get-FileHash D:\SRE-data\.env.real).Hash -ne $before) { throw 'the settings file changed on the second run' }
           Select-String -Path C:\ProgramData\SRE\setup.log -Pattern 'are KEPT' | Select-Object -Last 2
           & 'C:\Program Files\SRE Retail OS\runtime\node\node.exe' 'C:\Program Files\SRE Retail OS\scripts\store-computer.mjs' services-status

@@ -1,7 +1,11 @@
 // The FIRST-RUN SCREENS' server — CR-01 step 2b (OI-02). Started by SRE-Setup.exe (through `store-computer setup-screens`)
 // once its files are copied; it opens the screens in this PC's browser and stops itself after the setup has run.
 //
-//   node scripts/dist/setup-server.js [--port 8099] [--no-browser]
+//   node scripts/dist/setup-server.js [--port 8099] [--no-browser] [--shortcut <file.url>] [--log <file>]
+//
+// Started by SRE-Setup.exe (which runs as administrator) it is given --shortcut and --log: it opens NO browser itself, but
+// writes its address into that shortcut ("Finish SRE setup" on the person's desktop), and SRE-Setup.exe opens the address
+// as the person (scripts/lib/setup-handoff.mjs says why). Every line it says is also kept in the log.
 //
 // It listens on 127.0.0.1 only, and every call must carry the one-time key in the page's address (scripts/lib/setup-app.ts,
 // createSetupDoor). Everything it does is what the store-computer tool and the owner setup steps already do, joined in
@@ -10,6 +14,7 @@
 // logs or writes a PIN, a token or a key.
 
 import { randomBytes } from 'node:crypto';
+import * as nodeFs from 'node:fs';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
@@ -17,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { heldFetch } from './lib/held-fetch.mjs';
+import { argValue, loggedSay, removeHandoff, screensUrl, writeHandoff } from './lib/setup-handoff.mjs';
 import { createSetupDoor, install, type InstallSteps, type Progress, type SetupState } from './lib/setup-app';
 import { buildPersonToken, demoTenantIds, parseEnvText, tokenPolicyFromEnv } from './lib/operator-env';
 import { pinVerifier } from './lib/owner-setup-pins';
@@ -30,9 +36,14 @@ import { seedInitialAdmins } from '../services/api/src/access';
 import { OWNER_ROLE_ID, ROLE_CATALOGUE } from '../services/api/src/roles';
 
 const argv = process.argv.slice(2);
-const port = Number(argv[argv.indexOf('--port') + 1] ?? '') || 8099;
+const port = Number(argValue(argv, '--port') ?? '') || 8099;
+const shortcut = argValue(argv, '--shortcut');
 const key = randomBytes(24).toString('base64url');
-const out = (line: string): void => { process.stdout.write(`${line}\n`); };
+const out = loggedSay(nodeFs, argValue(argv, '--log'), (line: string): void => { process.stdout.write(`${line}\n`); });
+// The shortcut holds the key: it goes when this server goes, however it stops.
+if (shortcut !== undefined) process.on('exit', () => { removeHandoff(nodeFs, shortcut); });
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, () => { process.exit(0); });
+process.on('uncaughtException', (e) => { out(`The setup screens stopped: ${e instanceof Error ? e.message : 'an error'}.`); process.exit(1); });
 
 /** The release (or repository) folder: the nearest folder above this file that holds package.json. */
 const ROOT = (() => {
@@ -211,12 +222,24 @@ const server = createServer((req, res) => {
   });
 });
 
+server.on('error', (e: NodeJS.ErrnoException) => {
+  out(e.code === 'EADDRINUSE'
+    ? `The setup screens could not start: port ${port} is already in use on this PC (an earlier setup screen may still be open — restart the PC and run SRE-Setup.exe again).`
+    : `The setup screens could not start: ${e.message}.`);
+  process.exit(1);
+});
+
 server.listen(port, '127.0.0.1', () => {
-  const url = `http://127.0.0.1:${port}/setup/#key=${key}`;
+  const url = screensUrl(port, key);
   out(`The setup screens are open on this PC only: http://127.0.0.1:${port}/setup/`);
-  if (!argv.includes('--no-browser') && process.platform === 'win32') {
-    spawn('explorer.exe', [url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  if (shortcut !== undefined) {
+    // Started by SRE-Setup.exe: the setup program opens this address as the person who started it. Never the key in the log.
+    if (writeHandoff(nodeFs, shortcut, url)) out(`Their address is in the shortcut "${shortcut}" — double-click it if the browser did not open.`);
+    else { out(`The shortcut "${shortcut}" could not be written; the setup screens cannot be opened.`); process.exit(1); }
+  } else if (!argv.includes('--no-browser') && process.platform === 'win32') {
+    // A person ran it themselves (not as administrator): Windows opens their own browser. Never hidden.
+    spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref();
   } else {
-    out(`Open: ${url}`);
+    process.stdout.write(`Open: ${url}\n`); // to the person's own window only, never into the log
   }
 });

@@ -4,14 +4,18 @@
 //
 //   <release>\runtime\node\node.exe tests\windows\first-run-screens.drive.mjs <release folder> <data drive, e.g. D:>
 //
-// It starts the screens' server (no browser), reads the one-time key it prints, checks a wrong answer is refused, sends
+// It starts the screens' server as SRE-Setup.exe does (--shortcut, --log: no browser of its own), reads the one-time key
+// from the "Finish SRE setup" shortcut it writes (the owner's PC, 2026-11-09: the browser it opened itself never
+// appeared), checks the key is never in the setup log, checks a wrong answer is refused, sends
 // the right answers (synthetic people and a made-up GSTIN with a correct check character), follows the progress to the
 // end, and passes only on SETUP DONE with the shop prepared by the owner and approved by the accountant (OB-659).
 // The synthetic PINs are this test's own; nothing here is a real shop's.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { urlInShortcut } from '../../scripts/lib/setup-handoff.mjs';
 
 const [release, drive] = process.argv.slice(2);
 const node = process.execPath;
@@ -25,14 +29,22 @@ const gstinFor = (first14) => {
   return first14 + GSTIN_CHARS[(36 - (sum % 36)) % 36];
 };
 
-const server = spawn(node, [join(release, 'scripts', 'dist', 'setup-server.js'), '--port', String(port), '--no-browser'], { cwd: release, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+const shortcut = join(tmpdir(), 'Finish SRE setup.url');
+const log = join(tmpdir(), 'sre-screens-test.log');
+rmSync(shortcut, { force: true });
+rmSync(log, { force: true });
+const server = spawn(node, [join(release, 'scripts', 'dist', 'setup-server.js'), '--port', String(port), '--shortcut', shortcut, '--log', log], { cwd: release, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+server.stdout.on('data', (c) => { process.stdout.write(c); });
 server.stderr.on('data', (c) => { process.stderr.write(c); });
 const key = await new Promise((resolve, reject) => {
-  let seen = '';
-  server.stdout.on('data', (c) => { seen += c.toString(); const m = /#key=([A-Za-z0-9_-]+)/.exec(seen); if (m) resolve(m[1]); });
-  setTimeout(() => reject(new Error(`the screens' server did not start: ${seen}`)), 60_000);
+  const t = setInterval(() => {
+    const url = existsSync(shortcut) ? urlInShortcut(readFileSync(shortcut, 'utf8')) : undefined;
+    const m = url === undefined ? null : /^http:\/\/127\.0\.0\.1:\d+\/setup\/#key=([A-Za-z0-9_-]+)$/.exec(url);
+    if (m) { clearInterval(t); resolve(m[1]); }
+  }, 250);
+  setTimeout(() => { clearInterval(t); reject(new Error('the screens\' server wrote no "Finish SRE setup" shortcut in 60 seconds')); }, 60_000);
 });
-say('The screens\' server is up on this PC only.');
+say('The screens\' server is up on this PC only; its address came from the "Finish SRE setup" shortcut.');
 const call = async (method, what, body, k = key) => {
   const r = await fetch(`http://127.0.0.1:${port}/setup/api/${what}`, { method, headers: { 'x-setup-key': k, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   return { status: r.status, body: await r.json() };
@@ -77,6 +89,10 @@ const tenant = (await call('GET', 'state')).body.tenantId;
 const about = await fetch('http://127.0.0.1:8091/about/').then((r) => r.text(), () => '');
 if (tenant === undefined || !about.includes(`<code>${tenant}</code>`)) fail('the About screen does not show this shop\'s tenant id');
 say(`The desktop has the three shortcuts; the About screen shows tenant id ${tenant}.`);
+const logged = existsSync(log) ? readFileSync(log, 'utf8') : '';
+if (!logged.includes('[screens] The setup screens are open on this PC only')) fail('the screens\' server kept nothing in the setup log');
+if (logged.includes(key)) fail('the one-time key was written into the setup log');
+say('The screens\' words are in the setup log, without the key.');
 say('PASS — the first-run screens set this PC up: settings, till, services, the two people, their own PINs, and the shop, prepared by the owner and approved by the accountant.');
 server.kill();
 process.exit(0);
