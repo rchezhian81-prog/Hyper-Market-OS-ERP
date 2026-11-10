@@ -45,6 +45,11 @@ SetupLogging=yes
 ; The services are stopped by PrepareToInstall below; Windows' own "close the applications" step is not needed.
 CloseApplications=no
 
+[Messages]
+; A person's run: the first-run screens are opened in their browser; the shortcut is the way back to them.
+FinishedLabelNoIcons=The program is copied. The setup screens are open in your browser. If you cannot see them, double-click "Finish SRE setup" on your desktop.
+FinishedLabel=The program is copied. The setup screens are open in your browser. If you cannot see them, double-click "Finish SRE setup" on your desktop.
+
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
@@ -70,30 +75,76 @@ end;
 // Run again (a repair, or an update later): the three services hold this program's files open, and Windows refuses to
 // replace a file in use. So they are stopped first — the till, then the office API, then the database — and the setup
 // step below starts them again. A service that is not there is simply not stopped. Nothing of the shop's data is touched.
+//
+// Then anything still running from this program's own Node is stopped too: an earlier run's setup screens (seen on the
+// owner's PC, 2026-11-09: the screens' server held node.exe and the second run was refused, "DeleteFile failed; code 5").
+// Only a node.exe whose file is THIS program's runtime\node\node.exe is stopped — never another program's.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
+  NodeExe: String;
 begin
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Till /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-API /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Database /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  NodeExe := ExpandConstant('{app}\runtime\node\node.exe');
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ''' + NodeExe + ''' } | Stop-Process -Force; Start-Sleep -Seconds 2"',
+       '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
+end;
+
+// The screens' address, from the shortcut their server writes once it is listening; '' if it has not come in 60 seconds.
+function ScreensAddress(const Shortcut: String): String;
+var
+  Lines: TArrayOfString;
+  I, Tries: Integer;
+begin
+  Result := '';
+  for Tries := 1 to 120 do
+  begin
+    if FileExists(Shortcut) and LoadStringsFromFile(Shortcut, Lines) then
+      for I := 0 to GetArrayLength(Lines) - 1 do
+        if Pos('URL=', Lines[I]) = 1 then
+        begin
+          Result := Copy(Lines[I], 5, Length(Lines[I]) - 4);
+          exit;
+        end;
+    Sleep(500);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
+  Shortcut, Address: String;
 begin
   if CurStep = ssPostInstall then
   begin
     // Run by a person: the first-run screens open in the browser (CR-01 step 2b, OI-02) and do the setup there; this
     // program's part is done once its files are copied. Run silently (a technician, the tests): the setup runs here.
+    // This program runs as administrator, and so does the screens' server: it opens no browser itself (an administrator's
+    // browser did not appear on the owner's PC). It writes its address into "Finish SRE setup" on the desktop, and this
+    // program opens that address AS THE PERSON who started it. Its words go into the setup log.
     if not WizardSilent() then
     begin
-      if not Exec(ExpandConstant('{app}\runtime\node\node.exe'), '"' + ExpandConstant('{app}\scripts\dist\setup-server.js') + '"',
-                  ExpandConstant('{app}'), SW_HIDE, ewNoWait, Code) then
-        MsgBox('The setup screens could not be opened. What happened is in C:\ProgramData\SRE\setup.log.', mbError, MB_OK);
       SetupResult := 0;
+      Shortcut := ExpandConstant('{userdesktop}\Finish SRE setup.url');
+      DeleteFile(Shortcut);
+      ForceDirectories(ExpandConstant('{commonappdata}\SRE'));
+      WizardForm.StatusLabel.Caption := 'Opening the setup screens in your browser...';
+      if not Exec(ExpandConstant('{app}\runtime\node\node.exe'),
+                  '"' + ExpandConstant('{app}\scripts\dist\setup-server.js') + '" --shortcut "' + Shortcut + '" --log "' + ExpandConstant('{commonappdata}\SRE\setup.log') + '"',
+                  ExpandConstant('{app}'), SW_HIDE, ewNoWait, Code) then
+      begin
+        MsgBox('The setup screens could not be started. Restart the PC and run SRE-Setup.exe again. If it happens again, send a photo of the last lines of C:\ProgramData\SRE\setup.log.', mbError, MB_OK);
+        exit;
+      end;
+      Address := ScreensAddress(Shortcut);
+      if Address = '' then
+        MsgBox('The setup screens did not start. Restart the PC and run SRE-Setup.exe again. If it happens again, send a photo of the last lines of C:\ProgramData\SRE\setup.log.', mbError, MB_OK)
+      else if not ShellExecAsOriginalUser('open', Address, '', '', SW_SHOWNORMAL, ewNoWait, Code) then
+        MsgBox('Your browser did not open. Double-click "Finish SRE setup" on your desktop to open the setup screens.', mbInformation, MB_OK);
       exit;
     end;
     WizardForm.StatusLabel.Caption := 'Setting up the shop database, the office and the till. This takes a few minutes...';
