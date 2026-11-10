@@ -205,7 +205,10 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
     expect(landed.status, await landed.clone().text()).toBe(200);
     const cookie = box.raw.find((c) => c.startsWith('sre_session='))!;
     expect(cookie).toMatch(/HttpOnly/);
-    expect(cookie).not.toMatch(/eyJ/);
+    // No token in the cookie: a JWT is three base64url parts joined by dots, its first starting "eyJ". The session id is
+    // random base64url and may contain the letters "eyJ" by chance (CI, 10 Nov 2026: "…iEeyJJ…"), but never a dot.
+    expect(cookie).not.toMatch(/eyJ[\w-]*\.[\w-]+\./);
+    expect(cookie.split(';')[0]!.slice('sre_session='.length)).not.toContain('.');
     const asThem = await fetch(`${BOX}/v1/approvals/requests`, { headers: { cookie: box.header(), accept: 'application/json' } });
     expect(asThem.status, await asThem.clone().text()).toBe(200);
     const none = await fetch(`${BOX}/v1/approvals/requests`, { headers: { accept: 'application/json' } });
