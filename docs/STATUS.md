@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## The first SIGNED store PC release: 1.0.2005 (10 November 2026) — the signing key works end to end
+- **What happened:** the owner replaced the `RELEASE_SIGNING_KEY` secret with the private key from the office safe (the earlier value was not readable). The main build for #897 (83a5a82) then went green in every job, and its security-scans step says *SIGNED — the signature over 83a5a82… verifies* against `infra/deploy/release-signing.pub`.
+- **Proof on the published release:** `store-pc-v1.0.2005` (SRE-Setup.exe 68 MB + update.json with an Ed25519 signature) was downloaded and checked with the store PC's own check (`node scripts/store-pc-release.mjs check … --public-key infra/deploy/release-signing.pub --running 1.0.1996`): *ACCEPTED — version 1.0.2005 is signed, verifies, and the file is the signed one.* So the entry below ("No store PC release yet after #895") is resolved, and 1.0.2005 carries the public key the PC checks the next release with.
+- **For the store PC move:** install from 1.0.2005 or newer (Releases → newest "Store PC"), never 1.0.1996 (it has no public key, so it could never update itself).
+- **Duplicate closed:** #896 (the same chance-failure fix as #897) closed unmerged on the owner's instruction.
+- **Next for the build:** CR-01 step 3b — the store PC learns of a newer release, with the read-only GitHub key (OB-717), in a new conversation ("Start CR-01 step 3b"). **Still to do (administrator):** step 5 of the custodian's steps (turn the check on at the canary and demo boxes). **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## No store PC release yet after #895 (10 November 2026): the signing key's value, and a test that failed by chance
 - **What happened:** the main build for #894 was cancelled by the one for #895 (one build per branch at a time); the #895 build was then cancelled too, and its re-run (attempt 2) failed in two places, so `store-pc-publish` did not run and the newest release is still 1.0.1996 (the one with the setup-screens problem).
 - **1 — the release signing key:** the security-scans step "sign this merged commit" says *NOT SIGNED — RELEASE_SIGNING_KEY is not a readable private key*. The secret exists but its value is not a whole PEM private key. **Owner action:** replace the secret's value with the WHOLE content of the private key file (from the USB in the office safe), from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----`, both lines included. It must be the pair of the committed `infra/deploy/release-signing.pub`.
