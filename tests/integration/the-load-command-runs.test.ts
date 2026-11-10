@@ -133,7 +133,7 @@ describe('scripts/migration-load — the operator\'s load, as a subprocess', () 
     const outcome = JSON.parse(readFileSync(outFile, 'utf8')) as { exitCode: number; report: { landed: Record<string, number> } };
     expect(outcome.exitCode).toBe(0);
     expect(outcome.report.landed).toEqual({ tax: 2, product: 2, barcode: 3, price: 2, supplier: 1, customer: 3, stock: 1 });
-    expect(readFileSync(outFile, 'utf8')).not.toMatch(/eyJ/); // no token in the evidence file
+    expect(readFileSync(outFile, 'utf8')).not.toMatch(/eyJ[A-Za-z0-9_-]+\.eyJ/); // no token in the evidence file (a token's shape, header.payload — not three letters a random id can hold)
     const avail = (await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: OPERATOR, tenantId: REAL })).body as { rows: { productId: string; onHandMinor: number }[] };
     expect(avail.rows.map((x) => [x.productId, x.onHandMinor]).sort()).toEqual([['P-RICE', 40], ['P-SOAP', 200]]);
   });

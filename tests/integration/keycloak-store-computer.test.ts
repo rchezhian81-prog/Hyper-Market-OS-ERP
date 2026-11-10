@@ -205,7 +205,7 @@ describe.skipIf(!READY).sequential('a real Keycloak: the store computer carries 
     expect(landed.status, await landed.clone().text()).toBe(200);
     const cookie = box.raw.find((c) => c.startsWith('sre_session='))!;
     expect(cookie).toMatch(/HttpOnly/);
-    expect(cookie).not.toMatch(/eyJ/);
+    expect(cookie).not.toMatch(/eyJ[A-Za-z0-9_-]+\.eyJ/); // a token's shape (header.payload), not three letters a random id can hold (a random session id once held 'eyJ')
     const asThem = await fetch(`${BOX}/v1/approvals/requests`, { headers: { cookie: box.header(), accept: 'application/json' } });
     expect(asThem.status, await asThem.clone().text()).toBe(200);
     const none = await fetch(`${BOX}/v1/approvals/requests`, { headers: { accept: 'application/json' } });
