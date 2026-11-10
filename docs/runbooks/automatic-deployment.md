@@ -284,6 +284,8 @@ Never copy one computer's key to another: head office would refuse that computer
 
 ### The custodian's steps (Mr Sivakumar) — once, in this order
 
+_Since OB-720 (10 Nov 2026) the key holder is the owner, not Mr Sivakumar. Steps 1–4 were done on 9–10 Nov 2026: the pair was made on the owner's own computer, the private key is in the GitHub secret and in the office safe, the public key is committed. Step 5 (turning the check on at each box) is the administrator's, still to do._
+
 1. **Make the key pair** on the custodian's own computer, never on a shared one:
    `openssl genpkey -algorithm ed25519 -out release-signing.key` and
    `openssl pkey -in release-signing.key -pubout -out release-signing.pub`.

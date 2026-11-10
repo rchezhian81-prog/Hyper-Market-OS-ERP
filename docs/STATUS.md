@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## The release signing key is set up (10 November 2026): OB-720
+- **What changed:** the owner made the release signing key pair himself (OB-720, in place of Mr Sivakumar, OB-342), on his own computer with an offline page; the PRIVATE key is in the GitHub secret `RELEASE_SIGNING_KEY` and on a USB drive in the office safe; the PUBLIC key is committed at `infra/deploy/release-signing.pub`. From the next merge, every build checks its own signature against it, and every store PC release carries it — so a PC installed from such a release can check the next one.
+- **Proof:** the public key reads as Ed25519; the first merge after this one must show, on main, the security-scans step "signed" with "the signature … verifies", and the next store PC release's update.json with a signature. If it says NOT SIGNED or REFUSED, the secret's name or value is wrong.
+- **Part 3a works on GitHub:** release `store-pc-v1.0.1996` was published on 9 Nov 2026 (SRE-Setup.exe 68 MB and update.json, signature null — made before the key existed).
+- **Still to do (administrator):** step 5 of the custodian's steps — turn the signature check on at the canary and demo boxes. **Next for the build:** CR-01 step 3b. **Blocked:** nothing.
+
 ## CR-01 step 3a (9 November 2026): every merge publishes a signed store PC release (OI-05 · OB-717)
 - **What changed:** on every merge to main, after every suite is green on that commit, the new CI job `store-pc-publish` publishes the exact SRE-Setup.exe that `store-pc-setup` ran on a clean Windows machine as a GitHub Release `store-pc-v1.0.<run number>`, beside `update.json` (version, commit, SHA-256, signed with the release signing key). Versions only grow; a pull request's build stays a test build (0.0.0-ci.<n>) no PC updates to. A published release is never replaced. Only this job may write releases. The release folder now carries `release-signing.pub` (when committed), the key the PC checks the next release with. The check the PC will run in step 3d is written and tested now: unsigned, unverifiable, altered or not-newer releases are refused in plain words. `scripts/lib/store-pc-update.mjs`, `scripts/store-pc-release.mjs`.
 - **Proof:** 21 unit tests (signing, every refusal, the tool CI runs with and without a key, the CI job's conditions and permissions); the full unit suite (10,529 tests) green. The publishing itself is proven on the first merge to main (the job only runs there).
