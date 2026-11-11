@@ -54,6 +54,8 @@ export interface Deps {
   readonly fs: FsLike;
   readonly spawn: (cmd: string, args: readonly string[], opts: { cwd?: string; env?: Record<string, string | undefined>; stdio?: unknown; input?: string }) => SpawnResult;
   readonly fetch: (url: string) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+  /** CR-01 step 3b: a GET with headers (GitHub). Absent: the update check says it cannot reach the internet. */
+  readonly web?: (url: string, headers: Record<string, string>) => Promise<{ status: number; text(): Promise<string> }>;
   readonly portInUse: (port: number) => Promise<boolean>;
   readonly sleep: (ms: number) => Promise<void>;
   readonly now: () => Date;
