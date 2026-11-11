@@ -114,6 +114,34 @@ begin
   end;
 end;
 
+// Microsoft's Visual C++ runtime, which PostgreSQL's programs need. The owner's PC had none (11 Nov 2026: initdb.exe —
+// "VCRUNTIME140.dll was not found"; the move was put back). GitHub's Windows machines always have it, so it is checked
+// here on every PC and installed from the copy this release brings when missing (/FORCEVCREDIST=1 runs it anyway: the
+// tests). 0 done or not needed, 1638 a newer one is there, 3010 done (Windows asks for a restart later): all fine.
+function VcRuntimeMissing(): Boolean;
+begin
+  Result := not (FileExists(ExpandConstant('{sys}\vcruntime140.dll')) and FileExists(ExpandConstant('{sys}\vcruntime140_1.dll')) and FileExists(ExpandConstant('{sys}\msvcp140.dll')));
+end;
+
+function EnsureVcRuntime(): Boolean;
+var
+  Code: Integer;
+  Installer: String;
+begin
+  Result := True;
+  if (not VcRuntimeMissing()) and (ExpandConstant('{param:FORCEVCREDIST|0}') <> '1') then exit;
+  Installer := ExpandConstant('{app}\runtime\vcredist\vc_redist.x64.exe');
+  if not FileExists(Installer) then
+  begin
+    Result := not VcRuntimeMissing();
+    exit;
+  end;
+  WizardForm.StatusLabel.Caption := 'Installing Microsoft Visual C++ runtime (needed by the shop database)...';
+  if not Exec(Installer, '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, Code) then Code := -1;
+  Log(Format('Microsoft Visual C++ runtime installer ended with %d', [Code]));
+  Result := ((Code = 0) or (Code = 1638) or (Code = 3010)) and not VcRuntimeMissing();
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
@@ -121,6 +149,13 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    if not EnsureVcRuntime() then
+    begin
+      SetupResult := 3;
+      if not WizardSilent() then
+        MsgBox('Microsoft Visual C++ runtime could not be installed, and the shop database needs it. Nothing of the shop was changed. Restart the PC and run SRE-Setup.exe again; if it happens again, send a photo of this box.', mbError, MB_OK);
+      exit;
+    end;
     // Run by a person: the first-run screens open in the browser (CR-01 step 2b, OI-02) and do the setup there; this
     // program's part is done once its files are copied. Run silently (a technician, the tests): the setup runs here.
     // This program runs as administrator, and so does the screens' server: it opens no browser itself (an administrator's
