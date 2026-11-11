@@ -144,6 +144,10 @@ export function windowsTasks(deps, runDir) {
       const r = deps.spawn('schtasks', ['/Delete', '/TN', name, '/F'], {});
       return r.error === undefined && r.status === 0 ? { ok: true } : { ok: false, said: lines(`${r.stderr ?? ''}\n${r.stdout ?? ''}`)[0] ?? `it ended ${r.status}` };
     },
+    run: (name) => {
+      const r = deps.spawn('schtasks', ['/Run', '/TN', name], {});
+      return r.error === undefined && r.status === 0 ? { ok: true } : { ok: false, said: lines(`${r.stderr ?? ''}\n${r.stdout ?? ''}`)[0] ?? `it ended ${r.status}` };
+    },
     exists: (name) => {
       const r = deps.spawn('schtasks', ['/Query', '/TN', name], {});
       return r.error === undefined && r.status === 0;

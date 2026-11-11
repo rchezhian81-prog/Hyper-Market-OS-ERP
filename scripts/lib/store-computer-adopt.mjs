@@ -13,7 +13,7 @@
 // database folder is moved aside (never deleted) and the Docker copy is started again — the shop is as it was. Nothing
 // of the shop's data is ever deleted by this module (hard rule #6).
 
-import { composeBase, composeEnv, dockerProblem, lines, pathFor, stampOf, DEMO_PROJECT, PROJECT } from './store-computer.mjs';
+import { composeEnv, dockerProblem, lines, pathFor, stampOf, DEMO_PROJECT, PROJECT } from './store-computer.mjs';
 import { backupScript, parseTotals, psqlArgs, ready, reconcile, startsWithMagic, totalsScript } from './store-computer-recovery.mjs';
 import { dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import { installServices, removeServices } from './store-computer-services.mjs';
@@ -32,6 +32,28 @@ export function dockerCopyToMove(deps, L) {
   return lines(v.stdout).includes(`${PROJECT}_db-data`);
 }
 
+/**
+ * Where the Docker copy was MADE: the folder and compose files Docker itself recorded on the copy's containers
+ * (labels com.docker.compose.project.working_dir and .config_files). Found on the owner's PC, 10 Nov 2026: the copy was
+ * made from the release folder used in November, not from the installed program, whose folder has no compose file —
+ * so the move must speak to Docker with the copy's OWN files. undefined (with why) when they cannot be found.
+ */
+export function dockerCopyMadeFrom(deps) {
+  const r = deps.spawn('docker', ['ps', '-a', '--filter', `label=com.docker.compose.project=${PROJECT}`, '--format', '{{.Label "com.docker.compose.project.working_dir"}}|{{.Label "com.docker.compose.project.config_files"}}'], {});
+  if (r.error !== undefined || r.status !== 0) return { problem: 'Docker did not list the shop\'s containers' };
+  const first = lines(r.stdout).map((l) => l.trim()).find((l) => l !== '' && l !== '|');
+  if (first === undefined) return { problem: 'Docker has no container of the shop that says where it was made' };
+  const [dir, list] = first.split('|');
+  const files = String(list ?? '').split(',').map((f) => f.trim()).filter((f) => f !== '');
+  if (!dir || files.length === 0) return { problem: 'Docker has no container of the shop that says where it was made' };
+  const missing = [dir, ...files].find((f) => !deps.fs.existsSync(pathFor(deps.platform).isAbsolute(f) ? f : pathFor(deps.platform).join(dir, f)));
+  if (missing !== undefined) return { problem: `the folder the Docker copy was made from is not on this PC any more (${missing})` };
+  return { dir, files };
+}
+
+/** The `docker compose` words for the copy, with its own files and this PC's settings. */
+export const madeFromCompose = (L, made) => ['compose', '-p', PROJECT, ...made.files.flatMap((f) => ['-f', f]), '--env-file', L.settings];
+
 const said = (r) => lines(`${r.stdout ?? ''}\n${r.stderr ?? ''}`).slice(-3).join(' / ');
 
 /** Move the Docker copy onto the Windows services. 0 done · 1 not done (the shop is put back as it was) · 2 refused. */
@@ -48,13 +70,27 @@ export async function adoptDockerCopy(deps, opts) {
   if (docker !== undefined) { say(`REFUSED — ${docker.what} Docker is needed once more, to take the shop's data out of it. Nothing was changed.`); say(`  What to do: ${docker.fix}`); return 2; }
   const demo = lines(deps.spawn('docker', ['ps', '-a', '--filter', `label=com.docker.compose.project=${DEMO_PROJECT}`, '--format', '{{.Names}}'], {}).stdout);
   if (demo.length > 0) { say(`REFUSED — the demo's containers (project ${DEMO_PROJECT}) are on this computer (gate G4). Nothing was changed.`); return 2; }
-  const compose = (args) => deps.spawn('docker', [...composeBase(L), ...args], { cwd: L.composeDir, env: composeEnv(deps.env, ctx.settings) });
+  // Docker is spoken to with the copy's OWN compose files, from the folder it was made in — found before anything stops.
+  const made = dockerCopyMadeFrom(deps);
+  if (made.problem !== undefined) { say(`REFUSED — ${made.problem}. Nothing was changed; the till and the shop run as before. Send me a photo of this screen.`); return 2; }
+  say(`The Docker copy was made from ${made.dir}; it is spoken to with its own files.`);
+  const base = madeFromCompose(L, made);
+  const compose = (args) => deps.spawn('docker', [...base, ...args], { cwd: made.dir, env: composeEnv(deps.env, ctx.settings) });
+  const dctx = { ...ctx, compose: { base, dir: made.dir } };
 
   // 2 — Nothing writes any more: the till first, then the office.
   const till = runningTill(deps, L);
   if (till !== undefined) { deps.killProcess(till.pid); say(`The till started at sign-in (process ${till.pid}) is stopped for the move; the till service takes its place.`); }
+  // A move that stops before Docker is stopped gives the till back: the sign-in start runs again (the old release is
+  // still the live one), or the person is told to restart.
+  const tillBack = () => {
+    if (till === undefined) return;
+    const tasks = tasksFor(deps, L);
+    const ran = tasks?.run !== undefined && tasks.exists(TASKS.start) ? tasks.run(TASKS.start) : undefined;
+    say(ran?.ok ? '  The till is started again, as it was.' : '  Restart the computer to bring the till back (the sign-in start is still there).');
+  };
   const db = compose(['up', '-d', '--wait', 'db']);
-  if (db.error !== undefined || db.status !== 0) { say(`NOT DONE — the Docker copy's database did not start: ${said(db)}. Nothing was changed. Send me a photo of this screen.`); return 1; }
+  if (db.error !== undefined || db.status !== 0) { say(`NOT DONE — the Docker copy's database did not start: ${said(db)}. Nothing was changed.`); tillBack(); say('  Send me a photo of this screen.'); return 1; }
   compose(['stop', 'api']);
 
   // 3 — One snapshot, counted: the hourly backup's own method.
@@ -63,11 +99,12 @@ export async function adoptDockerCopy(deps, opts) {
   const dump = p.join(work, 'database.dump');
   const fd = fs.openSync(dump, 'wx', 0o600);
   let r;
-  try { r = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'] }); } finally { fs.closeSync(fd); }
+  try { r = dbSpawn(deps, dctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'] }); } finally { fs.closeSync(fd); }
   const expected = parseTotals(r.stderr ?? '');
   if (r.status !== 0 || expected.dumpExit !== 0 || !expected.done || !startsWithMagic(fs, dump)) {
     say(`NOT DONE — the shop's data could not be taken out of Docker: ${expected.other.slice(-2).join(' / ') || said(r) || 'no reason given'}. Nothing was changed.`);
     compose(['up', '-d', 'api']);
+    tillBack();
     return 1;
   }
   const rows = Object.values(expected.rowCounts).reduce((a, b) => a + b, 0);
@@ -75,7 +112,7 @@ export async function adoptDockerCopy(deps, opts) {
 
   // 4 — The Docker copy is stopped. Its storage stays.
   const stopped = compose(['stop']);
-  if (stopped.error !== undefined || stopped.status !== 0) { say(`NOT DONE — the Docker copy would not stop: ${said(stopped)}. Nothing else was changed.`); compose(['up', '-d', 'db', 'api']); return 1; }
+  if (stopped.error !== undefined || stopped.status !== 0) { say(`NOT DONE — the Docker copy would not stop: ${said(stopped)}. Nothing else was changed.`); compose(['up', '-d', 'db', 'api']); tillBack(); return 1; }
   say(`The Docker copy is stopped. Its storage (${PROJECT}_db-data) is KEPT on this PC, untouched — it is the way back.`);
 
   // A database folder left by an earlier move that did not finish is moved aside, never deleted.
@@ -111,7 +148,7 @@ export async function adoptDockerCopy(deps, opts) {
     if (fs.existsSync(dbDir)) { const aside = `${dbDir}-unfinished-${stampOf(deps.now())}`; try { fs.renameSync(dbDir, aside); say(`  The new database folder is kept at ${aside}.`); } catch { say(`  The new database folder ${dbDir} could not be moved aside; it is kept where it is.`); } }
     try { fs.rmSync(p.join(L.dataRoot, 'run', 'services', 'database.json'), { force: true }); } catch { /* the marker is rewritten by the next install */ }
     const back = compose(['up', '-d', 'db', 'migrate', 'api']);
-    say(back.status === 0 ? '  The Docker copy is running again. Restart the computer to bring the till back (the sign-in start is still there).' : `  The Docker copy did not start again: ${said(back)}. Open Docker Desktop, then run: pnpm run store-computer -- up`);
+    if (back.status === 0) { say('  The Docker copy is running again.'); tillBack(); } else say(`  The Docker copy did not start again: ${said(back)}. Open Docker Desktop and restart the computer.`);
     say(`  The snapshot taken for the move is kept at ${dump} (this PC only; the data folder is locked). Send me a photo of this screen.`);
     return 1;
   }

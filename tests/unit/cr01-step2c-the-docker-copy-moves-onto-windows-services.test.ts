@@ -51,6 +51,11 @@ async function ownersPc(): Promise<{ w: World; d: Deps; win: PretendWin }> {
   fs.writeFileSync('F:\\SRE-data\\run\\till.json', JSON.stringify({ pid: 4242, startedAt: '2026-11-08T03:00:00.000Z' }));
   // The release the owner set up with in November (the ZIP in C:\\SRE-2026-11) is the live one before the move.
   fs.writeFileSync('F:\\SRE-data\\run\\current-release.json', JSON.stringify({ folder: 'C:\\SRE-2026-11', setAt: '2026-11-06T10:00:00.000Z' }));
+  // The Docker copy was made from that November release folder: Docker says so on its containers (10 Nov 2026: the move
+  // must use these files — the installed program's folder has no compose file).
+  fs.mkdirSync('C:\\SRE-2026-11\\infra\\compose', { recursive: true });
+  fs.writeFileSync('C:\\SRE-2026-11\\infra\\compose\\docker-compose.yml', 'services: {}\n');
+  w.docker.madeFrom = 'C:\\SRE-2026-11\\infra\\compose|C:\\SRE-2026-11\\infra\\compose\\docker-compose.yml';
   w.tasks.registered.set(TASKS.start, '<Task/>');
   w.said.length = 0;
   return { w, d, win };
@@ -117,6 +122,64 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     expect(said(w)).toMatch(/REFUSED — .*Docker is needed once more, to take the shop's data out of it\. Nothing was changed\./);
     expect(w.killed).toEqual([]);
     expect(win.services.size).toBe(0);
+  });
+
+  // The owner's PC, 10 Nov 2026 (release 1.0.2005): the move asked Docker with the INSTALLED program's compose file, which
+  // a release does not carry ("C:\Program Files\SRE Retail OS\infra\compose\docker-compose.yml … cannot find the file"),
+  // after it had already stopped the till — and did not give the till back.
+  it('speaks to Docker with the files the copy was MADE with (Docker\'s own labels), from that folder — never the installed program\'s', async () => {
+    const { w, d, win } = await ownersPc();
+    expect(await main(['setup'], d)).toBe(0);
+    // Every compose call (up db, the snapshot's exec, stop api, stop) names the copy's own file …
+    const composeCalls = win.calls.filter((c) => c.cmd === 'docker' && c.args[0] === 'compose' && c.args[1] !== 'version');
+    expect(composeCalls.length).toBe(4);
+    for (const c of composeCalls) expect(c.args.slice(0, 6)).toEqual(['compose', '-p', 'sre-real', '-f', 'C:\\SRE-2026-11\\infra\\compose\\docker-compose.yml', '--env-file']);
+    // … and runs in the copy's folder (the calls the pretend Docker answered itself carry their folder).
+    const withFolder = w.calls.filter((c) => c.cmd === 'docker' && c.args[0] === 'compose' && c.args[1] !== 'version');
+    expect(withFolder.length).toBeGreaterThan(0);
+    for (const c of withFolder) expect(c.cwd).toBe('C:\\SRE-2026-11\\infra\\compose');
+    expect(said(w)).toMatch(/^The Docker copy was made from C:\\SRE-2026-11\\infra\\compose; it is spoken to with its own files\.$/m);
+  });
+
+  it('Docker cannot say where the copy was made: REFUSED before anything stops — the till keeps running', async () => {
+    const { w, d, win } = await ownersPc();
+    delete w.docker.madeFrom;
+    expect(await main(['setup'], d)).toBe(2);
+    expect(said(w)).toMatch(/^REFUSED — Docker has no container of the shop that says where it was made\. Nothing was changed; the till and the shop run as before\./m);
+    expect(w.killed).toEqual([]);
+    expect(win.composeSeen).toEqual([]);
+    expect(win.services.size).toBe(0);
+    // The old release stays the live one, so the sign-in start keeps working as before.
+    expect(JSON.parse(d.fs.readFileSync('F:\\SRE-data\\run\\current-release.json', 'utf8')).folder).toBe('C:\\SRE-2026-11');
+  });
+
+  it('the folder the copy was made from is gone: REFUSED before anything stops', async () => {
+    const { w, d } = await ownersPc();
+    d.fs.rmSync('C:\\SRE-2026-11\\infra\\compose\\docker-compose.yml');
+    expect(await main(['setup'], d)).toBe(2);
+    expect(said(w)).toMatch(/REFUSED — the folder the Docker copy was made from is not on this PC any more \(C:\\SRE-2026-11\\infra\\compose\\docker-compose\.yml\)\./);
+    expect(w.killed).toEqual([]);
+  });
+
+  it('Docker\'s database will not start after the till was stopped: nothing changed, and the till is started again', async () => {
+    const { w, d, win } = await ownersPc();
+    w.docker.upStatus = 1;
+    expect(await main(['setup'], d)).toBe(1);
+    const out = said(w);
+    expect(w.killed).toEqual([4242]);
+    expect(out).toMatch(/NOT DONE — the Docker copy's database did not start: .*Nothing was changed\./);
+    expect(w.tasks.ran).toEqual([TASKS.start]);
+    expect(out).toMatch(/^ {2}The till is started again, as it was\.$/m);
+    expect(win.services.size).toBe(0);
+    expect(JSON.parse(d.fs.readFileSync('F:\\SRE-data\\run\\current-release.json', 'utf8')).folder).toBe('C:\\SRE-2026-11');
+  });
+
+  it('put back after a mismatch: Docker started again AND the till started again', async () => {
+    const { w, d, win } = await ownersPc();
+    win.restoreLoses = 1;
+    expect(await main(['setup'], d)).toBe(1);
+    expect(w.tasks.ran).toEqual([TASKS.start]);
+    expect(said(w)).toMatch(/^ {2}The Docker copy is running again\.\n {2}The till is started again, as it was\.$/m);
   });
 
   it('run again after the move: nothing is moved twice, nothing replaced', async () => {
