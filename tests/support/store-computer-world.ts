@@ -39,6 +39,8 @@ export interface PretendDocker {
   dropFails: boolean;
   /** The compose file the running API was started from (compose's config_files label). */
   apiFrom: string | undefined;
+  /** "<working dir>|<compose file>[,…]" — what Docker says on the shop's containers about where they were made. */
+  madeFrom?: string;
   /** `up` per folder: its exit code (default 0). */
   upStatusIn: (cwd: string) => number;
   /** A migration the previous release's `migrate` would add (a release that is not a clean rollback). */
@@ -123,7 +125,7 @@ function pretendPowershell(win: PretendWindows, args: readonly string[], env: Re
 }
 
 /** A pretend Windows Task Scheduler: what was registered, by name, with its XML. */
-export interface PretendTasks { readonly registered: Map<string, string>; refuse?: string; readonly removed: string[] }
+export interface PretendTasks { readonly registered: Map<string, string>; refuse?: string; readonly removed: string[]; readonly ran: string[] }
 
 export interface World {
   readonly root: string;
@@ -173,6 +175,8 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
       if (args[0] === '--version') return { status: 0, stdout: 'Docker version 27.0.0\n' };
       if (args[0] === 'info') return docker.running ? { status: 0, stdout: '27.0.0\n' } : { status: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon' };
       if (args[0] === 'compose' && args[1] === 'version') return { status: docker.compose ? 0 : 1, stdout: '' };
+      // Where the copy was made (the labels Docker records on a compose project's containers): `madeFrom`, or none.
+      if (args[0] === 'ps' && args.some((a) => a.includes('com.docker.compose.project.working_dir'))) return { status: 0, stdout: docker.madeFrom === undefined ? '' : `${docker.madeFrom}\n` };
       if (args[0] === 'ps' && args.includes('label=com.docker.compose.service=api')) return { status: 0, stdout: docker.apiFrom === undefined ? '' : `${docker.apiFrom}\n` };
       if (args[0] === 'ps') {
         const label = args.find((a) => a.startsWith('label='));
@@ -254,7 +258,7 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
   const data = `${root}-data`;
   const asked: string[] = [];
   const state = { typed: [PASSPHRASE] as string[] };
-  const tasks: PretendTasks = { registered: new Map(), removed: [] };
+  const tasks: PretendTasks = { registered: new Map(), removed: [], ran: [] };
   const detached: World['detached'] = [];
   const killed: number[] = [];
   const deps: Deps = {
@@ -271,6 +275,7 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
       register: (name: string, xml: string) => { if (tasks.refuse !== undefined) return { ok: false, said: tasks.refuse }; tasks.registered.set(name, xml); return { ok: true }; },
       remove: (name: string) => { tasks.removed.push(name); tasks.registered.delete(name); return { ok: true }; },
       exists: (name: string) => tasks.registered.has(name),
+      run: (name: string) => { tasks.ran.push(name); return { ok: true }; },
     },
     platform: 'linux',
     env: {},

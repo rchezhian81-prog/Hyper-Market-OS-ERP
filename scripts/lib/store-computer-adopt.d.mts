@@ -4,4 +4,6 @@ import type { Deps, Layout } from './store-computer.mjs';
 export declare const ADOPTED_MARKER: 'adopted-from-docker.json';
 export declare function adoptedMarkerPath(platform: string, dataRoot: string): string;
 export declare function dockerCopyToMove(deps: Deps, L: Partial<Layout> | undefined): boolean;
+export declare function dockerCopyMadeFrom(deps: Deps): { dir: string; files: string[]; problem?: undefined } | { problem: string; dir?: undefined; files?: undefined };
+export declare function madeFromCompose(L: Partial<Layout>, made: { files: string[] }): string[];
 export declare function adoptDockerCopy(deps: Deps, opts: { pgBin?: string; serviceHost?: string }): Promise<number>;

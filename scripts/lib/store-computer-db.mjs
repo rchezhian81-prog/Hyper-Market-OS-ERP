@@ -57,7 +57,8 @@ export function dbCommand(deps, ctx, program, args) {
       opts: { cwd: ctx.L.dataRoot, env: { ...ctx.env, PGPASSWORD: String(ctx.settings.POSTGRES_PASSWORD ?? ''), PGOPTIONS: ALL_TENANTS_PGOPTIONS } },
     };
   }
-  return { cmd: 'docker', args: [...composeBase(ctx.L), 'exec', '-T', '-e', `PGOPTIONS=${ALL_TENANTS_PGOPTIONS}`, 'db', program, ...args], opts: { cwd: ctx.L.composeDir, env: ctx.env } };
+  // ctx.compose: the Docker copy's own compose files and folder (the move, store-computer-adopt.mjs); else this copy's.
+  return { cmd: 'docker', args: [...(ctx.compose?.base ?? composeBase(ctx.L)), 'exec', '-T', '-e', `PGOPTIONS=${ALL_TENANTS_PGOPTIONS}`, 'db', program, ...args], opts: { cwd: ctx.compose?.dir ?? ctx.L.composeDir, env: ctx.env } };
 }
 
 /** Run it: `extra` is merged into the spawn options (input, stdio). */
