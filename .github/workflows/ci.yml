@@ -382,11 +382,13 @@ jobs:
         shell: pwsh
         run: |
           # /FORCEVCREDIST=1: this machine already has the Visual C++ runtime, so its installer is run anyway, as on a PC without it.
-          $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DATADRIVE=D:','/FORCEVCREDIST=1','/LOG=C:\ProgramData\SRE\inno-setup.log' -Wait -PassThru
-          Get-Content C:\ProgramData\SRE\setup.log
-          if ($p.ExitCode -ne 0) { throw "SRE-Setup.exe exit $($p.ExitCode)" }
+          # Inno Setup's own log goes to a folder that is there before anything is installed (C:\ProgramData\SRE is not yet).
+          $innoLog = Join-Path $env:RUNNER_TEMP 'inno-setup.log'
+          $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DATADRIVE=D:','/FORCEVCREDIST=1',"/LOG=`"$innoLog`"" -Wait -PassThru
+          Get-Content C:\ProgramData\SRE\setup.log -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Get-Content $innoLog -Tail 40 -ErrorAction SilentlyContinue; throw "SRE-Setup.exe exit $($p.ExitCode)" }
           if (-not (Test-Path 'C:\Program Files\SRE Retail OS\runtime\vcredist\vc_redist.x64.exe')) { throw 'the release does not carry the Visual C++ runtime installer' }
-          $ran = Select-String -Path C:\ProgramData\SRE\inno-setup.log -Pattern 'Microsoft Visual C\+\+ runtime installer ended with (0|1638|3010)$'
+          $ran = Select-String -Path $innoLog -Pattern 'Microsoft Visual C\+\+ runtime installer ended with (0|1638|3010)$'
           if (-not $ran) { throw 'the Visual C++ runtime installer did not run, or failed' }
           Write-Output $ran.Line
 
