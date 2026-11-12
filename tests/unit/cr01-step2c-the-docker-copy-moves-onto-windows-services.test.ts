@@ -119,9 +119,53 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     const { w, d, win } = await ownersPc();
     w.docker.running = false;
     expect(await main(['setup'], d)).toBe(2);
-    expect(said(w)).toMatch(/REFUSED — .*Docker is needed once more, to take the shop's data out of it\. Nothing was changed\./);
+    expect(said(w)).toMatch(/^REFUSED — Docker Desktop is installed but not running, and this PC was set up before: its shop may still be in Docker, and Docker is needed to look\. Nothing was changed\./m);
     expect(w.killed).toEqual([]);
     expect(win.services.size).toBe(0);
+    // The owner's PC, 12 Nov 2026: this case used to make a NEW, EMPTY database. Now nothing is made.
+    expect(win.initdbRuns).toBe(0);
+    expect(readServicesMarker(d, layout('C:\\SRE', 'win32', 'F:\\SRE-data'))).toBeUndefined();
+  });
+
+  /** The owner's PC after 12 Nov 2026: the services were made with an EMPTY database while the shop stayed in Docker. */
+  async function leftBehind(): Promise<{ w: World; d: Deps; win: PretendWin }> {
+    const pc = await ownersPc();
+    expect(await main(['install-services', '--pg-bin', 'C:\\SRE\\runtime\\pgsql\\bin', '--service-host', 'C:\\SRE\\runtime\\winsw\\WinSW-x64.exe'], pc.d)).toBe(0);
+    pc.d.fs.writeFileSync('F:\\SRE-data\\run\\current-release.json', JSON.stringify({ folder: 'C:\\SRE', setAt: '2026-11-12T03:00:00.000Z', previous: 'C:\\SRE-2026-11' }));
+    expect(pc.win.nativeDbs['sre_real']).toEqual({ tables: {}, values: {}, maxSeq: 0, migrations: [] }); // empty
+    pc.w.said.length = 0;
+    return pc;
+  }
+
+  it('the services were made EMPTY, the shop left in Docker: setup sets the empty database aside (kept) and does the move — MATCHED, MOVED', async () => {
+    const { w, d, win } = await leftBehind();
+    expect(await main(['setup'], d)).toBe(0);
+    const out = said(w);
+    expect(out).toMatch(/^The shop database on this PC was made EMPTY, without the shop's data from Docker/m);
+    expect(out).toMatch(/^The new database holds no records \(no event at all\): it is set aside, kept, and the move from Docker runs now\.$/m);
+    expect(d.fs.readdirSync('F:\\SRE-data').some((f) => f.startsWith('database-empty-not-moved-'))).toBe(true);
+    expect(out).toMatch(/^MATCHED — the new database holds exactly what the Docker copy held/m);
+    expect(out).toMatch(/^MOVED — /m);
+    expect(win.nativeDbs['sre_real']).toEqual(w.docker.data['sre_real']);
+    expect(d.fs.existsSync(`F:\\SRE-data\\run\\services\\${ADOPTED_MARKER}`)).toBe(true);
+  });
+
+  it('the services were made and the new database ALREADY holds records: REFUSED, nothing changed, nothing moved over it', async () => {
+    const { w, d, win } = await leftBehind();
+    win.nativeDbs['sre_real'] = { tables: { event_ledger: 3 }, values: { SaleCommitted: 5_000 }, maxSeq: 3, migrations: ['0001_a.sql'] };
+    expect(await main(['setup'], d)).toBe(2);
+    expect(said(w)).toMatch(/^REFUSED — the new database on this PC already holds records \(newest event number 3\): something was done with it\. Nothing was changed/m);
+    expect(win.services.size).toBe(3);
+    expect(d.fs.readdirSync('F:\\SRE-data').some((f) => f.startsWith('database-empty-not-moved-'))).toBe(false);
+    expect(w.killed).toEqual([]);
+  });
+
+  it('the services were made EMPTY and Docker Desktop is not running: REFUSED, nothing changed', async () => {
+    const { w, d, win } = await leftBehind();
+    w.docker.running = false;
+    expect(await main(['setup'], d)).toBe(2);
+    expect(said(w)).toMatch(/^REFUSED — Docker Desktop is installed but not running/m);
+    expect(win.services.size).toBe(3);
   });
 
   // The owner's PC, 10 Nov 2026 (release 1.0.2005): the move asked Docker with the INSTALLED program's compose file, which

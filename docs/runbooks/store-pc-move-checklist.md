@@ -66,6 +66,10 @@ Docker's own copy is never deleted.
   this PC had no Microsoft Visual C++ runtime (double-clicking `initdb.exe` in
   `C:\Program Files\SRE Retail OS\runtime\pgsql\bin` said "VCRUNTIME140.dll was not found"). The shop was put back,
   Docker and the till running. Releases from 11 November 2026 install that runtime themselves.
+- **SETUP DONE, but no "MATCHED" and no "MOVED" line** (12 November 2026: Docker Desktop was not running): the services
+  were made with a NEW, EMPTY database and the shop's data stayed in Docker. **Do not sell on SRE Till** until it is put
+  right. Open Docker Desktop (Engine running) and run a release from 12 November 2026 or later: it sets the empty
+  database aside (kept) and does the move. Releases from then on refuse instead when Docker Desktop is not running.
 - Nothing here touches the shop's data: until step 6 says MOVED, the shop is still in Docker exactly as before.
 
 Docker Desktop can be uninstalled later, once I confirm from your photos; its stopped copy is the only thing it still holds.

@@ -6,4 +6,6 @@ export declare function adoptedMarkerPath(platform: string, dataRoot: string): s
 export declare function dockerCopyToMove(deps: Deps, L: Partial<Layout> | undefined): boolean;
 export declare function dockerCopyMadeFrom(deps: Deps): { dir: string; files: string[]; problem?: undefined } | { problem: string; dir?: undefined; files?: undefined };
 export declare function madeFromCompose(L: Partial<Layout>, made: { files: string[] }): string[];
+export declare function dockerCopyState(deps: Deps, L: Partial<Layout> | undefined, settingsKept: boolean): 'none' | 'move' | 'left-behind' | { refuse: string };
+export declare function finishLeftBehindMove(deps: Deps): Promise<number>;
 export declare function adoptDockerCopy(deps: Deps, opts: { pgBin?: string; serviceHost?: string }): Promise<number>;

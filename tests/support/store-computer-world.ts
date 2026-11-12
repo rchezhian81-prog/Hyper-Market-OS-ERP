@@ -183,7 +183,7 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
         if (label?.endsWith('=sre-pilot')) return { status: 0, stdout: docker.demoContainers.join('\n') };
         return { status: 0, stdout: docker.ownRunning.join('\n') };
       }
-      if (args[0] === 'volume') return { status: 0, stdout: docker.volumes.join('\n') };
+      if (args[0] === 'volume') return docker.running ? { status: 0, stdout: docker.volumes.join('\n') } : { status: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon' };
       if (args[0] === 'compose' && args.includes('up')) {
         const status = docker.upStatus !== 0 ? docker.upStatus : docker.upStatusIn(o.cwd ?? '');
         if (status === 0 && args.includes('--build')) {
