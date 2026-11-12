@@ -34,6 +34,7 @@ import {
 import { ALERT_RULES, SCHEDULE_FILE, ageWords, backupRoom, readSchedule, status } from './store-computer-status.mjs';
 import { refusedOnServer } from './store-computer-windows.mjs';
 import { databaseProblem, readServicesMarker } from './store-computer-db.mjs';
+import { checkIfDue } from './store-pc-update-check.mjs';
 // Kept importable from here, where they were first written (OB-262 · OB-268 moved them beside the status check).
 export { daysOfRoom, driveTally } from './store-computer-status.mjs';
 
@@ -382,6 +383,8 @@ export async function scheduledBackup(deps) {
   } finally {
     try { d.fs.rmSync(lock, { force: true }); } catch { /* a stale lock is taken over after two hours */ }
     await status(d, { quiet: true });
+    // CR-01 step 3c (OI-05): the automatic update check — at most every six hours, never failing the backup.
+    await checkIfDue(d, L0);
   }
 }
 

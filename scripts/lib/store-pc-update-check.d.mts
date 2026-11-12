@@ -26,3 +26,5 @@ export declare function keptKey(deps: Deps, L: Where): string | undefined;
 export declare function checkForUpdate(deps: Deps, L: Where): Promise<{ code: number; state: UpdateCheckState }>;
 export declare function checkUpdateCommand(deps: Deps, L: Where): Promise<number>;
 export declare function updateKeyCommand(deps: Deps, L: Where, opts?: { remove?: boolean }): Promise<number>;
+export declare const AUTO_CHECK_HOURS: number;
+export declare function checkIfDue(deps: Deps, L: Where, hours?: number): Promise<'not-due' | 'checked' | 'failed'>;
