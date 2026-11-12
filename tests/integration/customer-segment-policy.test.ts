@@ -17,11 +17,14 @@ const audience = (h: ApiHarness, u: string, body: unknown) =>
   h.request({ method: 'POST', path: '/v1/customer/segments/audience', userId: u, tenantId: A, idempotencyKey: `aud-${Math.random()}`, body });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code ?? (res.body as { code?: string }).code;
 
-// A customer with three recent orders: 'loyal' when the tenant sets loyalAtOrders:3, 'regular' under the default 10.
+// A customer with three RECENT orders: 'loyal' when the tenant sets loyalAtOrders:3, 'regular' under the default 10.
+// Dated back from today, never fixed dates: the engine calls a customer 'lapsing' 60 days after the last order, so fixed
+// September dates turned this customer 'lapsing' on 12 Nov 2026 and the test failed by the calendar alone.
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
 const threeOrders = (ref: string) => [
-  { orderId: `${ref}-1`, customerRef: ref, at: '2026-09-05T10:00:00.000Z', netMinor: 20000, marginMinor: 6000, channel: 'store' },
-  { orderId: `${ref}-2`, customerRef: ref, at: '2026-09-09T10:00:00.000Z', netMinor: 20000, marginMinor: 6000, channel: 'store' },
-  { orderId: `${ref}-3`, customerRef: ref, at: '2026-09-13T10:00:00.000Z', netMinor: 20000, marginMinor: 6000, channel: 'store' },
+  { orderId: `${ref}-1`, customerRef: ref, at: daysAgo(20), netMinor: 20000, marginMinor: 6000, channel: 'store' },
+  { orderId: `${ref}-2`, customerRef: ref, at: daysAgo(16), netMinor: 20000, marginMinor: 6000, channel: 'store' },
+  { orderId: `${ref}-3`, customerRef: ref, at: daysAgo(12), netMinor: 20000, marginMinor: 6000, channel: 'store' },
 ];
 const consentProfiling = (ref: string) => [{ customerRef: ref, granted: ['profiling'] }];
 
