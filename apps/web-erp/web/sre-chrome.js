@@ -706,6 +706,7 @@
     'packaging': 'boxes', // round 6 · M28-FR-03 — an icon already in the set
     'branch-compare': 'chart-column', // round 6 · M29-FR-02 — an icon already in the set
     'shelf-tags': 'tag', // round 7 · OB-505 — an icon already in the set
+    'esl': 'tag', // U6 · electronic shelf labels — the same shelf-label shape, an icon already in the set
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
     'findings': 'clipboard-check', // OB-609 — an icon already in the set
@@ -730,6 +731,7 @@
     'gift-cards': 'ticket', // W3 — an icon already in the set
     'partner-webhooks': 'send', // Wave 3 — an icon already in the set
     'partners': 'key-round', // Wave 3 — an icon already in the set
+    'keys': 'key-round', // U6 · keys and credentials — an icon already in the set
     'developer-docs': 'book-open', // Wave 3 — an icon already in the set
     'floor-devices': 'tag', // Wave 3 — an icon already in the set
     'branding': 'store', // Wave 3 — an icon already in the set
