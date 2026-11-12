@@ -87,12 +87,12 @@ export const readParts = (page: Page): Promise<Reading> => page.evaluate(`(() =>
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let n;
   while ((n = walker.nextNode())) {
-    const text = (n.nodeValue || '').replace(/\s+/g, ' ').trim();
+    const text = (n.nodeValue || '').replace(/\\s+/g, ' ').trim();
     const el = n.parentElement;
     if (text === '' || !el || el.closest('script,style,noscript,template,[aria-hidden="true"],[hidden],.sre-chrome,header.sre-header') || !shown(el)) continue;
     texts.push({ el, text });
   }
-  const marks = texts.filter((x) => /^[⚠✓✔✕✗▲▼●○]/.test(x.text) || /\s[⚠✓✔✕✗▲▼]\s/.test(x.text)).map((x) => where(x.el) + ': ' + x.text.slice(0, 40));
+  const marks = texts.filter((x) => /^[⚠✓✔✕✗▲▼●○]/.test(x.text) || /\\s[⚠✓✔✕✗▲▼]\\s/.test(x.text)).map((x) => where(x.el) + ': ' + x.text.slice(0, 40));
   const dashes = texts.filter((x) => /^[—–-]$/.test(x.text)).map((x) => where(x.el));
   const nativeDates = [...document.querySelectorAll('input[type="date"]')].filter(shown).map(where);
   return { rawTables, pills, unlabelled, marks, dashes, nativeDates, scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth };

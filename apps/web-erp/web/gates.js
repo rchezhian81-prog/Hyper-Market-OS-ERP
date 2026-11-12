@@ -179,7 +179,7 @@ function paint() {
   $('decide-section').hidden = !shown;
   $('decide-form').hidden = !may.decide;
   $('decide-not').textContent = may.decide ? '' : t('decideNot');
-  for (const [id, k] of [['outside-h', 'outsideH'], ['outside-lead', 'outsideLead'], ['outside-kind-label', 'outsideKindLabel'], ['outside-result-label', 'outsideResultLabel'], ['outside-ms-label', 'outsideMsLabel'], ['outside-on-label', 'outsideOnLabel'], ['outside-where-label', 'outsideWhereLabel'], ['outside-ref-label', 'outsideRefLabel'], ['outside-statement-label', 'outsideStatementLabel'], ['outside-record-text', 'outsideRecord']]) $(id).textContent = t(k);
+  for (const [id, k] of [['outside-h', 'outsideH'], ['outside-lead', 'outsideLead'], ['outside-kind-label', 'outsideKindLabel'], ['outside-result-label', 'outsideResultLabel'], ['outside-ms-label', 'outsideMsLabel'], ['outside-on-label', 'outsideOnLabel'], ['outside-where-label', 'outsideWhereLabel'], ['outside-ref-label', 'outsideRefLabel'], ['outside-statement-label', 'outsideStatementLabel'], ['outside-record-text', 'outsideRecord']]) { const n = $(id); if (n !== null) n.textContent = t(k); } // the day's label went with the chrome's date field
   $('outside-section').hidden = !shown;
   $('outside-form').hidden = !may.decide;
   $('outside-not').textContent = may.decide ? '' : t('outsideNot');

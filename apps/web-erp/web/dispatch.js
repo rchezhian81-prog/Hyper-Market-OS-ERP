@@ -457,7 +457,8 @@ function paintTillJobs() {
     const appJob = j.status === 'waiting_for_customer_app' && j.deskMayEnter !== undefined;
     if (appJob) {
       const m = j.deskMayEnter;
-      const w = withChip(text('span', m.waitEndsAt === null ? dk('waitNotSet') : m.afterWait ? dk('waitPassed') : `${dk('waitEnds')} ${when(m.waitEndsAt)}`, 'facts wait'), m.waitEndsAt === null ? 'unknown' : 'pending');
+      const w = text('span', m.waitEndsAt === null ? dk('waitNotSet') : m.afterWait ? dk('waitPassed') : `${dk('waitEnds')} ${when(m.waitEndsAt)}`, 'facts wait');
+      if (m.waitEndsAt !== null) withChip(w, 'pending'); // "not set" says itself in words
       w.dataset.afterWait = String(m.afterWait); li.append(w);
     }
     if ((j.status === 'waiting_for_delivery_desk' || appJob) && desk.session.may.enter) {

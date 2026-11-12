@@ -147,6 +147,11 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
       throw new Error(`#${id} says ${JSON.stringify(await page.textContent(`#${id}`))}, not ${String(re)}`);
     }
   };
+  // U5: a page's summary figures are the chrome's cards — a figure is read by its card's label, not a page-own id
+  const card = async (page: Page, label: string, re: RegExp): Promise<void> => {
+    const value = page.locator('.sre-summary-card', { hasText: label }).locator('.sre-summary-value');
+    await expect.poll(() => value.textContent(), { timeout: 15_000, message: `the "${label}" card` }).toMatch(re);
+  };
   const inbox = async (who: string) => (await req('GET', '/v1/approvals/requests', undefined, who)).body as { waitingForMe: { requestId: string; kind: string; subjectRef: string }[] };
   const approveWaiting = async (checker: string, kind: string, subjectRef: string) => {
     const r = (await inbox(checker)).waitingForMe.find((x) => x.kind === kind && x.subjectRef === subjectRef);
@@ -433,12 +438,12 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await ok(req('POST', '/v1/promotions/later/definition', { kind: 'amount_off', amountOffMinor: 500, productIds: ['OIL'], startsAt: day(10), endsAt: day(20) }), 'define later');
     const m = await open(MANAGER, '/offer-results/');
     await m.page.locator('#rows tr[data-id="rice-10"][data-status="active"]').waitFor();
-    await says(m.page, 'v-active', /^1$/);
-    await says(m.page, 'v-draft', /^1$/);
+    await card(m.page, 'Running now', /^1$/);
+    await card(m.page, 'Recorded, not started', /^1$/);
     await m.page.locator('#rows tr[data-id="rice-10"]').click();
     await says(m.page, 'rule', /^Percent off on RICE/);
     await m.page.click('#measure');
-    await says(m.page, 'v-units', /^0 · 0$/);
+    await card(m.page, 'Units: offer · before', /^0 · 0$/);
     await says(m.page, 'baseline-say', /the same number of days just before it started/);
     expect(await m.page.isHidden('#stop-row')).toBe(false);
     expect(m.errors).toEqual([]);

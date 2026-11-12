@@ -84,7 +84,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       await s.page.selectOption('#outside-kind', 'scan_to_line_p95');
       expect(await s.page.locator('#outside-result-wrap').isHidden()).toBe(true); // a timing has no "result" to type
       await s.page.fill('#outside-ms', '340');
-      await s.page.fill('#outside-on', '2026-11-01');
+      await s.page.fill('#outside-on', '01/11/2026'); // U5: the chrome's dd/mm/yyyy field — head office still gets 2026-11-01
       await s.page.fill('#outside-where', 'certified store PC, lanes 1-4 (synthetic rehearsal)');
       await s.page.fill('#outside-ref', 'docs/evidence/scan-speed-2026-11-01.md');
       await s.page.fill('#outside-statement', 'timed a thousand scans with the shop open');

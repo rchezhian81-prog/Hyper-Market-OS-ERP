@@ -11,7 +11,9 @@ import type { HeadOfficeHttp } from './head-office-http';
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
 export function wireStockScreens(win: Record<string, unknown>, viewerIdentity: (raw: unknown) => Viewer | undefined, http: () => HeadOfficeHttp): void {
-  if (win['stockLedgerData'] !== undefined) win['stockLedgerSession'] = createStockLedgerSession(viewerIdentity(win['stockLedgerData']), http());
-  if (win['quarantineData'] !== undefined) win['quarantineSession'] = createQuarantineSession(viewerIdentity(win['quarantineData']), http());
-  if (win['stockAdjustmentsData'] !== undefined) win['stockAdjustmentsSession'] = createStockAdjustmentsSession(viewerIdentity(win['stockAdjustmentsData']), http());
+  // Always attached, like Count plans: with no payload the viewer is "nobody", so the page says nobody is named, reads
+  // nothing and offers nothing — but its words and its language toggle still work (the page never runs without a session).
+  win['stockLedgerSession'] = createStockLedgerSession(viewerIdentity(win['stockLedgerData']), http());
+  win['quarantineSession'] = createQuarantineSession(viewerIdentity(win['quarantineData']), http());
+  win['stockAdjustmentsSession'] = createStockAdjustmentsSession(viewerIdentity(win['stockAdjustmentsData']), http());
 }

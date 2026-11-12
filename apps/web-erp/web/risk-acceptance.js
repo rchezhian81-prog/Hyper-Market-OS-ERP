@@ -131,7 +131,7 @@ function paint() {
   // owner's naming form.
   el('reviewer-heading').textContent = t('reviewerHeading');
   el('reviewer-state').className = `status tone-${view.reviewer.status.tone}`;
-  sayWith(el('reviewer-state'), view.reviewer.status.tone === 'idle' ? null : stateOfTone(view.reviewer.status.tone), view.reviewer.words, 'reviewer-words');
+  sayWith(el('reviewer-state'), stateOfTone(view.reviewer.status.tone), view.reviewer.words, 'reviewer-words'); // always a chip: "Not known" when nobody is named
   // Read aloud as one status, like every other status on the page: the colour never carries the meaning alone.
   el('reviewer-state').setAttribute('aria-label', view.reviewer.status.announcement || view.reviewer.words);
   el('namer').hidden = !view.mayNameReviewer;

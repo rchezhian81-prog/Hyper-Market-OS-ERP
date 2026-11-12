@@ -98,6 +98,7 @@ function paintFigures(split) {
   if (!o) { host.textContent = figs.map(([k, w]) => `${t(w)}: ${n(k) ?? ''}`).join(' · '); return; }
   o.cards(host, figs.map(([k, w]) => { const v = n(k); return { label: t(w), value: v === null ? null : String(v), tone: v !== null && v > 0 && k !== 'done' ? 'degraded' : 'ok' }; }));
   host.querySelectorAll('.sre-summary-value').forEach((b, i) => { b.id = `v-${figs[i][0]}`; });
+  host.querySelectorAll('.sre-summary-label').forEach((l, i) => { l.id = `k-${figs[i][0]}`; });
 }
 
 function paint() {

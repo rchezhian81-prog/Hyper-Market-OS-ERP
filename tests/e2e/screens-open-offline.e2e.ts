@@ -54,6 +54,7 @@ interface A11yEl {
   getAttribute(name: string): string | null;
   readonly textContent: string | null;
   querySelector(selector: string): A11yEl | null;
+  matches(selector: string): boolean;
 }
 interface A11yDoc {
   getElementById(id: string): A11yEl | null;
@@ -257,7 +258,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
           statusCount: statuses.length,
           everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
           everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
-          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+          everyIconHidden: statuses.every((s) => (s.matches('.sre-chip') || s.querySelector('.sre-chip') !== null) && s.querySelector('.icon:not([aria-hidden="true"])') === null), // U5 · G17: the state is the chrome's chip (shape + words); any icon in it is hidden, and no mark character is left
         };
       });
       expect(a11y.langLabelled).toBe(true);
@@ -342,11 +343,11 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
         const statuses = Array.from(doc.querySelectorAll('.status'));
         return {
           langLabelled: nonEmpty(doc.getElementById('lang')?.getAttribute('aria-label') ?? null),
-          listLabelled: nonEmpty(doc.getElementById('rows')?.getAttribute('aria-label') ?? null),
+          listLabelled: nonEmpty(doc.getElementById('register')?.getAttribute('aria-label') ?? null), // U5: the counts register is the chrome's
           statusCount: statuses.length,
           everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
           everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
-          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+          everyIconHidden: statuses.every((s) => (s.matches('.sre-chip') || s.querySelector('.sre-chip') !== null) && s.querySelector('.icon:not([aria-hidden="true"])') === null), // U5 · G17: the state is the chrome's chip (shape + words); any icon in it is hidden, and no mark character is left
         };
       });
       expect(a11y.langLabelled).toBe(true);
@@ -466,7 +467,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
           statusCount: statuses.length,
           everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
           everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
-          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+          everyIconHidden: statuses.every((s) => (s.matches('.sre-chip') || s.querySelector('.sre-chip') !== null) && s.querySelector('.icon:not([aria-hidden="true"])') === null), // U5 · G17: the state is the chrome's chip (shape + words); any icon in it is hidden, and no mark character is left
         };
       });
       expect(a11y.langLabelled).toBe(true);
@@ -724,7 +725,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
           statusCount: statuses.length,
           everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
           everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
-          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+          everyIconHidden: statuses.every((s) => (s.matches('.sre-chip') || s.querySelector('.sre-chip') !== null) && s.querySelector('.icon:not([aria-hidden="true"])') === null), // U5 · G17: the state is the chrome's chip (shape + words); any icon in it is hidden, and no mark character is left
         };
       });
       expect(a11y.langLabelled, 'language toggle has no aria-label').toBe(true);
@@ -804,7 +805,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
           statusCount: statuses.length,
           everyStatusAnnounced: statuses.every((s) => nonEmpty(s.getAttribute('aria-label'))),
           everyStatusHasWord: statuses.every((s) => nonEmpty(s.textContent)),
-          everyIconHidden: statuses.every((s) => s.querySelector('.icon')?.getAttribute('aria-hidden') === 'true'),
+          everyIconHidden: statuses.every((s) => (s.matches('.sre-chip') || s.querySelector('.sre-chip') !== null) && s.querySelector('.icon:not([aria-hidden="true"])') === null), // U5 · G17: the state is the chrome's chip (shape + words); any icon in it is hidden, and no mark character is left
         };
       });
       expect(a11y.langLabelled, 'language toggle has no aria-label').toBe(true);

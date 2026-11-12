@@ -802,6 +802,8 @@
     'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
     'b2b': 'building', // OB-288 commercial desks (M22) — an icon already in the set
     'supplier-submissions': 'package-check', // OB-288 commercial desks (M24) — an icon already in the set
+    'rfq': 'send', // U6 (M06-FR-02 · M24-FR-01) — an icon already in the set
+    'supplier-claims': 'package-minus', // U6 (M07-FR-03 · M24-FR-02) — an icon already in the set
     'concessions': 'store', // OB-288 commercial desks (M27) — an icon already in the set
     'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',

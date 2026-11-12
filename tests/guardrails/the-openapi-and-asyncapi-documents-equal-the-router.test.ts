@@ -31,7 +31,7 @@ const NOT_PUBLISHED_YET = [
   'AIRecommendationCreated', 'BackupFailed', 'BackupVerified', 'BatchQuarantined', 'BatchRecalled', 'ConsentGranted', 'ConsentWithdrawn',
   'GoodsRejected', 'InventoryCounted', 'InventoryReleased', 'InventoryReserved', 'LoyaltyEarned', 'LoyaltyRedeemed', 'LoyaltyReversed',
   'OrderAllocated', 'OrderCancelled', 'OrderDelivered', 'OrderPicked', 'OrderReturned', 'PriceActivated', 'PriceRolledBack', 'ProductApproved',
-  'PurchaseOrderApproved', 'ReconciliationExceptionResolved', 'RefundCompleted', 'RefundFailed', 'SecurityIncidentRaised',
+  'PurchaseOrderApproved', 'RefundCompleted', 'RefundFailed', 'SecurityIncidentRaised',
   'SupplierInvoiceException', 'SupplierInvoiceMatched', 'SyncDelayed', 'SyncRecovered', 'TenderAuthorized', 'TenderSettled', 'TenderUncertain',
 ];
 

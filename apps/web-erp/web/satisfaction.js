@@ -9,8 +9,21 @@ const api = window.satisfaction ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
 let lang = 'en';
-const t = (k) => (api === null ? k : api.words(lang, k));
-const both = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+// Opened without the store computer's screen data (no session in the bundle): the page says so on the shared state, in both
+// languages, and reads and writes nothing — never a crash (P-08).
+const OFF = {
+  en: { title: 'Customer satisfaction', offTitle: 'Not answered', offDetail: 'This page was opened without the store computer, so who you are and what head office holds are not known here. Open it from the store computer\'s menu. Nothing was read or changed.' },
+  ta: { title: 'வாடிக்கையாளர் திருப்தி', offTitle: 'பதில் இல்லை', offDetail: 'இந்தப் பக்கம் கடைக் கணினி இல்லாமல் திறக்கப்பட்டது, எனவே நீங்கள் யார், தலைமை அலுவலகம் என்ன வைத்திருக்கிறது என்பது இங்கே தெரியாது. கடைக் கணினியின் பட்டியலிலிருந்து திறங்கள். எதுவும் படிக்கப்படவில்லை, மாற்றப்படவில்லை.' },
+};
+const t = (k) => (api === null ? (OFF[lang][k] ?? OFF.en[k] ?? '') : api.words(lang, k));
+const both = (k) => (api === null ? { en: OFF.en[k] ?? '', ta: OFF.ta[k] ?? '' } : { en: api.words('en', k), ta: api.words('ta', k) });
+/** The no-data state, drawn with the shared part once the chrome is there (or as plain words before it). */
+function paintOff() {
+  const host = document.getElementById('page-status');
+  const o = window.sreOffice ?? null;
+  if (o !== null && typeof o.state === 'function') o.state(host, 'unknown', { title: t('offTitle'), detail: t('offDetail') });
+  else host.textContent = `${t('offTitle')} — ${t('offDetail')}`;
+}
 const office = () => window.sreOffice ?? null;
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 const shopTime = (at) => (!at ? '' : window.sreShopDay?.dateTimeOf(at) ?? at);
@@ -82,6 +95,7 @@ function paintCases() {
 
 /** Five 44px score buttons (one tap), the comment as a shared field; the customer is the case's own, shown and never typed. */
 function buildForm() {
+  if (api === null) return;
   const o = office();
   if (o === null || fields !== null || typeof o.field !== 'function') return;
   fields = { comment: o.field({ id: 'r-comment', label: both('comment'), type: 'text' }) };
@@ -102,6 +116,7 @@ function paintRecord() {
 }
 
 function paint() {
+  if (api === null) { $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English'; paintOff(); return; }
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   document.title = `SRE ${t('title')}`;
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
@@ -144,7 +159,8 @@ $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; 
 $('rate-form').addEventListener('submit', (e) => { void submit(e); });
 $('r-back').addEventListener('click', unchoose);
 paint();
-if (!may.named) $('page-status').textContent = t('nobody');
+if (api === null) { paintOff(); document.addEventListener('sre:chrome', paintOff); }
+else if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
 else {
   $('report').hidden = false; $('cases').hidden = false;

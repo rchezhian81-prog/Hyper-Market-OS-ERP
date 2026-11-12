@@ -203,7 +203,7 @@ const PAGES: readonly { readonly key: string; readonly file: string; readonly re
   { key: 'approvals', file: 'index.html', ready: '#tiles .tile', tab: '#tab-approvals' },
   { key: 'day close', file: 'index.html', ready: '#tiles .tile', tab: '#tab-close' },
   { key: 'goods receipt', file: 'goods-receipt.html', ready: '#rows li.row' },
-  { key: 'counts', file: 'counts.html', ready: '#rows li.row' },
+  { key: 'counts', file: 'counts.html', ready: '#counts-grid tbody tr' }, // U5: the chrome's register
   { key: 'gst returns', file: 'gst-returns.html', ready: '#differences li' },
   { key: 'suppliers', file: 'suppliers.html', ready: '#rows li.row' },
 ];

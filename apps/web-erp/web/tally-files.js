@@ -47,7 +47,7 @@ function emptyRow(words) {
   return li;
 }
 /** A figure head office does not know, by name (never a zero). */
-function notKnownCell(words) { const span = text('span', words, 'sre-unknown'); const mark = typeof window.sreIcon === 'function' ? window.sreIcon('circle-help', 16) : null; if (mark) span.prepend(mark, ' '); return span; }
+function notKnownCell(words) { const span = text('span', words, 'sre-unknown'); const mark = typeof window.sreIcon === 'function' ? window.sreIcon('circle-help', 16) : null; if (mark) { mark.style.marginInlineEnd = '6px'; span.prepend(mark); } return span; }
 
 function row(p) {
   const li = document.createElement('li');

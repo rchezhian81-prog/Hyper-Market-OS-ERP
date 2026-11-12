@@ -113,7 +113,7 @@ function paintNotTold() {
   paintState(state, { tone: 'degraded', label: session.text(lang, 'notTold'), announcement: '' });
 }
 paint();
-onChrome(() => paint());
+onChrome(() => { paint(); paintNotTold(); });
 paintNotTold();
 
 if ('serviceWorker' in navigator) {

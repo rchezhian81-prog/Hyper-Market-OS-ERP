@@ -548,7 +548,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
     // OB-380: Transfers and Store events (head-office pages on the same read) are served by the box now, so it offers them; QG-02 R4: and the Dock diary. M28-FR-03 (round 6): Packaging and crates, on the same availability read.
     // W1: task workspaces (Goods coming in · Stock & counts · Waste, expiry & returns), the most-used screens leading.
-    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Dock diary', 'Stock health', 'Stock counts', 'Transfers', 'Packaging and crates', 'Warehouse', 'Store events', 'Products nobody can sell']);
+    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Dock diary', 'Stock health', 'Stock counts', 'Transfers', 'Stock ledger', 'Adjust a quantity', 'Packaging and crates', 'Warehouse', 'Store events', 'Products nobody can sell'] /* U6: + Stock ledger, Adjust a quantity (the same availability read) */);
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
 
     await page.click('#sre-menu a:has-text("Stock health")');

@@ -38,7 +38,10 @@ describe('an empty list says what it covers, or "not known" — never good news 
 
   it('Customer cases: "every resolved case has a root cause" is said only when a case was resolved; no case at all says so', () => {
     const view = read('apps/web-erp/web/service-desk.js');
-    expect(view).toMatch(/resolved === 0 \? t\('noneResolved'\) : t\('allExplained'\)/);
+    // U5: with no case resolved the page draws the shared EMPTY state with "noneResolved"; "allExplained" is said only
+    // otherwise (no unexplained case and at least one resolved) — the same rule, on the shared state part.
+    expect(view).toMatch(/!unexplained && resolved === 0 && o && typeof o\.state === 'function'\) \{[^}]*o\.state\(missing, 'empty', \{ title: t\('noneResolved'\)/);
+    expect(view).toMatch(/: resolved === 0 \? t\('noneResolved'\) : t\('allExplained'\)/);
     expect(view).toMatch(/noneResolved: 'No case has been resolved yet, so there is no root cause to record\.'/);
     expect(view).toMatch(/none: 'No cases yet — head office holds no case for this shop\.'/);
     expect(view).toMatch(/noneResolved: '[஀-௿]/);

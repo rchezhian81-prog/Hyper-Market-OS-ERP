@@ -145,7 +145,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Dispat
     await flagged.waitFor({ timeout: 15_000 });
     expect(await flagged.locator('.flag-words').getAttribute('data-flags')).toBe('delivery_code_wrong outside_geofence');
     expect(await flagged.locator('.flag-words').innerText()).toBe(' · Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
-    expect(await flagged.innerText()).toMatch(/Code: .* WRONG · Where: AWAY from the address \(\d+ m\)/);
+    expect(await flagged.innerText()).toMatch(/Code: WRONG · Where: AWAY from the address \(\d+ m\)/);
 
     // ── The contribution rule: not set — the rule only flags.
     await page.click('#show-held');

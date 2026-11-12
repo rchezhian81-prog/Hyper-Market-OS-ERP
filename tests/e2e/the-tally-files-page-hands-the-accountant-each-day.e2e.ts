@@ -109,7 +109,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     expect(await page.textContent('#company-n')).toBe('SRE Hyper Market (synthetic)');
     const ready = page.locator(`#files li.row[data-day="${DAY_OK}"]`);
     expect(await ready.getAttribute('data-state')).toBe('posted');
-    expect(await ready.innerText()).toMatch(/✓ Day .* — Ready to import/);
+    expect(await ready.innerText()).toMatch(/^Day \S+\s+Ready to import/); // U5: the state is the chrome's chip beside the day, never a ✓
 
     // Download the ready day: the XML Tally imports, and head office's own import check accepts it.
     const download = page.waitForEvent('download');
@@ -135,7 +135,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     expect((await page.textContent('#page-status'))?.trim()).toBe('Done — files made: 1 ready · 0 dead letter');
     const fixed = page.locator(`#files li.row[data-posting="tally-day:${DAY_DEAD}:1:r1"]`);
     expect(await fixed.getAttribute('data-state')).toBe('posted');
-    expect(await fixed.innerText()).toMatch(new RegExp(`↺ Requeued from tally-day:${DAY_DEAD}:1`));
+    expect(await fixed.innerText()).toMatch(new RegExp(`Requeued from tally-day:${DAY_DEAD}:1`)); // U5: words, no ↺ glyph
     // The original stays on the record, in the dead letter's history (never deleted).
     expect(await page.locator(`#files li.row[data-posting="tally-day:${DAY_DEAD}:1"]`).getAttribute('data-state')).toBe('dead_lettered');
 
@@ -163,7 +163,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     expect(await page.textContent('#page-h')).toBe('டேலி கோப்புகள்');
     expect((await page.textContent('#tb-status'))?.trim()).toBe('Balanced — debit and credit agree to the paisa.'); // a past answer is not re-worded
     expect(await page.textContent('#dept-h')).toBe('துறை வாரியான விற்பனையும் லாபமும்');
-    expect(await dairy.nth(2).innerText()).toBe('○ தெரியவில்லை');
+    expect(await dairy.nth(2).innerText()).toBe('தெரியவில்லை');
     expect(await fixed.innerText()).toMatch(/இறக்குமதிக்குத் தயார்/);
     expect(errors).toEqual([]);
     await context.close();

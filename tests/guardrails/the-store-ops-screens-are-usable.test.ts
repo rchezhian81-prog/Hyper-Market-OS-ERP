@@ -78,8 +78,10 @@ describe('the screens are gated on the permission their routes check (P-04)', ()
   it('a status is a word with an aria-hidden icon, never colour alone', () => {
     for (const page of ['food-safety', 'store-tasks', 'my-tasks']) {
       expect(view(page)).toMatch(/state\.setAttribute\('aria-label', words\.label\)/);
-      expect(view(page)).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
     }
+    for (const page of ['store-tasks', 'my-tasks']) expect(view(page)).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+    // U5 · G17: Food safety's slot state is the chrome's chip — its shape and its words, never a mark character
+    expect(view('food-safety')).toMatch(/fillStatus\(state, words\.tone, words\.label\)/);
   });
 
   it('OB-163: the price page always shows the owner\'s four bands', () => {

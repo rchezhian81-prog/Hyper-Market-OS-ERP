@@ -168,8 +168,9 @@ async function issue() {
 async function recordOutcome(r, result, statementRef) {
   const out = await session.outcome(r.orderId, r.refundId, result, statementRef);
   if (out.result !== 'ok') { bad('pending-status', out); return; }
-  good('pending-status', `${t('outcomeSaved')} ${r.refundId} — ${t(result)}`);
   await showPending();
+  // said after the list is re-read: showing the list resets this status line
+  good('pending-status', `${t('outcomeSaved')} ${r.refundId} — ${t(result)}`);
 }
 
 $('show-pending').addEventListener('click', () => { void showPending(); });

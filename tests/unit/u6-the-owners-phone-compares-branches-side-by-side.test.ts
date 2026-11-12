@@ -11,7 +11,7 @@ import { officeLinksFor } from '../../edge/store-edge/src/screen-server';
 const NOW = '2026-11-07T14:00:00.000Z';
 const now = () => NOW;
 const sale = (saleId: string, totalMinor: number, cogsMinor: number): SaleFact => ({ saleId, netMinor: totalMinor, taxMinor: 0, totalMinor, cogsMinor, units: 2, tender: 'cash', currency: 'INR' });
-const OWNER: OwnerConfig = { owner: { userId: 'u-owner', roleId: 'owner', branchScope: 'all', approvalLimitMinor: 10_000_000_00 } as OwnerConfig['owner'], staleAfterSeconds: 300, acknowledgeStaleDecisions: true };
+const OWNER: OwnerConfig = { owner: { userId: 'u-owner', roleId: 'owner', branchScope: 'all', approvalLimitMinor: 10_000_000_00 } as unknown as OwnerConfig['owner'], staleAfterSeconds: 300, acknowledgeStaleDecisions: true };
 const branch = (over: Partial<BranchPayload>): BranchPayload => ({
   branchId: 'b1', name: 'Main', lastSyncedAt: '2026-11-07T13:59:00.000Z', sales: [], exceptions: [], approvals: [], ...over,
 });

@@ -104,9 +104,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 1 · Changed by u-acc/);
       await s.page.click('#lang');
       expect(await s.page.textContent('#limits-h')).toBe('பண வரம்புகள்');
-      expect(await s.page.locator('#limits-head th').allInnerTexts()).toContain('கல்லாவில் விலைக் குறைப்பு');
+      expect(await s.page.locator('#limits-grid thead th').allInnerTexts()).toContain('கல்லாவில் விலைக் குறைப்பு'); // U5: the register's own head row
       expect(await cell('accountant', 'refund')).toBe('அமைக்கப்படவில்லை');
-      expect(await cell('owner', 'refund')).toBe('∞ வரம்பு இல்லை');
+      expect(await cell('owner', 'refund')).toBe('வரம்பு இல்லை'); // U5 · G13: words alone
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
 

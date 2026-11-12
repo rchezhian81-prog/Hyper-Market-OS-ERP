@@ -53,7 +53,7 @@ function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.
 let forecastTable = null;
 /** The next seven days on the chrome's register: the day, the forecast, the corrected figure, the events named on that day. */
 function paintForecast(days) {
-  const o = office(); const host = $('forecast');
+  const o = office(); const host = $('forecast-list');
   host.hidden = forecast === null;
   if (!o || forecast === null) return;
   const both = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });

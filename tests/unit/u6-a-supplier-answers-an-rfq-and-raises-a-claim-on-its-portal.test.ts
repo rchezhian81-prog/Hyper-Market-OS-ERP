@@ -17,7 +17,7 @@ const rfqs: SupplierRfqsFeed = {
   rfqsKnown: true, mayRespond: true,
   rfqs: [{ rfqId: 'rfq-1', requisitionId: 'rq-1', dueOn: '2026-11-20', sentAt: '2026-11-07T04:00:00.000Z', currency: 'INR', lines: [{ productId: 'rice', quantity: 10_000, uom: 'kg' }, { productId: 'dal', quantity: 4 }], replied: false, awaitingBuyer: false, answered: false, decision: null }],
 };
-const orders: SupplierOrdersFeed = { ordersKnown: true, mayUpdate: true, orders: [{ poId: 'po-1', number: 'PO-000001', issuedAt: '2026-11-01T04:00:00.000Z', deliverToLocationId: 'br-1', lines: 1 }] };
+const orders: SupplierOrdersFeed = { ordersKnown: true, mayUpdate: true, orders: [{ poId: 'po-1', number: 'PO-000001', issuedAt: '2026-11-01T04:00:00.000Z', deliverToLocationId: 'br-1' }] };
 
 describe('U6 · a supplier answers a request for quotation', () => {
   it('is refused on the page first, by name; a blank line is not quoted; the body is what head office takes', () => {
@@ -45,7 +45,7 @@ describe('U6 · a supplier answers a request for quotation', () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const g = globalThis as { fetch?: typeof fetch };
     const before = g.fetch;
-    g.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    g.fetch = (async (url: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
       calls.push({ url: String(url), init: init ?? {} });
       if (calls.length === 1) return new Response(JSON.stringify({ submissionId: 'rfq-rfq-1-sup-a-abc', kind: 'rfq_response' }), { status: 201 });
       return new Response(JSON.stringify({ error: { whatHappened: 'The quote names wheat, which this request did not ask for.' } }), { status: 400 });
@@ -77,7 +77,7 @@ describe('U6 · a supplier answers a request for quotation', () => {
       g.fetch = (async () => new Response(JSON.stringify({ error: { code: 'forbidden' } }), { status: 403 })) as typeof fetch;
       expect(await fetchSupplierRfqs()).toBeNull();
       expect(await fetchSupplierClaims()).toBeNull();
-      g.fetch = (async (url: RequestInfo | URL) => new Response(JSON.stringify(String(url).endsWith('/rfqs')
+      g.fetch = (async (url: Parameters<typeof globalThis.fetch>[0]) => new Response(JSON.stringify(String(url).endsWith('/rfqs')
         ? { partnerId: 'sup-a', rfqsKnown: true, mayRespond: true, rfqs: [{ ...rfqs.rfqs[0], note: 'per kg', replied: true, submissionId: 's-1', repliedAt: '2026-11-08T04:00:00.000Z', awaitingBuyer: false, answered: false, decision: 'rejected', reason: 'too dear' }] }
         : { partnerId: 'sup-a', claimsKnown: true, claims: [{ claimId: 'grn-1:p2', kind: 'debit_note', grnId: 'grn-1', poId: 'po-1', productId: 'p2', quantityMinor: 2, valueMinor: 20_000, reason: 'damaged', raisedAt: '2026-11-07T05:00:00.000Z', number: null, state: 'raised' }] }), { status: 200 })) as typeof fetch;
       const r = await fetchSupplierRfqs();
@@ -105,7 +105,7 @@ describe('U6 · a supplier raises a claim on the shop', () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const g = globalThis as { fetch?: typeof fetch };
     const before = g.fetch;
-    g.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => { calls.push({ url: String(url), init: init ?? {} }); return new Response(JSON.stringify({ submissionId: 'clm-k1', kind: 'claim', requiresReview: true }), { status: 201 }); }) as typeof fetch;
+    g.fetch = (async (url: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => { calls.push({ url: String(url), init: init ?? {} }); return new Response(JSON.stringify({ submissionId: 'clm-k1', kind: 'claim', requiresReview: true }), { status: 201 }); }) as typeof fetch;
     try {
       expect(await postClaim({ poId: 'po-1', amount: '1250', why: 'short paid' }, orders, true, () => 'k1')).toEqual({ result: 'sent', submissionId: 'clm-k1' });
       expect(calls).toHaveLength(1);

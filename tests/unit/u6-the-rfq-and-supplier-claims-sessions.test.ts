@@ -16,7 +16,7 @@ import { rfqState } from '../../services/purchase/src/rfq';
 type Call = { method: string; path: string; body?: unknown };
 function stub(answer: (c: Call) => { status: number; body: unknown }) {
   const calls: Call[] = [];
-  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetch = (async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
     const c: Call = { method: init?.method ?? 'GET', path: String(input), ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) as unknown }) };
     calls.push(c);
     const a = answer(c);

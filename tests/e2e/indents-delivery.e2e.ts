@@ -352,7 +352,7 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     expect(rows).toContain('On the trolley');
     expect(rows).toContain('Issued in parts'); // the flag, in words
     expect(rows).toContain('u-back');
-    const trolley = await page.$$eval('#rows li.row[data-indent-id="ind-2"] table.lines td.n', (els) => els.map((e) => (e as unknown as { textContent: string }).textContent));
+    const trolley = await page.$$eval('#rows li.row[data-indent-id="ind-2"] .sre-datatable tbody td.sre-end', (els) => els.map((e) => (e as unknown as { textContent: string }).textContent));
     expect(trolley).toEqual(['20', '20', '12', '12', '0', '0', '8']); // asked · allocated · issued · on the trolley · on the shelf · short · still owed
     expect((await page.textContent('#summary')) ?? '').toContain('3 indents');
     expect(((await page.textContent('#asof')) ?? '').toLowerCase()).toContain('as of');

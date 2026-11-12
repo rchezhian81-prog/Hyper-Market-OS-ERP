@@ -132,7 +132,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       await s.page.click('#d-receive');
       await says(s.page, 'd-state', /^Received · Shortfall open/);
       expect(await s.page.locator('#d-short').innerText()).toMatch(/P1 — 2 missing · worth ₹4\.00/);
-      expect(await s.page.locator('#n-short').innerText()).toBe('1');
+      expect(await s.page.locator('#panels .sre-summary-card:nth-child(4) .sre-summary-value').innerText()).toBe('1'); // the fourth card: shortfalls open
       await s.page.locator('#d-short input.found').fill('1');
       await s.page.fill('#d-note', 'searched the van and the floor');
       await s.page.click('#d-resolve');

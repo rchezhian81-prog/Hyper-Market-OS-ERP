@@ -48,10 +48,11 @@ describe('read-only, and honest about where it came from', () => {
 
   it('every group reads as a state — a tone class, an icon hidden from the reader, a word, an aria-label — and recall is grouped first by the session, not the view', () => {
     expect(VIEW).toMatch(/section\.className = `group tone-\$\{/);
-    expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+    expect(VIEW).toMatch(/fillStatus\(|\.chip\(|recordChip\(/); // U5 · G17: the state is the chrome's chip — its shape and its words
+    expect(VIEW).not.toMatch(/icon\.textContent = /); // never a ✓/⚠ character beside the words
     expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
     expect(VIEW).not.toMatch(/sort\(/); // the order is the session's
-    expect(HTML).toMatch(/<p class="state" id="state" hidden>/);
+    expect(HTML).toMatch(/<div class="state" id="state" hidden>/); // U5: the chrome's state box
     expect(HTML).toMatch(/<div id="groups" aria-label=/);
   });
 

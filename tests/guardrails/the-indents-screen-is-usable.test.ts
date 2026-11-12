@@ -108,7 +108,8 @@ describe('the view renders from the tested session and re-decides nothing', () =
 
   it('labels each status for a screen reader and hides the decorative icon', () => {
     expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
-    expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+    expect(VIEW).toMatch(/fillStatus\(|\.chip\(|recordChip\(/); // U5 · G17: the state is the chrome's chip — its shape and its words
+    expect(VIEW).not.toMatch(/icon\.textContent = /); // never a ✓/⚠ character beside the words
   });
 
   it('shows every verdict and refusal through the session\'s own words — the view invents no wording', () => {

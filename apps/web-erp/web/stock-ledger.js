@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id);
 const session = window.stockLedgerSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
-const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+const both = (k) => (session === null ? { en: k, ta: k } : { en: session.text('en', k), ta: session.text('ta', k) });
 const office = () => (window.sreOffice && typeof window.sreOffice.table === 'function' ? window.sreOffice : null);
 
 let ledger = null; // head office's last answer

@@ -21,6 +21,7 @@ import {
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { shopToday } from '../../../packages/calendar/src/shop-clock';
 
 /**
  * OB-288 P3: a requisition as head office keeps it — who raised it (server-attributed, §28) and, for WF-03, what it was
@@ -274,7 +275,8 @@ export function rfqRoutes(deps: RfqDeps): readonly Route[] {
       handler: async (ctx) => {
         const only = isStr(ctx.query['requisitionId']) ? ctx.query['requisitionId'].trim() : undefined;
         const all = deps.rfqs === undefined ? [] : await deps.rfqs(ctx.tenantId);
-        const today = deps.today === undefined ? deps.now().slice(0, 10) : await deps.today(ctx.tenantId);
+        // The SHOP's today (M01-FR-02): the adapter hands its calendar's day; without one, the shop clock's own default zone.
+        const today = deps.today === undefined ? await shopToday({ now: deps.now }, ctx.tenantId) : await deps.today(ctx.tenantId);
         const rows: RfqRegisterRow[] = [];
         for (const rfq of all) {
           if (only !== undefined && rfq.requisitionId !== only) continue;

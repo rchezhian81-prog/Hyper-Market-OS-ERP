@@ -458,7 +458,9 @@ el('vmi-store').addEventListener('change', () => { paintVmi(); });
 // The bundle checks and sends each quote (window.supplierPortal.sendRfqQuote); a buyer accepts it before it counts.
 const typedQuote = new Map(); // `${rfq}|${product}` → { unitPrice, leadTimeDays } as typed
 const qtyWords = (l) => (l.uom === 'kg' || l.uom === 'L' ? `${(l.quantity / 1000).toFixed(3)} ${l.uom}` : String(l.quantity));
-const rfqStateOf = (r) => (r.decision === 'accepted' ? 'accepted' : r.decision === 'rejected' ? 'rejected' : r.awaitingBuyer ? 'awaiting' : (window.sreShopDay?.today?.() ?? new Date().toISOString().slice(0, 10)) > r.dueOn ? 'overdue' : 'open');
+// Overdue is judged on the SHOP's day (OB-607); with no shop clock on the page the request reads open, never a guessed day.
+const shopToday = () => (typeof window.sreShopDay?.today === 'function' ? window.sreShopDay.today() : null);
+const rfqStateOf = (r) => { const today = shopToday(); return r.decision === 'accepted' ? 'accepted' : r.decision === 'rejected' ? 'rejected' : r.awaitingBuyer ? 'awaiting' : today !== null && today > r.dueOn ? 'overdue' : 'open'; };
 function paintRfqs() {
   const api = window.supplierPortal;
   const feed = api && typeof api.rfqs === 'function' ? api.rfqs() : null;

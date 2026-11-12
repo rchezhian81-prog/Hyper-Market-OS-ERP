@@ -175,7 +175,9 @@ function stateChip(state) {
   const span = document.createElement('span'); span.textContent = t(state); return span;
 }
 /** The list's state (reading / nothing / refused / unreachable) as the shared state part — never a plain line. */
+let lastCasesState = null; // repainted in the reader's language on the toggle
 function casesState(kind, title) {
+  lastCasesState = kind === null ? null : { kind, key: { empty: 'none', loading: 'loading', offline: 'unreachable', denied: 'nobody' }[kind] };
   const host = $('cases-status'); const o = window.sreOffice;
   if (kind === null) { host.replaceChildren(); host.hidden = true; return; }
   host.hidden = false;
@@ -200,12 +202,12 @@ function renderCases() {
     if (caseRegister === null || !host.contains(document.getElementById('service-cases-table'))) {
       caseRegister = o.table(host, { id: 'service-cases', label: { en: WORDS.en.casesH, ta: WORDS.ta.casesH }, bodyId: 'case-rows', pageSize: 10, sortable: true, rowKey: (c) => c.caseId, rowData: (c) => ({ caseId: c.caseId }), rows: ordered, columns,
         empty: { title: { en: WORDS.en.none, ta: WORDS.ta.none }, detail: '' } });
-      const body = $('case-rows');
-      const rowOf = (e) => e.target?.closest?.('tr[data-case-id]');
-      body.addEventListener('click', (e) => { const tr = rowOf(e); if (tr) void pick(tr.dataset.caseId); });
-      body.addEventListener('keydown', (e) => { const tr = rowOf(e); if (tr && e.key === 'Enter') void pick(tr.dataset.caseId); });
+      // the register redraws its body on every sort / page, so a row is picked through the host (which stays)
+      const rowOf = (e) => e.target?.closest?.('#case-rows tr[data-case-id]');
+      host.addEventListener('click', (e) => { const tr = rowOf(e); if (tr) void pick(tr.dataset.caseId); });
+      host.addEventListener('keydown', (e) => { const tr = rowOf(e); if (tr && e.key === 'Enter') void pick(tr.dataset.caseId); });
     } else caseRegister.setRows(ordered);
-    for (const tr of $('case-rows').querySelectorAll('tr[data-case-id]')) { tr.tabIndex = 0; tr.setAttribute('aria-selected', String(picked?.caseId === tr.dataset.caseId)); }
+    for (const tr of host.querySelectorAll('#case-rows tr[data-case-id]')) { tr.tabIndex = 0; tr.setAttribute('aria-selected', String(picked?.caseId === tr.dataset.caseId)); }
   }
   casesState(cases.length === 0 ? 'empty' : null, t('none'));
 }
@@ -315,7 +317,7 @@ function renderSummary() {
   const o = window.sreOffice;
   if (!unexplained && resolved === 0 && o && typeof o.state === 'function') { missing.className = ''; o.state(missing, 'empty', { title: t('noneResolved'), detail: '' }); return; }
   missing.className = `status ${unexplained ? 'err' : 'good'}`;
-  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : t('allExplained');
+  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained'); // never a claim about no cases
 }
 
 // W4 · M21-FR-04: head office's service report over every case — the figures exactly as it sends them, nothing worked out here.
@@ -451,7 +453,9 @@ $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintWords();
+  const was = lastCasesState;
   renderCases();
+  if (was !== null && was.kind !== 'empty') casesState(was.kind, t(was.key)); // a "reading…" / "cannot be reached" line follows the toggle
   renderCase();
   renderSummary();
   repaintPickers();
