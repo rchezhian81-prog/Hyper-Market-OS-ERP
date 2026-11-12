@@ -2782,7 +2782,7 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     // OB-380: Transfers and Store events (head-office pages on the same availability read) are served by the box now.
     // Round 6: Packaging and crates (M28-FR-03) on the same availability read.
     // W1: within a workspace the most-used screens lead (Stock health, Stock counts, Transfers).
-    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events', 'unsellable', 'day-reopen']);
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'dock-diary', 'stock-health', 'counts', 'transfers', 'stock-ledger', 'stock-adjustments', 'packaging', 'warehouse-supervisor', 'demand-events', 'unsellable', 'day-reopen']); // U6: + Stock ledger, Adjust a quantity (the same availability read)
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
     // Both languages ride along, so the chrome never draws half a menu.
     for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);

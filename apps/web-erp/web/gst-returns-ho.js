@@ -180,7 +180,7 @@ function figure(dl, label, value, key, notKnown = false) {
  *  clearer shape where the tone's own would mislead); a line whose words are all in its title wears the shape there. */
 function row(list, head, word, tone, facts, data, icon) {
   const li = document.createElement('li');
-  li.className = `row tone-${tone}`;
+  li.className = 'row'; li.dataset.tone = tone;
   // OB-699: a FINDING head office wrote (its own sentence about the return) stays English on the Tamil screen and is
   // marked as English for a screen reader (WCAG 3.1.2); the page's own words around it follow the toggle.
   const ho = data.ho === '1'; delete data.ho;

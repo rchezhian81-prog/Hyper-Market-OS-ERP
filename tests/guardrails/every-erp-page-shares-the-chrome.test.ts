@@ -376,6 +376,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     // U6 (M23-FR-01 · M23-FR-03 · lane 3): the bank reconciliation's and the accounts' words are in their tested sessions.
     'bank-reconciliation.js': 'apps/web-erp/src/bank-reconciliation-session.ts',
     'payables-receivables.js': 'apps/web-erp/src/payables-receivables-session.ts',
+    // U6 (M32-FR-03 · §27 Admin/Security keys): the Keys and credentials page's words are in its tested session.
+    'keys.js': 'apps/web-erp/src/keys-session.ts',
   };
   // No page is English-only any more: the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

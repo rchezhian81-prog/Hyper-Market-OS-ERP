@@ -62,7 +62,7 @@ function toneMark(holder, tone, glyph) {
  *  portal reference and the people — each in its own column under the register's captions. */
 function rowNode(r) {
   const li = document.createElement('li');
-  li.className = `row tone-${r.status.tone}`;
+  li.className = 'row'; li.dataset.tone = r.status.tone;
 
   const period = document.createElement('span'); period.className = 'period'; period.textContent = r.period;
   const status = document.createElement('span');
@@ -233,9 +233,10 @@ function paint() {
   el('register').hidden = shown.length === 0;
   if (shown.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
-    el('state-text').textContent = view.screenState.label;
+    // U5: the shared state part — no period yet / not permitted / head office unreachable, as word + icon.
+    const o = window.sreOffice; const tone = view.screenState.tone;
+    if (o && typeof o.state === 'function') o.state(state, tone === 'error' ? 'error' : tone === 'degraded' ? 'offline' : 'empty', { title: view.screenState.label, detail: '' });
+    else state.textContent = view.screenState.label;
   } else {
     state.hidden = true;
   }

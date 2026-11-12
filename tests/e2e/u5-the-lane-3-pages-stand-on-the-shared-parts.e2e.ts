@@ -70,7 +70,8 @@ export async function partsFindings(page: Page, width: number): Promise<Finding[
       const tag = el.tagName.toLowerCase();
       const inline = ['span', 'b', 'strong', 'em', 'i', 'small', 'li', 'td'].includes(tag);
       // a tone class on a block (a row's stripe) is a mark of its own only when the row carries no chip for its state
-      const toneClass = classes.some((c) => /^tone-[a-z]+$/.test(c)) && (inline || el.querySelector('.sre-chip') === null);
+      // (an outcome line — `.result` / `.said` / `.answer-line`, the design system's "toast / error banner" — is not a record's state)
+      const toneClass = classes.some((c) => /^tone-[a-z]+$/.test(c)) && !classes.some((c) => /^(result|said|answer-line)$/.test(c)) && (inline || el.querySelector('.sre-chip') === null);
       if (classes.some((c) => /^(pill|tag|badge|lifecycle)$/.test(c)) || toneClass || (inline && classes.some((c) => /^(status|state)$/.test(c)))) out.push({ rule: 'own-state-mark', where: path(el), text: (el.textContent ?? '').trim().slice(0, 40) });
     }
     const walker = d.createTreeWalker(main, 4);
@@ -120,7 +121,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U5: the lane-3 pages stand on the shared
   }, 300_000);
   afterAll(async () => { await shop?.stop(); await browser?.close(); });
 
-  const sweep = async (device: { viewport: { width: number } }, label: string): Promise<void> => {
+  const sweep = async (device: typeof DESK | typeof PHONE, label: string): Promise<void> => {
     const found: Record<string, Finding[]> = {};
     for (const p of LANE_3) {
       const item = ERP_NAVIGATION.find((i) => i.id === p.id);

@@ -15,7 +15,7 @@ const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === nu
 const fill = (text, values) => Object.entries(values).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
 const office = () => window.sreOffice ?? null;
 const shopTime = (at) => (at ? window.sreShopDay?.dateTimeOf(at) ?? at : '');
-const today = () => (window.sreShopDay?.today?.() ?? new Date().toISOString().slice(0, 10));
+const today = () => window.sreShopDay?.today?.() ?? ''; // the shop's own day; with none, the due words read "not known"
 
 let secrets = null; let secretsOut = null; // head office's inventory, or why there is none
 let review = null; let reviewOut = null;

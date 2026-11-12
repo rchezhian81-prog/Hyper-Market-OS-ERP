@@ -85,9 +85,11 @@ function paintRegister() {
 /** The send form: the requisition's lines under the choice, the suppliers added one by one, the day, the note. */
 function paintSend() {
   const o = office();
-  $('send-h').textContent = t('sendH'); $('s-req-l').textContent = t('requisition'); $('s-supplier-l').textContent = t('supplier');
-  $('s-add-text').textContent = t('addSupplier'); $('s-asked-l').textContent = t('suppliers'); $('s-due-l').textContent = t('dueOn');
-  $('s-note-l').textContent = t('note'); $('s-send-text').textContent = t('send');
+  // The shared picker and date field take over their own labels once the chrome is there, so a label may be gone by then.
+  const say = (id, words) => { const n = $(id); if (n) n.textContent = words; };
+  say('send-h', t('sendH')); say('s-req-l', t('requisition')); say('s-supplier-l', t('supplier'));
+  say('s-add-text', t('addSupplier')); say('s-asked-l', t('suppliers')); say('s-due-l', t('dueOn'));
+  say('s-note-l', t('note')); say('s-send-text', t('send'));
   const sel = $('s-req'); const kept = sel.value;
   const opts = [new Option(t('chooseRequisition'), '')];
   for (const r of requisitions ?? []) opts.push(new Option(`${r.requisitionId} — ${api.linesText(r)}`, r.requisitionId));

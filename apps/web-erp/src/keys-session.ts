@@ -181,7 +181,8 @@ export const keysOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => o
 const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TA_MONTHS = ['ஜன', 'பிப்', 'மார்', 'ஏப்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆக', 'செப்', 'அக்', 'நவ', 'டிச'];
 const DAY_MS = 86_400_000;
-const dayOf = (iso: string): number | undefined => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? Date.parse(`${iso.slice(0, 10)}T00:00:00.000Z`) : undefined);
+/** A calendar DAY as written (YYYY-MM-DD, a shop day — never an instant) → its day number's start, for counting days between two of them. */
+const dayOf = (day: string): number | undefined => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day); return m === null ? undefined : Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])); };
 /** "1 Apr 2026" / "1 ஏப் 2026" — a day a shop person reads (OB-606 spirit: never the machine's YYYY-MM-DD on screen). */
 export function dayWords(lang: Lang, iso: string): string {
   const ms = dayOf(iso);
@@ -197,7 +198,8 @@ export function dueWords(lang: Lang, s: SecretRow, today: string): string {
   const now = dayOf(today);
   if (since === undefined || now === undefined || !Number.isFinite(s.rotateEveryDays)) return w('notKnownDate');
   const dueMs = since + s.rotateEveryDays * DAY_MS;
-  const dueIso = new Date(dueMs).toISOString().slice(0, 10);
+  const due = new Date(dueMs); // a day number built from shop days above — its UTC parts ARE that calendar day
+  const dueIso = `${due.getUTCFullYear()}-${String(due.getUTCMonth() + 1).padStart(2, '0')}-${String(due.getUTCDate()).padStart(2, '0')}`;
   const days = Math.round((dueMs - now) / DAY_MS);
   if (days >= 0) return lang === 'ta' ? `${w('dueIn')} ${days} ${w('days')} (${dayWords(lang, dueIso)})` : `due in ${days} days (${dayWords(lang, dueIso)})`;
   return lang === 'ta' ? `${w('dueOverdue')} ${-days} ${w('days')} (${w('wasDue')} ${dayWords(lang, dueIso)})` : `overdue by ${-days} days (was due ${dayWords(lang, dueIso)})`;

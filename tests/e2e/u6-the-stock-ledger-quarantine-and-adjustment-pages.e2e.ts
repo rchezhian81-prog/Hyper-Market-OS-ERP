@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
-import { askedThenConfirmed, confirmIt, writeCounter } from './lib/confirm-sheet';
+import { askedThenConfirmed, writeCounter } from './lib/confirm-sheet';
 import { auditPage } from './lib/a11y-audit';
 
 /**

@@ -58,7 +58,7 @@ function fakeDeps(input: { exceptions?: BankLineException[]; resolved?: BankLine
 }
 const ctx = (userId: string, body: unknown, params: Record<string, string> = {}, query: Record<string, string> = {}) => ({ tenantId: 'T', userId, body, params, query, branchId: null }) as never;
 const handlerOf = (deps: BankReconciliationDeps, method: string, path: string) => bankReconciliationRoutes(deps).find((r) => r.method === method && r.path === path)!.handler;
-const codeOf = async (p: Promise<unknown>): Promise<string> => { try { await p; return 'ok'; } catch (e) { return (e as { body?: { code?: string } }).body?.code ?? String(e); } };
+const codeOf = async (p: unknown): Promise<string> => { try { await p; return 'ok'; } catch (e) { return (e as { body?: { code?: string } }).body?.code ?? String(e); } };
 
 describe('the bank reconciliation routes', () => {
   it('reads the latest statement matched, or the one asked for; an unknown statement is refused by name', async () => {

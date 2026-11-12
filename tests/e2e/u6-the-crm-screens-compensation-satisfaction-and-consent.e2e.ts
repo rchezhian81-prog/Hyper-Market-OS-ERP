@@ -44,7 +44,7 @@ const widest = (page: Page): Promise<string[]> => page.evaluate(`(() => {
     .map(({ el, r }) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + ' right=' + Math.round(r.right));
 })()`) as Promise<string[]>;
 
-const primaries = (page: Page): Promise<number> => page.evaluate(() => Array.from(document.querySelectorAll('.sre-btn-primary')).filter((b) => (b as HTMLElement).offsetParent !== null).length);
+const primaries = (page: Page): Promise<number> => page.evaluate(`Array.from(document.querySelectorAll('.sre-btn-primary')).filter((b) => b.offsetParent !== null).length`) as Promise<number>;
 
 describe.skipIf(!HAVE_BROWSER)('U6 · the CRM screens: compensation for a separate approver, satisfaction, consent by name', () => {
   let shop: BoxPageShop;
@@ -167,7 +167,7 @@ describe.skipIf(!HAVE_BROWSER)('U6 · the CRM screens: compensation for a separa
     const d = await shop.open(DESK, '/satisfaction/');
     await says(d.page, '#report-cards', /No customer has rated a case yet/);
     await d.page.waitForSelector('#cases-table tr[data-case="K-2"]');
-    const order = await d.page.$$eval('#cases-table tbody tr[data-case]', (rows) => rows.map((r) => `${(r as HTMLElement).dataset['case']}:${(r as HTMLElement).dataset['ratable']}`));
+    const order = await d.page.evaluate(`Array.from(document.querySelectorAll('#cases-table tbody tr[data-case]')).map((r) => r.dataset.case + ':' + r.dataset.ratable)`) as string[];
     expect(order).toEqual(['K-2:true', 'K-1:false']);
     expect(d.writes).toEqual([]);
     // the open case: chosen, but the record button is greyed and says why

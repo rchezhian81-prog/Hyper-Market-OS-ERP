@@ -164,7 +164,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Keys a
       const english = s.page.locator('#rev-table [lang="en"]');
       if ((await english.count()) > 0) expect(await english.first().innerText()).toMatch(/[A-Za-z]/);
       expect(await auditPage(s.page, { expectLang: 'ta' })).toEqual([]);
-      const overflow = await s.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const overflow = await s.page.evaluate(() => { const d = (globalThis as unknown as { document: { documentElement: { scrollWidth: number; clientWidth: number } } }).document.documentElement; return d.scrollWidth - d.clientWidth; });
       expect(overflow, 'no sideways scroll on a phone').toBeLessThanOrEqual(0);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

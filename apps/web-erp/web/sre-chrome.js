@@ -657,6 +657,9 @@
     'counts': 'scan-barcode',
     'count-plans': 'calendar-check',
     'transfers': 'arrow-left-right',
+    'stock-ledger': 'history',
+    'quarantine': 'shield-alert',
+    'stock-adjustments': 'sliders',
     'waste': 'trash',
     'write-off-capture': 'package-minus',
     'stock-health': 'activity',
@@ -712,6 +715,8 @@
     'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
     'posting-map': 'book-open', // Round 4d — an icon already in the set
     'settlement': 'banknote', // W3 — an icon already in the set
+    'bank-reconciliation': 'banknote', // U6 — an icon already in the set
+    'payables-receivables': 'book-open', // U6 — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
     'production-costs': 'banknote', // W4 — an icon already in the set

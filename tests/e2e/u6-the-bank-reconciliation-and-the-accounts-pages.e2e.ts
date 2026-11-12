@@ -102,10 +102,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('U6: the Ba
       expect(await textOf(s.page, '#sre-confirm')).toMatch(/−₹20000\.00/);
       expect(s.writes.length).toBe(before); // nothing is sent before the person confirms
       await confirmIt(s.page);
-      await s.page.waitForFunction(() => document.getElementById('raise-status')?.textContent === 'Exception raised.', undefined, { timeout: 15_000 });
+      await s.page.waitForFunction(`document.getElementById('raise-status')?.textContent === 'Exception raised.'`, undefined, { timeout: 15_000 });
       expect(s.writes.filter((w) => w.includes('/bank-reconciliation/exceptions/'))).toHaveLength(1);
       await s.page.waitForSelector('#bank-exceptions-grid tbody tr', { timeout: 15_000 });
-      await s.page.waitForFunction(() => /open/.test(document.querySelector('#bank-lines-grid tbody tr:nth-child(3) .sre-chip')?.textContent ?? ''), undefined, { timeout: 15_000 });
+      await s.page.waitForFunction(`/open/.test(document.querySelector('#bank-lines-grid tbody tr:nth-child(3) .sre-chip')?.textContent ?? '')`, undefined, { timeout: 15_000 });
       expect(await textOf(s.page, '#bank-lines-grid tbody tr:nth-child(3) .sre-chip')).toMatch(/Exception · open/);
       expect(await textOf(s.page, '#cards')).toMatch(/Open exceptions\s*1/);
       // Resolve it: outcome + reason, confirmed.
@@ -116,11 +116,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('U6: the Ba
       await s.page.fill('#matched-to', 'RENT-09');
       await s.page.click('#resolve-go');
       await confirmIt(s.page);
-      await s.page.waitForFunction(() => document.getElementById('resolve-status')?.textContent === 'Resolution recorded.', undefined, { timeout: 15_000 });
+      await s.page.waitForFunction(`document.getElementById('resolve-status')?.textContent === 'Resolution recorded.'`, undefined, { timeout: 15_000 });
       // the page reads head office again after the fact lands; the row follows
-      await s.page.waitForFunction(() => /resolved/.test(document.querySelector('#bank-lines-grid tbody tr:nth-child(3) .sre-chip')?.textContent ?? ''), undefined, { timeout: 15_000 });
+      await s.page.waitForFunction(`/resolved/.test(document.querySelector('#bank-lines-grid tbody tr:nth-child(3) .sre-chip')?.textContent ?? '')`, undefined, { timeout: 15_000 });
       expect(await textOf(s.page, '#bank-lines-grid tbody tr:nth-child(3) .sre-chip')).toMatch(/Exception · resolved/);
-      expect(await textOf(s.page, '#bank-exceptions')).toMatch(/Matched by hand · September rent, bill RENT-09 · Matched to.*RENT-09/);
+      expect(await textOf(s.page, '#exceptions-table')).toMatch(/Matched by hand · September rent, bill RENT-09 · Matched to.*RENT-09/);
       expect(await textOf(s.page, '#cards')).toMatch(/Open exceptions\s*0/);
       // Tamil: the page's words follow the toggle; head office's sentences are said to be English.
       await s.page.click('#lang');
@@ -137,7 +137,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('U6: the Ba
   it('a cashier is refused by name on the bank page and nothing is read', async () => {
     const s = await open(CASHIER, '/bank-reconciliation');
     try {
-      await s.page.waitForFunction(() => (document.getElementById('page-status')?.textContent ?? '') !== '', undefined, { timeout: 10_000 });
+      await s.page.waitForFunction(`(document.getElementById('page-status')?.textContent ?? '') !== ''`, undefined, { timeout: 10_000 });
       expect(await textOf(s.page, '#page-status')).toBe('Your role cannot read the bank reconciliation.');
       expect(await s.page.locator('#choose').isHidden()).toBe(true);
       expect(s.writes).toEqual([]);

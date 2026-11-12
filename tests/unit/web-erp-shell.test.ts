@@ -62,7 +62,7 @@ describe('role-scoped navigation', () => {
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     // Round 12: Transfers (gated on the same availability read) joins the Inventory group.
     // W1: Stock health and Stock counts lead (NAV_ITEM_ORDER); the rest keep their declared order.
-    expect(nav.find((g) => g.group === 'Inventory')?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
+    expect(nav.find((g) => g.group === 'Inventory')?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'stock-ledger', 'stock-adjustments', 'packaging', 'warehouse-supervisor', 'demand-events']); // U6: + Stock ledger and Adjust a quantity on the same availability read (Quarantine needs the quality-hold right this manager lacks); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {
