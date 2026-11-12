@@ -99,8 +99,12 @@ export interface ReportDefinition {
   readonly family: ReportFamily;
   /** What it is called on the screen. */
   readonly name: string;
+  /** The same name in Tamil (U3 · OB-699: a report's name is the product's own word, carried in both languages). */
+  readonly nameTa: string;
   /** The question it answers, in one sentence a shopkeeper would use. */
   readonly answers: string;
+  /** The same question in Tamil. */
+  readonly answersTa: string;
   /** Everything that must be recorded before it can be produced at all. */
   readonly needs: readonly Producer[];
   /**
@@ -138,48 +142,56 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'sales_by_day', family: 'sales', name: 'Sales by day',
     answers: 'what the shop took, and on how many bills',
+    nameTa: 'நாள் வாரியான விற்பனை', answersTa: 'கடை என்ன வசூலித்தது, எத்தனை பில்களில்',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'saleId', type: 'text' }, { name: 'at', type: 'date' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'tender', type: 'enum' }]
   },
   {
     id: 'sales_by_hour', family: 'sales', name: 'Sales by hour',
     answers: 'when the shop is busy, so the rota can match it',
+    nameTa: 'மணி வாரியான விற்பனை', answersTa: 'கடை எப்போது பரபரப்பாக இருக்கிறது, பணி அட்டவணை அதற்கு ஏற்ப அமைய',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'key', type: 'text' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'bills', type: 'integer' }]
   },
   {
     id: 'sales_by_cashier', family: 'sales', name: 'Sales by cashier',
     answers: 'what each person on the tills took',
+    nameTa: 'கல்லாவர் வாரியான விற்பனை', answersTa: 'கல்லாவில் ஒவ்வொருவரும் என்ன வசூலித்தார்கள்',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'key', type: 'text' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'bills', type: 'integer' }]
   },
   {
     id: 'tender_mix', family: 'sales', name: 'How people paid',
     answers: 'how much came in as cash, card and UPI',
+    nameTa: 'மக்கள் எப்படிப் பணம் செலுத்தினர்', answersTa: 'ரொக்கம், அட்டை, UPI-இல் எவ்வளவு வந்தது',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'key', type: 'enum' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'bills', type: 'integer' }]
   },
   {
     id: 'basket', family: 'sales', name: 'Average basket',
     answers: 'what a customer spends in one visit',
+    nameTa: 'சராசரி பில்', answersTa: 'ஒரு வாடிக்கையாளர் ஒரு முறை வரும்போது எவ்வளவு செலவிடுகிறார்',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'saleId', type: 'text' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'units', type: 'integer' }]
   },
   {
     id: 'day_on_day', family: 'sales', name: 'Today against the last day we traded',
     answers: 'whether today is better or worse than the day before, and by how much',
+    nameTa: 'கடைசி வியாபார நாளுடன் இன்று', answersTa: 'இன்று முந்தைய நாளை விட நன்றாக உள்ளதா, மோசமாக உள்ளதா, எவ்வளவு',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'tradingDay', type: 'date' }, { name: 'totalMinor', type: 'money_minor' }, { name: 'bills', type: 'integer' }]
   },
   {
     id: 'units_by_category', family: 'sales', name: 'What is selling, by department',
     answers: 'how many items each department sold today',
+    nameTa: 'துறை வாரியாக என்ன விற்கிறது', answersTa: 'ஒவ்வொரு துறையும் இன்று எத்தனை பொருட்களை விற்றது',
     needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
     columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',
     answers: 'what the shop kept after what the goods cost',
+    nameTa: 'லாபம்', answersTa: 'சரக்கின் விலை போக கடை என்ன வைத்துக்கொண்டது',
     needs: ['sales_rung_at_the_till', 'cost_prices_on_the_catalogue'],
     columns: [{ name: 'saleId', type: 'text' }, { name: 'netMinor', type: 'money_minor' }, { name: 'cogsMinor', type: 'money_minor' }, { name: 'marginMinor', type: 'money_minor' }]
   },
@@ -188,18 +200,21 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'purchases_by_supplier', family: 'purchasing', name: 'Purchases by supplier',
     answers: 'what the shop has ordered from each supplier',
+    nameTa: 'சப்ளையர் வாரியான கொள்முதல்', answersTa: 'ஒவ்வொரு சப்ளையரிடமும் கடை என்ன ஆர்டர் செய்துள்ளது',
     needs: ['what_was_ordered_from_suppliers'],
     columns: [{ name: 'supplierId', type: 'text' }, { name: 'orders', type: 'integer' }, { name: 'orderedMinor', type: 'money_minor' }]
   },
   {
     id: 'supplier_service', family: 'purchasing', name: 'Supplier service',
     answers: 'who delivers what they promised, and who does not',
+    nameTa: 'சப்ளையர் சேவை', answersTa: 'யார் சொன்னதை வழங்குகிறார்கள், யார் இல்லை',
     needs: ['what_was_ordered_from_suppliers', 'what_arrived_from_suppliers'],
     columns: [{ name: 'supplierId', type: 'text' }, { name: 'orders', type: 'integer' }, { name: 'orderedUnits', type: 'integer' }, { name: 'receivedUnits', type: 'integer' }],
   },
   {
     id: 'invoice_differences', family: 'purchasing', name: 'Invoice differences',
     answers: 'where a supplier billed for something other than what arrived',
+    nameTa: 'பில் வேறுபாடுகள்', answersTa: 'வந்ததற்கு மாறாக சப்ளையர் எங்கே பில் போட்டார்',
     needs: ['what_was_ordered_from_suppliers', 'what_arrived_from_suppliers', 'supplier_invoices_captured'],
     columns: [{ name: 'invoiceId', type: 'text' }, { name: 'supplierId', type: 'text' }, { name: 'invoicedMinor', type: 'money_minor' }, { name: 'payableMinor', type: 'money_minor' }, { name: 'differenceMinor', type: 'money_minor' }],
   },
@@ -208,6 +223,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'stock_on_hand', family: 'stock', name: 'Stock on hand',
     answers: 'what the shop is holding, and what it is worth',
+    nameTa: 'கையிருப்பு சரக்கு', answersTa: 'கடை என்ன வைத்திருக்கிறது, அதன் மதிப்பு என்ன',
     needs: ['stock_movements_recorded', 'cost_prices_on_the_catalogue'],
     columns: [
       { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'onHandMinor', type: 'integer' },
@@ -217,18 +233,21 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'shrinkage', family: 'stock', name: 'Shrinkage',
     answers: 'the difference between what the books say and what is on the shelf',
+    nameTa: 'சரக்கு இழப்பு', answersTa: 'கணக்கு சொல்வதற்கும் அடுக்கில் இருப்பதற்கும் உள்ள வேறுபாடு',
     needs: ['stock_movements_recorded', 'stock_counted_on_the_shelves'],
     columns: [{ name: 'countId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'varianceMinor', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }],
   },
   {
     id: 'expiry', family: 'stock', name: 'Approaching expiry',
     answers: 'what will go out of date before it sells',
+    nameTa: 'காலாவதி நெருங்குபவை', answersTa: 'விற்பனைக்கு முன் எது காலாவதியாகும்',
     needs: ['expiry_dates_recorded', 'stock_movements_recorded'],
     columns: [{ name: 'batchId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'expiry', type: 'date' }, { name: 'quantity', type: 'integer' }, { name: 'action', type: 'enum' }, { name: 'daysToExpiry', type: 'integer' }],
   },
   {
     id: 'waste', family: 'stock', name: 'Waste',
     answers: 'what was thrown away, and what it cost',
+    nameTa: 'வீணானவை', answersTa: 'என்ன தூக்கி எறியப்பட்டது, அதன் செலவு என்ன',
     needs: ['what_is_thrown_away_recorded', 'cost_prices_on_the_catalogue'],
     columns: [{ name: 'writeOffId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'lossType', type: 'enum' }, { name: 'quantity', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }, { name: 'valueSource', type: 'enum' }],
   },
@@ -237,12 +256,14 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'customer_repeat', family: 'customer', name: 'Customers coming back',
     answers: 'how many shoppers return, and how often',
+    nameTa: 'திரும்பி வரும் வாடிக்கையாளர்கள்', answersTa: 'எத்தனை பேர் திரும்பி வருகிறார்கள், எவ்வளவு அடிக்கடி',
     needs: ['customers_identified_at_the_till'],
     columns: [{ name: 'visits', type: 'integer' }, { name: 'customers', type: 'integer' }],
   },
   {
     id: 'loyalty', family: 'customer', name: 'Loyalty',
     answers: 'points earned and spent, and what they cost the shop',
+    nameTa: 'விசுவாசத் திட்டம்', answersTa: 'சேர்ந்த மற்றும் செலவிட்ட புள்ளிகள், கடைக்கு அவற்றின் செலவு',
     needs: ['loyalty_points_accrued'],
     // The member code is personal data (a code made from the mobile number) — redacted unless the reader may see it.
     columns: [{ name: 'memberRef', type: 'text', sensitive: true }, { name: 'points', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }]
@@ -250,6 +271,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'marketing', family: 'customer', name: 'Campaigns and complaints',
     answers: 'what the shop sent out and what came back',
+    nameTa: 'பிரச்சாரங்களும் புகார்களும்', answersTa: 'கடை என்ன அனுப்பியது, என்ன திரும்பி வந்தது',
     needs: ['campaigns_and_complaints_recorded'],
     columns: [{ name: 'campaignId', type: 'text' }, { name: 'channel', type: 'enum' }, { name: 'sent', type: 'integer' }, { name: 'at', type: 'date' }],
   },
@@ -258,18 +280,21 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'orders_and_substitutions', family: 'fulfilment', name: 'Online orders',
     answers: 'what was ordered online, and what had to be swapped',
+    nameTa: 'ஆன்லைன் ஆர்டர்கள்', answersTa: 'ஆன்லைனில் என்ன ஆர்டர் செய்யப்பட்டது, எதை மாற்ற வேண்டியிருந்தது',
     needs: ['online_orders_and_deliveries'],
     columns: [{ name: 'orderId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'state', type: 'enum' }, { name: 'lines', type: 'integer' }, { name: 'substituted', type: 'integer' }],
   },
   {
     id: 'delivery_sla', family: 'fulfilment', name: 'Deliveries on time',
     answers: 'how many deliveries arrived inside the slot the customer booked',
+    nameTa: 'நேரத்தில் டெலிவரிகள்', answersTa: 'வாடிக்கையாளர் பதிவு செய்த நேரத்துக்குள் எத்தனை டெலிவரிகள் சென்றன',
     needs: ['online_orders_and_deliveries'],
     columns: [{ name: 'orderId', type: 'text' }, { name: 'slotEndsAt', type: 'date' }, { name: 'deliveredAt', type: 'date' }, { name: 'verdict', type: 'enum' }],
   },
   {
     id: 'delivery_contribution', family: 'fulfilment', name: 'What a delivery earns',
     answers: 'whether a delivery is worth making once the driving is paid for',
+    nameTa: 'ஒரு டெலிவரி என்ன ஈட்டுகிறது', answersTa: 'ஓட்டுநர் செலவு போக ஒரு டெலிவரி செய்வது லாபமா',
     needs: ['online_orders_and_deliveries', 'cost_prices_on_the_catalogue'],
     columns: [{ name: 'routeId', type: 'text' }, { name: 'stopId', type: 'text' }, { name: 'orderRef', type: 'text' }, { name: 'orderValueMinor', type: 'money_minor' }, { name: 'goodsCostMinor', type: 'money_minor' }, { name: 'deliveryCostMinor', type: 'money_minor' }, { name: 'contributionMinor', type: 'money_minor' }],
   },
@@ -278,16 +303,19 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'gst', family: 'finance', name: 'GST',
     answers: 'tax collected and tax paid, by rate',
+    nameTa: 'ஜிஎஸ்டி', answersTa: 'விகித வாரியாக வசூலித்த வரியும் செலுத்திய வரியும்',
     needs: ['journals_posted_to_the_ledger'],
   },
   {
     id: 'reconciliation', family: 'finance', name: 'Money in the bank',
     answers: 'whether what the till took reached the bank',
+    nameTa: 'வங்கியில் உள்ள பணம்', answersTa: 'கல்லா வசூலித்தது வங்கியை அடைந்ததா',
     needs: ['sales_rung_at_the_till', 'bank_and_gateway_statements'],
   },
   {
     id: 'profitability', family: 'finance', name: 'Profitability',
     answers: 'what the shop made after everything',
+    nameTa: 'லாபத்தன்மை', answersTa: 'எல்லாவற்றுக்கும் பிறகு கடை என்ன சம்பாதித்தது',
     needs: ['journals_posted_to_the_ledger', 'cost_prices_on_the_catalogue'],
   },
 
@@ -295,24 +323,28 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
   {
     id: 'sync_health', family: 'operations', name: 'Anything not sent yet',
     answers: 'work this shop has done that has not reached head office',
+    nameTa: 'இன்னும் அனுப்பப்படாதவை', answersTa: 'இந்தக் கடை செய்த வேலையில் தலைமை அலுவலகத்தை அடையாதவை',
     needs: ['the_boxs_own_outbox'],
     columns: [{ name: 'unsent', type: 'integer' }]
   },
   {
     id: 'data_freshness', family: 'operations', name: 'How current these figures are',
     answers: 'when each number on this screen was last true',
+    nameTa: 'இந்த எண்கள் எவ்வளவு புதியவை', answersTa: 'இந்தத் திரையில் உள்ள ஒவ்வொரு எண்ணும் கடைசியாக எப்போது சரியாக இருந்தது',
     needs: ['the_boxs_own_outbox'],
     columns: [{ name: 'lastSyncedAt', type: 'date' }, { name: 'state', type: 'enum' }]
   },
   {
     id: 'exceptions', family: 'operations', name: 'Things that need a look',
     answers: 'voids, refunds and no-sales outside the shop’s own limits',
+    nameTa: 'பார்க்க வேண்டியவை', answersTa: 'கடையின் சொந்த வரம்புகளுக்கு வெளியே உள்ள ரத்துகள், திருப்பங்கள், விற்பனையில்லா திறப்புகள்',
     needs: ['sales_rung_at_the_till'],
     columns: [{ name: 'n', type: 'integer' }, { name: 'what', type: 'text' }]
   },
   {
     id: 'ai_outcomes', family: 'operations', name: 'What the assistant suggested',
     answers: 'what the AI proposed, and what a person decided',
+    nameTa: 'உதவியாளர் என்ன பரிந்துரைத்தது', answersTa: 'AI என்ன முன்மொழிந்தது, ஒருவர் என்ன முடிவு செய்தார்',
     needs: ['ai_decisions_recorded'],
     columns: [{ name: 'agent', type: 'enum' }, { name: 'proposed', type: 'integer' }, { name: 'decided', type: 'integer' }],
   },
@@ -323,6 +355,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     // lockouts from head office's own kept record of them (W3 · D13-FR-06).
     id: 'security', family: 'operations', name: 'Security',
     answers: 'who was given or lost access, who reached the system for support, and what security incidents were opened',
+    nameTa: 'பாதுகாப்பு', answersTa: 'யாருக்கு அணுகல் வழங்கப்பட்டது அல்லது நீக்கப்பட்டது, ஆதரவுக்காக யார் கணினியை அணுகினர், என்ன பாதுகாப்புச் சம்பவங்கள் திறக்கப்பட்டன',
     needs: ['access_changes_and_incidents_recorded'],
     columns: [
       { name: 'what', type: 'enum' }, { name: 'ref', type: 'text' },

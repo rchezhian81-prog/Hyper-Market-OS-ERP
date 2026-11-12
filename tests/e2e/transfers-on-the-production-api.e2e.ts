@@ -91,7 +91,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
     try {
       await s.page.locator('#register tbody tr[data-transfer="t-1"][data-state="proposed"]').waitFor({ timeout: 15_000 });
       expect(s.writes, 'nothing is written on open').toEqual([]);
-      expect(await s.page.locator('#n-proposed').innerText()).toBe('2');
+      expect(await s.page.locator('#panels .sre-summary-card:nth-child(1) .sre-summary-value').innerText()).toBe('2'); // the first card: proposed (a chrome summary card, U5)
       expect(await s.page.locator('#register tbody tr[data-transfer="t-3"]').count(), 'another store\'s transfer is not listed').toBe(0);
       await look(s.page, 't-1');
       expect(await s.page.locator('#d-lines').innerText()).toMatch(/P1 — 10 EA[\s\S]*head office cost ₹2\.00[\s\S]*P2 — 4 EA[\s\S]*head office cost ₹5\.00/);

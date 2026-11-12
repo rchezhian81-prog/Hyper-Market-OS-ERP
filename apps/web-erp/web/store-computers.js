@@ -13,35 +13,15 @@ const $ = (id) => document.getElementById(id);
 // the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
 // changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
 const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
-const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
-const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
 const u2bRepaints = [];
 const repaintPickers = () => { for (const f of u2bRepaints) f(); };
 /** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
 function pickableEl(input, kind, titleKey, extra = {}) {
-  if (!input || input.dataset.pickable === 'on') return;
+  // U5: the chrome's own adapter (`sreOffice.pickable`) draws the "Choose…" button (#<id>-pick) and the name beside (#<id>-name);
+  // this page keeps only its title words and the per-field options. The typed code stays the fallback (never a dead end).
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  if (!office || typeof office.pickable !== 'function') return;
+  office.pickable(input, kind, { en: u2bWords.en[titleKey] ?? titleKey, ta: u2bWords.ta[titleKey] ?? titleKey }, extra);
 }
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
@@ -62,6 +42,7 @@ const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
 const when = (iso) => (typeof iso === 'string' ? window.sreShopDay?.dateTimeOf(iso) ?? '' : '');
 
 let board = null; // Board | null
+let loaded = false; // head office has answered once (ok or refused)
 let tab = 'bindings';
 const you = () => board?.you ?? { mayReplace: false, mayAcknowledge: false };
 
@@ -77,63 +58,93 @@ function paintSummary() {
   $('p-zones').classList.toggle('attention', (s.zones ?? 0) > 0);
 }
 
-function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
 
 // U2 · G16 (UI/UX gap audit): a NAME where an id was shown — the store's name, the store computer's name, the time zone in
 // words — through the chrome (`sreOffice.nameOf`); the id itself when no name is known, never blank.
 const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 function button(text, act, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = text; b.dataset.act = act; b.addEventListener('click', onClick); return b; }
 
+// ── U5 · G17 (UI/UX gap audit): every list on this page is the chrome's register part (`sreOffice.table`) — search, sort
+// with its direction in words, paging, a count line, rows that stack on a phone. The old `<tbody id>` is kept as the
+// register's body id so the records' data attributes read the same. Before the chrome has loaded the host waits for it.
+const registers = new Map();
+function register(hostId, opts) {
+  const host = $(hostId); const o = window.sreOffice;
+  if (host === null) return null;
+  if (!o || typeof o.table !== 'function') {
+    if (!registers.has(hostId)) { registers.set(hostId, null); document.addEventListener('sre:chrome', () => { registers.delete(hostId); register(hostId, opts); }, { once: true }); }
+    return null;
+  }
+  let c = registers.get(hostId) ?? null;
+  if (c === null || !c.connected()) { c = o.table(host, opts); registers.set(hostId, c); }
+  else if (opts.state) c.setState(opts.state, opts.stateOpts ?? {}); else c.setRows(opts.rows ?? null);
+  return c;
+}
+const chip = (tone, label) => { const o = window.sreOffice; if (o && typeof o.chip === 'function') return o.chip(tone, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.dataset.tone = tone; s.textContent = typeof label === 'string' ? label : (label?.en ?? ''); return s; };
+const W = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+
 function paintBindings() {
-  const body = $('binding-rows');
-  body.replaceChildren();
   const rows = board?.bindings ?? [];
-  $('no-bindings').hidden = board === null || rows.length > 0;
-  $('no-bindings').textContent = t('noBindings');
-  for (const b of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.store = b.storeId; tr.dataset.prefix = b.prefix; tr.dataset.computer = b.computer; tr.dataset.via = b.via;
-    tr.append(cell(nameOf('store', b.storeId)), cell(b.prefix), cell(nameOf('person', b.computer)), cell(b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')), cell(when(b.since)));
-    if (you().mayReplace) {
-      // Open the drawer for this till, the old store computer already filled in.
-      tr.tabIndex = 0;
-      const open = () => openReplace(b);
-      tr.addEventListener('click', open);
-      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-    }
-    body.append(tr);
+  const c = register('binding-host', {
+    id: 'bindings', label: W('tabBindings'), bodyId: 'binding-rows', sortable: true, pageSize: 10,
+    rowKey: (b) => `${b.storeId}:${b.prefix}`, rowData: (b) => ({ store: b.storeId, prefix: b.prefix, computer: b.computer, via: b.via }),
+    columns: [
+      { key: 'storeId', label: W('colStore'), filter: true, value: (b) => nameOf('store', b.storeId) },
+      { key: 'prefix', label: W('colPrefix') },
+      { key: 'computer', label: W('colComputer'), value: (b) => nameOf('person', b.computer) },
+      { key: 'via', label: W('colVia'), value: (b) => (b.via === 'replacement' ? t('viaReplaced') : t('viaFirst')) },
+      { key: 'since', label: W('colSince'), value: (b) => when(b.since) },
+      ...(you().mayReplace ? [{ key: 'replace', label: W('replace'), sort: false, render: (b) => { const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn sre-btn-quiet'; btn.dataset.act = 'replace'; btn.textContent = t('replace'); btn.addEventListener('click', (e) => { e.stopPropagation(); openReplace(b); }); return btn; } }] : []),
+    ],
+    rows: board === null ? null : rows,
+    ...(board === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noBindings') },
+  });
+  // a tap on the row itself still opens the drawer for this till, the old store computer already filled in
+  if (c !== null && !$('binding-host').dataset.wired) {
+    $('binding-host').dataset.wired = '1';
+    $('binding-host').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-prefix]'); if (tr === null || e.target.closest('button') || !you().mayReplace) return; const b = (board?.bindings ?? []).find((x) => x.storeId === tr.dataset.store && x.prefix === tr.dataset.prefix); if (b) openReplace(b); });
   }
 }
 
 // Round 27 · OB-100: numbers taken and never used, per store, till and day — information only (no action here).
 function paintUnused() {
-  const body = $('unused-rows');
-  body.replaceChildren();
   const rows = board?.unused ?? [];
-  $('no-unused').hidden = board === null || rows.length > 0;
-  $('no-unused').textContent = t('noUnused');
-  for (const u of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.store = u.storeId; tr.dataset.prefix = u.prefix; tr.dataset.day = u.day; tr.dataset.count = String(u.count);
-    tr.append(cell(nameOf('store', u.storeId)), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
-    body.append(tr);
-  }
+  register('unused-host', {
+    id: 'unused', label: W('unusedH'), bodyId: 'unused-rows', sortable: true, pageSize: 10,
+    rowKey: (u) => `${u.storeId}:${u.prefix}:${u.day}`, rowData: (u) => ({ store: u.storeId, prefix: u.prefix, day: u.day, count: String(u.count) }),
+    columns: [
+      { key: 'storeId', label: W('colStore'), filter: true, value: (u) => nameOf('store', u.storeId) },
+      { key: 'prefix', label: W('colPrefix') },
+      { key: 'day', label: W('colDay') },
+      { key: 'count', label: W('colCount'), sort: 'number', align: 'end' },
+      { key: 'numbers', label: W('colNumbers'), value: (u) => api.unusedWords(lang, u) },
+    ],
+    rows: board === null ? null : rows,
+    ...(board === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noUnused') },
+  });
 }
 
-// R3 · P-08: each store computer's own time zone against the shop's — a wrong one is said in words (P-08), wrong ones first.
+// R3 · P-08: each store computer's own time zone against the shop's, from its latest health report.
 function paintZones() {
-  const body = $('zone-rows');
-  body.replaceChildren();
   const rows = board?.zones ?? [];
-  $('no-zones').hidden = board === null || rows.length > 0;
-  $('no-zones').textContent = t('noZones');
-  for (const z of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.store = z.storeId; tr.dataset.verdict = z.verdict;
-    if (z.verdict === 'differs') tr.className = 'attention';
-    tr.append(cell(nameOf('store', z.storeId)), cell(nameOf('person', z.computer ?? '')), cell(nameOf('zone', z.machineTimeZone)), cell(`${nameOf('zone', z.shopTimeZone)}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}`), cell(api.zoneWords(lang, z)), cell(when(z.lastReportAt)));
-    body.append(tr);
-  }
+  register('zone-host', {
+    id: 'zones', label: W('zonesH'), bodyId: 'zone-rows', sortable: true, pageSize: 10,
+    rowKey: (z) => z.storeId, rowData: (z) => ({ store: z.storeId, verdict: z.verdict }),
+    columns: [
+      { key: 'storeId', label: W('colStore'), value: (z) => nameOf('store', z.storeId) },
+      { key: 'computer', label: W('colComputer'), value: (z) => nameOf('person', z.computer ?? '') },
+      { key: 'zone', label: W('colZone'), value: (z) => nameOf('zone', z.machineTimeZone) },
+      { key: 'shopZone', label: W('colShopZone'), value: (z) => `${nameOf('zone', z.shopTimeZone)}${z.shopTimeZoneFrom === 'shop_default' ? ` ${t('zoneDefault')}` : ''}` },
+      // the verdict as the one chip, head office's sentence beside it
+      { key: 'says', label: W('colZoneSays'), filter: true, value: (z) => api.zoneWords(lang, z), render: (z) => { const f = document.createDocumentFragment(); f.append(chip(z.verdict === 'differs' ? 'error' : z.verdict === 'same' ? 'ok' : 'unknown', api.zoneWords(lang, z))); return f; } },
+      { key: 'reported', label: W('colReported'), value: (z) => when(z.lastReportAt) },
+    ],
+    rows: board === null ? null : rows,
+    ...(board === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noZones') },
+  });
 }
 
 function paintFindings() {
@@ -232,6 +243,7 @@ function showTab(which) {
 async function load() {
   if (session === null || !may.named || !may.read) return;
   const out = await session.load();
+  loaded = true;
   if (out.result === 'ok') board = out.value; else say($('page-status'), out, '');
   paintAll();
 }

@@ -124,11 +124,123 @@ export interface RetirementDraft {
   readonly cutoverAccepted: boolean; readonly openAssessments: string;
 }
 
+// ── U6 · MG-09 the delta LOAD: the changes file, the steps ladder ──────────────────────────────────────────────────
+
+/** One change made in the old system after the final extract — the route's own fields (services/migration, DeltaChange). */
+export interface DeltaChangeBody {
+  readonly changeKey: string; readonly entity: string; readonly legacyId: string; readonly operation: 'insert' | 'update' | 'delete'; readonly changedAt: string;
+  readonly deltaMinor?: number; readonly deltaQty?: number; readonly locationId?: string; readonly uom?: string; readonly unitCostMinor?: number;
+  readonly netMinor?: number; readonly cgstMinor?: number; readonly sgstMinor?: number; readonly tender?: string;
+}
+export interface DeltaLineRead { readonly changeKey: string; readonly outcome: string; readonly detail: string; readonly effect?: string }
+export interface DeltaRead {
+  readonly ok: boolean; readonly applied: number; readonly duplicatesIgnored: number; readonly refused: number;
+  readonly lines: readonly DeltaLineRead[]; readonly appliedKeys: readonly string[]; readonly netValueMinor: number; readonly netQty: number; readonly detail: string;
+}
+export type DeltaCsvRead =
+  | { readonly ok: true; readonly changes: readonly DeltaChangeBody[] }
+  | { readonly ok: false; readonly why: 'noDeltaFile' | 'noDeltaRows' }
+  | { readonly ok: false; readonly why: 'deltaColumnsMissing'; readonly missing: readonly string[] }
+  | { readonly ok: false; readonly why: 'deltaRowBad'; readonly row: number; readonly field: string };
+
+const DELTA_REQUIRED = ['changeKey', 'entity', 'legacyId', 'operation', 'changedAt'] as const;
+const DELTA_NUMBERS = ['deltaMinor', 'deltaQty', 'unitCostMinor', 'netMinor', 'cgstMinor', 'sgstMinor'] as const;
+const DELTA_WORDS = ['locationId', 'uom', 'tender'] as const;
+const DELTA_OPS = ['insert', 'update', 'delete'] as const;
+
+/** A small RFC-4180 reader: quoted fields, doubled quotes, CR/LF lines, a BOM. */
+function csvLines(text: string): string[][] {
+  const rows: string[][] = []; let row: string[] = []; let field = ''; let quoted = false;
+  const src = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < src.length; i += 1) {
+    const c = src[i]!;
+    if (quoted) {
+      if (c === '"') { if (src[i + 1] === '"') { field += '"'; i += 1; } else quoted = false; }
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && src[i + 1] === '\n') i += 1; row.push(field); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((v) => v.trim() !== ''));
+}
+
+/**
+ * The changes file → the route's own body, or why it cannot be sent. The columns ARE the route's field names (no format of
+ * this page's own); the five the route requires must be there; a number column must hold a number; blanks are left out.
+ */
+export function readDeltaCsv(csv: string): DeltaCsvRead {
+  if (csv.trim() === '') return { ok: false, why: 'noDeltaFile' };
+  const lines = csvLines(csv);
+  const head = (lines[0] ?? []).map((h) => h.trim());
+  const missing = DELTA_REQUIRED.filter((f) => !head.includes(f));
+  if (missing.length > 0) return { ok: false, why: 'deltaColumnsMissing', missing };
+  const body = lines.slice(1);
+  if (body.length === 0) return { ok: false, why: 'noDeltaRows' };
+  const changes: DeltaChangeBody[] = [];
+  for (const [i, cells] of body.entries()) {
+    const row = i + 2; // the row as a person counts it in the file (the heading is row 1)
+    const at = (f: string): string => (cells[head.indexOf(f)] ?? '').trim();
+    for (const f of DELTA_REQUIRED) if (at(f) === '') return { ok: false, why: 'deltaRowBad', row, field: f };
+    if (!(DELTA_OPS as readonly string[]).includes(at('operation'))) return { ok: false, why: 'deltaRowBad', row, field: 'operation' };
+    const change: Record<string, string | number> = { changeKey: at('changeKey'), entity: at('entity'), legacyId: at('legacyId'), operation: at('operation'), changedAt: at('changedAt') };
+    for (const f of DELTA_NUMBERS) {
+      if (!head.includes(f) || at(f) === '') continue;
+      const n = Number(at(f));
+      if (!Number.isFinite(n)) return { ok: false, why: 'deltaRowBad', row, field: f };
+      change[f] = n;
+    }
+    for (const f of DELTA_WORDS) if (head.includes(f) && at(f) !== '') change[f] = at(f);
+    changes.push(change as unknown as DeltaChangeBody);
+  }
+  return { ok: true, changes };
+}
+
+/** A shop day (YYYY-MM-DD) at a shop time (HH:MM, Asia/Kolkata — the shop calendar's zone, no DST) → the instant head office compares with. */
+export function shopMomentOf(day: string, time = '00:00'): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day.trim())) return undefined;
+  const t = /^\d{2}:\d{2}$/.test(time.trim()) ? time.trim() : '00:00';
+  const ms = Date.parse(`${day.trim()}T${t}:00+05:30`);
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+}
+
+/** The migration controls in the roadmap's order (§30 MG-01…MG-12), each with its section on this page — the ladder at the top. */
+export const MIGRATION_STEPS = Object.freeze([
+  { control: 'MG-01', word: 'step_discovery', anchor: '#disc' },
+  { control: 'MG-02', word: 'step_seal', anchor: '#seal' },
+  { control: 'MG-03', word: 'step_mapping', anchor: '#map' },
+  { control: 'MG-04', word: 'step_cleaning', anchor: '#prob' },
+  { control: 'MG-05', word: 'step_trial', anchor: '#trial' },
+  { control: 'MG-06', word: 'step_totals', anchor: '#tot' },
+  { control: 'MG-07', word: 'step_history', anchor: '#excl' },
+  { control: 'MG-08', word: 'step_opening', anchor: '#night' },
+  { control: 'MG-09', word: 'step_delta_capture', anchor: '#diff' },
+  { control: 'MG-09', word: 'step_delta_load', anchor: '#delta' },
+  { control: 'MG-10', word: 'step_parallel', anchor: '#books' },
+  { control: 'MG-11', word: 'step_cutover', anchor: '#gate' },
+  { control: 'MG-12', word: 'step_retire', anchor: '#retire' },
+] as const);
+
 // ── words ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const OLD_SYSTEM_COPY = {
   en: {
     lang: 'தமிழ்', title: 'Old system checks',
+    // U6: the steps ladder (MG-01…MG-12) and the delta LOAD step (MG-09)
+    stepsH: 'The twelve controls, in order', stepsLead: 'Every migration control the roadmap names (MG-01 to MG-12) is a step on this page. Source profiling, the trial load and the delta are their own steps; tap one to go to it.',
+    step_discovery: 'Source profiling — where the old records are, how many, who owns each', step_seal: 'The export checked against its seal', step_mapping: 'The code mapping and its coverage', step_cleaning: 'Problems in the old data, decided',
+    step_trial: 'Trial load — full volume, timed, repeatable', step_totals: 'The figures, reconciled and signed', step_history: 'What is left behind, and why', step_opening: 'The opening load and undoing it',
+    step_delta_capture: 'Delta — the changes since the final extract, found by comparing two exports', step_delta_load: 'Delta — the changes loaded, exactly once', step_parallel: 'Running both systems: the books side of a day', step_cutover: 'The switch-over night and its gate', step_retire: 'Switching the old system off',
+    deltaH: 'Load the changes made after the final extract', deltaLead: 'Between the final extract and the switch-over night the old shop keeps trading. The changes file carries each change with its own key (the columns are head office\'s own field names: changeKey, entity, legacyId, operation, changedAt, and for stock deltaQty, locationId, uom, unitCostMinor; for a sale deltaMinor, netMinor, cgstMinor, sgstMinor, tender). Head office applies each exactly once: a change sent again is "already applied" (a success), a change dated before the extract\'s moment is refused as already in the extract, and a kind this version cannot apply is refused by name — never counted.',
+    deltaCutoff: 'The final extract was taken on (day)', deltaCutoffTime: 'at (shop time, HH:MM)', deltaFile: 'The changes file (CSV)', readDelta: 'Read the file', loadDelta: 'Load the changes', deltaRead: 'changes read from the file — nothing sent yet',
+    deltaConfirmTitle: 'Load these changes into the shop?', deltaConfirmDetail: '{n} changes made in the old system after {cutoff} will be applied at head office in your name: stock moves and sales become real records, each exactly once. A change already applied is left alone. This is recorded and cannot be undone except by a compensating entry.',
+    deltaOk: 'Head office answered. Each change\'s outcome is below.', deltaAppliedK: 'applied', deltaDupK: 'already applied', deltaRefusedK: 'refused', deltaNetK: 'net stock', deltaValueK: 'net value',
+    noCutoff: 'Say the day the final extract was taken first. Nothing was sent.', noDeltaFile: 'Choose the changes file first. Nothing was sent.', noDeltaRows: 'The file has a heading and no changes. Nothing was sent.',
+    deltaColumnsMissing: 'The file is missing a column head office needs ({missing}). Nothing was sent.', deltaRowBad: 'Row {row} cannot be read: "{field}" is missing or not a number / one of insert, update, delete. Nothing was sent — fix the file and read it again.',
+    cChangeKey: 'Change', cEntity: 'Kind', cLegacyId: 'Old id', cOperation: 'What', cChangedAt: 'When (old system)', cQty: 'Quantity', cValue: 'Value', cOutcome: 'Outcome', cDetail: 'Head office said',
+    o_applied: 'applied', o_already_applied: 'already applied — left alone', o_refused_before_cutoff: 'refused — dated before the extract', o_refused_production: 'refused — this is the real shop', o_refused_unsupported_entity: 'refused — a kind head office does not apply', o_refused_incomplete: 'refused — incomplete',
+    op_insert: 'added', op_update: 'changed', op_delete: 'removed',
     lead: 'The office steps of moving from the old system: list what it keeps, approve how its codes map, decide what is left behind, compare two exports, check the switch-over night, undo an opening load inside its window, and check whether the old system may be switched off. Head office checks every step; nothing here deletes old data.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
@@ -211,6 +323,19 @@ export const OLD_SYSTEM_COPY = {
   },
   ta: {
     lang: 'English', title: 'பழைய முறை சோதனைகள்',
+    stepsH: 'பன்னிரண்டு கட்டுப்பாடுகள், வரிசையில்', stepsLead: 'வரைபடம் பெயரிடும் ஒவ்வொரு இடமாற்றக் கட்டுப்பாடும் (MG-01 முதல் MG-12 வரை) இந்தப் பக்கத்தில் ஒரு படி. மூலப் பகுப்பாய்வு, சோதனை ஏற்றம், மாற்றங்கள் — தனித்தனிப் படிகள்; ஒன்றைத் தட்டி அங்கே செல்லலாம்.',
+    step_discovery: 'மூலப் பகுப்பாய்வு — பழைய பதிவுகள் எங்கே, எத்தனை, யார் பொறுப்பு', step_seal: 'முத்திரையோடு சரிபார்த்த ஏற்றுமதி', step_mapping: 'குறியீட்டு வரைபடமும் அதன் பரப்பும்', step_cleaning: 'பழைய தகவலின் சிக்கல்கள், முடிவு செய்யப்பட்டவை',
+    step_trial: 'சோதனை ஏற்றம் — முழு அளவு, நேரம் அளக்கப்பட்டது, மீண்டும் செய்யக்கூடியது', step_totals: 'எண்ணிக்கைகள், சரிகட்டி கையொப்பமிட்டவை', step_history: 'விட்டுவிடப்பட்டவை, ஏன்', step_opening: 'தொடக்க ஏற்றமும் அதைத் திரும்பப் பெறுதலும்',
+    step_delta_capture: 'மாற்றங்கள் — இறுதி ஏற்றுமதிக்குப் பின் நடந்தவை, இரு ஏற்றுமதிகளை ஒப்பிட்டுக் கண்டவை', step_delta_load: 'மாற்றங்கள் — ஒரே ஒரு முறை ஏற்றப்பட்டவை', step_parallel: 'இரு முறைகளும் இயக்குதல்: ஒரு நாளின் கணக்குப் பக்கம்', step_cutover: 'மாற்ற இரவும் அதன் வாயிலும்', step_retire: 'பழைய முறையை நிறுத்துதல்',
+    deltaH: 'இறுதி ஏற்றுமதிக்குப் பின் நடந்த மாற்றங்களை ஏற்று', deltaLead: 'இறுதி ஏற்றுமதிக்கும் மாற்ற இரவுக்கும் இடையில் பழைய கடை வியாபாரம் தொடரும். மாற்றங்கள் கோப்பு ஒவ்வொரு மாற்றத்தையும் அதன் சொந்தச் சாவியோடு கொண்டிருக்கும் (நிரல்கள் தலைமை அலுவலகத்தின் சொந்தப் புலப் பெயர்கள்: changeKey, entity, legacyId, operation, changedAt; சரக்குக்கு deltaQty, locationId, uom, unitCostMinor; விற்பனைக்கு deltaMinor, netMinor, cgstMinor, sgstMinor, tender). ஒவ்வொன்றையும் தலைமை அலுவலகம் ஒரே ஒரு முறை பயன்படுத்தும்: மீண்டும் அனுப்பிய மாற்றம் "ஏற்கனவே பயன்படுத்தப்பட்டது" (வெற்றி), ஏற்றுமதி நேரத்துக்கு முந்தைய மாற்றம் ஏற்கனவே ஏற்றுமதியில் உள்ளதாக மறுக்கப்படும், இந்தப் பதிப்பு பயன்படுத்த முடியாத வகை பெயரோடு மறுக்கப்படும் — ஒருபோதும் எண்ணப்படாது.',
+    deltaCutoff: 'இறுதி ஏற்றுமதி எடுத்த நாள்', deltaCutoffTime: 'நேரம் (கடை நேரம், HH:MM)', deltaFile: 'மாற்றங்கள் கோப்பு (CSV)', readDelta: 'கோப்பைப் படி', loadDelta: 'மாற்றங்களை ஏற்று', deltaRead: 'மாற்றங்கள் கோப்பிலிருந்து படிக்கப்பட்டன — இன்னும் எதுவும் அனுப்பப்படவில்லை',
+    deltaConfirmTitle: 'இந்த மாற்றங்களைக் கடைக்குள் ஏற்றவா?', deltaConfirmDetail: '{cutoff}-க்குப் பின் பழைய முறையில் நடந்த {n} மாற்றங்கள் உங்கள் பெயரில் தலைமை அலுவலகத்தில் பயன்படுத்தப்படும்: சரக்கு நகர்வுகளும் விற்பனைகளும் உண்மைப் பதிவுகளாகும், ஒவ்வொன்றும் ஒரே ஒரு முறை. ஏற்கனவே பயன்படுத்திய மாற்றம் விடப்படும். இது பதிவு செய்யப்படும்; ஈடுசெய்யும் பதிவால் மட்டுமே திரும்பப் பெற முடியும்.',
+    deltaOk: 'தலைமை அலுவலகம் பதிலளித்தது. ஒவ்வொரு மாற்றத்தின் முடிவும் கீழே.', deltaAppliedK: 'பயன்படுத்தப்பட்டது', deltaDupK: 'ஏற்கனவே பயன்படுத்தப்பட்டது', deltaRefusedK: 'மறுக்கப்பட்டது', deltaNetK: 'நிகர சரக்கு', deltaValueK: 'நிகர மதிப்பு',
+    noCutoff: 'முதலில் இறுதி ஏற்றுமதி எடுத்த நாளைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.', noDeltaFile: 'முதலில் மாற்றங்கள் கோப்பைத் தேர்ந்தெடுக்கவும். எதுவும் அனுப்பப்படவில்லை.', noDeltaRows: 'கோப்பில் தலைப்பு மட்டும் உள்ளது, மாற்றங்கள் இல்லை. எதுவும் அனுப்பப்படவில்லை.',
+    deltaColumnsMissing: 'தலைமை அலுவலகத்துக்குத் தேவையான நிரல் கோப்பில் இல்லை ({missing}). எதுவும் அனுப்பப்படவில்லை.', deltaRowBad: 'வரிசை {row} படிக்க முடியவில்லை: "{field}" இல்லை அல்லது எண் அல்ல / insert, update, delete இல் ஒன்று அல்ல. எதுவும் அனுப்பப்படவில்லை — கோப்பைத் திருத்தி மீண்டும் படிக்கவும்.',
+    cChangeKey: 'மாற்றம்', cEntity: 'வகை', cLegacyId: 'பழைய அடையாளம்', cOperation: 'என்ன', cChangedAt: 'எப்போது (பழைய முறை)', cQty: 'அளவு', cValue: 'மதிப்பு', cOutcome: 'முடிவு', cDetail: 'தலைமை அலுவலகம் சொன்னது',
+    o_applied: 'பயன்படுத்தப்பட்டது', o_already_applied: 'ஏற்கனவே பயன்படுத்தப்பட்டது — விடப்பட்டது', o_refused_before_cutoff: 'மறுக்கப்பட்டது — ஏற்றுமதிக்கு முந்தையது', o_refused_production: 'மறுக்கப்பட்டது — இது உண்மைக் கடை', o_refused_unsupported_entity: 'மறுக்கப்பட்டது — தலைமை அலுவலகம் பயன்படுத்தாத வகை', o_refused_incomplete: 'மறுக்கப்பட்டது — முழுமையற்றது',
+    op_insert: 'சேர்க்கப்பட்டது', op_update: 'மாற்றப்பட்டது', op_delete: 'நீக்கப்பட்டது',
     lead: 'பழைய முறையிலிருந்து மாறுவதன் அலுவலகப் படிகள்: அது வைத்திருப்பவற்றைப் பட்டியலிடு, அதன் குறியீடுகள் எப்படிப் பொருந்துகின்றன என்பதை ஒப்புக்கொள், விட்டுச் செல்வதை முடிவு செய், இரண்டு ஏற்றுமதிகளை ஒப்பிடு, மாறும் இரவைச் சோதி, தொடக்க ஏற்றத்தை அதன் கால அளவுக்குள் திரும்பப் பெறு, பழைய முறையை அணைக்கலாமா என்று சோதி. ஒவ்வொரு படியையும் தலைமை அலுவலகம் சோதிக்கிறது; இங்கே எதுவும் பழைய தரவை அழிப்பதில்லை.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
@@ -378,6 +503,8 @@ export interface OldSystemMay {
   readonly retire: boolean;
   // W4 · WF-19
   readonly verify: boolean; readonly trial: boolean; readonly resolve: boolean; readonly sign: boolean;
+  // U6 · MG-09: loading the changes made after the final extract, exactly once
+  readonly delta: boolean;
 }
 
 export interface OldSystemSession {
@@ -405,6 +532,9 @@ export interface OldSystemSession {
   decideProblem(exceptionId: string, action: string, reason: string, survivor: string): Promise<Outcome<unknown>>;
   /** MG-05 — the trial load: the verified export and head office's own count of undecided blocking problems go with it. */
   trialLoad(d: { readonly trialId: string; readonly rows: string; readonly minutes: string; readonly fullRows: string; readonly preparedEmpty: boolean }): Promise<Outcome<TrialLoadRead>>;
+  /** U6 · MG-09 — LOAD the changes made after the final extract, exactly once: the changes file (the route's own fields as
+   *  columns) and the extract's moment at the shop. A row that cannot be read is refused by name and nothing is sent. */
+  applyDeltas(d: { readonly extractCutoff: string; readonly cutoffTime?: string; readonly csv: string }): Promise<Outcome<DeltaRead>>;
   /** MG-06 — the figures and their reconciliation (QG-07). */
   totals(): Promise<Outcome<TotalsRead>>;
   signTotal(totalId: string, statement: string): Promise<Outcome<unknown>>;
@@ -426,6 +556,7 @@ export function createOldSystemSession(input: { readonly viewer: ViewerIdentity 
     retire: has('migration.retirement.assess'),
     verify: has('migration.preservation.verify'), trial: has('migration.trial.run'),
     resolve: has('migration.exception.resolve'), sign: has('migration.controltotal.sign'),
+    delta: has('migration.delta.apply'),
   };
   const call = makeCaller({ keyPrefix: 'old-system', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const gate = (right: boolean): Invalid | undefined => (!named ? invalid('nobody') : right ? undefined : invalid('notAllowed'));
@@ -563,6 +694,16 @@ export function createOldSystemSession(input: { readonly viewer: ViewerIdentity 
         blockingExceptionsOpen: open.value.outstanding.blockingUnresolved.length, targetPreparedEmpty: d.preparedEmpty,
         ...(full === undefined ? {} : { fullVolumeRows: full }),
       });
+    },
+    // U6 · MG-09: the changes LOADED, exactly once. Head office judges each (already applied / before the cutoff / a kind it
+    // does not apply); the page sends the file's changes and the extract's moment, nothing of its own.
+    applyDeltas: async (d) => {
+      const no = gate(may.delta); if (no) return no;
+      const cutoff = shopMomentOf(d.extractCutoff, d.cutoffTime);
+      if (cutoff === undefined) return invalid('noCutoff');
+      const read = readDeltaCsv(d.csv);
+      if (!read.ok) return invalid(read.why);
+      return call('POST', '/v1/migration/deltas', { changes: read.changes, extractCutoff: cutoff });
     },
     totals: async () => gate(may.exclusionsRead) ?? call('GET', '/v1/migration/control-totals'),
     signTotal: async (id, statement) => {

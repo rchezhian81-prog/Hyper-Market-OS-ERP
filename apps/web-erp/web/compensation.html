@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Compensation</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Compensation (U6 · UI/UX gap audit §27 "CRM · compensation" · M21-FR-03 · §28 · OB-698). A THIN CLIENT over head office's
+      service-desk compensation routes and the approvals engine: the desk's limits (GET /v1/service/compensation-policy), the
+      cases (GET /v1/service/cases), what was given on a case (GET /v1/service/cases/:id/compensations), the grant
+      (POST /v1/service/cases/:id/compensation — within the person's own authority, or with an approval a SECOND person gave on
+      the Approvals page), and the ask (POST /v1/approvals/requests, kind service_compensation). Money leaves the business only
+      after the confirm sheet. Its session is apps/web-erp/src/compensation-session.ts. No prompt/confirm/alert of the
+      browser's own; nothing on a timer. The page stands on the shared office parts (window.sreOffice).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .facts { display: grid; gap: 4px; font-size: 14px; margin: 0; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Compensation</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Compensation</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="limits" hidden aria-labelledby="limits-h">
+        <h3 id="limits-h"></h3>
+        <div id="limits-cards"></div>
+        <p class="meta" id="limits-source"></p>
+        <p class="status" id="limits-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="cases" hidden aria-labelledby="cases-h">
+        <h3 id="cases-h"></h3>
+        <p class="meta" id="cases-lead"></p>
+        <p class="status" id="cases-status" role="status" aria-live="polite"></p>
+        <div id="cases-table"></div>
+      </section>
+      <section id="case" hidden aria-labelledby="case-h">
+        <h3 id="case-h"></h3>
+        <p class="facts" id="case-facts"></p>
+        <p class="meta" id="english-note"></p>
+        <h4 id="given-h"></h4>
+        <p class="status" id="given-status" role="status" aria-live="polite"></p>
+        <div id="given-table"></div>
+        <h4 id="asked-h"></h4>
+        <p class="status" id="asked-status" role="status" aria-live="polite"></p>
+        <div id="asked-table"></div>
+        <form id="give-form" hidden>
+          <h4 id="form-h"></h4>
+          <div class="row-form" id="give-fields"></div>
+          <p class="meta" id="g-route"></p>
+          <div class="acts">
+            <button id="g-give" type="submit" class="sre-btn sre-btn-primary"><span id="g-give-text"></span></button>
+            <button id="g-back" type="button" class="sre-btn sre-btn-quiet"><span id="g-back-text"></span></button>
+          </div>
+          <p class="status" id="g-status" role="status" aria-live="polite"></p>
+        </form>
+        <button id="back" type="button" class="sre-btn sre-btn-quiet" hidden><span id="back-text"></span></button>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./compensation.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

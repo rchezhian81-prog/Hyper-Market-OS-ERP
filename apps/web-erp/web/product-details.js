@@ -152,7 +152,7 @@ const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
 const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
 const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = $(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
 function shopDate(id, words, opts = {}) {
   const office = window.sreOffice; const input = $(id);
   if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;

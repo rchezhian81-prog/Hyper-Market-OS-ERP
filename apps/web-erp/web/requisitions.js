@@ -60,6 +60,11 @@ const may = session?.may ?? { named: false, read: false, raise: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+// U5 (G17): the worklist and the comparison stand on the chrome's register part — built once per host, fed by setRows;
+// the column words are pairs, so the chrome repaints them on the toggle.
+const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+const tables = {};
+function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
 let rows = [];
 let open = null; // the requisition opened
 let comparison = null;
@@ -80,17 +85,21 @@ function say(text, err = false) { $('page-status').className = err ? 'status err
 const sourceWords = (r) => r.source === undefined ? t('typed') : r.source.kind === 'replenishment' ? `${t('fromReplenishment')} (${r.source.storeId ?? ''})` : t('fromDrafts');
 
 function paintList() {
-  $('none').hidden = rows.length > 0; $('none').textContent = t('none');
-  $('list').replaceChildren(...rows.map((r) => {
-    const tr = document.createElement('tr');
-    tr.dataset.requisition = r.requisitionId;
-    const cells = [r.requisitionId, r.lines.map((l) => lineText(l)).join(', '), r.raisedBy ?? '—', sourceWords(r)].map((v) => { const td = document.createElement('td'); td.textContent = v; return td; });
-    const td = document.createElement('td');
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open sre-btn sre-btn-quiet'; label(b, 'search', 'open');
-    b.addEventListener('click', () => { void openRequisition(r); });
-    td.append(b); tr.append(...cells, td);
-    return tr;
-  }));
+  $('none').hidden = true;
+  const reg = register($('list-host'), {
+    id: 'requisitions', label: pair('worklist'), pageSize: 10, sortable: true, bodyId: 'list',
+    columns: [
+      { key: 'id', label: pair('id'), value: (r) => r.requisitionId },
+      { key: 'lines', label: pair('lines'), value: (r) => r.lines.map((l) => lineText(l)).join(', ') },
+      { key: 'by', label: pair('raisedBy'), value: (r) => (r.raisedBy === undefined || r.raisedBy === null ? null : (window.sreOffice.nameOf('person', r.raisedBy) ?? r.raisedBy)) },
+      { key: 'from', label: pair('from'), value: (r) => sourceWords(r) },
+      { key: 'open', label: pair('open'), sort: false, value: () => t('open'), render: (r) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open sre-btn sre-btn-quiet'; label(b, 'search', 'open'); b.addEventListener('click', () => { void openRequisition(r); }); return b; } },
+    ],
+    rowKey: (r) => r.requisitionId, rowData: (r) => ({ requisition: r.requisitionId }),
+    empty: { title: pair('none') },
+  });
+  if (reg === null) return;
+  reg.setRows(rows);
 }
 
 function paintNewLines() {
@@ -132,16 +141,28 @@ function paintComparison() {
   const has = comparison !== null && comparison.lines.some((l) => l.offers.length > 0);
   $('no-quotes').hidden = has; $('no-quotes').textContent = t('noQuotes');
   const list = comparison === null ? [] : api.offerRows(comparison);
-  $('cmp').replaceChildren(...list.map((o) => {
-    const tr = document.createElement('tr'); tr.dataset.quote = o.quoteId; tr.dataset.product = o.productId;
-    const cells = [o.productId, `${o.supplierId} (${o.quoteId})`, api.rupees(o.unitMinor), api.rupees(o.lineMinor), `${o.leadTimeDays} ${t('days')}`].map((v) => { const td = document.createElement('td'); td.textContent = v; return td; });
-    const marks = document.createElement('td');
-    if (!o.comparable) marks.textContent = `${t('notComparable')}${o.reason === undefined ? '' : ` — ${o.reason}`}`;
-    if (o.cheapest) marks.append(chip('trending-down', 'cheapest'));
-    if (o.fastest) marks.append(' ', chip('truck', 'fastest'));
-    tr.append(...cells, marks);
-    return tr;
-  }));
+  const reg = register($('cmp-host'), {
+    id: 'quote-comparison', label: pair('comparison'), pageSize: 20, sortable: true, bodyId: 'cmp',
+    columns: [
+      { key: 'product', label: pair('product'), value: (o) => window.sreOffice.nameOf('product', o.productId) ?? o.productId },
+      { key: 'supplier', label: pair('supplier'), value: (o) => `${window.sreOffice.nameOf('supplier', o.supplierId) ?? o.supplierId} (${o.quoteId})` },
+      { key: 'unit', label: pair('unitCost'), value: (o) => api.rupees(o.unitMinor), align: 'end' },
+      { key: 'line', label: pair('total'), value: (o) => api.rupees(o.lineMinor), align: 'end' },
+      { key: 'lead', label: pair('leadDays'), value: (o) => `${o.leadTimeDays} ${t('days')}` },
+      { key: 'marks', label: pair('comparison'), sort: false, value: (o) => [o.comparable ? '' : t('notComparable'), o.cheapest ? t('cheapest') : '', o.fastest ? t('fastest') : ''].filter(Boolean).join(' · '), render: (o) => {
+        const marks = document.createElement('span');
+        if (!o.comparable) marks.append(`${t('notComparable')}${o.reason === undefined ? '' : ` — ${o.reason}`}`);
+        if (o.cheapest) marks.append(chip('trending-down', 'cheapest'));
+        if (o.fastest) marks.append(' ', chip('truck', 'fastest'));
+        if (marks.childNodes.length === 0) marks.textContent = '';
+        return marks;
+      } },
+    ],
+    rowKey: (o) => `${o.quoteId}|${o.productId}`, rowData: (o) => ({ quote: o.quoteId, product: o.productId }),
+    empty: { title: pair('noQuotes') },
+  });
+  if (reg === null) return;
+  reg.setRows(list);
   const parts = [];
   if (comparison?.cheapestOverall) parts.push(`${t('cheapestOverall')}: ${comparison.cheapestOverall.supplierId} (${comparison.cheapestOverall.quoteId})`);
   if (comparison?.fastestOverall) parts.push(`${t('fastestOverall')}: ${comparison.fastestOverall.supplierId} (${comparison.fastestOverall.quoteId})`);
@@ -155,9 +176,9 @@ function paintComparison() {
 
 function paint() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['list-h', 'worklist'], ['th-id', 'id'], ['th-lines', 'lines'], ['th-by', 'raisedBy'], ['th-from', 'from'],
+  for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['list-h', 'worklist'], 
     ['raise-h', 'raise'], ['l-new-id', 'newId'], ['quote-h', 'quotes'], ['l-quote-id', 'quoteId'], ['l-quote-supplier', 'supplier'], ['cmp-h', 'comparison'],
-    ['th-product', 'product'], ['th-supplier', 'supplier'], ['th-unit', 'unitCost'], ['th-line', 'total'], ['th-lead', 'leadDays'], ['order-h', 'order'], ['l-order-quote', 'chooseQuote'],
+     ['order-h', 'order'], ['l-order-quote', 'chooseQuote'],
     ['l-order-store', 'deliverTo'], ['l-order-id', 'poId']]) $(id).textContent = t(k);
   label($('add-line'), 'list-plus', 'addLine'); label($('raise'), 'clipboard-list', 'raiseIt'); label($('record-quote'), 'receipt-text', 'recordQuote'); label($('raise-order'), 'send', 'raiseOrder');
   $('lang').textContent = t('lang');
@@ -243,3 +264,5 @@ function whyDisabled(btn, why) {
 pickable('quote-supplier', 'supplier', 'pickSupplier');
 pickable('order-store', 'store', 'pickStore');
 prefillStore('order-store');
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

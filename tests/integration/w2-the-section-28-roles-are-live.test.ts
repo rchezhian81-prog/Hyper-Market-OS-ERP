@@ -33,7 +33,7 @@ describe('the §28 roles are written from the roadmap and are live', () => {
       expect(live, r.id).toBeDefined();
       expect(live!.permissions).toEqual(r.permissions);
       // The catalogue carries the words only — the store setup is not widened with the reasons.
-      expect(Object.keys(live!).sort()).toEqual(['id', 'name', 'permissions']);
+      expect(Object.keys(live!).sort()).toEqual(['id', 'name', 'nameTa', 'permissions']); // U3 (OB-699): the name in both languages
     }
     expect(ROLES_AWAITING_OWNER_APPROVAL).toEqual([]);
     expect(byId('purchase_user').liveBy).toMatch(/OB-622/);

@@ -63,12 +63,29 @@ const WORDS = {
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
 
+// U5 (G17): every list stands on the chrome's register part — built once per host, fed by setRows, repainted on the
+// language toggle by the chrome itself (the column words are pairs). A row's first cell is a button, so a keyboard reaches
+// it; a click anywhere on the row opens the same record (the tests and a mouse click the row).
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: (WORDS.ta ?? {})[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function register(host, spec) {
+  if (!window.sreOffice) return null; // the chrome's parts arrive after this script
+  const have = tables[spec.id];
+  if (have && have.connected()) return have;
+  tables[spec.id] = window.sreOffice.table(host, spec);
+  return tables[spec.id];
+}
+function rowLink(text) { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet sre-row-link'; b.textContent = text; return b; }
+function onRow(host, attr, open) {
+  host.addEventListener('click', (e) => { const tr = e.target.closest(`tr[data-${attr}]`); if (tr && host.contains(tr)) open(tr.dataset[attr]); });
+}
+
 // U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
 // while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
 const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
 const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = $(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
 function shopDate(id, words, opts = {}) {
   const office = window.sreOffice; const input = $(id);
   if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
@@ -116,6 +133,7 @@ async function ownApproval(kind, subjectRef, details) {
 }
 
 let classes = null;   // [{ hsn, products, gst: [...], cess: [...] }]
+onRow($('rows-host'), 'id', (hsn) => { $('hsn').value = hsn; void openClass(hsn); });
 let open = null;      // the class on the record panel
 let pending = null;   // { kind, details, summary } the last record needed approval for
 const inForce = (periods, day) => [...periods].filter((p) => p.effectiveFrom <= day).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom)).at(-1);
@@ -132,24 +150,31 @@ function paintList() {
   // U2b (G5): the classes head office's products carry are offered on the HSN field — the code stays, it is the class
   if (Array.isArray(classes)) $('hsn-list').replaceChildren(...classes.map((c) => Object.assign(document.createElement('option'), { value: c.hsn, label: `${c.hsn} · ${c.products} ${t('cProducts')}` })));
   const day = today();
-  const tbody = $('rows'); tbody.replaceChildren();
-  for (const k of classes ?? []) {
-    const tr = document.createElement('tr'); tr.dataset.id = k.hsn; tr.tabIndex = 0;
-    const g = k.gst === null ? undefined : inForce(k.gst, day); const c = k.cess === null ? undefined : inForce(k.cess, day);
-    const next = [...(k.gst === null ? [] : [nextOf(k.gst, day)].filter(Boolean).map((p) => `GST ${gstWords(p)}`)), ...(k.cess === null ? [] : [nextOf(k.cess, day)].filter(Boolean).map((p) => `${t('cessH')} ${cessWords(p)}`))];
-    const cells = [[k.hsn, false], [String(k.products), false],
-      [k.gst === null ? t('notKnown') : g === undefined ? t('noRate') : `${pct(g.rateBps)}%`, k.gst === null || g === undefined],
-      [k.cess === null ? t('notKnown') : c === undefined || (c.advaloremBps === 0 && c.specificPerQuantityMinor === 0) ? t('noCess') : cessWords(c), k.cess === null],
-      [next.length === 0 ? t('none') : next.join(' · '), false]];
-    for (const [v, warn] of cells) { const td = document.createElement('td'); td.textContent = v; if (warn) td.className = 'unknown'; tr.append(td); }
-    const go = () => { $('hsn').value = k.hsn; void openClass(k.hsn); };
-    tr.addEventListener('click', go); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-    tbody.append(tr);
-  }
-  const unknown = (el, known, v) => { el.textContent = known ? String(v) : t('notKnown'); el.classList.toggle('unknown', !known); };
-  unknown($('v-classes'), classes !== null, classes?.length ?? 0);
-  unknown($('v-norate'), classes !== null && classes.every((k) => k.gst !== null), (classes ?? []).filter((k) => k.gst !== null && inForce(k.gst, day) === undefined).length);
-  unknown($('v-cess'), classes !== null && classes.every((k) => k.cess !== null), (classes ?? []).filter((k) => { const c = k.cess === null ? undefined : inForce(k.cess, day); return c !== undefined && (c.advaloremBps > 0 || c.specificPerQuantityMinor > 0); }).length);
+  const gstOf = (k) => (k.gst === null ? null : inForce(k.gst, day));
+  const cessOf = (k) => (k.cess === null ? null : inForce(k.cess, day));
+  const nextWords = (k) => { const next = [...(k.gst === null ? [] : [nextOf(k.gst, day)].filter(Boolean).map((p) => `GST ${gstWords(p)}`)), ...(k.cess === null ? [] : [nextOf(k.cess, day)].filter(Boolean).map((p) => `${t('cessH')} ${cessWords(p)}`))]; return next.length === 0 ? t('none') : next.join(' · '); };
+  const reg = register($('rows-host'), {
+    id: 'tax-classes', label: pair('listH'), pageSize: 10, sortable: true, bodyId: 'rows',
+    columns: [
+      { key: 'hsn', label: pair('cHsn'), value: (k) => k.hsn, render: (k) => rowLink(k.hsn) },
+      { key: 'products', label: pair('cProducts'), value: (k) => k.products, sort: 'number', align: 'end' },
+      // a class head office has not answered for is "Not known" (the part's own words); one with no rate in force says so
+      { key: 'gst', label: pair('cGst'), value: (k) => (k.gst === null ? null : gstOf(k) === undefined ? t('noRate') : `${pct(gstOf(k).rateBps)}%`) },
+      { key: 'cess', label: pair('cCess'), value: (k) => { const c = cessOf(k); return k.cess === null ? null : c === undefined || (c.advaloremBps === 0 && c.specificPerQuantityMinor === 0) ? t('noCess') : cessWords(c); } },
+      { key: 'next', label: pair('cNext'), value: (k) => nextWords(k) },
+    ],
+    rowKey: (k) => k.hsn, rowData: (k) => ({ id: k.hsn }),
+    empty: { title: pair('listH') },
+  });
+  if (reg === null) return;
+  if (classes === null) reg.setState('unknown'); else reg.setRows(classes);
+  // the figures are summary cards: a count head office answered for every class, or "Not known" (the part's own word)
+  const figure = (known, v) => (known ? String(v) : null);
+  window.sreOffice.cards($('figures'), [
+    { label: pair('kClasses'), value: figure(classes !== null, classes?.length ?? 0), icon: 'list' },
+    { label: pair('kNoRate'), value: figure(classes !== null && classes.every((k) => k.gst !== null), (classes ?? []).filter((k) => k.gst !== null && inForce(k.gst, day) === undefined).length), icon: 'circle-alert' },
+    { label: pair('kCess'), value: figure(classes !== null && classes.every((k) => k.cess !== null), (classes ?? []).filter((k) => { const c = k.cess === null ? undefined : inForce(k.cess, day); return c !== undefined && (c.advaloremBps > 0 || c.specificPerQuantityMinor > 0); }).length), icon: 'percent' },
+  ]);
 }
 
 function paintRecord() {
@@ -167,10 +192,12 @@ function paintRecord() {
 }
 
 function paint() {
+  // U3 · OB-699: the read-only line is the page's own word — it follows the language toggle like every other
+  { const st = $('page-status'); if (st && st.dataset.readOnly === 'on') st.textContent = t('readOnly'); }
   repaintShopDates();
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-classes', 'kClasses'], ['k-norate', 'kNoRate'], ['k-cess', 'kCess'], ['list-h', 'listH'], ['list-lead', 'listLead'],
-    ['c-hsn', 'cHsn'], ['c-products', 'cProducts'], ['c-gst', 'cGst'], ['c-cess', 'cCess'], ['c-next', 'cNext'], ['l-hsn', 'hsn'], ['open', 'open'], ['gst-h', 'gstH'], ['cess-h', 'cessH'],
+  for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['list-h', 'listH'], ['list-lead', 'listLead'],
+     ['l-hsn', 'hsn'], ['open', 'open'], ['gst-h', 'gstH'], ['cess-h', 'cessH'],
     ['l-g-from', 'from'], ['l-g-rate', 'rate'], ['g-save', 'saveGst'], ['l-c-from', 'from'], ['l-c-adv', 'adv'], ['l-c-spec', 'spec'], ['l-c-per', 'per'], ['c-save', 'saveCess'], ['l-why', 'why'], ['ask', 'ask']]) { const el = $(id); if (el) el.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
@@ -186,7 +213,7 @@ async function load() {
   classes = read.map((k) => ({ ...k, products: counts.get(k.hsn) ?? 0 }));
   const st = $('page-status');
   if (read.some((k) => k.failed !== null)) say(st, read.find((k) => k.failed !== null).failed, '');
-  else if (!mayEdit) { st.className = 'status'; st.textContent = t('readOnly'); } else st.textContent = '';
+  else if (!mayEdit) { st.className = 'status'; st.dataset.readOnly = 'on'; st.textContent = t('readOnly'); } else { st.dataset.readOnly = 'off'; st.textContent = ''; }
   paint();
 }
 
@@ -281,3 +308,5 @@ function whyDisabled(btn, why) {
 }
 // the chrome loads after this script: its shared date fields replace the plain ones once it is there
 document.addEventListener('sre:chrome', () => { shopDate('g-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('c-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); paint(); }, { once: true });
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

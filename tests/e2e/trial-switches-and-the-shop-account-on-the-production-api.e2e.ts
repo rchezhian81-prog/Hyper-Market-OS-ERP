@@ -67,7 +67,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('trial swit
   it('IT previews and saves a switch for one lane, switches it off, and goes back to version 1 in one step', async () => {
     const { page, errors, close } = await open('u-it');
     await page.waitForSelector('#board:not([hidden])');
-    await waitText(page, '#board-rows', 'No trial switch has been set');
+    await waitText(page, '#board-table', 'No trial switch has been set'); // U5: the empty register is the chrome's state part
     expect(await page.isHidden('#meter')).toBe(false); // IT reads the meter
     expect(await page.isHidden('#consent')).toBe(true); // the consent record is the owner's
     for (const id of ['#ch-preview', '#ch-save']) expect(await page.locator(`${id} svg`).count(), id).toBe(1);

@@ -521,6 +521,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
               agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
               governance: inboxGovernance('A08', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              // U3 · OB-699: the reason as a code, so a screen says it in the reader's language (the note stays for older screens)
+              reason: killed ? 'kill_switch' : 'not_enabled',
               note: killed
                 ? 'The AI kill switch is on, so the Data Quality agent is stopped and shows no suggestions. Turn it off to see them again — nothing else in the shop is affected.'
                 : 'The Data Quality agent (A08) is not switched on for this tenant, so it shows no suggestions. Enable it by name to see them.',
@@ -587,6 +589,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
               agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
               governance: inboxGovernance('A06', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              // U3 · OB-699: the reason as a code, so a screen says it in the reader's language (the note stays for older screens)
+              reason: killed ? 'kill_switch' : 'not_enabled',
               note: killed
                 ? 'The AI kill switch is on, so the Operations agent is stopped and shows no recommendations. Turn it off to see them again — nothing else in the shop is affected.'
                 : 'The Operations agent (A06) is not switched on for this tenant, so it shows no recommendations. Enable it by name to see them.',
@@ -653,6 +657,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
               agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
               governance: inboxGovernance('A10', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
+              // U3 · OB-699: the reason as a code, so a screen says it in the reader's language (the note stays for older screens)
+              reason: killed ? 'kill_switch' : 'not_enabled',
               note: killed
                 ? 'The AI kill switch is on, so the Workforce guidance agent is stopped and shows no tasks. Turn it off to see them again — nothing else in the shop is affected.'
                 : 'The Workforce guidance agent (A10) is not switched on for this tenant, so it shows no tasks. Enable it by name to see them.',

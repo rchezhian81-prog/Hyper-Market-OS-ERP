@@ -52,6 +52,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'certificates',
   // OB-609 (owner, 29 Oct 2026): Bill findings and attendance flags.
   'findings',
+  // U6 (§27 Admin/Security keys · M32-FR-03): Keys and credentials.
+  'keys',
   // Round 4a (M03-FR-01..04 · M05-FR-01 · WF-01): the product-master and price-list pages.
   'product-details', 'product-categories', 'product-merges', 'tax-rates', 'price-lists', 'offer-results',
   // Round 4c (people and administration): Users & roles, Audit log, Staff list and shifts, Settings and their history.
@@ -76,15 +78,25 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   'payroll-legal',
   // W3 (money): Card, UPI and bank — settlement files, bank statements, cash deposits, cases and payment disputes.
   'settlement',
+  // U6 (UI/UX gap audit §27): Requests for quotation (M06-FR-02 · M24-FR-01) and Supplier claims (M07-FR-03 · M24-FR-02).
+  'rfq', 'supplier-claims',
+  // U6 (M23-FR-01 · M23-FR-03): Bank reconciliation; Payables and receivables.
+  'bank-reconciliation', 'payables-receivables',
   // W3 (M18 · D05-FR-03): the online-orders desk and the delivery area and slots.
   'online-orders', 'delivery-area',
   // Wave 3 (D14-FR-05/06 · M36-FR-02/04): partner webhooks, partners and sandboxes, the developer guide, the floor devices
   // (shelf labels, RFID, cameras) and the shop's own name and colours — head-office pages over their own routes.
   'partner-webhooks', 'partners', 'developer-docs', 'floor-devices', 'branding',
+  // U6 (§27 Product — label/ESL): the Electronic shelf labels page, over the labels' own routes.
+  'esl',
   // W3 (migration controls): Old system checks — MG-01/03/07/08/09/11/12 head-office routes that had no screen.
   'old-system',
   // W4 (M11-FR-02): Production costs — Finance reviews what each production run's output cost.
   'production-costs',
+  // U6 (UI/UX gap audit, 7 Nov 2026 · §27 Inventory): the stock ledger, the quarantine register, a stock correction with a reason.
+  'stock-ledger', 'quarantine', 'stock-adjustments',
+  // U6 (M21-FR-03 · M21-FR-04 · M16-FR-02): Compensation for approval, Customer satisfaction, Check consent.
+  'compensation', 'satisfaction', 'consent-check',
 ] as const);
 export type HeadOfficePageScreen = (typeof HEAD_OFFICE_PAGE_SCREENS)[number];
 
@@ -156,6 +168,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   quotations: 'quotationsData',
   certificates: 'certificatesData',
   findings: 'findingsData',
+  keys: 'keysData',
   'product-details': 'productDetailsData',
   'product-categories': 'productCategoriesData',
   'product-merges': 'productMergesData',
@@ -176,9 +189,13 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'product-checks': 'productChecksData',
   'posting-map': 'postingMapData',
   settlement: 'settlementBankData',
+  'bank-reconciliation': 'bankReconciliationData',
+  'payables-receivables': 'payablesReceivablesData',
   'facilities-setup': 'facilitiesSetupData',
   'production-recipes': 'productionRecipesData',
   'data-requests': 'dataRequestsData',
+  rfq: 'rfqData',
+  'supplier-claims': 'supplierClaimsData',
   'customer-value': 'customerValueData',
   'message-queue': 'messageQueueData',
   'compensation-limits': 'compensationLimitsData',
@@ -198,9 +215,16 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   partners: 'partnersData',
   'developer-docs': 'developerDocsData',
   'floor-devices': 'floorDevicesData',
+  compensation: 'compensationData',
+  satisfaction: 'satisfactionData',
+  'consent-check': 'consentCheckData',
+  esl: 'eslData',
   branding: 'brandingData',
   'old-system': 'oldSystemData',
   'production-costs': 'productionCostsData',
+  'stock-ledger': 'stockLedgerData',
+  quarantine: 'quarantineData',
+  'stock-adjustments': 'stockAdjustmentsData',
 });
 
 export const HEAD_OFFICE_PAGES: readonly HeadOfficePage[] = Object.freeze(HEAD_OFFICE_PAGE_SCREENS.map((screen) => Object.freeze({
@@ -260,6 +284,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'online-orders': findingsPagePayload,
   // Wave 3 (D14-FR-05): the floor devices of the box's own store (head office still keeps each read to the person's stores).
   'floor-devices': findingsPagePayload,
+  // U6: the shelf labels of the box's own store.
+  esl: findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

@@ -50,6 +50,7 @@ import {
   type ConsentPurposeSpec,
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest, type ShopCommerceRequest } from './shop-transport';
+import { categoriesOf, productsInCategory, type CatalogueCategory, type BrowseCategory } from './categories';
 import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
 import { basketKey, COUPON_CODE, repeatOrderBody, todayAtShop, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
 import { createScanAndGo, linesForTheShop, type ScanAndGo, type ScanProduct } from './scan-and-go';
@@ -85,6 +86,8 @@ export interface ShopData {
   readonly deliveryFeeMinor?: number;
   /** The store (stock location) that fulfils this app's orders — told by the box, never guessed here. */
   readonly locationId?: string;
+  /** U6 · M20-FR-01: the pack's category names beside the products, from the store computer, for browsing by category. */
+  readonly categories?: readonly CatalogueCategory[];
   /** The purposes this tenant asks consent for. Choose-able, never hard-coded. */
   readonly consentPurposes?: readonly ConsentPurposeSpec[];
   readonly consent?: ConsentState;
@@ -212,6 +215,10 @@ export interface Shop {
   state(): SessionState;
   /** Search the catalogue this device holds. Typo-tolerant; the ranking lives in the package. */
   search(term: string): ReturnType<typeof searchCatalogue>;
+  /** U6 · M20-FR-01 · §27 "Customer: Category": the categories worth a tap, counted, in the reader's language — offline. */
+  categories(language: 'en' | 'ta'): readonly BrowseCategory[];
+  /** U6: the sellable products of one category (a parent reaches its children), by name — offline. */
+  inCategory(categoryId: string): readonly StorefrontProduct[];
   /** Add or change a line. Any change invalidates the review — the total must be seen again. */
   setLine(productId: string, quantityMinor: number): SessionState;
   /** Rebuild a past basket in one tap (≤3 taps to reorder, QG-02). */
@@ -396,7 +403,19 @@ export interface MyCase {
   readonly replies: readonly { readonly text: string; readonly at: string; readonly channel: string }[];
   readonly returnRequest?: { readonly requestId: string; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[] };
 }
+/** U6 · M17 · §27 "Customer: Loyalty": my points as head office holds them — read, never moved from the app. */
+export interface MyLoyalty {
+  readonly member: boolean;
+  readonly pointsBalance?: number;
+  readonly pointValuePaise?: number;
+  readonly worthMinor?: number;
+  readonly say: string;
+  readonly howToSpend?: string;
+}
+
 export interface MyShop {
+  /** U6: my points and what they are worth at the till (`GET /v1/me/loyalty`). */
+  loyalty(): Promise<MineOutcome<MyLoyalty>>;
   favourites(): Promise<MineOutcome<readonly string[]>>;
   setFavourite(productId: string, favourite: boolean): Promise<MineOutcome<boolean>>;
   lists(): Promise<MineOutcome<readonly { readonly listId: string; readonly name: string; readonly items: readonly { readonly productId: string; readonly quantityMinor: number }[] }[]>>;
@@ -506,6 +525,8 @@ export function bootShop(
     state: () => state,
 
     search: (term) => searchCatalogue({ query: term, products }),
+    categories: (language) => categoriesOf(products, data?.categories ?? [], language),
+    inCategory: (categoryId) => productsInCategory(products, data?.categories ?? [], categoryId),
 
     setLine: (productId, quantityMinor) => keep(setLine(state, { productId, quantityMinor })),
 
@@ -653,6 +674,10 @@ export function bootShop(
     },
 
     mine: {
+      loyalty: async () => {
+        const a = await mineCall({ method: 'GET', path: 'loyalty' });
+        return a.ok ? { ok: true, value: a.body as MyLoyalty } : a;
+      },
       favourites: async () => {
         const a = await mineCall({ method: 'GET', path: 'favourites' });
         return a.ok ? { ok: true, value: ((a.body as { favourites?: { productId: string }[] }).favourites ?? []).map((f) => f.productId) } : a;

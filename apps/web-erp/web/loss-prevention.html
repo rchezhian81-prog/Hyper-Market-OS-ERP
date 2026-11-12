@@ -35,7 +35,6 @@
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .closer { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .closer label { font-size:14px; color:var(--muted); }
@@ -44,17 +43,13 @@
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
       button.act:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
-      .pick-row input { flex: 1 1 140px; min-width: 0; }
-      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 </style>
   </head>
   <body>
@@ -162,8 +157,8 @@
       </section>
       <!-- OB-288 LP/workforce package — end -->
 
-      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <p class="result" id="result" hidden role="status" aria-live="polite"></p>
+      <div class="state" id="state" hidden></div>
     </main>
 
     <!--SCREEN-DATA-->

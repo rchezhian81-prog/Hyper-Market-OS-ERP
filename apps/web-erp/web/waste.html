@@ -33,13 +33,12 @@
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .prod { font-weight:600; } .row .val { color:var(--ink); font-variant-numeric:tabular-nums; font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; }
       .badges { display:flex; gap:8px; flex-wrap:wrap; }
       .badges b { font-size: var(--fs-sm); padding:2px 8px; border-radius:999px; background:var(--line); color:var(--ink); font-weight:600; }
       .badges b.warn { background:var(--warn-surface); color:var(--on-warn-surface); } .badges b.muted { background:var(--panel-2); color:var(--muted); font-weight:500; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.state.tone-error { color:var(--danger-text); }
     </style>
   </head>
   <body>
@@ -65,7 +64,7 @@
       </div>
 
       <ul class="rows" id="rows" aria-label="Recorded losses"></ul>
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <div class="state" id="state" hidden></div>
     </main>
 
     <!--SCREEN-DATA-->

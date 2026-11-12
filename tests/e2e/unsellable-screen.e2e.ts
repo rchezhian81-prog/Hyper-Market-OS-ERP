@@ -110,8 +110,8 @@ describe.skipIf(!HAVE_BROWSER)('products nobody can sell, on the real box in a r
     expect((await page.textContent('#summary')) ?? '').toContain('1 products the till can sell');
     expect((await page.textContent('#groups section.group[data-reason="recall_block"]')) ?? '').toContain('Expiry & recalls');
     expect((await page.textContent('#groups section.group[data-reason="unknown_uom"]')) ?? '').toContain('unknown unit of measure "bundle"');
-    // The state line reads as a state: an icon hidden from the reader and words for it.
-    expect(await page.getAttribute('#state-icon', 'aria-hidden')).toBe('true');
+    // The state line is the chrome's state box (U5): its words are the state, no icon character.
+    expect(await page.locator('#state .sre-state').count()).toBe(1);
     expect((await page.textContent('#state-text')) ?? '').toContain('refused at the till');
 
     // Tamil: the heading, the reasons and the product's Tamil name where it has one.

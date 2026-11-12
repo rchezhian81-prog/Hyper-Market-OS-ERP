@@ -302,10 +302,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-205 · the office pages, polished inside the 
 
     const counts = await open('counts.html', 1280, []);
     try {
-      await counts.waitForSelector('#rows li.row');
-      // a count the box holds without a money value
-      expect(await counts.textContent('#rows li.row:nth-child(2) .val')).toBe('Value not known');
-      expect(await counts.getAttribute('#rows li.row:nth-child(2) .val svg', 'data-icon')).toBe('circle-help');
+      // U5 (G17): the counts are the chrome's register; a count the box holds without a money value says "Not known" in the unknown tone
+      await counts.waitForSelector('#counts-grid tbody tr');
+      expect(await counts.textContent('#counts-grid tbody tr:nth-child(2) td[data-label="Value"]')).toBe('Not known');
+      expect(await counts.getAttribute('#counts-grid tbody tr:nth-child(2) td[data-label="Value"]', 'class')).toContain('sre-unknown');
       // no bare copy key ever reaches the screen
       expect(await counts.textContent('main')).not.toMatch(/neededApproval|approvedByLabel|counterLabel/);
     } finally {

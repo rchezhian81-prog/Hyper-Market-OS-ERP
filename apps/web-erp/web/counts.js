@@ -7,6 +7,12 @@
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
 function sampleSession() {
@@ -54,56 +60,27 @@ const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
 
 /** OB-205: a shape from the one icon set (sre-icons.js), or null when the set is not loaded. */
 const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
-/** A tone's shape, with the session's glyph only if the set is missing. */
-function toneMark(holder, tone, glyph) {
-  const mark = window.sreIcon && typeof window.sreIcon.forTone === 'function' ? lineIcon(window.sreIcon.forTone(tone), 16) : null;
-  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
-}
-/** A cell's own word for a screen reader (and, on a phone, for the eye) — the register's caption, kept with the figure. */
-function captioned(className, caption, value) {
-  const cell = document.createElement('span'); cell.className = className;
-  const cap = document.createElement('span'); cap.className = 'sr-cap'; cap.textContent = `${caption} `;
-  cell.append(cap, document.createTextNode(value));
-  return cell;
-}
-
-/** One count: product, where it stands (a chip — shape + word), counted and system quantities, the difference and its
- *  value — each in its own column, right-aligned in tabular figures. A count without a value says "Value not known". */
-function rowNode(r) {
-  const li = document.createElement('li');
-  li.className = `row tone-${r.status.tone}`;
-
-  const prod = document.createElement('span'); prod.className = 'prod'; prod.textContent = r.productId;
-
-  const status = document.createElement('span');
-  status.className = 'status sre-chip';
-  status.dataset.tone = r.status.tone;
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, r.status.tone, r.status.icon);
-  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
-  status.append(icon, slabel);
-  status.setAttribute('aria-label', r.status.announcement || r.status.label);
-
-  const notKnown = r.value === t('valueNotKnown');
-  const val = document.createElement('span');
-  val.className = notKnown ? 'val unknown' : 'val';
-  const mark = notKnown ? lineIcon('circle-help', 16) : null;
-  if (mark) val.append(mark);
-  val.append(document.createTextNode(r.value));
-
-  li.append(prod, status,
-    captioned('q', vw('counted'), r.counted),
-    captioned('q', vw('system'), r.expected),
-    captioned('q var', vw('colVariance'), r.variance),
-    val);
-
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  if (r.neededApproval) { const b = document.createElement('b'); b.className = 'warn'; b.textContent = t('neededApproval'); meta.append(b); }
-  if (r.approvedBy) { const b = document.createElement('b'); b.className = 'muted'; b.textContent = `${t('approvedByLabel')}: ${r.approvedBy}`; meta.append(b); }
-  if (r.counterId) { const b = document.createElement('span'); b.textContent = `${t('counterLabel')}: ${r.counterId}`; meta.append(b); }
-  if (meta.childNodes.length > 0) li.append(meta);
-
-  return li;
+const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+const bothV = (k) => ({ en: VIEW_WORDS.en[k], ta: VIEW_WORDS.ta[k] });
+let register = null;
+/** The counts on the chrome's register: product, where it stands (the one chip), counted, system, the difference, the value. */
+function ensureRegister() {
+  const o = office(); if (!o || register !== null) return register;
+  register = o.table(el('register'), {
+    id: 'counts', label: bothV('colProd'), pageSize: 10, sortable: true, rows: null,
+    rowKey: (r) => r.id ?? r.productId, rowData: (r) => ({ product: r.productId, tone: r.status.tone, attention: String(r.needsAttention) }),
+    columns: [
+      { key: 'productId', label: bothV('colProd'), value: (r) => (o.nameOf('product', r.productId) || r.productId) },
+      { key: 'status', label: bothV('colStatus'), filter: true, value: (r) => r.status.label, render: (r) => { const chip = o.chip(r.status.tone, r.status.label); chip.setAttribute('aria-label', r.status.announcement || r.status.label); chip.classList.add('status'); return chip; } },
+      { key: 'counted', label: bothV('counted'), align: 'end', sort: false },
+      { key: 'expected', label: bothV('system'), align: 'end', sort: false },
+      { key: 'variance', label: bothV('colVariance'), align: 'end', sort: false },
+      { key: 'value', label: bothV('colValue'), align: 'end', sort: false, value: (r) => (r.value === t('valueNotKnown') ? null : r.value) },
+      { key: 'approval', label: both('neededApproval'), filter: true, value: (r) => (r.neededApproval ? t('neededApproval') : ''), render: (r) => (r.neededApproval ? o.chip('degraded', t('neededApproval')) : document.createTextNode('')) },
+      { key: 'people', label: both('counterLabel'), sort: false, value: (r) => [r.counterId ? `${t('counterLabel')}: ${o.nameOf('person', r.counterId) || r.counterId}` : '', r.approvedBy ? `${t('approvedByLabel')}: ${o.nameOf('person', r.approvedBy) || r.approvedBy}` : ''].filter((x) => x !== '').join(' · ') },
+    ],
+  });
+  return register;
 }
 
 function paint() {
@@ -120,48 +97,29 @@ function paint() {
   const filterMark = lineIcon(attentionOnly ? 'list' : 'triangle-alert', 18);
   el('filter').replaceChildren(...(filterMark ? [filterMark] : []), filterWords);
   el('filter').setAttribute('aria-pressed', attentionOnly ? 'true' : 'false');
-  el('col-prod').textContent = vw('colProd');
-  el('col-status').textContent = vw('colStatus');
-  el('col-counted').textContent = vw('counted');
-  el('col-system').textContent = vw('system');
-  el('col-variance').textContent = vw('colVariance');
-  el('col-value').textContent = vw('colValue');
-
-  // The summary panel: the figure large, its words under it (the words still read in the same order).
-  const count = el('attention-count');
-  el('attention-stat').dataset.tone = view.attentionCount === 0 ? 'ok' : 'error';
-  if (view.attentionCount === 0) {
-    count.className = 'count clear sre-with-icon';
-    const ok = lineIcon('circle-check', 20);
-    const words = document.createElement('span'); words.textContent = t('allClear');
-    count.replaceChildren(...(ok ? [ok] : []), words);
-  } else {
-    count.className = 'count attention';
-    const n = document.createElement('b'); n.className = 'n'; n.textContent = String(view.attentionCount);
-    const l = document.createElement('span'); l.className = 'l'; l.textContent = t('attentionCount');
-    count.replaceChildren(n, document.createTextNode(' '), l);
+  // The figures as summary cards: how many needed a second approval (and that none did, when none did), the value at variance.
+  const o = office();
+  if (o) {
+    o.cards(el('stats'), [
+      { label: both('attentionCount'), value: view.attentionCount, tone: view.attentionCount === 0 ? 'ok' : 'error', note: view.attentionCount === 0 ? both('allClear') : undefined },
+      { label: both('totalVariance'), value: view.totalValue },
+    ]);
   }
-  const label = document.createElement('span'); label.className = 'l'; label.textContent = t('totalVariance');
-  const colon = document.createElement('span'); colon.className = 'sr-only'; colon.textContent = ': ';
-  const b = document.createElement('b'); b.className = 'n'; b.textContent = view.totalValue;
-  el('total').replaceChildren(label, colon, b);
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
   nobody.textContent = view.nobodyNamed ? t('nobodyNamed') : '';
 
   const shown = attentionOnly ? view.rows.filter((r) => r.needsAttention) : view.rows;
-  el('rows').replaceChildren(...shown.map(rowNode));
-
   const state = el('state');
   el('register').hidden = shown.length === 0;
   if (shown.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
-    el('state-text').textContent = view.screenState.label;
+    if (o) { const box = o.state(state, stateKindOf(view.screenState.tone), { title: view.screenState.label, detail: '' }); box.querySelector('strong').id = 'state-text'; }
+    else state.textContent = view.screenState.label;
   } else {
     state.hidden = true;
+    if (ensureRegister() !== null) { register.setRows(shown); register.repaint(); }
   }
 }
 
@@ -171,6 +129,7 @@ el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; p
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+whenChrome(paint);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

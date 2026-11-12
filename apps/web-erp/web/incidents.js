@@ -12,35 +12,15 @@ const $ = (id) => document.getElementById(id);
 // the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
 // changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
 const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
-const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
-const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
 const u2bRepaints = [];
 const repaintPickers = () => { for (const f of u2bRepaints) f(); };
 /** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
 function pickableEl(input, kind, titleKey, extra = {}) {
-  if (!input || input.dataset.pickable === 'on') return;
+  // U5: the chrome's own adapter (`sreOffice.pickable`) draws the "Choose…" button (#<id>-pick) and the name beside (#<id>-name);
+  // this page keeps only its title words and the per-field options. The typed code stays the fallback (never a dead end).
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  if (!office || typeof office.pickable !== 'function') return;
+  office.pickable(input, kind, { en: u2bWords.en[titleKey] ?? titleKey, ta: u2bWords.ta[titleKey] ?? titleKey }, extra);
 }
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
@@ -65,23 +45,20 @@ const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
 function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  // U5: the chrome's own adapter (`sreOffice.shopDate`) swaps the box for the shared dd/mm/yyyy field under the same id; the
+  // page reads ISO back with `dateOf` and remembers which fields it swapped.
+  const office = window.sreOffice;
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (office.shopDate(id, words, opts) !== null) shopDates.set(id, words);
 }
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never the UTC clock.
 const when = (iso) => (typeof iso === 'string' ? window.sreShopDay?.dateTimeOf(iso) ?? '' : '');
 
 let board = null; // { incidents, open } | null
-let register = null; // DrillRegister | null
+let drillRegister = null; // DrillRegister | null
+let loaded = false; // head office has answered once (ok or refused)
 let targets = [];
 let current = null; // IncidentDetail | null
 let tab = 'incidents';
@@ -92,7 +69,7 @@ function say(el, out, good) {
 }
 
 function paintSummary() {
-  const s = api.summarise(board?.incidents ?? null, register);
+  const s = api.summarise(board?.incidents ?? null, drillRegister);
   $('v-open').textContent = s.openIncidents === null ? '—' : String(s.openIncidents);
   $('p-open').classList.toggle('attention', (s.openIncidents ?? 0) > 0);
   $('v-actions').textContent = s.openActions === null ? '—' : String(s.openActions);
@@ -104,40 +81,71 @@ function paintSummary() {
   $('p-posture').classList.toggle('attention', s.posture === null || s.posture.length === 0 || s.posture.some((p) => !p.passed));
 }
 
-function cell(text, cls) { const td = document.createElement('td'); if (cls) { const span = document.createElement('span'); span.className = cls; span.textContent = text; td.append(span); } else td.textContent = text; return td; }
 
+// ── U5 · G17 (UI/UX gap audit): every list on this page is the chrome's register part (`sreOffice.table`) — search, sort
+// with its direction in words, paging, a count line, rows that stack on a phone. The old `<tbody id>` is kept as the
+// register's body id so the records' data attributes read the same. Before the chrome has loaded the host waits for it.
+const registers = new Map();
+function register(hostId, opts) {
+  const host = $(hostId); const o = window.sreOffice;
+  if (host === null) return null;
+  if (!o || typeof o.table !== 'function') {
+    if (!registers.has(hostId)) { registers.set(hostId, null); document.addEventListener('sre:chrome', () => { registers.delete(hostId); register(hostId, opts); }, { once: true }); }
+    return null;
+  }
+  let c = registers.get(hostId) ?? null;
+  if (c === null || !c.connected()) { c = o.table(host, opts); registers.set(hostId, c); }
+  else if (opts.state) c.setState(opts.state, opts.stateOpts ?? {}); else c.setRows(opts.rows ?? null);
+  return c;
+}
+const chip = (tone, label) => { const o = window.sreOffice; if (o && typeof o.chip === 'function') return o.chip(tone, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.dataset.tone = tone; s.textContent = typeof label === 'string' ? label : (label?.en ?? ''); return s; };
+const recordChip = (state, label) => { const o = window.sreOffice; if (o && typeof o.recordChip === 'function') return o.recordChip(state, label); return chip('idle', label ?? state); };
+const W = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+
+const SEVERITY_TONE = { sev1: 'error', sev2: 'degraded', sev3: 'pending' };
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 function paintIncidents() {
-  const body = $('incident-rows');
-  body.replaceChildren();
   const rows = board?.incidents ?? [];
-  $('no-incidents').hidden = board === null || rows.length > 0;
-  $('no-incidents').textContent = t('noIncidents');
-  for (const i of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.incident = i.incidentId;
-    tr.dataset.state = i.state;
-    tr.tabIndex = 0;
-    tr.append(cell(i.title), cell(t(i.severity), `tag ${i.severity}`), cell(i.state === 'open' ? t('stateOpen') : t('stateClosed')), cell(`${when(i.openedAt)} · ${i.openedBy}`), cell(String(i.openActions)), cell(i.hasPostmortem ? t('yes') : t('no')));
-    const open = () => { void openRecord(i.incidentId); };
-    tr.addEventListener('click', open);
-    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-    body.append(tr);
+  const c = register('incident-host', {
+    id: 'incidents', label: W('tabIncidents'), bodyId: 'incident-rows', sortable: true, pageSize: 10,
+    rowKey: (i) => i.incidentId, rowData: (i) => ({ incident: i.incidentId, state: i.state }),
+    columns: [
+      { key: 'title', label: W('colIncident') },
+      { key: 'severity', label: W('colSeverity'), filter: true, value: (i) => t(i.severity), render: (i) => chip(SEVERITY_TONE[i.severity] ?? 'unknown', t(i.severity)) },
+      { key: 'state', label: W('colState'), filter: true, value: (i) => (i.state === 'open' ? t('stateOpen') : t('stateClosed')), render: (i) => recordChip(i.state === 'open' ? 'open' : 'closed', i.state === 'open' ? t('stateOpen') : t('stateClosed')) },
+      { key: 'openedAt', label: W('colOpened'), value: (i) => `${when(i.openedAt)} · ${nameOf('person', i.openedBy)}` },
+      { key: 'openActions', label: W('colFollowUps'), sort: 'number', align: 'end', value: (i) => i.openActions },
+      { key: 'hasPostmortem', label: W('colPostmortem'), value: (i) => (i.hasPostmortem ? t('yes') : t('no')) },
+      { key: 'open', label: W('openRecord'), sort: false, render: (i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet'; b.dataset.act = 'open'; b.textContent = t('openRecord'); b.addEventListener('click', (e) => { e.stopPropagation(); void openRecord(i.incidentId); }); return b; } },
+    ],
+    rows: board === null ? null : rows,
+    ...(board === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noIncidents') },
+  });
+  // a tap on the row itself still opens the record (the Open button is the named way)
+  if (c !== null && !$('incident-host').dataset.wired) {
+    $('incident-host').dataset.wired = '1';
+    $('incident-host').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-incident]'); if (tr === null || e.target.closest('button')) return; void openRecord(tr.dataset.incident); });
   }
 }
 
 function paintDrills() {
-  const body = $('drill-rows');
-  body.replaceChildren();
-  const rows = register?.drills ?? [];
-  $('no-drills').hidden = register === null || rows.length > 0;
-  $('no-drills').textContent = t('noDrills');
-  for (const d of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.drill = d.drillId;
-    tr.dataset.passed = String(d.result.passed);
-    tr.append(cell(d.drillId), cell(d.result.service), cell(`${d.result.passed ? t('passed') : t('missed')} — ${d.result.detail}`, `tag ${d.result.passed ? 'passed' : 'missed'}`), cell(when(d.drilledAt)), cell(d.drilledBy));
-    body.append(tr);
-  }
+  const rows = drillRegister?.drills ?? [];
+  register('drill-host', {
+    id: 'drills', label: W('tabDrills'), bodyId: 'drill-rows', sortable: true, pageSize: 10,
+    rowKey: (d) => d.drillId, rowData: (d) => ({ drill: d.drillId, passed: String(d.result.passed) }),
+    columns: [
+      { key: 'drillId', label: W('colDrill') },
+      { key: 'service', label: W('colService'), filter: true, value: (d) => d.result.service },
+      // the drill's result as the one chip, head office's detail beside it
+      { key: 'result', label: W('colResult'), value: (d) => `${d.result.passed ? t('passed') : t('missed')} — ${d.result.detail}`, render: (d) => { const f = document.createDocumentFragment(); f.append(chip(d.result.passed ? 'ok' : 'error', d.result.passed ? t('passed') : t('missed')), document.createTextNode(` — ${d.result.detail}`)); return f; } },
+      { key: 'drilledAt', label: W('colWhen'), value: (d) => when(d.drilledAt) },
+      { key: 'drilledBy', label: W('colBy'), value: (d) => nameOf('person', d.drilledBy) },
+    ],
+    rows: drillRegister === null ? null : rows,
+    ...(drillRegister === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noDrills') },
+  });
   const select = $('d-service');
   if (select.options.length !== targets.length) {
     select.replaceChildren(...targets.map((x) => { const o = document.createElement('option'); o.value = x.service; o.textContent = x.service; return o; }));
@@ -187,8 +195,6 @@ function paintWords() {
   document.title = `SRE ${t('title')}`;
   const pairs = [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['open-new', 'newIncident'], ['k-open', 'sumOpen'], ['k-actions', 'sumActions'], ['k-drills', 'sumDrills'], ['k-posture', 'sumPosture'],
     ['tab-incidents', 'tabIncidents'], ['tab-drills', 'tabDrills'], ['incidents-h', 'tabIncidents'], ['incidents-lead', 'incidentsLead'], ['drills-h', 'tabDrills'], ['drills-lead', 'drillsLead'],
-    ['c-incident', 'colIncident'], ['c-severity', 'colSeverity'], ['c-state', 'colState'], ['c-opened', 'colOpened'], ['c-followups', 'colFollowUps'], ['c-pm', 'colPostmortem'],
-    ['c-drill', 'colDrill'], ['c-service', 'colService'], ['c-result', 'colResult'], ['c-when', 'colWhen'], ['c-by', 'colBy'],
     ['drill-form-h', 'recordDrill'], ['l-d-id', 'dId'], ['l-d-service', 'dService'], ['l-d-loss', 'dLoss'], ['l-d-back', 'dBack'], ['d-save', 'saveDrill'],
     ['new-h', 'newIncident'], ['l-n-title', 'fTitle'], ['l-n-severity', 'fSeverity'], ['l-n-summary', 'fSummary'], ['n-save', 'save'], ['n-cancel', 'cancel'], ['o-sev1', 'sev1'], ['o-sev2', 'sev2'], ['o-sev3', 'sev3'],
     ['r-close', 'cancel'], ['r-timeline-h', 'timeline'], ['l-t-when', 'tlWhen'], ['l-t-note', 'tlNote'], ['t-add', 'addTimeline'], ['r-actions-h', 'actions'], ['l-a-desc', 'aDesc'], ['l-a-owner', 'aOwner'], ['l-a-due', 'aDue'], ['a-add', 'addAction'],
@@ -217,10 +223,11 @@ async function load() {
   const reads = [];
   if (may.readIncidents) reads.push(session.board().then((out) => { if (out.result === 'ok') board = out.value; else say($('page-status'), out, ''); }));
   if (may.readDrills) {
-    reads.push(session.drills().then((out) => { if (out.result === 'ok') register = out.value; else say($('page-status'), out, ''); }));
+    reads.push(session.drills().then((out) => { if (out.result === 'ok') drillRegister = out.value; else say($('page-status'), out, ''); }));
     reads.push(session.targets().then((out) => { if (out.result === 'ok') targets = out.value; }));
   }
   await Promise.all(reads);
+  loaded = true;
   paintSummary(); paintIncidents(); paintDrills();
 }
 

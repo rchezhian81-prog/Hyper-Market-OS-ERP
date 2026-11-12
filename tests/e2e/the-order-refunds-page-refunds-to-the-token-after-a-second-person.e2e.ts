@@ -68,26 +68,26 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Order 
 
       // Issue before asking: refused on the page.
       await page.click('#issue');
-      expect(await page.textContent('#refund-status')).toBe('⚠ Ask for the approval first, then issue the refund once it is approved.');
+      expect(await page.textContent('#refund-status')).toContain('Ask for the approval first, then issue the refund once it is approved.');
       await page.fill('#amount', '40');
       await page.selectOption('#basis', 'goodwill');
       await page.click('#ask');
-      expect(await page.textContent('#refund-status')).toBe('⚠ Say why in words first. Nothing was sent.');
+      expect(await page.textContent('#refund-status')).toContain('Say why in words first. Nothing was sent.');
       await page.fill('#reason', 'Late delivery (synthetic)');
       await page.click('#ask');
-      await page.locator('#refund-status', { hasText: '✓ Asked' }).waitFor({ timeout: 15_000 });
+      await page.locator('#refund-status', { hasText: 'Asked' }).waitFor({ timeout: 15_000 });
       const requestId = await page.inputValue('#approval-id');
       expect(requestId).not.toBe('');
       // Issued before the second person decides: head office refuses it.
       await page.click('#issue');
       await confirmSheet(page);
-      await page.locator('#refund-status', { hasText: '⚠ Head office refused:' }).waitFor({ timeout: 15_000 });
+      await page.locator('#refund-status', { hasText: 'Head office refused:' }).waitFor({ timeout: 15_000 });
       // Nothing moved. Once the owner approves that same request in his own session, the page's kept draft goes.
       await approve(requestId);
       await page.click('#issue');
       await confirmSheet(page);
       await page.locator('#refund-status[data-state="issued"]').waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#refund-status')).toMatch(/^✓ Refund rf-\w+ · ₹40\.00 — refunded$/);
+      expect(await page.textContent('#refund-status')).toMatch(/Refund rf-\w+ · ₹40\.00 — refunded$/);
       await page.locator('#money .refundable', { hasText: '₹60.00' }).waitFor({ timeout: 15_000 });
       expect(await page.textContent('#money .refunded')).toBe('Refunded: ₹40.00');
 
@@ -97,22 +97,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Order 
       await page.fill('#reason', 'Item missing (synthetic)');
       await page.selectOption('#basis', 'short_pick');
       await page.click('#ask');
-      await page.locator('#refund-status', { hasText: '✓ Asked' }).waitFor({ timeout: 15_000 });
+      await page.locator('#refund-status', { hasText: 'Asked' }).waitFor({ timeout: 15_000 });
       await approve(await page.inputValue('#approval-id'));
       await page.click('#issue');
       await confirmSheet(page);
       await page.locator('#refund-status[data-state="pending"]').waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#refund-status')).toMatch(/^⏱ Refund rf-\w+ · ₹25\.00 — waiting for the bank$/);
+      expect(await page.textContent('#refund-status')).toMatch(/Refund rf-\w+ · ₹25\.00 — waiting for the bank$/);
       await page.click('#show-pending');
       const row = page.locator('#pending li[data-order="o-slow"]');
       await row.waitFor({ timeout: 15_000 });
-      expect(await row.innerText()).toMatch(/⏱ Refund not confirmed by the bank — o-slow · ₹25\.00[\s\S]*Something was missing · Item missing \(synthetic\)/);
+      expect(await row.innerText()).toMatch(/Refund not confirmed by the bank — o-slow · ₹25\.00[\s\S]*Something was missing · Item missing \(synthetic\)/);
       await row.locator('button.outcome-refunded').click();
-      expect(await page.textContent('#pending-status')).toBe('⚠ Give the bank statement line first. Nothing was sent.');
+      expect(await page.textContent('#pending-status')).toContain('Give the bank statement line first. Nothing was sent.');
       await row.locator('input.statement').fill('STMT-2026-10-23-0042');
       await row.locator('button.outcome-refunded').click();
       await page.locator('#pending li', { hasText: 'Nothing is waiting on the bank.' }).waitFor({ timeout: 15_000 });
-      expect(await page.textContent('#pending-status')).toMatch(/^✓ Recorded from the statement: rf-\w+ — The bank refunded it$/);
+      expect(await page.textContent('#pending-status')).toMatch(/Recorded from the statement: rf-\w+ — The bank refunded it$/);
       for (const id of ['show-pending', 'show-order', 'ask', 'issue']) expect(await page.locator(`#${id} svg.sre-icon`).count(), id).toBe(1);
 
       await page.click('#lang');

@@ -14,10 +14,10 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
 const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = $(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
 function shopDate(id, words, opts = {}) {
   const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
+  if (!office || typeof office.dateField !== 'function' || input === null || input.closest('.sre-date') !== null) return;
   // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
   const typed = input.value.trim();
   const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
@@ -63,6 +63,7 @@ function paintClaim(c) {
   if (may.claim && c.state === 'raised') {
     acts.append(button(t('ask'), 'ask', 'send'));
     acts.append(field('sent-on', t('sentDay'), reg?.today ?? ''));
+    $('sent-on-words')?.remove();
     acts.append(button(t('send'), 'send', 'check'));
   }
   if (may.claim && (c.state === 'raised' || c.state === 'sent' || c.state === 'partly_answered')) {
@@ -125,6 +126,7 @@ function paintDocument() {
 }
 function paint() {
   repaintShopDates();
+  if ($('sent-on') && !$('sent-on').closest('.sre-date')) { $('sent-on').id = 'sent-on'; shopDate('sent-on', { en: wordsIn('en', 'sentDay'), ta: wordsIn('ta', 'sentDay') }); }
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['register-h', 'registerH'], ['r-show-text', 'show'], ['raise-h', 'raiseH'], ['c-scheme-l', 'schemeId'], ['c-amount-l', 'amountRs'], ['c-note-l', 'note'], ['c-raise-text', 'raise'],

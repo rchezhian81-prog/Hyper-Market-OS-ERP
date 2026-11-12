@@ -32,31 +32,46 @@ function roleIds() {
   return shown;
 }
 
+// U5 · G17 · G13: the money limits as the chrome's register — one row per role, one column per kind; a cell carries the
+// figure now (as words, never a ○ / ∞ / ✓ character) and, for every role but the owner, the box to propose a new figure.
+let limitsTable = null;
 function paintLimits() {
   // OB-500 (R7-A): the money-limit columns include a price cut at the till (an older bundle without them shows the three).
   const limitKinds = api.limitKinds ?? api.kinds;
-  $('limits-head').replaceChildren(text('th', t('role')), ...limitKinds.map((k) => text('th', t(`k_${k}`))));
-  $('limits-body').replaceChildren(...roleIds().map((roleId) => {
-    const tr = document.createElement('tr');
-    tr.dataset.role = roleId;
-    tr.append(text('th', t(`r_${roleId}`) === `r_${roleId}` ? roleId : t(`r_${roleId}`)));
-    for (const k of limitKinds) {
-      const td = document.createElement('td');
-      const v = rules.limits.value.byRole[roleId]?.[k];
-      const now = text('span', `${v === undefined ? '○' : v === null ? '∞' : '✓'} ${api.limitWords(lang, v)}`, 'now');
-      now.dataset.kind = k;
-      if (roleId === 'owner') { td.append(now); tr.append(td); continue; }
-      const input = document.createElement('input');
-      input.inputMode = 'decimal'; input.autocomplete = 'off';
-      input.id = `limit-${roleId}-${k}`; input.dataset.role = roleId; input.dataset.kind = k;
-      input.setAttribute('aria-label', `${roleId} ${t(`k_${k}`)}`);
-      input.value = v === undefined || v === null ? '' : String(v / 100);
-      input.disabled = !may.propose;
-      td.append(input, now);
-      tr.append(td);
-    }
-    return tr;
-  }));
+  const o = window.sreOffice;
+  if (!o || typeof o.table !== 'function') { document.addEventListener('sre:chrome', paintLimits, { once: true }); return; }
+  const W = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+  const roleWords = (roleId) => (t(`r_${roleId}`) === `r_${roleId}` ? roleId : t(`r_${roleId}`));
+  const rows = roleIds().map((roleId) => ({ roleId }));
+  const opts = {
+    id: 'limits', label: W('limitsH'), bodyId: 'limits-body', pageSize: 50, search: false, count: false,
+    rowKey: (r) => r.roleId, rowData: (r) => ({ role: r.roleId }),
+    columns: [
+      { key: 'role', label: W('role'), value: (r) => roleWords(r.roleId) },
+      ...limitKinds.map((k) => ({
+        key: k, label: W(`k_${k}`), sort: false,
+        value: (r) => api.limitWords(lang, rules.limits.value.byRole[r.roleId]?.[k]),
+        render: (r) => {
+          const roleId = r.roleId;
+          const v = rules.limits.value.byRole[roleId]?.[k];
+          const frag = document.createDocumentFragment();
+          const now = text('span', api.limitWords(lang, v), 'now');
+          now.dataset.kind = k; now.dataset.state = v === undefined ? 'not_set' : v === null ? 'unlimited' : 'set';
+          if (roleId === 'owner') { frag.append(now); return frag; }
+          const input = document.createElement('input');
+          input.inputMode = 'decimal'; input.autocomplete = 'off'; input.className = 'sre-input';
+          input.id = `limit-${roleId}-${k}`; input.dataset.role = roleId; input.dataset.kind = k;
+          input.setAttribute('aria-label', `${roleWords(roleId)} — ${t(`k_${k}`)}`);
+          input.value = v === undefined || v === null ? '' : String(v / 100);
+          input.disabled = !may.propose;
+          frag.append(input, now);
+          return frag;
+        },
+      })),
+    ],
+    rows,
+  };
+  if (limitsTable === null || !limitsTable.connected()) limitsTable = o.table($('limits-host'), opts); else limitsTable.setRows(rows);
 }
 
 function paintWaits() {

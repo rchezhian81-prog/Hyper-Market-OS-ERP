@@ -15,7 +15,7 @@ const WORDS = {
     hDetails: 'The shop\'s details on every listing', hListings: 'Products online', hComplaints: 'Online complaints (48 hours to acknowledge, one month to resolve)', hReturns: 'Online returns',
     legalName: 'Legal name', address: 'Address', gstin: 'GSTIN', returnTerms: 'Return and refund terms', grievanceOfficerName: 'Grievance officer', grievanceOfficerContact: 'Grievance officer contact',
     reason: 'Why (needed)', save: 'Save', publishStore: 'Publish the online store', notSet: 'not set',
-    storeOpen: 'The online store is published.', storeNotOpen: 'The online store cannot be published yet:',
+    storeOpen: 'The online store is published.', storeNotOpen: 'The online store cannot be published yet:', tcsLine: 'TCS (section 52): not applicable: own goods only', windowsExample: 'for example', noneWord: 'none',
     listed: 'Online', notListed: 'Not online', publishable: 'Ready to publish', missing: 'Missing', publish: 'Publish online', withdraw: 'Withdraw', withdrawReason: 'Why withdraw',
     ack: 'Acknowledge by', resolveBy: 'Resolve by', ownerException: 'Owner exception', noComplaints: 'No online complaints.',
     awaiting_acknowledgement: 'Awaiting acknowledgement', acknowledgement_overdue: 'Not acknowledged in 48 hours', acknowledged: 'Acknowledged', redress_overdue: 'Not resolved within one month', resolved: 'Resolved',
@@ -33,7 +33,7 @@ const WORDS = {
     hDetails: 'ஒவ்வொரு பட்டியலிலும் கடையின் விவரங்கள்', hListings: 'ஆன்லைன் பொருட்கள்', hComplaints: 'ஆன்லைன் புகார்கள் (ஏற்க 48 மணி நேரம், தீர்க்க ஒரு மாதம்)', hReturns: 'ஆன்லைன் திருப்பி அனுப்புதல்',
     legalName: 'சட்டப் பெயர்', address: 'முகவரி', gstin: 'GSTIN', returnTerms: 'திருப்பி அனுப்புதல் மற்றும் பணம் திருப்பும் விதிமுறைகள்', grievanceOfficerName: 'குறைதீர்ப்பு அலுவலர்', grievanceOfficerContact: 'குறைதீர்ப்பு அலுவலர் தொடர்பு',
     reason: 'ஏன் (தேவை)', save: 'சேமி', publishStore: 'ஆன்லைன் கடையை வெளியிடு', notSet: 'அமைக்கப்படவில்லை',
-    storeOpen: 'ஆன்லைன் கடை வெளியிடப்பட்டுள்ளது.', storeNotOpen: 'ஆன்லைன் கடையை இன்னும் வெளியிட முடியாது:',
+    storeOpen: 'ஆன்லைன் கடை வெளியிடப்பட்டுள்ளது.', tcsLine: 'TCS (பிரிவு 52): பொருந்தாது: கடையின் சொந்தப் பொருட்கள் மட்டும்', windowsExample: 'எடுத்துக்காட்டு', noneWord: 'none', storeNotOpen: 'ஆன்லைன் கடையை இன்னும் வெளியிட முடியாது:',
     listed: 'ஆன்லைனில்', notListed: 'ஆன்லைனில் இல்லை', publishable: 'வெளியிடத் தயார்', missing: 'இல்லாதவை', publish: 'ஆன்லைனில் வெளியிடு', withdraw: 'திரும்பப் பெறு', withdrawReason: 'ஏன் திரும்பப் பெறுகிறீர்கள்',
     ack: 'ஏற்க வேண்டிய நேரம்', resolveBy: 'தீர்க்க வேண்டிய நேரம்', ownerException: 'உரிமையாளர் விதிவிலக்கு', noComplaints: 'ஆன்லைன் புகார்கள் இல்லை.',
     awaiting_acknowledgement: 'ஏற்புக்காகக் காத்திருக்கிறது', acknowledgement_overdue: '48 மணி நேரத்தில் ஏற்கப்படவில்லை', acknowledged: 'ஏற்கப்பட்டது', redress_overdue: 'ஒரு மாதத்தில் தீர்க்கப்படவில்லை', resolved: 'தீர்க்கப்பட்டது',
@@ -88,8 +88,14 @@ function paintDetails() {
     if (d.details[k] === 'not set') dd.className = 'unset';
     return [dt, dd];
   })));
-  el('store-state').textContent = d === null ? '' : d.onlineStore.published !== null && d.onlineStore.publishable ? t('storeOpen') : `${t('storeNotOpen')} ${d.onlineStore.refusal ?? ''}`;
-  el('tcs').textContent = d?.tcs ?? '';
+  // OB-699: the page's own words follow the toggle; head office's reason for refusing (its own sentence) stays English, marked so.
+  const stateLine = el('store-state'); stateLine.replaceChildren();
+  if (d !== null) {
+    if (d.onlineStore.published !== null && d.onlineStore.publishable) stateLine.textContent = t('storeOpen');
+    else { stateLine.append(document.createTextNode(`${t('storeNotOpen')} `)); const why = document.createElement('span'); why.setAttribute('lang', 'en'); why.textContent = d.onlineStore.refusal ?? ''; stateLine.append(why); }
+  }
+  // R4 Lane 2 · A26 · OB-211: no TCS under CGST s.52 — the shop sells its own goods only; said in the reader's language.
+  el('tcs').textContent = d?.tcs ? t('tcsLine') : '';
 }
 
 function paintListings() {
@@ -115,7 +121,10 @@ function paintListings() {
 
 function paintComplaints() {
   const c = view.complaints;
-  el('complaints-say').textContent = c === null ? '' : c.count === 0 ? t('noComplaints') : c.detail;
+  // U5: no complaint is the shared empty state (word + icon); a count is the lead line as head office said it.
+  const say = el('complaints-say'); const o = window.sreOffice;
+  if (c !== null && c.count === 0 && o && typeof o.state === 'function') { say.className = ''; o.state(say, 'empty', { title: t('noComplaints'), detail: '' }); }
+  else { say.className = 'lead'; say.textContent = c === null ? '' : c.detail; }
   el('complaints').replaceChildren(...(c?.complaints ?? []).map((x) => {
     const li = row(x.ownerException ? 'error' : x.state === 'acknowledgement_overdue' ? 'degraded' : x.state === 'resolved' ? 'ok' : 'idle', x.caseId, t(x.state));
     li.dataset.case = x.caseId; li.dataset.state = x.state;
@@ -177,7 +186,10 @@ function paint() {
   el('h-details').textContent = t('hDetails'); el('h-listings').textContent = t('hListings'); el('h-complaints').textContent = t('hComplaints'); el('h-returns').textContent = t('hReturns');
   for (const k of DETAIL_KEYS) el(`l-${k}`).textContent = t(k);
   el('l-reason').textContent = t('reason'); el('save-details').textContent = t('save'); el('publish-store').textContent = t('publishStore');
-  el('l-windows').textContent = t('windows'); el('l-nonreturnable').textContent = t('nonReturnable'); el('l-preason').textContent = t('policyReason'); el('save-policy').textContent = t('save');
+  // The typed syntax (category id = days) and the literal word a person types for "nothing" are codes, shown as code.
+  const lw = el('l-windows'); lw.replaceChildren(document.createTextNode(`${t('windows')} — ${t('windowsExample')} `)); const eg = document.createElement('code'); eg.textContent = 'dairy=2, household=7'; lw.append(eg);
+  const ln = el('l-nonreturnable'); ln.replaceChildren();
+  for (const [i, part] of t('nonReturnable').split('"none"').entries()) { if (i > 0) { const c = document.createElement('code'); c.textContent = 'none'; ln.append(c); } ln.append(document.createTextNode(part)); } el('l-preason').textContent = t('policyReason'); el('save-policy').textContent = t('save');
   el('state').hidden = !view.readFailed; el('state').textContent = view.readFailed ? t('cannotRead') : '';
   paintDetails(); paintListings(); paintComplaints(); paintReturns();
 }

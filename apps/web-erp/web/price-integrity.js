@@ -10,42 +10,50 @@ const may = session?.may ?? { named: false, readPrices: false };
 
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
+// U5 (G17): the exceptions stand on the chrome's register part, built once and fed by setRows; the column words are pairs
+// so the chrome repaints them on the toggle.
+const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+let table = null;
+function register(spec) { if (!window.sreOffice) return null; if (table && table.connected()) return table; table = window.sreOffice.table($('rows-host'), spec); return table; }
 // R1c: this device's own date of a moment, never its UTC date.
 // OB-606: a moment is shown on the SHOP's date (its zone), never this device's; a plain date is already a date.
 const day = (iso) => (typeof iso === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : (window.sreShopDay?.dateOf(iso) ?? '')) : '');
 let report = null;
 
-function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
 
 function paint() {
   document.title = `SRE ${t('prTitle')}`;
-  for (const [id, k] of [['title-text', 'prTitle'], ['page-h', 'prTitle'], ['lead', 'prLead'], ['l-branch', 'prBranch'], ['show', 'prShow'],
-    ['c-product', 'prColProduct'], ['c-where', 'prColWhere'], ['c-record', 'prColRecord'], ['c-shown', 'prColShown'], ['c-since', 'prColSince'], ['c-band', 'prColBand']]) $(id).textContent = t(k);
+  for (const [id, k] of [['title-text', 'prTitle'], ['page-h', 'prTitle'], ['lead', 'prLead'], ['l-branch', 'prBranch'], ['show', 'prShow']]) $(id).textContent = t(k);
   $('list-h').textContent = t('prTitle');
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.storeOpsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   // OB-163: always the owner's four bands, in his order, with how many are open in each.
   const counts = new Map((report?.byBand ?? []).map((b) => [b.band, b.count]));
-  $('bands').replaceChildren(...(api?.bands ?? []).map((band) => {
-    const panel = document.createElement('div'); panel.className = 'panel'; panel.dataset.band = band;
+  // The four bands are summary cards: the count head office answered, "Not known" before it has, the degraded tone when
+  // a band holds an open mismatch (its words and shape, never colour alone).
+  if (window.sreOffice) window.sreOffice.cards($('bands'), (api?.bands ?? []).map((band) => {
     const n = counts.get(band) ?? 0;
-    if (n > 0) panel.classList.add('attention');
-    const k = document.createElement('span'); k.className = 'k'; k.textContent = api.bandWords(lang, band);
-    const v = document.createElement('span'); v.className = 'v'; v.textContent = report === null ? '—' : String(n);
-    panel.append(k, v);
-    return panel;
+    return { label: { en: api.bandWords('en', band), ta: api.bandWords('ta', band) }, value: report === null ? null : String(n), tone: n > 0 ? 'degraded' : undefined, icon: 'clock' };
   }));
   const rows = report?.exceptions ?? [];
-  $('rows').replaceChildren(...rows.map((x) => {
-    const tr = document.createElement('tr');
-    tr.dataset.product = x.productId; tr.dataset.surface = x.surface; tr.dataset.kind = x.kind; tr.dataset.band = x.band;
-    tr.append(cell(x.productId), cell(`${api.surfaceWords(lang, x.surface)} — ${api.kindWords(lang, x.kind)}`), cell(api.rupees(x.recordMinor)),
-      cell(x.surfaceMinor === undefined ? '—' : api.rupees(x.surfaceMinor)), cell(day(x.openSince)), cell(api.bandWords(lang, x.band)));
-    tr.title = x.detail;
-    return tr;
-  }));
-  $('none').hidden = report === null || rows.length > 0; $('none').textContent = t('prNone');
+  const reg = register({
+    id: 'price-exceptions', label: pair('prTitle'), pageSize: 10, sortable: true, bodyId: 'rows',
+    columns: [
+      { key: 'product', label: pair('prColProduct'), value: (x) => window.sreOffice.nameOf('product', x.productId) ?? x.productId },
+      { key: 'where', label: pair('prColWhere'), value: (x) => `${api.surfaceWords(lang, x.surface)} — ${api.kindWords(lang, x.kind)}` },
+      { key: 'record', label: pair('prColRecord'), value: (x) => api.rupees(x.recordMinor), align: 'end' },
+      // a surface that showed no price at all is "Not known" (the part's own words), never a dash
+      { key: 'shown', label: pair('prColShown'), value: (x) => (x.surfaceMinor === undefined ? null : api.rupees(x.surfaceMinor)), align: 'end' },
+      { key: 'since', label: pair('prColSince'), value: (x) => day(x.openSince) },
+      { key: 'band', label: pair('prColBand'), value: (x) => api.bandWords(lang, x.band) },
+    ],
+    rowKey: (x) => `${x.productId}|${x.surface}|${x.kind}`, rowData: (x) => ({ product: x.productId, surface: x.surface, kind: x.kind, band: x.band }),
+    empty: { title: pair('prNone') },
+  });
+  if (reg === null) return;
+  if (report === null) reg.setState('unknown'); else reg.setRows(rows);
+  $('none').hidden = true;
 }
 
 async function show(event) {
@@ -148,3 +156,5 @@ if ('serviceWorker' in navigator) {
     // No offline copy this time; the screen still works online.
   });
 }
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

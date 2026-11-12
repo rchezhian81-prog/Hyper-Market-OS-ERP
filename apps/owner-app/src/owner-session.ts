@@ -269,9 +269,30 @@ export interface BranchFreshness {
   readonly freshness: Freshness;
 }
 
+/**
+ * U6 · M29-FR-02 (OB-701's sibling, 7 Nov 2026): one branch's figures for the SIDE-BY-SIDE comparison — the session's own
+ * brief for that branch, with its own freshness. A branch that never reached the phone has `null` figures, never a nought.
+ */
+export interface BranchComparison {
+  readonly branchId: string;
+  readonly name: string;
+  readonly freshness: Freshness;
+  /** Today's takings, net of refunds — the same figure the branch's own tile shows. */
+  readonly takenMinor: number | null;
+  readonly bills: number | null;
+  /** The margin over the costed bills; `marginKnown` false when the store computer could cost none of them. */
+  readonly marginMinor: number | null;
+  readonly marginKnown: boolean;
+  readonly approvalsWaiting: number | null;
+  /** The things needing attention on that branch (at most three, as the brief ranks them). */
+  readonly attentionCount: number | null;
+}
+
 export interface OwnerSession {
   /** Every branch the owner can look at, with how current each one's data is. */
   branches(): readonly BranchFreshness[];
+  /** U6: every branch's figures side by side, in the order the phone was given them — the branch in view is not changed. */
+  compare(): readonly BranchComparison[];
   /** The branch currently being viewed. */
   currentBranchId(): string;
   /** Switch branch (≤2 taps in the spec). Unknown ids are refused rather than blanking the screen. */
@@ -364,6 +385,21 @@ export function createOwnerSession(
       name: payload.name,
       freshness: briefFor(payload.branchId).freshness,
     })),
+
+    compare: () => payloads.map((payload) => {
+      const b = briefFor(payload.branchId);
+      const missing = b.freshness.state === 'missing';
+      const costed = b.takings.bills - b.takings.marginUnknownBills;
+      return {
+        branchId: payload.branchId, name: payload.name, freshness: b.freshness,
+        takenMinor: missing ? null : b.takings.takenMinor,
+        bills: missing ? null : b.takings.bills,
+        marginMinor: missing || costed === 0 ? null : b.kpis.marginMinor,
+        marginKnown: !missing && costed > 0,
+        approvalsWaiting: missing ? null : b.approvals.length,
+        attentionCount: missing ? null : b.attention.length,
+      };
+    }),
 
     currentBranchId: () => current,
 

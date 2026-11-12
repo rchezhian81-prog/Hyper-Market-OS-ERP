@@ -145,6 +145,8 @@ function paint() {
     el('vmi').hidden = true;
     el('invoice').hidden = true;
     el('asn').hidden = true;
+    el('rfqs').hidden = true;
+    el('claims').hidden = true;
     return;
   }
   state.hidden = true;
@@ -164,6 +166,8 @@ function paint() {
   paintVmi();
   paintDocuments();
   paintRebates();
+  paintRfqs();
+  paintClaims();
 }
 
 // OB-362: the Delivery update form — the supplier's own open orders only; the bundle checks and sends it.
@@ -449,6 +453,141 @@ el('vmi-store').addEventListener('change', () => { paintVmi(); });
 { const i = icon('package'); if (i !== null) el('vmi-send').prepend(i); }
 { const i = icon('truck'); if (i !== null) el('du-send').prepend(i); }
 
+// U6 · M24-FR-01: the requests for quotation the shop sent this supplier, each with its own quote form (a price per unit and
+// the days to deliver, per line asked). What the supplier types lives in this page's memory, so a repaint never loses it.
+// The bundle checks and sends each quote (window.supplierPortal.sendRfqQuote); a buyer accepts it before it counts.
+const typedQuote = new Map(); // `${rfq}|${product}` → { unitPrice, leadTimeDays } as typed
+const qtyWords = (l) => (l.uom === 'kg' || l.uom === 'L' ? `${(l.quantity / 1000).toFixed(3)} ${l.uom}` : String(l.quantity));
+const rfqStateOf = (r) => (r.decision === 'accepted' ? 'accepted' : r.decision === 'rejected' ? 'rejected' : r.awaitingBuyer ? 'awaiting' : (window.sreShopDay?.today?.() ?? new Date().toISOString().slice(0, 10)) > r.dueOn ? 'overdue' : 'open');
+function paintRfqs() {
+  const api = window.supplierPortal;
+  const feed = api && typeof api.rfqs === 'function' ? api.rfqs() : null;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  el('rfqs').hidden = window.supplierPortalSession === undefined || notPermitted;
+  el('rfqs-h').textContent = t('rfqH');
+  el('rfqs-lead').textContent = t('rfqLead');
+  const said = el('rfqs-said');
+  said.textContent = feed === null ? (ordersTried ? t('rfqUnknown') : '') : !feed.rfqsKnown ? t('rfqUnknown') : feed.rfqs.length === 0 ? t('rfqNone') : !feed.mayRespond ? t('cannotQuote') : '';
+  said.hidden = said.textContent === '';
+  const mayQuote = feed !== null && feed.rfqsKnown && feed.mayRespond;
+  el('rfqs-rows').replaceChildren(...(feed?.rfqs ?? []).map((r) => {
+    const state = rfqStateOf(r);
+    const li = document.createElement('li');
+    const tone = state === 'accepted' ? 'ok' : state === 'rejected' || state === 'overdue' ? 'error' : 'degraded';
+    li.className = `row tone-${tone}`;
+    li.dataset.rfq = r.rfqId; li.dataset.state = state;
+    const st = document.createElement('span'); st.className = 'status';
+    const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = state === 'accepted' ? '✓' : state === 'rejected' || state === 'overdue' ? '✕' : '⏳';
+    const w = document.createElement('span'); w.textContent = `${t(`rfq_${state}`)}${state === 'rejected' && r.reason ? ` — ${r.reason}` : ''}`;
+    st.append(ic, w); st.setAttribute('aria-label', t(`rfq_${state}`));
+    const facts = document.createElement('div'); facts.className = 'facts';
+    facts.textContent = `${fill(t('rfqFacts'), { rfq: r.rfqId, due: r.dueOn, sent: api ? api.dateOf(r.sentAt) : r.sentAt })}${r.note ? ` · ${t('rfqNoteL')}: ${r.note}` : ''}${r.replied && r.repliedAt ? ` · ${t('rfqRepliedAt')} ${shopWhen(r.repliedAt)}` : ''}`;
+    li.append(st, facts);
+    // One quote form per request: a price and the days for each line the shop asked for; a line left blank is not quoted.
+    const form = document.createElement('div'); form.className = 'du-form';
+    for (const line of r.lines) {
+      const key = `${r.rfqId}|${line.productId}`;
+      const typed = typedQuote.get(key) ?? { unitPrice: '', leadTimeDays: '' };
+      const row = document.createElement('div'); row.className = 'facts';
+      const name = document.createElement('span'); name.textContent = fill(t('rfqLineFacts'), { product: line.productId, qty: qtyWords(line) });
+      const price = document.createElement('label'); price.htmlFor = `q-${r.rfqId}-${line.productId}-price`;
+      const priceL = document.createElement('span'); priceL.textContent = t('rfqPriceL');
+      const priceI = document.createElement('input'); priceI.id = price.htmlFor; priceI.inputMode = 'decimal'; priceI.autocomplete = 'off'; priceI.value = typed.unitPrice; priceI.disabled = !mayQuote;
+      priceI.addEventListener('input', () => { typedQuote.set(key, { ...(typedQuote.get(key) ?? { unitPrice: '', leadTimeDays: '' }), unitPrice: priceI.value }); });
+      price.append(priceL, priceI);
+      const lead = document.createElement('label'); lead.htmlFor = `q-${r.rfqId}-${line.productId}-lead`;
+      const leadL = document.createElement('span'); leadL.textContent = t('rfqLeadL');
+      const leadI = document.createElement('input'); leadI.id = lead.htmlFor; leadI.inputMode = 'numeric'; leadI.autocomplete = 'off'; leadI.value = typed.leadTimeDays; leadI.disabled = !mayQuote;
+      leadI.addEventListener('input', () => { typedQuote.set(key, { ...(typedQuote.get(key) ?? { unitPrice: '', leadTimeDays: '' }), leadTimeDays: leadI.value }); });
+      lead.append(leadL, leadI);
+      row.append(name, price, lead);
+      form.append(row);
+    }
+    const send = document.createElement('button'); send.type = 'button'; send.id = `q-${r.rfqId}-send`; send.disabled = !mayQuote;
+    const sendT = document.createElement('span'); sendT.textContent = t('sendQuote');
+    { const i = icon('send'); if (i !== null) send.append(i); }
+    send.append(sendT);
+    send.addEventListener('click', () => { void sendQuote(r.rfqId); });
+    const result = document.createElement('p'); result.className = 'status-line'; result.id = `q-${r.rfqId}-result`; result.setAttribute('role', 'status'); result.setAttribute('aria-live', 'polite');
+    form.append(send);
+    form.hidden = !mayQuote;
+    li.append(form, result);
+    return li;
+  }));
+}
+async function sendQuote(rfqId) {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendRfqQuote !== 'function') return;
+  const lines = {};
+  for (const [key, typed] of typedQuote) { const [rfq, product] = key.split('|'); if (rfq === rfqId) lines[product] = typed; }
+  const out = await api.sendRfqQuote({ rfqId, lines });
+  const st = el(`q-${rfqId}-result`);
+  if (!st) return;
+  st.className = `status-line ${out.result === 'sent' ? 'tone-ok' : 'tone-error'}`;
+  st.textContent = out.result === 'sent' ? `✓ ${t('quoteSent')}` : out.result === 'invalid' ? `⚠ ${fill(t(out.why), { product: out.productId ?? '' })}` : out.result === 'refused' ? `⚠ ${t('refusedSay')} ${out.whatHappened}` : `⚠ ${t('quoteNotSent')}`;
+  st.dataset.result = out.result;
+  if (out.result === 'sent') { await refresh(); const again = el(`q-${rfqId}-result`); if (again) { again.className = 'status-line tone-ok'; again.textContent = `✓ ${t('quoteSent')}`; again.dataset.result = 'sent'; } }
+}
+
+// U6 · M07-FR-03 · M24-FR-02: the claims the shop holds AGAINST this supplier (read only), and the one form that raises the
+// supplier's own claim on the shop — the bundle checks and sends it (window.supplierPortal.sendClaim); a buyer decides it.
+function paintClaims() {
+  const api = window.supplierPortal;
+  const feed = api && typeof api.claims === 'function' ? api.claims() : null;
+  const orders = api && typeof api.orders === 'function' ? api.orders() : null;
+  const v = session.view(lang);
+  const notPermitted = v.screenState.tone === 'error' && v.awaiting.length === 0 && v.processed.length === 0 && v.statement === null && !v.statementInaccessible;
+  el('claims').hidden = window.supplierPortalSession === undefined || notPermitted;
+  el('claims-h').textContent = t('claimsH');
+  el('claims-lead').textContent = t('claimsLead');
+  const said = el('claims-said');
+  said.textContent = feed === null ? (ordersTried ? t('claimsUnknown') : '') : !feed.claimsKnown ? t('claimsUnknown') : feed.claims.length === 0 ? t('claimsNone') : '';
+  said.hidden = said.textContent === '';
+  el('claims-rows').replaceChildren(...(feed?.claims ?? []).map((c) => {
+    const li = document.createElement('li');
+    const tone = c.state === 'issued' || c.state === 'returned' ? 'ok' : c.state === 'never_owed' ? 'muted' : 'degraded';
+    li.className = `row tone-${tone}`;
+    li.dataset.claim = c.claimId; li.dataset.state = c.state;
+    const st = document.createElement('span'); st.className = 'status';
+    const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = c.state === 'issued' || c.state === 'returned' ? '✓' : c.state === 'never_owed' ? '○' : '⏳';
+    const w = document.createElement('span'); w.textContent = t(`claim_${c.state}`);
+    st.append(ic, w); st.setAttribute('aria-label', t(`claim_${c.state}`));
+    const facts = document.createElement('div'); facts.className = 'facts';
+    facts.textContent = fill(t('claimFacts'), { kind: t(`claimKind_${c.kind}`), po: c.poId, product: c.productId, qty: qtyWords({ quantity: c.quantityMinor, uom: c.uom }), value: rupeesOf(c.valueMinor), reason: c.reason, raised: api ? api.dateOf(c.raisedAt) : c.raisedAt, number: c.number ?? t('claimNoNumber') });
+    li.append(st, facts);
+    return li;
+  }));
+  // The raise form: the supplier's own open orders to name (or none), the amount, why.
+  el('raise-h').textContent = t('raiseH');
+  el('raise-lead').textContent = t('raiseLead');
+  el('cl-order-l').textContent = t('claimOrderL'); el('cl-amount-l').textContent = t('claimAmountL'); el('cl-why-l').textContent = t('claimWhyL');
+  el('cl-send-text').textContent = t('sendClaim');
+  const order = el('cl-order');
+  const keep = order.value;
+  const opts = [new Option(t('noOrder'), '')];
+  for (const o of orders?.orders ?? []) opts.push(new Option(`${o.number}${o.issuedAt && api ? ` · ${api.dateOf(o.issuedAt)}` : ''}`, o.poId));
+  order.replaceChildren(...opts);
+  if ([...order.options].some((x) => x.value === keep)) order.value = keep;
+  const may = api && typeof api.maySubmitDocuments === 'function' ? api.maySubmitDocuments() : false;
+  const rsaid = el('raise-said');
+  rsaid.textContent = !may ? t('cannotSubmit') : '';
+  rsaid.hidden = rsaid.textContent === '';
+  el('raise-form').hidden = !may;
+}
+async function sendClaim() {
+  const api = window.supplierPortal;
+  if (!api || typeof api.sendClaim !== 'function') return;
+  const out = await api.sendClaim({ poId: el('cl-order').value, amount: el('cl-amount').value, why: el('cl-why').value });
+  const st = el('cl-result');
+  st.className = `status-line ${out.result === 'sent' ? 'tone-ok' : 'tone-error'}`;
+  st.textContent = out.result === 'sent' ? `✓ ${t('claimSent')}` : out.result === 'invalid' ? `⚠ ${t(out.why)}` : out.result === 'refused' ? `⚠ ${t('refusedSay')} ${out.whatHappened}` : `⚠ ${t('claimNotSent')}`;
+  st.dataset.result = out.result;
+  if (out.result === 'sent') { el('cl-amount').value = ''; el('cl-why').value = ''; await refresh(); }
+}
+el('cl-send').addEventListener('click', () => { void sendClaim(); });
+{ const i = icon('circle-alert'); if (i !== null) el('cl-send').prepend(i); }
+
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); paintStale(); });
 
 el('sample').hidden = window.supplierPortalSession !== undefined;
@@ -462,7 +601,7 @@ async function refresh() {
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
   ordersTried = true;
-  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); paintDocuments(); paintRebates(); }
+  if (data) { session = api.present(data); paint(); } else { paintDelivery(); paintVmi(); paintDocuments(); paintRebates(); paintRfqs(); paintClaims(); }
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 

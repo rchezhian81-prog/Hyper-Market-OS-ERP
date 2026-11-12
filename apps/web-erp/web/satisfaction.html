@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Customer satisfaction</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Customer satisfaction (U6 · UI/UX gap audit §27 "CRM · feedback / satisfaction" · M21-FR-04). A THIN CLIENT over head
+      office's service report (GET /v1/service/report — CSAT with its response rate beside it), the cases (GET /v1/service/cases)
+      and a customer's rating of a case that has been dealt with (POST /v1/service/cases/:id/satisfaction, append-only, in the
+      case's own customer's name). Its session is apps/web-erp/src/satisfaction-session.ts. No prompt/confirm/alert of the
+      browser's own; nothing on a timer. The page stands on the shared office parts (window.sreOffice).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .scores { display: flex; gap: 8px; flex-wrap: wrap; }
+      .scores .sre-btn[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .facts { display: grid; gap: 4px; font-size: 14px; margin: 0; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Customer satisfaction</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Customer satisfaction</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="report" hidden aria-labelledby="report-h">
+        <h3 id="report-h"></h3>
+        <div id="report-cards"></div>
+        <p class="meta" id="report-detail" lang="en"></p>
+        <p class="meta" id="english-note"></p>
+        <p class="status" id="report-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="cases" hidden aria-labelledby="cases-h">
+        <h3 id="cases-h"></h3>
+        <p class="meta" id="cases-lead"></p>
+        <p class="status" id="cases-status" role="status" aria-live="polite"></p>
+        <div id="cases-table"></div>
+      </section>
+      <section id="rate" hidden aria-labelledby="rate-h">
+        <h3 id="rate-h"></h3>
+        <p class="facts" id="rate-facts"></p>
+        <form id="rate-form">
+          <p class="meta" id="score-l"></p>
+          <div class="scores" id="scores" role="group" aria-labelledby="score-l"></div>
+          <div id="rate-fields"></div>
+          <div class="acts">
+            <button id="r-record" type="submit" class="sre-btn sre-btn-primary"><span id="r-record-text"></span></button>
+            <button id="r-back" type="button" class="sre-btn sre-btn-quiet"><span id="r-back-text"></span></button>
+          </div>
+          <p class="status" id="r-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./satisfaction.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

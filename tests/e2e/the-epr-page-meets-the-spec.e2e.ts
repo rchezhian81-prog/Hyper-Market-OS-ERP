@@ -60,7 +60,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('EPR regist
     page.on('pageerror', (e) => errors.push(e.message));
     try {
       await page.goto(`${shop.base}/epr?fy=2030-31`, { waitUntil: 'load' });
-      await page.locator('.panel[data-panel="I"]').waitFor({ timeout: 15_000 });
+      await page.locator('#panels .sre-summary-card[data-panel="I"]').waitFor({ timeout: 15_000 });
 
       // The answers the CA or consultant has not confirmed say so.
       expect(await page.locator('#settings .row').count()).toBe(4);
@@ -68,8 +68,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('EPR regist
       expect(await page.locator('#settings .row[data-key="plasticRegistration"] .state').textContent()).toContain('Not confirmed');
 
       // The year's plastic per category, to the gram; the missing declaration listed, never counted as zero.
-      expect(await page.locator('.panel[data-panel="I"] .v').textContent()).toBe('1,250 g · 100 units');
-      expect(await page.locator('.panel[data-panel="II"] .v').textContent()).toBe('2,620 g · 1100 units');
+      expect(await page.locator('#panels .sre-summary-card[data-panel="I"] .sre-summary-value').textContent()).toBe('1,250 g · 100 units');
+      expect(await page.locator('#panels .sre-summary-card[data-panel="II"] .sre-summary-value').textContent()).toBe('2,620 g · 1100 units');
       expect(await page.locator('#plastic-exceptions .row[data-product="P-NODECL"]').count()).toBe(1);
       expect(await page.locator('#plastic-exceptions').textContent()).toContain('packaging declaration missing: P-NODECL');
       expect(await page.locator('#plastic-exceptions').textContent()).toContain('Incomplete');

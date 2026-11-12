@@ -53,7 +53,7 @@ export const LOYALTY_DESK_COPY = {
     referrerL: 'The customer who referred earns (₹)', referredL: 'The new customer earns (₹)', saveReferral: 'Save the rewards', rewardNotSet: 'not set — nothing is given',
     badReward: 'Enter a reward in rupees (for example 50 or 25.50) in at least one box. 0 means no reward on that side. Nothing was sent.',
     lastSet: 'Last set by', badTier: 'Each tier needs a name, a spend in rupees and a multiplier from 1 to 10. Nothing was sent.', needReasonFirst: 'Say why first. Nothing was sent.', badMonths: 'Months is a whole number from 1 to 120, or empty to switch expiry off. Nothing was sent.',
-    expiredSay: 'Expiry run:', ownerOnly: 'Only the owner can change these numbers.',
+    expiredSay: 'Expiry run:', ownerOnly: 'Only the owner can change these numbers.', deskOnly: 'This desk enrols customers and finds members. The programme\'s numbers — tiers, points expiry, referral rewards — are the owner\'s, read on the Loyalty page by the owner and the store manager.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', cannotEnrol: 'Your role cannot enrol customers.', cannotRead: 'Your role cannot read loyalty members.', cannotConfigure: 'Only the owner can change the programme.', cannotRun: 'Your role cannot run the expiry.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     confirmH: 'Confirm this member\'s phone number', confirmLead: 'This member was carried over from the old system. Nobody has seen their number on their phone yet: look at the number on the customer\'s own phone now.', confirmSeen: 'I saw this number on the customer\'s own phone', confirm: 'Confirm the phone number', confirmed: 'Phone number confirmed — member ending', needSeenConfirm: 'Look at the number on the customer\'s own phone and tick the box. Nothing was sent.', toConfirm: 'Phone number to confirm',
@@ -75,7 +75,7 @@ export const LOYALTY_DESK_COPY = {
     referrerL: 'பரிந்துரைத்த வாடிக்கையாளர் பெறுவது (₹)', referredL: 'புதிய வாடிக்கையாளர் பெறுவது (₹)', saveReferral: 'பரிசுகளைச் சேமி', rewardNotSet: 'அமைக்கப்படவில்லை — எதுவும் வழங்கப்படாது',
     badReward: 'குறைந்தது ஒரு பெட்டியில் ரூபாயில் பரிசை உள்ளிடுங்கள் (எ.கா. 50 அல்லது 25.50). 0 என்றால் அந்தத் தரப்புக்குப் பரிசு இல்லை. எதுவும் அனுப்பப்படவில்லை.',
     lastSet: 'கடைசியாக அமைத்தவர்', badTier: 'ஒவ்வொரு நிலைக்கும் பெயர், ரூபாயில் செலவு, 1 முதல் 10 வரை பெருக்கி தேவை. எதுவும் அனுப்பப்படவில்லை.', needReasonFirst: 'முதலில் காரணத்தைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.', badMonths: 'மாதங்கள் 1 முதல் 120 வரையிலான முழு எண், அல்லது காலாவதியை நிறுத்தக் காலியாக விடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
-    expiredSay: 'காலாவதி இயக்கம்:', ownerOnly: 'உரிமையாளர் மட்டுமே இந்த எண்களை மாற்ற முடியும்.',
+    expiredSay: 'காலாவதி இயக்கம்:', ownerOnly: 'உரிமையாளர் மட்டுமே இந்த எண்களை மாற்ற முடியும்.', deskOnly: 'இந்த மேசை வாடிக்கையாளர்களைச் சேர்த்து உறுப்பினர்களைக் கண்டறியும். திட்டத்தின் எண்கள் — அடுக்குகள், புள்ளிகள் காலாவதி, பரிந்துரை வெகுமதிகள் — உரிமையாளருடையவை; உரிமையாளரும் கடை மேலாளரும் லாயல்டி பக்கத்தில் படிக்கிறார்கள்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotEnrol: 'உங்கள் பங்கு வாடிக்கையாளர்களைச் சேர்க்க முடியாது.', cannotRead: 'உங்கள் பங்கு லாயல்டி உறுப்பினர்களைப் படிக்க முடியாது.', cannotConfigure: 'உரிமையாளர் மட்டுமே திட்டத்தை மாற்ற முடியும்.', cannotRun: 'உங்கள் பங்கு காலாவதியை இயக்க முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     confirmH: 'இந்த உறுப்பினரின் கைபேசி எண்ணை உறுதிசெய்', confirmLead: 'இந்த உறுப்பினர் பழைய அமைப்பிலிருந்து கொண்டுவரப்பட்டவர். இவரின் எண்ணை இன்னும் யாரும் அவரின் தொலைபேசியில் பார்க்கவில்லை: இப்போது வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் எண்ணைப் பாருங்கள்.', confirmSeen: 'இந்த எண்ணை வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் பார்த்தேன்', confirm: 'கைபேசி எண்ணை உறுதிசெய்', confirmed: 'கைபேசி எண் உறுதிசெய்யப்பட்டது — உறுப்பினர் எண் கடைசி', needSeenConfirm: 'வாடிக்கையாளரின் சொந்தத் தொலைபேசியில் எண்ணைப் பார்த்து குறியிடுங்கள். எதுவும் அனுப்பப்படவில்லை.', toConfirm: 'உறுதிசெய்ய வேண்டிய கைபேசி எண்',
@@ -108,7 +108,7 @@ export function readTierRow(row: { readonly name: string; readonly nameTa?: stri
 }
 
 export interface LoyaltyDeskSession {
-  readonly may: { readonly named: boolean; readonly enrol: boolean; readonly read: boolean; readonly configure: boolean; readonly runExpiry: boolean };
+  readonly may: { readonly named: boolean; readonly enrol: boolean; readonly read: boolean; readonly configure: boolean; readonly runExpiry: boolean; readonly readProgramme: boolean };
   notice(): Promise<Outcome<EnrolmentNotice>>;
   enrol(input: { readonly mobile: string; readonly name: string; readonly saidYes: boolean; readonly seenOnPhone: boolean }): Promise<Outcome<{ readonly mobileLast4: string; readonly enrolled?: boolean; readonly alreadyMember?: boolean; readonly name?: string | null }>>;
   find(mobile: string): Promise<Outcome<LookupView>>;
@@ -140,6 +140,10 @@ export function createLoyaltyDeskSession(input: { readonly viewer: ViewerIdentit
   const may = {
     named, enrol: named && perms.has('loyalty.member.enrol'), read: named && perms.has('loyalty.points.read'),
     configure: named && perms.has('loyalty.programme.configure'), runExpiry: named && perms.has('loyalty.points.write'),
+    // OB-702 (owner, 7 Nov 2026, decision 5 = A · P-07): the programme panels (tiers, expiry, the CA's note, referral
+    // rewards) are the owner's to set and the manager's to read; the cashier's desk enrols and finds members (OB-560) and
+    // sees none of them — six greyed buttons were the audit's G15. The manager's word is the offer-drafting right.
+    readProgramme: named && (perms.has('loyalty.programme.configure') || perms.has('loyalty.offer.draft')),
   };
   const call = makeCaller({ keyPrefix: 'loyalty-desk', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const guard = (need: boolean, why: LoyaltyDeskKey): Outcome<never, LoyaltyDeskKey> | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !need ? { result: 'invalid', why } : undefined);

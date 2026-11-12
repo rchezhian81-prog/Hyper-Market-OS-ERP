@@ -99,6 +99,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // the door — the image and its SHA-256. Head office checks the bytes against the hash and the type from the file itself,
   // keeps it as a document (never deleted, #6) and re-verifies the driver. Nothing in it moves money or stock.
   DeliveryProofCaptured: { surfaces: ['driver'] },
+  // U6 · OB-700 (owner, 7 Nov 2026): the driver's REQUEST that the store call a stop's customer — the phone holds no number
+  // (§31). Thin: route, driver, stop, order reference, area. Head office re-verifies the driver, keeps it once and tells the store.
+  DeliveryCallRequested: { surfaces: ['driver'] },
   // 2b-vi-c-4: the migration screen's DECISIONS (an exception resolved, a control total signed), from the ERP surface the
   // box serves. The box seals each for the person it verified (ADR-0023 amended); head office refuses an unsealed one by
   // name and re-checks the decider's authority and the load operator from its own records.

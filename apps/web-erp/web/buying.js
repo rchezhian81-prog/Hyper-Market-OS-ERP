@@ -170,6 +170,13 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+// U5 (G17): the open-to-buy table, the reorder proposal and the reorder settings stand on the chrome's register part —
+// built once per host, fed by setRows; the column words are pairs so the chrome repaints them on the toggle. The
+// proposal's tick and quantity boxes live in its rows, so that register neither sorts nor searches (a repaint would lose
+// what a person typed) and shows every line on one page.
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: WORDS.ta[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
 
 // ── U2 · G5: pick a thing, never type its code ──────────────────────────────
 // A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
@@ -745,26 +752,28 @@ function renderOtb() {
   // Summary panels: how many categories are over, and what is left across the budgets head office holds.
   const over = view.rows.filter((r) => r.state === 'over').length;
   const open = view.rows.reduce((s, r) => s + (r.openToBuyMinor ?? 0), 0);
-  el('budget-summary').replaceChildren(...[[t('categoriesOver'), String(over)], [t('totalOpen'), inr(open)]].map(([label, value]) => {
-    const box = document.createElement('div');
-    box.append(textCell('span', label, 'label'), textCell('span', value, 'value'));
-    return box;
-  }));
-  const head = document.createElement('tr');
-  for (const [k, cls] of [['category', ''], ['budget', 'amount'], ['committed', 'amount'], ['waitingCol', 'amount'], ['openToBuy', 'amount'], ['afterWaiting', 'amount'], ['stateCol', '']]) head.append(textCell('th', t(k), cls));
-  const money = (m) => (m === null ? '—' : m < 0 ? `−${inr(-m)}` : inr(m));
-  el('otb-table').replaceChildren(head, ...view.rows.map((r) => {
-    const tr = document.createElement('tr');
-    tr.dataset.category = r.categoryId;
-    tr.dataset.state = r.state;
-    if (r.state === 'over') tr.className = 'over';
-    tr.append(
-      textCell('td', r.categoryId + (r.budgetScope === null ? '' : ` (${r.budgetScope === 'store' ? t('forStore') : t('forCompany')})`)),
-      textCell('td', money(r.budgetMinor), 'amount'), textCell('td', money(r.committedMinor), 'amount'), textCell('td', money(r.waitingMinor), 'amount'),
-      textCell('td', money(r.openToBuyMinor), 'amount'), textCell('td', money(r.openAfterWaitingMinor), 'amount'), textCell('td', t(`st_${r.state}`)),
-    );
-    return tr;
-  }));
+  if (window.sreOffice) window.sreOffice.cards(el('budget-summary'), [
+    { label: pair('categoriesOver'), value: String(over), tone: over > 0 ? 'degraded' : 'ok', icon: 'circle-alert' },
+    { label: pair('totalOpen'), value: inr(open), icon: 'wallet' },
+  ]);
+  // a budget head office does not hold is "Not known" (the part's own words), never a dash
+  const money = (m) => (m === null ? null : m < 0 ? `−${inr(-m)}` : inr(m));
+  const otbReg = register(el('otb-table'), {
+    id: 'open-to-buy', label: pair('category'), pageSize: 20, sortable: true,
+    columns: [
+      { key: 'category', label: pair('category'), value: (r) => r.categoryId + (r.budgetScope === null ? '' : ` (${r.budgetScope === 'store' ? t('forStore') : t('forCompany')})`) },
+      { key: 'budget', label: pair('budget'), value: (r) => money(r.budgetMinor), align: 'end' },
+      { key: 'committed', label: pair('committed'), value: (r) => money(r.committedMinor), align: 'end' },
+      { key: 'waiting', label: pair('waitingCol'), value: (r) => money(r.waitingMinor), align: 'end' },
+      { key: 'open', label: pair('openToBuy'), value: (r) => money(r.openToBuyMinor), align: 'end' },
+      { key: 'after', label: pair('afterWaiting'), value: (r) => money(r.openAfterWaitingMinor), align: 'end' },
+      // G13: where the category stands is the one record chip — over budget is the error tone, within is ok
+      { key: 'state', label: pair('stateCol'), value: (r) => t(`st_${r.state}`), render: (r) => window.sreOffice.recordChip(r.state === 'over' ? 'error' : r.state === 'within' ? 'ok' : 'unknown', pair(`st_${r.state}`)) },
+    ],
+    rowKey: (r) => r.categoryId, rowData: (r) => ({ category: r.categoryId, state: r.state }),
+  });
+  if (otbReg === null) return;
+  otbReg.setRows(view.rows);
 
   // Waiting orders — the ones head office found over budget first, each saying it escalates to the owner (OB-63).
   el('waiting-orders').replaceChildren(...(waiting.length === 0 ? [textCell('p', t('noWaiting'), 'empty')] : waiting.map((o) => {
@@ -982,46 +991,44 @@ const RP_FIELDS = ['maxLevel', 'reorderPoint', 'safetyStock', 'leadTimeDays', 'm
 function rpSay(id, out, good) { el(id).className = `otb-status ${out.result === 'ok' ? 'good' : 'err'}`; el(id).textContent = rp.outcomeWords(lang, out, good); }
 const rpQty = (minor, productId) => (minor === undefined ? '—' : rp.qtyIn(minor, rp.session.uomOf(productId)));
 
+const rpair = (k) => ({ en: rp === null ? k : rp.words('en', k), ta: rp === null ? k : rp.words('ta', k) });
 function renderReorder() {
-  el('reorder-proposal').replaceChildren(); el('reorder-params').replaceChildren(); el('reorder-exceptions').replaceChildren();
+  el('reorder-exceptions').replaceChildren();
   el('reorder-raise-box').hidden = true;
   el('reorder-advisory').textContent = rpProposal === null ? '' : rt('advisory');
-  if (rpProposal !== null) {
+  const proposalReg = register(el('reorder-proposal'), {
+    id: 'reorder-proposal', label: rpair('proposalH'), pageSize: 1000, search: false, count: false,
+    columns: [
+      { key: 'choose', label: rpair('choose'), value: () => '', render: (l) => { if (!(l.suggestedQty > 0 && rp.session.may.set)) return document.createTextNode(''); const c = document.createElement('input'); c.type = 'checkbox'; c.className = 'tick'; c.setAttribute('aria-label', `${rt('choose')} ${l.productId}`); return c; } },
+      { key: 'product', label: rpair('product'), value: (l) => window.sreOffice.nameOf('product', l.productId) ?? l.productId },
+      { key: 'position', label: rpair('position'), value: (l) => rpQty(l.position, l.productId), align: 'end' },
+      { key: 'reorderPoint', label: rpair('reorderPoint'), value: (l) => rpQty(l.reorderPoint, l.productId), align: 'end' },
+      { key: 'suggested', label: rpair('suggested'), value: (l) => `${rpQty(l.suggestedQty, l.productId)} · ${rt(`r_${l.reason}`)}` },
+      { key: 'yourQty', label: rpair('yourQty'), value: () => '', render: (l) => { if (!(l.suggestedQty > 0 && rp.session.may.set)) return document.createTextNode(''); const q = document.createElement('input'); q.className = 'qty sre-input'; q.setAttribute('aria-label', `${l.productId} — ${rt('yourQty')}`); return q; } },
+    ],
+    rowKey: (l) => l.productId, rowData: (l) => ({ product: l.productId, reason: l.reason }),
+  });
+  const paramsReg = register(el('reorder-params'), {
+    id: 'reorder-params', label: rpair('paramsH'), pageSize: 10, sortable: true,
+    columns: [
+      { key: 'product', label: rpair('product'), value: ({ current: c }) => window.sreOffice.nameOf('product', c.productId) ?? c.productId },
+      ...RP_FIELDS.map((f) => ({ key: f, label: rpair(f), align: 'end', value: ({ current: c }) => (f === 'leadTimeDays' ? (c[f] === undefined ? null : String(c[f])) : rpQty(c[f], c.productId)) })),
+      { key: 'version', label: rpair('version'), value: ({ current: c, history }) => `${rt('version')} ${c.version} · ${rt('setBy')} ${c.setBy} · ${rt('why')}: ${c.reason}${history.length > 1 ? ` · ${rt('history')}: ${history.slice(0, -1).map((h) => `v${h.version} ${rpQty(h.maxLevel, c.productId)} (${h.setBy})`).join(', ')}` : ''}` },
+    ],
+    rowKey: ({ current: c }) => c.productId, rowData: ({ current: c }) => ({ product: c.productId, version: String(c.version) }),
+  });
+  if (paramsReg === null) return;
+  if (rpProposal === null) proposalReg.setRows([]);
+  else {
     const lines = rpProposal.proposals;
-    if (lines.length === 0) el('reorder-proposal').append(textCell('caption', rpProposal.parametersNotSet ? rt('noParams') : rt('noProposal')));
-    else {
-      const head = document.createElement('tr');
-      for (const k of ['choose', 'product', 'position', 'reorderPoint', 'suggested', 'yourQty']) head.append(textCell('th', rt(k)));
-      el('reorder-proposal').append(head);
-      for (const l of lines) {
-        const tr = document.createElement('tr');
-        tr.dataset.product = l.productId; tr.dataset.reason = l.reason;
-        const pick = document.createElement('td');
-        if (l.suggestedQty > 0 && rp.session.may.set) { const c = document.createElement('input'); c.type = 'checkbox'; c.className = 'tick'; c.setAttribute('aria-label', `${rt('choose')} ${l.productId}`); pick.append(c); }
-        const mine = document.createElement('td');
-        if (l.suggestedQty > 0 && rp.session.may.set) { const q = document.createElement('input'); q.className = 'qty'; q.setAttribute('aria-label', `${l.productId} — ${rt('yourQty')}`); mine.append(q); }
-        tr.append(pick, textCell('td', l.productId), textCell('td', rpQty(l.position, l.productId)), textCell('td', rpQty(l.reorderPoint, l.productId)),
-          textCell('td', `${rpQty(l.suggestedQty, l.productId)} · ${rt(`r_${l.reason}`)}`), mine);
-        el('reorder-proposal').append(tr);
-      }
-      el('reorder-raise-box').hidden = !rp.session.may.set;
-    }
+    if (lines.length === 0) proposalReg.setState('empty', { title: rpair(rpProposal.parametersNotSet ? 'noParams' : 'noProposal') });
+    else { proposalReg.setRows(lines); el('reorder-raise-box').hidden = !rp.session.may.set; }
     for (const o of rpProposal.outOfRange ?? []) el('reorder-exceptions').append(textCell('p', `${o.productId}: ${rt('outOfRange')} (${o.status})`, 'exception'));
     for (const o of rpProposal.stoppedByLifecycle ?? []) el('reorder-exceptions').append(textCell('p', `${o.productId}: ${rt('stopped')} (${o.lifecycle})`, 'exception'));
   }
-  if (rpParams !== null) {
-    if (rpParams.products.length === 0) { el('reorder-params').append(textCell('caption', rt('noParams'))); return; }
-    const head = document.createElement('tr');
-    for (const k of ['product', ...RP_FIELDS, 'version']) head.append(textCell('th', rt(k)));
-    el('reorder-params').append(head);
-    for (const { current: c, history } of rpParams.products) {
-      const tr = document.createElement('tr');
-      tr.dataset.product = c.productId; tr.dataset.version = String(c.version);
-      tr.append(textCell('td', c.productId), ...RP_FIELDS.map((f) => textCell('td', f === 'leadTimeDays' ? (c[f] === undefined ? '—' : String(c[f])) : rpQty(c[f], c.productId))),
-        textCell('td', `${rt('version')} ${c.version} · ${rt('setBy')} ${c.setBy} · ${rt('why')}: ${c.reason}${history.length > 1 ? ` · ${rt('history')}: ${history.slice(0, -1).map((h) => `v${h.version} ${rpQty(h.maxLevel, c.productId)} (${h.setBy})`).join(', ')}` : ''}`));
-      el('reorder-params').append(tr);
-    }
-  }
+  if (rpParams === null) paramsReg.setRows([]);
+  else if (rpParams.products.length === 0) paramsReg.setState('empty', { title: rpair('noParams') });
+  else paramsReg.setRows(rpParams.products);
 }
 
 async function readReorder() {

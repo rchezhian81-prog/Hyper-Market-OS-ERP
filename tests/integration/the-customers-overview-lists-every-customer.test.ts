@@ -37,7 +37,7 @@ if (DATABASE_URL !== undefined) {
 
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
-interface Overview { customers: { customerRef: string; segment: string; profiled: boolean; orders: number }[]; notProfiled: number; merges: { waitingForSecondPerson: { mergeId: string }[]; inForce: { mergeId: string }[]; reversed: { mergeId: string }[] }; mergesAnything: boolean }
+interface Overview { customers: { customerRef: string; name: string | null; segment: string; profiled: boolean; orders: number }[]; notProfiled: number; merges: { waitingForSecondPerson: { mergeId: string }[]; inForce: { mergeId: string }[]; reversed: { mergeId: string }[] }; mergesAnything: boolean }
 
 describe.each(backings)('the customers overview lists every customer — on $name (M16)', ({ harness, restart }) => {
   it('segments with "not profiled" listed, merges waiting for a second person, a reversal, and a refusal without the permission', async () => {
@@ -66,6 +66,17 @@ describe.each(backings)('the customers overview lists every customer — on $nam
     let o = (await ok(req('GET', '/v1/customer/overview', undefined, 'u-mgr'), 'overview')).body as Overview;
     expect(o.customers.map((c) => [c.customerRef, c.segment, c.profiled])).toEqual([['M-anu', 'new', true], ['M-anu-2', 'new', true], ['M-bala', 'not_profiled', false]]);
     expect(o.notProfiled).toBe(1);
+    // U5 · G16 (UI/UX gap audit): a name head office holds is answered beside the id; a customer nobody named is null, never invented.
+    expect(o.customers.map((c) => c.name)).toEqual([null, null, null]);
+    const joined = (await ok(req('POST', '/v1/loyalty/members', { mobile: '9840077701', consent: true, verifiedHow: 'seen_on_phone', name: 'Lakshmi R' }), 'enrol')).body as { memberRef: string };
+    await ok(req('POST', '/v1/sales', {
+      saleId: 'S-member', receiptNumber: 'R-member', laneId: 'lane-1', locationId: 'store-01', cashierId: 'u-owner', tradingDay: '2026-10-01', committedAt: '2026-10-01T06:30:00.000Z',
+      totalMinor: 5_000, currency: 'INR', packVersion: 1, customerRef: joined.memberRef,
+      lines: [{ productId: 'p-tea', quantityMinor: 1, uom: 'ea', unitPriceMinor: 5_000, lineTotalMinor: 5_000 }], tenders: [{ kind: 'cash', amountMinor: 5_000 }],
+    }), 'sale by the member');
+    o = (await ok(req('GET', '/v1/customer/overview', undefined, 'u-mgr'), 'overview with a member')).body as Overview;
+    expect(o.customers.find((c) => c.customerRef === joined.memberRef)?.name).toBe('Lakshmi R');
+    expect(o.customers.find((c) => c.customerRef === 'M-bala')?.name).toBeNull();
     expect(o.mergesAnything).toBe(false);
 
     // The suggested duplicates: a pure check over what the desk saw; it proposes, it never merges.

@@ -36,6 +36,9 @@ const A26_HOMES = new Set([
   'services/orders/src/storefront-online-store.ts',
   'apps/web-erp/src/navigation.ts',
   'apps/web-erp/web/gst-returns.html',
+  // U3 (OB-699): the GST returns page says the A26 line in the reader's language — its words live in the page and its session.
+  'apps/web-erp/web/gst-returns.js',
+  'apps/web-erp/src/gst-returns-session.ts',
   'apps/web-erp/web/online-store.js',
   'apps/web-erp/web/online-store.html',
 ]);

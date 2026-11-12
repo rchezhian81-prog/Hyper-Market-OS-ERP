@@ -49,10 +49,12 @@ describe('the chrome carries the picker and the date field', () => {
   });
 
   it('the date field reads day/month/year and refuses a day that does not exist; dateWords knows the Tamil months', () => {
-    expect(CHROME).toContain("control.placeholder = 'dd/mm/yyyy';");
+    // U5: the placeholder is a word of the chrome's, so it follows the toggle like the hint and "(required)" (NFR-08)
+    expect(CHROME).toContain("control.placeholder = ow('datePlaceholder');");
+    expect(CHROME).toContain("datePlaceholder: 'dd/mm/yyyy'");
     expect(CHROME).toMatch(/if \(mo < 1 \|\| mo > 12 \|\| d < 1 \|\| d > daysIn\(y, mo\)/);
     expect(CHROME).toMatch(/const TA_MONTHS = \['ஜன', 'பிப்'/);
-    for (const key of ['dateHint', 'dateBad', 'dateTooEarly', 'dateTooLate', 'typeCodeInstead', 'useThisCode', 'choose', 'nothingChosen', 'pickSearch', 'pickCount', 'pickMore']) {
+    for (const key of ['dateHint', 'datePlaceholder', 'dateBad', 'dateTooEarly', 'dateTooLate', 'typeCodeInstead', 'useThisCode', 'choose', 'nothingChosen', 'pickSearch', 'pickCount', 'pickMore']) {
       const en = CHROME.slice(CHROME.indexOf('  const OFFICE_WORDS = {'), CHROME.indexOf('    ta: {', CHROME.indexOf('  const OFFICE_WORDS = {')));
       const ta = CHROME.slice(CHROME.indexOf('    ta: {', CHROME.indexOf('  const OFFICE_WORDS = {')), CHROME.indexOf('  const ow = (key)'));
       expect(en, `no English for ${key}`).toMatch(new RegExp(`\\b${key}: '`));

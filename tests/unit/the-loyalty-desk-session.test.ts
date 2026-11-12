@@ -14,6 +14,16 @@ const recorder = () => {
 };
 const desk = (perms: string[], fetch: typeof globalThis.fetch) => createLoyaltyDeskSession({ viewer: { userId: 'u-desk', permissions: perms }, fetch });
 
+describe('OB-702 (owner, 7 Nov 2026, decision 5 = A · P-07): who may READ the programme panels', () => {
+  it('the owner (configure) and the store manager (offer-drafting right) read them; the cashier\'s desk (enrol + points) does not', () => {
+    const { fetch } = recorder();
+    expect(desk(['loyalty.programme.configure', 'loyalty.points.read'], fetch).may.readProgramme).toBe(true);
+    expect(desk(['loyalty.offer.draft', 'loyalty.points.read', 'loyalty.member.enrol'], fetch).may.readProgramme).toBe(true);
+    expect(desk(['loyalty.member.enrol', 'loyalty.points.read', 'loyalty.points.write'], fetch).may.readProgramme).toBe(false);
+    expect(createLoyaltyDeskSession({ viewer: undefined, fetch }).may.readProgramme).toBe(false);
+  });
+});
+
 describe('the Loyalty desk session (OB-329 · OB-295)', () => {
   it('enrols only on the yes and the number seen; the name is optional and must be a name; the number goes in the body', async () => {
     const { asked, fetch } = recorder();

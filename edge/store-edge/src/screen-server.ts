@@ -70,6 +70,32 @@ export const EVENING_CHECK_LOAD_MAX_BYTES = 12 * 1024 * 1024;
  * vouch for. It records nothing and asks head office nothing, so it works with the cable out.
  */
 export const PRODUCTION_LABEL_PATH = '/production/label';
+/**
+ * U5 (7 Nov 2026 · UI/UX gap audit G5 · P-01): the store computer's own signed catalogue for the office pages' product
+ * picker when head office cannot be reached — the same products the till sells from, by name, code or barcode, with
+ * the pack's version so the sheet can say how old the copy is. Read only; nothing personal; nothing invented: a box whose
+ * pack holds no catalogue answers `known: false`.
+ */
+export const DIRECTORY_PRODUCTS_PATH = '/directory/products';
+const DIRECTORY_PRODUCTS_MAX = 5000;
+export function directoryProducts(pack: ScreenInput['pack'], query: string, limit: number): { readonly known: boolean; readonly version: number; readonly receivedAt: string | null; readonly count: number; readonly products: readonly { readonly id: string; readonly name: string; readonly nameTa?: string; readonly code?: string; readonly barcodes: readonly string[] }[] } {
+  // the till's slice when the box holds it (names in both languages, barcodes); else the master records an office box
+  // holds (M03) with the warehouse's barcode register beside them; else nothing — said, never a thin list as if whole
+  const skuOf = new Map<string, string>();
+  if (pack.productMaster.known) for (const m of pack.productMaster.value) if (typeof m?.productId === 'string' && typeof m.sku === 'string' && m.sku !== '') skuOf.set(m.productId, m.sku);
+  const barcodesOf = new Map<string, string[]>();
+  if (pack.warehouse.known) for (const b of pack.warehouse.value?.barcodes ?? []) if (typeof b?.productId === 'string' && typeof b.barcode === 'string') barcodesOf.set(b.productId, [...(barcodesOf.get(b.productId) ?? []), b.barcode]);
+  const source: readonly { readonly productId: string; readonly name: string; readonly nameTa?: string; readonly barcodes?: readonly string[] }[] =
+    pack.products.known ? pack.products.value : pack.productMaster.known ? pack.productMaster.value : [];
+  if (!pack.products.known && !pack.productMaster.known) return { known: false, version: pack.version, receivedAt: pack.receivedAt, count: 0, products: [] };
+  const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const rows = source
+    .filter((p) => typeof p?.productId === 'string' && typeof p.name === 'string')
+    .map((p) => ({ id: p.productId, name: p.name, ...(typeof p.nameTa === 'string' && p.nameTa !== '' ? { nameTa: p.nameTa } : {}), ...(skuOf.has(p.productId) ? { code: skuOf.get(p.productId)! } : {}), barcodes: [...new Set([...(Array.isArray(p.barcodes) ? p.barcodes.filter((b) => typeof b === 'string') : []), ...(barcodesOf.get(p.productId) ?? [])])] }))
+    .filter((r) => words.length === 0 || words.every((w) => `${r.name} ${r.nameTa ?? ''} ${r.code ?? ''} ${r.id} ${r.barcodes.join(' ')}`.toLowerCase().includes(w)));
+  const n = Math.max(1, Math.min(DIRECTORY_PRODUCTS_MAX, Number.isFinite(limit) ? Math.floor(limit) : 500));
+  return { known: true, version: pack.version, receivedAt: pack.receivedAt, count: rows.length, products: rows.slice(0, n) };
+}
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -298,6 +324,15 @@ export function forwardedPrefix(header: string | string[] | undefined): string {
   if (raw === undefined) return '';
   const value = raw.trim().replace(/\/+$/, '');
   return /^\/[a-z0-9-]+$/.test(value) ? value : '';
+}
+
+/**
+ * U6 · OB-701 (owner, 7 Nov 2026, decision 4 = B): the office pages the owner's phone LINKS to — the audit trail, the store
+ * computers' health and the side-by-side compare — under the public prefix when the box is served behind the front. The
+ * phone never carries a copy of those pages; it opens the office's own, where the office's rights apply.
+ */
+export function officeLinksFor(prefix: string): { readonly auditLog: string; readonly storeComputers: string; readonly compare: string } {
+  return { auditLog: `${prefix}/audit-log`, storeComputers: `${prefix}/store-computers`, compare: `${prefix}/branch-compare` };
 }
 
 /** The menu with every link under the public prefix; untouched when there is none. */
@@ -654,6 +689,14 @@ export function startScreenServer(input: {
         await labelDoor(req, res);
         return;
       }
+      // U5 · P-01: the office picker's product list from this box's own signed catalogue, for when head office is away.
+      if (doorPath === DIRECTORY_PRODUCTS_PATH) {
+        req.resume();
+        if (req.method !== 'GET') { json(res, 405, { ok: false, refusedBecause: 'wrong_method', detail: 'read with GET' }); return; }
+        const q = ((): URLSearchParams => { try { return new URL(req.url ?? '/', 'http://screen').searchParams; } catch { return new URLSearchParams(); } })();
+        json(res, 200, directoryProducts(input.snapshot().pack, q.get('q') ?? '', Number(q.get('limit') ?? '500')));
+        return;
+      }
       // OB-380 · P-08: a page's same-origin call to head office that nothing in front of this box carried there. The box
       // holds no head-office answer and never makes one up (no copy, no blank list, no "refused"): the call fails as a lost
       // link, exactly as it does when the line is down, so every page says in its OWN tested words, in English or Tamil,
@@ -843,6 +886,9 @@ export function startScreenServer(input: {
           // OB-606: the shop's zone from this box's SIGNED store pack (else the shop default) — every page dates "today",
           // a month and a shown date by it (packages/calendar shop-day), never by its device's own zone; no network call.
           shopTimeZone: packTimeZone(snap.pack),
+          // U6 · OB-701: the owner's phone links to the office's audit trail and system health (and the compare page) — the
+          // office's own pages, under the public prefix when served behind the front; never a copy on the phone.
+          ...(route.screen === 'owner' ? { ownerOffice: officeLinksFor(forwardedPrefix(req.headers['x-forwarded-prefix'])) } : {}),
           // Round A (P-08): when head office last sent this box the store setup every office page's figures come from — the
           // page's chrome says "the store computer's copy, as head office last sent it at …, N old" wherever a page asks.
           ...(APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { storeCopy: storeCopyOf(snap) }),

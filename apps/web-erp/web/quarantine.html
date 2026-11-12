@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Quarantine</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Quarantine (U6 of the UI/UX gap audit, 7 Nov 2026 · §27 Inventory "Quarantine" · M07-FR-03 · M08-FR-02 · M10-FR-02 · §28).
+      A THIN CLIENT over head office's quarantine register (GET /v1/inventory/quarantine: the batches on quality hold and the
+      delivery lines quarantined at the door with no disposition yet) and the quality routes that place a hold
+      (POST /v1/quality/holds/:batchId) and release one for sale (POST …/release — judged by head office on the samples recorded
+      on the hold). A delivery line is decided on the Goods receipt review page, reached from the menu. Every rule and every
+      refusal is head office's; the words live in the tested session model (apps/web-erp/src/quarantine-session.ts).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1100px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: start; }
+      label.f { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .meta { color: var(--muted); font-size: 14px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="who">Quarantine</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Quarantine</h2>
+        <p class="lede" id="lede"></p>
+        <div id="cards"></div>
+        <p class="meta" id="covers"></p>
+        <p class="meta" id="as-at"></p>
+        <p class="status" id="read-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="new-h" id="new-section" hidden>
+        <h3 id="new-h">Put a batch in quarantine</h3>
+        <p class="lede" id="new-lede"></p>
+        <form id="new" class="row">
+          <label class="f" for="batch"><span id="l-batch">Batch</span><input id="batch" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="product"><span id="l-product">Product</span><input id="product" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="reason"><span id="l-reason">Reason</span><input id="reason" class="sre-input" autocomplete="off" /></label>
+        </form>
+        <button id="hold" type="button" class="sre-btn sre-btn-primary">Put in quarantine</button>
+        <p class="status" id="new-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="holds-h" id="holds-section">
+        <h3 id="holds-h">Batches on quality hold</h3>
+        <p class="lede" id="holds-lede"></p>
+        <p class="status" id="holds-status" role="status" aria-live="polite"></p>
+        <div id="holds"></div>
+      </section>
+      <section aria-labelledby="lines-h" id="lines-section">
+        <h3 id="lines-h">Delivery lines in quarantine</h3>
+        <p class="lede" id="lines-lede"></p>
+        <div id="lines"></div>
+      </section>
+      <section aria-labelledby="released-h" id="released-section">
+        <h3 id="released-h">Released batches</h3>
+        <p class="lede" id="released-lede"></p>
+        <div id="released"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./quarantine.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

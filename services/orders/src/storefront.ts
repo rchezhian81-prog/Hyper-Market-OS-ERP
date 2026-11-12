@@ -671,5 +671,29 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         return { status: 200, body: await view(ctx.tenantId, own) };
       },
     },
+    {
+      // U6 · M17-FR-01 · M20 · §27 "Customer: Loyalty" (7 Nov 2026): MY points, as the till would spend them — the balance
+      // head office holds for the member this app account is tied to (at the desk, OB-29), what a point is worth, and how
+      // to spend them. The same figures the basket quote carries, readable without a basket. Nothing here moves a point.
+      api: 'API-07', method: 'GET', path: '/v1/me/loyalty',
+      permission: 'storefront.order.read', entitlement: 'customer_app',
+      handler: async (ctx) => {
+        const member = deps.pricing === undefined ? undefined : await deps.pricing.memberOf(ctx.tenantId, ctx.userId);
+        if (deps.pricing === undefined || member === undefined) {
+          return { status: 200, body: { member: false, say: 'Your app is not tied to a loyalty membership. Show your app reference at the service desk to see your points here.', asAt: deps.now() } };
+        }
+        const balance = Math.max(0, (await deps.pricing.pointsOf(ctx.tenantId, member.memberRef)) ?? 0);
+        const value = await deps.pricing.pointValuePaise(ctx.tenantId);
+        return {
+          status: 200,
+          body: {
+            member: true, pointsBalance: balance, pointValuePaise: value, ...(value > 0 ? { worthMinor: balance * value } : {}),
+            say: value > 0 ? `You have ${balance} point(s), worth ₹${((balance * value) / 100).toFixed(2)} at the till.` : `You have ${balance} point(s). The shop has not set what a point is worth yet.`,
+            howToSpend: 'At the till, tell the cashier the mobile number your membership is on; the points come off the bill before you pay.',
+            asAt: deps.now(),
+          },
+        };
+      },
+    },
   ];
 }

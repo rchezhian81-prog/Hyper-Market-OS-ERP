@@ -290,7 +290,7 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     await page.waitForSelector('#saved li.saved[data-kind="request"]');
     await page.waitForFunction(() => (globalThis as unknown as IndentsWindow).indentsSession!.savedWork()[0]?.state === 'handed_to_box', undefined, { timeout: 10_000 });
     await page.waitForSelector('#saved li.saved[data-state="handed_to_box"]');
-    expect((await page.textContent('#saved li.saved .pill')) ?? '').toContain('With the store computer');
+    expect((await page.textContent('#saved li.saved .saved-state')) ?? '').toContain('With the store computer');
     const pending = edge.deviceEventsOutbox.pending();
     expect(pending.map((i) => i.event.type)).toEqual(['FloorIndentRequested']);
     const indentId = (pending[0]!.event.payload as { indentId: string }).indentId;
@@ -315,7 +315,7 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     await raiseRice(page);
     await page.waitForFunction(() => (globalThis as unknown as IndentsWindow).indentsSession!.savedWork()[0]?.state === 'retrying', undefined, { timeout: 10_000 });
     await page.waitForSelector('#saved li.saved[data-state="retrying"]');
-    expect((await page.textContent('#saved li.saved .pill')) ?? '').toContain('trying again');
+    expect((await page.textContent('#saved li.saved .saved-state')) ?? '').toContain('trying again');
     expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
 
     await page.reload({ waitUntil: 'load' });
@@ -415,13 +415,13 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     expect(rec.writes).toHaveLength(0); // nothing went to the cloud from the browser — the box carries it
     // The box's word makes it posted — the list says so in words.
     await page.waitForSelector('#saved li.saved[data-kind="receipt"][data-state="posted"]', { timeout: 10_000 });
-    expect((await page.textContent('#saved li.saved .pill')) ?? '').toContain('Posted at head office');
+    expect((await page.textContent('#saved li.saved .saved-state')) ?? '').toContain('Posted at head office');
     // The issue is no longer offered; the session refuses a second count of it.
     expect(await page.$$eval('#receive-issue option', (els) => els.length)).toBe(0);
     expect(await page.evaluate(() => (globalThis as unknown as IndentsWindow).indentsSession!.view('en').receivable)).toEqual([]);
     // A second look in Tamil says the same state in Tamil.
     await page.click('#lang');
-    expect((await page.textContent('#saved li.saved .pill')) ?? '').toContain('தலைமை அலுவலகத்தில்');
+    expect((await page.textContent('#saved li.saved .saved-state')) ?? '').toContain('தலைமை அலுவலகத்தில்');
   });
 
   it('Batch 2 · Resolve a shortfall: offered only to someone who neither issued nor counted it; a click POSTs exactly { reasonCode, note, lines } (no resolver), then the register says who resolved it and what was lost', async () => {

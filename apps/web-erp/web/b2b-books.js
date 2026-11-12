@@ -9,6 +9,15 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, reconcile: false, documents: false, setSteps: false };
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const w = (k, fill) => (api === null ? k : api.words(lang(), k, fill));
+// OB-699: the page's words of a refusal follow the toggle; head office's own sentence stays English, marked so (WCAG 3.1.2).
+const sayOutcome = (host, out) => {
+  host.replaceChildren();
+  const words = api.outcomeWords(lang(), out);
+  const ho = out && out.result === 'refused' && typeof out.whatHappened === 'string' && out.whatHappened !== '' && words.endsWith(out.whatHappened);
+  if (!ho) { host.textContent = words; return; }
+  host.append(document.createTextNode(words.slice(0, words.length - out.whatHappened.length)));
+  const sp = document.createElement('span'); sp.setAttribute('lang', 'en'); sp.textContent = out.whatHappened; host.append(sp);
+};
 const node = (tag, props = {}, ...kids) => { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; };
 const fig = (label, value, key) => { const d = node('div', {}, node('span', { className: 'meta', textContent: label }), node('strong', { textContent: value })); d.dataset.fig = key; return d; };
 function say(text, cls = '') { $('bk-status').textContent = text; $('bk-status').dataset.result = cls; }
@@ -16,7 +25,9 @@ function say(text, cls = '') { $('bk-status').textContent = text; $('bk-status')
 let shown = null; // { kind, value }
 let steps = null; // OB-686: the owner's chasing steps as head office answered ({ state: 'not_set' } | { state: 'set', steps })
 
+let lastStepsOutcome = null;
 function paintSteps() {
+  if (lastStepsOutcome !== null) sayOutcome($('bk-steps-status'), lastStepsOutcome);
   for (const [id, k] of [['bk-steps-h', 'stepsH'], ['bk-steps-floor-l', 'floorL'], ['bk-steps-remind-l', 'remindL'], ['bk-steps-final-l', 'finalL'], ['bk-steps-stop-l', 'stopL'], ['bk-steps-save-text', 'stepsSave']]) $(id).textContent = w(k);
   const line = $('bk-steps-line');
   if (steps === null) { line.textContent = ''; return; }
@@ -83,13 +94,14 @@ if (api !== null && may.read) {
   $('bk-probing').addEventListener('click', () => run('probing', $('bk-probing'), () => session.probing()));
   // OB-686: read the owner's chasing steps as the page opens; the owner alone is offered the form.
   $('bk-steps-form').hidden = !may.setSteps;
-  const loadSteps = async () => { const out = await session.chasingSteps(); steps = out.result === 'ok' ? out.value : null; if (out.result !== 'ok') $('bk-steps-status').textContent = api.outcomeWords(lang(), out); paintSteps(); };
+  const loadSteps = async () => { const out = await session.chasingSteps(); steps = out.result === 'ok' ? out.value : null; if (out.result !== 'ok') lastStepsOutcome = out; paintSteps(); };
   void loadSteps();
   $('bk-steps-save').addEventListener('click', async () => {
     $('bk-steps-save').disabled = true;
     try {
       const out = await session.setChasingSteps({ floorRupees: $('bk-steps-floor').value, reminderDays: $('bk-steps-remind').value, finalDays: $('bk-steps-final').value, stopDays: $('bk-steps-stop').value });
-      $('bk-steps-status').textContent = out.result === 'ok' ? w('stepsSaved') : api.outcomeWords(lang(), out);
+      lastStepsOutcome = out.result === 'ok' ? null : out;
+      if (out.result === 'ok') $('bk-steps-status').textContent = w('stepsSaved'); else sayOutcome($('bk-steps-status'), out);
       if (out.result === 'ok') { steps = out.value; paintSteps(); }
     } finally { $('bk-steps-save').disabled = false; }
   });

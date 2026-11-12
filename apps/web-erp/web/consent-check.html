@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Check consent</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Check consent (U6 · UI/UX gap audit §27 "CRM · consent" · M16-FR-02 · crm-service.md "check a customer's consent state
+      (≤2)"). A THIN CLIENT, READ ONLY: a few letters of a customer's name find the person in head office's directory
+      (GET /v1/customer/overview, with each name beside the ref) and their consent ledger (GET /v1/customers/:ref/consent) is
+      read into one state per purpose and channel — the same rule head office applies before any message is sent. Nothing is
+      written here. Its session is apps/web-erp/src/consent-check-session.ts. No prompt/confirm/alert of the browser's own;
+      nothing on a timer. The page stands on the shared office parts (window.sreOffice).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      section.group { background: var(--bg); padding: 12px; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: grid; gap: 12px; grid-template-columns: minmax(200px, 1fr) auto; align-items: end; }
+      .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .facts { display: grid; gap: 4px; font-size: 14px; margin: 0; }
+      .groups { display: grid; gap: 12px; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Check consent</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Check consent</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="find" hidden aria-labelledby="find-h">
+        <h3 id="find-h"></h3>
+        <form class="row-form" id="find-form">
+          <div id="find-fields"></div>
+          <button id="f-show" type="submit" class="sre-btn sre-btn-primary"><span id="f-show-text"></span></button>
+        </form>
+        <p class="meta" id="f-note"></p>
+        <p class="status" id="f-status" role="status" aria-live="polite"></p>
+        <div id="matches-table"></div>
+      </section>
+      <section id="records" hidden aria-labelledby="records-h">
+        <h3 id="records-h"></h3>
+        <p class="facts" id="records-facts"></p>
+        <p class="meta" id="records-lead"></p>
+        <p class="meta" id="english-note"></p>
+        <p class="status" id="records-status" role="status" aria-live="polite"></p>
+        <div class="groups" id="purposes"></div>
+        <button id="back" type="button" class="sre-btn sre-btn-quiet"><span id="back-text"></span></button>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./consent-check.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

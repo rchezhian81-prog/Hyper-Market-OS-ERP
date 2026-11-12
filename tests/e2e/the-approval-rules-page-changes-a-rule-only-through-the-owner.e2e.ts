@@ -9,7 +9,7 @@ import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
  * OB-290 / OB-292 / OB-291 (owner, 23 Oct 2026) — the Approval rules page, in a real browser, on the PRODUCTION API over
  * real PostgreSQL, in English and Tamil:
  *
- *   • MONEY LIMITS: opening writes and reads nothing; the owner's ladder shows (∞ Unlimited, ₹2,000.00, ○ Not set); the
+ *   • MONEY LIMITS: opening writes and reads nothing; the owner's ladder shows (Unlimited, ₹2,000.00, Not set — words alone since U5); the
  *     accountant asks for the store manager's adjustment limit to be ₹3,000; it waits; the owner approves in his own
  *     session; the accountant applies it; it is in force at version 1 and reads back after an API restart;
  *   • ESCALATION WAITS: the store manager asks for the refund wait to be 90 minutes; the owner approves; applied;
@@ -77,13 +77,14 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       expect(s.reads, 'nothing is read before the person asks').toEqual([]);
       await showRules(s.page);
       const cell = (role: string, kind: string) => s.page.locator(`#limits-body tr[data-role="${role}"] .now[data-kind="${kind}"]`).innerText();
-      expect(await cell('owner', 'refund')).toBe('∞ Unlimited');
-      expect(await cell('store_manager', 'stock_adjustment')).toBe('✓ ₹2,000.00');
-      expect(await cell('accountant', 'refund')).toBe('○ Not set');
+      // U5 · G13: a limit reads as words alone — never a ○ / ∞ / ✓ character standing in for a state
+      expect(await cell('owner', 'refund')).toBe('Unlimited');
+      expect(await cell('store_manager', 'stock_adjustment')).toBe('₹2,000.00');
+      expect(await cell('accountant', 'refund')).toBe('Not set');
       // OB-500 (R7-A): a price cut at the till — unlimited for the owner; OB-519 (R8-A): ₹100 a line for a store manager.
-      expect(await s.page.locator('#limits-head th').allInnerTexts()).toContain('Price cut at the till');
-      expect(await cell('owner', 'price_override')).toBe('∞ Unlimited');
-      expect(await cell('store_manager', 'price_override')).toBe('✓ ₹100.00');
+      expect(await s.page.locator('#limits-grid thead th').allInnerTexts()).toContain('Price cut at the till'); // U5: the register's own head row
+      expect(await cell('owner', 'price_override')).toBe('Unlimited');
+      expect(await cell('store_manager', 'price_override')).toBe('₹100.00');
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 0 · The owner's figures of 23 Oct 2026/);
       // No reason → refused on the screen, nothing sent.
       await s.page.fill('#limit-store_manager-stock_adjustment', '3000');
@@ -98,13 +99,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
       expect(await s.page.locator('#asked li.row[data-status="waiting"]').innerText()).toMatch(/Money limits — Waiting for the owner/);
       await ownerApproves();
       await applyApproved(s.page);
-      expect(await cell('store_manager', 'stock_adjustment')).toBe('✓ ₹3,000.00');
-      expect(await cell('store_manager', 'price_override')).toBe('✓ ₹150.00');
+      expect(await cell('store_manager', 'stock_adjustment')).toBe('₹3,000.00');
+      expect(await cell('store_manager', 'price_override')).toBe('₹150.00');
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 1 · Changed by u-acc/);
       await s.page.click('#lang');
       expect(await s.page.textContent('#limits-h')).toBe('பண வரம்புகள்');
       expect(await s.page.locator('#limits-head th').allInnerTexts()).toContain('கல்லாவில் விலைக் குறைப்பு');
-      expect(await cell('accountant', 'refund')).toBe('○ அமைக்கப்படவில்லை');
+      expect(await cell('accountant', 'refund')).toBe('அமைக்கப்படவில்லை');
       expect(await cell('owner', 'refund')).toBe('∞ வரம்பு இல்லை');
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
@@ -113,7 +114,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Approv
     s = await open(ACC);
     try {
       await showRules(s.page);
-      expect(await s.page.locator('#limits-body tr[data-role="store_manager"] .now[data-kind="stock_adjustment"]').innerText()).toBe('✓ ₹3,000.00');
+      expect(await s.page.locator('#limits-body tr[data-role="store_manager"] .now[data-kind="stock_adjustment"]').innerText()).toBe('₹3,000.00');
       expect(await s.page.textContent('#limits-meta')).toMatch(/Version 1/);
     } finally { await s.close(); }
   }, 240_000);

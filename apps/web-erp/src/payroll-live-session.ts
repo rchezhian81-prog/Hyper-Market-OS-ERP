@@ -26,7 +26,7 @@ export type Lang = 'en' | 'ta';
 export const PAYROLL_LIVE_COPY = {
   en: {
     servedLead: 'Read from head office as you open it. This page only reads: approving, locking and the salary bank file are not done from here.',
-    hold: 'Pay release', holdOn: 'Switched on by the owner', holdOff: 'Held — switched off', setBy: 'Set by', why: 'Why',
+    hold: 'Pay release', holdOn: 'Switched on by the owner', holdOff: 'Held — switched off', holdOnDetail: 'Pay release is switched on: approving or locking a pay run and building the salary bank file may go ahead, each with its own checks (a fresh sign-in, a different approver).', holdOffDetail: 'Pay release is switched off: approving or locking a pay run and building the salary bank file are refused until the owner switches release on.', setBy: 'Set by', why: 'Why',
     runNumber: 'Pay run number', show: 'Show the pay run', period: 'Month', stage: 'Stage', submittedBy: 'Submitted by', approvedBy: 'Approved by',
     people: 'People paid', net: 'Net pay, all staff', lockedAt: 'Locked at', reversed: 'Reversed because', notGiven: 'not given',
     s_draft: 'Draft', s_submitted: 'Awaiting approval', s_approved: 'Approved — awaiting lock', s_locked: 'Locked', s_reversed: 'Reversed',
@@ -38,7 +38,7 @@ export const PAYROLL_LIVE_COPY = {
   },
   ta: {
     servedLead: 'திறக்கும்போது தலைமை அலுவலகத்திலிருந்து படிக்கப்படுகிறது. இந்தப் பக்கம் படிக்க மட்டுமே: அனுமதித்தல், பூட்டுதல், சம்பள வங்கிக் கோப்பு இங்கிருந்து செய்யப்படாது.',
-    hold: 'சம்பள வெளியீடு', holdOn: 'உரிமையாளரால் இயக்கப்பட்டது', holdOff: 'நிறுத்தி வைக்கப்பட்டுள்ளது — அணைக்கப்பட்டது', setBy: 'அமைத்தவர்', why: 'காரணம்',
+    hold: 'சம்பள வெளியீடு', holdOnDetail: 'சம்பள வெளியீடு இயக்கப்பட்டுள்ளது: சம்பள ஓட்டத்தை ஒப்புதல் அளிப்பதும் பூட்டுவதும், சம்பள வங்கிக் கோப்பை உருவாக்குவதும் அவற்றின் சொந்தச் சரிபார்ப்புகளுடன் (புதிய உள்நுழைவு, வேறு ஒப்புதல் அளிப்பவர்) தொடரலாம்.', holdOffDetail: 'சம்பள வெளியீடு நிறுத்தப்பட்டுள்ளது: உரிமையாளர் வெளியீட்டை இயக்கும் வரை சம்பள ஓட்டத்தை ஒப்புதல் அளிப்பதும் பூட்டுவதும், சம்பள வங்கிக் கோப்பை உருவாக்குவதும் மறுக்கப்படும்.', holdOn: 'உரிமையாளரால் இயக்கப்பட்டது', holdOff: 'நிறுத்தி வைக்கப்பட்டுள்ளது — அணைக்கப்பட்டது', setBy: 'அமைத்தவர்', why: 'காரணம்',
     runNumber: 'சம்பள ஓட்ட எண்', show: 'சம்பள ஓட்டத்தைக் காட்டு', period: 'மாதம்', stage: 'நிலை', submittedBy: 'சமர்ப்பித்தவர்', approvedBy: 'அனுமதித்தவர்',
     people: 'சம்பளம் பெறுவோர்', net: 'நிகர சம்பளம், அனைத்துப் பணியாளர்', lockedAt: 'பூட்டிய நேரம்', reversed: 'திருப்பியதற்கான காரணம்', notGiven: 'கொடுக்கப்படவில்லை',
     s_draft: 'வரைவு', s_submitted: 'அனுமதிக்காகக் காத்திருக்கிறது', s_approved: 'அனுமதிக்கப்பட்டது — பூட்டக் காத்திருக்கிறது', s_locked: 'பூட்டப்பட்டது', s_reversed: 'திருப்பப்பட்டது',
@@ -90,7 +90,8 @@ export function payRunRows(lang: Lang, run: PayRunAggregate): readonly { readonl
 export function holdWords(lang: Lang, hold: PayReleaseRead): { readonly headline: string; readonly detail: string; readonly on: boolean } {
   const w = (k: string) => payrollLiveWords(lang, k);
   const who = hold.setBy === null ? '' : `${w('setBy')}: ${hold.setBy}${hold.setAt === null ? '' : ` · ${hold.setAt}`}${hold.reason === null ? '' : ` · ${w('why')}: ${hold.reason}`}`;
-  return { headline: `${w('hold')}: ${hold.on ? w('holdOn') : w('holdOff')}`, detail: [hold.state, who].filter((x) => x !== '').join(' '), on: hold.on };
+  // OB-699: the detail is the page's own sentence for the switch's state; head office's English sentence is not shown.
+  return { headline: `${w('hold')}: ${hold.on ? w('holdOn') : w('holdOff')}`, detail: [w(hold.on ? 'holdOnDetail' : 'holdOffDetail'), who].filter((x) => x !== '').join(' '), on: hold.on };
 }
 
 export interface PayrollLiveSession {

@@ -74,7 +74,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       // The outside evidence: five tests, each ○ nothing on file — never ✓.
       expect(await s.page.locator('#outside-list li').count()).toBe(5);
       expect(await s.page.locator('#outside-list li[data-standing="nothing_on_file"]').count()).toBe(5);
-      expect(await s.page.locator('#outside-list li[data-kind="scan_to_line_p95"]').innerText()).toMatch(/○\s*Scan-to-line speed, ≤300 ms \(QG-05\) — nothing on file/);
+      expect(await s.page.locator('#outside-list li[data-kind="scan_to_line_p95"]').innerText()).toMatch(/Scan-to-line speed, ≤300 ms \(QG-05\) — nothing on file/);
       expect(await row(s.page, 'QG-05').locator('.blockers').innerText()).toMatch(/Scan-to-line speed on certified pilot hardware: nothing on file — not passed until it is done and recorded/);
       expect(await row(s.page, 'QG-04').locator('.blockers').innerText()).toMatch(/72-hour offline trading simulation: nothing on file[\s\S]*no store computer has reported its sync/);
       // R2 is not customer-facing: no pen-test blocker on QG-06.
@@ -91,7 +91,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Qualit
       await s.page.click('#outside-record');
       await s.page.locator('#outside-status.good').waitFor({ timeout: 15_000 });
       await s.page.locator('#outside-list li[data-kind="scan_to_line_p95"][data-standing="failed"]').waitFor({ timeout: 15_000 });
-      expect(await s.page.locator('#outside-list li[data-kind="scan_to_line_p95"]').innerText()).toMatch(/⚠\s*Scan-to-line speed, ≤300 ms \(QG-05\) — failed · p95 340 ms · latest: 2026-11-01/);
+      expect(await s.page.locator('#outside-list li[data-kind="scan_to_line_p95"]').innerText()).toMatch(/Scan-to-line speed, ≤300 ms \(QG-05\) — failed · p95 340 ms · latest: 2026-11-01/);
       expect(await row(s.page, 'QG-05').locator('.blockers').innerText()).toMatch(/FAILED — p95 340 ms against the 300 ms target/);
       // A step the screen refuses before asking: a timing typed with a decimal.
       await s.page.fill('#outside-ms', '2.5');

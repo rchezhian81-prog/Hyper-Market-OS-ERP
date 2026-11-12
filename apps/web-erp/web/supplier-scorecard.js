@@ -55,7 +55,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
 const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = $(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
 function shopDate(id, words, opts = {}) {
   const office = window.sreOffice; const input = $(id);
   if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
@@ -123,45 +123,49 @@ function paint() {
 const icon = (name, size = 18) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
 // Icons always beside the words; added once (a repaint that keeps the element's children does not stack them).
 const withIcon = (el, name) => { if ([...el.children].some((c) => c.tagName.toLowerCase() === 'svg')) return el; const i = icon(name); if (i) el.prepend(i, ' '); return el; };
-function cell(text, cls) { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; }
-function head(table, cols) {
-  const tr = document.createElement('tr');
-  for (const [k, num] of cols) { const th = document.createElement('th'); th.textContent = t(k); if (num) th.className = 'num'; tr.append(th); }
-  table.querySelector('thead').replaceChildren(tr);
+// U5 (G17): the roll-ups, the receipt lines and the contracts stand on the chrome's register part — built once per host,
+// fed by setRows; the column words are pairs, so the chrome repaints them on the toggle. A figure over the agreed price is
+// said with the warning chip beside it, never by colour alone.
+const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+const tables = {};
+function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
+function over(text, isOver) { if (!isOver) return text; const s = document.createElement('span'); s.append(window.sreOffice.recordChip('warning', text)); return s; }
+function rollupRows(host, rows, kind) {
+  const reg = register(host, {
+    id: `ppv-${kind}`, label: pair(kind === 'product' ? 'ppvByProduct' : 'ppvByReceipt'), pageSize: 10, sortable: true,
+    columns: [
+      { key: 'key', label: pair(kind === 'product' ? 'ppvProduct' : 'ppvReceipt'), value: (r) => (kind === 'product' ? (window.sreOffice.nameOf('product', r.key) ?? r.key) : r.key) },
+      { key: 'compared', label: pair('ppvCompared'), value: (r) => `${r.comparedLines}/${r.lines}`, align: 'end' },
+      { key: 'received', label: pair('ppvReceived'), value: (r) => api.signedRupees(r.receivedValueMinor).replace('+', ''), align: 'end' },
+      { key: 'agreed', label: pair('ppvAgreed'), value: (r) => api.signedRupees(r.orderValueMinor).replace('+', ''), align: 'end' },
+      { key: 'variance', label: pair('ppvVariance'), value: (r) => api.signedRupees(r.varianceMinor), sort: 'number', align: 'end', render: (r) => over(api.signedRupees(r.varianceMinor), r.varianceMinor > 0) },
+      { key: 'contract', label: pair('ppvVsContract'), value: (r) => (r.contractLines === 0 ? t('ppvNoContract') : api.signedRupees(r.contractVarianceMinor)), align: 'end', render: (r) => over(r.contractLines === 0 ? t('ppvNoContract') : api.signedRupees(r.contractVarianceMinor), r.contractVarianceMinor > 0) },
+      { key: 'open', label: pair('ppvOpen'), sort: false, value: () => t('ppvOpen'), render: (r) => { const open = document.createElement('button'); open.classList.add('sre-btn'); open.type = 'button'; open.dataset.drill = kind; open.dataset.key = r.key; open.append(t('ppvOpen')); withIcon(open, 'list'); open.addEventListener('click', () => { void openDrill(kind, r.key); }); return open; } },
+    ],
+    rowKey: (r) => r.key, rowData: (r) => ({ key: r.key }),
+    empty: { title: pair('ppvNothing') },
+  });
+  reg.setRows(rows);
 }
-function rollupRows(table, rows, kind) {
-  head(table, [[kind === 'product' ? 'ppvProduct' : 'ppvReceipt', false], ['ppvCompared', true], ['ppvReceived', true], ['ppvAgreed', true], ['ppvVariance', true], ['ppvVsContract', true], ['ppvOpen', false]]);
-  table.querySelector('tbody').replaceChildren(...rows.map((r) => {
-    const tr = document.createElement('tr');
-    tr.dataset.key = r.key;
-    const open = document.createElement('button'); open.classList.add('sre-btn');
-    open.type = 'button'; open.dataset.drill = kind; open.dataset.key = r.key;
-    open.append(t('ppvOpen')); withIcon(open, 'list');
-    open.addEventListener('click', () => { void openDrill(kind, r.key); });
-    const td = document.createElement('td'); td.append(open);
-    tr.append(
-      cell(r.key), cell(`${r.comparedLines}/${r.lines}`, 'num'), cell(api.signedRupees(r.receivedValueMinor).replace('+', ''), 'num'), cell(api.signedRupees(r.orderValueMinor).replace('+', ''), 'num'),
-      cell(api.signedRupees(r.varianceMinor), r.varianceMinor > 0 ? 'num over' : 'num'),
-      cell(r.contractLines === 0 ? t('ppvNoContract') : api.signedRupees(r.contractVarianceMinor), r.contractVarianceMinor > 0 ? 'num over' : 'num'),
-      td,
-    );
-    return tr;
-  }));
-}
-function lineRows(table, lines) {
-  head(table, [['ppvReceipt', false], ['ppvProduct', false], ['ppvOrder', false], ['ppvKept', true], ['ppvReceived', true], ['ppvAgreed', true], ['ppvVariance', true], ['ppvContract', true], ['ppvVsContract', true]]);
-  table.querySelector('tbody').replaceChildren(...lines.map((l) => {
-    const tr = document.createElement('tr');
-    tr.dataset.grn = l.grnId; tr.dataset.product = l.productId;
-    const order = l.order === undefined ? `${t('ppvNotCompared')} ${t(`nc_${l.notCompared}`)}` : api.costWords(l.order.unitCost) + (l.order.basis === 'blanket_release' ? ` (${t('ppvBlanket')})` : '');
-    tr.append(
-      cell(`${l.receiptNumber} · ${l.receivedOn}`), cell(l.productId), cell(l.poNumber ?? '—'), cell(`${l.keptMinor} ${l.uom}`, 'num'), cell(api.receivedCostWords ? api.receivedCostWords(lang, l) : (l.receivedUnitCost === null ? t('ppvNotYetBilled') : api.costWords(l.receivedUnitCost)), l.receivedUnitCost === null ? 'num not-billed' : 'num'),
-      cell(order, 'num'), cell(l.order === undefined ? '—' : api.signedRupees(l.order.varianceMinor), l.order !== undefined && l.order.varianceMinor > 0 ? 'num over' : 'num'),
-      cell(l.contract === undefined ? t('ppvNoContract') : `${api.costWords(l.contract.unitCost)} (${l.contract.agreementId})`, 'num'),
-      cell(l.contract === undefined ? '—' : api.signedRupees(l.contract.varianceMinor), l.contract !== undefined && l.contract.varianceMinor > 0 ? 'num over' : 'num'),
-    );
-    return tr;
-  }));
+function lineRows(host, lines) {
+  const reg = register(host, {
+    id: 'ppv-lines', label: pair('ppvLines'), pageSize: 10, sortable: true,
+    columns: [
+      { key: 'receipt', label: pair('ppvReceipt'), value: (l) => `${l.receiptNumber} · ${l.receivedOn}` },
+      { key: 'product', label: pair('ppvProduct'), value: (l) => window.sreOffice.nameOf('product', l.productId) ?? l.productId },
+      { key: 'order', label: pair('ppvOrder'), value: (l) => l.poNumber ?? null },
+      { key: 'kept', label: pair('ppvKept'), value: (l) => `${l.keptMinor} ${l.uom}`, align: 'end' },
+      { key: 'received', label: pair('ppvReceived'), value: (l) => (api.receivedCostWords ? api.receivedCostWords(lang, l) : (l.receivedUnitCost === null ? null : api.costWords(l.receivedUnitCost))), align: 'end' },
+      { key: 'agreed', label: pair('ppvAgreed'), value: (l) => (l.order === undefined ? `${t('ppvNotCompared')} ${t(`nc_${l.notCompared}`)}` : api.costWords(l.order.unitCost) + (l.order.basis === 'blanket_release' ? ` (${t('ppvBlanket')})` : '')), align: 'end' },
+      { key: 'variance', label: pair('ppvVariance'), value: (l) => (l.order === undefined ? null : api.signedRupees(l.order.varianceMinor)), align: 'end', render: (l) => (l.order === undefined ? null : over(api.signedRupees(l.order.varianceMinor), l.order.varianceMinor > 0)) },
+      { key: 'contract', label: pair('ppvContract'), value: (l) => (l.contract === undefined ? t('ppvNoContract') : `${api.costWords(l.contract.unitCost)} (${l.contract.agreementId})`), align: 'end' },
+      { key: 'vsContract', label: pair('ppvVsContract'), value: (l) => (l.contract === undefined ? null : api.signedRupees(l.contract.varianceMinor)), align: 'end', render: (l) => (l.contract === undefined ? null : over(api.signedRupees(l.contract.varianceMinor), l.contract.varianceMinor > 0)) },
+    ],
+    rowKey: (l) => `${l.grnId}|${l.productId}`, rowData: (l) => ({ grn: l.grnId, product: l.productId }),
+    empty: { title: pair('ppvNothing') },
+  });
+  if (reg === null) return;
+  reg.setRows(lines);
 }
 
 function paintPpv() {
@@ -218,18 +222,21 @@ let contracts = null;
 function paintContracts() {
   for (const [id, key] of [['contracts-h', 'contractsH'], ['contracts-show-text', 'contractsShow'], ['contract-h', 'contractH'], ['contract-lead', 'contractLead'], ['k-id-l', 'contractId'],
     ['k-supplier-l', 'supplier'], ['k-starts-l', 'startsOn'], ['k-ends-l', 'endsOn'], ['k-lead-l', 'leadDays'], ['k-ask-text', 'ask'], ['k-record-text', 'record']]) { const n = $(id); if (n) n.textContent = tt(key); }
-  const body = $('contracts').querySelector('tbody');
-  body.replaceChildren();
-  if (contracts === null) return;
-  if (contracts.length === 0) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.textContent = tt('noContracts'); tr.append(td); body.append(tr); return; }
-  for (const a of contracts) {
-    const tr = document.createElement('tr');
-    tr.dataset.contract = a.contractId; tr.dataset.finding = a.finding;
-    for (const [v, cls] of [[a.contractId, ''], [a.supplierId, ''], [tt(`f_${a.finding}`), a.finding === 'active' ? '' : 'over'], [`${a.daysRemaining} ${tt('daysLeft')}`, 'num']]) {
-      const td = document.createElement('td'); td.textContent = v; if (cls) td.className = cls; tr.append(td);
-    }
-    body.append(tr);
-  }
+  const tpair = (k) => ({ en: terms === null ? k : terms.words('en', k), ta: terms === null ? k : terms.words('ta', k) });
+  const reg = register($('contracts'), {
+    id: 'contracts', label: tpair('contractsH'), pageSize: 10, sortable: true,
+    columns: [
+      { key: 'contract', label: tpair('contractId'), value: (a) => a.contractId },
+      { key: 'supplier', label: tpair('supplier'), value: (a) => window.sreOffice.nameOf('supplier', a.supplierId) ?? a.supplierId },
+      // G13: where the contract stands is the one record chip — in force / ending soon / ended / not yet approved
+      { key: 'finding', label: tpair('contractsH'), value: (a) => tt(`f_${a.finding}`), render: (a) => window.sreOffice.recordChip(a.finding === 'active' ? 'active' : a.finding === 'expiring_soon' ? 'due' : a.finding === 'expired' ? 'expired' : 'pending', tt(`f_${a.finding}`)) },
+      { key: 'days', label: tpair('daysLeft'), value: (a) => a.daysRemaining, sort: 'number', align: 'end', render: (a) => document.createTextNode(`${a.daysRemaining} ${tt('daysLeft')}`) },
+    ],
+    rowKey: (a) => a.contractId, rowData: (a) => ({ contract: a.contractId, finding: a.finding }),
+    empty: { title: tpair('noContracts') },
+  });
+  if (reg === null) return;
+  if (contracts === null) reg.setState('unknown'); else reg.setRows(contracts);
 }
 async function showContracts() {
   const out = await terms.session.contracts();
@@ -289,3 +296,5 @@ function whyDisabled(btn, why) {
 document.addEventListener('sre:chrome', () => { if (terms !== null) { shopDate('k-starts', { en: terms.words('en', 'startsOn'), ta: terms.words('ta', 'startsOn') }); shopDate('k-ends', { en: terms.words('en', 'endsOn'), ta: terms.words('ta', 'endsOn') }); } shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
 
 pickable('supplier', 'supplier', 'pickSupplier');
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); paintContracts(); }, { once: true });

@@ -93,10 +93,6 @@
       }
       .problem-row .where { color: var(--warn); font-weight: 700; }
 
-      table { width: 100%; border-collapse: collapse; font-size: 15px; }
-      th { text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; padding: 8px 6px; }
-      td { padding: 8px 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-      td.amount, th.amount { text-align: right; }
       tr.blocked td { color: var(--warn); }
 
       .empty { color: var(--muted); padding: 20px 4px; }
@@ -126,11 +122,6 @@
       .otb-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
       .otb-status { font-size: 15px; min-height: 20px; margin: 4px 0; overflow-wrap: anywhere; }
       .otb-status.good { color: var(--good); } .otb-status.err { color: var(--danger-text); }
-      .otb-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }
-      .otb-summary div { background: var(--panel); border-radius: 12px; padding: 10px 14px; }
-      .otb-summary .label { display: block; color: var(--muted); font-size: var(--fs-sm); }
-      .otb-summary .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      tr.over td { color: var(--danger-text); }
       .escalation { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
       .escalation.over { border-left-color: var(--danger); }
       .escalation .what { font-weight: 600; overflow-wrap: anywhere; }
@@ -147,7 +138,7 @@
       .group-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
       .exception { color: var(--danger-text); }
       .table-wrap { overflow-x: auto; }
-      #reorder-proposal input[type='checkbox'] { width: 22px; height: 22px; }
+      #reorder-proposal input[type='checkbox'] { width: 24px; height: 24px; }
       #reorder-proposal input.qty { width: 100%; min-height: var(--tap); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; background: var(--bg); color: var(--ink); box-sizing: border-box; }
       .version { font-size: 15px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
       .version.superseded { color: var(--muted); text-decoration: line-through; }
@@ -302,8 +293,8 @@
         </div>
         <button id="budget-read" class="wide sre-btn" type="button">Show this month</button>
         <p class="otb-status" id="budget-status" role="status" aria-live="polite"></p>
-        <div class="otb-summary" id="budget-summary"></div>
-        <table id="otb-table"></table>
+        <div id="budget-summary" role="status" aria-live="polite"></div>
+        <div id="otb-table" aria-labelledby="otb-h"></div>
 
         <h3 id="waiting-title">Orders waiting for approval this month</h3>
         <div id="waiting-orders"></div>
@@ -362,14 +353,14 @@
         <p class="otb-status" id="reorder-status" role="status" aria-live="polite"></p>
         <h3 id="reorder-proposal-h">What head office proposes to reorder</h3>
         <p class="lead" id="reorder-advisory"></p>
-        <div class="table-wrap"><table id="reorder-proposal"></table></div>
+        <div id="reorder-proposal" aria-labelledby="reorder-proposal-h"></div>
         <div id="reorder-exceptions"></div>
         <div id="reorder-raise-box" hidden>
           <button id="reorder-raise" class="primary wide sre-btn sre-btn-primary" type="button">Raise a requisition from the ticked lines</button>
           <p class="otb-status" id="reorder-raise-status" role="status" aria-live="polite"></p>
         </div>
         <h3 id="reorder-params-h">Reorder settings</h3>
-        <div class="table-wrap"><table id="reorder-params"></table></div>
+        <div id="reorder-params" aria-labelledby="reorder-params-h"></div>
         <div id="reorder-set" hidden>
           <h3 id="reorder-set-h">Set an item's reorder settings</h3>
           <div class="otb-row">

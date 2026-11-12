@@ -150,6 +150,18 @@ const WORDS = {
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
 
+// U5 (G17): every list stands on the chrome's register part — built once per host, fed by setRows, repainted on the
+// language toggle by the chrome itself (the column words are pairs).
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: (WORDS.ta ?? {})[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function register(host, spec) {
+  if (!window.sreOffice) return null; // the chrome's parts arrive after this script
+  const have = tables[spec.id];
+  if (have && have.connected()) return have;
+  tables[spec.id] = window.sreOffice.table(host, spec);
+  return tables[spec.id];
+}
+
 // U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
 // while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
 const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
@@ -239,25 +251,38 @@ function paintBasis() {
 }
 
 function paintHistory() {
-  const tbody = $('history'); tbody.replaceChildren();
-  if (history !== null && history.length === 0) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = t('noHistory'); tr.append(td); tbody.append(tr); }
-  for (const e of history ?? []) {
-    const tr = document.createElement('tr'); tr.dataset.entry = e.id;
-    for (const v of [scopeWords(e.scope), `${e.scopeRef}${e.batchId === undefined ? '' : ` · ${e.batchId}`}`, rupees(e.price.minor), shopDay(e.effectiveFrom), e.effectiveTo ? shopDay(e.effectiveTo) : t('open'), String(e.version)]) {
-      const td = document.createElement('td'); td.textContent = v; tr.append(td);
-    }
-    tbody.append(tr);
-  }
+  const reg = register($('history-host'), {
+    id: 'price-history', label: pair('historyH'), pageSize: 10, sortable: true, bodyId: 'history',
+    columns: [
+      { key: 'scope', label: pair('cScope'), value: (e) => scopeWords(e.scope) },
+      { key: 'ref', label: pair('cRef'), value: (e) => `${e.scopeRef}${e.batchId === undefined ? '' : ` · ${e.batchId}`}` },
+      { key: 'price', label: pair('cPrice'), value: (e) => rupees(e.price.minor), align: 'end' },
+      { key: 'from', label: pair('cFrom'), value: (e) => shopDay(e.effectiveFrom) },
+      { key: 'to', label: pair('cTo'), value: (e) => (e.effectiveTo ? shopDay(e.effectiveTo) : t('open')) },
+      { key: 'ver', label: pair('cVer'), value: (e) => e.version, sort: 'number', align: 'end' },
+    ],
+    rowKey: (e) => e.id, rowData: (e) => ({ entry: e.id }),
+    empty: { title: pair('noHistory') },
+  });
+  if (reg === null) return;
+  // Before a product is chosen there is no list to read; once chosen, head office's answer or "Not known"
+  if (history === null) reg.setState('unknown'); else reg.setRows(history);
 }
 
 function paintZones() {
-  const tbody = $('zones'); tbody.replaceChildren();
-  if (zones !== null && zones.length === 0) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = t('noZones'); tr.append(td); tbody.append(tr); }
-  for (const z of zones ?? []) {
-    const tr = document.createElement('tr'); tr.dataset.store = z.storeId;
-    for (const v of [z.storeId, z.zoneId, z.setBy, shopTime(z.setAt)]) { const td = document.createElement('td'); td.textContent = v; tr.append(td); }
-    tbody.append(tr);
-  }
+  const reg = register($('zones-host'), {
+    id: 'price-zones', label: pair('tabZones'), pageSize: 10, sortable: true, bodyId: 'zones',
+    columns: [
+      { key: 'store', label: pair('cZStore'), value: (z) => window.sreOffice.nameOf('store', z.storeId) ?? z.storeId },
+      { key: 'zone', label: pair('cZone'), value: (z) => z.zoneId },
+      { key: 'by', label: pair('cZBy'), value: (z) => window.sreOffice.nameOf('person', z.setBy) ?? z.setBy },
+      { key: 'at', label: pair('cZAt'), value: (z) => shopTime(z.setAt) },
+    ],
+    rowKey: (z) => z.storeId, rowData: (z) => ({ store: z.storeId }),
+    empty: { title: pair('noZones') },
+  });
+  if (reg === null) return;
+  if (zones === null) reg.setState('unknown'); else reg.setRows(zones);
   for (const id of ['z-store', 'z-zone', 'z-save']) $(id).disabled = !mayZone;
   whyDisabled($('z-save'), mayZone ? '' : 'role');
   $('zone-form').hidden = !mayZone;
@@ -319,8 +344,8 @@ function paint() {
     ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['tab-pack', 'tabPack'], ['pack-h', 'tabPack'], ['pack-lead', 'packLead'], ['l-pk-store', 'pkStore'], ['l-pk-asof', 'pkAsOf'], ['pk-preview', 'pkPreview'], ['pk-publish', 'pkPublish'], ['l-pk-ack', 'pkAck'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
     ['l-p-product', 'product'], ['l-p-scope', 'scope'], ['o-store', 'store'], ['o-zone', 'zone'], ['o-channel', 'channel'], ['o-customer', 'customer'], ['l-p-ref', 'ref'], ['l-p-from', 'from'], ['l-p-to', 'to'], ['l-p-price', 'price'],
     ['k-mrp', 'kMrp'], ['k-cost', 'kCost'], ['k-floor', 'kFloor'], ['k-now', 'kNow'], ['k-size', 'kSize'], ['read-basis', 'readBasis'], ['save', 'save'], ['l-p-why', 'why'], ['ask', 'ask'],
-    ['history-h', 'historyH'], ['c-scope', 'cScope'], ['c-ref', 'cRef'], ['c-price', 'cPrice'], ['c-from', 'cFrom'], ['c-to', 'cTo'], ['c-ver', 'cVer'],
-    ['zones-h', 'tabZones'], ['zones-lead', 'zonesLead'], ['c-zstore', 'cZStore'], ['c-zone', 'cZone'], ['c-zby', 'cZBy'], ['c-zat', 'cZAt'], ['l-z-store', 'zStore'], ['l-z-zone', 'zZone'], ['z-save', 'zSave'],
+    ['history-h', 'historyH'], 
+    ['zones-h', 'tabZones'], ['zones-lead', 'zonesLead'],  ['l-z-store', 'zStore'], ['l-z-zone', 'zZone'], ['z-save', 'zSave'],
     ['channels-h', 'tabChannels'], ['channels-lead', 'channelsLead'], ['pending-h', 'pendingH'], ['l-d-store', 'dStore'], ['d-run', 'dRun']]) { const el = $(id); if (el) el.textContent = t(k); }
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
@@ -438,7 +463,8 @@ $('d-run').addEventListener('click', async () => {
 for (const v of ['prices', 'zones', 'channels', 'pack']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
 
 // ── W4 · Send to the tills: preview head office's pack for a store, then send it (its own permission; head office's step-up) ──
-const packOf = () => ({ storeId: $('pk-store').value.trim(), asOf: $('pk-asof').value || today() });
+// U2c: the pack's day on the shared dd/mm field (the last native date on this page); ISO goes to head office as before.
+const packOf = () => ({ storeId: $('pk-store').value.trim(), asOf: dateOf('pk-asof') || today() });
 $('pk-preview').addEventListener('click', async () => {
   const st = $('pk-status'); const { storeId, asOf } = packOf();
   if (storeId === '') { tell(st, false, t('pkNeedStore')); return; }
@@ -503,8 +529,10 @@ function whyDisabled(btn, why) {
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
 // the chrome loads after this script: its shared date fields replace the plain ones once it is there
-document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('p-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('p-to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); shopDate('pk-asof', { en: wordsIn('en', 'pkAsOf'), ta: wordsIn('ta', 'pkAsOf') }); paint(); }, { once: true });
 
 pickable('p-product', 'product', 'pickProduct');
 // a store price picks a store, a customer price a customer; a zone or a channel has no list to pick from (typed, as before)
 pickable('p-ref', () => ({ store: 'store', customer: 'customer' })[$('p-scope').value] ?? null, () => ($('p-scope').value === 'customer' ? 'pickCustomer' : 'pickStore'));
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

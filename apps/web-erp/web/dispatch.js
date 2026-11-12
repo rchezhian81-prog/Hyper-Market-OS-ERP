@@ -8,6 +8,20 @@
 // OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** The chrome's "Not known" in the reader's language — never a dash. */
+const notKnownWord = () => { const o = sreO(); return o && typeof o.words === 'function' ? o.words('notKnown') : 'Not known'; };
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
 // ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
 // and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
 // page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
@@ -15,44 +29,17 @@ const $ = (id) => document.getElementById(id);
 // the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
 // changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
 const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
-const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
-const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
-const u2bRepaints = [];
-const repaintPickers = () => { for (const f of u2bRepaints) f(); };
-/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+const u2bTitle = (titleKey) => ({ en: u2bWords.en[titleKey], ta: u2bWords.ta[titleKey] });
+/** U5 · G17: the chrome's own picker beside the field (sreOffice.pickable) — the page keeps its titles; the button and the name
+ *  it shows follow the language toggle inside the chrome. Mounted once the chrome is there; off the box nothing changes. */
 function pickableEl(input, kind, titleKey, extra = {}) {
   if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  o.pickable(input, kind, u2bTitle(titleKey), { ...extra, ...(typeof extra.titleOf === 'function' ? { titleOf: () => u2bTitle(extra.titleOf()) } : {}) });
 }
-function pickable(inputId, kind, titleKey, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  pickableEl(input, kind, titleKey, extra);
-}
-// the pickers' words and the shared fields' labels follow the language toggle like the page's own words
-new MutationObserver(() => { repaintPickers(); if (typeof repaintShopDates === 'function') repaintShopDates(); if (typeof ownStores !== 'undefined') for (const id of ownStores) ownStore(id); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+function pickable(inputId, kind, titleKey, extra = {}) { pickableEl(document.getElementById(inputId), kind, titleKey, extra); }
+new MutationObserver(() => { if (typeof ownStores !== 'undefined') for (const id of ownStores) ownStore(id); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 // ── U2b end
 const api = window.dispatch ?? null;
 const session = api?.session ?? null;
@@ -64,22 +51,13 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 // U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
 // while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
 const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
-const shopDates = new Map();
-/** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+// A date a shop person reads — the chrome's shared dd/mm/yyyy field (sreOffice.shopDate), while the page goes on sending ISO (`dateOf`).
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  const o = sreO();
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  o.shopDate(id, words, opts);
 }
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const dateOf = (id) => { const o = sreO(); return o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : (document.getElementById(id)?.value ?? ''); };
 const store = () => $('store').value;
 const runDate = () => dateOf('run-date');
 
@@ -90,14 +68,14 @@ for (const [id, name] of [['show-orders', 'search'], ['show-waves', 'list-checks
 }
 
 function say(where, out) { $(where).className = 'status err'; $(where).textContent = api.outcomeWords(lang, out); }
-function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
+function good(where, words) { $(where).className = 'status good'; sayWith($(where), 'done', words); }
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, onClick, cls) {
   const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls;
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
-const clock = (iso) => (iso ? shopTimeOf(iso) : '—');
+const clock = (iso) => (iso ? shopTimeOf(iso) : notKnownWord());
 
 // ── Waves ────────────────────────────────────────────────────────────────────
 function candidateRow(c, selectable) {
@@ -118,7 +96,7 @@ async function showOrders() {
   if (out.result !== 'ok') { say('waves-status', out); return; }
   const c = out.value;
   $('candidates').hidden = false;
-  $('ready').replaceChildren(...(c.ready.length === 0 ? [text('li', `○ ${t('noneReady')}`, 'row')] : c.ready.map((x) => candidateRow(x, true))));
+  $('ready').replaceChildren(...(c.ready.length === 0 ? [withChip(text('li', t('noneReady'), 'row'), 'unknown')] : c.ready.map((x) => candidateRow(x, true))));
   $('held-orders').replaceChildren(...c.held.map((x) => candidateRow(x, false)));
   $('on-wave').replaceChildren(...c.onWave.map((x) => candidateRow(x, false)));
   $('waves-status').className = 'status'; $('waves-status').textContent = '';
@@ -130,7 +108,7 @@ async function build() {
   const out = await session.buildWave({ waveId: $('wave-id').value, storeId: store(), pickerId: $('picker').value, orderIds });
   if (out.result !== 'ok') { say('waves-status', out); return; }
   const w = out.value;
-  const kept = w.refused.length === 0 ? '' : ` · ⚠ ${t('refusedK')}: ${w.refused.map((r) => `${r.orderId} (${r.detail})`).join('; ')}`;
+  const kept = w.refused.length === 0 ? '' : ` · ${t('refusedK')}: ${w.refused.map((r) => `${r.orderId} (${r.detail})`).join('; ')}`;
   await showOrders();
   good('waves-status', `${t('built')} ${w.waveId} · ${w.pickerId} · ${w.lineCount} ${t('lines')}${kept}`);
 }
@@ -143,7 +121,7 @@ async function showWaves() {
     const li = document.createElement('li');
     li.className = `row tone-${w.stage === 'packed' ? 'ok' : w.short + w.qualityFailed > 0 ? 'error' : 'degraded'}`;
     li.dataset.wave = w.waveId; li.dataset.stage = w.stage;
-    li.append(text('strong', `${w.stage === 'packed' ? '✓' : '⏱'} ${w.waveId} · ${w.pickerId} — ${t(`stage_${w.stage}`)}`));
+    li.append(withChip(text('strong', `${w.waveId} · ${w.pickerId} — ${t(`stage_${w.stage}`)}`), w.stage === 'packed' ? 'done' : 'pending'));
     li.append(text('span', `${w.orderIds.join(', ')} · ${w.picked} ${t('pickedK')} · ${w.short} ${t('shortK')} · ${w.substituted} ${t('subK')} · ${w.qualityFailed} ${t('qcK')} · ${w.notYet} ${t('notYetK')}`, 'facts'));
     return li;
   }));
@@ -156,14 +134,14 @@ function drawPlan(result) {
   $('planned').hidden = false;
   $('planned').replaceChildren(...plan.routes.map((r) => {
     const li = document.createElement('li'); li.className = 'row tone-degraded'; li.dataset.route = r.routeId;
-    li.append(text('strong', `⏱ ${r.routeId} · ${r.driverId} · ${r.stops.length} · ${(r.totalMetres / 1000).toFixed(1)} km (${plan.distancesAre === 'straight_line' ? 'straight line' : plan.distancesAre}) · ${api.rupees(r.totalCodMinor)}`));
+    li.append(withChip(text('strong', `${r.routeId} · ${r.driverId} · ${r.stops.length} · ${(r.totalMetres / 1000).toFixed(1)} km (${plan.distancesAre === 'straight_line' ? 'straight line' : plan.distancesAre}) · ${api.rupees(r.totalCodMinor)}`), 'pending'));
     const stops = document.createElement('ol'); stops.className = 'stops';
-    for (const s of r.stops) stops.append(text('li', `${s.sequence}. ${s.orderId} · ${s.area} · ~${clock(s.estimatedArrivalAt)}${s.missesTheWindow ? ' · ⚠ misses the window' : ''}${s.codMinor > 0 ? ` · ${api.rupees(s.codMinor)}` : ''}`));
+    for (const s of r.stops) stops.append(text('li', `${s.sequence}. ${s.orderId} · ${s.area} · ~${clock(s.estimatedArrivalAt)}${s.missesTheWindow ? ' · misses the window' : ''}${s.codMinor > 0 ? ` · ${api.rupees(s.codMinor)}` : ''}`));
     li.append(stops);
     if (may.dispatch) li.append(button(t('assign'), 'send', () => { void assign(r.routeId, li); }));
     return li;
   }));
-  const notOn = [...plan.unplanned.map((u) => `⚠ ${u.orderId} — ${u.detail}`), ...result.held.map((h) => `⚠ ${h.orderId} — ${t(`st_${h.standing}`)}`)];
+  const notOn = [...plan.unplanned.map((u) => `${u.orderId} — ${u.detail}`), ...result.held.map((h) => `${h.orderId} — ${t(`st_${h.standing}`)}`)];
   $('unplanned').hidden = notOn.length === 0;
   $('unplanned').replaceChildren(text('li', t('unplannedK'), 'row'), ...notOn.map((w) => text('li', w, 'row tone-error')));
 }
@@ -182,13 +160,11 @@ async function assign(routeId, li) {
 async function offRoad() {
   const out = await session.offRoad({ ...planInputs(), driverId: $('off-driver').value, reason: $('off-reason').value });
   if (out.result !== 'ok') { say('plan-status', out); return; }
-  good('plan-status', `${t('withdrawnK')} ${(out.value.withdrawn ?? []).join(', ') || '—'} · ${t('planned')} ${out.value.plan.routes.length} ${t('routesK')}`);
+  good('plan-status', `${t('withdrawnK')} ${(out.value.withdrawn ?? []).join(', ') || notKnownWord()} · ${t('planned')} ${out.value.plan.routes.length} ${t('routesK')}`);
   drawPlan(out.value);
 }
 
 // ── The day's routes ─────────────────────────────────────────────────────────
-const CODE_MARK = { matched: '✓', wrong: '⚠', not_issued: '⚠', not_given: '○' };
-const FENCE_MARK = { inside: '✓', outside: '⚠', radius_not_set: '○', no_device_location: '○', no_address_location: '○' };
 async function showBoard() {
   const out = await session.board(runDate(), store());
   if (out.result !== 'ok') { say('board-status', out); return; }
@@ -199,7 +175,7 @@ async function showBoard() {
   const tolWords = api.toleranceNote(lang, out.value.handoverTolerance);
   $('board-tolerance').hidden = tolWords === '';
   $('board-tolerance').className = 'status err';
-  $('board-tolerance').textContent = tolWords === '' ? '' : `⚠ ${tolWords}`;
+  if (tolWords === '') $('board-tolerance').textContent = ''; else sayWith($('board-tolerance'), 'warning', tolWords);
   $('board-tolerance').dataset.state = out.value.handoverTolerance?.state ?? 'not_told';
   const tolConfirmed = out.value.handoverTolerance?.state === 'confirmed';
   $('board').replaceChildren(...out.value.routes.map((r) => {
@@ -207,25 +183,25 @@ async function showBoard() {
     const flagged = r.flags.length > 0 || (r.cash.handover !== null && r.cash.handover.material);
     li.className = `row tone-${flagged ? 'error' : r.status === 'settled' ? 'ok' : 'degraded'}`;
     li.dataset.route = r.routeId; li.dataset.status = r.status;
-    li.append(text('strong', `${r.status === 'settled' ? '✓' : r.status === 'withdrawn' ? '↺' : '⏱'} ${r.routeId} · ${r.driverId ?? '—'} — ${t(`s_${r.status}`)}`));
+    li.append(withChip(text('strong', `${r.routeId} · ${r.driverId ?? notKnownWord()} — ${t(`s_${r.status}`)}`), r.status === 'settled' ? 'done' : r.status === 'withdrawn' ? 'cancelled' : 'pending'));
     const stops = document.createElement('ol'); stops.className = 'stops';
     for (const s of r.stops) {
       const item = document.createElement('li'); item.dataset.stop = s.stopId; item.dataset.order = s.orderRef; item.dataset.state = s.state;
       if (s.flags.length > 0) item.className = 'flagged';
       const proof = s.proofCheck === null ? t('noProofYet')
-        : `${t('codeK')}: ${CODE_MARK[s.proofCheck.code] ?? '○'} ${t(`code_${s.proofCheck.code}`)} · ${t('fenceK')}: ${FENCE_MARK[s.proofCheck.fence.result] ?? '○'} ${t(`fence_${s.proofCheck.fence.result}`)}${s.proofCheck.fence.distanceMetres === undefined ? '' : ` (${s.proofCheck.fence.distanceMetres} m)`}`;
+        : `${t('codeK')}: ${t(`code_${s.proofCheck.code}`)} · ${t('fenceK')}: ${t(`fence_${s.proofCheck.fence.result}`)}${s.proofCheck.fence.distanceMetres === undefined ? '' : ` (${s.proofCheck.fence.distanceMetres} m)`}`;
       item.textContent = `${s.sequence}. ${s.orderRef} · ${s.state.replace(/_/g, ' ')} · ${proof} · ${t('photoK')}: ${s.imagesKept}`;
       // OB-343 · OB-344: a wrong code or a hand-over away from the address is a visible flag, in words — never refused.
       if (s.flags.length > 0) {
         const look = document.createElement('span'); look.className = 'flag-words'; look.dataset.flags = s.flags.join(' ');
-        look.textContent = ` · ⚠ ${t('needsLook')} ${api.flagWords(lang, s.flags).join('; ')}`;
+        look.textContent = ` · ${t('needsLook')} ${api.flagWords(lang, s.flags).join('; ')}`;
         item.append(look);
       }
       stops.append(item);
     }
     li.append(stops);
     const h = r.cash.handover;
-    li.append(text('span', `${t('expectedK')} ${api.rupees(r.cash.fromStops.expectedMinor)} · ${t('collectedK')} ${api.rupees(r.cash.fromStops.collectedMinor)}${h === null ? '' : ` · ${t('countedK')} ${api.rupees(h.countedMinor)} · ${t('varianceK')} ${api.rupees(h.varianceMinor)}${h.material ? ` · ⚠ ${t('cashOffice')}` : ''}${tolConfirmed ? '' : ` · ⚠ ${t('tolNotConfirmedShort')}`}`}`, 'facts cash'));
+    li.append(text('span', `${t('expectedK')} ${api.rupees(r.cash.fromStops.expectedMinor)} · ${t('collectedK')} ${api.rupees(r.cash.fromStops.collectedMinor)}${h === null ? '' : ` · ${t('countedK')} ${api.rupees(h.countedMinor)} · ${t('varianceK')} ${api.rupees(h.varianceMinor)}${h.material ? ` · ${t('cashOffice')}` : ''}${tolConfirmed ? '' : ` · ${t('tolNotConfirmedShort')}`}`}`, 'facts cash'));
     return li;
   }));
 }
@@ -236,13 +212,13 @@ async function showHeld() {
   if (out.result !== 'ok') { say('contribution-status', out); return; }
   const c = out.value;
   $('threshold').hidden = false;
-  $('threshold').textContent = `${t('thresholdK')}: ${c.thresholdMinor === null ? `○ ${t('notSet')}` : api.rupees(c.thresholdMinor)}`;
+  $('threshold').textContent = `${t('thresholdK')}: ${c.thresholdMinor === null ? t('notSet') : api.rupees(c.thresholdMinor)}`;
   $('contribution').hidden = false;
   $('contribution').replaceChildren(...c.orders.map((o) => {
     const li = document.createElement('li');
     li.className = `row tone-${o.standing === 'held' || o.standing === 'declined' ? 'error' : o.standing === 'flag_only' || o.standing === 'not_assessed' ? 'degraded' : 'ok'}`;
     li.dataset.order = o.orderId; li.dataset.standing = o.standing;
-    li.append(text('strong', `${o.standing === 'held' ? '⚠' : o.standing === 'clear' || o.standing === 'approved' ? '✓' : '○'} ${o.orderId} — ${t(`st_${o.standing}`)}`));
+    li.append(withChip(text('strong', `${o.orderId} — ${t(`st_${o.standing}`)}`), o.standing === 'held' ? 'warning' : o.standing === 'clear' || o.standing === 'approved' ? 'done' : 'unknown'));
     li.append(text('span', o.gate.detail, 'facts'));
     if (o.standing === 'held' && may.decide) {
       const actions = document.createElement('div'); actions.className = 'actions';
@@ -263,7 +239,7 @@ async function decide(orderId, decision, reason) {
 
 // ── The owner's numbers ──────────────────────────────────────────────────────
 function controlValue(n) {
-  if (n.state === 'not_set') return `○ ${t('notSet').split(' — ')[0]}`;
+  if (n.state === 'not_set') return t('notSet').split(' — ')[0];
   if (n.key === 'fleetRate') return `${n.value.basis} ${api.rupees(n.value.rateMinor)}`;
   const v = n.key.endsWith('Minor') ? api.rupees(n.value) : `${n.value}`;
   // OB-343: a number the owner decided in writing reads as the shop's default, with the decision named.
@@ -306,14 +282,14 @@ function drawTolerance(v) {
   state.className = `status ${v.state === 'confirmed' ? 'good' : 'err'}`;
   const inForce = v.valueMinor === null ? t('toleranceNoSettings') : api.rupees(v.valueMinor);
   const who = v.confirmed === null ? '' : ` (${t('tolConfirmedBy')} ${v.confirmed.by}, ${window.sreShopDay?.dateTimeOf(v.confirmed.at) ?? v.confirmed.at})`;
-  state.textContent = `${v.state === 'confirmed' ? '✓' : '⚠'} ${t('toleranceInForce')} ${inForce} — ${t(`tol_${v.state}`)}${who}.${v.changedSinceConfirmed ? ` ${t('tolChangedSince')}` : ''}`
-    + (v.state === 'confirmed' ? '' : ` ${t('toleranceSuggested')} ${api.rupees(v.suggestedMinor)}.`);
+  sayWith(state, v.state === 'confirmed' ? 'done' : 'warning', `${t('toleranceInForce')} ${inForce} — ${t(`tol_${v.state}`)}${who}.${v.changedSinceConfirmed ? ` ${t('tolChangedSince')}` : ''}`
+    + (v.state === 'confirmed' ? '' : ` ${t('toleranceSuggested')} ${api.rupees(v.suggestedMinor)}.`));
   $('tolerance-form').hidden = !may.setNumbers;
   if (may.setNumbers) $('tolerance-value').value = (v.suggestedMinor / 100).toFixed(2).replace(/\.00$/, '');
   $('tolerance-history-h').hidden = v.history.length === 0;
   $('tolerance-history').replaceChildren(...[...v.history].reverse().map((c) => {
     const li = document.createElement('li'); li.className = 'row tone-ok'; li.dataset.version = String(c.version); li.dataset.kind = c.kind;
-    const what = c.kind === 'changed' ? `${t('tolKind_changed')} ${c.previousMinor === null ? '—' : api.rupees(c.previousMinor)}` : t('tolKind_as_suggested');
+    const what = c.kind === 'changed' ? `${t('tolKind_changed')} ${c.previousMinor === null ? notKnownWord() : api.rupees(c.previousMinor)}` : t('tolKind_as_suggested');
     li.append(text('strong', `v${c.version} · ${api.rupees(c.valueMinor)} — ${what}`), text('span', `${c.by} · ${window.sreShopDay?.dateTimeOf(c.at) ?? c.at}${c.reason ? ` · ${c.reason}` : ''}`, 'facts'));
     return li;
   }));
@@ -343,12 +319,12 @@ async function showPack() {
   $('send-pack').hidden = false;
   $('pack-lines').replaceChildren(
     ...p.lines.map((l) => {
-      const li = text('li', `${l.shortMinor > 0 ? '⚠' : '✓'} ${l.name} (${l.productId}) · ${l.packedMinor} ${t('packedK')}${l.shortMinor > 0 ? ` · ${l.shortMinor} ${t('shortK')}` : ''} · ${t('crateK')} ${l.crateId} · ${api.rupees(l.finalPriceMinor)}`, `row tone-${l.shortMinor > 0 ? 'error' : 'ok'}`);
+      const li = withChip(text('li', `${l.name} (${l.productId}) · ${l.packedMinor} ${t('packedK')}${l.shortMinor > 0 ? ` · ${l.shortMinor} ${t('shortK')}` : ''} · ${t('crateK')} ${l.crateId} · ${api.rupees(l.finalPriceMinor)}`, `row tone-${l.shortMinor > 0 ? 'error' : 'ok'}`), l.shortMinor > 0 ? 'warning' : 'done');
       li.dataset.line = l.lineId; li.dataset.crate = l.crateId;
       if (l.shortMinor > 0) li.append(toldBox(l.lineId));
       return li;
     }),
-    ...p.refused.map((r) => { const li = text('li', `⚠ ${t('refusedLineK')}: ${r.lineId} — ${r.detail}`, 'row tone-error'); li.dataset.line = r.lineId; li.append(toldBox(r.lineId)); return li; }),
+    ...p.refused.map((r) => { const li = withChip(text('li', `${t('refusedLineK')}: ${r.lineId} — ${r.detail}`, 'row tone-error'), 'warning'); li.dataset.line = r.lineId; li.append(toldBox(r.lineId)); return li; }),
   );
   // One tamper seal per crate, typed (or scanned) from the crate itself — never filled in by the page.
   $('crate-seals').replaceChildren(...[...new Set(p.lines.map((l) => l.crateId))].sort().map((crate) => {
@@ -390,7 +366,7 @@ async function showManifest() {
 function settled(out) {
   if (out.result !== 'ok') { say('settle-status', out); return; }
   const s = out.value;
-  good('settle-status', `${s.routeId} · ${t('stage')}: ${s.stage}${s.proposed ? ` · ${api.rupees(s.proposed.amountMinor)} (${s.proposed.drops} ${t('drops')})` : ''}${s.differenceMinor !== null && s.differenceMinor !== 0 ? ` · ⚠ ${t('varianceK')} ${api.rupees(s.differenceMinor)}` : ''} · ${t('settleBooks')}: ${s.books}`);
+  good('settle-status', `${s.routeId} · ${t('stage')}: ${s.stage}${s.proposed ? ` · ${api.rupees(s.proposed.amountMinor)} (${s.proposed.drops} ${t('drops')})` : ''}${s.differenceMinor !== null && s.differenceMinor !== 0 ? ` · ${t('varianceK')} ${api.rupees(s.differenceMinor)}` : ''} · ${t('settleBooks')}: ${s.books}`);
 }
 
 
@@ -409,7 +385,6 @@ function ownStore(inputId) {
   note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
 }
 function paint() {
-  repaintShopDates();
   ownStore('store');
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'storeL'], ['date-l', 'dateL'], ['waves-h', 'wavesH'],
@@ -472,8 +447,8 @@ function paintTillJobs() {
   ul.replaceChildren(...tillJobs.jobs.map((j) => {
     const li = document.createElement('li'); li.className = `row tone-${j.status === 'booked' ? 'ok' : j.status === 'waiting_for_delivery_desk' ? 'degraded' : 'idle'}`;
     li.dataset.order = j.orderId; li.dataset.status = j.status;
-    const mark = j.status === 'booked' ? '✓' : j.status === 'waiting_for_delivery_desk' ? '⚠' : '•';
-    li.append(text('strong', `${dk('job')} ${j.orderId} · ${dk('bill')} ${j.receiptNumber}`), text('span', `${mark} ${dk(j.status)}`, 'state'));
+    const st = text('span', '', 'state'); fillStatus(st, j.status === 'booked' ? 'ok' : j.status === 'waiting_for_delivery_desk' ? 'degraded' : 'idle', dk(j.status));
+    li.append(text('strong', `${dk('job')} ${j.orderId} · ${dk('bill')} ${j.receiptNumber}`), st);
     if (j.given !== null) {
       const why = j.given.forAppCustomer === undefined ? '' : ` · ${dk('forApp')} ${dk(j.given.forAppCustomer.because)}${j.given.forAppCustomer.note ? `: ${j.given.forAppCustomer.note}` : ''}`;
       li.append(text('span', `${dk('slotL')}: ${when(j.given.slotStartsAt)}–${when(j.given.slotEndsAt).slice(11)} · ${j.given.by === 'customer_app' ? dk('byApp') : `${dk('byDesk')} ${j.given.personId}`}${why}`, 'facts'));
@@ -482,7 +457,7 @@ function paintTillJobs() {
     const appJob = j.status === 'waiting_for_customer_app' && j.deskMayEnter !== undefined;
     if (appJob) {
       const m = j.deskMayEnter;
-      const w = text('span', m.waitEndsAt === null ? `○ ${dk('waitNotSet')}` : m.afterWait ? `⏱ ${dk('waitPassed')}` : `⏱ ${dk('waitEnds')} ${when(m.waitEndsAt)}`, 'facts wait');
+      const w = withChip(text('span', m.waitEndsAt === null ? dk('waitNotSet') : m.afterWait ? dk('waitPassed') : `${dk('waitEnds')} ${when(m.waitEndsAt)}`, 'facts wait'), m.waitEndsAt === null ? 'unknown' : 'pending');
       w.dataset.afterWait = String(m.afterWait); li.append(w);
     }
     if ((j.status === 'waiting_for_delivery_desk' || appJob) && desk.session.may.enter) {

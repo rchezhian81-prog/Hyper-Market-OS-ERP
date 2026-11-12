@@ -309,7 +309,7 @@ import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-lo
 import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
 import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
-import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
+import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord, DriverCallRequest } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
@@ -9645,6 +9645,15 @@ export function loyaltyMembersAdapter(input: {
 }
 
 /**
+ * U6 (M16-FR-02 · §27 "CRM · consent"): every member ever enrolled (OB-329), by ref, once each — the customers a desk can
+ * name, so the customer directory lists a member who gave or refused consent but has not bought online. A read of the one
+ * members stream; nothing is written.
+ */
+export async function enrolledMemberRefs(store: EventStore, tenantId: string): Promise<readonly string[]> {
+  return [...new Set((await allOf<MemberRecord>(store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).map((m) => m.memberRef))].sort();
+}
+
+/**
  * What a sale and a return do to a member's points (PF-09-a): each sale's loyalty facts fold their own small stream, so a
  * return reads only its sale's history. The earn and its points movement are ONE write; a take-back and its movement are
  * ONE write under the member's points guard (Wave 2a), so it can never race a burn into a negative balance.
@@ -10891,7 +10900,47 @@ export function driverRunAdapter(input: {
     recordDeliveryTransition: orders.recordDeliveryTransition,
     // OB-09: the phone's door outcomes join the driver's own run register — the stream `/v1/delivery/runs/:driverId` reads.
     recordAttempt: orders.appendAttempt,
+    // U6 · OB-700: the driver's requests that the store call a stop's customer — one per stop, on the route's own stream.
+    callRequests: (tenantId, routeId) => allOf<DriverCallRequest>(input.store, tenantId, forRoute(routeId), 'DriverCallRequestRecorded'),
+    recordCallRequest: async (tenantId, r) => {
+      await input.store.append(tenantId, forRoute(r.routeId), makeEvent({
+        id: `route-call-${r.routeId}-${r.stopId}`,
+        type: 'DriverCallRequestRecorded',
+        occurredAt: r.at,
+        idempotencyKey: `route-call-${tenantId}-${r.routeId}-${r.stopId}`,
+        source: 'api/fulfilment',
+        payload: r,
+      }));
+    },
+    tellStoreToCall: (tenantId, r) => tellStoreToCallCustomer(input.store, input.now, tenantId, r),
   };
+}
+
+/**
+ * U6 · OB-700 (owner, 7 Nov 2026): put a driver's call request in front of the store — an operational alert on the same
+ * lifecycle every alert rides (the Ops alerts page shows it, with who owns it and by when), owned by a store manager, the
+ * others also told; the owners when the shop has no store manager. One alert per stop while it is open; a request re-sent
+ * while the alert is open adds nothing. The alert's words name the order and the driver, never the customer.
+ */
+export async function tellStoreToCallCustomer(store: EventStore, now: () => string, tenantId: string, r: DriverCallRequest): Promise<{ readonly toldUserIds: readonly string[] }> {
+  const grants = await effectiveGrants(store, tenantId);
+  const managers = [...new Set(grants.filter((g) => g.roleId === STORE_MANAGER_ROLE_ID).map((g) => g.userId))].sort();
+  const owners = [...new Set(grants.filter((g) => g.roleId === OWNER_ROLE_ID).map((g) => g.userId))].sort();
+  const told = managers.length > 0 ? managers : owners;
+  if (told.length === 0) return { toldUserIds: [] };
+  const lifecycle = alertLifecycleAdapter({ store, now });
+  const alertId = `delivery-call:${r.routeId}:${r.stopId}`;
+  const current = (await lifecycle.alerts(tenantId)).find((a) => a.alert.alertId === alertId);
+  if (current !== undefined && current.state !== 'cleared') return { toldUserIds: told };
+  const at = r.at;
+  const ackDueBy = new Date(Date.parse(at) + 15 * 60_000).toISOString();
+  const detail = `Driver ${r.driverId} on route ${r.routeId} asks the store to call the customer of order ${r.orderRef}${r.area === null ? '' : ` (${r.area})`}. The phone holds no customer number (OB-700): call from the order's own record.`;
+  const event: AlertLifecycleEvent = {
+    alertId, change: 'raised', by: r.driverId, at,
+    alert: { alertId, component: 'delivery', status: 'degraded', ownerUserId: told[0]!, ownerName: told[0]!, detail, raisedAt: at, ackDueBy, ...(told.length > 1 ? { alsoToUserIds: told.slice(1) } : {}) },
+  };
+  await lifecycle.recordAlertEvent(tenantId, event, `${alertId}|${at}|${current?.clearedAt ?? 'first'}`);
+  return { toldUserIds: told };
 }
 
 /**

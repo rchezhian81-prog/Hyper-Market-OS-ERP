@@ -19,7 +19,9 @@ import { money } from '../../packages/contracts/src/money';
 // Real words only (Stage G slice 5b): every permission here is one a cloud route checks and the role catalogue
 // grants — the menu is gated on what the server enforces, never on a word nobody checks.
 const ROLES: Role[] = [
-  { id: 'cashoffice', name: 'Cash office', permissions: ['till.dayclose.read', 'till.shift.read', 'reporting.report.read'] },
+  // OB-702 (7 Nov 2026): "Cash over / short" is the reviewer's page — its word is the sign-off right, which this cash-office
+  // role holds; a cashier with the shift read alone is no longer offered it.
+  { id: 'cashoffice', name: 'Cash office', permissions: ['till.dayclose.read', 'till.shift.read', 'till.overshort.review', 'reporting.report.read'] },
   {
     id: 'manager',
     name: 'Store manager',

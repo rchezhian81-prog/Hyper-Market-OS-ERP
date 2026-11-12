@@ -25,7 +25,10 @@ export interface SetupConfig {
 export interface SetupScreenItem {
   readonly key: string;
   readonly label: string;
+  /** U3 (OB-699): the label and the question in Tamil, from the setup catalogue — the screen shows the reader's. */
+  readonly labelTa: string;
   readonly question: string;
+  readonly questionTa: string;
   readonly required: boolean;
   readonly state: ItemState;
   /** The value in force — the tenant's answer, or the safe default. */
@@ -46,6 +49,7 @@ export interface SetupGroupView {
 export interface SetupBlocker {
   readonly key: string;
   readonly question: string;
+  readonly questionTa: string;
 }
 
 export interface SetupHeadline {
@@ -58,6 +62,8 @@ export interface SetupHeadline {
   readonly blocking: readonly SetupBlocker[];
   /** A plain sentence the screen can show as-is (no jargon). */
   readonly sentence: string;
+  /** The same sentence in Tamil (U3 · OB-699). */
+  readonly sentenceTa: string;
 }
 
 export interface SetupSession {
@@ -78,7 +84,7 @@ const GROUP_ORDER: readonly SetupGroup[] = ['give_now', 'check_default', 'alread
 
 export function createSetupSession(config: SetupConfig, ports: SetupPorts): SetupSession {
   const toScreenItem = (i: SetupStatus['items'][number]): SetupScreenItem => ({
-    key: i.key, label: i.label, question: i.question, required: i.required,
+    key: i.key, label: i.label, labelTa: i.labelTa, question: i.question, questionTa: i.questionTa, required: i.required,
     state: i.state, value: i.value, isDefault: i.isDefault,
     // The version is the token a save sends back (ifVersion). Without it the page's save carried NO version, the
     // server could not check it, and two people saving the same setting overwrote each other silently (hard rule
@@ -91,13 +97,16 @@ export function createSetupSession(config: SetupConfig, ports: SetupPorts): Setu
   return {
     headline: () => {
       const status = ports.status();
-      const blocking: SetupBlocker[] = status.blocking.map((key) => ({
-        key,
-        question: status.items.find((i) => i.key === key)?.question ?? key,
-      }));
+      const blocking: SetupBlocker[] = status.blocking.map((key) => {
+        const item = status.items.find((i) => i.key === key);
+        return { key, question: item?.question ?? key, questionTa: item?.questionTa ?? item?.question ?? key };
+      });
       const sentence = status.complete
         ? `Setup is complete — the store can open. ${status.answered} of ${status.total} settings chosen; the rest run on safe defaults you can change any time.`
         : `${blocking.length} setting${blocking.length === 1 ? '' : 's'} still needed before the store can open. Everything else runs on a safe default.`;
+      const sentenceTa = status.complete
+        ? `அமைப்பு முடிந்தது — கடை திறக்கலாம். ${status.total}-இல் ${status.answered} அமைப்புகள் தேர்ந்தெடுக்கப்பட்டன; மற்றவை எப்போது வேண்டுமானாலும் மாற்றக்கூடிய பாதுகாப்பான இயல்புநிலைகளில் இயங்கும்.`
+        : `கடை திறக்கும் முன் இன்னும் ${blocking.length} அமைப்பு தேவை. மற்ற அனைத்தும் பாதுகாப்பான இயல்புநிலையில் இயங்கும்.`;
       return {
         complete: status.complete,
         answered: status.answered,
@@ -105,6 +114,7 @@ export function createSetupSession(config: SetupConfig, ports: SetupPorts): Setu
         progressBp: status.progressBp,
         blocking,
         sentence,
+        sentenceTa,
       };
     },
 

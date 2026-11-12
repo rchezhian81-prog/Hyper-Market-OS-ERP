@@ -6,6 +6,12 @@
 // OB-607: a time of day is the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
 const api = window.storeOps ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, readChecks: false, recordChecks: false };
@@ -75,9 +81,7 @@ function slotRow(slot) {
   const head = document.createElement('div'); head.className = 'head';
   const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${slot.title} — ${when(slot.slotDueAt)}`;
   const state = document.createElement('span'); state.className = 'state'; state.setAttribute('aria-label', words.label);
-  const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true'); icon.textContent = words.icon;
-  const word = document.createElement('span'); word.textContent = words.label;
-  state.append(icon, word); head.append(name, state);
+  fillStatus(state, words.tone, words.label); head.append(name, state);
   const facts = document.createElement('div'); facts.className = 'facts';
   facts.textContent = [slot.performedBy ? `${t('fsColWho')}: ${slot.performedBy}` : '', slot.correctiveAction ?? '', slot.escalateTo ? `${t('fsEscalated')} ${slot.escalateTo}` : ''].filter((x) => x !== '').join(' · ');
   li.append(head, facts);
@@ -86,9 +90,19 @@ function slotRow(slot) {
   return li;
 }
 
+/** The day's four figures as the chrome's cards — "Not known" until the board is read; a missed, due or failed count is a warning. */
+function paintFigures(split) {
+  const o = sreO(); const host = $('panels');
+  const figs = [['missed', 'fsMissed'], ['due', 'fsDue'], ['done', 'fsDone'], ['failed', 'fsFailed']];
+  const n = (k) => (split === null ? null : k === 'failed' ? split.failed : split[k].length);
+  if (!o) { host.textContent = figs.map(([k, w]) => `${t(w)}: ${n(k) ?? ''}`).join(' · '); return; }
+  o.cards(host, figs.map(([k, w]) => { const v = n(k); return { label: t(w), value: v === null ? null : String(v), tone: v !== null && v > 0 && k !== 'done' ? 'degraded' : 'ok' }; }));
+  host.querySelectorAll('.sre-summary-value').forEach((b, i) => { b.id = `v-${figs[i][0]}`; });
+}
+
 function paint() {
   document.title = `SRE ${t('fsTitle')}`;
-  for (const [id, k] of [['title-text', 'fsTitle'], ['page-h', 'fsTitle'], ['lead', 'fsLead'], ['k-missed', 'fsMissed'], ['k-due', 'fsDue'], ['k-done', 'fsDone'], ['k-failed', 'fsFailed'], ['receiving-h', 'fsReceiving']]) $(id).textContent = t(k);
+  for (const [id, k] of [['title-text', 'fsTitle'], ['page-h', 'fsTitle'], ['lead', 'fsLead'], ['receiving-h', 'fsReceiving']]) $(id).textContent = t(k);
   // OB-606: the SHOP's today in words (its zone, as the store computer told the page) — never this device's own date.
   const shopDay = window.sreShopDay ?? null;
   $('today-h').textContent = shopDay === null ? '' : shopDay.dayWords(shopDay.today(), lang);
@@ -96,12 +110,9 @@ function paint() {
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.storeOpsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
+  const split = board === null ? null : api.splitToday(board);
+  paintFigures(split);
   if (board === null) return;
-  const split = api.splitToday(board);
-  $('v-missed').textContent = String(split.missed.length); $('p-missed').classList.toggle('attention', split.missed.length > 0);
-  $('v-due').textContent = String(split.due.length); $('p-due').classList.toggle('attention', split.due.length > 0);
-  $('v-done').textContent = String(split.done.length);
-  $('v-failed').textContent = String(split.failed); $('p-failed').classList.toggle('attention', split.failed > 0);
   const ordered = [...split.missed, ...split.due, ...split.done, ...split.later];
   $('rows').replaceChildren(...ordered.map(slotRow));
   $('none').hidden = ordered.length > 0; $('none').textContent = t('fsNone');
@@ -130,6 +141,7 @@ async function load() {
 
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+onChrome(() => paint());
 if (may.named && !may.readChecks) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 else if (may.named && !may.recordChecks) $('page-status').textContent = t('fsReadOnly');
 if (may.named && may.readChecks) { if ($('page-status').textContent === '') $('page-status').textContent = t('reading'); void load().then(() => { if ($('page-status').textContent === t('reading')) $('page-status').textContent = ''; }); }

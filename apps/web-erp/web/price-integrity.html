@@ -29,10 +29,6 @@
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
-      .panel .k { color: var(--muted); font-size: 14px; } .panel .v { font-size: 22px; font-weight: 700; }
-      .panel.attention { border-left: 6px solid var(--degraded); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
       li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--danger-text); }
@@ -43,9 +39,6 @@
       .status { font-size: 14px; min-height: 20px; margin: 0; } .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 14px; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
@@ -67,15 +60,12 @@
           <label for="branch"><span id="l-branch">Store</span><input id="branch" autocomplete="off" /></label>
           <button id="show" type="submit" class="sre-btn sre-btn-primary">Show the report</button>
         </form>
-        <div class="panels" id="bands" role="status" aria-live="polite"></div>
+        <div id="bands" role="status" aria-live="polite"></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="list-h">
         <h3 id="list-h">Open mismatches</h3>
-        <div class="table-wrap"><table aria-labelledby="list-h">
-          <thead><tr><th id="c-product">Product</th><th id="c-where">Where</th><th id="c-record">Shop's price</th><th id="c-shown">Shown / charged</th><th id="c-since">Open since</th><th id="c-band">How long</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table></div>
+        <div id="rows-host" aria-labelledby="list-h"></div>
         <p class="muted" id="none" hidden></p>
       </section>
       <section id="walk" hidden aria-labelledby="record-h">

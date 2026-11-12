@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Stock ledger</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Stock ledger (U6 of the UI/UX gap audit, 7 Nov 2026 · §27 Inventory "Ledger" · M08-FR-01 · hard rule #2 · P-08). A THIN
+      CLIENT over head office's ledger read (GET /v1/inventory/ledger): one product's movements in the order head office
+      recorded them, each with its effect and the stock left after it, narrowed to a place and a window when asked. A read
+      only: nothing is written here. Its words and its one request live in the tested session model
+      (apps/web-erp/src/stock-ledger-session.ts, window.stockLedgerSession); the page stands on the shared office parts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1100px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: start; }
+      label.f { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .meta { color: var(--muted); font-size: 14px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="who">Stock ledger</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Stock ledger</h2>
+        <p class="lede" id="lede"></p>
+      </section>
+      <section aria-labelledby="ask-h" id="ask-section">
+        <h3 id="ask-h">Stock ledger</h3>
+        <form id="ask" class="row">
+          <label class="f" for="product"><span id="l-product">Product</span><input id="product" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="place"><span id="l-place">Place</span><input id="place" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="from"><span id="l-from">From</span><input id="from" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="to"><span id="l-to">To</span><input id="to" class="sre-input" autocomplete="off" /></label>
+        </form>
+        <p class="meta" id="all-places"></p>
+        <button id="show" type="button" class="sre-btn sre-btn-primary">Show the ledger</button>
+        <p class="status" id="ask-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="figures-h" id="figures-section" hidden>
+        <h3 id="figures-h">On hand now</h3>
+        <div id="cards"></div>
+        <p class="meta" id="covers"></p>
+        <p class="meta" id="as-at"></p>
+      </section>
+      <section aria-labelledby="lines-h" id="lines-section" hidden>
+        <h3 id="lines-h">Movements</h3>
+        <div id="lines"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./stock-ledger.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

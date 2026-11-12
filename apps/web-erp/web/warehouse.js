@@ -15,51 +15,12 @@
 // NOTE: the Tamil below is pending a native-speaker review before go-live (OWNER-ACTION OA-10).
 
 const el = (id) => document.getElementById(id);
-// ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
-// and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
-// page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
-// never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
-// the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
-// changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
+// U2b (G5): the picker's titles for this page's six fields; the chrome's `pickable` draws the button and the name (U5).
 const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
-const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
-const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
-const u2bRepaints = [];
-const repaintPickers = () => { for (const f of u2bRepaints) f(); };
-/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
-function pickableEl(input, kind, titleKey, extra = {}) {
-  if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
-}
-function pickable(inputId, kind, titleKey, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-  if (!window.sreOffice || typeof window.sreOffice.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  pickableEl(input, kind, titleKey, extra);
-}
-// the pickers' words follow the language toggle like the page's own words
-new MutationObserver(() => { repaintPickers(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
 // ── U2b end
 
 const WORDS = {
@@ -137,65 +98,48 @@ const t = (key) => WORDS[lang][key] ?? WORDS.en[key] ?? key;
 const real = window.warehouseSupervisorSession;
 const data = window.warehouseSupervisorData;
 
-function cell(text, cls) {
-  const td = document.createElement('td');
-  if (cls) td.className = cls;
-  td.textContent = String(text);
-  return td;
+const bothW = (k) => ({ en: WORDS.en[k], ta: WORDS.ta[k] });
+const registers = new Map();
+/** A list on the chrome's register, drawn once per host and given its rows after; the words follow the toggle on repaint. */
+function registerOn(hostId, spec) {
+  const o = office(); if (!o) return null;
+  let r = registers.get(hostId);
+  if (!r || !r.connected()) { r = o.table(el(hostId), spec); registers.set(hostId, r); }
+  return r;
 }
-function headRow(keys) {
-  const tr = document.createElement('tr');
-  for (const k of keys) { const th = document.createElement('th'); th.textContent = t(k); tr.append(th); }
-  return tr;
-}
-
 function renderBins() {
   const host = el('bins');
-  host.textContent = '';
-  if (real === undefined) return;
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  thead.append(headRow(['colBin', 'colZone', 'colKind', 'colCapacity', 'colUsed', 'colFree', 'colFull']));
-  table.append(thead);
-  const tbody = document.createElement('tbody');
-  for (const b of real.bins()) {
-    const tr = document.createElement('tr');
-    const over = b.usedMinor !== null && b.usedMinor > b.capacityMinor;
-    if (over) tr.className = 'over';
-    tr.append(
-      cell(b.binId), cell(b.zone ?? '—'), cell(b.pickable ? t('pickable') : t('holding')),
-      cell(b.capacityMinor, 'num'),
-      cell(b.usedMinor === null ? '—' : b.usedMinor, 'num'),
-      cell(b.freeMinor === null ? '—' : b.freeMinor, 'num'),
-      cell(b.pctFull === null ? '—' : `${b.pctFull}%`, 'num'),
-    );
-    tbody.append(tr);
-  }
-  table.append(tbody);
-  host.append(table);
+  if (real === undefined) { host.textContent = ''; return; }
+  const r = registerOn('bins', {
+    id: 'bins', label: bothW('binsHeading'), pageSize: 20, sortable: true, search: true, rows: null,
+    rowKey: (b) => b.binId, rowData: (b) => ({ bin: b.binId, over: String(b.usedMinor !== null && b.usedMinor > b.capacityMinor) }),
+    columns: [
+      { key: 'binId', label: bothW('colBin') }, { key: 'zone', label: bothW('colZone'), filter: true, value: (b) => b.zone ?? null },
+      { key: 'kind', label: bothW('colKind'), filter: true, value: (b) => (b.pickable ? t('pickable') : t('holding')) },
+      { key: 'capacityMinor', label: bothW('colCapacity'), sort: 'number', align: 'end' },
+      { key: 'usedMinor', label: bothW('colUsed'), sort: 'number', align: 'end', value: (b) => b.usedMinor },
+      { key: 'freeMinor', label: bothW('colFree'), sort: 'number', align: 'end', value: (b) => b.freeMinor },
+      { key: 'pctFull', label: bothW('colFull'), sort: 'number', align: 'end', value: (b) => b.pctFull, render: (b) => (b.pctFull === null ? null : (b.usedMinor !== null && b.usedMinor > b.capacityMinor ? office().chip('degraded', `${b.pctFull}%`) : `${b.pctFull}%`)) },
+    ],
+  });
+  if (r) { r.setRows(real.bins()); r.repaint(); }
 }
 
 function renderStock() {
   const host = el('stock');
-  host.textContent = '';
-  if (real === undefined) return;
+  if (real === undefined) { host.textContent = ''; return; }
   const stock = real.stock();
-  if (!stock.known) {
-    const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('notKnownStock'); host.append(p);
-    return;
-  }
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  thead.append(headRow(['colBin', 'colProduct', 'colBatch', 'colQty']));
-  table.append(thead);
-  const tbody = document.createElement('tbody');
-  for (const r of stock.rows) {
-    const tr = document.createElement('tr');
-    tr.append(cell(r.binId), cell(r.productId), cell(r.batchId ?? '—'), cell(r.quantityMinor, 'num'));
-    tbody.append(tr);
-  }
-  table.append(tbody);
-  host.append(table);
+  const o = office();
+  if (!stock.known) { registers.delete('stock'); if (o) o.state(host, 'unknown', { title: bothW('notKnownStock') }); else { host.textContent = t('notKnownStock'); } return; }
+  const r = registerOn('stock', {
+    id: 'stock', label: bothW('stockHeading'), pageSize: 20, sortable: true, rows: null,
+    rowKey: (x) => `${x.binId}|${x.productId}|${x.batchId ?? ''}`,
+    columns: [
+      { key: 'binId', label: bothW('colBin'), filter: true }, { key: 'productId', label: bothW('colProduct'), value: (x) => (o.nameOf('product', x.productId) || x.productId) },
+      { key: 'batchId', label: bothW('colBatch'), value: (x) => x.batchId ?? null }, { key: 'quantityMinor', label: bothW('colQty'), sort: 'number', align: 'end' },
+    ],
+  });
+  if (r) { r.setRows(stock.rows); r.repaint(); }
 }
 
 function renderExceptions() {
@@ -203,12 +147,13 @@ function renderExceptions() {
   host.textContent = '';
   if (real === undefined) return;
   const ex = real.exceptions();
+  const o = office();
   if (!ex.known) {
-    const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('notKnownEx'); host.append(p);
+    if (o) o.state(host, 'unknown', { title: bothW('notKnownEx') }); else { const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('notKnownEx'); host.append(p); }
     return;
   }
   if (ex.rows.length === 0) {
-    const p = document.createElement('p'); p.className = 'ex-empty'; p.textContent = t('exNone'); host.append(p);
+    if (o) o.state(host, 'empty', { title: bothW('exNone'), detail: '' }); else { const p = document.createElement('p'); p.textContent = t('exNone'); host.append(p); }
     return;
   }
   const wrap = document.createElement('div');
@@ -216,7 +161,8 @@ function renderExceptions() {
   for (const e of ex.rows) {
     const row = document.createElement('div');
     row.className = `row ${e.kind}`;
-    const k = document.createElement('div'); k.className = 'kind'; k.textContent = t(e.kind);
+    const k = document.createElement('div'); k.className = 'kind';
+    if (o) k.append(o.chip(e.kind === 'over_capacity' ? 'degraded' : 'error', t(e.kind))); else k.textContent = t(e.kind);
     const d = document.createElement('div'); d.className = 'detail'; d.textContent = e.detail;
     row.append(k, d);
     wrap.append(row);
@@ -229,13 +175,14 @@ function renderApprovals() {
   host.textContent = '';
   if (real === undefined) return;
   const q = real.approvalQueue();
+  const o = office();
   if (!q.known) {
-    const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('apprNotKnown'); host.append(p);
+    if (o) o.state(host, 'unknown', { title: bothW('apprNotKnown') }); else { const p = document.createElement('p'); p.className = 'notknown'; p.textContent = t('apprNotKnown'); host.append(p); }
     return;
   }
   const rows = q.rows.filter((r) => !decided.has(r.request.id));
   if (rows.length === 0) {
-    const p = document.createElement('p'); p.className = 'ex-empty'; p.textContent = t('apprEmpty'); host.append(p);
+    if (o) o.state(host, 'empty', { title: bothW('apprEmpty'), detail: '' }); else { const p = document.createElement('p'); p.textContent = t('apprEmpty'); host.append(p); }
     return;
   }
   const wrap = document.createElement('div');
@@ -260,7 +207,7 @@ function renderApprovals() {
     } else {
       const blocked = document.createElement('div');
       blocked.className = 'blocked';
-      blocked.textContent = t(row.blockedReason);
+      if (o) blocked.append(o.chip('idle', t(row.blockedReason))); else blocked.textContent = t(row.blockedReason);
       box.append(blocked);
     }
     wrap.append(box);
@@ -383,9 +330,14 @@ if ('serviceWorker' in navigator) {
 
 // ── U2b (G5): pick by name, never type a code (the typed id stays the fallback when the list cannot be read)
 const storeScope = () => ({ storeId: window.sreOffice?.me?.()?.storeId });
-pickable('t-from', 'place', 'pickPlace', { scope: storeScope });
-pickable('t-to', 'place', 'pickPlace', { scope: storeScope });
-pickable('k-bin', 'place', 'pickPlace', { scope: storeScope });
-pickable('t-product', 'product', 'pickProduct');
-pickable('k-product', 'product', 'pickProduct');
-pickable('k-assignee', 'person', 'pickPerson', { scope: storeScope });
+const pickTitle = (k) => ({ en: u2bWords.en[k], ta: u2bWords.ta[k] });
+whenChrome(() => {
+  const o = office();
+  o.pickable('t-from', 'place', pickTitle('pickPlace'), { scope: storeScope });
+  o.pickable('t-to', 'place', pickTitle('pickPlace'), { scope: storeScope });
+  o.pickable('k-bin', 'place', pickTitle('pickPlace'), { scope: storeScope });
+  o.pickable('t-product', 'product', pickTitle('pickProduct'));
+  o.pickable('k-product', 'product', pickTitle('pickProduct'));
+  o.pickable('k-assignee', 'person', pickTitle('pickPerson'), { scope: storeScope });
+  render();
+});

@@ -51,6 +51,15 @@ export const FINDINGS_COPY = {
     cannotSales: 'Your role cannot see bill findings.', cannotAttendance: 'Your role cannot see attendance flags.',
     needDay: 'Choose a shop day.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read.', reading: 'Reading from head office…',
+    // U5 (UI/UX gap audit, lane 3): the findings grouped and counted by kind, each group a register.
+    byKind: 'By kind', kindH: 'What kind of finding', findingsN: 'findings', findingOne: 'finding', severity: 'Severity',
+    whatHappened: 'What head office found', whatToDo: 'What to do', openProduct: 'Open the product', jumpTo: 'Go to',
+    kindUnknown: 'A kind this page does not know yet — shown as head office named it.',
+    headOfficeEnglish: 'Head office\'s own sentences are in English.',
+    salesEmptyDetail: 'Head office checked every bill of this store and raised no critical or material finding. The informational notes are counted above.',
+    attEmptyDetail: 'Every mark of this day pairs up. If a shift is still on, its "in" is not flagged until the shift is over.',
+    notReadYet: 'Not read yet', notReadDetail: 'Head office has not answered, so nothing here is known.',
+    groupCritical: 'with a critical finding', groupMaterial: 'material only',
   },
   ta: {
     title: 'பில் கண்டறிதல்களும் வருகை எச்சரிக்கைகளும்',
@@ -73,6 +82,14 @@ export const FINDINGS_COPY = {
     cannotSales: 'உங்கள் பணி பில் கண்டறிதல்களைப் பார்க்க முடியாது.', cannotAttendance: 'உங்கள் பணி வருகை எச்சரிக்கைகளைப் பார்க்க முடியாது.',
     needDay: 'கடை நாளைத் தேர்ந்தெடுங்கள்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
+    byKind: 'வகை வாரியாக', kindH: 'எந்த வகைக் கண்டறிதல்', findingsN: 'கண்டறிதல்கள்', findingOne: 'கண்டறிதல்', severity: 'தீவிரம்',
+    whatHappened: 'தலைமை அலுவலகம் கண்டறிந்தது', whatToDo: 'செய்ய வேண்டியது', openProduct: 'பொருளைத் திற', jumpTo: 'செல்',
+    kindUnknown: 'இந்தப் பக்கத்திற்கு இன்னும் தெரியாத வகை — தலைமை அலுவலகம் பெயரிட்டபடியே காட்டப்படுகிறது.',
+    headOfficeEnglish: 'தலைமை அலுவலகத்தின் சொந்த வாக்கியங்கள் ஆங்கிலத்தில் உள்ளன.',
+    salesEmptyDetail: 'இந்தக் கடையின் ஒவ்வொரு பில்லையும் தலைமை அலுவலகம் சரிபார்த்தது; முக்கியமான அல்லது கவனிக்க வேண்டிய கண்டறிதல் எதுவும் இல்லை. தகவல் குறிப்புகள் மேலே எண்ணப்பட்டுள்ளன.',
+    attEmptyDetail: 'இந்த நாளின் ஒவ்வொரு பதிவும் இணைகிறது. ஒரு பணி இன்னும் நடந்தால், அது முடியும் வரை அதன் "உள்ளே" பதிவு எச்சரிக்கப்படாது.',
+    notReadYet: 'இன்னும் படிக்கப்படவில்லை', notReadDetail: 'தலைமை அலுவலகம் பதிலளிக்கவில்லை, எனவே இங்கே எதுவும் தெரியவில்லை.',
+    groupCritical: 'முக்கியமான கண்டறிதலுடன்', groupMaterial: 'கவனிக்க வேண்டியவை மட்டும்',
   },
 } as const;
 
@@ -86,6 +103,55 @@ export type AttendanceFlag = (typeof ATTENDANCE_FLAGS)[number];
 /** A flag in the reader's language; a flag this page does not know is shown as head office named it. */
 export const flagWords = (lang: Lang, flag: string): string =>
   (ATTENDANCE_FLAGS as readonly string[]).includes(flag) ? findingsWords(lang, flag) : flag;
+
+/**
+ * U5 (UI/UX gap audit, lane 3 HARD): the KINDS of finding head office raises on a bill (services/api/src/adapters.ts, the
+ * sale intake's checks), each with the page's own words in both languages (OB-699: a kind's NAME is the product's word;
+ * the finding's sentence is head office's and stays English). A kind this list does not know yet is shown as head office
+ * named it, with a note — never hidden.
+ */
+export const FINDING_KIND_WORDS = {
+  price_cut_above_approver_limit: { en: 'Price cut above the approver\'s limit', ta: 'அனுமதிப்பவரின் வரம்பைத் தாண்டிய விலைக் குறைப்பு' },
+  price_cut_below_floor: { en: 'Price cut below the floor price', ta: 'அடிப்படை விலைக்குக் கீழே விலைக் குறைப்பு' },
+  price_cut_without_floor_not_by_owner: { en: 'Price cut with no floor price set, not by the owner', ta: 'அடிப்படை விலை இல்லாமல், உரிமையாளர் அல்லாதவரின் விலைக் குறைப்பு' },
+  sold_a_recalled_product: { en: 'A recalled product was sold', ta: 'திரும்பப் பெறப்பட்ட பொருள் விற்கப்பட்டது' },
+  sold_above_mrp: { en: 'Sold above the MRP', ta: 'அதிகபட்ச விற்பனை விலையைத் தாண்டி விற்பனை' },
+  price_differs_from_catalogue: { en: 'Price differs from the catalogue', ta: 'பட்டியல் விலையிலிருந்து வேறுபட்ட விலை' },
+  quotation_below_floor: { en: 'A quotation below the floor price', ta: 'அடிப்படை விலைக்குக் கீழே ஒரு விலைப்புள்ளி' },
+  quotation_below_floor_owner_quoted: { en: 'A quotation below the floor price, quoted by the owner', ta: 'உரிமையாளர் கொடுத்த, அடிப்படை விலைக்குக் கீழான விலைப்புள்ளி' },
+  quotation_floor_not_known: { en: 'A quotation with the floor price not known', ta: 'அடிப்படை விலை தெரியாத விலைப்புள்ளி' },
+  quotation_floor_not_known_owner_quoted: { en: 'A quotation with the floor price not known, quoted by the owner', ta: 'உரிமையாளர் கொடுத்த, அடிப்படை விலை தெரியாத விலைப்புள்ளி' },
+  quotation_carries_floor_or_cost: { en: 'A quotation that carries a floor price or a cost', ta: 'அடிப்படை விலையையோ செலவையோ கொண்ட விலைப்புள்ளி' },
+  receipt_number_reused: { en: 'A receipt number used twice', ta: 'ஒரே ரசீது எண் இருமுறை' },
+  loyalty_on_a_bill_not_banked: { en: 'Loyalty on a bill head office has not banked', ta: 'தலைமை அலுவலகத்தில் பதிவாகாத பில்லில் விசுவாசப் புள்ளிகள்' },
+  loyalty_value_spent_twice: { en: 'Loyalty value spent twice', ta: 'விசுவாச மதிப்பு இருமுறை செலவிடப்பட்டது' },
+  sold_on_an_unsupported_app_version: { en: 'Sold on a till version no longer supported', ta: 'ஆதரவில்லாத கல்லா பதிப்பில் விற்பனை' },
+} as const;
+export const FINDING_KINDS = Object.keys(FINDING_KIND_WORDS) as readonly (keyof typeof FINDING_KIND_WORDS)[];
+export const knowsKind = (kind: string): kind is keyof typeof FINDING_KIND_WORDS => Object.prototype.hasOwnProperty.call(FINDING_KIND_WORDS, kind);
+/** A kind's words in the reader's language; a kind this page does not know is shown as head office named it. */
+export const kindWords = (lang: Lang, kind: string): string => (knowsKind(kind) ? FINDING_KIND_WORDS[kind][lang] : kind);
+
+/** One group of findings of the same kind, counted; `worst` is the worst severity in it. */
+export interface FindingGroup {
+  readonly kind: string; readonly count: number; readonly critical: number; readonly material: number;
+  readonly worst: 'critical' | 'material'; readonly findings: readonly BillFinding[];
+}
+/**
+ * The findings grouped by kind: the kind with the most critical findings first, then the larger group, then by the
+ * kind's name; inside a group the critical findings first, then by bill. Counts come with each group (P-03: the page says
+ * how many of what, never a wall of identical cards).
+ */
+export function groupFindings(findings: readonly BillFinding[]): readonly FindingGroup[] {
+  const by = new Map<string, BillFinding[]>();
+  for (const f of findings) { const list = by.get(f.kind) ?? []; list.push(f); by.set(f.kind, list); }
+  const rank = (s: 'critical' | 'material'): number => (s === 'critical' ? 0 : 1);
+  return [...by.entries()].map(([kind, list]) => {
+    const sorted = [...list].sort((a, b) => rank(a.severity) - rank(b.severity) || a.saleId.localeCompare(b.saleId));
+    const critical = sorted.filter((f) => f.severity === 'critical').length;
+    return { kind, count: sorted.length, critical, material: sorted.length - critical, worst: critical > 0 ? 'critical' as const : 'material' as const, findings: sorted };
+  }).sort((a, b) => b.critical - a.critical || b.count - a.count || a.kind.localeCompare(b.kind));
+}
 
 /** One finding, as head office raised it. `detail` and `ownerAction` are head office's own sentences. */
 export interface BillFinding {

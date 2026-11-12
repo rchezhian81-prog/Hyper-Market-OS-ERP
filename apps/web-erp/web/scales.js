@@ -11,16 +11,12 @@ const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const shopDates = new Map();
 function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  // U5: the chrome's own adapter (`sreOffice.shopDate`) swaps the box for the shared dd/mm/yyyy field under the same id; the
+  // page reads ISO back with `dateOf` and remembers which fields it swapped.
+  const office = window.sreOffice;
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (office.shopDate(id, words, opts) !== null) shopDates.set(id, words);
 }
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 /** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
@@ -35,6 +31,7 @@ const may = session?.may ?? { named: false, read: false, manage: false };
 let lang = 'en';
 const t = (k, slots) => (api === null ? k : api.words(lang, k, slots));
 let reg = null; // Register | null
+let loaded = false; // head office has answered once (ok or refused) — the register's state is then known, not "loading"
 const FIELDS = [['assetId', 'f-asset'], ['storeId', 'f-store'], ['lanes', 'f-lanes'], ['approvalNo', 'f-approval-no'], ['capacityGrams', 'f-capacity'], ['lastStampedOn', 'f-stamped'], ['reverificationDueOn', 'f-valid'], ['certificateRef', 'f-certificate']];
 const DATE_FIELDS = new Set(['f-stamped', 'f-valid']);
 const form = () => Object.fromEntries(FIELDS.map(([k, id]) => [k, DATE_FIELDS.has(id) ? dateOf(id) : $(id).value]));
@@ -43,7 +40,24 @@ function say(el, out, good) {
   el.className = `status ${out.result === 'ok' ? 'good' : 'err'}`;
   el.textContent = out.result === 'ok' ? good : api.outcomeWords(lang, out);
 }
-function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
+
+// ── U5 · G17 (UI/UX gap audit): every list on this page is the chrome's register part (`sreOffice.table`) — search, sort
+// with its direction in words, paging, a count line, rows that stack on a phone. The old `<tbody id>` is kept as the
+// register's body id so the records' data attributes read the same. Before the chrome has loaded the host waits for it.
+const registers = new Map();
+function register(hostId, opts) {
+  const host = $(hostId); const o = window.sreOffice;
+  if (host === null) return null;
+  if (!o || typeof o.table !== 'function') {
+    if (!registers.has(hostId)) { registers.set(hostId, null); document.addEventListener('sre:chrome', () => { registers.delete(hostId); register(hostId, opts); }, { once: true }); }
+    return null;
+  }
+  let c = registers.get(hostId) ?? null;
+  if (c === null || !c.connected()) { c = o.table(host, opts); registers.set(hostId, c); }
+  else if (opts.state) c.setState(opts.state, opts.stateOpts ?? {}); else c.setRows(opts.rows ?? null);
+  return c;
+}
+const chip = (tone, label) => { const o = window.sreOffice; if (o && typeof o.chip === 'function') return o.chip(tone, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.dataset.tone = tone; s.textContent = typeof label === 'string' ? label : (label?.en ?? ''); return s; };
 
 function paintSummary() {
   const s = api.summarise(reg);
@@ -52,25 +66,34 @@ function paintSummary() {
   $('as-of').textContent = reg === null ? '' : t('asOf', { day: reg.asOf });
 }
 
+const W = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+const LEVEL_TONE = { lapsed: 'error', due_soon: 'degraded', current: 'ok', waiting: 'pending' };
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 function paintRegister() {
-  const body = $('scale-rows');
-  body.replaceChildren();
   const rows = reg?.scales ?? [];
-  $('no-scales').hidden = reg === null || rows.length > 0;
-  $('no-scales').textContent = t('noScales');
-  for (const s of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.asset = s.assetId; tr.dataset.level = s.verification.level;
-    tr.append(cell(s.assetId), cell(s.storeId), cell(s.laneIds.join(', ')), cell(s.lastStampedOn), cell(s.reverificationDueOn),
-      cell(s.certificateRef ?? t('noCertificate')), cell(api.stampWords(lang, s)), cell(s.approvedBy ? `${s.setBy} · ${s.approvedBy}` : s.setBy));
-    if (may.manage) {
-      // Open "Add or update" with this scale as it stands on the register.
-      tr.tabIndex = 0;
-      const open = () => edit(s);
-      tr.addEventListener('click', open);
-      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-    }
-    body.append(tr);
+  const c = register('scale-host', {
+    id: 'scales', label: W('tabRegister'), bodyId: 'scale-rows', sortable: true, pageSize: 10,
+    rowKey: (s) => s.assetId, rowData: (s) => ({ asset: s.assetId, level: s.verification.level }),
+    columns: [
+      { key: 'assetId', label: W('colScale') },
+      { key: 'storeId', label: W('colStore'), value: (s) => nameOf('store', s.storeId), filter: true },
+      { key: 'lanes', label: W('colLanes'), value: (s) => s.laneIds.join(', ') },
+      { key: 'lastStampedOn', label: W('colStamped'), value: (s) => s.lastStampedOn },
+      { key: 'reverificationDueOn', label: W('colValid'), value: (s) => s.reverificationDueOn },
+      { key: 'certificateRef', label: W('colCertificate'), value: (s) => s.certificateRef ?? t('noCertificate') },
+      // the stamp's state as the one chip (tone by level) with head office's words beside it
+      { key: 'state', label: W('colState'), value: (s) => api.stampWords(lang, s), render: (s) => { const f = document.createDocumentFragment(); f.append(chip(LEVEL_TONE[s.verification.level] ?? 'unknown', api.stampWords(lang, s))); return f; } },
+      { key: 'by', label: W('colBy'), value: (s) => (s.approvedBy ? `${nameOf('person', s.setBy)} · ${nameOf('person', s.approvedBy)}` : nameOf('person', s.setBy)) },
+      ...(may.manage ? [{ key: 'edit', label: W('tabEdit'), sort: false, render: (s) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet'; b.dataset.act = 'edit'; b.textContent = t('tabEdit'); b.addEventListener('click', (e) => { e.stopPropagation(); edit(s); }); return b; } }] : []),
+    ],
+    rows: reg === null ? null : rows,
+    ...(reg === null && loaded ? { state: 'unknown' } : {}),
+    empty: { title: W('noScales') },
+  });
+  // a tap on the row itself still opens "Add or update" with the scale as it stands (the Edit button is the named way)
+  if (c !== null && may.manage && !$('scale-host').dataset.wired) {
+    $('scale-host').dataset.wired = '1';
+    $('scale-host').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-asset]'); if (tr === null || e.target.closest('button')) return; const s = (reg?.scales ?? []).find((x) => x.assetId === tr.dataset.asset); if (s) edit(s); });
   }
 }
 
@@ -108,7 +131,6 @@ function paintWords() {
     ['k-scales', 'sumScales'], ['k-lapsed', 'sumLapsed'], ['k-soon', 'sumSoon'], ['k-waiting', 'sumWaiting'],
     ['tab-register', 'tabRegister'], ['tab-edit', 'tabEdit'], ['tab-requests', 'tabRequests'],
     ['register-h', 'tabRegister'], ['register-lead', 'registerLead'], ['edit-h', 'tabEdit'], ['edit-lead', 'editLead'], ['requests-h', 'tabRequests'], ['requests-lead', 'requestsLead'],
-    ['c-scale', 'colScale'], ['c-store', 'colStore'], ['c-lanes', 'colLanes'], ['c-stamped', 'colStamped'], ['c-valid', 'colValid'], ['c-certificate', 'colCertificate'], ['c-state', 'colState'], ['c-by', 'colBy'],
     ['l-f-asset', 'fAsset'], ['l-f-store', 'fStore'], ['l-f-lanes', 'fLanes'], ['l-f-approval-no', 'fApprovalNo'], ['l-f-capacity', 'fCapacity'], ['l-f-stamped', 'fStamped'], ['l-f-valid', 'fValid'], ['l-f-certificate', 'fCertificate'],
     ['f-save', 'save'], ['f-ask', 'ask']];
   for (const [id, k] of pairs) { const el = $(id); if (el) el.textContent = t(k); }
@@ -145,6 +167,7 @@ function edit(s) {
 async function load() {
   if (session === null || !may.named || !may.read) return;
   const out = await session.load();
+  loaded = true;
   if (out.result === 'ok') reg = out.value; else say($('page-status'), out, '');
   paintAll();
 }

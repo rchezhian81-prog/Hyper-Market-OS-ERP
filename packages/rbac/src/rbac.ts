@@ -18,6 +18,8 @@ export function isPermission(code: string): code is Permission {
 export interface Role {
   readonly id: string;
   readonly name: string;
+  /** U3 (OB-699, 7 Nov 2026): the role's name in Tamil — a role's name is the product's own word, carried in both languages. */
+  readonly nameTa?: string;
   readonly permissions: readonly Permission[];
 }
 

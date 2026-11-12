@@ -111,6 +111,23 @@
       .empty { color: var(--muted); font-size: 15px; margin: 0; }
       .empty.unknown { color: var(--warn); font-weight: 600; }
 
+      /* U6: the branches side by side — on a phone one card under another, each with the same five figures; on a wider
+         screen the cards sit beside each other. A figure not known is said in the warn tone, never a nought. */
+      .compare { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+      .cmp { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; display: grid; gap: 6px; }
+      .cmp-name { font-size: 16px; font-weight: 700; }
+      .cmp-age { font-size: 14px; color: var(--muted); }
+      .cmp-age.stale { color: var(--warn); font-weight: 700; }
+      .cmp-age.missing { color: var(--danger-text); font-weight: 700; }
+      .cmp-grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 0; }
+      .cmp-grid dt { font-size: 14px; color: var(--muted); }
+      .cmp-grid dd { margin: 0; font-size: 16px; font-weight: 700; font-variant-numeric: var(--numbers); text-align: right; overflow-wrap: anywhere; }
+      .cmp-grid dd.unknown { color: var(--warn); font-weight: 600; }
+      /* U6 · OB-701: links to the office's own pages — 48px rows, said as links. */
+      .office-links { display: grid; gap: 10px; }
+      .office-link { display: flex; align-items: center; min-height: var(--tap); padding: 0 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--accent); font-size: 16px; font-weight: 600; text-decoration: none; }
+      .office-link:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
       /* The trend: drawn by the one chart code (window.sreCharts, design system §4.4), each in a panel. */
       .trends { display: grid; gap: 12px; }
       .trend { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
@@ -221,6 +238,13 @@
         <div id="alerts"></div>
       </section>
 
+      <!-- U6 · M29-FR-02: the branches side by side — only for two shops or more; each with its own data age. -->
+      <section id="compare-section" aria-labelledby="compare-title" hidden>
+        <h2 id="compare-title">Branches side by side</h2>
+        <p class="empty" id="compare-note"></p>
+        <div class="compare" id="compare"></div>
+      </section>
+
       <section aria-labelledby="trends-title">
         <h2 id="trends-title">How the day is going</h2>
         <div class="trends">
@@ -228,6 +252,13 @@
           <div class="trend" id="chart-days"></div>
           <div class="trend" id="chart-tender"></div>
         </div>
+      </section>
+
+      <!-- U6 · OB-701: the audit trail and system health are office pages; this phone LINKS to them, it never copies them. -->
+      <section id="office-section" aria-labelledby="office-title">
+        <h2 id="office-title">Also in the office</h2>
+        <p class="empty" id="office-note"></p>
+        <div class="office-links" id="office-links"></div>
       </section>
 
       <section id="queued-section" hidden>

@@ -42,7 +42,7 @@
       .row .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
       .row .doc { font-weight: 600; } .row .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
       .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
-      .status .icon { font-size: 18px; width: 1.4em; text-align: center; } /* the shape — survives greyscale + glare */
+      .status .icon { display:inline-flex; width:1.4em; justify-content:center; } /* the shape — survives greyscale + glare */
       .action { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
       .action .permit { font-size: var(--fs-sm); padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
       .action .permit.ok { color: var(--ink); }
@@ -52,8 +52,6 @@
       .do-note { font-size: var(--fs-sm); color: var(--muted); }
       .row .mismatch { font-size: 14px; color: var(--danger-text); }
       .row .detail { font-size: var(--fs-sm); color: var(--muted); }
-      p.state { margin: 0; padding: 16px; background: var(--panel); border-radius: 12px; color: var(--muted); font-size: 15px; display: inline-flex; gap: 8px; align-items: center; }
-      p.state .icon { font-size: 18px; }
       p.state.tone-error { color: var(--danger-text); }
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
     </style>
@@ -81,7 +79,8 @@
       </div>
 
       <ul class="rows" id="rows" aria-label="Reconciliation queue"></ul>
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <!-- U5: an empty / refused view is the chrome's shared state (window.sreOffice.state), never a plain line with a glyph. -->
+      <div id="state" hidden></div>
     </main>
 
     <!--SCREEN-DATA-->

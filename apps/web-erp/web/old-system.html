@@ -46,6 +46,9 @@
       pre.kept-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: var(--fs-sm); margin: 0; }
       a.quiet-link { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-weight: 600; }
       @media print { body.printing > header, body.printing > p, body.printing main > section:not(.printing), body.printing main > section.printing > :not(pre.printing) { display: none !important; } body.printing pre.kept-text.printing { border: 0; display: block !important; } }
+      ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ol.steps > li > a { display: flex; gap: 10px; align-items: center; min-height: var(--tap); padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; background: var(--bg); }
+      ol.steps > li > a > b { font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--fs-sm); min-width: 54px; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -60,6 +63,13 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Old system checks</h2>
         <p class="lead" id="lead"></p>
+      </section>
+
+      <!-- U6 · §27 Migration: the twelve controls as their own steps, in the roadmap's order (MG-01…MG-12) -->
+      <section aria-labelledby="steps-h" id="steps">
+        <h3 id="steps-h"></h3>
+        <p class="lead" id="steps-lead"></p>
+        <ol class="steps" id="steps-list"></ol>
       </section>
 
       <!-- MG-01 -->
@@ -165,6 +175,24 @@
           <button id="diff-run" type="button" class="sre-btn"><span data-w="runDiff"></span></button>
         </div>
         <p class="status" id="diff-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- U6 · MG-09 the delta LOADED, exactly once -->
+      <section aria-labelledby="delta-h" id="delta">
+        <h3 id="delta-h">Load the changes made after the final extract</h3>
+        <p class="lead" id="delta-lead"></p>
+        <div class="row-form">
+          <label for="delta-cutoff"><span data-w="deltaCutoff"></span><input id="delta-cutoff" type="text" inputmode="numeric" autocomplete="off" placeholder="dd/mm/yyyy" /></label>
+          <label for="delta-time"><span data-w="deltaCutoffTime"></span><input id="delta-time" type="time" value="00:00" autocomplete="off" /></label>
+          <label for="delta-file"><span data-w="deltaFile"></span><input id="delta-file" type="file" accept=".csv,text/csv" /></label>
+        </div>
+        <div class="row-form">
+          <button id="delta-read" type="button" class="quiet sre-btn sre-btn-quiet"><span data-w="readDelta"></span></button>
+          <button id="delta-load" type="button" class="sre-btn"><span data-w="loadDelta"></span></button>
+        </div>
+        <p class="status" id="delta-status" role="status" aria-live="polite"></p>
+        <div id="delta-rows"></div>
+        <ul class="rows" id="delta-result"></ul>
       </section>
 
       <!-- W4 · MG-02 the export checked against its seal -->

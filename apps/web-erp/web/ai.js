@@ -34,16 +34,12 @@ const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const shopDates = new Map();
 function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  // U5: the chrome's own adapter (`sreOffice.shopDate`) swaps the box for the shared dd/mm/yyyy field under the same id; the
+  // page reads ISO back with `dateOf` and remembers which fields it swapped.
+  const office = window.sreOffice;
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (office.shopDate(id, words, opts) !== null) shopDates.set(id, words);
 }
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 /** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */

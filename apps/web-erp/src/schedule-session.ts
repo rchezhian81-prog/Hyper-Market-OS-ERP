@@ -53,6 +53,9 @@ export const SCHEDULE_COPY = {
     cannotCommit: 'Only a manager can commit the roster.', needDraft: 'Draft the week first.',
     as_rostered: 'as rostered', short: 'short', over: 'over', absent: 'absent', not_recorded: 'not recorded', worked_unrostered: 'worked, not rostered',
     minutes: 'min', rostered: 'rostered', actual: 'actual',
+    // U5 (G17): the registers' column words and their states
+    colDate: 'Day', colHours: 'Hours', colRole: 'Role', colStaffNeeded: 'Staff needed', colEmployee: 'Who', colStatus: 'Outcome',
+    notShownYet: 'Choose the store and the week, then press "Show the forecast".', noDemand: 'No staff need was forecast for this week — the shop has no sales history for it yet.', noShifts: 'The draft has no shifts.', noActuals: 'Nothing was recorded for this week yet.',
   },
   ta: {
     lang: 'English', title: 'பணியாளர் அட்டவணை',
@@ -68,6 +71,8 @@ export const SCHEDULE_COPY = {
     cannotCommit: 'மேலாளர் மட்டுமே அட்டவணையை உறுதிசெய்ய முடியும்.', needDraft: 'முதலில் வாரத்தை வரைவு செய்யவும்.',
     as_rostered: 'அட்டவணைப்படி', short: 'குறைவு', over: 'அதிகம்', absent: 'வரவில்லை', not_recorded: 'பதிவு இல்லை', worked_unrostered: 'அட்டவணையில்லாமல் வேலை',
     minutes: 'நிமி', rostered: 'அட்டவணை', actual: 'உண்மை',
+    colDate: 'நாள்', colHours: 'மணிநேரம்', colRole: 'பணி', colStaffNeeded: 'தேவையான பணியாளர்கள்', colEmployee: 'யார்', colStatus: 'முடிவு',
+    notShownYet: 'கடையையும் வாரத்தையும் தேர்ந்தெடுத்து, "முன்கணிப்பைக் காட்டு" என்பதை அழுத்தவும்.', noDemand: 'இந்த வாரத்திற்கு பணியாளர் தேவை முன்கணிக்கப்படவில்லை — கடைக்கு இதற்கான விற்பனை வரலாறு இன்னும் இல்லை.', noShifts: 'வரைவில் ஷிப்டுகள் இல்லை.', noActuals: 'இந்த வாரத்திற்கு இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.',
   },
 } as const;
 export type ScheduleCopyKey = keyof typeof SCHEDULE_COPY.en;

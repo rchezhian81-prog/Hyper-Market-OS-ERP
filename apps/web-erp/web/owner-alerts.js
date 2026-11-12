@@ -11,6 +11,9 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, open: false, manage: false, schedulesRead: false, schedule: false, floorRead: false, floorManage: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+// OB-702 · G15 (UI/UX gap audit, lane 3): the owner's page in the owner's voice for the owner (owner.alert.manage), in the
+// third person for the store manager who reads it — "the owner enters it", never "you enter it".
+const voice = (key) => (may.manage ? t(key) : t(`${key}Other`));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, cls) { const b = document.createElement('button'); b.type = 'button'; b.className = cls ? `${cls} sre-btn` : 'sre-btn'; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
@@ -31,7 +34,7 @@ const fillIn = (words, values) => Object.entries(values).reduce((w, [k, v]) => w
 // OB-375 · OB-378: the kiosk hours and the watch numbers in force — the owner's written decision until he enters another.
 function paintFloor() {
   if (floor === null) return;
-  const from = (row) => (row.source === 'owner_decision' ? fillIn(t('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: row.setAt ? shopDayOf(row.setAt) : '' }));
+  const from = (row) => (row.source === 'owner_decision' ? fillIn(voice('fromDecision'), { decision: row.decision, date: row.decidedOn }) : fillIn(t('fromEntry'), { by: row.setBy ?? '', at: row.setAt ? shopDayOf(row.setAt) : '' }));
   const kiosk = floor.settings.find((r) => r.setting === 'kiosk_stale_after');
   const watch = floor.settings.find((r) => r.setting === 'self_checkout_watch');
   if (kiosk) {
@@ -53,7 +56,7 @@ function paintThresholds() {
   for (const row of thresholds.thresholds) {
     const li = document.createElement('li'); li.dataset.kind = row.kind; li.dataset.state = row.state;
     li.append(text('strong', t(row.kind)));
-    if (row.state === 'not_set') li.append(text('span', t('notSet'), 'notset'));
+    if (row.state === 'not_set') li.append(text('span', voice('notSet'), 'notset'));
     else li.append(text('span', `${t('setTo')} ${api.shownValue(row.kind, row.value)} · ${t('setBy')} ${row.setBy ?? ''}`, 'meta'));
     if (row.state === 'set' && !row.canFire && row.whyNot) li.append(text('span', `⚠ ${row.whyNot}`, 'meta'));
     if (may.manage) {
@@ -90,19 +93,19 @@ function paintToday() {
   for (const k of today.kinds) {
     const li = document.createElement('li'); li.dataset.kind = k.kind;
     li.append(text('strong', t(k.kind)));
-    li.append(text('span', k.threshold === 'not_set' ? t('notSet') : k.events === null ? `${t('recorded')}: ${t('notKnown')}` : `${t('recorded')}: ${k.events} · ${k.alerts} ${t('alerts')}`, k.threshold === 'not_set' ? 'notset' : 'meta'));
+    li.append(text('span', k.threshold === 'not_set' ? voice('notSet') : k.events === null ? `${t('recorded')}: ${t('notKnown')}` : `${t('recorded')}: ${k.events} · ${k.alerts} ${t('alerts')}`, k.threshold === 'not_set' ? 'notset' : 'meta'));
     ul.append(li);
   }
   if (today.alerts.length === 0) {
     // No alert is not an all-clear when a limit is not set: the shared "nothing yet" state says what the list covers (P-08).
     const o = office();
     if (o === null) al.append(text('li', t('noAlerts')));
-    else { const li = document.createElement('li'); o.state(li, 'empty', { title: t('noAlerts'), detail: notSet > 0 ? `${$('d-covers').textContent} · ${notSet} ${u3('notSetKinds').toLowerCase()} — ${u3('notSetNote')}` : $('d-covers').textContent }); al.append(li); }
+    else { const li = document.createElement('li'); o.state(li, 'empty', { title: voice('noAlerts'), detail: notSet > 0 ? `${$('d-covers').textContent} · ${notSet} ${u3('notSetKinds').toLowerCase()} — ${u3('notSetNote')}` : $('d-covers').textContent }); al.append(li); }
   }
   for (const a of today.alerts) {
     const li = document.createElement('li'); li.dataset.alert = a.inboxId;
     li.append(text('strong', `⚠ ${a.headline}`));
-    li.append(text('span', a.inOwnersInbox ? `✓ ${t('inInbox')}` : t('notInInbox'), 'meta'));
+    li.append(text('span', a.inOwnersInbox ? `✓ ${voice('inInbox')}` : voice('notInInbox'), 'meta'));
     al.append(li);
   }
 }
@@ -129,10 +132,10 @@ function paintSchedules() {
 }
 
 function paint() {
-  $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
+  $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = voice('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['thresholds-h', 'thresholdsH'], ['today-h', 'todayH'], ['schedules-h', 'schedulesH'], ['d-check-text', 'checkNow'], ['s-id-l', 'scheduleId'], ['s-kind-l', 'kind'], ['s-kind-report', 'kindReport'], ['s-kind-export', 'kindExport'], ['s-target-l', 'target'], ['s-time-l', 'time'], ['s-lang-l', 'language'], ['s-save-text', 'saveSchedule'], ['s-run-text', 'runNow']]) $(id).textContent = t(key);
-  for (const [id, key] of [['floor-h', 'floorH'], ['floor-lead', 'floorLead'], ['kiosk-h', 'kioskH'], ['kiosk-l', 'kioskL'], ['kiosk-save-text', 'saveKiosk'], ['watch-h', 'watchH'], ['watch-pct-l', 'watchPct'], ['watch-above-l', 'watchAbove'], ['watch-loose-l', 'watchLoose'], ['watch-voids-l', 'watchVoids'], ['watch-save-text', 'saveWatch']]) $(id).textContent = t(key);
+  for (const [id, key] of [['thresholds-h', may.manage ? 'thresholdsH' : 'thresholdsHOther'], ['today-h', 'todayH'], ['schedules-h', 'schedulesH'], ['d-check-text', 'checkNow'], ['s-id-l', 'scheduleId'], ['s-kind-l', 'kind'], ['s-kind-report', 'kindReport'], ['s-kind-export', 'kindExport'], ['s-target-l', 'target'], ['s-time-l', 'time'], ['s-lang-l', 'language'], ['s-save-text', 'saveSchedule'], ['s-run-text', 'runNow']]) $(id).textContent = t(key);
+  for (const [id, key] of [['floor-h', 'floorH'], ['floor-lead', may.manage ? 'floorLead' : 'floorLeadOther'], ['kiosk-h', 'kioskH'], ['kiosk-l', 'kioskL'], ['kiosk-save-text', 'saveKiosk'], ['watch-h', 'watchH'], ['watch-pct-l', 'watchPct'], ['watch-above-l', 'watchAbove'], ['watch-loose-l', 'watchLoose'], ['watch-voids-l', 'watchVoids'], ['watch-save-text', 'saveWatch']]) $(id).textContent = t(key);
   paintThresholds(); paintToday(); paintSchedules(); paintFloor();
 }
 

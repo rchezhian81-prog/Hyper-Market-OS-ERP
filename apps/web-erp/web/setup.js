@@ -79,6 +79,8 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+// U3 (OB-699): a setup question is the product's own word — head office carries it in both languages; the Tamil shows on a Tamil screen.
+const questionWords = (item) => (lang === 'ta' && typeof item.questionTa === 'string' && item.questionTa !== '' ? item.questionTa : item.question);
 
 function readable(value) {
   if (Array.isArray(value)) return value.length === 0 ? t('none') : value.join(', ');
@@ -272,7 +274,7 @@ function renderHeadline(h) {
     el('blocking-title').textContent = t('stillNeeded');
     el('blocking-list').replaceChildren(...h.blocking.map((b) => {
       const li = document.createElement('li');
-      li.textContent = b.question;
+      li.textContent = questionWords(b);
       return li;
     }));
   }
@@ -300,7 +302,7 @@ function itemRow(item) {
   what.className = 'what';
   const question = document.createElement('strong');
   question.id = `q-${item.key}`;
-  question.textContent = item.question;
+  question.textContent = questionWords(item);
   const value = document.createElement('small');
   value.id = `v-${item.key}`;
   value.textContent = `${t('now')}: ${readable(item.value)}`;
@@ -313,10 +315,13 @@ function itemRow(item) {
 
   const side = document.createElement('div');
   side.className = 'side';
-  const tag = document.createElement('span');
-  tag.className = 'tag';
+  // U5 · G13: the setting's state as the chrome's chip — needed to open (error), the default (idle), your choice (ok)
+  const tagWords = item.state === 'blocking' ? t('needed') : item.isDefault ? t('usingDefault') : t('yourChoice');
+  const tagTone = item.state === 'blocking' ? 'error' : item.isDefault ? 'idle' : 'ok';
+  const o = window.sreOffice;
+  const tag = o && typeof o.chip === 'function' ? o.chip(tagTone, tagWords) : document.createElement('span');
+  if (!tag.classList.contains('sre-chip')) { tag.className = 'sre-chip'; tag.dataset.tone = tagTone; tag.textContent = tagWords; }
   tag.id = `t-${item.key}`;
-  tag.textContent = item.state === 'blocking' ? t('needed') : item.isDefault ? t('usingDefault') : t('yourChoice');
   side.append(tag);
 
   if (canEdit) {
@@ -477,9 +482,13 @@ function prefixRow(r) {
   }
   const side = document.createElement('div');
   side.className = 'side';
-  const tag = document.createElement('span');
-  tag.className = `tag${r.flagged ? ' flag' : ''}`;
-  tag.textContent = r.flagged ? pw('flagged') : r.prefix ? `v${r.version}` : pw('none');
+  // U5 · G13: the prefix's state as the chrome's chip — flagged (degraded), set (ok), none yet (idle)
+  const pWords = r.flagged ? pw('flagged') : r.prefix ? `v${r.version}` : pw('none');
+  const pTone = r.flagged ? 'degraded' : r.prefix ? 'ok' : 'idle';
+  const po = window.sreOffice;
+  const tag = po && typeof po.chip === 'function' ? po.chip(pTone, pWords) : document.createElement('span');
+  if (!tag.classList.contains('sre-chip')) { tag.className = 'sre-chip'; tag.dataset.tone = pTone; tag.textContent = pWords; }
+  if (r.flagged) tag.classList.add('flag');
   side.append(tag);
   row.append(what, side);
   return row;

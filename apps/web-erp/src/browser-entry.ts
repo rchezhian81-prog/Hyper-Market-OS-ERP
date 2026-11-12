@@ -94,6 +94,7 @@ import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
+import { figureNameIn } from '../../../services/reporting/src/index';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
 import {
   createServiceSession, type ServicePorts, type ServiceSession,
@@ -122,11 +123,18 @@ import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring';
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
 import { wireFindings } from './findings-browser-wiring'; // OB-609
+import { wireRfqAndClaims } from './u6-rfq-claims-browser-wiring'; // U6 · M06-FR-02 RFQ to suppliers · M07-FR-03 / M24-FR-02 supplier claims
+import { wireStockScreens } from './u6-stock-screens-browser-wiring'; // U6 (7 Nov 2026)
+import { wireBankReconciliation } from './bank-reconciliation-browser-wiring'; // U6 · M23-FR-03
+import { wirePayablesReceivables } from './payables-receivables-browser-wiring'; // U6 · M23-FR-01
+import { wireKeys } from './keys-browser-wiring'; // U6 · §27 Admin/Security keys · M32-FR-03
+import { wireEsl } from './esl-browser-wiring'; // U6 · §27 label/ESL: the Electronic shelf labels page
 import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
+import { wireU6Crm } from './u6-crm-browser-wiring'; // U6 · CRM: compensation for approval, satisfaction, consent check
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { wireW3TrainingChecks } from './w3-training-checks-browser-wiring'; // Wave 3 · OB-675 Training checks (QG-02)
 import { wireW4Production } from './w4-production-browser-wiring'; // W4 · M11 plan, batch trace and production costs
@@ -5271,6 +5279,8 @@ interface ManagerWindow {
   unsellableSession?: UnsellableSession;
   reportingSession?: ReportingSession;
   reportingData?: ReportingData;
+  /** U3 (OB-699): a figure's name in the reader's language, from the one table head office and the box name their figures from. */
+  figureNameIn?: (lang: 'en' | 'ta', name: string) => string;
   serviceData?: ServiceData;
   serviceSession?: ServiceSession;
   expiryData?: ExpiryData;
@@ -6737,6 +6747,7 @@ if (browserWindow !== undefined) {
   if (unsellable !== null) browserWindow.unsellableSession = unsellable;
   const reporting = bootReporting(browserWindow.reportingData);
   if (reporting !== null) browserWindow.reportingSession = reporting;
+  browserWindow.figureNameIn = figureNameIn;
   const service = bootService(browserWindow.serviceData);
   if (service !== null) browserWindow.serviceSession = service;
   const expiry = bootExpiry(browserWindow.expiryData);
@@ -7571,11 +7582,20 @@ if (browserWindow !== undefined) {
   wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // OB-609: Bill findings and attendance flags.
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireRfqAndClaims(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6
+  // U6 (UI/UX gap audit, 7 Nov 2026): the stock ledger, the quarantine register and the stock-correction page.
+  wireStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity, headOfficeHttp);
+  // U6: Bank reconciliation; Payables and receivables.
+  wireBankReconciliation(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wirePayablesReceivables(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireKeys(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6: Keys and credentials
+  wireEsl(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6: Electronic shelf labels
   wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
   wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
   wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
   wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
+  wireU6Crm(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6 · CRM screens
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
   wireW3TrainingChecks(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · OB-675 Training checks (QG-02)
   wireW4Production(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · M11 plan, batch trace and production costs

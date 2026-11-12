@@ -93,7 +93,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the day bo
       await says(page, 'evidence-state-text', /NOT FINAL — the day was reopened and not closed again/);
 
       await showDay(page, '2026-10-22');
-      await says(page, 'evidence-state-text', /No store has closed this day yet/);
+      await says(page, 'evidence-state', /No store has closed this day yet/); // U5: no close yet is the shared empty state
       await page.click('#lang');
       await says(page, 'evidence-heading', /பட்டயக் கணக்காளருக்கான சான்று தொகுப்பு/);
       expect(errors).toEqual([]);

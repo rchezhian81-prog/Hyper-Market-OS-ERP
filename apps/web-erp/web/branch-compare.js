@@ -100,13 +100,18 @@ function paintResult() {
         { key: 'open', label: t('open'), render: () => button(t('open'), 'open', 'search', true) },
       ],
     });
-  } else c.rows.forEach((row, i) => {
-    const tr = document.createElement('tr'); tr.dataset.key = row.key;
-    const cells = [String(i + 1), labelOf(row), rs(row.valueMinor), api.share(row.shareBps), String(row.transactionCount)];
-    cells.forEach((v, j) => { const td = text('td', v); if (j >= 2) td.className = 'num'; tr.append(td); });
-    const td = document.createElement('td'); td.append(button(t('open'), 'open', 'search', true)); tr.append(td);
-    $('r-rows').append(tr);
-  });
+  } else {
+    // Before the chrome arrives: a plain table of the same rows (the register replaces it on `sre:chrome`).
+    const table = plainTable('r-table', ['#', t('by'), t('total'), t('share'), t('txns'), ''], 'r-rows');
+    c.rows.forEach((row, i) => {
+      const tr = document.createElement('tr'); tr.dataset.key = row.key;
+      const cells = [String(i + 1), labelOf(row), rs(row.valueMinor), api.share(row.shareBps), String(row.transactionCount)];
+      cells.forEach((v, j) => { const td = text('td', v); if (j >= 2) td.className = 'num'; tr.append(td); });
+      const td = document.createElement('td'); td.append(button(t('open'), 'open', 'search', true)); tr.append(td);
+      table.tBodies[0].append(tr);
+    });
+    $('r-register').replaceChildren(table);
+  }
   $('r-total').textContent = `${t('total')} ${rs(c.totalMinor)}`;
   // UI-3: the same rows as a chart — head office's own figures and order, each bar with its rupees and share in words.
   if (window.sreCharts !== undefined) {
@@ -118,6 +123,14 @@ function paintResult() {
     // The chart's own caption carries the source line, so it is not said twice.
     $('r-covers').hidden = true;
   }
+}
+/** A plain table for the moment before the chrome's register takes over (U5: no static table in the page). */
+function plainTable(id, headings, bodyId) {
+  const table = document.createElement('table'); table.id = id; table.className = 'sre-register';
+  const thead = document.createElement('thead'); const tr = document.createElement('tr');
+  for (const h of headings) tr.append(text('th', h));
+  thead.append(tr); const tbody = document.createElement('tbody'); tbody.id = bodyId; table.append(thead, tbody);
+  return table;
 }
 function paintTxns() {
   $('txns').hidden = view === null || opened === null;
@@ -140,18 +153,20 @@ function paintTxns() {
     });
     return;
   }
+  const table = plainTable('tx-table', [t('when'), t('branch'), t('what'), t('amount')], 'tx-rows');
   for (const x of api.rowTransactions(view, opened)) {
     const tr = document.createElement('tr'); tr.dataset.txn = x.transactionId;
     [x.at, x.branchId, `${x.transactionId} · ${x.description}`, rs(x.amountMinor)].forEach((v, j) => { const td = text('td', v); if (j === 3) td.className = 'num'; tr.append(td); });
-    $('tx-rows').append(tr);
+    table.tBodies[0].append(tr);
   }
+  $('tx-register').replaceChildren(table);
 }
 function paint() {
   repaintShopDates();
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   for (const [id, key] of [['form-h', 'formH'], ['c-by-l', 'by'], ['c-from-l', 'from'], ['c-to-l', 'to'], ['c-go-text', 'go'], ['result-h', 'resultH'],
-    ['th-name', 'by'], ['th-value', 'total'], ['th-share', 'share'], ['th-count', 'txns'], ['tx-when', 'when'], ['tx-branch', 'branch'], ['tx-what', 'what'], ['tx-amount', 'amount'], ['tx-close-text', 'close']]) setText(id, t(key));
+    ['tx-close-text', 'close']]) setText(id, t(key));
   if (api !== null) {
     const sel = $('c-by'); const keep = sel.value;
     sel.replaceChildren(...api.dimensions.map((d) => { const o = document.createElement('option'); o.value = d; o.textContent = t(`by_${d}`); return o; }));

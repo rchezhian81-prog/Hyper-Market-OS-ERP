@@ -15,11 +15,14 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 let rows = null; let check = null; let rebuilt = null;
 
 function row(r) {
+  // The record as head office holds it (field names and values) is its data: shown as it is, marked English (OB-699).
+  const dump = (label, state) => { const p = document.createElement('p'); p.append(document.createTextNode(`${label}: `)); const code = document.createElement('span'); code.setAttribute('lang', 'en'); code.textContent = api.stateWords(state); p.append(code); return p; };
   const li = document.createElement('li'); li.dataset.sequence = String(r.sequence); li.dataset.action = r.action; li.dataset.object = `${r.objectType}/${r.objectId}`;
   const head = document.createElement('div'); head.className = 'head';
-  head.append(text('h4', `${r.action} — ${r.objectType} ${r.objectId}`), text('span', `#${r.sequence} · ${api.moment(r.at)}`, 'meta'));
+  const ident = text('h4', `${r.action} — ${r.objectType} ${r.objectId}`); ident.setAttribute('lang', 'en'); // the record's own identifiers
+  head.append(ident, text('span', `#${r.sequence} · ${api.moment(r.at)}`, 'meta'));
   li.append(head, text('p', `${t('who')} ${r.actorId} · ${t('where')} ${r.branchId ?? t('headOffice')}`, 'meta'),
-    text('p', `${t('before')}: ${api.stateWords(r.before)}`), text('p', `${t('after')}: ${api.stateWords(r.after)}`));
+    dump(t('before'), r.before), dump(t('after'), r.after));
   if (r.reason !== undefined) li.append(text('p', `${t('why')}: ${r.reason}`, 'meta'));
   if (r.approvalId !== undefined) li.append(text('p', `${t('approval')}: ${r.approvalId}`, 'meta'));
   return li;

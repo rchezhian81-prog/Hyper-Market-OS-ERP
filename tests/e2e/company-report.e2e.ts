@@ -160,7 +160,7 @@ describe.skipIf(!HAVE_BROWSER || DATABASE_URL === undefined)('company-wide repor
       expect(await page.$$eval('#scope option', (o) => o.map((x) => x.textContent))).toEqual(['Whole company', 'Test Branch East — branch only', 'Test Branch North — branch only', 'Test Branch South — branch only']);
       await page.locator('#missing', { hasText: 'Test Branch East (br-3)' }).waitFor({ timeout: 10_000 });
       expect(asked).toContain('GET /v1/org/nodes');
-      await page.locator('#freshness.stale').waitFor({ timeout: 10_000 });
+      await page.locator('#freshness[data-state="stale"] .sre-chip[data-tone="degraded"]').waitFor({ timeout: 10_000 }); // U5: the freshness is the shared chip
       await page.locator('#missing', { hasText: 'br-3' }).waitFor({ timeout: 10_000 });
       await page.locator('#reconcile', { hasText: /does NOT reconcile/i }).waitFor({ timeout: 10_000 });
 

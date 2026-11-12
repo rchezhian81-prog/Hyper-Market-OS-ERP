@@ -78,6 +78,23 @@ const WORDS = {
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
+
+// U5 (G17): every list stands on the chrome's register part — built once per host, fed by setRows, repainted on the
+// language toggle by the chrome itself (the column words are pairs). A row's first cell is a button, so a keyboard reaches
+// it; a click anywhere on the row opens the same record (the tests and a mouse click the row).
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: (WORDS.ta ?? {})[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function register(host, spec) {
+  if (!window.sreOffice) return null; // the chrome's parts arrive after this script
+  const have = tables[spec.id];
+  if (have && have.connected()) return have;
+  tables[spec.id] = window.sreOffice.table(host, spec);
+  return tables[spec.id];
+}
+function rowLink(text) { const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet sre-row-link'; b.textContent = text; return b; }
+function onRow(host, attr, open) {
+  host.addEventListener('click', (e) => { const tr = e.target.closest(`tr[data-${attr}]`); if (tr && host.contains(tr)) open(tr.dataset[attr]); });
+}
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 
 const newKey = () => `category-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -111,6 +128,7 @@ async function ownApproval(subjectRef, details) {
 }
 
 let categories = null;
+onRow($('rows-host'), 'id', (id) => { const c = (categories ?? []).find((x) => x.categoryId === id); if (c) fillForm(c); });
 let readFailed = false;
 let pending = null; // the definition the last save needed the owner's approval for
 let tab = 'list';
@@ -190,24 +208,29 @@ function definitionOfForm() {
 }
 
 function paintList() {
-  const tbody = $('rows');
-  tbody.replaceChildren();
   const list = [...(categories ?? [])].sort((a, b) => pathOf(a).localeCompare(pathOf(b)));
-  if (categories !== null && list.length === 0) {
-    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = t('empty'); tr.append(td); tbody.append(tr);
-  }
-  for (const c of list) {
-    const tr = document.createElement('tr'); tr.dataset.id = c.categoryId; tr.tabIndex = 0;
-    for (const v of [pathOf(c), c.categoryId, (c.regulated ?? []).map((k) => t(k)).join(', ') || t('none'),
-      (c.attributes ?? []).map((a) => `${a.label}${a.required === true ? ' *' : ''}`).join(', ') || t('none'), String(c.version), c.approvedBy]) {
-      const td = document.createElement('td'); td.textContent = v; tr.append(td);
-    }
-    const open = () => fillForm(c);
-    tr.addEventListener('click', open); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-    tbody.append(tr);
-  }
-  const unknown = (el, v) => { el.textContent = categories === null ? t('notKnown') : String(v); el.classList.toggle('unknown', categories === null); };
-  unknown($('v-count'), list.length); unknown($('v-top'), list.filter((c) => c.parentId === null).length); unknown($('v-regulated'), list.filter((c) => (c.regulated ?? []).length > 0).length);
+  const reg = register($('rows-host'), {
+    id: 'categories', label: pair('tabList'), pageSize: 10, sortable: true, bodyId: 'rows',
+    columns: [
+      { key: 'path', label: pair('cPath'), value: (c) => pathOf(c), render: (c) => rowLink(pathOf(c)) },
+      { key: 'id', label: pair('cId'), value: (c) => c.categoryId },
+      { key: 'reg', label: pair('cReg'), value: (c) => (c.regulated ?? []).map((k) => t(k)).join(', ') || t('none') },
+      { key: 'attrs', label: pair('cAttrs'), value: (c) => (c.attributes ?? []).map((a) => `${a.label}${a.required === true ? ' *' : ''}`).join(', ') || t('none') },
+      { key: 'ver', label: pair('cVer'), value: (c) => c.version, sort: 'number', align: 'end' },
+      { key: 'by', label: pair('cBy'), value: (c) => c.approvedBy },
+    ],
+    rowKey: (c) => c.categoryId, rowData: (c) => ({ id: c.categoryId }),
+    empty: { title: pair('empty') },
+  });
+  if (reg === null) return;
+  if (categories === null) reg.setState('unknown'); else reg.setRows(list);
+  // the figures are summary cards: head office's count, or "Not known" (the part's own word) until it answers
+  const figure = (v) => (categories === null ? null : String(v));
+  window.sreOffice.cards($('figures'), [
+    { label: pair('kCount'), value: figure(list.length), icon: 'list' },
+    { label: pair('kTop'), value: figure(list.filter((c) => c.parentId === null).length), icon: 'layers' },
+    { label: pair('kRegulated'), value: figure(list.filter((c) => (c.regulated ?? []).length > 0).length), icon: 'shield' },
+  ]);
   const sel = $('v-cat'); const was = sel.value; sel.replaceChildren();
   const all = document.createElement('option'); all.value = ''; all.textContent = t('all'); sel.append(all);
   for (const c of list) { const o = document.createElement('option'); o.value = c.categoryId; o.textContent = pathOf(c); sel.append(o); }
@@ -216,8 +239,8 @@ function paintList() {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-count', 'kCount'], ['k-top', 'kTop'], ['k-regulated', 'kRegulated'], ['tab-list', 'tabList'], ['tab-variants', 'tabVariants'],
-    ['list-h', 'tabList'], ['list-lead', 'listLead'], ['c-path', 'cPath'], ['c-id', 'cId'], ['c-reg', 'cReg'], ['c-attrs', 'cAttrs'], ['c-ver', 'cVer'], ['c-by', 'cBy'],
+  for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['tab-list', 'tabList'], ['tab-variants', 'tabVariants'],
+    ['list-h', 'tabList'], ['list-lead', 'listLead'], 
     ['form-h', 'formH'], ['l-f-id', 'fId'], ['l-f-name', 'fName'], ['l-f-parent', 'fParent'], ['l-f-reg', 'fReg'], ['l-f-attrs', 'fAttrs'], ['l-f-why', 'fWhy'], ['save', 'save'], ['ask', 'ask'],
     ['variants-h', 'tabVariants'], ['variants-lead', 'variantsLead'], ['l-v-cat', 'vCat'], ['run', 'run']]) { const el = $(id); if (el) el.textContent = t(k); }
   $('lang').textContent = t('lang');
@@ -225,6 +248,8 @@ function paintWords() {
 }
 
 function paint() {
+  // U3 · OB-699: the read-only line is the page's own word — it follows the language toggle like every other
+  { const st = $('page-status'); if (st && st.dataset.readOnly === 'on') st.textContent = t('readOnly'); }
   paintWords(); paintList(); paintForm();
   $('view-list').hidden = tab !== 'list'; $('view-variants').hidden = tab !== 'variants';
   for (const v of ['list', 'variants']) { if (v === tab) $(`tab-${v}`).setAttribute('aria-current', 'page'); else $(`tab-${v}`).removeAttribute('aria-current'); }
@@ -235,7 +260,7 @@ async function load() {
   readFailed = !out.ok;
   categories = out.ok && Array.isArray(out.body?.categories) ? out.body.categories : null;
   const st = $('page-status');
-  if (readFailed) say(st, out, ''); else if (!mayPropose && !mayDefine) { st.className = 'status'; st.textContent = t('readOnly'); } else st.textContent = '';
+  if (readFailed) say(st, out, ''); else if (!mayPropose && !mayDefine) { st.className = 'status'; st.dataset.readOnly = 'on'; st.textContent = t('readOnly'); } else { st.dataset.readOnly = 'off'; st.textContent = ''; }
   paint();
 }
 
@@ -312,3 +337,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

@@ -78,7 +78,7 @@ async function thrown(fn: () => unknown): Promise<Thrown> {
 const BODY = { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'L1', payment: { providerRef: 'tok_1', amountMinor: 10_000, result: 'authorised' } };
 
 describe('storefront routes over a stubbed ledger', () => {
-  it('ten routes, all behind the customer_app entitlement; the register is a staff read', () => {
+  it('eleven routes, all behind the customer_app entitlement; the register is a staff read', () => {
     const { routes } = stub();
     expect(routes.map((r) => [r.method, r.path, r.permission, r.entitlement])).toEqual([
       // WF-13 (OB-288 wave 3): the shop's price for the basket — the till's own promotions and coupon engines.
@@ -94,6 +94,8 @@ describe('storefront routes over a stubbed ledger', () => {
       ['GET', '/v1/storefront/access-refusals', 'order.read', 'customer_app'],
       ['GET', '/v1/storefront/orders', 'storefront.order.read', 'customer_app'],
       ['GET', '/v1/storefront/orders/:orderId', 'storefront.order.read', 'customer_app'],
+      // U6 · M17 · §27 "Customer: Loyalty": my points and what they are worth at the till — a read, never a spend.
+      ['GET', '/v1/me/loyalty', 'storefront.order.read', 'customer_app'],
     ]);
   });
 

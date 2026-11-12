@@ -26,8 +26,7 @@ import { tradingDayIn, type TradingCalendar } from '../../../packages/calendar/s
 import type { NotificationTransport } from '../../../packages/notifications/src/index';
 import type { NotificationQueueEvent } from '../../customer/src/notification-queue';
 import {
-  buildScheduledBrief, briefsDue, type BriefFigures, type AttentionLine, type Narrative, type BriefLanguage,
-} from '../../../packages/owner-control/src/index';
+  buildScheduledBrief, briefsDue, type BriefFigures, type AttentionLine, type Narrative, type BriefLanguage, briefLinesIn } from '../../../packages/owner-control/src/index';
 import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -283,16 +282,19 @@ export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[]
         }
         const calendar = await deps.calendar(ctx.tenantId);
         const tradingDay = tradingDayIn(now, calendar);
+        const figures = await deps.dayFigures(ctx.tenantId, tradingDay);
         const brief = buildScheduledBrief({
-          figures: await deps.dayFigures(ctx.tenantId, tradingDay), attention: [],
+          figures, attention: [],
           ...(s?.language === undefined ? {} : { language: s.language }),
           ...(s?.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }),
         });
+        // U3 (OB-699): the same lines in both languages, so the office page shows the reader's whatever the schedule's language.
+        const linesIn = briefLinesIn({ figures, attention: [], ...(s?.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }) });
         const sent = s?.sentDays.includes(tradingDay) === true;
         return {
           status: 200,
           body: {
-            tradingDay, prepared: true, lines: brief.lines, deterministic: brief.deterministic,
+            tradingDay, prepared: true, lines: brief.lines, linesIn, deterministic: brief.deterministic,
             scheduled: s === undefined ? null : { dueAt: s.dueAt },
             sending: sendingOn(deps) ? 'on' : 'switched_off', sent,
             detail: sendingOn(deps) ? (sent ? 'Sent.' : 'Not sent yet.') : BRIEF_SENDING_OFF_DETAIL,

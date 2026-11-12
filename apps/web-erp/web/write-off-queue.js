@@ -5,6 +5,16 @@
 // Tamil twin; every button carries an icon beside its word.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** The chrome's "Not known" in the reader's language — never a dash. */
+const notKnownWord = () => { const o = sreO(); return o && typeof o.words === 'function' ? o.words('notKnown') : 'Not known'; };
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
 
 // ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
 // The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
@@ -14,31 +24,12 @@ const pickWords = {
   en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
   ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
 };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
-const pickRepaints = [];
-const repaintPickers = () => { for (const f of pickRepaints) f(); };
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
   if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  o.pickable(input, kind, { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, extra);
 }
 const q = window.writeOffQueue ?? null;
 const dec = window.writeOffDecide ?? null;
@@ -92,10 +83,10 @@ if (q !== null) {
     const complete = ['woq-product', 'woq-location', 'woq-qty', 'woq-type', 'woq-reason'].every((id) => el(id).value.trim() !== '');
     const sub = (l, key) => String(q.text(l, key)).replace('{qty}', `${el('woq-qty').value} ${el('woq-uom').value}`.trim()).replace('{product}', el('woq-product').value);
     const answer = complete ? await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'danger' }) : { ok: true };
-    if (answer === 'unavailable') { el('woq-result').hidden = false; el('woq-result-icon').textContent = '⚠'; el('woq-result-text').textContent = w('confirmUnavailable'); return; }
+    if (answer === 'unavailable') { el('woq-result').hidden = false; sayWith(el('woq-result'), 'warning', w('confirmUnavailable'), 'woq-result-text'); return; }
     if (answer === null) return;
     const out = q.save(lang(), { productId: el('woq-product').value, locationId: el('woq-location').value, qty: el('woq-qty').value, uom: el('woq-uom').value, lossType: el('woq-type').value, reasonCode: el('woq-reason').value, evidenceRef: el('woq-evidence').value });
-    el('woq-result').hidden = false; el('woq-result-icon').textContent = out.ok ? '✓' : '✕'; el('woq-result-text').textContent = out.ok ? w('stSavedHere') : out.words;
+    el('woq-result').hidden = false; sayWith(el('woq-result'), out.ok ? 'done' : 'failed', out.ok ? w('stSavedHere') : out.words, 'woq-result-text');
     paintQueue(); void syncQueue();
     })();
   });
@@ -110,7 +101,7 @@ function paintDecide() {
   el('wod-rows').replaceChildren(...(pending.captures.length === 0 ? [text('li', w('pendingNone'))] : pending.captures.map((r) => {
     const li = document.createElement('li'); li.dataset.writeOff = r.loss.writeOffId; li.dataset.state = r.state;
     li.append(text('strong', `${r.loss.productId} × ${r.loss.qty} ${r.loss.uom} · ${w(r.loss.lossType)} · ${w(r.loss.reasonCode)}`));
-    li.append(text('span', `${w(r.state)} · ${w('raisedBy')} ${r.loss.raisedBy} · ${w('value')} ${r.valueMinor === undefined || r.valueMinor === null ? '—' : rupees(r.valueMinor)}${r.decisionReason ? ` · ${r.decisionReason}` : ''}`, 'lead'));
+    li.append(text('span', `${w(r.state)} · ${w('raisedBy')} ${r.loss.raisedBy} · ${w('value')} ${r.valueMinor === undefined || r.valueMinor === null ? notKnownWord() : rupees(r.valueMinor)}${r.decisionReason ? ` · ${r.decisionReason}` : ''}`, 'lead'));
     if (r.state === 'awaiting_approval' && dec.session.may.decide) {
       const lab = document.createElement('label'); lab.append(text('span', w('why'))); const why = document.createElement('textarea'); why.className = 'wod-why'; lab.append(why);
       const ok = button(w('approve'), 'check', 'primary'); ok.dataset.act = 'approve';
@@ -128,7 +119,7 @@ async function loadDecide() {
   if (o.result === 'ok') pending = o.value; else el('wod-status').textContent = dec.outcomeWords(lang(), o);
   paintDecide();
 }
-el('lang').addEventListener('click', () => { paintQueue(); paintDecide(); repaintPickers(); });
+el('lang').addEventListener('click', () => { paintQueue(); paintDecide(); });
 // U2: the line-down loss and the free sample pick the item and the place by name too.
 if (q !== null) { pickable('woq-product', 'product', 'pickProduct'); pickable('woq-location', 'place', 'pickPlace'); }
 paintQueue(); paintDecide();
@@ -152,7 +143,7 @@ if (fs !== null && fs.session.may.named) {
     const out = await fs.session.record({ productId: el('fs-product').value, locationId: el('fs-location').value, qty: el('fs-qty').value, uom: el('fs-uom').value, note: el('fs-note').value });
     const r = el('fs-result');
     r.dataset.result = out.result;
-    r.textContent = out.result === 'ok' ? `✓ ${fs.words(lang(), 'recorded')}` : `⚠ ${fs.outcomeWords(lang(), out)}`;
+    sayWith(r, out.result === 'ok' ? 'done' : 'warning', out.result === 'ok' ? fs.words(lang(), 'recorded') : fs.outcomeWords(lang(), out));
     if (out.result === 'ok') { el('fs-qty').value = ''; el('fs-note').value = ''; if (pendingShown) void loadPending(); }
   });
   el('lang').addEventListener('click', () => { paintFreeSample(); });
@@ -186,8 +177,8 @@ function paintPending() {
     const go = async (decision) => {
       const out = await fs.session.decide(p, decision, reason.value);
       said.dataset.result = out.result;
-      if (out.result !== 'ok') { said.textContent = `⚠ ${fs.outcomeWords(lang(), out)}`; return; }
-      el('fsp-said').textContent = decision === 'approve' ? `✓ ${fw('approved')} ${out.value.itcWords ?? ''}` : `✓ ${fw('rejectedOk')}`;
+      if (out.result !== 'ok') { sayWith(said, 'warning', fs.outcomeWords(lang(), out)); return; }
+      sayWith(el('fsp-said'), 'done', decision === 'approve' ? `${fw('approved')} ${out.value.itcWords ?? ''}` : fw('rejectedOk'));
       el('fsp-said').dataset.result = 'ok';
       await loadPending();
     };
@@ -200,7 +191,7 @@ function paintPending() {
 async function loadPending() {
   const out = await fs.session.pending();
   pendingShown = true;
-  if (out.result !== 'ok') { pendingRows = null; el('fsp-said').textContent = `⚠ ${fs.outcomeWords(lang(), out)}`; el('fsp-said').dataset.result = out.result; paintPending(); return; }
+  if (out.result !== 'ok') { pendingRows = null; sayWith(el('fsp-said'), 'warning', fs.outcomeWords(lang(), out)); el('fsp-said').dataset.result = out.result; paintPending(); return; }
   pendingRows = out.value.pending;
   paintPending();
 }

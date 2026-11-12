@@ -28,13 +28,10 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
-      table { width: 100%; border-collapse: collapse; font-size: 14px; }
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
-      tr.pick { cursor: pointer; }
+      #case-rows tr { cursor: pointer; }
+      #case-rows tr[aria-selected="true"] { background: var(--hover); }
       tr[aria-selected='true'] { background: var(--line); }
-      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; border: 1px solid var(--line); }
-      .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
-      .badge.breached { color: var(--danger-text); } .badge.at_risk { color: var(--warn); } .badge.within, .badge.met { color: var(--good); }
       .draft { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
       .draft blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); }
       .status { font-size: 14px; min-height: 20px; }
@@ -67,13 +64,9 @@
       <section aria-labelledby="cases-h">
         <h2 id="cases-h">Open and recent cases</h2>
         <p class="lede" id="cases-lede">Breaching cases first. Pick one to work it.</p>
-        <div class="sre-scroll-x">
-          <table>
-            <thead><tr><th id="th-case">Case</th><th id="th-kind">Kind</th><th id="th-priority">Priority</th><th id="th-state">State</th><th id="th-first">First reply</th><th id="th-resolution">Resolution</th></tr></thead>
-            <tbody id="case-rows"></tbody>
-          </table>
-        </div>
-        <p class="status" id="cases-status" role="status" aria-live="polite"></p>
+        <!-- U5 (G17 · G13): the cases on the chrome's register, each SLA clock a chip; an empty / unreachable list is the shared state. -->
+        <div id="cases-register"></div>
+        <div id="cases-status" role="status" aria-live="polite"></div>
       </section>
 
       <section aria-labelledby="open-h" id="open-section">
@@ -100,7 +93,7 @@
       <section aria-labelledby="case-h" id="case-section" hidden>
         <h2 id="case-h">Case</h2>
         <p id="case-facts"></p>
-        <p><span id="l-first-clock">First reply</span>: <span class="badge" id="first-badge"></span> · <span id="l-resolution-clock">Resolution</span>: <span class="badge" id="resolution-badge"></span></p>
+        <p><span id="l-first-clock">First reply</span>: <span id="first-badge"></span> · <span id="l-resolution-clock">Resolution</span>: <span id="resolution-badge"></span></p>
 
         <h2 id="drafts-h">Reply</h2>
         <p class="lede" id="drafts-lede">The assistant drafts from the case's own records. Nothing reaches the customer until a person approves it and a person sends it.</p>
@@ -137,7 +130,7 @@
         <h2 id="summary-h">Why cases happen</h2>
         <p class="lede" id="summary-lede">Resolved cases by root cause — and the resolved ones nobody has explained yet.</p>
         <ul id="rc-summary"></ul>
-        <p class="status" id="rc-missing"></p>
+        <div id="rc-missing"></div>
       </section>
       <!-- W5 (route audit bundle 8): sections over head-office routes no screen called before — filled by customer-desk-sections.js (session: apps/web-erp/src/customer-desk-sections-session.ts). Offered only to a role head office answers. -->
       <section data-desk="case-follow-up" id="desk-case-follow-up" hidden></section>

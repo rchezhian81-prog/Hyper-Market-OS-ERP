@@ -91,8 +91,8 @@
       ul.facts-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: var(--space-3); }
       ul.facts-list li { --tone: var(--idle); background: var(--panel-2); border:1px solid var(--line-soft); border-radius: var(--radius); padding:10px 14px; display:grid; grid-template-columns:auto minmax(0, 1fr); column-gap:10px; row-gap:2px; align-items:start; font-size:15px; box-shadow: inset 3px 0 0 var(--tone); }
       ul.facts-list li > .sre-icon { grid-row: 1 / span 2; width:18px; height:18px; margin-top:2px; color: var(--tone); }
-      ul.facts-list li.tone-ok { --tone: var(--ok); } ul.facts-list li.tone-degraded { --tone: var(--degraded); }
-      ul.facts-list li.tone-idle { --tone: var(--idle); }
+      ul.facts-list li[data-tone="ok"] { --tone: var(--ok); } ul.facts-list li[data-tone="degraded"] { --tone: var(--degraded); }
+      ul.facts-list li[data-tone="idle"] { --tone: var(--idle); }
       ul.facts-list li .word { font-weight:700; }
       form.pick { display:flex; gap: var(--space-3); align-items:flex-start; flex-wrap:wrap; }
       form.pick .field { display:grid; gap:6px; min-width:min(100%, 220px); }
@@ -222,7 +222,7 @@
         <h3 id="controls-heading"></h3>
         <ul class="facts-list" id="controls" aria-label="GST controls"></ul>
         <!-- R4 Lane 2 · A26 · OB-211 (begin): the online store sells the shop's own goods only, so no TCS under CGST s.52 arises. -->
-        <p class="ho-lead" id="tcs-line">TCS (section 52): not applicable: own goods only <span lang="ta">/ TCS (பிரிவு 52): பொருந்தாது: கடையின் சொந்தப் பொருட்கள் மட்டும்</span></p>
+        <p class="ho-lead" id="tcs-line"></p>
         <!-- R4 Lane 2 · A26 (end) -->
 
         <form class="pick" id="pick">

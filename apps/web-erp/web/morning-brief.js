@@ -48,7 +48,9 @@ function paint() {
   $('sent-detail').textContent = brief.sending === 'switched_off' ? t('switchedOff') : brief.detail;
   $('sent-detail').dataset.sending = brief.sending;
   paintUi3();
-  $('lines').replaceChildren(...(brief.lines ?? []).map((l) => { const li = document.createElement('li'); li.className = 'row'; li.textContent = l; return li; }));
+  // U3 (OB-699): head office prepares the brief's lines in both languages; the reader's are shown (the schedule's when it sent only those).
+  const lines = (lang === 'ta' ? brief.linesIn?.ta : brief.linesIn?.en) ?? brief.lines ?? [];
+  $('lines').replaceChildren(...lines.map((l) => { const li = document.createElement('li'); li.className = 'row'; li.textContent = l; return li; }));
 }
 
 // W3 (D13-FR-01..06): the brief's schedule — read as the page opens; the owner changes it with an explicit press.

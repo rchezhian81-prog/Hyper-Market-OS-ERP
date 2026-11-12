@@ -92,12 +92,16 @@ describe('open guidance reads as attention; set-aside ones do not', () => {
 });
 
 describe('governance and permission', () => {
-  it('when the agent is not active, shows a plain-English note and no rows — never a bare "all on track"', () => {
-    const view = session(worklist({ agentActive: false, note: 'The kill switch is on.' })).view('en');
-    expect(view.agentActive).toBe(false);
-    expect(view.open).toEqual([]);
-    expect(view.screenState.label).toBe('The kill switch is on.');
-    expect(view.screenState.tone).not.toBe('error'); // off is not a fault
+  it('when the agent is not active, shows the page\'s own sentence for the state and no rows — never a bare "all on track" (OB-699: both languages)', () => {
+    const killed = session(worklist({ agentActive: false, note: 'The AI kill switch is on, so the Workforce guidance agent is stopped and shows no tasks.' }));
+    expect(killed.view('en').agentActive).toBe(false);
+    expect(killed.view('en').open).toEqual([]);
+    expect(killed.view('en').screenState.label).toMatch(/^The AI kill switch is on, so the Workforce helper is stopped/);
+    expect(killed.view('ta').screenState.label).toMatch(/^AI நிறுத்து-சுவிட்ச்/);
+    expect(killed.view('en').screenState.tone).not.toBe('error'); // off is not a fault
+    const off = session(worklist({ agentActive: false, note: 'The Workforce guidance agent (A10) is not switched on for this tenant, so it shows no tasks.' }));
+    expect(off.view('en').screenState.label).toBe('The Workforce helper is switched off, so there are no tasks to show.');
+    expect(off.view('ta').screenState.label).toBe('பணியாளர் உதவியாளர் அணைக்கப்பட்டுள்ளது, எனவே காட்ட பணிகள் இல்லை.');
   });
 
   it('refuses to show anything without read permission', () => {

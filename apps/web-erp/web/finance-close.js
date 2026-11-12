@@ -147,16 +147,28 @@ function renderPl() {
   note('pl-status', `${w('periodState')}: ${v.periodState}${v.journals === 0 ? ` — ${w('noJournals')}` : ''}`);
   tiles.append(tile(inr(v.totalIncomeMinor), w('totalIncome'), 'income'), tile(inr(v.totalExpensesMinor), w('totalExpenses'), 'expenses'), tile(inr(v.netMinor), w('net'), 'net'));
   if (v.grossMargin !== null) tiles.append(tile(`${inr(v.grossMargin.grossMarginMinor)}${v.grossMargin.marginBps === null ? '' : ` (${(v.grossMargin.marginBps / 100).toFixed(1)}%)`}`, w('grossMargin'), 'margin'));
-  const head = node('tr', {}, node('th', { textContent: w('account') }), node('th', { className: 'n', textContent: '₹' }));
-  table.append(head);
-  const section = (title, rows, total) => {
-    table.append(node('tr', {}, node('th', { colSpan: 2, textContent: title })));
-    for (const x of rows) { const tr = node('tr', {}, node('td', { textContent: x.account }), node('td', { className: 'n', textContent: inr(x.amountMinor) })); tr.dataset.account = x.account; table.append(tr); }
-    table.append(node('tr', { className: 'total' }, node('td', { textContent: total[0] }), node('td', { className: 'n', textContent: inr(total[1]) })));
-  };
-  section(w('income'), v.income, [w('totalIncome'), v.totalIncomeMinor]);
-  section(w('expenses'), v.expenses, [w('totalExpenses'), v.totalExpensesMinor]);
-  table.append(node('tr', { className: 'total' }, node('td', { textContent: w('net') }), node('td', { className: 'n', textContent: inr(v.netMinor) })));
+  // U5 (G17): the statement as the chrome's register — a heading row per section, the lines, the totals; no sorting or
+  // search (a statement keeps its order), the figures right-aligned, the rows stacking on a phone.
+  const lines = [
+    { kind: 'heading', account: w('income'), amountMinor: null },
+    ...v.income.map((x) => ({ kind: 'line', account: x.account, amountMinor: x.amountMinor })),
+    { kind: 'total', account: w('totalIncome'), amountMinor: v.totalIncomeMinor },
+    { kind: 'heading', account: w('expenses'), amountMinor: null },
+    ...v.expenses.map((x) => ({ kind: 'line', account: x.account, amountMinor: x.amountMinor })),
+    { kind: 'total', account: w('totalExpenses'), amountMinor: v.totalExpensesMinor },
+    { kind: 'total', account: w('net'), amountMinor: v.netMinor },
+  ];
+  const o = office();
+  if (o !== null) {
+    o.table(table, {
+      id: 'finance-pl', label: w('plH'), bodyId: 'pl-rows', pageSize: 500, search: false, count: false, sortable: false,
+      rowKey: (x, i) => `${x.kind}-${x.account}-${i}`, rowData: (x) => ({ account: x.account, kind: x.kind }), rows: lines,
+      columns: [
+        { key: 'account', label: w('account'), sort: false },
+        { key: 'amountMinor', label: '₹', align: 'end', sort: false, render: (x) => (x.amountMinor === null ? '' : inr(x.amountMinor)) },
+      ],
+    });
+  }
   for (const n of v.notInTheBooks) notes.append(node('li', { textContent: n }));
   if (v.unclassified.length > 0) notes.append(node('li', { textContent: `${w('unclassified')}: ${v.unclassified.map((u) => `${u.account} ${inr(u.netDebitMinor)}`).join(', ')}` }));
 }
@@ -246,9 +258,21 @@ function renderBudget() {
   if (r.kind !== 'done') { status('budget-status', r, ''); return; }
   const v = r.body;
   note('budget-status', v.budget === null ? w('noBudget') : `${w('version')} ${v.budget.version} · ${v.budget.setBy} · ${v.budget.at}${v.budget.reason ? ` · ${v.budget.reason}` : ''}`);
-  table.append(node('tr', {}, node('th', { textContent: w('account') }), node('th', { className: 'n', textContent: w('budgetCol') }), node('th', { className: 'n', textContent: w('actual') }), node('th', { className: 'n', textContent: w('variance') })));
-  for (const x of v.rows) { const tr = node('tr', {}, node('td', { textContent: x.account }), node('td', { className: 'n', textContent: inr(x.budgetMinor) }), node('td', { className: 'n', textContent: inr(x.actualMinor) }), node('td', { className: 'n', textContent: inr(x.varianceMinor) })); tr.dataset.account = x.account; table.append(tr); }
-  for (const x of v.unbudgeted) { const tr = node('tr', {}, node('td', { textContent: `${x.account} — ${w('unbudgeted')}` }), node('td', { className: 'n', textContent: '—' }), node('td', { className: 'n', textContent: inr(x.actualMinor) }), node('td', { className: 'n', textContent: '—' })); tr.dataset.account = x.account; table.append(tr); }
+  // U5 (G17): budget against actual on the chrome's register — sortable by any column, searchable, the figures right-aligned.
+  const o = office();
+  if (o !== null) {
+    o.table(table, {
+      id: 'finance-budget', label: w('budgetH'), bodyId: 'budget-rows', pageSize: 100, sortable: true, count: false,
+      rowKey: (x) => x.account, rowData: (x) => ({ account: x.account }),
+      rows: [...v.rows.map((x) => ({ ...x, unbudgeted: false })), ...v.unbudgeted.map((x) => ({ account: x.account, budgetMinor: null, actualMinor: x.actualMinor, varianceMinor: null, unbudgeted: true }))],
+      columns: [
+        { key: 'account', label: w('account'), sort: 'text', render: (x) => (x.unbudgeted ? `${x.account} — ${w('unbudgeted')}` : x.account) },
+        { key: 'budgetMinor', label: w('budgetCol'), align: 'end', sort: 'number', render: (x) => (x.budgetMinor === null ? '—' : inr(x.budgetMinor)) },
+        { key: 'actualMinor', label: w('actual'), align: 'end', sort: 'number', render: (x) => inr(x.actualMinor) },
+        { key: 'varianceMinor', label: w('variance'), align: 'end', sort: 'number', render: (x) => (x.varianceMinor === null ? '—' : inr(x.varianceMinor)) },
+      ],
+    });
+  }
   if (may.budget && $('budget-lines').childElementCount === 0) {
     for (const l of v.budget?.lines ?? []) budgetLine(l.account, (l.amountMinor / 100).toFixed(2));
     if ($('budget-lines').childElementCount === 0) budgetLine();

@@ -58,7 +58,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Loyalt
       await page.goto(`${shop.base}/loyalty`, { waitUntil: 'load' });
       await page.locator('#notice-text', { hasText: 'Joining SRE Hyper Market loyalty' }).waitFor({ timeout: 15_000 });
       expect(await page.isVisible('#notice-draft')).toBe(true);
-      expect(await page.textContent('#notice-draft')).toBe('⚠ DRAFT — waiting for the owner\'s signature');
+      // U5 (G13): the draft mark is the chrome's record chip — the tone's shape from the icon set and the words, never a ⚠ character
+      expect((await page.textContent('#notice-draft'))?.trim()).toBe('DRAFT — waiting for the owner\'s signature');
+      expect(await page.getAttribute('#notice-draft .sre-chip', 'data-tone')).toBe('idle');
 
       // Refused on the page until both ticks; nothing sent.
       await page.fill('#enrol-mobile', '98400 77701');

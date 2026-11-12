@@ -2926,6 +2926,6 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
       if (figure.known) expect(typeof figure.value).toBe('number'); else expect(figure.why).toMatch(/^the /);
     }
     // a register this box was never given is said so, by name — never a zero
-    expect(today['purchaseOrdersOpen']).toEqual({ known: false, why: 'the store computer has not been given the purchase orders' });
+    expect(today['purchaseOrdersOpen']).toEqual({ known: false, why: 'the store computer has not been given the purchase orders', whyTa: 'கடைக் கணினிக்கு கொள்முதல் ஆணைகள் வழங்கப்படவில்லை' }); // U3 (OB-699): in both languages
   });
 });

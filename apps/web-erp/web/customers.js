@@ -49,16 +49,18 @@ function paintRegister() {
       empty: { title: { en: customersWord('en', 'emptyCustomers'), ta: customersWord('ta', 'emptyCustomers') }, detail: { en: customersWord('en', 'emptyCustomersDetail'), ta: customersWord('ta', 'emptyCustomersDetail') } },
       columns: [
         { key: 'customerRef', label: both('colCustomer'), sort: 'text' },
+        // U5 (G16): the person's NAME beside the code, as head office holds it; blank when it holds none (never invented)
+        { key: 'name', label: both('colName'), sort: 'text', value: (c) => c.name ?? '' },
         { key: 'segment', label: both('colSegment'), sort: 'text', filter: true, value: (c) => both(`segment_${c.segment}`) },
         { key: 'orders', label: both('colBills'), sort: 'number', align: 'end', value: (c) => c.orders },
         { key: 'lastOrderAt', label: both('colLastBill'), sort: 'text', value: (c) => (c.lastOrderAt === null ? both('noOrder') : shopDayOf(c.lastOrderAt)) },
       ],
       drawer: {
-        title: (c) => c.customerRef,
+        title: (c) => (c.name ? `${c.name} (${c.customerRef})` : c.customerRef),
         body: (c) => {
           const box = document.createElement('div');
           box.append(o.facts([
-            [both('colCustomer'), c.customerRef], [both('colSegment'), segmentWords(c.segment)], [both('colBills'), String(c.orders)],
+            [both('colCustomer'), c.customerRef], ...(c.name ? [[both('colName'), c.name]] : []), [both('colSegment'), segmentWords(c.segment)], [both('colBills'), String(c.orders)],
             [both('colLastBill'), c.lastOrderAt === null ? t('noOrder') : shopDayOf(c.lastOrderAt)],
           ]));
           if (may.record) {
@@ -83,7 +85,8 @@ const customersWord = (l, k) => (api === null ? k : api.words(l, k));
 document.addEventListener('sre:chrome', () => paintRegister());
 
 /** An empty list item that says "nothing yet" in the shared look (never "all clear" — P-08). */
-function nothingYet() { const li = el('li', 'row empty'); li.textContent = t('none'); return li; }
+// U5: an empty list is the shared state part (word + icon), never a plain "nothing here yet" line.
+function nothingYet() { const li = el('li', 'empty'); const o = window.sreOffice; if (o && typeof o.state === 'function') li.append(o.state(null, 'empty', { title: t('none'), detail: '' })); else li.textContent = t('none'); return li; }
 function mergeLine(m) { return `${m.mergedRef} ${t('into')} ${m.survivorRef} — ${m.reason} (${t('by')} ${m.proposedBy}${m.approvedBy ? `, ${m.approvedBy}` : ''})`; }
 
 function paint() {

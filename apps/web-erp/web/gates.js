@@ -7,6 +7,21 @@
 // is listed, newest first, each with its outcome, box, run and attempt — nothing hidden or collapsed into "latest".
 
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's record state for an old mark character a session still hands over (its words are what the screen shows). */
+const stateOfMark = (mark) => (mark === '✓' ? 'done' : mark === '⚠' ? 'warning' : mark === '✕' ? 'failed' : mark === '⏱' ? 'pending' : mark === '⏸' ? 'held' : mark === '↺' ? 'cancelled' : 'unknown');
+/** The chip of an old mark character; nothing until the chrome is there. */
+function chipOfMark(mark) { const o = sreO(); return o ? o.recordChip(stateOfMark(mark)) : document.createTextNode(''); }
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
 const api = window.gates ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, decide: false };
@@ -47,7 +62,7 @@ function gateRow(g) {
   head.append(text('span', `${g.gate} · ${api.names[g.gate]?.[lang] ?? g.name}`, 'gate'));
   const state = document.createElement('span');
   state.className = 'state';
-  state.append(text('span', view.icon, 'icon'), text('span', view.words, 'words'));
+  state.append(chipOfMark(view.icon), ' ', text('span', view.words, 'words'));
   head.append(state);
   li.append(head);
   const facts = document.createElement('div');
@@ -62,7 +77,7 @@ function gateRow(g) {
     li.append(text('span', `${t('blockersK')}:`, 'facts'));
     const ul = document.createElement('ul');
     ul.className = 'blockers';
-    for (const b of g.blockers) { const item = text('li', `⚠ ${t(`k_${b.kind}`)} — ${b.reason}`); item.dataset.kind = b.kind; ul.append(item); }
+    for (const b of g.blockers) { const item = withChip(text('li', `${t(`k_${b.kind}`)} — ${b.reason}`), 'warning'); item.dataset.kind = b.kind; ul.append(item); }
     li.append(ul);
   }
   if (g.gate === 'QG-10') li.append(qg10Notes());
@@ -96,7 +111,7 @@ function qg10Notes() {
     item.dataset.outcome = n.outcome;
     item.dataset.verified = String(n.verified);
     const head = document.createElement('div');
-    head.append(text('span', v.icon, 'icon'), ' ', text('span', v.headline, 'words'));
+    head.append(chipOfMark(v.icon), ' ', text('span', v.headline, 'words'));
     item.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
     ul.append(item);
   }
@@ -115,7 +130,7 @@ function qg01Reading() {
   box.dataset.qg01 = v.state;
   const head = document.createElement('p');
   head.className = `tone-${v.tone}`;
-  head.append(text('span', v.icon, 'icon'), ' ', text('span', v.headline, 'words'));
+  head.append(chipOfMark(v.icon), ' ', text('span', v.headline, 'words'));
   box.append(head, ...v.lines.map((l) => text('div', l, 'facts')));
   return box;
 }
@@ -145,7 +160,7 @@ function paintOutside() {
     li.className = `tone-${v.tone}`;
     li.dataset.kind = k.kind;
     li.dataset.standing = k.standing;
-    li.append(text('span', v.icon, 'icon'), ' ', text('span', v.words, 'words'));
+    li.append(chipOfMark(v.icon), ' ', text('span', v.words, 'words'));
     return li;
   }));
 }
@@ -200,18 +215,18 @@ async function record() {
   });
   if (out.result !== 'ok') { say('decide-status', out); return; }
   $('decide-status').className = 'status good';
-  $('decide-status').textContent = `✓ ${t('recorded')}`;
+  sayWith($('decide-status'), 'done', t('recorded'));
   await show();
 }
 
 async function recordOutside() {
   const out = await session.recordOutside({
     kind: $('outside-kind').value, result: $('outside-result').value, measuredMs: $('outside-ms').value, where: $('outside-where').value,
-    reportRef: $('outside-ref').value, testedOn: $('outside-on').value, statement: $('outside-statement').value,
+    reportRef: $('outside-ref').value, testedOn: dateOf('outside-on'), statement: $('outside-statement').value,
   });
   if (out.result !== 'ok') { say('outside-status', out); return; }
   $('outside-status').className = 'status good';
-  $('outside-status').textContent = `✓ ${t('outsideRecorded')}`;
+  sayWith($('outside-status'), 'done', t('outsideRecorded'));
   await show();
 }
 
@@ -221,6 +236,11 @@ $('outside-kind').addEventListener('change', () => { if (register !== null) pain
 $('record').addEventListener('click', () => { void record(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+onChrome(() => paint());
+// U5 · G17: the day it was tested is the chrome's dd/mm/yyyy field; the page goes on sending ISO.
+const dateOf = (id) => { const o = sreO(); return o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : ($(id)?.value ?? ''); };
+const mountOutsideDay = () => { const o = sreO(); if (o && typeof o.shopDate === 'function' && $('outside-on')) o.shopDate('outside-on', { en: api.words('en', 'outsideOnLabel'), ta: api.words('ta', 'outsideOnLabel') }); };
+if (window.sreOffice) mountOutsideDay(); else document.addEventListener('sre:chrome', mountOutsideDay, { once: true });
 if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = t('cannotRead'); }
 
 if ('serviceWorker' in navigator) {

@@ -163,6 +163,10 @@
         min-height: var(--tap); background: var(--panel-2); color: var(--ink);
         border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; font-size: 18px;
       }
+      /* U2c: the picker's row beside an id field — the typed field keeps working; the name shows beside it (≥ 14px). */
+      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+      .pick-row input { flex: 1 1 140px; min-width: 0; }
+      .pick-name { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
       .lines { display: grid; gap: 8px; margin: 12px 0; }
       .line-row {
         display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;

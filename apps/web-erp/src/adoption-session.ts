@@ -20,7 +20,7 @@ export const ADOPTION_COPY = {
   en: {
     title: 'Training and adoption', lead: 'The adoption gate (QG-09), the role curriculum the owner approves, training with a second person\'s sign-off, floor champions, access against the staff list, and sales per labour hour.',
     gateH: 'Adoption gate (QG-09)', GO: 'GO — every role ready', HOLD: 'HOLD — something is missing', NOT_PROVEN: 'Not proven — a role\'s curriculum is not approved', readGate: 'Read the gate', allClear: 'Nothing is missing.',
-    role: 'Role', people: 'People', curriculum: 'Curriculum', approvedV: 'approved, version', notApproved: 'not approved', missing: 'Missing',
+    role: 'Role', people: 'People', curriculum: 'Curriculum', approvedV: 'approved, version', notApproved: 'not approved', missing: 'Missing', nothingMissing: 'nothing missing',
     notCompetent: 'not signed competent:', notAcknowledged: 'not acknowledged:',
     curriculumH: 'Role curriculum (the owner approves)', proposed: 'Proposed from the shop\'s sheets', approve: 'Approve this list', approvedBy: 'Approved by',
     trainingH: 'Training', employee: 'Staff member', item: 'Curriculum item', due: 'Due day', assign: 'Assign', done: 'Record done', competent: 'Sign competent', notYet: 'Not yet',
@@ -36,7 +36,7 @@ export const ADOPTION_COPY = {
   ta: {
     title: 'பயிற்சி மற்றும் ஏற்பு', lead: 'ஏற்பு வாயில் (QG-09), உரிமையாளர் ஒப்புதல் தரும் பணிப் பாடத்திட்டம், இரண்டாவது நபர் கையொப்பமிடும் பயிற்சி, தளச் சாம்பியன்கள், பணியாளர் பட்டியலுக்கு எதிரான அணுகல், உழைப்பு மணிக்கு விற்பனை.',
     gateH: 'ஏற்பு வாயில் (QG-09)', GO: 'GO — ஒவ்வொரு பணியும் தயார்', HOLD: 'HOLD — ஏதோ குறைவு', NOT_PROVEN: 'நிரூபிக்கப்படவில்லை — ஒரு பணியின் பாடத்திட்டத்துக்கு ஒப்புதல் இல்லை', readGate: 'வாயிலைப் படி', allClear: 'எதுவும் குறைவில்லை.',
-    role: 'பணி', people: 'நபர்கள்', curriculum: 'பாடத்திட்டம்', approvedV: 'ஒப்புதல், பதிப்பு', notApproved: 'ஒப்புதல் இல்லை', missing: 'குறைவு',
+    role: 'பணி', people: 'நபர்கள்', curriculum: 'பாடத்திட்டம்', nothingMissing: 'எதுவும் குறையவில்லை', approvedV: 'ஒப்புதல், பதிப்பு', notApproved: 'ஒப்புதல் இல்லை', missing: 'குறைவு',
     notCompetent: 'திறமை கையொப்பம் இல்லை:', notAcknowledged: 'ஏற்கவில்லை:',
     curriculumH: 'பணிப் பாடத்திட்டம் (உரிமையாளர் ஒப்புதல்)', proposed: 'கடையின் தாள்களிலிருந்து முன்மொழியப்பட்டது', approve: 'இந்தப் பட்டியலுக்கு ஒப்புதல்', approvedBy: 'ஒப்புதல் அளித்தவர்',
     trainingH: 'பயிற்சி', employee: 'பணியாளர்', item: 'பாடத்திட்ட உருப்படி', due: 'கடைசி நாள்', assign: 'ஒதுக்கு', done: 'முடிந்தது எனப் பதிவு', competent: 'திறமை என கையொப்பம்', notYet: 'இன்னும் இல்லை',

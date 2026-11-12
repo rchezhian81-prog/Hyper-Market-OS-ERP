@@ -30,14 +30,6 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.primary {   border: 0; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; }
-      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
-      .panel .k { color: var(--muted); font-size: 14px; }
-      .panel .v { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
-      .panel .v.unknown { color: var(--warn); font-size: 15px; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
       tr[data-id] { cursor: pointer; }
       .status { font-size: 15px; min-height: 20px; margin: 0; }
       .status.good { color: var(--ok); } .status.err { color: var(--danger-text); }
@@ -59,20 +51,14 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Offer results</h2>
         <p class="lead" id="lead"></p>
-        <div class="panels" role="status" aria-live="polite">
-          <div class="panel"><span class="k" id="k-active">Running now</span><span class="v" id="v-active">—</span></div>
-          <div class="panel"><span class="k" id="k-draft">Recorded, not started</span><span class="v" id="v-draft">—</span></div>
-          <div class="panel"><span class="k" id="k-stopped">Stopped</span><span class="v" id="v-stopped">—</span></div>
+        <div id="figures" role="status" aria-live="polite">
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
 
       <section aria-labelledby="list-h">
         <h3 id="list-h">Offers</h3>
-        <div class="table-wrap"><table aria-labelledby="list-h">
-          <thead><tr><th id="c-id">Offer</th><th id="c-kind">Kind</th><th id="c-on">On</th><th id="c-dates">Dates</th><th id="c-status">Where it stands</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table></div>
+        <div id="rows-host" aria-labelledby="list-h"></div>
       </section>
 
       <section id="record" aria-labelledby="record-h" hidden>
@@ -84,12 +70,7 @@
           <button id="measure" class="primary sre-btn sre-btn-primary" type="button">Measure the offer</button>
         </div>
         <p class="muted" id="baseline-say"></p>
-        <div class="panels" id="result-panels" aria-live="polite">
-          <div class="panel"><span class="k" id="k-units">Units: offer · before</span><span class="v" id="v-units">—</span></div>
-          <div class="panel"><span class="k" id="k-uplift">Extra units</span><span class="v" id="v-uplift">—</span></div>
-          <div class="panel"><span class="k" id="k-margin">Margin kept, with supplier money</span><span class="v" id="v-margin">—</span></div>
-          <div class="panel"><span class="k" id="k-funding">Supplier money received</span><span class="v" id="v-funding">—</span></div>
-          <div class="panel"><span class="k" id="k-verdict">Worth doing?</span><span class="v" id="v-verdict">—</span></div>
+        <div id="result-panels" aria-live="polite">
         </div>
         <p class="muted" id="result-say"></p>
         <div class="row" id="stop-row">

@@ -73,6 +73,19 @@ function sampleSession() {
 
 let session = window.dataIoSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+/** The exportable records and the import templates by name in the reader's language (OB-699); the code is shown beside. */
+const DOMAIN_WORDS = {
+  en: { priceLists: 'Price lists', promotions: 'Offers', goodsReceipts: 'Goods receipts', supplierInvoices: 'Supplier bills', returns: 'Returns', stockMovements: 'Stock movements', transfers: 'Transfers', stockCounts: 'Stock counts', tillShifts: 'Till shifts', cashMovements: 'Cash movements', writeOffs: 'Write-offs', wasteRecords: 'Waste records', serviceCases: 'Customer cases', attendance: 'Attendance', purchaseOrders: 'Purchase orders', customers: 'Customers', loyaltyWallets: 'Loyalty wallets', orders: 'Online orders', payslips: 'Payslips', sales: 'Bills', stockOnHand: 'Stock on hand', suppliers: 'Suppliers', ledgerJournals: 'Ledger journals', products: 'Products', importCommits: 'Imports loaded' },
+  ta: { priceLists: 'விலைப் பட்டியல்கள்', promotions: 'சலுகைகள்', goodsReceipts: 'சரக்கு வரவுகள்', supplierInvoices: 'விநியோகஸ்தர் பில்கள்', returns: 'திருப்பங்கள்', stockMovements: 'சரக்கு நகர்வுகள்', transfers: 'மாற்றங்கள்', stockCounts: 'சரக்கு எண்ணிக்கைகள்', tillShifts: 'கல்லா ஷிப்ட்கள்', cashMovements: 'பண நகர்வுகள்', writeOffs: 'தள்ளுபடிகள்', wasteRecords: 'கழிவுப் பதிவுகள்', serviceCases: 'வாடிக்கையாளர் வழக்குகள்', attendance: 'வருகை', purchaseOrders: 'கொள்முதல் ஆணைகள்', customers: 'வாடிக்கையாளர்கள்', loyaltyWallets: 'விசுவாசப் பணப்பைகள்', orders: 'ஆன்லைன் ஆர்டர்கள்', payslips: 'சம்பளச் சீட்டுகள்', sales: 'பில்கள்', stockOnHand: 'கையிருப்பு', suppliers: 'விநியோகஸ்தர்கள்', ledgerJournals: 'பேரேட்டுப் பதிவுகள்', products: 'பொருட்கள்', importCommits: 'ஏற்றப்பட்ட இறக்குமதிகள்' },
+};
+const TEMPLATE_WORDS = {
+  en: { supplierInvoiceV1: 'Supplier invoices (one row per invoice line)', productV1: 'New products (one row per product)', productUpdateV1: 'Change existing products (one row per product; a blank cell keeps what is there)', supplierV1: 'New suppliers (one row per supplier; each arrives proposed, for finance to approve)', priceListV1: 'Store selling prices (one row per product and store; never above MRP, never below cost or the store\'s margin floor)', openingStockV1: 'Opening stock (one row per product, place and batch — the first stock fact at that place, at its cost)', customerV1: 'Customers from the old system (one row per customer; only with their recorded yes to loyalty — the number is never kept)', loyaltyOpeningV1: 'Opening loyalty points (one row per member — the first fact on their points; the number is never kept)' },
+  ta: { supplierInvoiceV1: 'விநியோகஸ்தர் பில்கள் (ஒரு பில் வரிக்கு ஒரு வரி)', productV1: 'புதிய பொருட்கள் (ஒரு பொருளுக்கு ஒரு வரி)', productUpdateV1: 'இருக்கும் பொருட்களை மாற்று (ஒரு பொருளுக்கு ஒரு வரி; காலி கட்டம் இருப்பதை வைத்திருக்கும்)', supplierV1: 'புதிய விநியோகஸ்தர்கள் (ஒருவருக்கு ஒரு வரி; ஒவ்வொன்றும் முன்மொழிவாக வந்து நிதித்துறை ஒப்புதலுக்குக் காத்திருக்கும்)', priceListV1: 'கடை விற்பனை விலைகள் (ஒரு பொருள்-கடைக்கு ஒரு வரி; MRP-க்கு மேல் இல்லை, செலவுக்கும் கடையின் லாப வரம்புக்கும் கீழ் இல்லை)', openingStockV1: 'தொடக்கச் சரக்கு (ஒரு பொருள், இடம், தொகுதிக்கு ஒரு வரி — அந்த இடத்தின் முதல் சரக்கு உண்மை, அதன் செலவில்)', customerV1: 'பழைய அமைப்பிலிருந்து வாடிக்கையாளர்கள் (ஒருவருக்கு ஒரு வரி; விசுவாசத்திற்குப் பதிவான சம்மதத்துடன் மட்டும் — எண் ஒருபோதும் வைக்கப்படாது)', loyaltyOpeningV1: 'தொடக்க விசுவாசப் புள்ளிகள் (ஒரு உறுப்பினருக்கு ஒரு வரி — அவர்களின் புள்ளிகளின் முதல் உண்மை; எண் ஒருபோதும் வைக்கப்படாது)' },
+};
+const wordKey = (id) => id.replace(/[-._](\w)/g, (_, c) => c.toUpperCase()); // 'price-lists' → priceLists (the tables' bare keys)
+const domainName = (id) => DOMAIN_WORDS[lang]?.[wordKey(id)] ?? DOMAIN_WORDS.en[wordKey(id)] ?? id;
+const templateName = (tpl) => TEMPLATE_WORDS[lang]?.[wordKey(tpl.id)] ?? tpl.label;
+
 /** The uploader's own requests, as last read (a GET). Kept so a language switch repaints them without a new read. */
 let lastRequests = null;
 
@@ -100,9 +113,13 @@ function paintExport() {
   el('export-domains').replaceChildren(...view.domains.map((d) => {
     const li = document.createElement('li'); li.className = 'row';
     const what = document.createElement('span'); what.className = 'what';
-    const name = document.createElement('strong'); name.textContent = d.domain;
-    if (d.sensitiveCount > 0) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = `${d.sensitiveCount} ${t('sensitiveTag')}`; name.append(tag); }
-    what.append(name, line(d.columns.map((c) => c.name).join(', ')));
+    const name = document.createElement('strong'); name.textContent = domainName(d.domain);
+    const code = document.createElement('code'); code.className = 'domain-code'; code.textContent = d.domain; name.append(document.createTextNode(' '), code);
+    // U5 · G13: "n sensitive" as the chrome's chip (tone + icon), never a page-own pill
+    if (d.sensitiveCount > 0) { const o = window.sreOffice; const words = `${d.sensitiveCount} ${t('sensitiveTag')}`; const tag = o && typeof o.chip === 'function' ? o.chip('degraded', words) : document.createElement('span'); if (!tag.classList.contains('sre-chip')) tag.textContent = words; tag.classList.add('sensitive'); name.append(' ', tag); }
+    // The file's column names are codes: shown as code.
+    const cols = line(''); const colCode = document.createElement('code'); colCode.textContent = d.columns.map((c) => c.name).join(', '); cols.append(colCode);
+    what.append(name, cols);
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act small export-btn sre-btn'; btn.textContent = t('exportBtn'); btn.dataset.domain = d.domain;
     if (d.period) {
       // A dated domain (attendance): From / To, defaulting to the last 7 days ending yesterday in the shop's calendar.
@@ -168,7 +185,7 @@ function paintImport() {
   el('ask').textContent = t('askBtn');
   el('commit').textContent = t('commitBtn');
   const chosen = el('import-template').value;
-  el('import-template').replaceChildren(...view.templates.map((tpl) => { const o = document.createElement('option'); o.value = tpl.id; o.textContent = tpl.label; return o; }));
+  el('import-template').replaceChildren(...view.templates.map((tpl) => { const o = document.createElement('option'); o.value = tpl.id; o.textContent = templateName(tpl); return o; }));
   if (chosen && view.templates.some((tpl) => tpl.id === chosen)) el('import-template').value = chosen;
   paintRequests();
 }

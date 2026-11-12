@@ -544,11 +544,19 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
  * reassuring zero for a register the box has not been given — "Not known — the store computer has not been given
  * the purchase orders" is the honest reading, and the only one a manager can act on.
  */
+/**
+ * U3 (OB-699, 7 Nov 2026): a figure's note and its "why not known" are the PRODUCT's own words, so the box carries them
+ * in both languages (`note`/`noteTa`, `why`/`whyTa`); the screen shows the reader's. A finding head office wrote is never
+ * among them.
+ */
 export type TodayFigure =
-  | { readonly known: true; readonly value: number; readonly unit?: 'inr'; readonly note?: string }
-  | { readonly known: false; readonly why: string };
+  | { readonly known: true; readonly value: number; readonly unit?: 'inr'; readonly note?: string; readonly noteTa?: string }
+  | { readonly known: false; readonly why: string; readonly whyTa?: string };
 
-const notGiven = (what: string): TodayFigure => ({ known: false, why: `the store computer has not been given ${what}` });
+const notGiven = (what: string, whatTa: string): TodayFigure =>
+  ({ known: false, why: `the store computer has not been given ${what}`, whyTa: `கடைக் கணினிக்கு ${whatTa} வழங்கப்படவில்லை` });
+/** The Tamil word for a till's device, for the tills' devices figure. */
+const DEVICE_TA: Readonly<Record<string, string>> = Object.freeze({ scanner: 'ஸ்கேனர்', printer: 'அச்சுப்பொறி', scale: 'தராசு', cash_drawer: 'பண அறை', card_terminal: 'அட்டை இயந்திரம்' });
 /** An ISO-8601 moment WITH its zone ("Z" or "±HH:MM") — read in the shop's zone; anything else dated is already a shop date. */
 const MOMENT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
 /**
@@ -576,10 +584,11 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
   const salesToday: TodayFigure = {
     known: true, value: takings, unit: 'inr',
     note: `${day.sales.length} ${day.sales.length === 1 ? 'sale' : 'sales'} on this box${day.undated > 0 ? ` · ${day.undated} undated, in nobody's figures` : ''}`,
+    noteTa: `இந்தக் கணினியில் ${day.sales.length} விற்பனை${day.undated > 0 ? ` · ${day.undated} தேதியில்லாதவை, யாருடைய கணக்கிலும் இல்லை` : ''}`,
   };
 
   let purchaseOrdersOpen: TodayFigure;
-  if (!pack.purchaseOrders.known) purchaseOrdersOpen = notGiven('the purchase orders');
+  if (!pack.purchaseOrders.known) purchaseOrdersOpen = notGiven('the purchase orders', 'கொள்முதல் ஆணைகள்');
   else {
     const received = new Map<string, Map<string, number>>();
     if (pack.receipts.known) {
@@ -590,64 +599,81 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
       }
     }
     const open = pack.purchaseOrders.value.filter((po) => po.lines.some((line) => line.qty > (received.get(po.poId)?.get(line.productId) ?? 0)));
-    purchaseOrdersOpen = { known: true, value: open.length, note: pack.receipts.known ? `of ${pack.purchaseOrders.value.length} on the box, still awaiting goods` : 'receipts not given — every order counted as open' };
+    purchaseOrdersOpen = {
+      known: true, value: open.length,
+      note: pack.receipts.known ? `of ${pack.purchaseOrders.value.length} on the box, still awaiting goods` : 'receipts not given — every order counted as open',
+      noteTa: pack.receipts.known ? `கணினியில் உள்ள ${pack.purchaseOrders.value.length}-இல், சரக்கு இன்னும் வரவில்லை` : 'வரவுகள் வழங்கப்படவில்லை — ஒவ்வொரு ஆணையும் திறந்ததாகக் கணக்கிடப்பட்டது',
+    };
   }
 
-  const receiptsRecorded: TodayFigure = pack.receipts.known ? { known: true, value: pack.receipts.value.length, note: 'against open orders' } : notGiven('the goods receipts');
+  const receiptsRecorded: TodayFigure = pack.receipts.known
+    ? { known: true, value: pack.receipts.value.length, note: 'against open orders', noteTa: 'திறந்த ஆணைகளுக்கு எதிராக' }
+    : notGiven('the goods receipts', 'சரக்கு வரவுகள்');
 
   const CLOSED = new Set(['received', 'closed', 'cancelled', 'rejected', 'fulfilled', 'done']);
   const indentsOpen: TodayFigure = pack.floorIndents.known
-    ? { known: true, value: pack.floorIndents.value.indents.filter((i) => !CLOSED.has(String(i.state).toLowerCase())).length, note: 'shelf requests the back store has not finished' }
-    : notGiven('the floor indents');
+    ? { known: true, value: pack.floorIndents.value.indents.filter((i) => !CLOSED.has(String(i.state).toLowerCase())).length, note: 'shelf requests the back store has not finished', noteTa: 'பின்கடை முடிக்காத அடுக்குக் கோரிக்கைகள்' }
+    : notGiven('the floor indents', 'தள கோரிக்கைகள்');
 
   let countsAwaitingApproval: TodayFigure;
-  if (!pack.countsQueue.known) countsAwaitingApproval = notGiven('the stock counts');
+  if (!pack.countsQueue.known) countsAwaitingApproval = notGiven('the stock counts', 'சரக்கு எண்ணிக்கைகள்');
   else {
     const rows = pack.countsQueue.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
     const waiting = rows.filter((r) => r['approvedBy'] === null || r['approvedBy'] === undefined || r['status'] === 'pending');
-    countsAwaitingApproval = { known: true, value: waiting.length, note: `of ${rows.length} counted` };
+    countsAwaitingApproval = { known: true, value: waiting.length, note: `of ${rows.length} counted`, noteTa: `எண்ணப்பட்ட ${rows.length}-இல்` };
   }
 
   let expiringSoon: TodayFigure;
-  if (!pack.batches.known) expiringSoon = notGiven('the batch register');
-  else if (!pack.expiryPolicy.known) expiringSoon = notGiven('the expiry policy');
+  if (!pack.batches.known) expiringSoon = notGiven('the batch register', 'தொகுதிப் பதிவேடு');
+  else if (!pack.expiryPolicy.known) expiringSoon = notGiven('the expiry policy', 'காலாவதி விதி');
   else {
     const window = pack.expiryPolicy.value.nearExpiryDays;
     const rows = pack.batches.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
     // Round A: head office's batches carry `expiry` (the batch register's own field, `packages/fefo` Batch).
     const dated = rows.map((r) => dateOf(r['expiry'] ?? r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'], zone)).filter((d): d is string => d !== null);
     expiringSoon = rows.length > 0 && dated.length === 0
-      ? { known: false, why: 'the batch records carry no expiry date' }
-      : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches` };
+      ? { known: false, why: 'the batch records carry no expiry date', whyTa: 'தொகுதிப் பதிவுகளில் காலாவதி தேதி இல்லை' }
+      : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches`, noteTa: `${window} நாட்களுக்குள், ${rows.length} தொகுதிகளில்` };
   }
 
   // Round A: head office sends every recall it holds, closed and withdrawn ones too (kept, hard rule #6) — only an OPEN one
   // (no closure, no withdrawal) is counted as open.
   const recallsOpen: TodayFigure = pack.recalls.known
-    ? { known: true, value: pack.recalls.value.filter((r) => typeof r !== 'object' || r === null || ((r as Record<string, unknown>)['closure'] === undefined && (r as Record<string, unknown>)['withdrawal'] === undefined)).length, note: 'recall notices on the box' }
-    : notGiven('the recall notices');
+    ? { known: true, value: pack.recalls.value.filter((r) => typeof r !== 'object' || r === null || ((r as Record<string, unknown>)['closure'] === undefined && (r as Record<string, unknown>)['withdrawal'] === undefined)).length, note: 'recall notices on the box', noteTa: 'கணினியில் உள்ள திரும்பப்பெறல் அறிவிப்புகள்' }
+    : notGiven('the recall notices', 'திரும்பப்பெறல் அறிவிப்புகள்');
 
   let checklistOpen: TodayFigure;
-  if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist');
+  if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist', 'நாளின் சரிபார்ப்புப் பட்டியல்');
   else {
     const open = pack.checklist.value.filter((i) => !i.done);
     const blocking = open.filter((i) => i.blocking).length;
-    checklistOpen = { known: true, value: open.length, note: blocking > 0 ? `${blocking} must be done before the day closes` : 'none holds the day close' };
+    checklistOpen = {
+      known: true, value: open.length,
+      note: blocking > 0 ? `${blocking} must be done before the day closes` : 'none holds the day close',
+      noteTa: blocking > 0 ? `நாள் முடியும் முன் ${blocking} செய்ய வேண்டும்` : 'நாள் முடிப்பை எதுவும் தடுக்கவில்லை',
+    };
   }
 
   const deliveriesToday: TodayFigure = pack.deliveries.known
-    ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt, zone) === input.tradingDay).length, note: 'customer deliveries in today\'s slots' }
-    : notGiven('the delivery slots');
+    ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt, zone) === input.tradingDay).length, note: 'customer deliveries in today\'s slots', noteTa: 'இன்றைய நேரங்களில் வாடிக்கையாளர் டெலிவரிகள்' }
+    : notGiven('the delivery slots', 'டெலிவரி நேரங்கள்');
 
   // D04-FR-05: the tills' devices — how many are failed or not working properly, each named. No report is "not known",
   // never "all fine" (P-08). Only on a box that has a till.
   const tillDevices: TodayFigure | undefined = input.peripheralReports === undefined ? undefined
     : input.peripheralReports.length === 0
-      ? { known: false, why: 'no till has reported its scanner, printer, scale, drawer or card machine yet' }
+      ? { known: false, why: 'no till has reported its scanner, printer, scale, drawer or card machine yet', whyTa: 'எந்தக் கல்லாவும் அதன் ஸ்கேனர், அச்சுப்பொறி, தராசு, பண அறை அல்லது அட்டை இயந்திரம் பற்றி இன்னும் தெரிவிக்கவில்லை' }
       : ((): TodayFigure => {
-        const bad = input.peripheralReports!.flatMap((r) => r.devices.filter((d) => d.state !== 'ok').map((d) => `${r.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`));
+        const broken = input.peripheralReports!.flatMap((r) => r.devices.filter((d) => d.state !== 'ok').map((d) => ({ lane: r.laneId, kind: d.kind, failed: d.state === 'failed', detail: d.detail })));
+        const bad = broken.map((d) => `${d.lane}: ${d.kind.replace('_', ' ')} ${d.failed ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
+        // The device's word in Tamil; the till's own detail is the till's finding and stays as the till said it (OB-699).
+        const badTa = broken.map((d) => `${d.lane}: ${DEVICE_TA[d.kind] ?? d.kind.replace('_', ' ')} ${d.failed ? 'செயலிழந்தது' : 'சரியாக வேலை செய்யவில்லை'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
         const oldest = input.peripheralReports!.map((r) => r.reportedAt).sort()[0]!;
-        return { known: true, value: bad.length, note: bad.length === 0 ? `every device reported working (oldest report ${oldest})` : bad.join('; ') };
+        return {
+          known: true, value: bad.length,
+          note: bad.length === 0 ? `every device reported working (oldest report ${oldest})` : bad.join('; '),
+          noteTa: bad.length === 0 ? `ஒவ்வொரு சாதனமும் வேலை செய்வதாகத் தெரிவித்தது (பழைய அறிக்கை ${oldest})` : badTa.join('; '),
+        };
       })();
 
   return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, ...(tillDevices === undefined ? {} : { tillDevices }) };
@@ -1538,6 +1564,14 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
     ...(routing === undefined ? {} : { storeLocation: routing.storeLocation, policy: { radiusMetres: routing.radiusMetres } }),
     ...(slots === undefined ? {} : { slots }),
     ...(input.pack.consentPurposes.known ? { consentPurposes: input.pack.consentPurposes.value } : {}),
+    // U6 · M20-FR-01 · §27 "Customer: Category": the pack's category names beside the products, so the app browses by
+    // category from what the phone holds (no network). Absent when the pack carries none — the app then shows ids, never nothing.
+    ...(input.pack.categories.known ? {
+      categories: input.pack.categories.value.map((c) => ({
+        categoryId: c.categoryId, name: c.name, parentId: c.parentId,
+        ...((c as { nameTa?: unknown }).nameTa === undefined ? {} : { nameTa: (c as { nameTa?: string }).nameTa }),
+      })),
+    } : {}),
   };
 }
 

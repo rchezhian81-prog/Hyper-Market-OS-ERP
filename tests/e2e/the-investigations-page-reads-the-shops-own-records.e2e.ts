@@ -97,8 +97,9 @@ describe.skipIf(!HAVE_BROWSER)('the Investigations page reads the shop\'s own re
     const { page, reads, errors } = await open(['lp.case.read'], records);
     await page.waitForLoadState('networkidle');
     expect(reads.filter((r) => /fraud-signals|staff-purchases/.test(r)), 'nothing of the records is read on open').toEqual([]);
-    await page.fill('#rec-from', '2026-10-01');
-    await page.fill('#rec-to', '2026-10-25');
+    // U2c: the window's two days are on the chrome's shared dd/mm field (ISO goes to head office).
+    await page.fill('#rec-from', '01/10/2026');
+    await page.fill('#rec-to', '25/10/2026');
     await page.click('#rec-read');
     await page.waitForSelector('#rec-result:not([hidden])');
     expect(reads).toContain('GET /v1/fraud-signals/stored?from=2026-10-01&to=2026-10-25');
