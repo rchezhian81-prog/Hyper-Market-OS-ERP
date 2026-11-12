@@ -379,7 +379,7 @@ export async function installServices(deps, opts) {
     const b = deps.spawn(deps.nodePath, [P.buildScript, what, '--quiet'], { cwd: deps.repoRoot, env: deps.env });
     if (!ran(b)) { say(`NOT INSTALLED — this release's ${what === 'api' ? 'office API' : 'till'} program could not be built. ${said(b)}`); return 1; }
   }
-  for (const dir of [P.servicesDir, P.logsDir, P.scratchDir, ...SERVICE_ORDER.map((n) => P.logDirOf(n))]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [P.servicesDir, P.logsDir, P.scratchDir, P.statusDir, ...SERVICE_ORDER.map((n) => P.logDirOf(n))]) fs.mkdirSync(dir, { recursive: true });
 
   // 1 — The database. From here on the tool reaches it as a Windows service (store-computer-db.mjs).
   const dbDone = await installDatabase(deps, P, db);

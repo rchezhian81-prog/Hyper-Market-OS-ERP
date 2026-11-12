@@ -49,6 +49,7 @@ import { rolesAtThisStore } from './office-sign-in';
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
+import { OWNER_ROLE, UPDATE_PATHS, requestUpdate, updatePage, type UpdateDeps } from './update-page'; // CR-01 step 3c (OI-05)
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -464,6 +465,11 @@ export function startScreenServer(input: {
   readonly handheldSeal?: () => HandheldSealSource;
   /** CR-01 step 2d (OI-03): what the About screen says — the shop's tenant id, the store, the till, the release. */
   readonly about?: () => AboutFacts;
+  /**
+   * CR-01 step 3c (OI-05 · OB-718 · OB-719): the Software update page (/update/) — the last update check, and the owner's
+   * PIN-confirmed request, refused while a till shift is open. Served only with the office PIN sign-in on.
+   */
+  readonly update?: { readonly deps: Omit<UpdateDeps, 'rolesOf'>; readonly updaterPending: () => boolean };
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -561,6 +567,39 @@ export function startScreenServer(input: {
     if (request === undefined) { json(res, 400, { ok: false, refusedBecause: 'not_readable_as_a_label', detail: 'A label needs the run, and for a weighed pack its weight in whole grams. Nothing was printed.' }); return; }
     const label = counterLabelFor(snap, request);
     json(res, label.ok ? 200 : 422, label);
+  };
+  /**
+   * CR-01 step 3c: the Software update page and its one write. Only with the office PIN sign-in on (the person is known by
+   * their own PIN); a box serving its screens openly, or behind the hosted front, has no update page at all.
+   */
+  const updateDoor = async (req: IncomingMessage, res: ServerResponse, path: string, update: NonNullable<typeof input.update>): Promise<void> => {
+    if (office === undefined || input.trustForwardedUser === true) {
+      req.resume();
+      send(res, 403, 'text/plain; charset=utf-8', 'The software update page needs the office PIN sign-in on this store computer.');
+      return;
+    }
+    const snap = input.snapshot();
+    const session = await office.check(officeTokenOf(req.headers['cookie']));
+    if (path !== UPDATE_PATHS.request) {
+      req.resume();
+      if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'this page is only read; the request is sent from it'); return; }
+      if (!session.ok) { page(res, 401, signInPage({ next: UPDATE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
+      const isOwner = (rolesAtThisStore(session.userId, snap.pack) ?? []).includes(OWNER_ROLE);
+      page(res, 200, updatePage({ check: update.deps.check(), isOwner, displayName: displayNameIn(snap.pack, session.userId), openShifts: await update.deps.openShifts(), updaterPending: update.updaterPending() }));
+      return;
+    }
+    if (req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, refusedBecause: 'wrong_method', en: 'Send with POST.', ta: '' }); return; }
+    if (!sameOrigin(req)) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'not_from_this_screen', en: 'Refused: not from a page this store computer served. Nothing was requested.', ta: '' }); return; }
+    if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { req.resume(); json(res, 415, { ok: false, refusedBecause: 'not_json', en: 'Send JSON.', ta: '' }); return; }
+    const raw = await readBody(req, 4 * 1024);
+    let pin: unknown;
+    try { pin = raw === null ? undefined : (JSON.parse(raw) as { pin?: unknown }).pin; } catch { pin = undefined; }
+    const answer = await requestUpdate({ ...update.deps, rolesOf: (userId) => rolesAtThisStore(userId, snap.pack) }, session.ok ? { userId: session.userId } : null, pin);
+    const status = answer.ok ? 200
+      : answer.refusedBecause === 'not_signed_in' ? 401
+        : answer.refusedBecause === 'not_the_owner' || answer.refusedBecause === 'pin_not_confirmed' ? 403
+          : answer.refusedBecause === 'not_recorded' ? 503 : 409;
+    json(res, status, answer);
   };
   /**
    * OB-388 · ADR-0029: a page's `/v1` call, carried to head office with the person's OWN head-office session — never the
@@ -680,6 +719,11 @@ export function startScreenServer(input: {
       // OB-424 · ADR-0030: the handheld seal — public material only, on this loopback socket only.
       if (input.handheldSeal !== undefined && (doorPath === HANDHELD_SEAL_PATHS.page || doorPath === HANDHELD_SEAL_PATHS.page.slice(0, -1) || doorPath === HANDHELD_SEAL_PATHS.certificate)) {
         await sealDoor(req, res, doorPath, input.handheldSeal);
+        return;
+      }
+      // CR-01 step 3c (OI-05): the Software update page and the owner's request — routed before the read-only rule.
+      if (input.update !== undefined && (doorPath === UPDATE_PATHS.page || doorPath === UPDATE_PATHS.page.slice(0, -1) || doorPath === UPDATE_PATHS.request)) {
+        await updateDoor(req, res, doorPath, input.update);
         return;
       }
       if (req.method !== 'GET') {

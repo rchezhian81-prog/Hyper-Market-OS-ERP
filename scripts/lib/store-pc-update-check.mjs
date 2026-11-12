@@ -167,3 +167,24 @@ export async function updateKeyCommand(deps, L, { remove = false } = {}) {
   const { state } = await checkForUpdate(deps, L);
   return state.state === 'could-not-check' ? 1 : 0;
 }
+
+/** How often the automatic check asks GitHub (the hourly backup task runs it; GitHub allows 60 questions an hour). */
+export const AUTO_CHECK_HOURS = 6;
+
+/**
+ * CR-01 step 3c: the automatic check, run by the hourly backup task after its backup. It asks only when the last answer
+ * is older than AUTO_CHECK_HOURS (or there is none), and never fails the backup: anything that goes wrong is said.
+ */
+export async function checkIfDue(deps, L, hours = AUTO_CHECK_HOURS) {
+  try {
+    const w = where(deps, L);
+    const last = (() => { try { return JSON.parse(readText(deps.fs, w.stateFile) ?? 'null')?.checkedAt; } catch { return undefined; } })();
+    const age = typeof last === 'string' ? deps.now().getTime() - Date.parse(last) : Number.POSITIVE_INFINITY;
+    if (Number.isFinite(age) && age >= 0 && age < hours * 3_600_000) return 'not-due';
+    await checkForUpdate(deps, L);
+    return 'checked';
+  } catch (e) {
+    deps.say(`(The automatic update check did not run: ${e instanceof Error ? e.message : String(e)})`);
+    return 'failed';
+  }
+}
