@@ -53,6 +53,7 @@ import { migrateDataFolder, update } from './store-computer-data.mjs';
 import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
 import { driveChoices, firstRun, releaseInfo, writeShortcuts } from './store-computer-setup.mjs';
 import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
+import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1252,6 +1253,9 @@ export const USAGE = [
   '                                           or the whole data folder to another internal drive',
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
+  '  check-update                             ask GitHub whether a newer, signed store PC version is ready (CR-01 3b)',
+  '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
+  '                                           is made private (OB-721); pasted with nothing shown, never said again',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
   '  setup-screens                            the first-run screens in this PC\'s browser (what SRE-Setup.exe opens)',
   '  shortcuts [--only till,office,import]    the desktop shortcuts: the till, the office pages, import & export',
@@ -1412,7 +1416,7 @@ export function parseCommandLine(argv) {
   while (args[0] === '--') args.shift();
   const out = {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
-    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
+    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
     cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, setup: {}, problems: [],
   };
@@ -1436,6 +1440,7 @@ export function parseCommandLine(argv) {
     else if (a === '--run') out.run = true;
     else if (a === '--every') out.every = value();
     else if (a === '--off') out.off = true;
+    else if (a === '--remove') out.remove = true;
     else if (a === '--quiet') out.quiet = true;
     else if (a === '--dir') out.dir = value();
     else if (a === '--as') out.as = value();
@@ -1490,6 +1495,8 @@ export async function main(argv, given) {
     case 'autostart': return autostart(deps, { off: cl.off });
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
+    case 'check-update': return checkUpdateCommand(deps, resolveLayout(deps));
+    case 'update-key': return updateKeyCommand(deps, resolveLayout(deps), { remove: cl.remove === true });
     case 'import': return importPage(deps);
     case 'setup-screens': return setupScreens(deps);
     case 'setup-state': return setupState(deps);
@@ -1598,6 +1605,8 @@ export function defaultDeps() {
     diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
     // A timer that keeps Node running while it waits (heldFetch): AbortSignal.timeout's does not, and `up` crashed with exit 13.
     fetch: (url) => heldFetch(url, {}, 5_000),
+    // CR-01 step 3b: GitHub, with headers; a redirect to another host drops the Authorization header (fetch's own rule).
+    web: async (url, headers) => { const r = await heldFetch(url, { headers, redirect: 'follow' }, 30_000); return { status: r.status, text: () => r.text() }; },
     portInUse,
     sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
     now: () => new Date(),
