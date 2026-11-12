@@ -16,7 +16,7 @@
 import { composeEnv, dockerProblem, lines, pathFor, stampOf, DEMO_PROJECT, PROJECT } from './store-computer.mjs';
 import { backupScript, parseTotals, psqlArgs, ready, reconcile, startsWithMagic, totalsScript } from './store-computer-recovery.mjs';
 import { dbSpawn, readServicesMarker } from './store-computer-db.mjs';
-import { installServices, removeServices } from './store-computer-services.mjs';
+import { installServices, removeServices, SERVICES } from './store-computer-services.mjs';
 import { currentRelease, runningTill, tasksFor, TASKS, writeLauncher } from './store-computer-schedule.mjs';
 
 export const ADOPTED_MARKER = 'adopted-from-docker.json';
@@ -92,7 +92,15 @@ export async function finishLeftBehindMove(deps) {
   const L = ctx.L;
   say('The shop database on this PC was made EMPTY, without the shop\'s data from Docker (an earlier setup could not ask Docker). That is put right now.');
   if (ctx.native === undefined) { say('NOT DONE — the services record cannot be read. Nothing was changed. Send me a photo of this screen.'); return 1; }
-  const counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: `${totalsScript().join('\n')}\n` });
+  // SRE-Setup.exe stops the three services before it copies its files (the owner's PC, 12 Nov 2026: "Connection refused"
+  // and the repair refused). The database is started to be counted, and asked again until it answers (2 minutes at most).
+  deps.spawn('sc.exe', ['start', SERVICES.database], {});
+  let counted;
+  for (let tries = 0; tries < 60; tries += 1) {
+    counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: `${totalsScript().join('\n')}\n` });
+    if (counted.error === undefined && counted.status === 0) break;
+    await deps.sleep(2_000);
+  }
   const got = parseTotals(counted.stdout ?? '');
   if (counted.error !== undefined || counted.status !== 0) {
     say(`REFUSED — the new database could not be counted (${said(counted) || 'no reason given'}). Nothing was changed. Send me a photo of this screen.`);

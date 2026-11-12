@@ -150,6 +150,20 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     expect(d.fs.existsSync(`F:\\SRE-data\\run\\services\\${ADOPTED_MARKER}`)).toBe(true);
   });
 
+  // The owner's PC, 12 Nov 2026 (release 1.0.2017): SRE-Setup.exe had stopped the three services before copying its files,
+  // so the empty database could not be counted ("Connection refused") and the repair refused. It is started first now.
+  it('the installer stopped the services first: the database is started, answers, is counted — then set aside and the move runs', async () => {
+    const { w, d, win } = await leftBehind();
+    for (const s of win.services.values()) s.state = 'stopped';
+    const spawn = d.spawn;
+    const stoppedDbRefuses: Deps = { ...d, spawn: (cmd, args, o) => (String(cmd).endsWith('psql.exe') && win.services.get(SERVICES.database)?.state !== 'running' ? { status: 2, stdout: '', stderr: 'psql: error: connection to server at "127.0.0.1", port 5432 failed: Connection refused' } : spawn(cmd, args, o)) };
+    expect(await main(['setup'], stoppedDbRefuses)).toBe(0);
+    const out = said(w);
+    expect(out).toMatch(/^The new database holds no records \(no event at all\)/m);
+    expect(out).toMatch(/^MOVED — /m);
+    expect(win.nativeDbs['sre_real']).toEqual(w.docker.data['sre_real']);
+  });
+
   it('the services were made and the new database ALREADY holds records: REFUSED, nothing changed, nothing moved over it', async () => {
     const { w, d, win } = await leftBehind();
     win.nativeDbs['sre_real'] = { tables: { event_ledger: 3 }, values: { SaleCommitted: 5_000 }, maxSeq: 3, migrations: ['0001_a.sql'] };
