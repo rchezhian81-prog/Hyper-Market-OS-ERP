@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRE Retail OS — Setup</title>
+<!-- CR-01 step 2b (OI-02): the first-run screens. Served by scripts/setup-server.ts on this PC only. No secret is in this file. -->
+<style>
+  :root { --ink:#1b1f24; --muted:#5b6470; --line:#d6dae0; --bg:#f5f6f8; --card:#fff; --brand:#0b6b4f; --bad:#b42318; --ok:#0b6b4f; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 16px/1.5 system-ui, "Segoe UI", "Nirmala UI", sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:var(--brand); color:#fff; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:20px; }
+  header button { background:#fff; color:var(--brand); border:0; border-radius:6px; padding:8px 12px; font-weight:600; min-height:44px; cursor:pointer; }
+  main { max-width:760px; margin:0 auto; padding:20px 16px 60px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:16px; }
+  h2 { margin:0 0 4px; font-size:18px; }
+  p.help { margin:0 0 12px; color:var(--muted); }
+  label { display:block; font-weight:600; margin:12px 0 4px; }
+  input[type=text], input[type=password] { width:100%; font-size:18px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; min-height:44px; }
+  .drive { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); border-radius:6px; padding:10px; margin:6px 0; }
+  .drive.no { color:var(--muted); background:#fafafa; }
+  .err { color:var(--bad); font-size:14px; margin-top:4px; min-height:0; }
+  .actions { display:flex; gap:12px; flex-wrap:wrap; }
+  button.primary { background:var(--brand); color:#fff; border:0; border-radius:8px; padding:12px 20px; font-size:17px; font-weight:600; min-height:48px; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--brand); border:1px solid var(--brand); border-radius:8px; padding:12px 20px; font-size:17px; min-height:48px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  pre { white-space:pre-wrap; background:#11161c; color:#e6edf3; padding:14px; border-radius:8px; font-size:14px; max-height:420px; overflow:auto; }
+  .banner { padding:12px 14px; border-radius:8px; margin-bottom:12px; font-weight:600; }
+  .banner.ok { background:#e7f5ef; color:var(--ok); } .banner.bad { background:#fdecea; color:var(--bad); }
+  dl { display:grid; grid-template-columns: max-content 1fr; gap:6px 16px; margin:0; } dt { color:var(--muted); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header><h1 data-t="title">SRE Retail OS — setting up this PC</h1><button id="lang" type="button">தமிழ்</button></header>
+<main>
+  <section id="loading"><p data-t="loading">Looking at this PC…</p></section>
+  <section id="refused" hidden><div class="banner bad" id="refusedText"></div></section>
+
+  <!-- A PC already set up: everything is kept. -->
+  <section id="existing" hidden>
+    <h2 data-t="existingH">This PC is already set up</h2>
+    <p class="help" data-t="existingP">Its shop, its people and every record are kept exactly as they are. Press the button to bring this PC's programs up to date.</p>
+    <dl><dt data-t="tenant">Shop's tenant id</dt><dd id="exTenant"></dd><dt data-t="dataAt">Shop's data</dt><dd id="exData"></dd></dl>
+    <p></p><div class="actions"><button class="primary" id="keepBtn" type="button" data-t="keepBtn">Finish setup</button></div>
+  </section>
+
+  <form id="form" hidden autocomplete="off">
+    <section>
+      <h2 data-t="driveH">1. Where the shop's data is kept</h2>
+      <p class="help" data-t="driveP">Choose a disk inside this PC that is not the one Windows is on, so the shop's data survives Windows being reinstalled.</p>
+      <div id="drives"></div><div class="err" data-for="dataDrive"></div>
+    </section>
+    <section>
+      <h2 data-t="shopH">2. The shop</h2>
+      <label for="shopName" data-t="shopName">Shop's name (as customers know it)</label><input id="shopName" type="text" maxlength="80"><div class="err" data-for="shopName"></div>
+      <label for="legalName" data-t="legalName">Legal name (exactly as on the GST certificate)</label><input id="legalName" type="text" maxlength="160"><div class="err" data-for="legalName"></div>
+      <label for="gstin" data-t="gstin">GSTIN (15 characters)</label><input id="gstin" type="text" maxlength="15" style="text-transform:uppercase"><div class="err" data-for="gstin"></div>
+      <label for="shopCode" data-t="shopCode">Short code for the shop (2–10 capital letters or digits, e.g. SRE)</label><input id="shopCode" type="text" maxlength="10" style="text-transform:uppercase"><div class="err" data-for="shopCode"></div>
+    </section>
+    <section>
+      <h2 data-t="ownerH">3. You, the owner</h2>
+      <p class="help" data-t="ownerP">Your staff ID will be owner-01. Choose your own six-digit PIN; nobody else may see it.</p>
+      <label for="ownerName" data-t="name">Name</label><input id="ownerName" type="text" maxlength="80"><div class="err" data-for="owner.name"></div>
+      <label for="ownerPin" data-t="pin">Six-digit PIN</label><input id="ownerPin" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="owner.pin"></div>
+      <label for="ownerPin2" data-t="pinAgain">The same PIN again</label><input id="ownerPin2" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="owner.pinAgain"></div>
+    </section>
+    <section>
+      <h2 data-t="mgrH">4. The accountant</h2>
+      <p class="help" data-t="mgrP">A second person, so no one sets the shop up alone: you prepare the shop and the store's accountant approves it. Their staff ID will be accountant-01. Give them the keyboard and look away while they type their own PIN.</p>
+      <label for="mgrName" data-t="name">Name</label><input id="mgrName" type="text" maxlength="80"><div class="err" data-for="accountant.name"></div>
+      <label for="mgrPin" data-t="pin">Six-digit PIN</label><input id="mgrPin" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="accountant.pin"></div>
+      <label for="mgrPin2" data-t="pinAgain">The same PIN again</label><input id="mgrPin2" type="password" inputmode="numeric" maxlength="6"><div class="err" data-for="accountant.pinAgain"></div>
+    </section>
+    <section>
+      <h2 data-t="goH">5. Set up</h2>
+      <p class="help" data-t="goP">This sets up this PC, records the two of you, sets your PINs, and makes the shop active: prepared by you, approved by the accountant. It takes a few minutes.</p>
+      <div class="actions"><button class="primary" id="goBtn" type="submit" data-t="goBtn">Set up this shop</button></div>
+    </section>
+  </form>
+
+  <section id="progress" hidden>
+    <h2 data-t="progH">Setting up…</h2>
+    <div class="banner" id="result" hidden></div>
+    <pre id="lines"></pre>
+  </section>
+
+  <section id="shortcuts" hidden>
+    <h2 data-t="scH">Shortcuts on the desktop</h2>
+    <p class="help" data-t="scP">Tick the ones you want for everyday use. You can come back for the others later.</p>
+    <label class="drive"><input type="checkbox" id="scTill" checked> <span data-t="scTill">Till — the selling screen</span></label>
+    <label class="drive"><input type="checkbox" id="scOffice" checked> <span data-t="scOffice">Office — the office pages</span></label>
+    <label class="drive"><input type="checkbox" id="scImport" checked> <span data-t="scImport">Import &amp; export — the old system's files in, Excel out</span></label>
+    <p></p><div class="actions"><button class="primary" id="scBtn" type="button" data-t="scBtn">Put them on the desktop</button></div>
+    <pre id="scLines" hidden></pre>
+    <p class="help"><span data-t="about">About this PC (its tenant id and release):</span> <a href="http://127.0.0.1:8091/about/" target="_blank" rel="noopener">http://127.0.0.1:8091/about/</a></p>
+  </section>
+</main>
+<script>
+(() => {
+  const KEY = new URLSearchParams(location.hash.slice(1)).get('key') || '';
+  const $ = (id) => document.getElementById(id);
+  const TA = {
+    title: 'SRE Retail OS — இந்த கணினியை அமைத்தல்', loading: 'இந்த கணினியைப் பார்க்கிறது…',
+    existingH: 'இந்த கணினி ஏற்கனவே அமைக்கப்பட்டுள்ளது', existingP: 'கடை, பணியாளர்கள், எல்லா பதிவுகளும் அப்படியே வைக்கப்படும். நிரல்களைப் புதுப்பிக்க பொத்தானை அழுத்தவும்.',
+    tenant: 'கடையின் டெனன்ட் எண்', dataAt: 'கடையின் தரவு', keepBtn: 'அமைப்பை முடி',
+    driveH: '1. கடையின் தரவு எங்கே வைக்கப்படும்', driveP: 'Windows உள்ள வட்டு அல்லாத, இந்த கணினிக்குள் உள்ள வேறு வட்டைத் தேர்ந்தெடுக்கவும் — Windows மீண்டும் நிறுவப்பட்டாலும் தரவு பாதுகாப்பாக இருக்கும்.',
+    shopH: '2. கடை', shopName: 'கடையின் பெயர் (வாடிக்கையாளர்கள் அறிந்தபடி)', legalName: 'சட்டப் பெயர் (GST சான்றிதழில் உள்ளபடியே)', gstin: 'GSTIN (15 எழுத்துகள்)', shopCode: 'கடையின் சுருக்கக் குறியீடு (2–10 பெரிய எழுத்து அல்லது எண், எ.கா. SRE)',
+    ownerH: '3. நீங்கள், உரிமையாளர்', ownerP: 'உங்கள் பணியாளர் எண் owner-01. உங்களுக்கென்று ஆறு இலக்க PIN தேர்ந்தெடுக்கவும்; வேறு யாரும் பார்க்கக்கூடாது.',
+    name: 'பெயர்', pin: 'ஆறு இலக்க PIN', pinAgain: 'அதே PIN மீண்டும்',
+    mgrH: '4. கணக்காளர்', mgrP: 'யாரும் தனியாக கடையை அமைக்கக்கூடாது: நீங்கள் தயார் செய்வீர்கள், கடையின் கணக்காளர் ஒப்புதல் தருவார். அவரது பணியாளர் எண் accountant-01. அவர் தன் PIN-ஐ தட்டச்சு செய்யும்போது வேறு பக்கம் பாருங்கள்.',
+    goH: '5. அமை', goP: 'இது இந்த கணினியை அமைக்கும், உங்கள் இருவரையும் பதிவு செய்யும், PIN-களை அமைக்கும், கடையைச் செயல்படுத்தும்: நீங்கள் தயார் செய்து, கணக்காளர் ஒப்புதல் தருவார். சில நிமிடங்கள் ஆகும்.',
+    goBtn: 'இந்தக் கடையை அமை', progH: 'அமைக்கிறது…',
+    scH: 'மேசைக் கணினித் திரையில் குறுக்குவழிகள்', scP: 'தினசரி பயன்பாட்டுக்கு வேண்டியவற்றைத் தேர்ந்தெடுக்கவும். மற்றவற்றைப் பிறகு சேர்க்கலாம்.', scTill: 'பணப்பெட்டி — விற்பனைத் திரை', scOffice: 'அலுவலகம் — அலுவலகப் பக்கங்கள்', scImport: 'இறக்குமதி & ஏற்றுமதி — பழைய அமைப்பின் கோப்புகள் உள்ளே, Excel வெளியே', scBtn: 'திரையில் வை', about: 'இந்தக் கணினி பற்றி (டெனன்ட் எண், வெளியீடு):',
+  };
+  const EN = {};
+  document.querySelectorAll('[data-t]').forEach((el) => { EN[el.dataset.t] = el.textContent; });
+  let ta = false;
+  try { ta = localStorage.getItem('sre-setup-lang') === 'ta'; } catch {}
+  const paint = () => {
+    document.documentElement.lang = ta ? 'ta' : 'en';
+    document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = (ta ? TA : EN)[el.dataset.t] || EN[el.dataset.t]; });
+    $('lang').textContent = ta ? 'English' : 'தமிழ்';
+  };
+  $('lang').onclick = () => { ta = !ta; try { localStorage.setItem('sre-setup-lang', ta ? 'ta' : 'en'); } catch {} paint(); };
+  paint();
+
+  const call = async (method, what, body) => {
+    const r = await fetch(`/setup/api/${what}`, { method, headers: { 'x-setup-key': KEY, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+  const show = (id) => { ['loading', 'refused', 'existing', 'form', 'progress'].forEach((x) => { $(x).hidden = x !== id; }); };
+  const refuse = (text) => { $('refusedText').textContent = text; show('refused'); };
+
+  const answers = () => ({
+    dataDrive: (document.querySelector('input[name=drive]:checked') || {}).value || '',
+    shopName: $('shopName').value, legalName: $('legalName').value, gstin: $('gstin').value, shopCode: $('shopCode').value,
+    owner: { name: $('ownerName').value, pin: $('ownerPin').value, pinAgain: $('ownerPin2').value },
+    accountant: { name: $('mgrName').value, pin: $('mgrPin').value, pinAgain: $('mgrPin2').value },
+  });
+  const showProblems = (problems) => {
+    document.querySelectorAll('.err').forEach((el) => { el.textContent = problems[el.dataset.for] || ''; });
+    const first = Object.keys(problems)[0];
+    if (first) { const el = document.querySelector(`.err[data-for="${first}"]`); if (el) el.scrollIntoView({ block: 'center' }); }
+  };
+  const follow = async () => {
+    show('progress');
+    for (;;) {
+      const p = (await call('GET', 'progress')).body;
+      $('lines').textContent = (p.lines || []).join('\n');
+      $('lines').scrollTop = $('lines').scrollHeight;
+      if (p.done) {
+        $('result').hidden = false;
+        $('result').className = `banner ${p.ok ? 'ok' : 'bad'}`;
+        $('result').textContent = p.ok ? 'Done. This PC is ready. / முடிந்தது. இந்த கணினி தயார்.' : 'Not finished. Send a photo of this screen. / முடியவில்லை. இந்தத் திரையின் புகைப்படத்தை அனுப்பவும்.';
+        if (p.ok) $('shortcuts').hidden = false;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  };
+
+  $('form').onsubmit = async (e) => {
+    e.preventDefault();
+    $('goBtn').disabled = true;
+    const a = answers();
+    const checked = await call('POST', 'check', a);
+    const problems = checked.body.problems || {};
+    if (checked.status !== 200 || Object.keys(problems).length > 0) { showProblems(problems); if (checked.body.error) refuse(checked.body.error); $('goBtn').disabled = false; return; }
+    const started = await call('POST', 'install', a);
+    ['ownerPin', 'ownerPin2', 'mgrPin', 'mgrPin2'].forEach((id) => { $(id).value = ''; });
+    if (started.status !== 202) { showProblems(started.body.problems || {}); if (started.body.error) refuse(started.body.error); $('goBtn').disabled = false; return; }
+    await follow();
+  };
+  $('scBtn').onclick = async () => {
+    $('scBtn').disabled = true;
+    const r = await call('POST', 'shortcuts', { till: $('scTill').checked, office: $('scOffice').checked, import: $('scImport').checked });
+    $('scLines').hidden = false;
+    $('scLines').textContent = (r.body.lines || [r.body.error || 'The shortcuts could not be made.']).join('\n');
+    $('scBtn').disabled = false;
+  };
+  $('keepBtn').onclick = async () => {
+    $('keepBtn').disabled = true;
+    const r = await call('POST', 'keep');
+    if (r.status !== 202) { refuse(r.body.error || 'The setup could not start.'); return; }
+    await follow();
+  };
+
+  (async () => {
+    if (KEY === '') { refuse('Open this page from the setup program on this PC.'); return; }
+    const r = await call('GET', 'state');
+    if (r.status !== 200) { refuse(r.body.error || 'This page was not opened by the setup program on this PC.'); return; }
+    const st = r.body;
+    if (st.setUp) { $('exTenant').textContent = st.tenantId || '—'; $('exData').textContent = st.dataRoot || '—'; show('existing'); return; }
+    const box = $('drives');
+    for (const d of st.drives) {
+      const row = document.createElement('label');
+      row.className = `drive${d.ok ? '' : ' no'}`;
+      const radio = document.createElement('input');
+      radio.type = 'radio'; radio.name = 'drive'; radio.value = `${d.letter}:`; radio.disabled = !d.ok;
+      const words = document.createElement('span');
+      words.textContent = `${d.letter}:  ${d.ok ? (d.note || '') : (d.why || '')}`;
+      row.append(radio, words);
+      box.append(row);
+    }
+    const usable = st.drives.filter((d) => d.ok);
+    if (usable.length === 1) box.querySelector(`input[value="${usable[0].letter}:"]`).checked = true;
+    if (usable.length === 0) { refuse('This PC has no second disk inside it for the shop\'s data. A second internal disk must be fitted first (decision OB-716). / கடையின் தரவுக்கு இந்த கணினியில் இரண்டாவது வட்டு இல்லை.'); return; }
+    show('form');
+  })();
+})();
+</script>
+</body>
+</html>

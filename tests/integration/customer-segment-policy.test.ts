@@ -18,8 +18,8 @@ const audience = (h: ApiHarness, u: string, body: unknown) =>
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code ?? (res.body as { code?: string }).code;
 
 // A customer with three RECENT orders: 'loyal' when the tenant sets loyalAtOrders:3, 'regular' under the default 10.
-// Dated from today, not fixed days: the rules call a customer 'lapsing' 60 days after their last order, so orders fixed
-// in September 2026 stopped being recent on 12 Nov 2026 and the case failed on the calendar alone (join of U3/U5/U6).
+// Dated back from today, never fixed dates: the engine calls a customer 'lapsing' 60 days after the last order, so fixed
+// September dates turned this customer 'lapsing' on 12 Nov 2026 and the test failed by the calendar alone.
 const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
 const threeOrders = (ref: string) => [
   { orderId: `${ref}-1`, customerRef: ref, at: daysAgo(20), netMinor: 20000, marginMinor: 6000, channel: 'store' },

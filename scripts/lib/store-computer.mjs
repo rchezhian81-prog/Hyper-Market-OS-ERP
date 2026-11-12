@@ -47,9 +47,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backup, drill, restoreCheck, tillFolders } from './store-computer-recovery.mjs';
 import { deviceDoorRow } from './store-computer-device-door.mjs';
-import { autostart, backupStatus, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup } from './store-computer-schedule.mjs';
+import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup, writeLauncher } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
+import { installServices, removeServices, servicesStatus } from './store-computer-services.mjs';
+import { driveChoices, firstRun, releaseInfo, writeShortcuts } from './store-computer-setup.mjs';
+import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
+import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -96,7 +100,7 @@ export const THRESHOLDS = Object.freeze({
 /** How long `up` waits for the API to say ready (the first start builds the API, which is the slow part). */
 export const READY_WAIT_MS = 5 * 60_000;
 
-const PLACEHOLDER = 'REPLACE_WITH';
+export const PLACEHOLDER = 'REPLACE_WITH';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const sha256 = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex');
 const real = (v) => typeof v === 'string' && v.trim() !== '' && !v.includes(PLACEHOLDER);
@@ -592,6 +596,15 @@ export async function up(deps) {
   const placeholders = Object.entries(settings).filter(([k, v]) => v.includes(PLACEHOLDER) && !k.startsWith('KEYCLOAK_')).map(([k]) => k);
   if (placeholders.length > 0) { say(`REFUSED — the settings file still has a placeholder in ${placeholders.join(', ')}. Send me a photo of this screen (not of the file).`); return 2; }
 
+  // ADR-0032: a copy that runs as Windows services is started by Windows; `up` starts any service that is stopped.
+  if (readServicesMarker(deps, L) !== undefined) {
+    for (const name of ['SRE-Database', 'SRE-API', 'SRE-Till']) deps.spawn('sc.exe', ['start', name], {});
+    say('Starting the Windows services that are not running: the shop database, the office and the till.');
+    if (!(await waitReady(deps, settings.API_PORT || '8081'))) { say(`NOT READY — the office did not say ready within ${READY_WAIT_MS / 60_000} minutes. Run: pnpm run store-computer -- services-status, and send me a photo of the screen.`); return 1; }
+    say('READY — this copy is up on this computer, and needs no internet.');
+    return 0;
+  }
+
   const docker = dockerProblem(deps);
   if (docker !== undefined) { say(`NOT STARTED — ${docker.what}`); say(`  What to do: ${docker.fix}`); return 1; }
 
@@ -833,13 +846,23 @@ export async function runChecks(deps, settings, opts) {
   const L = resolveLayout(deps);
   const p = pathFor(deps.platform);
   const results = [];
-  const docker = dockerProblem(deps);
+  const native = readServicesMarker(deps, L);
+  const docker = databaseProblem(deps, L);
   const others = readOthers(deps, L);
   const port = settings.API_PORT || '8081';
 
   // 1 — own project, own storage.
   if (docker !== undefined) results.push(result(1, 'FAIL', `${docker.what} ${docker.fix}`));
-  else {
+  else if (native !== undefined) {
+    // ADR-0032: the copy's storage is its own database folder inside this copy's data folder, kept by its own service; and
+    // still no demo storage on this computer (asked of Docker too, if Docker is here at all).
+    const dbDir = p.join(L.dataRoot, 'database');
+    const vols = lines(deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {}).stdout ?? '');
+    const demo = vols.filter((v) => v.startsWith(`${DEMO_PROJECT}_`));
+    if (demo.length > 0) results.push(result(1, 'FAIL', `the demo's storage is on this computer (${demo.length} ${DEMO_PROJECT}_ volume(s)). The demo never lives here.`));
+    else if (!fs.existsSync(p.join(dbDir, 'PG_VERSION'))) results.push(result(1, 'FAIL', `this copy's database folder ${dbDir} is not there.`));
+    else results.push(result(1, 'PASS', `this copy's database lives in ${dbDir}, run by its own Windows service (SRE-Database); no ${DEMO_PROJECT}_ storage on this computer.`));
+  } else {
     const vols = lines(deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {}).stdout);
     const own = vols.filter((v) => v.startsWith(`${PROJECT}_`));
     const demo = vols.filter((v) => v.startsWith(`${DEMO_PROJECT}_`));
@@ -849,10 +872,13 @@ export async function runChecks(deps, settings, opts) {
   }
 
   // 2 — own database.
-  if (docker !== undefined) results.push(result(2, 'FAIL', 'Docker is not ready, so the database could not be asked.'));
+  if (docker !== undefined) results.push(result(2, 'FAIL', `the database could not be asked: ${docker.what}`));
   else {
     const user = settings.POSTGRES_USER || 'sre_admin';
-    const r = deps.spawn('docker', [...composeBase(L), 'exec', '-T', 'db', 'psql', '-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
+    const ask = ['-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'];
+    const r = native !== undefined
+      ? dbSpawn(deps, { L, settings, env: composeEnv(deps.env, settings), native }, 'psql', ask)
+      : deps.spawn('docker', [...composeBase(L), 'exec', '-T', 'db', 'psql', ...ask], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
     const names = lines(r.stdout);
     const ownDb = settings.POSTGRES_DB || 'sre_real';
     const demoDbs = new Set(['sre_pilot', ...others.map((o) => o.values.POSTGRES_DB).filter(real)]);
@@ -920,7 +946,8 @@ export async function runChecks(deps, settings, opts) {
   }
 
   // 7 and 8 — the real loader's own refusals, on a folder with no data in it.
-  const build = deps.spawn(deps.nodePath, [L.buildScript, 'tools'], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
+  // An installed release (release.json) brings the loader built, and has no build tools to build it with.
+  const build = fs.existsSync(p.join(deps.repoRoot, 'release.json')) ? { status: 0 } : deps.spawn(deps.nodePath, [L.buildScript, 'tools'], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
   if (build.error !== undefined || build.status !== 0) {
     results.push(result(7, 'FAIL', 'the loader could not be prepared for the check (the tools build failed). Send me a photo of this screen.'));
     results.push(result(8, 'FAIL', 'the loader could not be prepared for the check (the tools build failed).'));
@@ -1226,6 +1253,19 @@ export const USAGE = [
   '                                           or the whole data folder to another internal drive',
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
+  '  check-update                             ask GitHub whether a newer, signed store PC version is ready (CR-01 3b)',
+  '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
+  '                                           is made private (OB-721); pasted with nothing shown, never said again',
+  '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
+  '  setup-screens                            the first-run screens in this PC\'s browser (what SRE-Setup.exe opens)',
+  '  shortcuts [--only till,office,import]    the desktop shortcuts: the till, the office pages, import & export',
+  '  setup [--data-drive D:] [--lane lane-1]   what the setup program runs: this copy\'s settings (made once, or kept),',
+  '                                           the till, and the three Windows services (CR-01 step 2)',
+  '  install-services --pg-bin <PostgreSQL bin folder> --service-host <WinSW.exe>',
+  '                                           Windows 10/11: the shop database, the office API and the till as Windows',
+  '                                           services that start by themselves, on this PC only, without Docker (ADR-0032)',
+  '  services-status                          the three Windows services: running, starting by themselves, answering',
+  '  remove-services                          stop and remove the three services; the shop\'s data is kept',
   '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
   '                                           seal the old ERP\'s exported files (MG-02) — asks your OWN till PIN',
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
@@ -1272,6 +1312,82 @@ export async function ownerSetup(deps, step, cl) {
   return r.status ?? 1;
 }
 
+/**
+ * OB-704 (owner, 7 Nov 2026: "screens, not commands"): the "Import from the old system" page — built, then served on THIS
+ * PC only (127.0.0.1:8095) and opened in the browser; each person signs in on it with their staff ID and own till PIN.
+ * The first time it also puts "SRE Import" on the Windows desktop: a double-click opens the page of whichever release is
+ * live (it goes through run\launch.mjs, so an update never leaves the icon on an old release). No secret is in it.
+ */
+/** The launcher the desktop icon starts — written (naming this release live) only when the PC has none yet. */
+function writeLauncherIfMissing(deps, L) {
+  if (deps.fs.existsSync(pathFor(deps.platform).join(L.runDir, 'launch.mjs')) && currentRelease(deps, L) !== undefined) return;
+  writeLauncher(deps, L, currentRelease(deps, L)?.folder ?? deps.repoRoot);
+}
+
+export async function importPage(deps) {
+  const { say } = deps;
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+  if (L.dataRoot === undefined) { say('REFUSED — this copy keeps its data inside the release folder. Move it first: pnpm run store-computer -- migrate-data-folder'); return 2; }
+  if (!deps.fs.existsSync(L.tillEnv)) { say('REFUSED — the till is not installed yet (owner guide Part 13): the import page signs people in with their till PIN.'); return 2; }
+  const env = composeEnv(deps.env, {});
+  const p = pathFor(deps.platform);
+  // An installed release (release.json) brings the import page built, and has no build tools to build it with.
+  const built = deps.fs.existsSync(p.join(deps.repoRoot, 'release.json')) ? { status: 0 } : deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
+  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the import page could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
+  if (deps.platform === 'win32' && typeof deps.env.USERPROFILE === 'string' && deps.env.USERPROFILE !== '') {
+    try {
+      writeLauncherIfMissing(deps, L);
+      const desktop = p.join(deps.env.USERPROFILE, 'Desktop');
+      if (deps.fs.existsSync(desktop)) {
+        deps.fs.writeFileSync(p.join(desktop, 'SRE Import.cmd'), `@echo off\r\nrem Opens the SRE "Import from the old system" page (this computer only). No secret is in this file.\r\ntitle SRE Import - keep this window open while you work\r\n"${deps.nodePath}" "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');
+        say('The desktop now has "SRE Import": double-click it next time.');
+      }
+    } catch { say('(The desktop icon could not be written; the page still opens now.)'); }
+  }
+  const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'import-server.js'), '--settings', L.settings, '--till-settings', L.tillEnv, '--data', L.dataRoot], { cwd: deps.repoRoot, env, stdio: 'inherit' });
+  if (r.error !== undefined) { say('NOT DONE — the import page could not be started.'); return 1; }
+  return r.status ?? 1;
+}
+
+/**
+ * `setup-state` (CR-01 step 2b): one line of JSON for the first-run screens' server — is this PC set up, where its files
+ * are, which drives may hold a new shop's data. Names and paths only: never a setting's value but the tenant id.
+ */
+export function setupState(deps) {
+  const { L, settings } = loadSettings(deps);
+  const rel = releaseInfo(deps);
+  const state = {
+    setUp: settings !== undefined,
+    ...(settings?.EDGE_TENANT_ID === undefined ? {} : { tenantId: settings.EDGE_TENANT_ID }),
+    ...(settings === undefined || L.dataRoot === undefined ? {} : { dataRoot: L.dataRoot }),
+    settingsPath: L.settings,
+    tillEnvPath: L.tillEnv,
+    drives: settings === undefined ? driveChoices(deps) : [],
+    ...(rel?.version === undefined ? {} : { release: rel.version }),
+  };
+  deps.say(JSON.stringify(state));
+  return 0;
+}
+
+/**
+ * `setup-screens` (CR-01 step 2b, OI-02): the first-run screens, served on this PC only and opened in its browser. An
+ * installed release brings the screens' server built; a copy from the repository builds it first, as `import` does.
+ */
+export async function setupScreens(deps) {
+  const { say } = deps;
+  const p = pathFor(deps.platform);
+  const server = p.join(deps.repoRoot, 'scripts', 'dist', 'setup-server.js');
+  if (!deps.fs.existsSync(p.join(deps.repoRoot, 'release.json'))) {
+    const built = deps.spawn(deps.nodePath, [p.join('scripts', 'build-service.mjs'), 'tools', '--quiet'], { cwd: deps.repoRoot, env: deps.env });
+    if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the setup screens could not be prepared (the tools build failed).'); return 1; }
+  }
+  const r = deps.spawn(deps.nodePath, [server], { cwd: deps.repoRoot, env: deps.env, stdio: 'inherit' });
+  if (r.error !== undefined) { say('NOT DONE — the setup screens could not be started.'); return 1; }
+  return r.status ?? 1;
+}
+
 /** The owner steps of the migration (audit row 8): the slice tool, built, run as the signed-in person on THIS copy. */
 export async function ownerStep(deps, step, cl) {
   const { say } = deps;
@@ -1300,9 +1416,9 @@ export function parseCommandLine(argv) {
   while (args[0] === '--') args.shift();
   const out = {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
-    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
+    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1324,6 +1440,7 @@ export function parseCommandLine(argv) {
     else if (a === '--run') out.run = true;
     else if (a === '--every') out.every = value();
     else if (a === '--off') out.off = true;
+    else if (a === '--remove') out.remove = true;
     else if (a === '--quiet') out.quiet = true;
     else if (a === '--dir') out.dir = value();
     else if (a === '--as') out.as = value();
@@ -1335,6 +1452,10 @@ export function parseCommandLine(argv) {
     else if (a === '--max-days') out.maxDays = value();
     else if (a === '--start') out.start = value();
     else if (a === '--data-drive') out.dataDrive = value();
+    else if (a === '--pg-bin') out.pgBin = value();
+    else if (a === '--service-host') out.serviceHost = value();
+    else if (a === '--lane') out.lane = value();
+    else if (a === '--only') out.only = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1350,8 +1471,8 @@ export async function main(argv, given) {
     for (const l of USAGE) given.say(l);
     return 2;
   }
-  if (cl.dataDrive !== undefined && !['doctor', 'prepare', 'migrate-data-folder'].includes(cl.command)) {
-    given.say(`Not understood: --data-drive goes with doctor, prepare and migrate-data-folder only — every other command finds the data folder by itself.`);
+  if (cl.dataDrive !== undefined && !['doctor', 'prepare', 'migrate-data-folder', 'setup'].includes(cl.command)) {
+    given.say(`Not understood: --data-drive goes with doctor, prepare, setup and migrate-data-folder only — every other command finds the data folder by itself.`);
     return 2;
   }
   // OB-283: every command finds the shop's data folder the same way — where it is recorded.
@@ -1374,6 +1495,16 @@ export async function main(argv, given) {
     case 'autostart': return autostart(deps, { off: cl.off });
     case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
+    case 'check-update': return checkUpdateCommand(deps, resolveLayout(deps));
+    case 'update-key': return updateKeyCommand(deps, resolveLayout(deps), { remove: cl.remove === true });
+    case 'import': return importPage(deps);
+    case 'setup-screens': return setupScreens(deps);
+    case 'setup-state': return setupState(deps);
+    case 'shortcuts': return writeShortcuts(deps, { only: cl.only });
+    case 'setup': return firstRun(deps, { dataDrive: cl.dataDrive, lane: cl.lane, pgBin: cl.pgBin, serviceHost: cl.serviceHost });
+    case 'install-services': return installServices(deps, { pgBin: cl.pgBin, serviceHost: cl.serviceHost });
+    case 'services-status': return servicesStatus(deps);
+    case 'remove-services': return removeServices(deps);
     case 'seal': return ownerStep(deps, 'seal', cl);
     case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
     // OB-257: head office's own jobs on this computer, each by the people whose act it is.
@@ -1474,6 +1605,8 @@ export function defaultDeps() {
     diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
     // A timer that keeps Node running while it waits (heldFetch): AbortSignal.timeout's does not, and `up` crashed with exit 13.
     fetch: (url) => heldFetch(url, {}, 5_000),
+    // CR-01 step 3b: GitHub, with headers; a redirect to another host drops the Authorization header (fetch's own rule).
+    web: async (url, headers) => { const r = await heldFetch(url, { headers, redirect: 'follow' }, 30_000); return { status: r.status, text: () => r.text() }; },
     portInUse,
     sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
     now: () => new Date(),

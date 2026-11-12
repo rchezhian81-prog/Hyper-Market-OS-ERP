@@ -329,7 +329,7 @@ describe('OB-284 — a shared office PC: who is an administrator, and who can re
     const d = pilotPc(w);
     expect(await main(['prepare', '--data-drive', 'F:'], d)).toBe(0);
     const L = layout('C:\\SRE', 'win32', 'F:\\SRE-data');
-    expect(dataLockRow(d, L, d.dataPointer)).toMatchObject({ status: 'OK', detail: expect.stringMatching(/only you and Windows itself \(SYSTEM\) can read F:\\SRE-data, F:\\SRE-data\\\.env\.real, C:\\ProgramData\\SRE/) });
+    expect(dataLockRow(d, L, d.dataPointer)).toMatchObject({ status: 'OK', detail: expect.stringMatching(/only you, Windows itself \(SYSTEM\) and the shop's own services can read F:\\SRE-data, F:\\SRE-data\\\.env\.real, C:\\ProgramData\\SRE/) });
     // Windows' default: every account on the PC may read a new folder.
     w.windows.acl['f:\\sre-data'] = [...w.windows.aclDefault as never[], { sid: 'S-1-5-32-545', name: 'BUILTIN\\Users', rights: 1179817 }];
     expect(dataLockRow(d, L, d.dataPointer)).toMatchObject({ status: 'FIX', detail: expect.stringMatching(/others can read the shop's data: Users \(every account on this PC\) \(F:\\SRE-data\)/), fix: expect.stringMatching(/Part 26c, step 1/) });
@@ -407,9 +407,9 @@ describe('migrate-data-folder --data-drive — a data folder already set up move
     expect(existsSync(join(w.data, '.env.real'))).toBe(true);
   });
 
-  it('--data-drive goes with doctor, prepare and migrate-data-folder only', async () => {
+  it('--data-drive goes with doctor, prepare, setup and migrate-data-folder only', async () => {
     const { w, deps, drive } = setUp();
     expect(await main(['status', '--data-drive', drive], deps)).toBe(2);
-    expect(said(w)).toMatch(/--data-drive goes with doctor, prepare and migrate-data-folder only/);
+    expect(said(w)).toMatch(/--data-drive goes with doctor, prepare, setup and migrate-data-folder only/);
   });
 });

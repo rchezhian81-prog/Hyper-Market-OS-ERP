@@ -10,6 +10,7 @@ export declare const OWN_KEYS: readonly string[];
 export declare const SEEDING_KEYS: readonly string[];
 export declare const THRESHOLDS: Readonly<{ ramBytes: number; diskBytes: number; systemDriveBytes: number; minNodeMajor: number; minWindowsBuild: number; timeZones: readonly string[] }>;
 export declare const READY_WAIT_MS: number;
+export declare const PLACEHOLDER: 'REPLACE_WITH';
 export declare const COMPOSE_BASE: readonly string[];
 export declare const CHECK_TITLES: readonly string[];
 export declare const USAGE: readonly string[];
@@ -53,6 +54,8 @@ export interface Deps {
   readonly fs: FsLike;
   readonly spawn: (cmd: string, args: readonly string[], opts: { cwd?: string; env?: Record<string, string | undefined>; stdio?: unknown; input?: string }) => SpawnResult;
   readonly fetch: (url: string) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+  /** CR-01 step 3b: a GET with headers (GitHub). Absent: the update check says it cannot reach the internet. */
+  readonly web?: (url: string, headers: Record<string, string>) => Promise<{ status: number; text(): Promise<string> }>;
   readonly portInUse: (port: number) => Promise<boolean>;
   readonly sleep: (ms: number) => Promise<void>;
   readonly now: () => Date;
@@ -76,7 +79,7 @@ export interface Deps {
   readonly processAlive?: (pid: number) => boolean;
   readonly killProcess?: (pid: number) => void;
   /** Windows Task Scheduler (or a stand-in). Absent: Windows' own via schtasks, or none off Windows. */
-  readonly tasks?: { register(name: string, xml: string): { ok: boolean; said?: string }; remove(name: string): { ok: boolean; said?: string }; exists(name: string): boolean };
+  readonly tasks?: { register(name: string, xml: string): { ok: boolean; said?: string }; remove(name: string): { ok: boolean; said?: string }; exists(name: string): boolean; run?(name: string): { ok: boolean; said?: string } };
   /** scrypt's cost for a NEW backup key (tests use a cheaper one; the key file records whichever was used). */
   readonly scryptCost?: { N: number; r: number; p: number };
   /** How long a till log's half-written last record is given to finish before it is judged an old one. */
@@ -170,7 +173,7 @@ export declare function doctorRows(deps: Deps, extra?: { edition?: import('./sto
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
-  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string; lane?: string; only?: string;
   /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
   setup: Record<string, string>;
   problems: string[];

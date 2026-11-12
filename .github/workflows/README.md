@@ -6,6 +6,19 @@ Continuous integration and delivery — `ci.yml` (every pull request and push), 
   every push to `main`).
 - **`integration`** — the stage-gate and migration suites against a real PostgreSQL, then backup → destroy →
   restore reconciled (QG-08).
+- **`store-pc-windows`** — CR-01 step 1 (ADR-0032): on a clean Windows machine, the store computer is set up as the
+  owner does it and its database, office API and till are installed as Windows services, no Docker; then Windows itself
+  is asked whether each claim holds (`tests/windows/store-pc-on-windows.check.mjs`): running, starting at boot, each on
+  its own account, this PC only, no secret in a definition or log, the API back by itself after being killed, the till
+  selling with the API and the database stopped. Its record is the job's artifact.
+- **`store-pc-setup`** — CR-01 step 2a (OI-01): builds the release folder and `SRE-Setup.exe`, runs it once silently
+  on a clean Windows machine (no typed command), asks Windows the same 18 questions, runs it again (nothing replaced)
+  and uninstalls it (services gone, data kept). `SRE-Setup.exe` is kept as the run's artifact for 14 days.
+- **`store-pc-first-run`** — CR-01 step 2b (OI-02): the first-run screens on a clean Windows machine, filled in through
+  their own door (`tests/windows/first-run-screens.drive.mjs`): a wrong GSTIN refused, then SETUP DONE with the shop
+  prepared by the owner and approved by the accountant, then the 18 questions; then (CR-01 step 2c) a backup, a
+  restore check reconciled, and G4 checks 1 and 2 on the Windows database service, with no Docker
+  (`tests/windows/services-backup.drive.mjs`); and (step 2d) the three desktop shortcuts and the About screen.
 - **`deploy`** — the API image builds, refuses a bad configuration by name, and the whole compose stack comes
   up READY and drains cleanly.
 - **`release`** — on a push to `main` only, after the three above passed on that commit: deploys exactly that

@@ -145,7 +145,11 @@ import { packRule, packTimeZone, packTradingDay, packCalendarDate, packWallClock
 import { foodHandlingRefusalAtTheDoor } from './workforce-pack'; // Round 7 · OB-502
 import { handlesFood } from '../../../packages/production/src/departments';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
+import { UPDATE_LOG, UPDATE_REQUEST_FILE, readUpdateCheck } from './update-page'; // CR-01 step 3c (OI-05)
+import { rename, writeFile } from 'node:fs/promises';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
 import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
@@ -2286,7 +2290,50 @@ export async function startEdge(
   const sealRelay: { current: () => HandheldSealSource } = {
     current: settings['EDGE_DEVICE_PORT'] === undefined ? () => ({ kind: 'no_door' }) : () => ({ kind: 'starting' }),
   };
+  // CR-01 step 2d (OI-03): the About screen — this shop's tenant id, its store, this till, the release this PC runs
+  // (release.json beside the release's apps folder, when this is an installed release).
+  const appsDirForAbout = settings['EDGE_APPS_DIR'] ?? 'apps';
+  const releaseText = (() => { try { return readFileSync(join(dirname(resolve(appsDirForAbout)), 'release.json'), 'utf8'); } catch { return undefined; } })();
+  const aboutFacts: AboutFacts = {
+    ...(settings['EDGE_TENANT_ID'] === undefined ? {} : { tenantId: settings['EDGE_TENANT_ID'] }),
+    ...(settings['EDGE_STORE_ID'] === undefined ? {} : { storeId: settings['EDGE_STORE_ID'] }),
+    ...(settings['EDGE_LANE_ID'] === undefined ? {} : { laneId: settings['EDGE_LANE_ID'] }),
+    ...releaseFrom(releaseText),
+  };
+  // CR-01 step 3c (OI-05 · OB-718 · OB-719): the Software update page. What `store-computer check-update` last found is
+  // kept beside the store computer's own status file (status\update-check.json — this service may read that folder); the
+  // owner's requests and refusals go to their own append-only log here; an accepted request is left in this box's data
+  // folder (update-request.json) for the updater (step 3d), which alone may stop and replace the services.
+  const updateLog = screenPort === undefined ? null : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: UPDATE_LOG });
+  const updateCheckFile = settings['EDGE_STORE_COMPUTER_STATUS_FILE'] === undefined ? undefined : join(dirname(settings['EDGE_STORE_COMPUTER_STATUS_FILE']), 'update-check.json');
+  const updateDeps = updateLog === null ? undefined : {
+    check: () => readUpdateCheck((() => { try { return updateCheckFile === undefined ? undefined : readFileSync(updateCheckFile, 'utf8'); } catch { return undefined; } })()),
+    // OB-718: every till whose float is issued and not closed — from this box's own till-cash log, never the screen's word.
+    openShifts: async () => {
+      const cash = await tillCashRecords();
+      return [...new Set(cash.map((r) => r.tillId))].sort().flatMap((tillId) => {
+        const state = foldTillCash(cash, tillId);
+        return state.custodian === null || state.openedAt === null ? [] : [{ tillId, custodian: state.custodian, openedAt: state.openedAt }];
+      });
+    },
+    // OB-719: the owner's own till PIN, by the till's PIN register (same guess limits), holding the setup authority.
+    verifyPin: async (userId: string, pin: string, authority: string) => {
+      if (staffSignIn === null) return { ok: false as const, laneMessage: 'This store computer checks no PINs (it serves no till).' };
+      const who = await staffSignIn.verifyPerson({ staffId: userId, pin, laneId: OFFICE_LANE, authority, lacking: 'no_approval_authority' });
+      return who.ok ? { ok: true as const } : { ok: false as const, laneMessage: who.laneMessage };
+    },
+    record: async (entry: Record<string, unknown>) => { await updateLog.append(JSON.stringify(entry)); },
+    leaveRequest: async (request: Record<string, unknown>) => {
+      const file = join(settings['EDGE_DATA_DIR']!, UPDATE_REQUEST_FILE);
+      await writeFile(`${file}.tmp`, `${JSON.stringify(request, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+      await rename(`${file}.tmp`, file);
+    },
+    now: () => new Date().toISOString(),
+  };
   const screens = screenPort === undefined ? null : await startScreenServer({
+    about: () => aboutFacts,
+    // CR-01 step 3c: the updater that acts on a request is step 3d; until then the page says a request installs nothing yet.
+    ...(updateDeps === undefined ? {} : { update: { deps: updateDeps, updaterPending: () => true } }),
     handheldSeal: () => sealRelay.current(),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {

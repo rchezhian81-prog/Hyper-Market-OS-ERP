@@ -18,6 +18,7 @@
 // NONE OF THIS HAS RUN ON REAL WINDOWS YET. The scripts follow Windows' documented classes and cmdlets; the tests drive
 // the logic with a pretend PowerShell (tests/support/store-computer-world.ts).
 
+import { OWN_SERVICE_SIDS } from './store-computer-services.mjs';
 import { lines, pathFor } from './store-computer.mjs';
 
 // ── Running one fixed script ──────────────────────────────────────────────────────────────────────────────────────
@@ -88,9 +89,24 @@ export function windowsEdition(deps) {
   return { applies: true, known: typeKnown || server, server, productType: typeKnown ? productType : undefined, caption };
 }
 
+/**
+ * CR-01 step 1 (ADR-0032): GitHub's clean Windows test machines are Windows Server, and the proof that the store
+ * computer installs as Windows services runs on one. Only such a machine is let through, and only when all three hold:
+ * GitHub Actions says it is running the job, GitHub says the machine is one of ITS OWN throw-away hosted machines (never
+ * a self-hosted one, which could be a shop's server), and the job asks for it by name. A shop's server sets none of them.
+ */
+export function hostedTestMachine(deps) {
+  const e = deps.env ?? {};
+  return e.GITHUB_ACTIONS === 'true' && e.RUNNER_ENVIRONMENT === 'github-hosted' && e.SRE_TEST_ON_HOSTED_RUNNER === '1';
+}
+
 /** The refusal on a Windows Server (OB-282), said; true when refused. `edition` may be passed in (the doctor asks once). */
 export function refusedOnServer(deps, edition = windowsEdition(deps)) {
   if (!edition.server) return false;
+  if (hostedTestMachine(deps)) {
+    deps.say(`TEST MACHINE — this is one of GitHub's throw-away Windows Server test machines ("${edition.caption || 'Windows Server'}"), not a shop's server. It is used only to prove the install works (ADR-0032); OB-282 still refuses every other Windows Server.`);
+    return false;
+  }
   deps.say(`REFUSED — this computer is a Windows Server ("${edition.caption || 'Windows Server'}"). That is the shop's server, which runs the old ERP — your legal billing system during the pilot.`);
   deps.say('  Nothing of the new system is ever installed, started or backed up on it (OB-282). Nothing was changed.');
   deps.say('  Go to the Windows 11 PC and run this there (guide Part 1).');
@@ -231,7 +247,8 @@ export function folderReaders(deps, target) {
   for (const x of rows.filter((r) => r[0] === 'ACE')) {
     const [, sid, name, type, rights] = x;
     if (!/^allow$/i.test(String(type ?? '').trim()) || !canRead(rights)) continue;
-    if (sid === me[1] || sid === SYSTEM_SID) continue;
+    // ADR-0032: the shop's own three services, each under its own virtual account, may read what they need.
+    if (sid === me[1] || sid === SYSTEM_SID || Object.hasOwn(OWN_SERVICE_SIDS, sid)) continue;
     if (!others.has(sid)) others.set(sid, { sid, name: PLAIN_SIDS[sid] ?? String(name ?? sid) });
   }
   return { known: true, me: { sid: String(me[1] ?? ''), name: String(me[2] ?? '') }, others: [...others.values()] };
@@ -254,7 +271,7 @@ export function dataLockRow(deps, L, pointer) {
     const who = [...found.values()].map((o) => `${o.name} (${o.where.join(', ')})`).join('; ');
     return { name: 'Data lock', status: 'FIX', detail: `others can read the shop's data: ${who}`, fix: "Lock it now — guide Part 26c, step 1 (the icacls lines). Until then the purchase staff's account and the Till account could read this copy's secrets (OB-284)." };
   }
-  return { name: 'Data lock', status: 'OK', detail: `only you and Windows itself (SYSTEM) can read ${targets.join(', ')}` };
+  return { name: 'Data lock', status: 'OK', detail: `only you, Windows itself (SYSTEM) and the shop's own services can read ${targets.join(', ')}` };
 }
 
 // ── OB-283: Docker Desktop's disk image on the data drive ─────────────────────────────────────────────────────────

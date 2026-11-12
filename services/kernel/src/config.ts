@@ -202,6 +202,9 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // refuses one equal to PACK_SIGNING_KEY, PII_KEY_ENCRYPTION_KEY or IDP_SIGNING_KEY (services/api/src/main.ts).
   { key: 'BOX_HISTORY_SEAL_KEY', secret: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
+  // ADR-0032 (CR-01 step 1): on the store computer the API is a Windows service and listens on that PC only. Loopback is
+  // the only value accepted — the setting can keep the API on the PC, never open it wider. Unset in a container.
+  { key: 'API_LISTEN_HOST', optional: true, oneOf: ['127.0.0.1', '::1'] },
   // Verifier r20 HW-2: how long one of the API's own database sessions may sit IDLE inside an open transaction before the
   // database ends it (PostgreSQL `idle_in_transaction_session_timeout`, set on every pooled connection). A transaction left
   // open holds back the bill-number high-water's visibility fence; the API's transactions are short, so one minute is

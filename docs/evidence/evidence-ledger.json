@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2318,
+  "testFiles": 2333,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -30,7 +30,7 @@
       "id": "M01",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 34,
+        "unit": 35,
         "integration": 31,
         "realDb": 12,
         "browser": 14,
@@ -42,6 +42,7 @@
         "unit": [
           "tests/unit/a-till-told-no-zone-dates-by-the-shops-clock.test.ts",
           "tests/unit/config.test.ts",
+          "tests/unit/cr01-step2b-first-run-screens.test.ts",
           "tests/unit/document-templates-session.test.ts",
           "tests/unit/document-templates.test.ts",
           "tests/unit/durable-tenant-settings.test.ts",

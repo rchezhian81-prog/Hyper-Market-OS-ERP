@@ -673,25 +673,35 @@ classes and prices (OB-241); the department is **packaged groceries, barcode onl
 spices, packed snacks and beverages. Loose or weighed goods stay on the old ERP.
 
 When the GO is written:
-1. **From the old ERP (Bpal) — the converter (OB-693 · OB-694 · OB-695 · OB-696).** Export three reports from Bpal to
-   Excel (`.xlsx`), from its report screens only — never type into Bpal: the **EANCODE** report (Item Id, Item Name,
-   EanCode), the **HSN** report (Item Id, Hsn Code, Item Quantity, Gst %) and the **Product wise Detail Report** for the
-   **last 12 months** (Purc Date, Item Id, NetCost, Selling, MRP). Put them in `C:\SRE-bpal`, then type as one line:
-   ```
-   pnpm run migration:from-bpal -- --ean C:\SRE-bpal\EANCODE.xlsx --hsn C:\SRE-bpal\HSN.xlsx --purchases C:\SRE-bpal\Product_wise_Detail_Report.xlsx --out C:\SRE-slice --rates-from <the day you exported, YYYY-MM-DD> --tenant <tenant-id> --store <store-code> --operator owner-01
-   ```
-   - It picks the packaged groceries by HSN (OB-694), takes each item's newest MRP, selling price and cost in the last
-     12 months (OB-695), and writes the four files and `slice.json` into `C:\SRE-slice`.
-   - **`label-facts.csv`** lists the items, **best sellers first**, with five empty columns: `allergens` (or `none`),
-     `country_of_origin`, `net_quantity`, `packer`, `consumer_care`. A packed food is not sold until all five are read
-     off its pack (M03-FR-03). Staff fill it in Excel and save it as CSV; run the same line again with
-     `--label-facts C:\SRE-slice\label-facts.csv` added. Only items with all five facts go into `products.csv`.
-     The pilot starts once the **top 200** are done (OB-696).
-   - **`bpal-set-aside.csv`** lists every item it could not take, with the reason (a barcode with a wrong check digit,
-     a selling price above MRP, no purchase in 12 months, two tax readings). **`hsn-to-check.csv`** is for the
-     accountant: each HSN that Bpal taxes at more than one rate. Nothing is guessed.
-   - A folder that is already sealed is never written into: the next load uses a new folder (`C:\SRE-slice-2`) with
-     `--already C:\SRE-slice\products.csv` and a new `--load-id`.
+1. **From the old ERP (Bpal) — the import page (OB-704: screens, not commands; every gap fixed here, never carried).**
+   - **Open it:** the first time, in PowerShell in the live release folder, type `pnpm run store-computer -- import`.
+     It opens the page in the browser and puts **SRE Import** on the desktop; next time just double-click that. Keep its
+     black window open while you work. The page is on this PC only: nobody else on the network can open it.
+   - **Sign in** with your staff ID and your own till PIN. Every fix is saved in your name.
+   - **Read the files:** export from Bpal to Excel (.xlsx), from its report screens only — the **EANCODE** report, the
+     **HSN** report and the **Product wise Detail Report** for the last 12 months. Bpal exports that one **three months
+     at a time**, so a year is 4 or 5 files (in Bpal's date boxes the month comes first: `11/01/2025`–`01/31/2026`,
+     `02/01/2026`–`04/30/2026`, `05/01/2026`–`07/31/2026`, `08/01/2026`–`10/31/2026`, `11/01/2026`–today). Any report may
+     come as several files. Choose **all the files together, in the one box** (hold Ctrl and click each) and press **Read
+     the files**: the page tells which file is which by its columns (OB-706), and names any file it does not read. The GST
+     rates are taken from the day you read them. **The first time only**, it also asks the day Bpal's backup was restored
+     on another PC and checked (MG-02); after that it remembers it (a **Change** link is there for a newer check). The files
+     are kept on this PC (`<data folder>\imports`) and never sent to the internet.
+   - **Fix the gaps**, best sellers first. The tiles count the items waiting on each kind of fix; open an item to fix it:
+     - **Barcode** — scan or type the pack's barcode (a wrong check digit is refused).
+     - **GST rate (Finance)** — only the accountant or you: the HSN and the GST slab (OB-697 still asks for Bpal to be
+       corrected too, so today's bills are right).
+     - **Price** — MRP, selling price and cost (a selling price above MRP is refused).
+     - **Label facts** — allergens (or `none`), country of origin, net quantity, packer, consumer care, read off the pack
+       (M03-FR-03). The pilot starts once the top 200 are done (OB-696).
+     - **Leave it out of this department** — for an item that is not packaged groceries (for example loose goods).
+   - **Load**, by two people: you press **Prepare a load** (your PIN; the files are sealed and every row checked); the
+     store manager signs in on the same page, reads it and presses **Accept** (his PIN — you cannot accept your own);
+     you press **Load** (your PIN). Only items with no gap left are loaded; the rest wait. Then publish the price list
+     (Part 24).
+   - **Download** any time: all items, or the gaps, as Excel files.
+
+   (Without the page, the same rules run as a command: `pnpm run migration:from-bpal`, docs\runbooks\real-data-load.md.)
 
    (Any other old system: on the migration screen ("The figures" → "Templates for the first department") download the
    four templates and fill them from its export, into one folder, for example `C:\SRE-slice`, with its `slice.json`.)

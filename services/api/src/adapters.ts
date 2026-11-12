@@ -355,6 +355,8 @@ import type { ConsolidationDeps } from '../../reporting/src/consolidation-route'
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
 import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta, LoadRecord, LoadApplied } from '../../migration/src/index';
+import type { OldSystemImportRecord } from '../../migration/src/old-system-imports';
+import type { ImportFix } from '../../../packages/migration/src/old-system-import';
 import type { SliceAcceptance } from '../../../packages/migration/src/slice-import';
 import type { ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 import type { ParallelDifference, RollbackReconciliation } from '../../../packages/migration/src/cutover';
@@ -12476,6 +12478,23 @@ export function migrationAdapter(input: {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         id: keyedEventId('mig-load-accept', `mig-load-accept-${tenantId}-${loadId}-${acceptance.sliceDigest}`), type: 'MigrationLoadExceptionsAccepted', occurredAt: acceptance.acceptedAt,
         idempotencyKey: `mig-load-accept-${tenantId}-${loadId}-${acceptance.sliceDigest}`, source: 'api/migration', payload: { ...acceptance, loadId },
+      }));
+    },
+    // OB-704 — import from the old system: the import as the store PC read it, and every person's fix (latest applies).
+    oldSystemImports: (tenantId) => allOf<OldSystemImportRecord>(input.store, tenantId, STREAM.migration, 'MigrationOldSystemImportRecorded'),
+    recordOldSystemImport: async (tenantId, record) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('mig-old-import', `mig-old-import-${tenantId}-${record.importId}`), type: 'MigrationOldSystemImportRecorded', occurredAt: record.recordedAt,
+        idempotencyKey: `mig-old-import-${tenantId}-${record.importId}`, source: 'api/migration', payload: record,
+      }));
+    },
+    importFixes: async (tenantId, importId) =>
+      (await allOf<ImportFix>(input.store, tenantId, STREAM.migration, 'MigrationImportGapFixed')).filter((f) => f.importId === importId),
+    recordImportFix: async (tenantId, fix) => {
+      const key = `mig-import-fix-${tenantId}-${fix.importId}-${fix.itemId}-${fix.kind}-${fix.at}-${fix.by}`;
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('mig-import-fix', key), type: 'MigrationImportGapFixed', occurredAt: fix.at,
+        idempotencyKey: key, source: 'api/migration', payload: fix,
       }));
     },
     loadsApplied: async (tenantId, loadId) =>

@@ -108,7 +108,7 @@ describe('the link, against a stand-in identity server', () => {
     expect(audit).toContainEqual({ event: 'signed_in', userId: 'u-acct' });
     expect(text).not.toContain(id);
     expect(text).not.toContain('localhost');
-    expect(text).not.toMatch(/eyJ/);
+    expect(text).not.toMatch(/eyJ[A-Za-z0-9_-]+\.eyJ/); // a token's shape (header.payload), not three letters a random id can hold
   });
 
   it('a session lasts ten hours at most, whatever the identity server says; ending it ends it at once', async () => {
