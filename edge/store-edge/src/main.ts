@@ -145,10 +145,10 @@ import { packRule, packTimeZone, packTradingDay, packCalendarDate, packWallClock
 import { foodHandlingRefusalAtTheDoor } from './workforce-pack'; // Round 7 · OB-502
 import { handlesFood } from '../../../packages/production/src/departments';
 import { readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
-import { UPDATE_LOG, UPDATE_REQUEST_FILE, readUpdateCheck } from './update-page'; // CR-01 step 3c (OI-05)
+import { UPDATE_LOG, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE, readUpdateCheck, readUpdateProgress } from './update-page'; // CR-01 step 3c/3d (OI-05)
 import { rename, writeFile } from 'node:fs/promises';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
@@ -2332,8 +2332,21 @@ export async function startEdge(
   };
   const screens = screenPort === undefined ? null : await startScreenServer({
     about: () => aboutFacts,
-    // CR-01 step 3c: the updater that acts on a request is step 3d; until then the page says a request installs nothing yet.
-    ...(updateDeps === undefined ? {} : { update: { deps: updateDeps, updaterPending: () => true } }),
+    // CR-01 step 3d: the updater (a Windows task, SYSTEM) acts on the request; it leaves its mark and its latest word in the
+    // status folder this service may read. No mark: the page says the updater is not set up on this PC.
+    ...(updateDeps === undefined ? {} : {
+      update: {
+        deps: updateDeps,
+        updaterPending: () => updateCheckFile === undefined || !existsSync(join(dirname(updateCheckFile), UPDATER_MARK_FILE)),
+        progress: () => readUpdateProgress((() => { try { return updateCheckFile === undefined ? undefined : readFileSync(join(dirname(updateCheckFile), UPDATE_PROGRESS_FILE), 'utf8'); } catch { return undefined; } })()),
+        waitingSince: () => {
+          try {
+            const r = JSON.parse(readFileSync(join(settings['EDGE_DATA_DIR']!, UPDATE_REQUEST_FILE), 'utf8')) as { requestedAt?: unknown };
+            return typeof r.requestedAt === 'string' ? r.requestedAt : undefined;
+          } catch { return undefined; }
+        },
+      },
+    }),
     handheldSeal: () => sealRelay.current(),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {

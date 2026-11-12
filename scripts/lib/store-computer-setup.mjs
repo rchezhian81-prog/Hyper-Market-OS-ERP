@@ -18,6 +18,7 @@ import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove } from './store-
 import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
+import { registerUpdater } from './store-pc-updater.mjs';
 
 /** The marker an installed release carries (written by scripts/build-store-pc-release.mjs). */
 export const RELEASE_MARKER = 'release.json';
@@ -150,6 +151,9 @@ export async function firstRun(given, opts = {}) {
     const before = currentRelease(here, L)?.folder;
     writeLauncher(here, L, deps.repoRoot, before !== undefined && !sameFolder(deps.platform, before, deps.repoRoot) ? before : undefined);
     if (before !== undefined && !sameFolder(deps.platform, before, deps.repoRoot)) say(`The live release is now ${deps.repoRoot} (it was ${before}); the automatic backup and the check run from it.`);
+    // CR-01 step 3d (OI-05): the updater — a task that acts only on the owner's request from the Software update page.
+    // Not being able to set it up never undoes the setup: the page then says the updater is not set up.
+    registerUpdater(here, L);
   }
   say(`This shop's tenant id: ${now.settings.EDGE_TENANT_ID}  (${move || made === false ? 'kept' : 'made by this setup on this PC'}; a name, not a secret).`);
   say('SETUP DONE.');
