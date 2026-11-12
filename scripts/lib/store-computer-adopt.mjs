@@ -17,7 +17,7 @@ import { composeEnv, dockerProblem, lines, pathFor, stampOf, DEMO_PROJECT, PROJE
 import { backupScript, parseTotals, psqlArgs, ready, reconcile, startsWithMagic, totalsScript } from './store-computer-recovery.mjs';
 import { dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import { installServices, removeServices } from './store-computer-services.mjs';
-import { runningTill, tasksFor, TASKS } from './store-computer-schedule.mjs';
+import { currentRelease, runningTill, tasksFor, TASKS, writeLauncher } from './store-computer-schedule.mjs';
 
 export const ADOPTED_MARKER = 'adopted-from-docker.json';
 export const adoptedMarkerPath = (platform, dataRoot) => pathFor(platform).join(dataRoot, 'run', 'services', ADOPTED_MARKER);
@@ -53,6 +53,73 @@ export function dockerCopyMadeFrom(deps) {
 
 /** The `docker compose` words for the copy, with its own files and this PC's settings. */
 export const madeFromCompose = (L, made) => ['compose', '-p', PROJECT, ...made.files.flatMap((f) => ['-f', f]), '--env-file', L.settings];
+
+/**
+ * What `setup` must do about a Docker copy of this shop. Found on the owner's PC, 12 Nov 2026: SRE-Setup.exe was run while
+ * Docker Desktop was not running; dockerCopyToMove could not ask Docker, took that as "no copy", and made a NEW, EMPTY
+ * database — the shop's real data stayed in Docker. Now:
+ *   'none'        — no copy to move (moved already, or Docker answers and holds none, or Docker is not on this PC at all);
+ *   'move'        — a copy, and no services yet: move it (adoptDockerCopy);
+ *   'left-behind' — a copy, but the services were made WITHOUT moving it: finishLeftBehindMove, then move it;
+ *   { refuse }    — this PC was set up before (settings kept) and Docker is installed but cannot be asked: never guess.
+ */
+export function dockerCopyState(deps, L, settingsKept) {
+  if (L?.dataRoot === undefined) return 'none';
+  if (deps.fs.existsSync(adoptedMarkerPath(deps.platform, L.dataRoot))) return 'none';
+  const v = deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {});
+  if (v.error !== undefined || v.status !== 0) {
+    const installed = deps.spawn('docker', ['--version'], {});
+    if (settingsKept && installed.error === undefined && installed.status === 0) {
+      return { refuse: 'Docker Desktop is installed but not running, and this PC was set up before: its shop may still be in Docker, and Docker is needed to look. Nothing was changed. Open Docker Desktop, wait until it says "Engine running", then run SRE-Setup.exe again.' };
+    }
+    return 'none';
+  }
+  if (!lines(v.stdout).includes(`${PROJECT}_db-data`)) return 'none';
+  return readServicesMarker(deps, L) === undefined ? 'move' : 'left-behind';
+}
+
+/**
+ * The services were made without moving the Docker copy (the owner's PC, 12 Nov 2026). Only if the new database holds NO
+ * event at all: the services are removed, that empty database folder is moved aside (kept, never deleted), the services
+ * record is removed and the sign-in start points back to the release the Docker copy was run from — so the move can run
+ * as it should. If the new database holds anything, nothing is changed and the person is told. 0 ready to move · 1 · 2.
+ */
+export async function finishLeftBehindMove(deps) {
+  const { say, fs } = deps;
+  const p = pathFor(deps.platform);
+  const ctx = ready(deps);
+  if (ctx.code !== undefined) return ctx.code;
+  const L = ctx.L;
+  say('The shop database on this PC was made EMPTY, without the shop\'s data from Docker (an earlier setup could not ask Docker). That is put right now.');
+  if (ctx.native === undefined) { say('NOT DONE — the services record cannot be read. Nothing was changed. Send me a photo of this screen.'); return 1; }
+  const counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: `${totalsScript().join('\n')}\n` });
+  const got = parseTotals(counted.stdout ?? '');
+  if (counted.error !== undefined || counted.status !== 0) {
+    say(`REFUSED — the new database could not be counted (${said(counted) || 'no reason given'}). Nothing was changed. Send me a photo of this screen.`);
+    return 2;
+  }
+  const events = got.maxEventSeq ?? 0;
+  if (events !== 0) {
+    say(`REFUSED — the new database on this PC already holds records (newest event number ${events}): something was done with it. Nothing was changed, nothing is moved over it. Send me a photo of this screen.`);
+    return 2;
+  }
+  say('The new database holds no records (no event at all): it is set aside, kept, and the move from Docker runs now.');
+  const removed = await removeServices(deps);
+  if (removed !== 0) { say('NOT DONE — the services could not be removed. Send me a photo of this screen.'); return 1; }
+  const dbDir = p.join(L.dataRoot, 'database');
+  if (fs.existsSync(dbDir)) {
+    const aside = `${dbDir}-empty-not-moved-${stampOf(deps.now())}`;
+    fs.renameSync(dbDir, aside);
+    say(`  The empty database folder is kept at ${aside}.`);
+  }
+  fs.rmSync(p.join(L.dataRoot, 'run', 'services', 'database.json'), { force: true });
+  const rel = currentRelease(deps, L);
+  if (rel?.previous !== undefined) {
+    writeLauncher(deps, L, rel.previous);
+    say(`  The sign-in start runs the release the Docker copy came from again (${rel.previous}) until the move is done.`);
+  }
+  return 0;
+}
 
 const said = (r) => lines(`${r.stdout ?? ''}\n${r.stderr ?? ''}`).slice(-3).join(' / ');
 

@@ -14,7 +14,7 @@
 // runtime\pgsql\bin and runtime\winsw — nothing is downloaded on the shop's PC (ADR-0032).
 
 import { installServices } from './store-computer-services.mjs';
-import { adoptDockerCopy, dockerCopyToMove } from './store-computer-adopt.mjs';
+import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove } from './store-computer-adopt.mjs';
 import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
@@ -135,7 +135,13 @@ export async function firstRun(given, opts = {}) {
   // 3 — The three Windows services. A shop set up with Docker (the owner's own PC) is MOVED onto them, everything kept
   // (CR-01 step 2c, OI-08 — store-computer-adopt.mjs).
   const runtime = bundledRuntime(deps);
-  const move = dockerCopyToMove(here, L);
+  const copy = dockerCopyState(here, L, !made);
+  if (typeof copy === 'object') { say(`REFUSED — ${copy.refuse}`); return 2; }
+  if (copy === 'left-behind') {
+    const put = await finishLeftBehindMove(here);
+    if (put !== 0) return put;
+  }
+  const move = copy !== 'none';
   const done = move ? await adoptDockerCopy(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost }) : await installServices(here, { pgBin: opts.pgBin ?? runtime.pgBin, serviceHost: opts.serviceHost ?? runtime.serviceHost });
   if (done !== 0) return done;
   // An installed release is now the live one: the hourly backup, the red light and the import page's launcher run the
