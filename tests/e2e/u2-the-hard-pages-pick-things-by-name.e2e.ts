@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { auditPage } from './lib/a11y-audit';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { startOfficeShop, PEOPLE, S1, type OfficeShop } from './lib/office-shop';
 
 /**
@@ -24,7 +25,9 @@ import { startOfficeShop, PEOPLE, S1, type OfficeShop } from './lib/office-shop'
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DESK = { viewport: { width: 1280, height: 860 } };
-const iso = (plus: number): string => new Date(Date.now() + plus * 86_400_000).toISOString().slice(0, 10);
+// The SHOP's day, never the UTC one: after 18:30 UTC the shop is already on the next date, and head office refuses a
+// price that starts on the UTC day as back-dated (CI on #906, 12 Nov 2026, 19:03–20:04 UTC).
+const iso = (plus: number): string => shopDateIn(new Date(Date.now() + plus * 86_400_000).toISOString());
 const ddmm = (d: string): string => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const words = (d: string): string => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
