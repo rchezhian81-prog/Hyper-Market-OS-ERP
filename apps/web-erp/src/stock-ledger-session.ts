@@ -10,7 +10,7 @@ import type { HeadOfficeHttp, HttpAnswer } from './head-office-http';
 import { refusalWords } from './refusal-words';
 import { quantityLabel } from '../../../packages/contracts/src/quantity';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
-import { servedShopZone } from '../../../packages/calendar/src/shop-day';
+import { instantOfTyped, servedShopZone } from '../../../packages/calendar/src/shop-day';
 
 export type Lang = 'en' | 'ta';
 export interface StockLedgerViewer { readonly userId?: string; readonly permissions: readonly string[] }
@@ -112,9 +112,11 @@ export function ledgerQuery(ask: LedgerAsk): { readonly query: string } | { read
   if (from !== '' && to !== '' && from > to) return { key: 'badWindow' };
   const parts = [`productId=${enc(productId)}`];
   if (ask.locationId.trim() !== '') parts.push(`locationId=${enc(ask.locationId.trim())}`);
-  // A window typed as shop days: the whole first day to the whole last day (the shop's own zone is the API's reading).
-  if (from !== '') parts.push(`from=${enc(`${from}T00:00:00.000Z`)}`);
-  if (to !== '') parts.push(`to=${enc(`${to}T23:59:59.999Z`)}`);
+  // A window typed as shop days: the whole first day to the whole last day ON THE SHOP'S CLOCK, as the exact instants head
+  // office compares against (CI on #906: UTC midnight-to-midnight missed the shop's own day after 18:30 UTC).
+  const zone = servedShopZone();
+  if (from !== '') parts.push(`from=${enc(instantOfTyped(`${from}T00:00:00.000`, zone))}`);
+  if (to !== '') parts.push(`to=${enc(instantOfTyped(`${to}T23:59:59.999`, zone))}`);
   return { query: parts.join('&') };
 }
 

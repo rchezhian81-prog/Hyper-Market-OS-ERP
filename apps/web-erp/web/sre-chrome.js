@@ -2190,6 +2190,13 @@
     root.className = 'sre-datatable';
     root.id = `${id}-table`;
     host.replaceChildren(root);
+    // On a phone the rows stack and each cell names its column, so the head row is kept for a screen reader only — with
+    // the one visually-hidden class (`sr-only`), set from the same width the stacking uses and kept in step on a turn.
+    const stackQ = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 519px)') : null;
+    const stacked = () => stackQ !== null && stackQ.matches;
+    if (stackQ !== null && typeof stackQ.addEventListener === 'function') {
+      stackQ.addEventListener('change', () => { const th = root.querySelector('table.sre-register > thead'); if (th) th.classList.toggle('sr-only', stacked()); });
+    }
 
     function visibleRows() {
       const rows = state.rows ?? [];
@@ -2225,8 +2232,13 @@
       if (showSearch) {
         const searchLabel = document.createElement('label');
         searchLabel.className = 'sre-datatable-search';
+        const searchWord = document.createElement('span');
+        searchWord.className = 'sre-datatable-search-word';
+        searchWord.textContent = ow('search');
+        const searchBox = document.createElement('span');
+        searchBox.className = 'sre-datatable-search-box';
         const lens = icon('search', 18);
-        if (lens) searchLabel.append(lens);
+        if (lens) searchBox.append(lens);
         const search = document.createElement('input');
         search.type = 'search';
         search.id = `${id}-search`;
@@ -2235,7 +2247,8 @@
         search.placeholder = ow('search');
         search.setAttribute('aria-label', `${ow('search')} — ${said(opts.label)}`);
         search.addEventListener('input', () => { state.query = search.value; state.page = 0; paintBody(); });
-        searchLabel.append(search);
+        searchBox.append(search);
+        searchLabel.append(searchWord, searchBox);
         bar.append(searchLabel);
       }
       for (const col of opts.columns.filter((c) => c.filter)) {
@@ -2258,7 +2271,7 @@
       const choose = document.createElement('details');
       choose.className = 'sre-datatable-columns';
       const sum = document.createElement('summary');
-      sum.className = 'sre-btn';
+      sum.className = 'sre-btn sre-with-icon';
       const cols = icon('layout-grid', 18);
       if (cols) sum.append(cols);
       sum.append(document.createTextNode(ow('columns')));
@@ -2309,6 +2322,7 @@
       caption.className = 'sr-only';
       caption.textContent = said(opts.label);
       const thead = document.createElement('thead');
+      if (stacked()) thead.className = 'sr-only';
       const hr = document.createElement('tr');
       for (const col of shown()) {
         const th = document.createElement('th');

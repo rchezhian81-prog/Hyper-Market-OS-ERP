@@ -5,7 +5,7 @@
 // (`window.shellCachedAt`). The page is fetched from the network first every time: it carries the box's signed price
 // list, and yesterday's prices must never be served as today's (P-08). A missing script is never answered with a page.
 
-const CACHE = 'sre-price-kiosk-shell-c585bdf996e6';
+const CACHE = 'sre-price-kiosk-shell-ddd81644d1f4';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];

@@ -42,7 +42,14 @@ describe('the stock ledger session', () => {
   it('needs a product, refuses a window the wrong way round, and asks head office for one product at one place in a window of whole shop days', () => {
     expect(ledgerQuery({ productId: ' ', locationId: '', fromIso: '', toIso: '' })).toEqual({ key: 'needProduct' });
     expect(ledgerQuery({ productId: 'RICE', locationId: '', fromIso: '2026-11-05', toIso: '2026-11-01' })).toEqual({ key: 'badWindow' });
-    expect(ledgerQuery({ productId: 'RICE', locationId: ' S1 ', fromIso: '2026-11-01', toIso: '2026-11-05' })).toEqual({ query: 'productId=RICE&locationId=S1&from=2026-11-01T00%3A00%3A00.000Z&to=2026-11-05T23%3A59%3A59.999Z' });
+    // A window typed as shop days is the shop's whole first day to its whole last day ON THE SHOP'S CLOCK (Asia/Kolkata):
+    // 1 Nov starts at 31 Oct 18:30 UTC and 5 Nov ends at 5 Nov 18:29:59.999 UTC. (CI on #906, 12 Nov 2026: the window was
+    // UTC midnight to midnight, so after 18:30 UTC "today" missed the shop's own day — the page said 0 movements.)
+    expect(ledgerQuery({ productId: 'RICE', locationId: ' S1 ', fromIso: '2026-11-01', toIso: '2026-11-05' })).toEqual({ query: 'productId=RICE&locationId=S1&from=2026-10-31T18%3A30%3A00.000Z&to=2026-11-05T18%3A29%3A59.999Z' });
+    // A movement at 00:10 on 12 Nov in the shop (11 Nov 18:40 UTC) is inside a window of 12 Nov only.
+    const one = ledgerQuery({ productId: 'RICE', locationId: '', fromIso: '2026-11-12', toIso: '2026-11-12' }) as { query: string };
+    const q = new URLSearchParams(one.query);
+    expect(q.get('from')! <= '2026-11-11T18:40:00.000Z' && '2026-11-11T18:40:00.000Z' <= q.get('to')!).toBe(true);
   });
   it('reads in the person\'s own session, hands head office\'s answer through, and keeps a cashier off it before any request', async () => {
     const answer = { productId: 'RICE', locationId: null, from: null, to: null, lines: [{ movementId: 'm1', productId: 'RICE', locationId: 'S1', kind: 'received', effect: 1, quantityMinor: 100, uom: 'EA', occurredAt: '2026-11-01T04:30:00.000Z', batchId: null, expiry: null, reason: null, enteredBy: 'u-owner', approvedBy: null, balanceAfterMinor: 100 }], count: 1, inMinor: 100, outMinor: 0, places: [{ locationId: 'S1', onHandMinor: 100 }], movementsEver: 1, asAt: '2026-11-07T10:00:00.000Z' };

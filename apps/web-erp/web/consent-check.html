@@ -20,11 +20,13 @@
       :root { --tap: 48px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
       main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
-      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
       section.group { background: var(--bg); padding: 12px; }
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .row-form { display: grid; gap: 12px; grid-template-columns: minmax(200px, 1fr) auto; align-items: end; }
+      /* CI on #906: at 360px a 200px floor for the field plus the Show button needed ~302px inside a 294px card, and CI's
+         fonts pushed the page to 366px. The field gives way first; on a desk it is as wide as before. */
+      .row-form { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
       .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
       .meta { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }

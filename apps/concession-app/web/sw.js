@@ -7,7 +7,7 @@
 // change only on a deploy, so those stay cache-first and load instantly. A missing script is never answered with
 // a page (that would boot the sample stand-in for a reason nobody can see).
 
-const CACHE = 'sre-concession-shell-703e9119e49d';
+const CACHE = 'sre-concession-shell-359b54d9defd';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];

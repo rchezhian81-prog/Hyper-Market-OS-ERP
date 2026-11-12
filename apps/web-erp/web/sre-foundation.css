@@ -632,14 +632,21 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 .sre-datatable-filter { min-width: 0; max-width: 100%; }
 .sre-datatable-filter > .sre-select { min-width: 0; max-width: 100%; }
 .sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
-.sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
-.sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
-.sre-datatable-search > .sre-input { width: 100%; padding-left: 40px; }
+/* OB-205: the search box says its words above it (like a filter's), the lens sits inside the box. */
+.sre-datatable-search { display: grid; gap: 4px; flex: 1 1 240px; max-width: 420px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.sre-datatable-search-box { position: relative; display: flex; align-items: center; min-width: 0; }
+.sre-datatable-search-box > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
+.sre-datatable-search-box > .sre-input { width: 100%; padding-left: 40px; }
 .sre-datatable-filter { display: grid; gap: 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
 .sre-datatable-columns { position: relative; }
 .sre-datatable-columns > summary { list-style: none; cursor: pointer; }
 .sre-datatable-columns > summary::-webkit-details-marker { display: none; }
 .sre-datatable-columns > fieldset { position: absolute; right: 0; z-index: 5; display: grid; gap: 2px; min-width: 220px; margin: 6px 0 0; padding: var(--space-3); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+/* On a phone the column choice opens under its button across the register's width, never past the screen's left edge. */
+@media (max-width: 519px) {
+  .sre-datatable-columns { flex: 1 1 100%; }
+  .sre-datatable-columns > fieldset { position: static; min-width: 0; max-width: 100%; }
+}
 .sre-datatable-columns legend { padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
 .sre-datatable-columns label.sre-check { display: flex; align-items: center; gap: 8px; width: auto; height: auto; min-height: var(--tap); font-size: 15px; color: var(--ink); }
 .sre-datatable-columns label.sre-check > input { width: 20px; height: 20px; accent-color: var(--accent); }

@@ -20,11 +20,13 @@
       :root { --tap: 48px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
       main { width: min(1100px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
-      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+      /* CI on #906: a field's own column took the input's natural width (299px) inside a 234px cell, so the Unit field ran
+         to 1312px on a 1280px desk. Every column here gives way to its box; the fields wrap by the row's own rule. */
       h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
       p.lede { margin: 0; color: var(--muted); font-size: 14px; }
       .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: start; }
-      label.f { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      label.f { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
       fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0; display: flex; gap: 8px 16px; flex-wrap: wrap; }
       fieldset legend { font-size: 14px; font-weight: 600; }
       fieldset label { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); font-size: 15px; }
