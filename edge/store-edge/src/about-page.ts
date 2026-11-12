@@ -46,6 +46,7 @@ export function aboutPage(f: AboutFacts): string {
     row('This till', 'இந்தப் பணப்பெட்டி', f.laneId),
     row('Release', 'வெளியீடு', f.release === undefined ? undefined : `${f.release}${f.commit === undefined ? '' : ` (${f.commit})`}`),
     '</table>',
+    '<p><a href="/update/">Software update</a> <span lang="ta">· மென்பொருள் புதுப்பிப்பு</span> — what version this PC runs, whether a newer one is ready, and (for the owner) the Update button.</p>',
     '</main></body></html>',
   ].join('');
 }
