@@ -300,7 +300,15 @@ async function waitForState(deps, name, want, waitMs = START_WAIT_MS) {
 }
 
 const ran = (r) => r.error === undefined && r.status === 0;
-const said = (r) => lines(`${r.stdout ?? ''}\n${r.stderr ?? ''}`).slice(-3).join(' / ');
+// What a program said; when it said nothing (it could not even start), why: Windows' own code, in plain words for the
+// one seen on the owner's PC (0xC0000135, a missing DLL — there, Microsoft's Visual C++ runtime).
+const said = (r) => {
+  const words = lines(`${r.stdout ?? ''}\n${r.stderr ?? ''}`).slice(-3).join(' / ');
+  if (words !== '') return words;
+  if (r.error !== undefined) return `it could not be started (${r.error.code ?? r.error.message ?? 'error'})`;
+  if (r.status === 3221225781 || r.status === -1073741515) return 'it could not start: a part of Windows it needs is missing (Microsoft Visual C++ runtime — run SRE-Setup.exe again, which installs it)';
+  return r.status === null || r.status === undefined ? 'it said nothing' : `it ended with code ${r.status} and said nothing`;
+};
 
 // ── install-services ─────────────────────────────────────────────────────────────────────────────────────────────
 

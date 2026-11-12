@@ -62,6 +62,10 @@ Docker's own copy is never deleted.
   on or after 11 November 2026.
 - **"REFUSED — … where it was made"** or **"… not on this PC any more"**: the move could not find the folder Docker's
   copy was made from. Nothing was changed and the till keeps running. Send me a photo.
+- **"NOT INSTALLED — the shop database could not be made."** with no reason (release 1.0.2009, 11 November 2026):
+  this PC had no Microsoft Visual C++ runtime (double-clicking `initdb.exe` in
+  `C:\Program Files\SRE Retail OS\runtime\pgsql\bin` said "VCRUNTIME140.dll was not found"). The shop was put back,
+  Docker and the till running. Releases from 11 November 2026 install that runtime themselves.
 - Nothing here touches the shop's data: until step 6 says MOVED, the shop is still in Docker exactly as before.
 
 Docker Desktop can be uninstalled later, once I confirm from your photos; its stopped copy is the only thing it still holds.

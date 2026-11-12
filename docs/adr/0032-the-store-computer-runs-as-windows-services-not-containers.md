@@ -88,3 +88,14 @@ How the decision is carried out. Nothing here changes the decision; each point i
   PGPASSWORD only. The backup's Windows script keeps the one-snapshot guarantee (GT-07) with psql's `\o` file for the totals
   and the Windows shell's `%SRE_SNAPSHOT%` for pg_dump.
 - **Still Docker-only, said plainly:** the timed rollback drill and `update` — their Windows versions are CR-01 step 3.
+
+## Implementation note — Microsoft's Visual C++ runtime (11 November 2026)
+
+PostgreSQL's Windows programs (initdb, postgres, pg_ctl, psql, pg_dump, pg_restore) need Microsoft's Visual C++ runtime
+(`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`). The owner's store PC had none: the move's `initdb.exe`
+could not start ("VCRUNTIME140.dll was not found") and the move put the shop back. GitHub's Windows machines always have
+it, so CI never saw this. SRE-Setup.exe now carries Microsoft's own installer (`runtime\vcredist\vc_redist.x64.exe`,
+fetched from Microsoft by CI and refused unless validly signed by Microsoft Corporation — Microsoft updates the file in
+place, so a hash pin would break) and runs it quietly, before anything of the shop is touched, when the runtime is
+missing. Installed system-wide rather than copied beside PostgreSQL, so Windows Update keeps it patched (P-04). Offline:
+unchanged — nothing is downloaded on the shop's PC. Portability, cost: none (Microsoft's free redistributable).

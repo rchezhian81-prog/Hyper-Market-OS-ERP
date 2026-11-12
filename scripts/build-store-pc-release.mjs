@@ -2,6 +2,7 @@
 // Build the STORE PC RELEASE FOLDER — everything SRE-Setup.exe installs (CR-01 step 2, OI-01 · ADR-0032).
 //
 //   node scripts/build-store-pc-release.mjs --out <folder> --pgsql <PostgreSQL 16 'pgsql' folder> --winsw <WinSW-x64.exe>
+//                                           [--vcredist <vc_redist.x64.exe>]
 //        [--node-exe <node.exe>] [--version <v>] [--commit <sha>] [--skip-build]
 //
 // The folder holds, and nothing more:
@@ -12,6 +13,8 @@
 //   • node_modules with the ONE library the shop PC needs at run time: pg, at the version the lockfile names;
 //   • runtime\node\node.exe, runtime\pgsql\{bin,lib,share} (PostgreSQL 16, without pgAdmin or StackBuilder) and
 //     runtime\winsw\WinSW-x64.exe — so nothing is downloaded on the shop's PC;
+//   • runtime\vcredist\vc_redist.x64.exe when given: Microsoft's Visual C++ runtime, which PostgreSQL's programs need
+//     (the owner's PC had none, 11 Nov 2026: "VCRUNTIME140.dll was not found"); SRE-Setup.exe installs it when missing;
 //   • release.json — the version and commit, which the setup reads;
 //   • release-signing.pub — the PUBLIC release signing key, when one is committed at infra/deploy/release-signing.pub:
 //     the key this PC checks the NEXT release's signature with (CR-01 step 3a · OB-717). Not a secret.
@@ -76,10 +79,11 @@ async function main(argv) {
   const winsw = arg(argv, '--winsw');
   const nodeExe = arg(argv, '--node-exe') ?? process.execPath;
   if (out === undefined || pgsql === undefined || winsw === undefined) {
-    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--node-exe <node.exe>] [--version v] [--commit sha] [--skip-build]\n');
+    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--vcredist <vc_redist.x64.exe>] [--node-exe <node.exe>] [--version v] [--commit sha] [--skip-build]\n');
     return 2;
   }
-  for (const [what, p] of [['PostgreSQL bin', join(pgsql, 'bin', 'postgres.exe')], ['WinSW', winsw], ['node', nodeExe]]) {
+  const vcredist = arg(argv, '--vcredist');
+  for (const [what, p] of [['PostgreSQL bin', join(pgsql, 'bin', 'postgres.exe')], ['WinSW', winsw], ['node', nodeExe], ...(vcredist === undefined ? [] : [['the Visual C++ runtime installer', vcredist]])]) {
     if (!existsSync(p)) { process.stderr.write(`${what} not found at ${p}\n`); return 2; }
   }
   const node = process.execPath;
@@ -108,6 +112,10 @@ async function main(argv) {
   for (const sub of ['bin', 'lib', 'share']) cpSync(join(pgsql, sub), join(out, 'runtime', 'pgsql', sub), { recursive: true });
   mkdirSync(join(out, 'runtime', 'winsw'), { recursive: true });
   cpSync(winsw, join(out, 'runtime', 'winsw', 'WinSW-x64.exe'));
+  if (vcredist !== undefined) {
+    mkdirSync(join(out, 'runtime', 'vcredist'), { recursive: true });
+    cpSync(vcredist, join(out, 'runtime', 'vcredist', 'vc_redist.x64.exe'));
+  }
 
   const pub = releasePublicKey();
   if (pub !== undefined) cpSync(pub, join(out, 'release-signing.pub'));
