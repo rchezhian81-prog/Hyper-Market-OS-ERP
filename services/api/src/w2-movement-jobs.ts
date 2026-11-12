@@ -112,6 +112,9 @@ export const DIRECT_MOVEMENT_KINDS: Readonly<Record<string, Classify>> = Object.
   'POST /v1/packaging/items/:packagingId': fixed(null, 'a packaging item'),
   'POST /v1/packaging/items/:packagingId/movements/:movementId': fixed(null, 'a packaging movement'),
   'POST /v1/inventory/expiry-sweep': fixed(null, 'running the expiry sweep'),
+  // U6 (§27 Inventory "Adjustment", M08-FR-03): an office person asks for a stock correction; a second person decides it.
+  // Not a narrowed role's work — a receiver or warehouse user asks from the handheld, relayed (RELAYED_MOVEMENT_KINDS).
+  'POST /v1/inventory/adjustment-requests/:requestId': fixed(null, 'asking for a stock correction from the office'),
 });
 
 /**

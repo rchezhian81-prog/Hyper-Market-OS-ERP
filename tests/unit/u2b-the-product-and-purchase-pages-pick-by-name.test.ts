@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { beforeFixture } from '../support/before-fixture';
+import { expectChromePickableKeepsTheRules, expectChromeShopDateKeepsTheRules, expectNoFallbackSwitchedOff, usesChromePickable, usesChromeShopDate } from '../support/picker-pins';
 
 /**
  * **U2b · G5 and G14 of the UI/UX gap audit (4 Nov 2026): the product and purchase pages pick a thing by NAME, never
@@ -42,17 +43,23 @@ describe('U2b · G5: the product and purchase pages pick by name', () => {
   it.each(PICK_PAGES)('$page opens the shared picker for each id it used to ask typed', ({ page, pickers, words }) => {
     const js = web(page);
     for (const call of pickers) expect(js, `${page} lacks ${call}`).toContain(call);
-    // the chrome's picker, the typed code kept, the name beside the field, the picked id into the field the page sends
-    expect(js).toContain("if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome'");
-    expect(js).toContain('allowCode: true');
-    expect(js).toContain("input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');");
-    expect(js).toContain("name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';");
-    // the Choose… button is a 44px foundation button with a name a screen reader says
-    expect(js).toContain("btn.className = 'sre-btn sre-btn-quiet pick'");
-    expect(js).toContain("btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`)");
-    // the words follow the language toggle
-    expect(js).toContain('repaintPickers();');
-    expect(js).toMatch(/const pickWords = \{ en: \{[^\n]*choose: 'Choose…'[^\n]*\}, ta: \{[^\n]*choose: 'தேர்ந்தெடு…'[^\n]*\} \};/);
+    // the chrome's picker, the typed code kept, the name beside the field, the picked id into the field the page sends,
+    // a 44px Choose… with a spoken name, words that follow the toggle — in the page's own lines (U2b) or, where the page
+    // hands its field to the chrome's one copy (U5, `sreOffice.pickable`), in that copy
+    if (usesChromePickable(js)) {
+      expectChromePickableKeepsTheRules();
+      expectNoFallbackSwitchedOff(js, page);
+      expect(js, `${page} waits for the chrome when it paints first`).toContain("document.addEventListener('sre:chrome'");
+    } else {
+      expect(js).toContain("if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome'");
+      expect(js).toContain('allowCode: true');
+      expect(js).toContain("input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');");
+      expect(js).toContain("name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';");
+      expect(js).toContain("btn.className = 'sre-btn sre-btn-quiet pick'");
+      expect(js).toContain("btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`)");
+      expect(js).toContain('repaintPickers();');
+      expect(js).toMatch(/const pickWords = \{ en: \{[^\n]*choose: 'Choose…'[^\n]*\}, ta: \{[^\n]*choose: 'தேர்ந்தெடு…'[^\n]*\} \};/);
+    }
     // no label on the page or its session asks for an id or a code to be typed any more
     for (const w of [`web/${page}`, `web/${page.replace('.js', '.html')}`, ...words]) expect(wordsOf(w), `${w} still asks for a typed id/code`).not.toMatch(TYPED_ID_LABEL);
   });
@@ -118,10 +125,13 @@ describe('U2b · G14: the remaining dates are written as the shop writes them', 
   ];
   it.each(DATE_PAGES)('$page mounts the shared date field on $fields and reads ISO through it', ({ page, fields, reads }) => {
     const js = web(page);
-    for (const f of fields) expect(js, `${page} does not mount the shared date field on ${f}`).toMatch(new RegExp(`shopDate\\('${f}', \\{ en: `));
+    for (const f of fields) expect(js, `${page} does not mount the shared date field on ${f}`).toMatch(new RegExp(`shopDate\\('${f}', (\\{ en: |both\\()`));
     for (const r of reads) expect(js, `${page} still reads the plain field`).toContain(r);
-    expect(js).toContain("const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });");
-    expect(js).toContain('repaintShopDates();');
+    if (usesChromeShopDate(js)) expectChromeShopDateKeepsTheRules(); // U5: the chrome's one copy (`sreOffice.shopDate`)
+    else {
+      expect(js).toContain("const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });");
+      expect(js).toContain('repaintShopDates();');
+    }
     // the month lengths are the shared field's (calendar arithmetic) — this page reads no device clock for a day
     expect(js).not.toMatch(/new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
   });

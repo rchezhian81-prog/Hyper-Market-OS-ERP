@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { expectChromePickableKeepsTheRules, expectNoFallbackSwitchedOff, usesChromePickable } from '../support/picker-pins';
 import { beforeFixture } from '../support/before-fixture';
 
 /**
@@ -35,15 +36,19 @@ describe('U2b: the people and stock pages pick things by name', () => {
     for (const [file, fields] of Object.entries(PICKS)) {
       const js = web(file);
       expect(js, `${file} reaches the picker`).toMatch(/window\.sreOffice/);
-      expect(js, `${file} calls the chrome's pick`).toMatch(/office\.pick\(\{ kind/);
       for (const id of fields) expect(js, `${file}: #${id} is pickable`).toMatch(new RegExp(`pickable\\('${id}'`));
-      expect(js, `${file} says the typed code stays the fallback`).toMatch(/allowCode: true/);
+      if (usesChromePickable(js)) { expectChromePickableKeepsTheRules(); expectNoFallbackSwitchedOff(js, file); }
+      else {
+        expect(js, `${file} calls the chrome's pick`).toMatch(/office\.pick\(\{ kind/);
+        expect(js, `${file} says the typed code stays the fallback`).toMatch(/allowCode: true/);
+      }
     }
     // the per-unit form on Returned goods builds its inputs itself: the supplier and the approval are mounted on the element
     const held = web('held-returns.js');
     expect(held).toMatch(/pickableEl\(supplier, 'supplier', 'pickSupplier'\)/);
     expect(held).toMatch(/pickableEl\(approval, 'approval', 'pickApproval'/);
-    expect(held).toMatch(/allowCode: true/);
+    if (usesChromePickable(held)) { expectChromePickableKeepsTheRules(); expectNoFallbackSwitchedOff(held, 'held-returns.js'); } // U5: the chrome's one copy
+    else expect(held).toMatch(/allowCode: true/);
   });
 
   it('the subject on Investigations is a product or a person by what the person chose to look at', () => {

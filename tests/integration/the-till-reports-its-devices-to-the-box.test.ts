@@ -48,7 +48,7 @@ describe('D04-FR-05 — the till reports its devices; the manager sees what fail
     dirs.push(dir);
     const ready = await prepareTillBox({ dir, key: KEY, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }], pack: PACK });
     let edge = await start(dir, ready);
-    expect((await today(edge))['tillDevices']).toEqual({ known: false, why: 'no till has reported its scanner, printer, scale, drawer or card machine yet' });
+    expect((await today(edge))['tillDevices']).toEqual({ known: false, why: 'no till has reported its scanner, printer, scale, drawer or card machine yet', whyTa: 'எந்தக் கல்லாவும் அதன் ஸ்கேனர், அச்சுப்பொறி, தராசு, பண அறை அல்லது அட்டை இயந்திரம் பற்றி இன்னும் தெரிவிக்கவில்லை' });
 
     const devices = [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'failed', detail: 'paper out' }, { kind: 'card_terminal', state: 'degraded', detail: 'slow to answer' }];
     // Nobody signed in: refused, nothing kept.

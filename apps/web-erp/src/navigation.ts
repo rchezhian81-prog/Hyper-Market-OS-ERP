@@ -101,7 +101,7 @@ export const DAILY_WORK: Readonly<Record<string, readonly string[]>> = Object.fr
  */
 export const NAV_ITEM_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
   Today: ['dashboard', 'approval-requests'],
-  Products: ['products', 'pricing', 'promotions', 'shelf-tags', 'esl', 'price-integrity'],
+  Products: ['products', 'pricing', 'promotions', 'shelf-tags', 'price-integrity'],
   Purchase: ['buying', 'supplier-bills', 'suppliers', 'requisitions'],
   Receiving: ['goods-receipt', 'dock-diary'],
   Inventory: ['stock-health', 'counts', 'indents', 'transfers'],
@@ -277,7 +277,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // makes (`catalogue.pack.read`). A head-office page, served by the store computer (OB-380).
   { id: 'shelf-tags', label: 'Shelf tags', labelTa: 'அலமாரி விலைச் சீட்டுகள்', path: '/shelf-tags', requires: 'catalogue.pack.read', group: 'Products' },
   // U6 (UI/UX gap audit §27 "Product — label/ESL", 7 Nov 2026): did the shelf take the price the till charges — the product person's view of the electronic labels.
-  { id: 'esl', label: 'Electronic shelf labels', labelTa: 'மின்னணு அலமாரி லேபிள்கள்', path: '/esl', requires: 'price.integrity.audit', group: 'Products' },
+  { id: 'esl', label: 'Electronic shelf labels', labelTa: 'மின்னணு அலமாரி லேபிள்கள்', path: '/esl', requires: 'price.integrity.audit', group: 'Systems' },
   { id: 'data-quality', label: 'Data quality', labelTa: 'தரவுத் தரம்', path: '/data-quality', requires: 'ai.proposal.read', group: 'Products' },
   // Wave 2 · OB-625 (owner, 1 Nov 2026): three read-only product checks — no tax mapping, allergen or ingredient details
   // missing where the category needs them, no barcode — with counts and the register of products. Gated on the report read
@@ -556,7 +556,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // W3 (customers): head-office pages over their own routes (OB-380), each asking its own permission (OB-572); every write's
   // route checks its own word. Data requests (M16-FR-03), Customer value (D07-FR-05 · M16-FR-04), Message queue
   // (M31-FR-04), Compensation limits (M21-FR-03) and Gift cards (D07-FR-04).
-  { id: 'data-requests', label: 'Customer data requests', labelTa: 'வாடிக்கையாளர் தரவுக் கோரிக்கைகள்', path: '/data-requests', requires: 'privacy.request.manage', group: 'Customers' },
+  { id: 'data-requests', label: 'Customer data requests', labelTa: 'வாடிக்கையாளர் தரவுக் கோரிக்கைகள்', path: '/data-requests', requires: 'privacy.request.manage', group: 'Operations' },
   { id: 'customer-value', label: 'Customer value', labelTa: 'வாடிக்கையாளர் மதிப்பு', path: '/customer-value', requires: 'customer.segment.read', group: 'Customers' },
   { id: 'message-queue', label: 'Message queue', labelTa: 'செய்தி வரிசை', path: '/message-queue', requires: 'notification.send.check', group: 'Customers' },
   { id: 'compensation-limits', label: 'Compensation limits', labelTa: 'இழப்பீட்டு வரம்புகள்', path: '/compensation-limits', requires: 'service.case.read', group: 'Customers' },
@@ -675,7 +675,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
   // a screen the server would refuse (P-03 control-by-exception, P-08 no silent failure).
-  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Customers' },
+  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Orders' },
   // OB-702 (owner, 7 Nov 2026, decision 5 of the UI/UX gap audit · P-07): the reviewer's page — its word is the sign-off
   // right, which the cashier never holds; a cashier reading every till's over/short with no right to sign any was the
   // audit's G15. The store computer's gate reads this same word, so the direct link is refused too.
@@ -703,7 +703,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Wave 3 (M31-FR-01): documents past their keeping time, and record a disposal with a reason.
   { id: 'document-retention', label: 'Document retention', labelTa: 'ஆவணக் காப்புக் காலம்', path: '/document-retention', requires: 'document.template.read', group: 'Operations' },
   // Wave 3 (M22-FR-03): a business salesperson's commission rate — proposed, approved by someone else — and what they earned.
-  { id: 'sales-commission', label: 'Sales commission', labelTa: 'விற்பனைக் கமிஷன்', path: '/sales-commission', requires: 'b2b.commission.read', group: 'Customers' },
+  { id: 'sales-commission', label: 'Sales commission', labelTa: 'விற்பனைக் கமிஷன்', path: '/sales-commission', requires: 'b2b.commission.read', group: 'People' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.
