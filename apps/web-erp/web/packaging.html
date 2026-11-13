@@ -40,19 +40,9 @@
       [hidden] { display: none !important; }
     </style>
     <style>
-      table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-      .figures { display: flex; gap: 16px; flex-wrap: wrap; }
-      .figures span { display: grid; }
-      .figures b { font-size: 20px; }
-      .warn { color: var(--degraded); font-weight: 700; }
-      .table-wrap { overflow-x: auto; }
+      .warn { margin: 0; }
       label.check { display: flex; gap: 8px; align-items: center; min-height: var(--tap); }
       label.check input { min-height: 0; width: 24px; height: 24px; }
-          /* U2 · G5: a branch field with its "Choose…" button beside it and the picked store's name under it */
-      .row-form .pick-btn { flex: 0 0 auto;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
-      .row-form .pick-name { flex: 1 1 100%; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
 </style>
   </head>
   <body>
@@ -77,7 +67,8 @@
         <button id="q-show" type="button" class="sre-btn"><span id="q-show-text"></span></button>
         <p class="status" id="q-status" role="status" aria-live="polite"></p>
         <p class="warn" id="q-negative" hidden></p>
-        <div class="figures" id="q-figures"></div>
+        <!-- U5 · G17: the position's six figures as the chrome's summary cards -->
+        <div id="q-figures"></div>
       </section>
       <section id="register" hidden aria-labelledby="register-h">
         <h3 id="register-h"></h3>

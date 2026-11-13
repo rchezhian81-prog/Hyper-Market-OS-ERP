@@ -41,6 +41,11 @@ const WORDS = {
     online: 'Online', offline: 'No connection — you can fill your basket, but not order yet',
     searchFor: 'Search for something', buyAgain: 'Buy again', noLists: 'Nothing to buy again yet.',
     nothingFound: 'Nothing matched that. Try a shorter word.',
+    // U6 (7 Nov 2026): browse by category (M20-FR-01 · §27) and my points (M17 · §27 "Customer: Loyalty").
+    browseTitle: 'Browse by category', browseAll: 'Show everything', browseItems: 'item(s)', browseEmpty: 'Nothing in this category today.',
+    browseNone: 'The shop has not sorted its products into categories yet — search for something instead.', browseIn: 'In',
+    pointsTitle: 'My points', pointsSignIn: 'Sign in to see your points.', pointsSpend: 'How to spend them',
+    pointsChecking: 'Asking the shop…',
     add: 'Add', added: 'Added to your basket', remove: 'Remove', outOfStock: 'Not available today',
     yourBasket: 'Your basket', basketEmpty: 'Your basket is empty.',
     checkBasket: 'Check my basket', thingsChanged: 'Some things have changed',
@@ -94,6 +99,10 @@ const WORDS = {
     online: 'இணைப்பில்', offline: 'இணைப்பு இல்லை — கூடையை நிரப்பலாம், ஆனால் இன்னும் ஆர்டர் செய்ய முடியாது',
     searchFor: 'ஏதாவது தேடுங்கள்', buyAgain: 'மீண்டும் வாங்கு', noLists: 'மீண்டும் வாங்க இன்னும் எதுவும் இல்லை.',
     nothingFound: 'அது எதுவும் கிடைக்கவில்லை. சிறிய வார்த்தையை முயற்சிக்கவும்.',
+    browseTitle: 'வகை வாரியாகப் பார்', browseAll: 'எல்லாம் காட்டு', browseItems: 'பொருள்(கள்)', browseEmpty: 'இந்த வகையில் இன்று எதுவும் இல்லை.',
+    browseNone: 'கடை இன்னும் பொருட்களை வகைகளாகப் பிரிக்கவில்லை — அதற்குப் பதிலாகத் தேடுங்கள்.', browseIn: 'வகை',
+    pointsTitle: 'என் புள்ளிகள்', pointsSignIn: 'உங்கள் புள்ளிகளைப் பார்க்க உள்நுழையுங்கள்.', pointsSpend: 'எப்படிச் செலவழிப்பது',
+    pointsChecking: 'கடையிடம் கேட்கிறோம்…',
     add: 'சேர்', added: 'கூடையில் சேர்க்கப்பட்டது', remove: 'நீக்கு', outOfStock: 'இன்று கிடைக்கவில்லை',
     yourBasket: 'உங்கள் கூடை', basketEmpty: 'உங்கள் கூடை காலியாக உள்ளது.',
     checkBasket: 'என் கூடையைச் சரிபார்', thingsChanged: 'சில விஷயங்கள் மாறியுள்ளன',
@@ -389,8 +398,51 @@ function productRow(product) {
   return row;
 }
 
+// U6 · M20-FR-01 · §27 "Customer: Category": the category the customer is browsing, or null. Typing a search clears it —
+// the one results list shows either the search hits or the category's products, never both.
+let browsing = null;
+
+/** The category chips (≥ 48px), counted, in the reader's language; a parent's children under it. From the catalogue on this phone. */
+function renderBrowse() {
+  if (typeof shop.categories !== 'function') { el('browse-section').hidden = true; return; }
+  const cats = shop.categories(lang);
+  el('browse-section').hidden = false;
+  el('browse-title').textContent = t('browseTitle');
+  el('browse-none').hidden = cats.length > 0;
+  el('browse-none').textContent = t('browseNone');
+  const chip = (c, child) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = child ? 'cat child' : 'cat';
+    b.dataset.category = c.categoryId;
+    b.setAttribute('aria-pressed', String(browsing === c.categoryId));
+    b.textContent = `${c.name} · ${c.count}`;
+    b.setAttribute('aria-label', `${c.name}: ${c.count} ${t('browseItems')}`);
+    b.addEventListener('click', () => { browsing = browsing === c.categoryId ? null : c.categoryId; el('search').value = ''; render(); });
+    return b;
+  };
+  el('browse').replaceChildren(...cats.flatMap((c) => [chip(c, false), ...c.children.map((k) => chip(k, true))]));
+  const all = el('browse-all');
+  all.textContent = t('browseAll');
+  all.hidden = browsing === null;
+  all.onclick = () => { browsing = null; render(); };
+}
+
 function renderSearch() {
   const term = el('search').value.trim();
+  if (term !== '') browsing = null;
+  renderBrowse();
+  if (term === '' && browsing !== null) {
+    const rows = shop.inCategory(browsing);
+    const name = shop.categories(lang).flatMap((c) => [c, ...c.children]).find((c) => c.categoryId === browsing)?.name ?? browsing;
+    el('results-heading').hidden = false;
+    el('results-heading').textContent = `${t('browseIn')}: ${name} · ${rows.length} ${t('browseItems')}`;
+    el('results-empty').hidden = rows.length > 0;
+    el('results-empty').textContent = t('browseEmpty');
+    el('results').replaceChildren(...rows.map((p) => productRow(p)));
+    return;
+  }
+  el('results-heading').hidden = true;
   if (term === '') {
     el('results').replaceChildren();
     el('results-empty').hidden = true;
@@ -925,9 +977,40 @@ function paintChrome() {
   paintMineChrome();
 }
 
+/**
+ * U6 · M17 · §27 "Customer: Loyalty": my points, as head office holds them for the member this app is tied to — read when
+ * the account view opens; signed out it says to sign in; a refusal is said in the reader's words. Nothing moves a point.
+ */
+let pointsAsked = false;
+let pointsHeld;
+async function renderPoints() {
+  el('points-title').textContent = t('pointsTitle');
+  const say = el('points-card');
+  const lines = (v) => {
+    // U7 (OB-726) · M17-FR-01: my tier and when my points lapse — a line only for what head office sent and this can read.
+    const got = v && v.member && typeof shop.mine.standingLines === 'function' ? shop.mine.standingLines(lang, v) : {};
+    for (const [id, text] of [['points-tier', got.tier], ['points-due', got.lapse]]) { el(id).hidden = typeof text !== 'string'; el(id).textContent = typeof text === 'string' ? text : ''; }
+  };
+  if (shop.mine === undefined || typeof shop.mine.loyalty !== 'function' || !shop.isSignedIn()) { say.textContent = t('pointsSignIn'); el('points-spend').hidden = true; el('points-tier').hidden = true; el('points-due').hidden = true; pointsAsked = false; pointsHeld = undefined; return; }
+  if (pointsAsked) { lines(pointsHeld); return; }
+  pointsAsked = true;
+  say.textContent = t('pointsChecking');
+  const out = await shop.mine.loyalty();
+  if (!out.ok) { say.textContent = mineWords(out); el('points-spend').hidden = true; lines(undefined); pointsAsked = false; return; }
+  pointsHeld = out.value;
+  lines(out.value);
+  // Head office's own sentence (a finding about MY membership, in English by decision OB-699); the figures beside it.
+  say.textContent = out.value.say;
+  say.className = out.value.member ? 'say done' : 'say warn';
+  const spend = el('points-spend');
+  spend.hidden = !out.value.member || typeof out.value.howToSpend !== 'string';
+  spend.textContent = out.value.member && typeof out.value.howToSpend === 'string' ? `${t('pointsSpend')}: ${out.value.howToSpend}` : '';
+}
+
 function render() {
   renderConnection();
   if (view === 'shop') { renderSearch(); renderLists(); void renderMine(); }
+  if (view === 'account') void renderPoints();
   if (view === 'basket') renderBasket();
   if (view === 'order') { renderOrder(); void renderHelp(); }
   if (view === 'privacy') { renderConsent(); renderRights(); renderNominee(); }

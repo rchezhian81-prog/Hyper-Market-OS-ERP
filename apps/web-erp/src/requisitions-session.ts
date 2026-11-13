@@ -9,6 +9,7 @@
 import type { ViewerIdentity } from './browser-entry';
 import { normaliseUom, quantityLabel, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 import { refusalWords } from './refusal-words';
+import { pagedQuery, pagedAnswer, type RegisterAsk } from './register-paging';
 
 export type Lang = 'en' | 'ta';
 export type Outcome<T> =
@@ -127,6 +128,8 @@ export function paiseFromRupees(text: string): number | undefined {
 export interface RequisitionsSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly raise: boolean };
   list(): Promise<Outcome<readonly RequisitionView[]>>;
+  /** U7 (OB-726): ONE page of the worklist, searched and sorted by head office — for the register's loader. */
+  page(ask: RegisterAsk): Promise<Outcome<{ readonly rows: readonly RequisitionView[]; readonly total: number }>>;
   raise(requisitionId: string, lines: readonly { readonly productId: string; readonly quantity: string }[]): Promise<Outcome<RequisitionView>>;
   recordQuote(requisitionId: string, quoteId: string, supplierId: string, lines: readonly { readonly productId: string; readonly unitRupees: string; readonly leadDays: string }[]): Promise<Outcome<unknown>>;
   comparison(requisitionId: string): Promise<Outcome<ComparisonView>>;
@@ -160,6 +163,14 @@ export function createRequisitionsSession(input: { readonly viewer: ViewerIdenti
       const g = gate('read'); if (g !== undefined) return g;
       const out = await call<{ requisitions: RequisitionView[] }>('GET', '/v1/purchase/requisitions');
       return out.result === 'ok' ? { result: 'ok', value: out.value.requisitions } : out;
+    },
+    page: async (ask) => {
+      const g = gate('read'); if (g !== undefined) return g;
+      // The register's columns head office can sort by: the requisition's id and its number of lines.
+      const out = await call<unknown>('GET', `/v1/purchase/requisitions?${pagedQuery(ask, { id: 'requisitionId', lines: 'lines' })}`);
+      if (out.result !== 'ok') return out;
+      const page = pagedAnswer(out.value, 'requisitions');
+      return page === undefined ? { result: 'lost_link' } : { result: 'ok', value: { rows: page.rows as readonly RequisitionView[], total: page.total } };
     },
     raise: async (requisitionId, lines) => {
       const g = gate('raise'); if (g !== undefined) return g;

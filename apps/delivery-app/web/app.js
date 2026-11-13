@@ -127,6 +127,11 @@ const WORDS = {
     whyNotCollected: 'Why was nothing collected?', customerNotAvailable: 'Customer not available', nothingHandedOver: 'Customer handed nothing over',
     collectedOk: 'Recorded as collected', notCollectedOk: 'Recorded as not collected', collectionDone: 'That return is already collected.',
     notRecorded: 'Not recorded', nothingTaken: 'You took nothing. Record it as “Not collected” instead.',
+    // U6 · OB-700 (decision 3 = B): the phone holds no customer number — the driver asks the STORE to call.
+    askStoreToCall: 'Ask the store to call the customer', askStoreNote: 'This phone holds no customer number. The store calls them for you.',
+    callAsked: 'The store has been told', callAskedBody: 'The store will call the customer of this order. You will not see their number on this phone.',
+    callAlreadyAsked: 'The store has already been asked to call this customer.', callNotNeeded: 'That stop is finished — there is nobody to call about it.',
+    callAskedMark: 'store asked to call',
   },
   ta: {
     updateApp: 'இந்தச் செயலியைப் புதுப்பிக்கவும்',
@@ -181,6 +186,10 @@ const WORDS = {
     whyNotCollected: 'ஏன் எதுவும் எடுக்கவில்லை?', customerNotAvailable: 'வாடிக்கையாளர் இல்லை', nothingHandedOver: 'வாடிக்கையாளர் எதுவும் தரவில்லை',
     collectedOk: 'எடுக்கப்பட்டதாகப் பதிவானது', notCollectedOk: 'எடுக்கவில்லை என்று பதிவானது', collectionDone: 'அந்தத் திருப்பல் ஏற்கனவே எடுக்கப்பட்டது.',
     notRecorded: 'பதிவாகவில்லை', nothingTaken: 'நீங்கள் எதுவும் எடுக்கவில்லை. “எடுக்கவில்லை” என்று பதிவு செய்யவும்.',
+    askStoreToCall: 'வாடிக்கையாளரை அழைக்கக் கடையிடம் கேள்', askStoreNote: 'இந்த ஃபோனில் வாடிக்கையாளர் எண் இல்லை. கடை உங்களுக்காக அவர்களை அழைக்கும்.',
+    callAsked: 'கடைக்குச் சொல்லப்பட்டது', callAskedBody: 'இந்த ஆர்டரின் வாடிக்கையாளரைக் கடை அழைக்கும். அவர்களின் எண் இந்த ஃபோனில் தெரியாது.',
+    callAlreadyAsked: 'இந்த வாடிக்கையாளரை அழைக்க ஏற்கனவே கடையிடம் கேட்கப்பட்டது.', callNotNeeded: 'அந்த நிறுத்தம் முடிந்துவிட்டது — அழைக்க யாரும் இல்லை.',
+    callAskedMark: 'அழைக்கக் கடையிடம் கேட்டாச்சு',
   },
 };
 let lang = 'en';
@@ -249,6 +258,7 @@ const KIND_WORDS = {
   handover: { en: 'Cash handed over', ta: 'பணம் ஒப்படைப்பு' },
   collection: { en: 'Return collection', ta: 'திருப்பல் சேகரிப்பு' },
   proof: { en: 'Proof picture', ta: 'நிரூபணப் படம்' },
+  call: { en: 'Call request', ta: 'அழைப்புக் கோரிக்கை' },
 };
 
 /** WF-16 (driver): a return collection's state, in both languages, and the shape it wears beside the words. */
@@ -689,6 +699,13 @@ function render() {
       flag.textContent = stop.contributionFlag;
       row.append(flag);
     }
+    // U6 · OB-700: the store was asked to call this stop's customer — said on the row, so a second tap is not spent on it.
+    if (typeof session.callRequested === 'function' && session.callRequested(stop.stopId)) {
+      const asked = document.createElement('span');
+      asked.className = 'flag asked';
+      say(asked, t('callAskedMark'), 'phone');
+      row.append(asked);
+    }
     row.addEventListener('click', () => { selectedStopId = stop.stopId; render(); });
     return row;
   }));
@@ -704,6 +721,8 @@ function render() {
   say(el('delivered-partial'), t('partlyDelivered'), 'package-minus');
   say(el('failed'), t('couldNotDeliver'), 'circle-alert');
   say(el('handover'), t('endOfShift'), 'wallet');
+  say(el('ask-call'), t('askStoreToCall'), 'phone');
+  el('ask-call-note').textContent = t('askStoreNote');
   renderCollections();
   renderQueue();
 }
@@ -848,6 +867,25 @@ function proofRefusal(e) {
  * delivery without it. Then the money, on its own screen with a keypad — a driver mis-reading
  * ₹2,500 as ₹250 at a doorstep is not a display bug.
  */
+// U6 · OB-700 (owner, 7 Nov 2026, decision 3 = B) · M19 · §31: "customer contact" on the driver's phone is a REQUEST to the
+// store — one tap. The phone holds no number and never will; the session queues the request in the driver's name, the
+// store computer relays it, head office records it once and puts it in front of the store. Refused by name a second time.
+el('ask-call').addEventListener('click', () => {
+  const stop = selected();
+  if (stop === null) { tell(t('read'), t('tapStopFirst')); return; }
+  if (typeof session.askStoreToCall !== 'function') { tell(t('read'), t('sampleRoute')); return; }
+  try {
+    session.askStoreToCall(stop.stopId);
+    tell(t('callAsked'), `${stop.area} · ${stop.orderRef} — ${t('callAskedBody')}`, true);
+    void syncToBox();
+  } catch (e) {
+    if (versionRefused(e)) { render(); return; }
+    const name = e && e.name;
+    tell(t('read'), name === 'CallAlreadyAskedError' ? t('callAlreadyAsked') : name === 'StopFinishedError' ? t('callNotNeeded') : String(e && e.message ? e.message : e));
+  }
+  render();
+});
+
 el('deliver').addEventListener('click', async () => {
   const stop = selected();
   if (stop === null) { tell(t('read'), t('tapStopFirst')); return; }

@@ -31,17 +31,9 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
-      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
-      .panel .k { color: var(--muted); font-size: 14px; }
-      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
-      .panel .v.unknown { color: var(--warn); font-size: 16px; }
       #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
       fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
       legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
       tr[data-id] { cursor: pointer; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; }
@@ -68,10 +60,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Categories</h2>
         <p class="lead" id="lead"></p>
-        <div class="panels" role="status" aria-live="polite">
-          <div class="panel"><span class="k" id="k-count">Categories on the list</span><span class="v" id="v-count">—</span></div>
-          <div class="panel"><span class="k" id="k-top">Top-level departments</span><span class="v" id="v-top">—</span></div>
-          <div class="panel"><span class="k" id="k-regulated">Regulated categories</span><span class="v" id="v-regulated">—</span></div>
+        <div id="figures" role="status" aria-live="polite">
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -84,10 +73,7 @@
       <section id="view-list" aria-labelledby="list-h">
         <h3 id="list-h">Category list</h3>
         <p class="lead" id="list-lead"></p>
-        <div class="table-wrap"><table aria-labelledby="list-h">
-          <thead><tr><th id="c-path">Category</th><th id="c-id">Id</th><th id="c-reg">Regulated as</th><th id="c-attrs">Attributes</th><th id="c-ver">Version</th><th id="c-by">Approved by</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table></div>
+        <div id="rows-host" aria-labelledby="list-h"></div>
         <fieldset id="form">
           <legend id="form-h">Add or change a category</legend>
           <div class="row">

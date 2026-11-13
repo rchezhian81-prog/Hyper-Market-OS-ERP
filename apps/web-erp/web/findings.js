@@ -2,6 +2,8 @@
 // routes. The session (apps/web-erp/src/findings-session.ts, in the bundle as window.findings) does every call and every rule;
 // this page lays out what it is told. It reads head office as it opens (GETs only); nothing is written. Every word this page
 // adds has a Tamil twin; head office's own sentences stay in English (OB-553).
+// U5 (UI/UX gap audit, lane 3 HARD, 7 Nov 2026): the findings are counted by kind and each kind is a register on the shared
+// office parts (window.sreOffice: cards, table, state, chip) — never 48 identical cards in one column.
 
 const $ = (id) => document.getElementById(id);
 const api = window.findings ?? null;
@@ -42,64 +44,108 @@ const UI3 = {
 const u3 = (k) => UI3[lang][k] ?? UI3.en[k];
 const office = () => window.sreOffice ?? null;
 const shopTime = (at) => (at === null ? '' : window.sreShopDay?.dateTimeOf(at) ?? at);
-/** An empty list that is not an all-clear: the shared "nothing yet" state, saying what it covered (P-08). */
-function emptyItem(title, detail) {
-  const o = office();
-  if (o === null) return text('li', title, 'meta');
-  const li = document.createElement('li'); o.state(li, 'empty', { title, detail }); return li;
-}
 document.addEventListener('sre:chrome', () => { paint(); });
 
+/** The product link a finding carries: the product's page, with the product's name where the box knows it. */
+function productLink(productId) {
+  const o = office();
+  const a = document.createElement('a');
+  // the page is served at /findings/, so the product's page is its sibling (the form Product checks uses)
+  a.href = `../product-details/?product=${encodeURIComponent(productId)}`;
+  a.className = 'sre-btn sre-btn-quiet'; // a 44px target (design system §1.8), as a row action, never a bare text link
+  const name = o && typeof o.nameOf === 'function' ? o.nameOf('product', productId) : productId;
+  a.textContent = name && name !== productId ? `${name} (${productId})` : productId;
+  a.title = t('openProduct');
+  return a;
+}
+const severityTone = (severity) => (severity === 'critical' ? 'error' : 'pending');
+const kindName = (kind) => (api === null ? kind : api.kindWords(lang, kind));
+
+/** The sales section: the counts, one card per kind, then one register per kind — never a wall of identical cards (U5). */
 function paintBills() {
-  $('s-rows').replaceChildren(); $('s-counts').textContent = ''; $('s-covers').textContent = ''; $('s-cards').replaceChildren();
-  if (billsOutcome !== null) { $('s-status').textContent = api.outcomeWords(lang, billsOutcome); return; }
-  if (bills === null) return;
+  const o = office();
+  $('s-counts').textContent = ''; $('s-covers').textContent = ''; $('s-cards').replaceChildren(); $('s-kinds').replaceChildren(); $('s-groups').replaceChildren();
+  $('s-kinds-h').textContent = ''; $('s-note').textContent = '';
+  if (billsOutcome !== null) {
+    $('s-status').textContent = api.outcomeWords(lang, billsOutcome);
+    if (o !== null) o.state($('s-groups'), o.stateOf(billsOutcome), { title: api.outcomeWords(lang, billsOutcome), detail: t('notReadDetail') });
+    return;
+  }
+  if (bills === null) { $('s-status').textContent = ''; if (o !== null) o.state($('s-groups'), 'loading'); return; }
   $('s-status').textContent = '';
   $('s-counts').textContent = `${bills.critical} · ${bills.material} · ${bills.informational}  (${t('counts')})`;
   $('s-covers').textContent = u3('sCovers').split('{time}').join(shopTime(billsAt));
-  office()?.cards($('s-cards'), [
+  $('s-note').textContent = t('headOfficeEnglish');
+  if (o === null) { $('s-groups').replaceChildren(...bills.findings.map((f) => text('p', `${t(f.severity)} · ${t('bill')} ${f.saleId} · ${f.detail}`, 'meta'))); return; }
+  o.cards($('s-cards'), [
     { label: t('critical'), value: bills.critical, tone: bills.critical > 0 ? 'error' : undefined, icon: 'circle-alert' },
     { label: t('material'), value: bills.material, tone: bills.material > 0 ? 'pending' : undefined, icon: 'triangle-alert' },
     { label: t('informational'), value: bills.informational, icon: 'circle-help' },
   ]);
-  if (bills.findings.length === 0) { $('s-rows').append(emptyItem(t('salesNone'), $('s-covers').textContent)); return; }
-  $('s-rows').replaceChildren(...bills.findings.map((f) => {
-    const li = document.createElement('li');
-    li.className = f.severity === 'critical' ? 'tone-error' : 'tone-degraded';
-    li.dataset.severity = f.severity; li.dataset.kind = f.kind; li.dataset.sale = f.saleId;
-    const head = document.createElement('div'); head.className = 'head';
-    head.append(text('span', `${f.severity === 'critical' ? '✕' : '⚠'} ${t(f.severity)}`, 'chip'), text('span', `${t('bill')} ${f.saleId}`, 'meta'));
-    li.append(head, text('p', f.detail));
-    const facts = [];
-    if (f.productId !== undefined) facts.push(`${t('product')}: ${f.productId}`);
-    if (f.differenceMinor !== undefined) facts.push(`${t('difference')}: ${api.rupees(f.differenceMinor)}`);
-    if (facts.length > 0) li.append(text('p', facts.join(' · '), 'meta'));
-    if (f.ownerAction !== '') li.append(text('p', `${t('todo')} ${f.ownerAction}`, 'meta'));
-    return li;
+  if (bills.findings.length === 0) { o.state($('s-groups'), 'empty', { title: t('salesNone'), detail: t('salesEmptyDetail') }); return; }
+  const groups = api.groupFindings(bills.findings);
+  $('s-kinds-h').textContent = t('byKind');
+  const kinds = o.cards($('s-kinds'), groups.map((g) => ({
+    label: kindName(g.kind), value: g.count, tone: severityTone(g.worst), icon: g.worst === 'critical' ? 'circle-alert' : 'triangle-alert', href: `#kind-${g.kind}`,
+    note: g.critical > 0 ? `${g.critical} ${t('critical').toLowerCase()} · ${g.material} ${t('material').toLowerCase()}` : t('groupMaterial'),
+  })));
+  kinds.querySelectorAll('.sre-summary-card').forEach((card, i) => { card.dataset.kind = groups[i].kind; });
+  $('s-groups').replaceChildren(...groups.map((g) => {
+    const sec = document.createElement('section'); sec.className = 'group'; sec.id = `kind-${g.kind}`; sec.dataset.kind = g.kind;
+    sec.setAttribute('aria-labelledby', `kind-${g.kind}-h`);
+    const h = document.createElement('h4'); h.id = `kind-${g.kind}-h`;
+    h.append(document.createTextNode(`${kindName(g.kind)} · ${g.count} ${g.count === 1 ? t('findingOne') : t('findingsN')}`), o.chip(severityTone(g.worst), t(g.worst)));
+    sec.append(h);
+    if (!api.knowsKind(g.kind)) sec.append(text('p', t('kindUnknown'), 'meta'));
+    const host = document.createElement('div'); sec.append(host);
+    o.table(host, {
+      id: `f-${g.kind}`, label: kindName(g.kind), rows: g.findings, pageSize: 10,
+      rowKey: (f) => f.saleId, rowData: (f) => ({ sale: f.saleId, severity: f.severity, kind: f.kind }),
+      columns: [
+        { key: 'severity', label: t('severity'), sort: 'text', value: (f) => t(f.severity), render: (f) => o.chip(severityTone(f.severity), t(f.severity)) },
+        { key: 'saleId', label: t('bill'), sort: 'text' },
+        { key: 'productId', label: t('product'), render: (f) => (f.productId === undefined ? null : productLink(f.productId)) },
+        { key: 'differenceMinor', label: t('difference'), sort: 'number', align: 'end', value: (f) => (f.differenceMinor === undefined ? null : api.rupees(f.differenceMinor)) },
+        { key: 'detail', label: t('whatHappened') },
+        { key: 'ownerAction', label: t('whatToDo'), value: (f) => (f.ownerAction === '' ? null : f.ownerAction) },
+      ],
+      empty: { title: t('salesNone'), detail: t('salesEmptyDetail') },
+    });
+    return sec;
   }));
 }
 
+/** The attendance section: the counts, then the flagged marks as a register (U5). */
 function paintMarks() {
-  $('a-rows').replaceChildren(); $('a-counts').textContent = ''; $('a-covers').textContent = ''; $('a-cards').replaceChildren();
-  if (marksOutcome !== null) { $('a-status').textContent = api.outcomeWords(lang, marksOutcome); return; }
-  if (marks === null) return;
+  const o = office();
+  $('a-table').replaceChildren(); $('a-counts').textContent = ''; $('a-covers').textContent = ''; $('a-cards').replaceChildren();
+  if (marksOutcome !== null) {
+    $('a-status').textContent = api.outcomeWords(lang, marksOutcome);
+    if (o !== null) o.state($('a-table'), o.stateOf(marksOutcome), { title: api.outcomeWords(lang, marksOutcome), detail: t('notReadDetail') });
+    return;
+  }
+  if (marks === null) { $('a-status').textContent = ''; if (o !== null) o.state($('a-table'), 'loading'); return; }
   $('a-status').textContent = '';
   $('a-counts').textContent = `${marks.marksRead} ${t('marksRead')} ${marks.flagged.length}`;
   $('a-covers').textContent = u3('aCovers').split('{day}').join(marks.date).split('{time}').join(shopTime(marksAt));
-  office()?.cards($('a-cards'), [
+  if (o === null) { $('a-table').replaceChildren(...marks.flagged.map((m) => text('p', `${m.name} (${m.employeeId}) · ${t(m.kind)} · ${api.moment(m.at)} · ${m.flags.map((f) => api.flagWords(lang, f)).join(', ')}`, 'meta'))); return; }
+  o.cards($('a-cards'), [
     { label: u3('marks'), value: marks.marksRead, icon: 'list' },
     { label: u3('flagged'), value: marks.flagged.length, tone: marks.flagged.length > 0 ? 'pending' : undefined, icon: 'triangle-alert' },
   ]);
-  if (marks.flagged.length === 0) { $('a-rows').append(emptyItem(t('attNone'), $('a-covers').textContent)); return; }
-  $('a-rows').replaceChildren(...marks.flagged.map((m) => {
-    const li = document.createElement('li'); li.className = 'tone-degraded';
-    li.dataset.mark = m.markId; li.dataset.person = m.employeeId; li.dataset.flags = m.flags.join(' ');
-    const head = document.createElement('div'); head.className = 'head';
-    head.append(text('h4', `${m.name} (${m.employeeId})`), text('span', `${t(m.kind)} · ${api.moment(m.at)}`, 'meta'));
-    li.append(head, ...m.flags.map((f) => text('p', `⚠ ${api.flagWords(lang, f)}`, 'chip')));
-    if (m.flaggedOnArrival.length > 0) li.append(text('p', `${t('flaggedOnArrival')} ${m.flaggedOnArrival.map((f) => api.flagWords(lang, f)).join(', ')}`, 'meta'));
-    return li;
-  }));
+  if (marks.flagged.length === 0) { o.state($('a-table'), 'empty', { title: t('attNone'), detail: t('attEmptyDetail') }); return; }
+  o.table($('a-table'), {
+    id: 'a-flags', label: t('attendanceH'), rows: marks.flagged, pageSize: 10,
+    rowKey: (m) => m.markId, rowData: (m) => ({ mark: m.markId, person: m.employeeId, flags: m.flags.join(' ') }),
+    columns: [
+      { key: 'name', label: t('person'), sort: 'text', value: (m) => `${m.name} (${m.employeeId})` },
+      { key: 'kind', label: t('mark'), sort: 'text', value: (m) => t(m.kind) },
+      { key: 'at', label: t('at'), sort: 'text', value: (m) => api.moment(m.at) },
+      { key: 'flags', label: t('flags'), render: (m) => { const w = document.createElement('span'); w.className = 'sre-chips'; for (const f of m.flags) w.append(o.chip('pending', api.flagWords(lang, f))); return w; } },
+      { key: 'flaggedOnArrival', label: t('flaggedOnArrival'), value: (m) => (m.flaggedOnArrival.length === 0 ? null : m.flaggedOnArrival.map((f) => api.flagWords(lang, f)).join(', ')) },
+    ],
+    empty: { title: t('attNone'), detail: t('attEmptyDetail') },
+  });
 }
 
 function paint() {

@@ -63,7 +63,14 @@ describe('the Audit log session', () => {
     const s = createAuditLogSession({ viewer: { userId: 'u-o', permissions: ['audit.retention.read'] }, fetch: ho.fetch });
     expect(await s.search({ from: '1 Nov' })).toEqual({ result: 'invalid', why: 'badDate' });
     await s.search({ actorId: ' u-m ', until: '2026-10-31' });
-    expect(ho.sent.map((x) => x.path)).toEqual(['/v1/audit/trail?actorId=u-m&until=2026-10-31T23%3A59%3A59.999Z']);
+    // U7 (13 Nov 2026): a shop day is Asia/Kolkata's — 31 Oct runs from 30 Oct 18:30 UTC up to (not including) 31 Oct
+    // 18:30 UTC, the trail's exclusive `until`. The old end, 31 Oct 23:59:59.999Z, reached five and a half hours into
+    // 1 Nov at the shop, and a "from" sent as the bare date started at 05:30 in the shop, missing the night before.
+    await s.search({ from: '2026-10-31' });
+    expect(ho.sent.map((x) => x.path)).toEqual([
+      '/v1/audit/trail?actorId=u-m&until=2026-10-31T18%3A30%3A00.000Z',
+      '/v1/audit/trail?from=2026-10-30T18%3A30%3A00.000Z',
+    ]);
     expect(ho.sent.every((x) => x.method === 'GET')).toBe(true);
     expect(await createAuditLogSession({ viewer: { userId: 'u-m', permissions: [] }, fetch: ho.fetch }).verify()).toEqual({ result: 'invalid', why: 'cannotRead' });
     expect(auditRowOf({ sequence: 1 })).toBeUndefined();

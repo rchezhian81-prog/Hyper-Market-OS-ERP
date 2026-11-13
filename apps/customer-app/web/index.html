@@ -149,6 +149,12 @@
       #scan-video { width: 100%; max-height: 240px; background: var(--panel-2); border-radius: 12px; }
       input[type='date'], input[type='time'], input[type='number'], select { min-height: var(--tap); font-size: 17px; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; }
       .row button { min-width: var(--tap); padding: 0 12px; }
+      /* U6: category chips — 48px, pressed state said in words and shape, a child indented under its parent. */
+      .cats { display: flex; flex-wrap: wrap; gap: 8px; }
+      .cats .cat { min-height: var(--tap); padding: 0 14px; border-radius: 24px; background: var(--panel); border: 1px solid var(--line); font-size: 15px; }
+      .cats .cat.child { font-weight: 500; margin-left: 12px; }
+      .cats .cat[aria-pressed='true'] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+      #results-heading { margin: 12px 0 6px; }
     </style>
   </head>
   <body>
@@ -207,6 +213,14 @@
           <button id="scan-stop" class="wide" type="button">Stop scanning</button>
         </div>
         <p class="note" id="scan-say" role="status" aria-live="polite"></p>
+        <!-- U6 · M20-FR-01 · §27 "Customer: Category": browse the catalogue this phone holds by category — no network. -->
+        <section id="browse-section" aria-labelledby="browse-title">
+          <h2 id="browse-title">Browse by category</h2>
+          <p class="empty" id="browse-none" hidden>—</p>
+          <div class="cats" id="browse"></div>
+          <button id="browse-all" class="wide" type="button" hidden>Show everything</button>
+        </section>
+        <h2 id="results-heading" hidden>—</h2>
         <div class="rows" id="results"></div>
         <p class="empty" id="results-empty" hidden>—</p>
 
@@ -365,6 +379,13 @@
         <h1 id="account-title">My account</h1>
         <p class="note" id="account-say" role="status" aria-live="polite"></p>
 
+        <!-- U6 · M17 · §27 "Customer: Loyalty": my points as head office holds them; spent at the till, never from here. -->
+        <h2 id="points-title">My points</h2>
+        <p class="say" id="points-card">—</p>
+        <p class="note" id="points-tier" hidden></p>
+        <p class="note" id="points-due" hidden></p>
+        <p class="note" id="points-spend" hidden></p>
+
         <h2 id="repeat-orders-title">My repeat orders</h2>
         <p class="lead" id="repeat-orders-lead">The basket you have now, placed again on the days you choose. You pay in the app each time; pause or cancel whenever you like.</p>
         <div class="rows" id="repeat-orders"></div>
@@ -409,7 +430,7 @@
         <div class="pick" id="occasion-kind" role="radiogroup" aria-labelledby="occasions-title"></div>
         <label for="occasion-day" id="occasion-day-label">The day</label>
         <input id="occasion-day" type="date" />
-        <div class="pick"><input type="checkbox" id="occasion-yes" /> <label for="occasion-yes" id="occasion-yes-label">Yes, the shop may keep this day to greet me</label></div>
+        <div class="pick"><label for="occasion-yes"><input type="checkbox" id="occasion-yes" /> <span id="occasion-yes-label">Yes, the shop may keep this day to greet me</span></label></div>
         <button id="occasion-save" class="wide" type="button">Save the day</button>
         <p class="note" id="occasion-say" role="status" aria-live="polite"></p>
 
@@ -423,7 +444,7 @@
         </dl>
         <div class="rows" id="referrals"></div>
         <label for="referral-claim-code" id="referral-claim-label">A friend gave me a code</label>
-        <input id="referral-claim-code" autocomplete="off" autocapitalize="characters" maxlength="12" />
+        <input id="referral-claim-code" type="text" autocomplete="off" autocapitalize="characters" maxlength="12" />
         <button id="referral-claim" class="wide" type="button">Use my friend's code</button>
         <p class="note" id="referral-say" role="status" aria-live="polite"></p>
 

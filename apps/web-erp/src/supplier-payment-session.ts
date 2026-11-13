@@ -11,6 +11,10 @@
 //      typed again. Head office refuses — nothing recorded — a held supplier, a bank payment with no verified account, a
 //      shared account, a payment above the balance owed, or a person who raised, received or matched the order it pays.
 // Nothing is read on open.
+//
+// U7 · OB-724 (owner, in writing: B): the same section sits on the SUPPLIER BILLS page, and a payment may name the BILLS it
+// settles (each this supplier's own; head office refuses another's by name). Recording is money, so the page asks the
+// confirm sheet first. The bank reference recorded here is what Bank reconciliation matches the statement's debit line by.
 
 import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
 import { signedPaiseOf, rupees } from './settlement-bank-session';
@@ -29,6 +33,9 @@ export const SUPPLIER_PAYMENT_COPY = {
     needPayment: 'Type the supplier, the amount in rupees, the day it was paid, how, and its reference.',
     nobody: 'Nobody is signed in on this screen.', cannotPay: 'Recording a supplier payment needs the permission to pay suppliers.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was asked or recorded.',
+    settles: 'Bills it settles (optional — bill numbers, separated by commas)', settlesShown: 'settles {bills}',
+    confirmTitle: '{amount} paid to {supplier} will be recorded', confirmDetail: 'Paid on {day} by {method}, reference {ref}. What the shop owes the supplier falls by this amount, and the bank statement line with this reference is matched to it on Bank reconciliation. A payment is kept for good; a mistake is corrected by a new entry.',
+    confirmAuthority: 'You may pay suppliers; {approver} approved this exact payment.', confirmLabel: 'Record the payment', notConfirmed: 'Not confirmed — nothing was recorded.',
   },
   ta: {
     payH: 'சப்ளையருக்குச் செலுத்தியதைப் பதி', payLede: 'இது சப்ளையருக்குப் பணம் செலுத்தப்பட்டதைப் பதிவு செய்கிறது — எந்தப் பணத்தையும் அனுப்பாது. செலுத்தலுக்கு இரண்டாவது நபர் தேவை: இங்கே கேளுங்கள், சப்ளையர்களுக்குச் செலுத்த அனுமதி உள்ள வேறொருவர் தமது ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் அளிக்கிறார், பின்னர் இங்கே பதியுங்கள். ஒப்புதல் அளிக்கப்பட்டதே சரியாகப் பதியப்படும்.',
@@ -40,6 +47,9 @@ export const SUPPLIER_PAYMENT_COPY = {
     needPayment: 'சப்ளையர், ரூபாயில் தொகை, செலுத்திய நாள், எப்படி, அதன் குறிப்பு ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotPay: 'சப்ளையர் செலுத்தலைப் பதிய சப்ளையர்களுக்குச் செலுத்தும் அனுமதி தேவை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் கேட்கப்படவில்லை, பதியப்படவில்லை.',
+    settles: 'இது தீர்க்கும் பில்கள் (விருப்பம் — பில் எண்கள், காற்புள்ளியால் பிரிக்கவும்)', settlesShown: '{bills} பில்களைத் தீர்க்கிறது',
+    confirmTitle: '{supplier}க்குச் செலுத்திய {amount} பதியப்படும்', confirmDetail: '{day} அன்று {method} மூலம் செலுத்தப்பட்டது, குறிப்பு {ref}. கடை சப்ளையருக்குச் செலுத்த வேண்டியது இந்தத் தொகையால் குறையும்; இந்தக் குறிப்புள்ள வங்கி அறிக்கை வரி வங்கி சரிக்கட்டல் பக்கத்தில் இதனுடன் பொருத்தப்படும். செலுத்தல் நிரந்தரமாக வைக்கப்படும்; தவறு புதிய பதிவால் திருத்தப்படும்.',
+    confirmAuthority: 'நீங்கள் சப்ளையர்களுக்குச் செலுத்தலாம்; இந்தச் செலுத்தலுக்கு {approver} ஒப்புதல் அளித்தார்.', confirmLabel: 'செலுத்தலைப் பதி', notConfirmed: 'உறுதிப்படுத்தவில்லை — எதுவும் பதியப்படவில்லை.',
   },
 } as const;
 
@@ -50,7 +60,14 @@ export function supplierPaymentWords(lang: Lang, key: string, fill?: Readonly<Re
 export const supplierPaymentOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => supplierPaymentWords(lang, k), out);
 export { rupees };
 
-export interface PaymentForm { readonly supplierId: string; readonly amountRupees: string; readonly paidOn: string; readonly method: string; readonly reference: string }
+export interface PaymentForm {
+  readonly supplierId: string; readonly amountRupees: string; readonly paidOn: string; readonly method: string; readonly reference: string;
+  /** U7 · OB-724 — the bills it settles, as typed: bill numbers separated by commas (or spaces). Optional. */
+  readonly settles?: string;
+}
+
+/** The bill numbers a person typed, trimmed, without blanks or repeats, in the order typed. Pure. */
+export const billsOf = (typed: string | undefined): readonly string[] => [...new Set((typed ?? '').split(/[,\s]+/).map((x) => x.trim()).filter((x) => x !== ''))];
 export interface PaymentAsk { readonly requestId: string; readonly kind: string; readonly subjectRef: string; readonly status: string; readonly details: Record<string, unknown>; readonly valueMinor: number | null; readonly decidedBy?: string }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -61,7 +78,8 @@ const ADVANCE_PREFIX = 'advance:';
 export function paymentBody(f: PaymentForm): Record<string, unknown> | null {
   const amountMinor = signedPaiseOf(f.amountRupees);
   if (f.supplierId.trim() === '' || amountMinor === null || amountMinor <= 0 || !DAY.test(f.paidOn.trim()) || !(PAY_METHODS as readonly string[]).includes(f.method) || f.reference.trim() === '') return null;
-  return { amountMinor, paidOn: f.paidOn.trim(), method: f.method, reference: f.reference.trim() };
+  const settles = billsOf(f.settles);
+  return { amountMinor, paidOn: f.paidOn.trim(), method: f.method, reference: f.reference.trim(), ...(settles.length === 0 ? {} : { settles }) };
 }
 
 type Why = 'nobody' | 'cannotPay' | 'needPayment';

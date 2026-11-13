@@ -15,24 +15,11 @@ let measure = 'sales';
 let heat = null;
 const t = (k) => (api === null ? k : api.words(lang, k));
 
-// U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
-// while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
 const wordsIn = (l, k) => (api === null ? k : api.words(l, k)); // the page's own words, for either language (null off the box)
-const shopDates = new Map();
-/** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
-function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
-}
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
-
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const dateOf = (id) => { const o = office(); return o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : ($(id)?.value ?? ''); };
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 for (const [id, name] of [['m-sales', 'indian-rupee'], ['m-margin', 'percent'], ['show', 'layout-grid']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
@@ -68,7 +55,7 @@ function drawMap() {
     const show = (ev) => {
       const tip = $('tip');
       tip.replaceChildren(text('strong', api.areaName(lang, a)), document.createElement('br'), text('span', `${t(measure)}: ${api.figureWords(lang, a, measure)}`), document.createElement('br'), text('span', `${t('sqft')}: ${a.squareFeet}`));
-      for (const n of api.areaNotes(lang, a, measure)) { tip.append(document.createElement('br'), text('span', `⚠ ${n}`)); }
+      for (const n of api.areaNotes(lang, a, measure)) { tip.append(document.createElement('br'), text('span', n)); }
       const r = box.getBoundingClientRect();
       tip.style.left = `${Math.max(8, Math.min(window.innerWidth - 270, (ev.clientX ?? r.left + r.width / 2) + 12))}px`;
       tip.style.top = `${(ev.clientY ?? r.top + r.height / 2) + 12}px`;
@@ -88,19 +75,28 @@ function drawLegend() {
   legend.append(text('span', t('legendHigh')), swatch('unknown'), text('span', t('legendUnknown')));
 }
 
+/** Every area as a row of the chrome's register: the figure, the heat as a number (or "Not known"), the notes in words. */
 function drawTable() {
-  $('th-fig').textContent = t(measure);
-  const rows = [...heat.areas].sort((a, b) => (b.heat ?? -1) - (a.heat ?? -1) || (a.areaId < b.areaId ? -1 : 1)).map((a) => {
-    const tr = document.createElement('tr');
-    tr.dataset.area = a.areaId;
-    const notes = api.areaNotes(lang, a, measure);
-    tr.append(text('td', api.areaName(lang, a)), text('td', String(a.squareFeet), 'num'), text('td', api.figureWords(lang, a, measure), 'num fig'),
-      text('td', a.heat === null ? `○ ${t('notKnown')}` : `${a.heat}`, 'num heat'), text('td', notes.length === 0 ? '' : notes.map((n) => `⚠ ${n}`).join(' · '), 'note'));
-    return tr;
+  const o = office(); if (!o) return;
+  const rows = [...heat.areas].sort((a, b) => (b.heat ?? -1) - (a.heat ?? -1) || (a.areaId < b.areaId ? -1 : 1));
+  const both = (k) => ({ en: wordsIn('en', k), ta: wordsIn('ta', k) });
+  const span = (cls, text) => { const x = document.createElement('span'); x.className = cls; x.textContent = text; return x; };
+  o.table($('areas'), {
+    id: 'areas', label: both('mapLabel'), pageSize: 25, sortable: true, search: false, count: false, rows,
+    rowKey: (a) => a.areaId, rowData: (a) => ({ area: a.areaId }),
+    columns: [
+      { key: 'area', label: both('thArea'), value: (a) => api.areaName(lang, a) },
+      { key: 'sqft', label: both('thSqft'), sort: 'number', align: 'end', value: (a) => a.squareFeet },
+      { key: 'fig', label: both(measure), sort: false, align: 'end', value: (a) => api.figureWords(lang, a, measure), render: (a) => span('fig', api.figureWords(lang, a, measure)) },
+      { key: 'heat', label: both('thHeat'), sort: 'number', align: 'end', value: (a) => a.heat, render: (a) => span('heat', a.heat === null ? o.words('notKnown') : String(a.heat)) },
+      { key: 'note', label: both('thNote'), sort: false, value: (a) => api.areaNotes(lang, a, measure).join(' · '), render: (a) => { const notes = api.areaNotes(lang, a, measure); const cell = document.createElement('span'); cell.className = 'note'; for (const n of notes) cell.append(o.chip('degraded', n)); return cell; } },
+    ],
   });
-  $('areas').querySelector('tbody').replaceChildren(...rows);
   const off = heat.notOnFloorPlan;
-  $('off-plan').textContent = off.products.length === 0 ? `✓ ${t('offPlanNone')}` : `⚠ ${t('offPlan')}: ${off.products.join(', ')} (${api.rupees(off.salesMinor)})`;
+  const offPlan = $('off-plan');
+  offPlan.replaceChildren(off.products.length === 0
+    ? o.chip('ok', t('offPlanNone'))
+    : o.chip('degraded', `${t('offPlan')}: ${off.products.join(', ')} (${api.rupees(off.salesMinor)})`));
 }
 
 
@@ -117,7 +113,6 @@ function ownStore(inputId) {
   note.textContent = `${me.storeName ?? me.storeId} — ${t('yourStore')}`;
 }
 function paint() {
-  repaintShopDates();
   ownStore('store');
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['store-l', 'store'], ['from-l', 'from'], ['to-l', 'to'], ['m-sales-text', 'sales'], ['m-margin-text', 'margin'], ['show-text', 'show'], ['th-area', 'area'], ['th-sqft', 'sqft'], ['th-heat', 'heat'], ['th-note', 'note']]) { const n = $(id); if (n) n.textContent = t(k); }
@@ -176,4 +171,4 @@ function whyDisabled(btn, why) {
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
 // the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
-document.addEventListener('sre:chrome', () => { shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); }, { once: true });
+document.addEventListener('sre:chrome', () => { const o = office(); o.shopDate('from', { en: wordsIn('en', 'from'), ta: wordsIn('ta', 'from') }); o.shopDate('to', { en: wordsIn('en', 'to'), ta: wordsIn('ta', 'to') }); paint(); });

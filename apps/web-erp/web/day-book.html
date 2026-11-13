@@ -40,19 +40,13 @@
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .status .icon { display:inline-flex; width:1.4em; justify-content:center; }
       .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       .row .lines { font-size: var(--fs-sm); color:var(--muted); display:grid; gap:2px; font-variant-numeric:tabular-nums; }
       .row .lines span { display:flex; justify-content:space-between; gap:12px; }
-      table.accounts { width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; font-variant-numeric:tabular-nums; }
-      table.accounts th, table.accounts td { padding:8px 12px; text-align:right; border-bottom:1px solid var(--line); font-size:14px; }
-      table.accounts th:first-child, table.accounts td:first-child { text-align:left; }
-      table.accounts th { color:var(--muted); font-weight:600; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon { font-size:18px; }
+      p.result .icon { display:inline-flex; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
-      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.muted { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
     </style>
@@ -93,18 +87,15 @@
       <ul class="rows" id="journals" aria-label="Journals posted for the day"></ul>
 
       <h3 id="accounts-heading" hidden></h3>
-      <div class="sre-scroll-x">
-      <table class="accounts" id="accounts" aria-label="Accounts moved by the day" hidden>
-        <thead><tr><th id="th-account"></th><th id="th-debit"></th><th id="th-credit"></th><th id="th-balance"></th></tr></thead>
-        <tbody id="accounts-body"></tbody>
-      </table>
-      </div>
+      <!-- U5 (G17): the accounts the day moved, as the chrome's shared register (window.sreOffice.table). -->
+      <div id="accounts" role="region" aria-label="Accounts moved by the day" hidden></div>
 
       <h3 id="exceptions-heading" hidden></h3>
       <ul class="rows" id="exceptions" aria-label="Exceptions on the day"></ul>
       <p class="muted" id="no-exceptions" hidden></p>
 
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <!-- U5: an empty / refused day is the chrome's shared state (window.sreOffice.state), never a plain line with a glyph. -->
+      <div id="state" hidden></div>
 
       <!-- W4 · WF-05 (M23-FR-01): supplier bills in the books — matched bills, debit notes and payments, posted through the
            accountant's own rules (nothing typed), each journal listed and, per supplier, the register beside the books.
@@ -127,7 +118,8 @@
         <h3 id="evidence-heading"></h3>
         <p class="muted" id="evidence-lead"></p>
         <ul class="rows" id="evidence-rows" aria-label="Closes of the day"></ul>
-        <p class="result" id="evidence-state" hidden role="status" aria-live="polite"><span class="icon" id="evidence-state-icon" aria-hidden="true"></span><span id="evidence-state-text"></span></p>
+        <!-- U5: no close yet = the shared empty state; a download's outcome = a result line with the one icon set. -->
+        <div id="evidence-state" hidden role="status" aria-live="polite"></div>
       </section>
     </main>
 

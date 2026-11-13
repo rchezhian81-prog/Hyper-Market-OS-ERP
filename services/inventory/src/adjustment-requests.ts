@@ -286,6 +286,62 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
       },
     },
     {
+      // U6 (UI/UX gap audit, 7 Nov 2026 · §27 Inventory "Adjustment" · M08-FR-03): an OFFICE person asks for a correction
+      // directly — the same request the handheld raises, raised here in the person's own session instead of relayed. The
+      // raiser is `ctx.userId` (known and present, so no `requester_*` flag applies — the kernel checked their authority);
+      // the value is still head office's own cost (never typed); it waits PENDING for a DIFFERENT person to decide it
+      // (§28) exactly like a relayed one. Nothing moves stock here.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/adjustment-requests/:requestId',
+      permission: 'inventory.movement.append', idempotent: true,
+      handler: async (ctx) => {
+        const requestId = (ctx.params['requestId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (requestId === '' || !isStr(b['productId']) || !isStr(b['locationId']) || !isStr(b['uom'])
+          || !isSignedNonZeroInt(b['deltaMinor']) || !isAdjustmentReason(b['reasonCode'])
+          || (b['note'] !== undefined && b['note'] !== null && typeof b['note'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_an_adjustment_request',
+            whatHappened: `A correction needs productId, locationId, uom, a whole non-zero deltaMinor (positive = found more, negative = missing or damaged) and a reasonCode from ${ADJUSTMENT_REASON_CODES.join(' / ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Fill in the product, the place, the quantity and the reason, then ask again. Nothing was changed.',
+          });
+        }
+        await assertLocationInScope(ctx, b['locationId'], deps.locationBranches); // PA-01-r1: the person's own stores only
+        const prior = await deps.request(ctx.tenantId, requestId);
+        if (prior !== undefined) {
+          // A retry after a lost reply (§31.1): one record, whatever state it has reached since.
+          return { status: 200, body: { requestId, recorded: true, alreadyRecorded: true, status: prior.status, valueMinor: prior.valueMinor, flags: prior.governanceFlags } };
+        }
+        const flags: AdjustmentRequestFlag[] = [];
+        const unitValue = await deps.unitValueMinor(ctx.tenantId, b['productId']);
+        if (unitValue === undefined) flags.push('value_unknown');
+        const at = deps.now();
+        const record: AdjustmentRequestRecord = {
+          requestId, productId: b['productId'], locationId: b['locationId'], binId: null,
+          deltaMinor: b['deltaMinor'], uom: b['uom'], reasonCode: b['reasonCode'],
+          note: typeof b['note'] === 'string' && b['note'].trim() !== '' ? b['note'].trim() : null,
+          valueMinor: valueAtUnitCost(Math.abs(b['deltaMinor']), b['uom'], unitValue ?? 0), currency: 'INR',
+          requestedBy: ctx.userId, at, storeId: ctx.branchId ?? null, source: 'office',
+          relayedBy: ctx.userId, recordedAt: at, governanceFlags: flags,
+          status: 'pending', decidedBy: null, decidedAt: null, decisionReason: null, movementId: null,
+        };
+        await deps.recordRequest(ctx.tenantId, record);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'adjustment.request', objectType: 'stock_adjustment_request', objectId: requestId,
+          at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: {
+            productId: record.productId, locationId: record.locationId, binId: '', deltaMinor: String(record.deltaMinor), uom: record.uom,
+            reasonCode: record.reasonCode, valueMinor: String(record.valueMinor), relayedBy: ctx.userId, source: 'office', storeId: record.storeId ?? '',
+            flags: flags.join(','), status: 'pending',
+          },
+          reason: record.reasonCode, correlationId: requestId,
+        });
+        // 202: recorded and waiting for a different person. Nothing has moved.
+        return { status: 202, body: { requestId, recorded: true, status: 'pending', valueMinor: record.valueMinor, flags } };
+      },
+    },
+    {
       api: 'API-04', method: 'GET', path: '/v1/inventory/adjustment-requests',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {

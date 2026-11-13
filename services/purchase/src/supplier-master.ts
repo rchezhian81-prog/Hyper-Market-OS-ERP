@@ -429,6 +429,17 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           const conflict = firstSegregationConflict(await deps.segregation.ordersPaidBy(t, supplierId), 'payment', [ctx.userId, approvedBy]);
           if (conflict !== undefined) throw segregationRefusal(conflict);
         }
+        // U7 · OB-724: the bills this payment settles, when named — each must be this supplier's own bill on the account;
+        // refused before the approval is spent, so nothing is recorded and the approval stays usable.
+        const settles = Array.isArray(b['settles']) ? [...new Set((b['settles'] as unknown[]).filter(isStr).map((x) => x.trim()))] : [];
+        const strangers = settles.filter((id) => !account.invoices.some((i) => i.invoiceId === id));
+        if (b['settles'] !== undefined && (!Array.isArray(b['settles']) || strangers.length > 0)) {
+          throw apiError(422, {
+            code: 'bill_not_this_suppliers',
+            whatHappened: strangers.length > 0 ? `Bill ${strangers.join(', ')} is not a bill of supplier ${supplierId} on the account.` : 'The bills a payment settles are a list of bill numbers.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Pick the bills from this supplier\'s list. Nothing was recorded and the approval was not used.',
+          });
+        }
         // R3 · A24: the TDS this payment carries. A payee flagged "TDS applicable" with no section (or a section not on the
         // list) is refused here — before the approval is spent, so nothing is recorded and the approval stays usable.
         const tds = deps.withholding === undefined ? undefined
@@ -447,6 +458,7 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         const payment: SupplierPayment = {
           paymentId, supplierId, amountMinor: b['amountMinor'], currency: 'INR', paidOn: b['paidOn'], method, reference: b['reference'].trim(),
           recordedBy: ctx.userId, recordedAt: now, approvedBy, approvedAt: now,
+          ...(settles.length === 0 ? {} : { settles }),
           ...(tds?.outcome === 'deducted' ? { tds: { section: tds.section, rateBps: tds.rateBps, baseMinor: tds.baseMinor, tdsMinor: tds.tdsMinor, netMinor: tds.netMinor } } : {}),
         };
         await deps.recordPayment(t, payment);

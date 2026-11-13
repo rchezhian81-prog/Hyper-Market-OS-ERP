@@ -232,7 +232,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U2: the buying and stock pages pick by n
     await pack.page.fill('#q-branch', '');
     await pickByName(pack.page, '#q-branch-pick', 'hyper', /SRE Hyper Market/);
     expect(await pack.page.inputValue('#q-branch')).toBe(S1);
-    expect(await pack.page.textContent('#q-branch-name')).toBe(`SRE Hyper Market (${S1})`);
+    expect(await pack.page.textContent('#q-branch-name'), 'U5: the chrome\'s pickable says the NAME beside the field; the id stays in the field').toBe('SRE Hyper Market');
     expect(await auditPage(pack.page)).toEqual([]);
     expect(pack.errors).toEqual([]);
     await pack.context.close();

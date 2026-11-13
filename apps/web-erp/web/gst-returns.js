@@ -11,10 +11,10 @@ let lang = 'en';
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
 function sampleSession() {
   const CHROME = {
-    en: { title: 'GST returns', lead: 'Sample filing periods. Connect the store computer to see your own returns.', langName: 'தமிழ்',
+    en: { title: 'GST returns', lead: 'Sample filing periods. Connect the store computer to see your own returns.', langName: 'தமிழ்', tcsLine: 'TCS (section 52): not applicable: own goods only',
       attentionCount: 'need attention', allClear: 'Every return is settled — nothing needs attention.',
       sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
-    ta: { title: 'GST வருமானங்கள்', lead: 'மாதிரி தாக்கல் காலங்கள். உங்கள் சொந்த வருமானங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
+    ta: { title: 'GST வருமானங்கள்', tcsLine: 'TCS (பிரிவு 52): பொருந்தாது: கடையின் சொந்தப் பொருட்கள் மட்டும்', lead: 'மாதிரி தாக்கல் காலங்கள். உங்கள் சொந்த வருமானங்களைப் பார்க்க கடை கணினியை இணைக்கவும்.', langName: 'English',
       attentionCount: 'கவனம் தேவை', allClear: 'ஒவ்வொரு வருமானமும் தீர்க்கப்பட்டது.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
@@ -62,7 +62,7 @@ function toneMark(holder, tone, glyph) {
  *  portal reference and the people — each in its own column under the register's captions. */
 function rowNode(r) {
   const li = document.createElement('li');
-  li.className = `row tone-${r.status.tone}`;
+  li.className = 'row'; li.dataset.tone = r.status.tone;
 
   const period = document.createElement('span'); period.className = 'period'; period.textContent = r.period;
   const status = document.createElement('span');
@@ -180,6 +180,8 @@ function paint() {
   // OB-205: the page's one heading (the header line) speaks the reader's language too.
   el('who').firstChild.textContent = `${t('title')} `;
   el('lead').textContent = t('lead');
+  // R4 Lane 2 · A26 · OB-211: the shop sells its own goods only, so no TCS under CGST s.52 arises — said in the reader's language.
+  if (el('tcs-line')) el('tcs-line').textContent = t('tcsLine');
   el('whoami').textContent = window.gstReturnsData?.userId ?? '';
   el('lang').textContent = t('langName');
   const filterWords = document.createElement('span');
@@ -231,9 +233,10 @@ function paint() {
   el('register').hidden = shown.length === 0;
   if (shown.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
-    el('state-text').textContent = view.screenState.label;
+    // U5: the shared state part — no period yet / not permitted / head office unreachable, as word + icon.
+    const o = window.sreOffice; const tone = view.screenState.tone;
+    if (o && typeof o.state === 'function') o.state(state, tone === 'error' ? 'error' : tone === 'degraded' ? 'offline' : 'empty', { title: view.screenState.label, detail: '' });
+    else state.textContent = view.screenState.label;
   } else {
     state.hidden = true;
   }

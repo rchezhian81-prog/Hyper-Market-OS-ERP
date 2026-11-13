@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { beforeFixture } from '../support/before-fixture';
+import { expectChromePickableKeepsTheRules, expectNoFallbackSwitchedOff, usesChromePickable } from '../support/picker-pins';
 
 /**
  * **U2 · G5 of the UI/UX gap audit (2 Nov 2026): on the HARD buying and stock pages a thing is PICKED by name, never
@@ -21,7 +22,7 @@ const before = (path: string): string => beforeFixture('be62d0a', path);
 
 const PAGES = [
   { page: 'buying.js', pickers: ["pickerBeside(el('po-supplier'), 'supplier'", "pickerBeside(el('po-product'), 'product'", "pickerBeside(el('po-store'), 'store'"], words: 'web/buying.js', store: "el('po-store').value = id" },
-  { page: 'count-plans.js', pickers: ["pickerBeside($('place'), 'place'", "kind: 'product'"], words: 'src/count-plans-session.ts', store: 'scope: { storeId: myStore() }', prefills: false },
+  { page: 'count-plans.js', pickers: ["pickerBeside($('place'), 'place'", "kind: 'product'"], words: 'src/count-plans-session.ts', store: 'scope: () => ({ storeId: myStore() })', prefills: false },
   { page: 'packaging.js', pickers: ["pickerBeside($('q-branch'), 'store'", "pickerBeside($('m-branch'), 'store'"], words: 'src/packaging-session.ts', store: "for (const f of ['q-branch', 'm-branch'])" },
   { page: 'demand-events.js', pickers: ["pickerBeside($('store'), 'store'", "pickerBeside($('product'), 'product'", "kind: 'product'"], words: 'src/demand-events-session.ts', store: "$('store').value = id" },
   { page: 'scrap.js', pickers: ["pickerBeside($('v-branch'), 'store'", "pickerBeside($('s-branch'), 'store'"], words: 'src/scrap-session.ts', store: "for (const f of ['v-branch', 's-branch'])" },
@@ -33,11 +34,18 @@ describe('U2 · G5: the HARD pages pick by name', () => {
   it.each(PAGES)('$page opens the shared picker for each id it used to ask typed, and fills in the person\'s store', ({ page, pickers, store, ...rest }) => {
     const prefills = (rest as { prefills?: boolean }).prefills;
     const js = web(page);
-    for (const call of pickers) expect(js, `${page} lacks ${call}`).toContain(call);
+    // Each field is on the picker — by the page's own lines (U2) or handed to the chrome's one copy (U5, `sreOffice.pickable`).
+    for (const call of pickers) {
+      const viaChrome = call.replace(/^pickerBeside\(/, 'pickable(');
+      expect(js.includes(call) || js.includes(viaChrome), `${page} lacks ${call}`).toBe(true);
+    }
     // the picker writes into the field the page already sends, with the typed code left as the fallback
-    expect(js).toMatch(/if \(!office \|\| typeof office\.pick !== 'function'\) \{[^}]*pickUnavailable/);
-    expect(js).toContain('allowCode: true');
-    expect(js).toContain('input.value = picked.id;');
+    if (usesChromePickable(js)) { expectChromePickableKeepsTheRules(); expectNoFallbackSwitchedOff(js, page); }
+    else {
+      expect(js).toMatch(/if \(!office \|\| typeof office\.pick !== 'function'\) \{[^}]*pickUnavailable/);
+      expect(js).toContain('allowCode: true');
+      expect(js).toContain('input.value = picked.id;');
+    }
     expect(js).toContain(store);
     // a page that fills a field in waits for the chrome too (it may load after the page); the place picker's scope is read at pick time
     if (prefills !== false) expect(js).toContain("document.addEventListener('sre:chrome'");

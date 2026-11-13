@@ -3,6 +3,11 @@
 // Nothing is read on open; every write is a click. Every word has a Tamil twin; every button its icon.
 
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
 const api = window.scrap ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, review: false, record: false };
@@ -23,28 +28,12 @@ async function confirmFirst(spec) {
 // A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
 // the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
 // list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
-const pickers = [];
 function pickerBeside(input, kind, titleKey, extra = {}) {
-  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
-  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
-  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
-  host.after(btn, name);
-  btn.addEventListener('click', async () => {
-    const office = window.sreOffice;
-    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
-    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
-    if (!picked || picked.ok !== true) return;
-    input.value = picked.id;
-    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
-  pickers.push(btn);
-  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
-  return btn;
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickerBeside(input, kind, titleKey, extra), { once: true }); return; }
+  o.pickable(input, kind, { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, typeof extra === 'function' ? extra() : extra);
 }
-const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+
 /** U2 · G5: the person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
 function myStore() {
   const office = window.sreOffice;
@@ -59,23 +48,12 @@ function prefillBranches() {
 
 // U2 · G14: the review's two days are the chrome's shared date field (dd/mm/yyyy, the shop's calendar; read back as ISO);
 // until the chrome is there the plain boxes stay (ISO typed), so the page is never a dead end.
-function dateable(inputId, labelKey, value) {
-  const input = $(inputId);
-  if (!input || input.dataset.dateable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, labelKey, value), { once: true }); return; }
-  const holder = input.closest('label') ?? input;
-  const field = office.dateField({ id: inputId, label: { en: api.words('en', labelKey), ta: api.words('ta', labelKey) }, required: true, ...(value ? { value } : {}) });
-  if (!field) return;
-  field.dataset.dateable = 'on';
-  holder.replaceWith(field);
+function dateable(inputId, labelKey) {
+  const o = sreO();
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, labelKey), { once: true }); return; }
+  o.shopDate(inputId, { en: api.words('en', labelKey), ta: api.words('ta', labelKey) }, { required: true });
 }
-const dateOf = (fieldId) => {
-  const office = window.sreOffice;
-  const f = $(fieldId);
-  if (office && typeof office.dateValue === 'function' && f && f.closest('.sre-date')) return office.dateValue(fieldId) ?? '';
-  return f ? f.value : '';
-};
+const dateOf = (fieldId) => { const o = sreO(); return o && typeof o.dateOf === 'function' ? (o.dateOf(fieldId) ?? '') : ($(fieldId)?.value ?? ''); };
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, act, iconName, quiet) {
@@ -92,21 +70,26 @@ function fillSelect(id, values, prefix) {
   sel.replaceChildren(...values.map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = t(`${prefix}${v}`); return o; }));
   if (keep) sel.value = keep;
 }
-function figure(label, value) { const s = document.createElement('span'); s.append(text('small', label), text('b', value)); return s; }
+/** The review's figures as the chrome's cards (label and value); plain words until the chrome is there. */
+function paintFigures(pairs) {
+  const o = sreO(); const host = $('v-figures');
+  if (!o) { host.replaceChildren(...pairs.map(([label, value]) => text('span', `${label} ${value}`))); return; }
+  o.cards(host, pairs.map(([label, value]) => ({ label, value })));
+}
 function paintReview() {
   for (const id of ['v-figures', 'rate-rows', 'finding-rows']) $(id).replaceChildren();
   $('rates-h').textContent = ''; $('findings-h').textContent = '';
   if (review === null) return;
-  $('v-figures').append(figure(t('sales'), String(review.sales)), figure(t('proceeds'), rs(review.totalProceedsMinor)), figure(t('weight'), api.kg(review.totalGrams)), figure(t('unposted'), rs(review.unpostedMinor)));
+  paintFigures([[t('sales'), String(review.sales)], [t('proceeds'), rs(review.totalProceedsMinor)], [t('weight'), api.kg(review.totalGrams)], [t('unposted'), rs(review.unpostedMinor)]]);
   $('rates-h').textContent = t('ratesH');
   const rates = Object.entries(review.ratesPerTonneMinor);
-  if (rates.length === 0) $('rate-rows').append(text('li', `○ ${t('noRates')}`));
+  if (rates.length === 0) $('rate-rows').append(withChip(text('li', t('noRates')), 'unknown'));
   for (const [cat, minor] of rates) $('rate-rows').append(text('li', `${t(`c_${cat}`)} · ${rs(minor)} ${t('perTonne')}`));
   $('findings-h').textContent = t('findingsH');
-  if (review.findings.length === 0) $('finding-rows').append(text('li', `✓ ${t('noFindings')}`));
+  if (review.findings.length === 0) $('finding-rows').append(withChip(text('li', t('noFindings')), 'done'));
   for (const f of review.findings) {
     const li = document.createElement('li'); li.className = 'attention'; li.dataset.scrap = f.scrapId; li.dataset.flag = f.flag;
-    li.append(text('strong', `⚠ ${t(`fl_${f.flag}`)}`));
+    li.append(withChip(text('strong', t(`fl_${f.flag}`)), 'warning'));
     li.append(text('span', `${f.scrapId} · ${t(`c_${f.category}`)} · ${rs(f.proceedsMinor)}`, 'meta'));
     if (f.flag === 'not_posted_to_finance' && may.record && !posted.has(f.scrapId)) {
       const acts = document.createElement('div'); acts.className = 'acts';
@@ -129,7 +112,6 @@ function paint() {
     ['record-h', 'recordH'], ['s-branch-l', 'branch'], ['s-category-l', 'category'], ['s-disposal-l', 'disposal'], ['s-kg-l', 'kg'], ['s-proceeds-l', 'proceedsRs'],
     ['s-buyer-l', 'buyer'], ['s-evidence-l', 'evidence'], ['s-recycler-l', 'recycler'], ['s-by-l', 'handledBy'], ['s-record-text', 'record']]) { const n = $(elId); if (n !== null) n.textContent = t(key); } // a day label belongs to the chrome's date field once mounted
   if (api !== null) { fillSelect('s-category', api.categories, 'c_'); fillSelect('s-disposal', api.disposals, 'd_'); }
-  paintPickers();
   paintReview();
 }
 async function showReview() {
@@ -147,7 +129,7 @@ if (may.named && may.review) {
   const today = api.today();
   $('v-from').value = today; $('v-to').value = today;
   $('review').hidden = false;
-  dateable('v-from', 'from', today); dateable('v-to', 'to', today);
+  dateable('v-from', 'from'); dateable('v-to', 'to');
   pickerBeside($('v-branch'), 'store', 'whichBranch');
   $('v-show').addEventListener('click', () => { void showReview(); });
   $('finding-rows').addEventListener('click', async (e) => {

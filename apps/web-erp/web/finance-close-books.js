@@ -156,12 +156,20 @@ function paintResults() {
 function paintCentres() {
   const table = $('centres-table'); table.replaceChildren();
   if (centres === null) return;
-  const head = node('tr', {}, ...['', 'income', 'expense', 'profit', 'journals'].map((k, i) => node('th', { className: i === 0 ? '' : 'n', textContent: k === '' ? '' : w(k) })));
-  table.append(head);
-  for (const c of centres.centres) {
-    const tr = node('tr', {}, node('td', { textContent: `${c.name ?? c.centre}${c.known ? '' : ` (${w('unknownCentre')})`}` }), node('td', { className: 'n', textContent: api.rupees(c.incomeMinor) }),
-      node('td', { className: 'n', textContent: api.rupees(c.expenseMinor) }), node('td', { className: 'n', textContent: api.rupees(c.profitMinor) }), node('td', { className: 'n', textContent: String(c.journals) }));
-    tr.dataset.centre = c.centre; table.append(tr);
+  // U5 (G17): the centres on the chrome's register — sortable, the figures right-aligned, the rows stacking on a phone.
+  const o = window.sreOffice ?? null;
+  if (o !== null && typeof o.table === 'function') {
+    o.table(table, {
+      id: 'finance-centres', label: w('centresH'), bodyId: 'centres-rows', pageSize: 100, sortable: true, count: false,
+      rowKey: (c) => c.centre, rowData: (c) => ({ centre: c.centre }), rows: [...centres.centres],
+      columns: [
+        { key: 'centre', label: w('centre'), sort: 'text', value: (c) => c.name ?? c.centre, render: (c) => `${c.name ?? c.centre}${c.known ? '' : ` (${w('unknownCentre')})`}` },
+        { key: 'incomeMinor', label: w('income'), align: 'end', sort: 'number', render: (c) => api.rupees(c.incomeMinor) },
+        { key: 'expenseMinor', label: w('expense'), align: 'end', sort: 'number', render: (c) => api.rupees(c.expenseMinor) },
+        { key: 'profitMinor', label: w('profit'), align: 'end', sort: 'number', render: (c) => api.rupees(c.profitMinor) },
+        { key: 'journals', label: w('journals'), align: 'end', sort: 'number' },
+      ],
+    });
   }
   const notes = [centres.detail, centres.ties ? w('ties') : w('noTie'), ...(centres.classesDefined ? [] : [w('classesMissing')]),
     `${w('unassigned')}: ${centres.unassigned.journals.length} ${w('journals')}`, ...(centres.attributedBps === null ? [] : [`${w('attributed')}: ${(centres.attributedBps / 100).toFixed(2)}%`])];

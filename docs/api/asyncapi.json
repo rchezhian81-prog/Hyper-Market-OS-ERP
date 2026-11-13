@@ -3879,57 +3879,68 @@
         "description": "No code builds a PurchaseOrderApproved event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
       },
       "ReconciliationExceptionRaisedPayload": {
-        "type": "object",
-        "required": [
-          "shiftId",
-          "tillId",
-          "kind",
-          "varianceMinor",
-          "currency",
-          "reasonCode"
-        ],
-        "properties": {
-          "shiftId": {
-            "type": "string"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/BankLineException"
           },
-          "tillId": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "varianceMinor": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "EUR",
-              "GBP",
-              "INR",
-              "USD"
-            ]
-          },
-          "reasonCode": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
+          {
+            "type": "object",
+            "required": [
+              "shiftId",
+              "tillId",
+              "kind",
+              "varianceMinor",
+              "currency",
+              "reasonCode"
+            ],
+            "properties": {
+              "shiftId": {
                 "type": "string"
+              },
+              "tillId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "varianceMinor": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "EUR",
+                  "GBP",
+                  "INR",
+                  "USD"
+                ]
+              },
+              "reasonCode": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
               }
-            ]
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-payload-schema": "derived",
         "x-derived-from": [
-          "packages/till/src/till.ts"
+          "packages/till/src/till.ts",
+          "services/api/src/bank-reconciliation-adapters.ts"
         ]
       },
       "ReconciliationExceptionResolvedPayload": {
-        "x-payload-schema": "not published",
-        "description": "No code builds a ReconciliationExceptionResolved event yet: it is a §30.2 event the contract reserves. When code first builds one, its payload schema is derived from that code."
+        "$ref": "#/components/schemas/BankLineExceptionResolved",
+        "x-payload-schema": "derived",
+        "x-derived-from": [
+          "services/api/src/bank-reconciliation-adapters.ts"
+        ]
       },
       "RefundCompletedPayload": {
         "x-payload-schema": "not published",
@@ -4746,6 +4757,87 @@
               },
               "additionalProperties": true
             }
+          }
+        },
+        "additionalProperties": true
+      },
+      "BankLineException": {
+        "type": "object",
+        "required": [
+          "exceptionId",
+          "statementId",
+          "lineId",
+          "amountMinor",
+          "ownerUserId",
+          "raisedBy",
+          "raisedAt",
+          "raisedOn"
+        ],
+        "properties": {
+          "exceptionId": {
+            "type": "string"
+          },
+          "statementId": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "raisedBy": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "raisedOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "BankLineExceptionResolved": {
+        "type": "object",
+        "required": [
+          "exceptionId",
+          "outcome",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "exceptionId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "bank_error",
+              "matched_by_hand",
+              "not_ours",
+              "other",
+              "timing"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "matchedTo": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
           }
         },
         "additionalProperties": true

@@ -63,7 +63,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Requis
       page.on('pageerror', (e) => { errors.push(String(e)); });
       await page.goto(`${shop.base}/requisitions`, { waitUntil: 'load' });
       await page.waitForFunction(() => (globalThis as unknown as { requisitions?: unknown }).requisitions !== undefined);
-      await expect.poll(() => page.isVisible('#none')).toBe(true);
+      // U5: the worklist is the register part — with no requisition it shows the part's empty state in the page's words
+      await expect.poll(() => page.textContent('#list-host .sre-state[data-state="empty"]')).toContain('No requisitions yet.');
       expect(await page.isHidden('#open-section')).toBe(true);
       // Every button carries its icon beside its word.
       expect(await page.locator('#raise svg').count()).toBe(1);

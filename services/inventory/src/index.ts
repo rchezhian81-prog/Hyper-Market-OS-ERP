@@ -580,6 +580,24 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       },
     },
     {
+      // U7 (OB-726) · the batch DIRECTORY: a product's batches on hand at every place the reader may see, by place then
+      // earliest expiry, so the office picks a batch by product (the quarantine hold form) instead of typing its id. The
+      // same stock-read scope as availability: a place outside the caller's branches is never listed.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/batch-directory',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const productId = (ctx.query['productId'] ?? '').trim();
+        if (productId === '') {
+          throw apiError(400, { code: 'not_readable_as_a_batch_read', whatHappened: 'Listing batches needs ?productId= — the product whose batches to list.', wasItSaved: 'not_saved', nextSafeAction: 'Choose the product first. Nothing was changed.' });
+        }
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const all = deps.batches === undefined ? [] : await deps.batches(ctx.tenantId, productId);
+        const places = [...new Set(all.filter((b) => b.productId === productId && scope.covers(b.locationId)).map((b) => b.locationId))].sort();
+        const batches = places.flatMap((loc) => fefoBatchesAt(all, loc, productId)).filter((b) => b.batchId !== null);
+        return { status: 200, body: { productId, batches, order: 'place_then_earliest_expiry', scope: scope.scope, asAt: deps.now() } };
+      },
+    },
+    {
       api: 'API-04', method: 'GET', path: '/v1/inventory/exceptions',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {

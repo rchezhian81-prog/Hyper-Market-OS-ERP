@@ -43,9 +43,6 @@
       .table-wrap { overflow-x: auto; max-width: 100%; }
       td, th { text-align: left; }
       tr[data-incident] { cursor: pointer; }
-      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: var(--fs-sm); font-weight: 600; }
-      .tag.sev1, .tag.missed { border-color: var(--danger-text); color: var(--danger-text); }
-      .tag.passed { border-color: var(--good); color: var(--good); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: grid; gap: 4px; overflow-wrap: anywhere; }
       .status { font-size: 14px; min-height: 20px; }
@@ -95,21 +92,13 @@
       <section id="view-incidents" aria-labelledby="incidents-h">
         <h3 id="incidents-h">Incidents</h3>
         <p class="lead" id="incidents-lead">Open incidents first, the most serious at the top. Open one to see its timeline, follow-ups and post-mortem.</p>
-        <div class="table-wrap"><table aria-labelledby="incidents-h">
-          <thead><tr><th id="c-incident">Incident</th><th id="c-severity">Severity</th><th id="c-state">State</th><th id="c-opened">Opened</th><th id="c-followups">Follow-ups open</th><th id="c-pm">Post-mortem</th></tr></thead>
-          <tbody id="incident-rows"></tbody>
-        </table></div>
-        <p class="muted" id="no-incidents" hidden></p>
+        <div id="incident-host" class="register-host"></div>
       </section>
 
       <section id="view-drills" aria-labelledby="drills-h" hidden>
         <h3 id="drills-h">Recovery drills</h3>
         <p class="lead" id="drills-lead">Each drill measured against the recovery targets: how much data may be lost, and how soon the shop must be back.</p>
-        <div class="table-wrap"><table aria-labelledby="drills-h">
-          <thead><tr><th id="c-drill">Drill</th><th id="c-service">Service</th><th id="c-result">Result</th><th id="c-when">When</th><th id="c-by">By</th></tr></thead>
-          <tbody id="drill-rows"></tbody>
-        </table></div>
-        <p class="muted" id="no-drills" hidden></p>
+        <div id="drill-host" class="register-host"></div>
         <div id="drill-form" hidden>
           <h3 id="drill-form-h">Record a drill result</h3>
           <div class="row">

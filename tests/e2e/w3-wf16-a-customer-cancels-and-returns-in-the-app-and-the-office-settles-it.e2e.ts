@@ -246,7 +246,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('WF-16: a c
         await refunds.click('#show-pending');
         const owed = refunds.locator(`#pending li[data-order="${milk.orderId}"]`);
         await owed.waitFor({ timeout: 15_000 });
-        expect(await owed.locator('strong').textContent()).toBe(`⏱ Refund not confirmed by the bank — ${milk.orderId} · ₹60.00`);
+        expect(await owed.locator('strong').textContent()).toBe(`Waiting Refund not confirmed by the bank — ${milk.orderId} · ₹60.00`) // U5: the chrome's "Waiting" chip, then the words;
         await owed.locator('input.statement').fill('STMT-WF16-0002');
         await owed.locator('button.outcome-refunded').click();
         await refunds.locator('#pending li', { hasText: 'Nothing is waiting on the bank.' }).waitFor({ timeout: 15_000 });

@@ -130,7 +130,7 @@ el('deliver').addEventListener('click', async () => {
   }
 });
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); el('sample').textContent = t('sampleData'); /* U3 · OB-699: the stand-in's own line follows the toggle */ });
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');

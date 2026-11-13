@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { sheetOpens, goBack, confirmIt } from './lib/confirm-sheet';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { startPageShell, type PageShell } from './lib/page-shell';
 import {
@@ -104,22 +105,35 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the import
       await page.click('#commit');
       await page.locator('#commit-result-text', { hasText: 'Loaded.' }).waitFor({ timeout: 15_000 });
       expect(await product('p-rice')).toMatchObject({ name: 'Ponni Rice 5kg', brand: 'Kaveri' });
-      const row = page.locator('#my-loads li[data-job-id="U-1"]');
+      const row = page.locator('#my-loads tr[data-job-id="U-1"]');
       await row.waitFor({ timeout: 15_000 });
       expect(await row.textContent()).toContain('In place');
+      // U7: phone-fit — on a 360px phone the row (reason box and both buttons) fits with no sideways scroll, every
+      // control a thumb's 44px.
+      await page.setViewportSize({ width: 360, height: 800 });
+      expect(await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { scrollWidth: number } } }).document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+      for (const sel of ['.undo-why', '.ask-undo', '.undo-btn']) expect((await row.locator(sel).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await page.setViewportSize({ width: 1280, height: 900 });
 
       // UNDO — asked, not yet approved: "Undo it" says so and changes nothing.
       await row.locator('.undo-why').fill('wrong brand file');
       await row.locator('.ask-undo').click();
       await row.locator('.undo-result', { hasText: 'Waiting for a second person to approve the undo' }).waitFor({ timeout: 15_000 });
       await row.locator('.undo-btn').click();
+      await confirmIt(page);
       await row.locator('.undo-result', { hasText: 'Not undone yet' }).waitFor({ timeout: 15_000 });
       expect((await product('p-rice'))['name']).toBe('Ponni Rice 5kg');
 
       // The manager approves the undo; "Undo it" puts each product back, and the row says who undid it and why.
       await managerApproves('data_import_rollback', 'U-1');
+      // U7: "Undo it" puts records back — the confirm sheet says the load and how many rows; Go back sends nothing.
       await row.locator('.undo-btn').click();
-      const undone = page.locator('#my-loads li[data-job-id="U-1"]');
+      expect(await sheetOpens(page)).toMatch(/Undo the load "U-1" — 2 rows put back/);
+      await goBack(page);
+      expect((await product('p-rice'))['name']).toBe('Ponni Rice 5kg');
+      await row.locator('.undo-btn').click();
+      await confirmIt(page);
+      const undone = page.locator('#my-loads tr[data-job-id="U-1"]');
       await undone.locator('.undo-result', { hasText: 'Undone.' }).waitFor({ timeout: 15_000 });
       expect(await undone.textContent()).toContain(`Undone — ${OWNER} asked, ${MGR} approved: "wrong brand file"`);
       expect(await undone.locator('.undo-btn').count()).toBe(0);
@@ -129,7 +143,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the import
       // Tamil, like the rest of the page.
       await page.click('#lang');
       await page.locator('#loads-heading', { hasText: 'ஏற்கனவே ஏற்றப்பட்டவை' }).waitFor({ timeout: 15_000 });
-      expect(await page.locator('#my-loads li[data-job-id="U-1"]').textContent()).toContain('திரும்பப் பெறப்பட்டது');
+      expect(await page.locator('#my-loads tr[data-job-id="U-1"]').textContent()).toContain('திரும்பப் பெறப்பட்டது');
     } finally {
       await context.close();
     }

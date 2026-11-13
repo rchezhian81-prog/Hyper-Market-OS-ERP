@@ -39,11 +39,6 @@
       /* "I have not been told" is not "all clear" — said plainly, never a blank table (P-08). */
       .notknown { background: var(--warn-surface); color: var(--on-warn-surface); padding: 10px 14px; border-radius: 10px; font-size: 15px; }
 
-      table { width: 100%; border-collapse: collapse; font-size: 15px; }
-      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-      th { color: var(--muted); font-weight: 600; }
-      td.num { text-align: right; font-variant-numeric: tabular-nums; }
-      tr.over td { color: var(--warn); }
 
       .ex { display: grid; gap: 8px; }
       .ex .row {
@@ -53,13 +48,11 @@
       .ex .row.over_capacity { border-left-color: var(--warn); }
       .ex .kind { font-weight: 700; }
       .ex .detail { color: var(--muted); font-size: 14px; }
-      .ex-empty { color: var(--good); font-weight: 600; }
 
       /* Approvals queue */
       .appr { display: grid; gap: 10px; }
       .appr .row { background: var(--panel); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
       .appr .subject { font-weight: 600; }
-      .appr .blocked { color: var(--warn); font-size: 14px; }
       .appr .buttons { display: flex; gap: 10px; }
       .appr button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 600; }
       
@@ -84,9 +77,6 @@
       .card button.do { min-height: 46px; border: 0; border-radius: 10px;   font-size: 15px; font-weight: 600; } /* U0: the one action colour, not the information tone */
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
-          .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
-      .pick-row input { flex: 1 1 140px; min-width: 0; }
-      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 </style>
   </head>
   <body>
@@ -102,12 +92,13 @@
       <section>
         <h2 id="bins-heading">—</h2>
         <p class="lead" id="bins-lead"></p>
-        <div id="bins" class="sre-scroll-x"></div>
+        <!-- U5 · G17: the bins and the stock are the chrome's register — sort said in words, search, paging; rows stack on a phone -->
+        <div id="bins"></div>
       </section>
 
       <section>
         <h2 id="stock-heading">—</h2>
-        <div id="stock" class="sre-scroll-x"></div>
+        <div id="stock"></div>
       </section>
 
       <section>

@@ -38,39 +38,59 @@ const node = (tag, props = {}, ...kids) => {
   return el;
 };
 
+// U5 · G17: the chrome's shared parts — the office (window.sreOffice) may load after this page, so each part is drawn
+// when it is there (`sre:chrome`), and the page keeps working with words alone until then.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+let register = null;
+
+/** The four figures as summary cards: a count the page has not read yet is "Not known", never a dash. */
 function paintPanels() {
-  const n = (f) => (rows === null ? '–' : String(rows.filter(f).length));
-  $('n-proposed').textContent = n((r) => r.transfer.state === 'proposed');
-  $('n-in_transit').textContent = n((r) => r.transfer.state === 'in_transit');
-  $('n-received').textContent = n((r) => r.transfer.state === 'received');
-  $('n-short').textContent = n((r) => r.shortfallOpen);
-  for (const [id, k] of [['p-proposed', 'proposed'], ['p-in_transit', 'in_transit'], ['p-received', 'received'], ['p-short', 'shortOpen']]) $(id).textContent = t(k);
+  const o = office(); if (!o || session === null) return;
+  const n = (f) => (rows === null ? null : rows.filter(f).length);
+  const short = n((r) => r.shortfallOpen);
+  o.cards($('panels'), [
+    { label: both('proposed'), value: n((r) => r.transfer.state === 'proposed'), tone: 'pending' },
+    { label: both('in_transit'), value: n((r) => r.transfer.state === 'in_transit'), tone: 'pending' },
+    { label: both('received'), value: n((r) => r.transfer.state === 'received'), tone: 'ok' },
+    { label: both('shortOpen'), value: short, tone: short === null ? undefined : short > 0 ? 'degraded' : 'ok' },
+  ]);
+}
+
+/** The register, drawn once on the chrome's shared part: the row's state as the one chip, "View" opens this page's drawer. */
+function ensureRegister() {
+  const o = office(); if (!o || session === null || register !== null) return register;
+  const linesText = (r) => session.rowView(lang, r).lines.map((l) => `${l.productId} × ${qtyText(l.quantityMinor, l.uom)}`).join(', ');
+  register = o.table($('register'), {
+    id: 'transfers', label: both('registerH'), pageSize: 10, sortable: true, rows: null,
+    rowKey: (r) => r.transfer.transferId,
+    rowData: (r) => ({ transfer: r.transfer.transferId, state: r.transfer.state }),
+    empty: { title: both('empty'), detail: both('registerLede') },
+    columns: [
+      { key: 'transfer', label: both('colTransfer'), value: (r) => r.transfer.transferId },
+      { key: 'route', label: both('colRoute'), value: (r) => session.rowView(lang, r).route },
+      { key: 'lines', label: both('colLines'), sort: false, value: linesText },
+      { key: 'state', label: both('colState'), filter: true, value: (r) => session.rowView(lang, r).stateWord,
+        render: (r) => { const v = session.rowView(lang, r); const cell = node('span', { className: 'state-cell' }, o.recordChip(v.state, v.stateWord)); if (v.flags.length > 0) cell.append(node('span', { className: 'muted', textContent: ` · ${v.flags.join(' · ')}` })); return cell; } },
+      { key: 'view', label: both('view'), sort: false, value: () => '', render: (r) => { const look = node('button', { type: 'button', className: 'sre-btn sre-btn-quiet', textContent: t('view'), dataset: { act: 'view' } }); look.addEventListener('click', () => { openDrawer(r.transfer.transferId); }); return look; } },
+    ],
+  });
+  return register;
 }
 
 function paintRegister() {
-  const body = $('register').querySelector('tbody');
-  body.replaceChildren();
   paintPanels();
-  if (rows === null) return;
-  if (rows.length === 0) { body.append(node('tr', {}, node('td', { colSpan: 5, className: 'muted', textContent: t('empty') }))); return; }
-  for (const r of rows) {
-    const v = session.rowView(lang, r);
-    const look = node('button', { type: 'button', className: 'quiet', textContent: t('view'), dataset: { act: 'view' } });
-    look.addEventListener('click', () => { openDrawer(v.transferId); });
-    body.append(node('tr', { className: `tone-${v.tone}`, dataset: { transfer: v.transferId, state: v.state } },
-      node('td', { textContent: v.transferId }), node('td', { textContent: v.route }),
-      node('td', { textContent: v.lines.map((l) => `${l.productId} × ${qtyText(l.quantityMinor, l.uom)}`).join(', ') }),
-      node('td', { textContent: [v.stateWord, ...v.flags].join(' · ') }), node('td', {}, look)));
-  }
+  if (ensureRegister() === null) return;
+  register.setRows(rows);
 }
 
 async function loadList() {
   if (session === null || session.nobody) return;
-  if (!session.may.read) { $('list-status').className = 'status'; $('list-status').textContent = t('cannotRead'); return; }
+  if (!session.may.read) { $('list-status').className = 'status'; $('list-status').textContent = t('cannotRead'); ensureRegister()?.setState('denied', { detail: both('cannotRead') }); return; }
   const out = await session.list();
-  if (out.result === 'ok') { rows = out.rows; if ($('list-status').textContent === t('reading')) $('list-status').textContent = ''; }
-  else { rows = null; say($('list-status'), out); }
-  paintRegister();
+  if (out.result === 'ok') { rows = out.rows; if ($('list-status').textContent === t('reading')) $('list-status').textContent = ''; paintRegister(); }
+  else { rows = null; say($('list-status'), out); paintPanels(); const o = office(); if (ensureRegister() !== null) register.setState(o.stateOf(out), { detail: session.say(lang, out, false).words }); }
   paintDrawer();
 }
 
@@ -198,11 +218,12 @@ if (session !== null) {
     paintWords();
     paintRegister();
     paintDrawer();
+    if (register !== null) register.repaint();
   });
 }
 
 paintWords();
-paintPanels();
+whenChrome(() => { paintRegister(); });
 if (session !== null && !session.nobody) { $('list-status').textContent = t('reading'); void loadList(); }
 
 if ('serviceWorker' in navigator) {

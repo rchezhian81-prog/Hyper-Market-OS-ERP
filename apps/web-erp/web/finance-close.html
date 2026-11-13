@@ -52,10 +52,10 @@
       li .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; margin: 0; }
       li .conflict, li .flags { font-size: 14px; color: var(--danger-text); margin: 0; overflow-wrap: anywhere; }
       details > summary { cursor: pointer; font-weight: 600; min-height: 32px; }
-      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      .sre-datatable tr[data-kind="heading"] td { font-weight: 700; color: var(--muted); }
+      .sre-datatable tr[data-kind="total"] td { font-weight: 700; }
       th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
       td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
-      tr.total td { font-weight: 700; }
       ul.blockers { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--danger-text); }
       .note { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
@@ -66,7 +66,6 @@
       .month-state { font-weight: 700; margin: 0; display: flex; gap: 8px; align-items: center; }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       [hidden] { display: none !important; }
-      .scroll { overflow-x: auto; }
     </style>
   </head>
   <body>
@@ -108,7 +107,8 @@
         <p class="lead" id="pl-lede"></p>
         <p class="status" id="pl-status" role="status" aria-live="polite"></p>
         <div class="tiles sre-summary" id="pl-tiles"></div>
-        <div class="scroll"><table id="pl-table"></table></div>
+        <!-- U5 (G17): the statement on the chrome's register (window.sreOffice.table) -->
+        <div id="pl-table"></div>
         <ul class="blockers" id="pl-notes"></ul>
       </section>
 
@@ -128,7 +128,7 @@
         <h2 id="budget-h">Budget against the books</h2>
         <p class="lead" id="budget-lede"></p>
         <p class="status" id="budget-status" role="status" aria-live="polite"></p>
-        <div class="scroll"><table id="budget-table"></table></div>
+        <div id="budget-table"></div>
         <div id="budget-edit">
           <div id="budget-lines" class="row"></div>
           <div class="row">
@@ -221,7 +221,7 @@
         <p class="lead" id="centres-lede"></p>
         <button id="centres-show" type="button" class="quiet">Read the centres</button>
         <p class="status" id="centres-status" role="status" aria-live="polite"></p>
-        <div class="scroll"><table id="centres-table"></table></div>
+        <div id="centres-table"></div>
       </section>
 
       <!-- OB-567 (owner, 31 Oct 2026): a month is closed and reopened HERE, and nowhere else — two people, head office's

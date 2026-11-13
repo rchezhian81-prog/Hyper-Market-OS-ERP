@@ -26,7 +26,7 @@ import { Tally } from './lib/tally';
  *     said; both languages; the audit is clean with the panel open and every row is a 56px target.
  *   • **The budgets nobody had counted**, honestly: the float = 8 (More · Take float · four keyed digits · OK · the OB-698
  *     confirm); a split of ₹200 cash + UPI = 10 (Tender · Split · Cash · three digits · OK · UPI · the "up to" tap · the
- *     machine's answer; the no-member notice is one more, 11 in all) — the spec's 3 is for a single tender; close the till with
+ *     machine's answer; the no-member notice is a line on the first question, 10 in all) — the spec's 3 is for a single tender; close the till with
  *     four notes counted = 7 (More · Close till · four notes · Close till), one more per further note.
  *   • **The cable pulled mid-basket (C6):** two items scanned with head office reachable, every call to it then refused,
  *     a third scanned, cash taken — the sale is on the box, the receipt lines are on the screen, the badge says 1 unsent;
@@ -232,7 +232,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
     expect(errors).toEqual([]);
   }, 90_000);
 
-  it('the budgets nobody had counted: the float = 8 (four digits and the OB-698 confirm), a ₹200 cash + UPI split = 11 (the no-member notice is one), closing the till with four notes = 7', async () => {
+  it('the budgets nobody had counted: the float = 8 (four digits and the OB-698 confirm), a ₹200 cash + UPI split = 10 (the no-member notice is a line, not a tap), closing the till with four notes = 7', async () => {
     const edge = await box('budgets');
     const { page, errors } = await openTill(edge);
     const taps = new Tally(page);
@@ -260,11 +260,12 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
     await taps.tap('#tender');
     await panelTitled(page, 'How is the customer paying?');
     await taps.tap('#pay-kinds button:text-is("Split / points / store credit")');
-    // With no loyalty member on the bill the till first says so — a notice the cashier must read and dismiss (one tap; a U5 line).
-    await page.waitForSelector('#refusal:not([hidden])');
-    expect(await page.textContent('#refusal-text')).toContain('No loyalty member on this bill');
-    await taps.tap('#refusal-ok');
+    // U5: with no loyalty member on the bill the till says so as a LINE above the first question — nothing to dismiss, the
+    // split goes straight on with cash, card and UPI (the U4 count had this as a stop and one more tap).
     await panelTitled(page, 'Still to pay ₹480.00');
+    expect(await page.isHidden('#refusal')).toBe(true);
+    expect(await page.isVisible('#pay-kicker')).toBe(true);
+    expect(await page.textContent('#pay-kicker-text')).toContain('No loyalty member on this bill');
     await taps.tap('#pay-kinds button:text-is("Cash")');
     await keyDigits('200');
     await taps.tap('#sheet-ok');
@@ -276,7 +277,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
     await taps.tap('#pay-kinds button:text-is("Approved")');
     const paid = await refusalShown(page);
     expect(paid.title).toBe('Approved'); // the split's own word: nothing is due back
-    expect(taps.reset(), 'split ₹200 cash + UPI: Tender · Split · the no-member notice · Cash · 3 digits · OK · UPI · up-to · Approved').toBe(11);
+    expect(taps.reset(), 'split ₹200 cash + UPI: Tender · Split · Cash · 3 digits · OK · UPI · up-to · Approved (the no-member line is read, not tapped)').toBe(10);
 
     // C10 — close the till: More · Close till · the notes in the drawer (₹1,000 float + ₹200 cash = two ₹500 and two ₹100) · Close till.
     // The expected figure is shown nowhere (the blind count).

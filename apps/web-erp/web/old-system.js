@@ -103,6 +103,21 @@ function paint() {
   $('night').hidden = !may.windowRead;
   for (const id of ['night-check', 'reverse-ask', 'reverse-approve']) $(id).hidden = !may.cutoverDecide;
   $('retire').hidden = !may.retire;
+  // U6 · §27 Migration: the twelve controls as their own steps; the delta LOAD step (MG-09)
+  $('steps-h').textContent = t('stepsH'); $('steps-lead').textContent = t('stepsLead');
+  $('steps-list').replaceChildren(...(api?.migrationSteps ?? []).map((step) => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = step.anchor; a.dataset.control = step.control; a.dataset.step = step.anchor.slice(1);
+    a.append(text('b', step.control), text('span', t(step.word)));
+    li.append(a);
+    return li;
+  }));
+  $('delta-h').textContent = t('deltaH'); $('delta-lead').textContent = t('deltaLead');
+  $('delta').hidden = !may.delta;
+  $('delta-load').hidden = !may.delta;
+  shopDateField('delta-cutoff', { en: api?.words('en', 'deltaCutoff') ?? 'Day', ta: api?.words('ta', 'deltaCutoff') ?? 'நாள்' });
+  paintDeltaRows();
   // W4 · WF-19
   $('seal').hidden = !may.verify;
   $('prob').hidden = !may.diffRead;
@@ -404,6 +419,85 @@ async function showGateRollback() {
   $('gate-rollback-result').replaceChildren(li);
 }
 
+// ── U6 · MG-09 the delta LOADED, exactly once ───────────────────────────────────────────────────────────────────
+/** The shared dd/mm/yyyy field in place of the page's own box (the chrome's U5 adapter); ISO is read back with dateOf. */
+const shopDated = new Set();
+function shopDateField(id, words) {
+  const o = window.sreOffice;
+  if (!o || typeof o.shopDate !== 'function' || shopDated.has(id) || $(id) === null) return;
+  o.shopDate(id, words, { required: true });
+  shopDated.add(id);
+}
+const dateOf = (id) => (shopDated.has(id) ? (window.sreOffice.dateOf(id) ?? '') : ($(id)?.value ?? ''));
+let deltaChanges = null; // the changes read from the file, shown before anything is sent
+let deltaCsv = '';
+const officeOf = () => window.sreOffice ?? null;
+const opWords = (op) => (t(`op_${op}`) === `op_${op}` ? op : t(`op_${op}`));
+const money = (minor) => (typeof minor === 'number' ? api.rupees(minor) : '');
+function paintDeltaRows() {
+  const office = officeOf(); const host = $('delta-rows');
+  host.replaceChildren();
+  if (!office || deltaChanges === null) return;
+  office.table(host, {
+    id: 'delta-changes', label: { en: api.words('en', 'deltaH'), ta: api.words('ta', 'deltaH') }, pageSize: 10, sortable: true,
+    columns: [
+      { key: 'changeKey', label: { en: api.words('en', 'cChangeKey'), ta: api.words('ta', 'cChangeKey') }, sort: 'text' },
+      { key: 'entity', label: { en: api.words('en', 'cEntity'), ta: api.words('ta', 'cEntity') }, filter: true },
+      { key: 'legacyId', label: { en: api.words('en', 'cLegacyId'), ta: api.words('ta', 'cLegacyId') } },
+      { key: 'operation', label: { en: api.words('en', 'cOperation'), ta: api.words('ta', 'cOperation') }, filter: true, value: (c) => opWords(c.operation) },
+      { key: 'changedAt', label: { en: api.words('en', 'cChangedAt'), ta: api.words('ta', 'cChangedAt') }, sort: 'text', value: (c) => window.sreShopDay?.dateTimeOf(c.changedAt) ?? c.changedAt },
+      { key: 'deltaQty', label: { en: api.words('en', 'cQty'), ta: api.words('ta', 'cQty') }, sort: 'number', align: 'end', value: (c) => (typeof c.deltaQty === 'number' ? `${c.deltaQty}${c.uom ? ` ${c.uom}` : ''}` : '') },
+      { key: 'deltaMinor', label: { en: api.words('en', 'cValue'), ta: api.words('ta', 'cValue') }, sort: 'number', align: 'end', value: (c) => money(c.deltaMinor ?? (typeof c.deltaQty === 'number' && typeof c.unitCostMinor === 'number' ? c.deltaQty * c.unitCostMinor : undefined)) },
+    ],
+    rows: deltaChanges, rowKey: (c) => c.changeKey, rowData: (c) => ({ change: c.changeKey, entity: c.entity }),
+  });
+}
+const readDeltaFile = async () => { const f = $('delta-file').files?.[0]; return f === undefined ? '' : f.text(); };
+async function readDelta() {
+  deltaCsv = await readDeltaFile();
+  const read = api.readDeltaCsv(deltaCsv);
+  $('delta-result').replaceChildren();
+  if (!read.ok) {
+    deltaChanges = null; paintDeltaRows();
+    const words = t(read.why).split('{missing}').join((read.missing ?? []).join(', ')).split('{row}').join(String(read.row ?? '')).split('{field}').join(read.field ?? '');
+    $('delta-status').className = 'status err'; $('delta-status').textContent = words; $('delta-status').dataset.result = 'invalid';
+    return;
+  }
+  deltaChanges = read.changes; paintDeltaRows();
+  $('delta-status').className = 'status'; $('delta-status').dataset.result = 'read';
+  $('delta-status').textContent = `${read.changes.length} ${t('deltaRead')}`;
+}
+async function loadDelta() {
+  const office = officeOf();
+  if (deltaChanges === null) await readDelta();
+  if (deltaChanges === null) return;
+  const day = dateOf('delta-cutoff');
+  if (day === '') { say('delta-status', { result: 'invalid', why: 'noCutoff' }); return; }
+  const cutoffWords = office?.dateWords ? office.dateWords(day) : day;
+  // OB-698: stock and money move — the consequence, in whose name, then the person's own word
+  const fill = (words, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), words);
+  const ask = office ? await office.confirm({
+    title: { en: api.words('en', 'deltaConfirmTitle'), ta: api.words('ta', 'deltaConfirmTitle') },
+    detail: { en: fill(api.words('en', 'deltaConfirmDetail'), { n: deltaChanges.length, cutoff: cutoffWords }), ta: fill(api.words('ta', 'deltaConfirmDetail'), { n: deltaChanges.length, cutoff: cutoffWords }) },
+    authority: { en: api.words('en', 'deltaLead'), ta: api.words('ta', 'deltaLead') },
+    confirmLabel: { en: api.words('en', 'loadDelta'), ta: api.words('ta', 'loadDelta') }, tone: 'primary',
+  }) : { ok: true };
+  if (!ask.ok) return;
+  const out = await session.applyDeltas({ extractCutoff: day, cutoffTime: $('delta-time').value, csv: deltaCsv });
+  if (out.result !== 'ok') { say('delta-status', out); return; }
+  const r = out.value;
+  good('delta-status', `${t('deltaOk')} ${t('deltaAppliedK')}: ${r.applied} · ${t('deltaDupK')}: ${r.duplicatesIgnored} · ${t('deltaRefusedK')}: ${r.refused} · ${t('deltaNetK')}: ${r.netQty} · ${t('deltaValueK')}: ${api.rupees(r.netValueMinor ?? 0)}`);
+  $('delta-status').dataset.applied = String(r.applied); $('delta-status').dataset.dup = String(r.duplicatesIgnored); $('delta-status').dataset.refused = String(r.refused);
+  $('delta-result').replaceChildren(...r.lines.map((l) => {
+    const tone = l.outcome === 'applied' ? 'ok' : l.outcome === 'already_applied' ? 'idle' : 'error';
+    const words = t(`o_${l.outcome}`) === `o_${l.outcome}` ? l.outcome : t(`o_${l.outcome}`);
+    const li = item(tone, `${l.outcome === 'applied' ? '✓' : l.outcome === 'already_applied' ? '○' : '✗'} ${l.changeKey} — ${words}`, l.detail);
+    if (office?.recordChip) li.firstChild.prepend(office.recordChip(l.outcome === 'applied' ? 'done' : l.outcome === 'already_applied' ? 'ok' : 'refused', words));
+    li.dataset.change = l.changeKey; li.dataset.outcome = l.outcome;
+    return li;
+  }));
+}
+
 // ── wiring ────────────────────────────────────────────────────────────────────────────────────────────────
 const on = (id, fn) => $(id).addEventListener('click', () => { void fn(); });
 on('src-add', addSource); on('src-check', checkSources);
@@ -414,6 +508,8 @@ $('diff-domain').addEventListener('change', paintDomains);
 on('window-show', showWindow); on('night-check', nightCheck); on('reverse-ask', askReversal); on('reverse-approve', approveReversal); on('reverse-show', showReversal);
 on('ar-assess', assess);
 on('seal-verify', verifySeal); on('prob-show', showProblems); on('prob-decide-btn', decideProblem); on('trial-run', runTrial);
+on('delta-read', readDelta); on('delta-load', loadDelta); // U6 · MG-09
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });
 on('tot-show', showTotals); on('tot-sign-btn', signTotal); on('gate-read', readGate); on('gate-rollback', showGateRollback);
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();

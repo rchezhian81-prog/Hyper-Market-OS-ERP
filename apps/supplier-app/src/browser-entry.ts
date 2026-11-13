@@ -25,8 +25,9 @@
 // never treated as current from a cache — they are re-read live on load and Refresh.
 
 import {
-  createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal, readInvoiceSubmission, readAsnSubmission,
-  type InvoiceInput, type AsnInput, type DocumentRefusal,
+  createSupplierPortalSession, readDeliveryUpdate, readTopUpProposal, readInvoiceSubmission, readAsnSubmission, readRfqQuote, readClaim,
+  type InvoiceInput, type AsnInput, type DocumentRefusal, type RfqQuoteInput, type RfqQuoteRead, type ClaimInput, type ClaimRead,
+  type SupplierRfqsFeed, type SupplierClaimsFeed,
   type SupplierPortalSession, type SupplierPortalData, type SupplierPortalPorts,
   type SubmissionView, type StatementView, type SubmissionKind, type SupplierOrdersFeed, type DeliveryUpdateInput, type SupplierRebateClaimsFeed,
   type SupplierVmiFeed, type SupplierVmiItem, type SupplierVmiProposalView, type TopUpInput,
@@ -73,6 +74,14 @@ interface SupplierWindow {
     sendAsn(input: AsnInput): Promise<DocumentOutcome>;
     /** OB-606: the SHOP's date of a moment (the shop's zone, never the supplier's device's) — an order's issue date. */
     dateOf(value: unknown): string;
+    /** U6 · M24-FR-01: the requests for quotation sent to this supplier, as last read (null until read, or when unreadable). */
+    rfqs(): SupplierRfqsFeed | null;
+    /** U6 · M24-FR-01: answer one request — checked first; the fifth write this surface makes. Waits for a buyer. */
+    sendRfqQuote(input: RfqQuoteInput): Promise<QuoteOutcome>;
+    /** U6 · M24-FR-02: the claims the shop holds against this supplier, as last read (null until read, or when unreadable). */
+    claims(): SupplierClaimsFeed | null;
+    /** U6 · M24-FR-02: raise a claim on the shop — checked first; the sixth and last write this surface makes. Waits for a buyer. */
+    sendClaim(input: ClaimInput): Promise<ClaimOutcome>;
   };
 }
 
@@ -182,6 +191,45 @@ export async function fetchSupplierRebateClaims(): Promise<SupplierRebateClaimsF
       claimId: String(c['claimId']), schemeId: String(c['schemeId'] ?? ''), amountMinor: num(c['amountMinor']), sentOn: String(c['sentOn'] ?? ''),
       answerDueOn: typeof c['answerDueOn'] === 'string' ? c['answerDueOn'] : null, paidMinor: num(c['paidMinor']), leftToPayMinor: num(c['leftToPayMinor']),
       state: (STATES as readonly string[]).includes(String(c['state'])) ? c['state'] as (typeof STATES)[number] : 'sent',
+    })),
+  };
+}
+
+/** U6 · M24-FR-01: read the requests for quotation sent to this supplier (GET); null when unreadable. Partner scoped server-side. */
+export async function fetchSupplierRfqs(): Promise<SupplierRfqsFeed | null> {
+  const body = await getPortal('/v1/supplier-portal/me/rfqs');
+  if (body === null || !Array.isArray(body['rfqs'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  return {
+    rfqsKnown: body['rfqsKnown'] === true,
+    mayRespond: body['mayRespond'] === true,
+    rfqs: (body['rfqs'] as Record<string, unknown>[]).map((r) => ({
+      rfqId: str(r['rfqId']), requisitionId: str(r['requisitionId']), dueOn: str(r['dueOn']), ...(typeof r['note'] === 'string' ? { note: r['note'] } : {}),
+      sentAt: str(r['sentAt']), currency: str(r['currency']) || 'INR',
+      lines: (Array.isArray(r['lines']) ? r['lines'] as Record<string, unknown>[] : []).map((l) => ({ productId: str(l['productId']), quantity: num(l['quantity']), ...(typeof l['uom'] === 'string' ? { uom: l['uom'] } : {}) })),
+      replied: r['replied'] === true, ...(typeof r['submissionId'] === 'string' ? { submissionId: r['submissionId'] } : {}), ...(typeof r['repliedAt'] === 'string' ? { repliedAt: r['repliedAt'] } : {}),
+      awaitingBuyer: r['awaitingBuyer'] === true, answered: r['answered'] === true,
+      decision: r['decision'] === 'accepted' || r['decision'] === 'rejected' ? r['decision'] : null, ...(typeof r['reason'] === 'string' ? { reason: r['reason'] } : {}),
+    })),
+  };
+}
+
+/** U6 · M24-FR-02: read the claims the shop holds AGAINST this supplier (GET); null when unreadable. Partner scoped server-side. */
+export async function fetchSupplierClaims(): Promise<SupplierClaimsFeed | null> {
+  const body = await getPortal('/v1/supplier-portal/me/claims');
+  if (body === null || !Array.isArray(body['claims'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const KINDS_OF = ['debit_note', 'refused_at_door', 'return_pending', 'door_debit_note'] as const;
+  const STATES = ['raised', 'issued', 'never_owed', 'pending', 'returned'] as const;
+  return {
+    claimsKnown: body['claimsKnown'] === true,
+    claims: (body['claims'] as Record<string, unknown>[]).map((c) => ({
+      claimId: str(c['claimId']), kind: (KINDS_OF as readonly string[]).includes(str(c['kind'])) ? c['kind'] as (typeof KINDS_OF)[number] : 'debit_note',
+      grnId: str(c['grnId']), poId: str(c['poId']), productId: str(c['productId']), quantityMinor: num(c['quantityMinor']), ...(typeof c['uom'] === 'string' ? { uom: c['uom'] } : {}),
+      valueMinor: num(c['valueMinor']), reason: str(c['reason']), raisedAt: str(c['raisedAt']), number: typeof c['number'] === 'string' ? c['number'] : null,
+      state: (STATES as readonly string[]).includes(str(c['state'])) ? c['state'] as (typeof STATES)[number] : 'raised',
     })),
   };
 }
@@ -334,7 +382,77 @@ export async function postAsn(input: AsnInput, feed: SupplierOrdersFeed | null, 
   }
 }
 
-/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and the four writes: OB-362, OB-389, OB-624). */
+/** U6 · M24-FR-01: what answering a request for quotation came to. */
+export type QuoteOutcome =
+  | { readonly result: 'sent'; readonly submissionId: string }
+  | { readonly result: 'invalid'; readonly why: Extract<RfqQuoteRead, { ok: false }>['why']; readonly productId?: string }
+  | { readonly result: 'refused'; readonly whatHappened: string }
+  | { readonly result: 'lost_link' };
+
+/**
+ * U6 · M24-FR-01: the FIFTH write — the supplier's quote for one request, `POST /v1/supplier-portal/me/rfqs/:rfqId/quote`.
+ * Checked first (its own requests, the lines asked for); head office keeps it as an `rfq_response` for a buyer to accept.
+ * The same answer sent twice collapses on the server (its id is the answer's digest), so a retry never doubles it.
+ */
+export async function postRfqQuote(input: RfqQuoteInput, feed: SupplierRfqsFeed | null, maySubmit: boolean): Promise<QuoteOutcome> {
+  const read = readRfqQuote(input, feed, maySubmit);
+  if (!read.ok) return { result: 'invalid', why: read.why, ...(read.productId === undefined ? {} : { productId: read.productId }) };
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const digest = read.body.lines.map((l) => `${l.productId}:${l.unitCost.minor}:${l.unitCost.currency}:${l.leadTimeDays}`).sort().join(',');
+  let hash = 0;
+  for (const ch of digest) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  try {
+    const res = await fetchFn(`/v1/supplier-portal/me/rfqs/${encodeURIComponent(read.rfqId)}/quote`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'idempotency-key': `rfq-quote-${read.rfqId}-${hash.toString(36)}` },
+      body: JSON.stringify(read.body),
+    });
+    if (res.status >= 400) {
+      const b = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+      return { result: 'refused', whatHappened: b.error?.whatHappened ?? `status ${res.status}` };
+    }
+    const b = (await res.json().catch(() => ({}))) as { submissionId?: string };
+    return { result: 'sent', submissionId: typeof b.submissionId === 'string' ? b.submissionId : '' };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** U6 · M24-FR-02: what raising a claim came to. */
+export type ClaimOutcome =
+  | { readonly result: 'sent'; readonly submissionId: string }
+  | { readonly result: 'invalid'; readonly why: Extract<ClaimRead, { ok: false }>['why'] }
+  | { readonly result: 'refused'; readonly whatHappened: string }
+  | { readonly result: 'lost_link' };
+
+/**
+ * U6 · M24-FR-02: the SIXTH and last write — a claim on the shop, as the existing `claim` submission. Checked first; a buyer
+ * accepts or rejects it on the Supplier claims page. It moves no money on its own.
+ */
+export async function postClaim(input: ClaimInput, feed: SupplierOrdersFeed | null, maySubmit: boolean, newId: () => string = newDocumentId): Promise<ClaimOutcome> {
+  const read = readClaim(input, feed, maySubmit);
+  if (!read.ok) return { result: 'invalid', why: read.why };
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const submissionId = `clm-${newId()}`;
+  try {
+    const res = await fetchFn('/v1/supplier-portal/me/submissions', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'idempotency-key': submissionId },
+      body: JSON.stringify({ submissionId, kind: 'claim', document: read.document }),
+    });
+    if (res.status >= 400) {
+      const b = (await res.json().catch(() => ({}))) as { error?: { whatHappened?: string } };
+      return { result: 'refused', whatHappened: b.error?.whatHappened ?? `status ${res.status}` };
+    }
+    return { result: 'sent', submissionId };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Wire the portal onto the given window: boot the session and expose the refresh/present api (and the six writes: OB-362, OB-389, OB-624, U6). */
 export function attachSupplierPortal(win: SupplierWindow): void {
   const data = win.supplierData;
   let current: SupplierPortalData = { submissions: [], statement: null, asAt: '' };
@@ -351,14 +469,16 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     refresh: async () => {
       // The feeds read together; a feed that fails to load stays absent rather than becoming a false empty.
       const mayPropose = new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION);
-      const [submissions, statement, orders, vmi, rebateClaims] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders(), fetchSupplierVmi(mayPropose), fetchSupplierRebateClaims()]);
-      if (submissions === null && statement === null && orders === null && vmi === null && rebateClaims === null) return null;
+      const [submissions, statement, orders, vmi, rebateClaims, rfqs, claims] = await Promise.all([fetchSupplierSubmissions(), fetchSupplierStatement(), fetchSupplierOrders(), fetchSupplierVmi(mayPropose), fetchSupplierRebateClaims(), fetchSupplierRfqs(), fetchSupplierClaims()]);
+      if (submissions === null && statement === null && orders === null && vmi === null && rebateClaims === null && rfqs === null && claims === null) return null;
       current = {
         submissions: submissions ?? current.submissions,
         statement: statement ?? current.statement,
         orders: orders ?? current.orders ?? null,
         vmi: vmi ?? current.vmi ?? null,
         rebateClaims: rebateClaims ?? current.rebateClaims ?? null,
+        rfqs: rfqs ?? current.rfqs ?? null,
+        claims: claims ?? current.claims ?? null,
         asAt: new Date().toISOString(),
       };
       return current;
@@ -372,6 +492,10 @@ export function attachSupplierPortal(win: SupplierWindow): void {
     maySubmitDocuments: () => new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION),
     sendInvoice: (input) => postInvoice(input, current.orders ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
     sendAsn: (input) => postAsn(input, current.orders ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
+    rfqs: () => current.rfqs ?? null,
+    sendRfqQuote: (input) => postRfqQuote(input, current.rfqs ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
+    claims: () => current.claims ?? null,
+    sendClaim: (input) => postClaim(input, current.orders ?? null, new Set(data?.permissions ?? []).has(SUBMIT_PERMISSION)),
   };
 }
 

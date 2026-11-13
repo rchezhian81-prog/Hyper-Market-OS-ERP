@@ -198,8 +198,26 @@ export interface StockHealthSession {
   view(lang: Lang): StockHealthView;
 }
 
-const kpiFromRatio = (r: Ratio): KpiValue =>
-  r.kind === 'ratio' ? { kind: 'ratio', bp: r.bp } : { kind: 'not_meaningful', because: r.because };
+/**
+ * U3 · OB-699: the reason a figure cannot be stated, and what to do about negative stock, are the PRODUCT's own sentences
+ * (`packages/stock/src/metrics.ts`, `services/inventory/src/index.ts`) — a closed set, carried here in Tamil and matched on
+ * head office's English; a sentence this session does not know is shown as head office sent it.
+ */
+const REASONS_TA: Readonly<Record<string, string>> = Object.freeze({
+  'no stock was held': 'சரக்கு எதுவும் வைக்கப்படவில்லை',
+  'nothing sold': 'எதுவும் விற்கப்படவில்லை',
+  'nothing sold in the period': 'இந்தக் காலத்தில் எதுவும் விற்கப்படவில்லை',
+  'turns could not be computed': 'சரக்குச் சுழற்சியைக் கணக்கிட முடியவில்லை',
+  'no stock was held, so there is no investment to return on': 'சரக்கு எதுவும் வைக்கப்படவில்லை, எனவே வருமானம் கணக்கிட முதலீடு இல்லை',
+  'net sales could not be computed — a product sold in the period has no known tax rate in the catalogue, so revenue cannot be stated net of tax':
+    'நிகர விற்பனையைக் கணக்கிட முடியவில்லை — இந்தக் காலத்தில் விற்ற ஒரு பொருளுக்குப் பட்டியலில் வரி விகிதம் தெரியவில்லை, எனவே வரி நீக்கிய வருவாயைச் சொல்ல முடியாது',
+  'The shelf cannot hold less than nothing, so something was sold that was never received or received against the wrong code. Count the line — do not adjust it to zero, which hides whichever of those it was.':
+    'அலமாரியில் ஒன்றுமில்லாததற்கும் குறைவாக இருக்க முடியாது; எனவே பெறப்படாத ஒன்று விற்கப்பட்டது அல்லது தவறான குறியீட்டில் பெறப்பட்டது. அந்த வரியை எண்ணுங்கள் — பூஜ்ஜியமாகச் சரிசெய்யாதீர்கள்; அது எது நடந்தது என்பதை மறைத்துவிடும்.',
+});
+const saidIn = (lang: Lang, english: string): string => (lang === 'ta' ? (REASONS_TA[english] ?? english) : english);
+
+const kpiFromRatio = (lang: Lang, r: Ratio): KpiValue =>
+  r.kind === 'ratio' ? { kind: 'ratio', bp: r.bp } : { kind: 'not_meaningful', because: saidIn(lang, r.because) };
 
 /** The most recent ISO timestamp among the sections present (string compare is correct for ISO-8601). */
 const mostRecent = (times: readonly (string | undefined)[]): string | null => {
@@ -246,7 +264,7 @@ export function createStockHealthSession(config: StockHealthConfig, ports: Stock
             announcement: `${t('sigNegative')}: ${row.productId} @ ${row.locationId}`, needsAttention: true,
           }),
           productId: row.productId, locationId: row.locationId, amountMinor: row.onHandMinor, currency: null,
-          detail: row.ownerAction,
+          detail: saidIn(lang, row.ownerAction),
         });
       }
 
@@ -294,9 +312,9 @@ export function createStockHealthSession(config: StockHealthConfig, ports: Stock
         kpis.push({ key: 'aged', label: t('kpiAged'), value: { kind: 'money', minor: data.ageing.oldestBucketValueMinor, currency: data.ageing.currency }, attention: data.ageing.oldestBucketValueMinor > 0 });
       }
       if (data.performance !== undefined) {
-        kpis.push({ key: 'turns', label: t('kpiTurns'), value: kpiFromRatio(data.performance.turns), attention: false });
-        kpis.push({ key: 'daysOfCover', label: t('kpiDaysOfCover'), value: kpiFromRatio(data.performance.daysOfCover), attention: false });
-        kpis.push({ key: 'gmroi', label: t('kpiGmroi'), value: kpiFromRatio(data.performance.gmroi), attention: false });
+        kpis.push({ key: 'turns', label: t('kpiTurns'), value: kpiFromRatio(lang, data.performance.turns), attention: false });
+        kpis.push({ key: 'daysOfCover', label: t('kpiDaysOfCover'), value: kpiFromRatio(lang, data.performance.daysOfCover), attention: false });
+        kpis.push({ key: 'gmroi', label: t('kpiGmroi'), value: kpiFromRatio(lang, data.performance.gmroi), attention: false });
       }
 
       const asOf = mostRecent([

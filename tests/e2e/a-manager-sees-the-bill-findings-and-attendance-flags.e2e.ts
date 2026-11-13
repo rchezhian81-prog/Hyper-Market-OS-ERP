@@ -133,36 +133,38 @@ describe.skipIf(!HAVE_BROWSER)('the Bill findings and attendance flags page thro
 
   it('the store manager sees the critical finding first, then the material one, and Ravi\'s unpaired "out"; in Tamil on the toggle; nothing written', async () => {
     const m = await open(MANAGER);
-    await m.page.waitForSelector('#s-rows li[data-sale="S-101"]');
-    expect(await m.page.$$eval('#s-rows li', (ls) => ls.map((l) => (l as unknown as { dataset: { severity: string; sale: string } }).dataset.severity + ':' + (l as unknown as { dataset: { sale: string } }).dataset.sale)))
+    // U5: the findings are grouped by kind, each kind a register; the kind with the critical finding comes first.
+    await m.page.waitForSelector('#s-groups tr[data-sale="S-101"]');
+    expect(await m.page.$$eval('#s-groups tr[data-sale]', (ls) => ls.map((l) => (l as unknown as { dataset: { severity: string; sale: string } }).dataset.severity + ':' + (l as unknown as { dataset: { sale: string } }).dataset.sale)))
       .toEqual(['critical:S-102', 'material:S-101']);
-    await says(m.page, '#s-rows li[data-sale="S-102"]', /Critical.*Bill S-102.*p-milk is under recall and was sold.*What to do: ACT NOW: contact the customer\./);
-    await says(m.page, '#s-rows li[data-sale="S-101"]', /Material.*Difference: ₹60\.00.*What to do: Ask the manager\. The sale stands\./);
+    expect(await m.page.$$eval('#s-groups section.group', (gs) => gs.map((g) => (g as unknown as { dataset: Record<string, string> }).dataset['kind']))).toEqual(['sold_a_recalled_product', 'price_cut_above_approver_limit']);
+    await says(m.page, '#s-groups tr[data-sale="S-102"]', /Critical.*S-102.*p-milk is under recall and was sold.*ACT NOW: contact the customer\./);
+    await says(m.page, '#s-groups tr[data-sale="S-101"]', /Material.*₹60\.00.*Ask the manager\. The sale stands\./);
     await says(m.page, '#s-counts', /^1 · 1 · 1 /);
 
     // U2: the day is the shop's dd/mm/yyyy field; the ISO day sits behind it.
     expect(await m.page.inputValue('#a-day')).toBe(`${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)}`);
     expect(await m.page.evaluate(() => (globalThis as unknown as { sreOffice: { dateValue(id: string): string | null } }).sreOffice.dateValue('a-day'))).toBe(TODAY);
-    await m.page.waitForSelector(`#a-rows li[data-person="${RAVI}"]`);
-    await says(m.page, `#a-rows li[data-person="${RAVI}"]`, /Ravi \(u-ravi\).*out.*Out, but no in to pair with/);
-    expect(await m.page.$$(`#a-rows li[data-person="${ANU}"]`)).toHaveLength(0);
+    await m.page.waitForSelector(`#a-flags-grid tr[data-person="${RAVI}"]`);
+    await says(m.page, `#a-flags-grid tr[data-person="${RAVI}"]`, /Ravi \(u-ravi\).*out.*Out, but no in to pair with/);
+    expect(await m.page.$$(`#a-flags-grid tr[data-person="${ANU}"]`)).toHaveLength(0);
     await says(m.page, '#a-counts', /^3 marks read for this day; with a flag: 1$/);
 
     await m.page.click('#lang');
     await says(m.page, '#sales-h', /^பில் கண்டறிதல்கள்$/);
-    await says(m.page, `#a-rows li[data-person="${RAVI}"]`, /வெளியே பதிவு உண்டு, இணைக்க உள்ளே பதிவு இல்லை/);
-    await says(m.page, '#s-rows li[data-sale="S-102"]', /p-milk is under recall and was sold/);
+    await says(m.page, `#a-flags-grid tr[data-person="${RAVI}"]`, /வெளியே பதிவு உண்டு, இணைக்க உள்ளே பதிவு இல்லை/);
+    await says(m.page, '#s-groups tr[data-sale="S-102"]', /p-milk is under recall and was sold/);
     expect(m.errors).toEqual([]);
     expect(m.writes).toEqual([]);
     // OB-612: the page asked for this store's findings only, and another store's bill is not on it.
     expect(m.asked).toContain(`/v1/sales/exceptions?branchId=${STORE}`);
-    expect(await m.page.$$('#s-rows li[data-sale="S-201"]')).toHaveLength(0);
+    expect(await m.page.$$('#s-groups tr[data-sale="S-201"]')).toHaveLength(0);
   });
 
   it('a cashier the box lets open the page is refused by head office, said in its words', async () => {
     const c = await open(CASHIER);
     await says(c.page, '#s-status', /^Head office refused:/);
-    expect(await c.page.$$('#s-rows li')).toHaveLength(0);
+    expect(await c.page.$$('#s-groups tr[data-sale]')).toHaveLength(0);
     expect(await c.page.isVisible('#attendance')).toBe(false);
     expect(c.errors).toEqual([]);
   });

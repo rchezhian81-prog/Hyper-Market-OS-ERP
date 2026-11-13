@@ -34,13 +34,13 @@ describe.skipIf(!HAVE_BROWSER)('the Audit log page (Round 4c)', () => {
 
   it('the owner reads who did what, checks the chain and rebuilds the person from the record; nothing is written', async () => {
     const o = await shop.open(OWNER, '/audit-log/');
-    await o.page.waitForSelector('#rows li[data-action="role.grant"]');
-    expect(await o.page.$$eval('#rows li[data-object]', (ls) => ls.map((l) => (l as unknown as { dataset: { action: string } }).dataset.action).slice(0, 2))).toEqual(['role.grant', 'role.grant.request']);
-    await says(o.page, '#rows li[data-action="role.grant"]', /role\.grant — user u-new.*by u-owner.*After: roleId: cashier/);
+    await o.page.waitForSelector('#rows tr[data-action="role.grant"]');
+    expect(await o.page.$$eval('#rows tr[data-object]', (ls) => ls.map((l) => (l as unknown as { dataset: { action: string } }).dataset.action).slice(0, 2))).toEqual(['role.grant', 'role.grant.request']);
+    await says(o.page, '#rows tr[data-action="role.grant"]', /role\.grant — user u-new.*by u-owner.*After: roleId: cashier/);
     await o.page.fill('#q-action', 'role.grant.request');
     await o.page.click('#q-find');
     await says(o.page, '#search-status', /^1 changes found$/);
-    await says(o.page, '#rows li', /by u-mgr/);
+    await says(o.page, '#rows tr[data-action]', /by u-mgr/);
     await o.page.click('#v-check');
     await says(o.page, '#verify-status', /^✓ The chain holds: \d+ records checked/);
     await o.page.fill('#r-type', 'user'); await o.page.fill('#r-id', NEW);

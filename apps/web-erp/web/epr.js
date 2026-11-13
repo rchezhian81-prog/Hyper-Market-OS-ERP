@@ -7,6 +7,22 @@
 // prompt/confirm/alert; nothing on a timer.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** The chrome's "Not known" in the reader's language — never a dash. */
+const notKnownWord = () => { const o = sreO(); return o && typeof o.words === 'function' ? o.words('notKnown') : 'Not known'; };
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 // U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
@@ -97,12 +113,12 @@ function row(tone, headline, stateWord, facts, data = {}) {
   return li;
 }
 
-function panel(key, label, value) {
-  const p = document.createElement('div'); p.className = 'panel'; p.dataset.panel = key;
-  const k = document.createElement('span'); k.className = 'k'; k.textContent = label;
-  const v = document.createElement('span'); v.className = 'v'; v.textContent = value;
-  p.append(k, v);
-  return p;
+/** The plastic register's categories as the chrome's cards (each carries its category in data-panel). */
+function paintPanels(cats) {
+  const o = sreO(); const host = el('panels');
+  if (!o) { host.replaceChildren(...cats.map((c) => { const s = document.createElement('span'); s.dataset.panel = c.key; s.textContent = `${c.label}: ${c.value}`; return s; })); return; }
+  o.cards(host, cats.map((c) => ({ label: c.label, value: c.value })));
+  host.querySelectorAll('.sre-summary-card').forEach((card, i) => { card.dataset.panel = cats[i].key; });
 }
 
 const stockWord = (s) => (s.kind === 'battery' ? `${t('battery')} — ${s.batteryType}` : t('e_waste'));
@@ -121,22 +137,22 @@ function paint() {
 
   const state = el('state');
   state.hidden = !readFailed;
-  state.textContent = readFailed ? t('cannotRead') : '';
+  if (readFailed) paintState(state, { tone: 'error', label: t('cannotRead'), announcement: '' }); else state.replaceChildren();
 
   el('settings').replaceChildren(...(readFailed || settings === null ? [] : settings.map((s) => row(
-    s.status === 'confirmed' ? 'ok' : 'degraded', s.label, t(s.status === 'confirmed' ? 'confirmed' : 'notConfirmed'),
-    [s.value ?? '—', ...(s.confirmation ? [`${t('confirmedBy')}: ${s.confirmation}`] : [])], { key: s.key, status: s.status },
+    s.status === 'confirmed' ? 'ok' : 'degraded', (window.eprRecords?.settingQuestion?.(lang, s.key, s.label) ?? s.label), t(s.status === 'confirmed' ? 'confirmed' : 'notConfirmed'),
+    [s.value ?? notKnownWord(), ...(s.confirmation ? [`${t('confirmedBy')}: ${s.confirmation}`] : [])], { key: s.key, status: s.status },
   ))));
 
   const cats = readFailed || plastic === null ? [] : plastic.categories;
-  el('panels').replaceChildren(...cats.map((c) => panel(c.category, c.label, `${c.totalGrams.toLocaleString('en-IN')} ${t('grams')} · ${c.units} ${t('units')}`)));
+  paintPanels(cats.map((c) => ({ key: c.category, label: c.label, value: `${c.totalGrams.toLocaleString('en-IN')} ${t('grams')} · ${c.units} ${t('units')}` })));
   el('csv').disabled = plastic === null || readFailed; whyDisabled(el('csv'), plastic === null || readFailed ? { en: 'The plastic register could not be read, so there is no file to make.', ta: 'பிளாஸ்டிக் பதிவேட்டைப் படிக்க முடியவில்லை, எனவே உருவாக்கக் கோப்பு இல்லை.' } : '');
   const ex = readFailed || plastic === null ? [] : plastic.exceptions;
   el('plastic-exceptions').replaceChildren(...(plastic === null || readFailed ? [] : ex.length === 0
     ? [row('ok', t('noException'), undefined, [])]
     : [row('error', t('incomplete'), undefined, []), ...ex.map((e) => row('error', e.productId, undefined, [e.detail], { product: e.productId, kind: e.kind }))]));
 
-  el('takeback-words').textContent = takeBack?.words ?? '';
+  el('takeback-words').textContent = takeBack === null ? '' : (window.eprRecords?.takeBackRule?.(lang) ?? takeBack.words ?? ''); // U3 · OB-699: the rule in the reader's language
   const stock = readFailed || takeBack === null ? [] : takeBack.stock;
   el('stock').replaceChildren(...(takeBack === null || readFailed ? [] : stock.length === 0 ? [row('idle', t('noStock'), undefined, [])] : stock.map((s) => row(
     'idle', stockWord(s), t('notSaleable'),
@@ -259,6 +275,7 @@ window.addEventListener('epr:changed', () => { void refresh(); });
 const asked = new URLSearchParams(location.search).get('fy');
 if (asked !== null && /^\d{4}-\d{2}$/.test(asked)) el('fy').value = asked;
 paint();
+onChrome(() => paint());
 void refresh();
 
 if ('serviceWorker' in navigator) {

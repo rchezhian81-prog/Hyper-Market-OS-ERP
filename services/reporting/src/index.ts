@@ -47,6 +47,54 @@ export interface Figure {
  * `lagging` and `stale` are separated because they mean different things to the reader: lagging is
  * "this will catch up", stale is "stop using this number".
  */
+/**
+ * U3 (OB-699, 7 Nov 2026): a figure's NAME is the product's own word, so it has a Tamil reading here, beside the one
+ * table every producer names its figures from — head office's and the store computer's alike. A name this table does
+ * not know is shown as it is (never blank), which the guardrail on the figure names catches.
+ */
+export const FIGURE_NAMES_TA: Readonly<Record<string, string>> = Object.freeze({
+  'Taken': 'வசூல்',
+  'Bills': 'பில்கள்',
+  'Average basket': 'சராசரி பில்',
+  'Units per basket': 'ஒரு பில்லுக்கு பொருட்கள்',
+  'Bills with no readable lines': 'படிக்க முடியாத வரிகளுள்ள பில்கள்',
+  'Today': 'இன்று',
+  'Up or down': 'மேலா கீழா',
+  'Items in no department': 'எந்தத் துறையிலும் இல்லாத பொருட்கள்',
+  'Margin': 'லாபம்',
+  'Margin %': 'லாப %',
+  'Sales with no cost price': 'வாங்கிய விலை இல்லாத விற்பனைகள்',
+  'Not sent yet': 'இன்னும் அனுப்பப்படவில்லை',
+  'Minutes since head office last spoke to this shop': 'தலைமை அலுவலகம் கடைசியாக இந்தக் கடையுடன் பேசி நிமிடங்கள்',
+  'Things to look at': 'பார்க்க வேண்டியவை',
+  'Card and UPI takings': 'அட்டை மற்றும் UPI வசூல்',
+  'GST collected': 'வசூலித்த ஜிஎஸ்டி',
+  'Points outstanding': 'நிலுவையில் உள்ள புள்ளிகள்',
+  'Profit': 'லாபம்',
+  'Bills outside your branches (not in these figures)': 'உங்கள் கிளைகளுக்கு வெளியே உள்ள பில்கள் (இந்த எண்களில் இல்லை)',
+  'Card and UPI payments not yet settled': 'இன்னும் தீர்க்கப்படாத அட்டை மற்றும் UPI பணம்',
+  'Cost of goods sold': 'விற்ற சரக்கின் விலை',
+  'Lines with stock at no known cost': 'விலை தெரியாத சரக்குள்ள வரிகள்',
+  'Members': 'உறுப்பினர்கள்',
+  'Net GST (collected less paid on purchases)': 'நிகர ஜிஎஸ்டி (வசூலித்தது போக கொள்முதலில் செலுத்தியது)',
+  'Ordered': 'ஆர்டர் செய்தது',
+  'Payouts not yet in the bank': 'இன்னும் வங்கியை அடையாத பணம்',
+  'Product lines held': 'வைத்திருக்கும் பொருள் வரிகள்',
+  'Records not yet sent': 'இன்னும் அனுப்பப்படாத பதிவுகள்',
+  'Returned': 'திருப்பியது',
+  'Returns': 'திருப்பங்கள்',
+  'Revenue net of GST and returns': 'ஜிஎஸ்டி மற்றும் திருப்பங்கள் போக வருவாய்',
+  'Taken but on no line': 'வசூலித்தது ஆனால் எந்த வரியிலும் இல்லை',
+  'Taken net of returns': 'திருப்பங்கள் போக வசூல்',
+  'Value on hand': 'கையிருப்பு மதிப்பு',
+  'What the points are worth': 'புள்ளிகளின் மதிப்பு',
+});
+
+/** A figure's name in the reader's language: the Tamil reading when the screen is Tamil and the table knows it, else the name as the producer gave it. */
+export function figureNameIn(lang: 'en' | 'ta', name: string): string {
+  return lang === 'ta' ? (FIGURE_NAMES_TA[name] ?? name) : name;
+}
+
 export function figure(input: {
   readonly name: string;
   readonly valueMinor?: number;

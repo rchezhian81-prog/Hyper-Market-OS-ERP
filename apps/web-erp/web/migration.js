@@ -25,16 +25,12 @@ const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const shopDates = new Map();
 function repaintShopDates() { const l = u2bLang(); for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  // U5: the chrome's own adapter (`sreOffice.shopDate`) swaps the box for the shared dd/mm/yyyy field under the same id; the
+  // page reads ISO back with `dateOf` and remembers which fields it swapped.
+  const office = window.sreOffice;
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (office.shopDate(id, words, opts) !== null) shopDates.set(id, words);
 }
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
 /** Put an ISO day on a field the page sets itself (today, a row being edited): the shared field shows it in the shop's form. */
@@ -92,6 +88,9 @@ const WORDS = {
     sources: 'places records are kept', countedRows: 'rows counted', gaps: 'things nobody can answer',
     retireTitle: 'Switching the old system off',
     retireLead: 'Switching the old system off is not the same act as deleting the old data, and this screen never does the second one.',
+    // U6 · §27 Migration: the steps that are their own on the Old system checks page
+    oldStepsTitle: 'The steps, one by one', oldStepsLead: 'Source profiling, the trial load and the delta (the changes since the final extract, found and then loaded exactly once) are their own steps, with the other migration controls, on the Old system checks page. Tap a step to go to it.',
+    os_disc: 'MG-01 Source profiling', os_trial: 'MG-05 Trial load', os_diff: 'MG-09 Delta — find the changes', os_delta: 'MG-09 Delta — load the changes', os_all: 'All twelve controls, in order',
     noRetire: 'Nothing has been archived yet, or nobody has said how many open questions could still need the old records. Either way this cannot be decided.',
     neverDeleted: 'The old data is never deleted, whatever else happens.',
     ok: 'OK', read: 'Please read this',
@@ -187,6 +186,8 @@ const WORDS = {
     sources: 'பதிவுகள் வைக்கப்படும் இடங்கள்', countedRows: 'எண்ணப்பட்ட வரிசைகள்', gaps: 'யாரும் பதில் சொல்ல முடியாதவை',
     retireTitle: 'பழைய அமைப்பை நிறுத்துதல்',
     retireLead: 'பழைய அமைப்பை நிறுத்துவதும் பழைய தகவலை நீக்குவதும் ஒன்றல்ல. இந்தத் திரை இரண்டாவதை ஒருபோதும் செய்யாது.',
+    oldStepsTitle: 'படிகள், ஒவ்வொன்றாக', oldStepsLead: 'மூலப் பகுப்பாய்வு, சோதனை ஏற்றம், மாற்றங்கள் (இறுதி ஏற்றுமதிக்குப் பின் நடந்தவை — கண்டறிந்து, பின் ஒரே ஒரு முறை ஏற்றப்படுபவை) மற்ற இடமாற்றக் கட்டுப்பாடுகளோடு பழைய முறை சோதனைகள் பக்கத்தில் தனித்தனிப் படிகள். ஒரு படியைத் தட்டி அங்கே செல்லலாம்.',
+    os_disc: 'MG-01 மூலப் பகுப்பாய்வு', os_trial: 'MG-05 சோதனை ஏற்றம்', os_diff: 'MG-09 மாற்றங்கள் — கண்டறிதல்', os_delta: 'MG-09 மாற்றங்கள் — ஏற்றுதல்', os_all: 'பன்னிரண்டு கட்டுப்பாடுகளும், வரிசையில்',
     noRetire: 'இதுவரை எதுவும் காப்பகப்படுத்தப்படவில்லை, அல்லது பழைய பதிவுகள் தேவைப்படக்கூடிய திறந்த கேள்விகள் எத்தனை என்று யாரும் சொல்லவில்லை. எப்படியும் இதை முடிவு செய்ய முடியாது.',
     neverDeleted: 'வேறு எது நடந்தாலும், பழைய தகவல் ஒருபோதும் நீக்கப்படாது.',
     ok: 'சரி', read: 'இதைப் படிக்கவும்',
@@ -1024,7 +1025,25 @@ function renderTemplates() {
 
 // ── The old system ──────────────────────────────────────────────────────────
 
+/** U6: the steps that are their own on the Old system checks page (served beside this page), as 44px links. */
+function renderOldSteps() {
+  const list = el('old-steps');
+  if (!list) return;
+  const steps = [['os_disc', '../old-system/#disc'], ['os_trial', '../old-system/#trial'], ['os_diff', '../old-system/#diff'], ['os_delta', '../old-system/#delta'], ['os_all', '../old-system/#steps']];
+  list.replaceChildren(...steps.map(([key, href]) => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = href; a.dataset.step = key;
+    const [control, ...rest] = t(key).split(' ');
+    const b = document.createElement('b'); b.textContent = control;
+    const span = document.createElement('span'); span.textContent = rest.join(' ');
+    a.append(b, span); li.append(a);
+    return li;
+  }));
+}
+
 function renderOld() {
+  renderOldSteps();
   const result = session.discovery();
   const box = el('old-summary');
   box.replaceChildren();
@@ -1699,7 +1718,7 @@ function paintChrome() {
     ['figures-title', 'figures'], ['figures-lead', 'figuresLead'],
     ['data-title', 'data'], ['data-lead', 'dataLead'],
     ['both-title', 'both'], ['both-lead', 'bothLead'],
-    ['old-title', 'old'], ['old-lead', 'oldLead'],
+    ['old-title', 'old'], ['old-lead', 'oldLead'], ['old-steps-title', 'oldStepsTitle'], ['old-steps-lead', 'oldStepsLead'],
     ['rollback-title', 'rollbackTitle'], ['rollback-lead', 'rollbackLead'],
     ['trigger-label', 'triggerLabel'], ['trigger-totals', 'triggerTotals'],
     ['trigger-trade', 'triggerTrade'], ['trigger-data', 'triggerData'],

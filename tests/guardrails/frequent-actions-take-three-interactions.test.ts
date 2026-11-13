@@ -36,6 +36,8 @@ const E2E = 'tests/e2e';
 const TILL = `${E2E}/the-till-and-manager-meet-the-interaction-budget.e2e.ts`;
 const HANDHELDS = `${E2E}/the-handhelds-meet-the-spec.e2e.ts`;
 const CUSTOMER = `${E2E}/the-customer-app-meets-wcag-aa.e2e.ts`;
+/** U6 (7 Nov 2026): the customer app's browse-by-category (M20-FR-01 · §27 "Customer: Category"). */
+const CUSTOMER_BROWSE = `${E2E}/u6-the-customer-app-browses-by-category-and-shows-points.e2e.ts`;
 const BUYING = `${E2E}/open-to-buy-on-the-production-api.e2e.ts`;
 // QG-02 lane 1 R4: the browser tests that now count the actions that were "not yet counted".
 const WEIGHED = `${E2E}/f7-the-served-till-spreads-an-offer-by-what-each-line-charges.e2e.ts`;
@@ -102,6 +104,8 @@ const REGISTER: readonly Budgeted[] = [
   { action: 'reorder a past basket', spec: 'customer-app.md', specWords: 'reorder a past basket', budget: 3, counted: { file: CUSTOMER, label: 'reorder a past basket' } },
   { action: 'add a searched item to the cart', spec: 'customer-app.md', specWords: 'add a searched item to cart', budget: 2, counted: { file: CUSTOMER, label: 'add a searched item to the cart' } },
   { action: 'reach checkout from the cart', spec: 'customer-app.md', specWords: 'reach checkout from cart', budget: 2, counted: { file: CUSTOMER, label: 'reach checkout from the cart' } },
+  // U6: the spec's "Catalogue with filters" — one tap to a category, one to add, the same ≤2 as adding a searched item.
+  { action: 'browse a category and add an item', spec: 'customer-app.md', specWords: 'catalogue with filters', budget: 2, counted: { file: CUSTOMER_BROWSE, label: 'browse a category and add an item' } },
   // ── The owner, AI control, CRM and merchandising screens ──
   { action: 'drill a KPI to its detail', spec: 'owner-command-centre.md', specWords: 'drill a KPI to its detail', budget: 3, counted: { file: OWNER, label: 'drill a KPI to its detail' } },
   { action: 'approve a pending item (owner)', spec: 'owner-command-centre.md', specWords: 'approve a pending item', budget: 3, counted: { file: OWNER, label: 'approve a pending item (owner)' } },

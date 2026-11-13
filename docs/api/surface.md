@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1706 | 982 | 982 | 194 | 445 |
+| 13 | 1725 | 990 | 990 | 196 | 445 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -292,6 +292,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/requisitions/:requisitionId/from-drafts` | `purchase.order.propose` | core | yes |
 | POST | `/v1/purchase/requisitions/:requisitionId/from-replenishment` | `purchase.order.propose` | core | yes |
 | POST | `/v1/purchase/requisitions/:requisitionId/quotes/:quoteId` | `purchase.order.propose` | core | yes |
+| POST | `/v1/purchase/requisitions/:requisitionId/rfq/:rfqId` | `purchase.order.propose` | core | yes |
+| GET | `/v1/purchase/rfqs` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/supplier-claims` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/supplier-claims/credits/:supplierId/:submissionId` | `purchase.supplier.pay` | core | yes |
+| POST | `/v1/purchase/supplier-claims/disputes/:supplierId/:submissionId/resolve` | `supplier.portal.review` | core | yes |
 | GET | `/v1/purchase/suppliers` | `supplier.view` | core | — |
 | GET | `/v1/purchase/suppliers/:supplierId` | `supplier.view` | core | — |
 | POST | `/v1/purchase/suppliers/:supplierId` | `purchase.supplier.manage` | core | yes |
@@ -309,8 +314,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/vmi-proposals/:proposalId/decide` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/vmi/:supplierId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/vmi/limits/:supplierId/:storeId/:productId` | `purchase.order.propose` | core | yes |
+| GET | `/v1/supplier-portal/me/claims` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/orders` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/rebate-claims` | `supplier.portal.self` | core | — |
+| GET | `/v1/supplier-portal/me/rfqs` | `supplier.portal.self` | core | — |
+| POST | `/v1/supplier-portal/me/rfqs/:rfqId/quote` | `supplier.portal.self.submit` | core | yes |
 | GET | `/v1/supplier-portal/me/statement` | `supplier.portal.self` | core | — |
 | GET | `/v1/supplier-portal/me/submissions` | `supplier.portal.self` | core | — |
 | POST | `/v1/supplier-portal/me/submissions` | `supplier.portal.self.submit` | core | yes |
@@ -348,11 +356,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/floor/indents/:indentId/returns/:returnId/accepted/synced` | `inventory.indent.sync` | core | yes |
 | POST | `/v1/floor/indents/:indentId/synced` | `inventory.indent.sync` | core | yes |
 | GET | `/v1/inventory/adjustment-requests` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/adjustment-requests/:requestId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/adjustment-requests/:requestId/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/adjustment-requests/:requestId/synced` | `inventory.adjustment.sync` | core | yes |
 | GET | `/v1/inventory/ageing` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/batch-directory` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/count-plans` | `inventory.count.plan` | core | — |
 | GET | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | — |
@@ -410,6 +420,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/returned` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
+| GET | `/v1/inventory/ledger` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/on-shelf-availability` | `inventory.availability.read` | core | — |
@@ -420,6 +431,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/online-availability` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/online-buffer` | `inventory.online.buffer.set` | core | yes |
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/quarantine` | `quality.hold.manage` | core | — |
 | GET | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.read` | core | — |
 | POST | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.set` | core | yes |
 | GET | `/v1/inventory/receipts-cost-not-known` | `purchase.invoice.match` | core | — |
@@ -778,6 +790,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/service/cases/:caseId/first-response` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/resolution` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/root-cause` | `service.case.manage` | core | yes |
+| GET | `/v1/service/cases/:caseId/satisfaction` | `service.case.read` | core | — |
 | POST | `/v1/service/cases/:caseId/satisfaction` | `service.case.manage` | core | yes |
 | GET | `/v1/service/cases/:caseId/sla` | `service.case.read` | core | — |
 | GET | `/v1/service/compensation-policy` | `service.case.read` | core | — |
@@ -805,6 +818,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/me/addresses/:addressId` | `storefront.order.place` | `customer_app` | yes |
 | POST | `/v1/me/addresses/:addressId/remove` | `storefront.order.place` | `customer_app` | yes |
 | POST | `/v1/me/help/answers` | `storefront.order.read` | `customer_app` | yes |
+| GET | `/v1/me/loyalty` | `storefront.order.read` | `customer_app` | — |
 | GET | `/v1/me/online-returns` | `storefront.order.read` | `customer_app` | — |
 | POST | `/v1/me/orders/:orderId/online-returns/:returnId` | `storefront.order.place` | `customer_app` | yes |
 | GET | `/v1/me/payment-methods` | `storefront.order.read` | `customer_app` | — |
@@ -927,6 +941,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/delivery/routes/:routeId/assignment` | `delivery.dispatch.manage` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/handover/synced` | `delivery.stop.sync` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/settled/synced` | `delivery.stop.sync` | `delivery` | yes |
+| POST | `/v1/delivery/routes/:routeId/stops/:stopId/call-request/synced` | `delivery.stop.sync` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/stops/:stopId/proof/synced` | `delivery.stop.sync` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/stops/:stopId/synced` | `delivery.stop.sync` | `delivery` | yes |
 | GET | `/v1/delivery/runs/:driverId` | `delivery.run.read` | `delivery` | — |
@@ -1059,6 +1074,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/account-openings/:loadId/sign-off` | `finance.period.sign` | core | yes |
 | POST | `/v1/finance/b2b/post` | `finance.journal.post` | `b2b` | yes |
 | GET | `/v1/finance/b2b/postings` | `finance.period.read` | `b2b` | — |
+| GET | `/v1/finance/bank-reconciliation` | `settlement.review.read` | core | — |
+| POST | `/v1/finance/bank-reconciliation/exceptions/:exceptionId` | `settlement.investigation.manage` | core | yes |
+| POST | `/v1/finance/bank-reconciliation/exceptions/:exceptionId/resolve` | `settlement.investigation.manage` | core | yes |
 | GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
 | GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
@@ -1177,6 +1195,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/rebate-accruals/post` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/rebate-receipts` | `finance.period.read` | core | — |
 | POST | `/v1/finance/rebate-receipts/:schemeId/receipts/:receiptId` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/receivables` | `finance.period.read` | core | — |
 | GET | `/v1/finance/referral-liability` | `finance.period.read` | core | — |
 | POST | `/v1/finance/referral-liability/post` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |

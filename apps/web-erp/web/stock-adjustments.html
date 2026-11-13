@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Adjust a quantity</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Adjust a quantity (U6 of the UI/UX gap audit, 7 Nov 2026 · §27 Inventory "Adjustment" · M08-FR-03 · §28 · hard rules #2 #5
+      #10). A THIN CLIENT over head office's adjustment-request routes: an office person ASKS for a stock correction with a
+      reason (POST /v1/inventory/adjustment-requests/:requestId), head office values it at its own cost and holds it PENDING,
+      and a DIFFERENT person decides it (POST …/decide) — only then does head office append ONE compensating movement to the
+      ledger. Every rule and every refusal is head office's; the words live in the tested session model
+      (apps/web-erp/src/stock-adjustments-session.ts, window.stockAdjustmentsSession).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1100px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+      /* CI on #906: a field's own column took the input's natural width (299px) inside a 234px cell, so the Unit field ran
+         to 1312px on a 1280px desk. Every column here gives way to its box; the fields wrap by the row's own rule. */
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: start; }
+      label.f { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0; display: flex; gap: 8px 16px; flex-wrap: wrap; }
+      fieldset legend { font-size: 14px; font-weight: 600; }
+      fieldset label { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); font-size: 15px; }
+      fieldset input { width: 20px; height: 20px; }
+      label.check { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); font-size: 15px; }
+      label.check input { width: 20px; height: 20px; }
+      .inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .meta { color: var(--muted); font-size: 14px; margin: 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="who">Adjust a quantity</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Adjust a quantity</h2>
+        <p class="lede" id="lede"></p>
+      </section>
+      <section aria-labelledby="new-h" id="new-section" hidden>
+        <h3 id="new-h">Ask for a correction</h3>
+        <p class="lede" id="new-lede"></p>
+        <form id="new" class="row">
+          <label class="f" for="product"><span id="l-product">Product</span><input id="product" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="place"><span id="l-place">Place</span><input id="place" class="sre-input" autocomplete="off" /></label>
+          <label class="f" for="qty"><span id="l-qty">By how many</span><input id="qty" class="sre-input" inputmode="decimal" autocomplete="off" /></label>
+          <label class="f" for="uom"><span id="l-uom">Unit</span><input id="uom" class="sre-input" value="EA" autocomplete="off" /></label>
+          <label class="f" for="reason"><span id="l-reason">Reason</span><select id="reason" class="sre-select"></select></label>
+          <label class="f" for="note"><span id="l-note">Note</span><input id="note" class="sre-input" autocomplete="off" /></label>
+        </form>
+        <fieldset id="direction">
+          <legend id="l-direction">The shelf holds</legend>
+          <label><input type="radio" name="direction" value="less" checked /><span id="d-less">fewer than the system says</span></label>
+          <label><input type="radio" name="direction" value="more" /><span id="d-more">more than the system says</span></label>
+        </fieldset>
+        <button id="ask" type="button" class="sre-btn sre-btn-primary">Ask for this correction</button>
+        <p class="status" id="new-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="reg-h" id="reg-section">
+        <h3 id="reg-h">Corrections asked for</h3>
+        <p class="lede" id="reg-lede"></p>
+        <div class="inline">
+          <label class="check"><input type="checkbox" id="all" /><span id="l-all">Show decided ones too</span></label>
+        </div>
+        <p class="meta" id="covers"></p>
+        <p class="meta" id="as-at"></p>
+        <p class="status" id="reg-status" role="status" aria-live="polite"></p>
+        <div id="register"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./stock-adjustments.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -13,7 +13,7 @@ import { bilingualGaps } from '../../packages/ui/src/index';
 // 2026): the vendor-managed-inventory "Top-up proposal" form, for the supplier's own VMI items only, which sends a
 // replenishment proposal that waits for a buyer. OB-624 (owner, 1 Nov 2026, in writing: "allow both" — widening OB-362
 // and OB-389): an "Invoice" form and a "Delivery note (ASN)" form, each sending the existing `invoice` / `asn` submission,
-// which counts only once a buyer accepts it. The guardrail allows exactly those FOUR writes, from the bundle, and nothing
+// which counts only once a buyer accepts it. The guardrail allows exactly those writes (SIX since U6: the RFQ quote and the claim), from the bundle, and nothing
 // else.
 // These are static checks on the shipped view + shell — that it reads from the tested session (never
 // re-deciding), issues NO write verb, shows every state as a word+icon (never colour alone), and is offered in
@@ -81,9 +81,9 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(VIEW).not.toMatch(/\bfetch\s*\(/);
   });
 
-  it('OB-362 + OB-389 + OB-624: the bundle makes exactly FOUR writes — the delivery_status submission, the VMI top-up proposal, the invoice and the delivery note (ASN), each to the supplier\'s own route', () => {
+  it('OB-362 + OB-389 + OB-624 + U6: the bundle makes exactly SIX writes — the delivery_status submission, the VMI top-up proposal, the invoice, the delivery note (ASN), the RFQ quote and the claim, each to the supplier\'s own route', () => {
     const writes = ENTRY.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? [];
-    expect(writes).toEqual(["method: 'POST'", "method: 'POST'", "method: 'POST'", "method: 'POST'"]);
+    expect(writes).toEqual(Array(6).fill("method: 'POST'"));
     const posts: string[] = [];
     for (let at = ENTRY.indexOf("method: 'POST'"); at >= 0; at = ENTRY.indexOf("method: 'POST'", at + 1)) posts.push(ENTRY.slice(Math.max(0, at - 1500), at + 600));
     // OB-362: to the supplier's OWN submissions route (no partner id in it), with the kind fixed, after the tested check.
@@ -98,6 +98,15 @@ describe('the view renders from the tested session and re-decides nothing', () =
     expect(invoice, 'the invoice write').toBeDefined();
     expect(invoice).toContain("'/v1/supplier-portal/me/submissions'");
     expect(invoice).toMatch(/readInvoiceSubmission\(input, feed, maySubmit\)/);
+    // U6 · M24-FR-01: the quote — to the request's OWN route under /me (no partner id), after the tested check.
+    const quote = posts.find((p) => p.includes('/v1/supplier-portal/me/rfqs/'));
+    expect(quote, 'the RFQ quote write').toBeDefined();
+    expect(quote).toMatch(/readRfqQuote\(input, feed, maySubmit\)/);
+    // U6 · M24-FR-02: the claim — the existing `claim` submission to the own submissions route, after the tested check.
+    const claim = posts.find((p) => p.includes("kind: 'claim'"));
+    expect(claim, 'the claim write').toBeDefined();
+    expect(claim).toContain("'/v1/supplier-portal/me/submissions'");
+    expect(claim).toMatch(/readClaim\(input, feed, maySubmit\)/);
     const asn = posts.find((p) => p.includes("kind: 'asn'"));
     expect(asn, 'the delivery note write').toBeDefined();
     expect(asn).toContain("'/v1/supplier-portal/me/submissions'");
@@ -112,7 +121,11 @@ describe('the view renders from the tested session and re-decides nothing', () =
     // No other write route is named anywhere in the bundle. (D03-FR-03 · OB-404: `rebate-claims` is a READ — the claims the
     // shop sent this supplier, fetched with the same GET helper as the statement; nothing is written to it.)
     const routes = [...ENTRY.matchAll(/['`](\/v1\/[^'`$]+)/g)].map((m) => m[1]);
-    expect(routes.filter((r) => !/^\/v1\/supplier-portal\/me\/(submissions|statement|orders|rebate-claims|vmi(\/proposals\/)?)$/.test(r ?? ''))).toEqual([]);
+    // U6: `rfqs` and `claims` are READS (the requests sent to this supplier, the claims the shop holds against it); the one
+    // `rfqs/…/quote` route is the quote write checked above.
+    expect(routes.filter((r) => !/^\/v1\/supplier-portal\/me\/(submissions|statement|orders|rebate-claims|rfqs|rfqs\/|claims|vmi(\/proposals\/)?)$/.test(r ?? ''))).toEqual([]);
+    expect(ENTRY).toMatch(/getPortal\('\/v1\/supplier-portal\/me\/rfqs'\)/);
+    expect(ENTRY).toMatch(/getPortal\('\/v1\/supplier-portal\/me\/claims'\)/);
     expect(ENTRY).toMatch(/getPortal\('\/v1\/supplier-portal\/me\/rebate-claims'\)/);
   });
 

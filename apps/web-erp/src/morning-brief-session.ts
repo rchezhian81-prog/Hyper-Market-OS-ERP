@@ -10,7 +10,10 @@ import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
 export interface BriefTodayView {
-  readonly tradingDay?: string; readonly prepared: boolean; readonly lines?: readonly string[]; readonly deterministic?: boolean;
+  readonly tradingDay?: string; readonly prepared: boolean; readonly lines?: readonly string[];
+  /** U3 (OB-699): the same lines in both languages — the page shows the reader's. */
+  readonly linesIn?: { readonly en?: readonly string[]; readonly ta?: readonly string[] };
+  readonly deterministic?: boolean;
   readonly sending: 'on' | 'switched_off'; readonly sent: boolean; readonly detail: string;
 }
 

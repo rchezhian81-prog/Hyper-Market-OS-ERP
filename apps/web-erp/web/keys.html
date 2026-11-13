@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Keys and credentials</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Keys and credentials (U6 · §27 Admin/Security "keys" · M32-FR-03 · SEC-04 · hard rule 4). A THIN CLIENT over head
+      office's secret routes (GET /v1/integration/secrets, POST …/review, GET …/usage, POST …/:id/rotation, POST …/:id/revocation)
+      and the sign-in revocations (GET/POST /v1/identity/token-revocations). Which keys and credentials exist, what each
+      protects, who owns it, its state and when it must be changed; head office's review; their use; changing one over with
+      an overlap; revoking one at once with a reason; cutting a person's sign-ins. A value is never shown, typed or stored.
+      Its session is apps/web-erp/src/keys-session.ts. The page reads head office as it opens (GETs only); every write is an
+      explicit click behind the confirm sheet (OB-698). No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      /* U5/U6: the page stands on the shared office parts (register, cards, state, chip, field, confirm sheet); only its own layout is here. */
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > .sre-field { flex: 1 1 220px; min-width: 0; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status[data-result="ok"] { color: var(--ok); }
+      .status[data-result="refused"], .status[data-result="invalid"], .status[data-result="lost_link"] { color: var(--danger-text); }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      ul.breaks { margin: 0; padding-left: 20px; font-size: 14px; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Keys and credentials</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Keys and credentials</h2>
+        <p class="meta" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="inv" hidden aria-labelledby="inv-h">
+        <h3 id="inv-h"></h3>
+        <p class="meta" id="inv-lead"></p>
+        <div id="inv-cards"></div>
+        <div id="inv-table"></div>
+        <p class="meta" id="inv-note"></p>
+        <div class="actions"><button id="inv-read" type="button" class="sre-btn sre-btn-quiet"></button></div>
+      </section>
+
+      <section id="rev" hidden aria-labelledby="rev-h">
+        <h3 id="rev-h"></h3>
+        <p class="meta" id="rev-lead"></p>
+        <div id="rev-table"></div>
+      </section>
+
+      <section id="rot" hidden aria-labelledby="rot-h">
+        <h3 id="rot-h"></h3>
+        <p class="meta" id="rot-lead"></p>
+        <form id="rot-form" class="row-form" novalidate></form>
+        <div class="actions"><button id="rot-btn" type="button" class="sre-btn sre-btn-primary"></button></div>
+        <p class="status" id="rot-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="rvk" hidden aria-labelledby="rvk-h">
+        <h3 id="rvk-h"></h3>
+        <p class="meta" id="rvk-lead"></p>
+        <form id="rvk-form" class="row-form" novalidate></form>
+        <div class="actions"><button id="rvk-btn" type="button" class="sre-btn sre-btn-danger"></button></div>
+        <p class="status" id="rvk-status" role="status" aria-live="polite"></p>
+        <ul class="breaks" id="rvk-breaks"></ul>
+      </section>
+
+      <section id="use" hidden aria-labelledby="use-h">
+        <h3 id="use-h"></h3>
+        <p class="meta" id="use-lead"></p>
+        <div id="use-table"></div>
+        <p class="meta" id="use-checked"></p>
+        <h3 id="unusual-h"></h3>
+        <div id="unusual-table"></div>
+      </section>
+
+      <section id="tok" hidden aria-labelledby="tok-h">
+        <h3 id="tok-h"></h3>
+        <p class="meta" id="tok-lead"></p>
+        <form id="tok-form" class="row-form" novalidate></form>
+        <div class="actions"><button id="tok-btn" type="button" class="sre-btn"></button></div>
+        <p class="status" id="tok-status" role="status" aria-live="polite"></p>
+        <div id="tok-table"></div>
+      </section>
+
+      <section id="where" aria-labelledby="where-h">
+        <h3 id="where-h"></h3>
+        <p class="meta" id="where-lead"></p>
+        <div id="where-cards"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./keys.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

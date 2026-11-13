@@ -52,6 +52,14 @@ const VIEW_WORDS = {
 const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
 let attentionOnly = false;
 
+// U5 (G13): a status mark is the one icon set's shape for the tone (the session's glyph only when the set is missing).
+const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+function toneMark(holder, tone, glyph) {
+  const mark = window.sreIcon && typeof window.sreIcon.forTone === 'function' ? lineIcon(window.sreIcon.forTone(tone), 18) : null;
+  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
+}
+/** The shared state's kind for a presentation tone: an error is refused/unreachable, degraded is a lost link, the rest is "nothing yet". */
+const stateKind = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'offline' : 'empty');
 function rowNode(r) {
   const li = document.createElement('li');
   li.className = `row tone-${r.status.tone}`;
@@ -71,7 +79,7 @@ function rowNode(r) {
   const icon = document.createElement('span');
   icon.className = 'icon';
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = r.status.icon;               // the shape
+  toneMark(icon, r.status.tone, r.status.icon);  // the shape, from the one icon set
   const slabel = document.createElement('span');
   slabel.textContent = r.status.label;            // the word — never colour alone
   status.append(icon, slabel);
@@ -171,9 +179,11 @@ function paint() {
   const state = el('state');
   if (shown.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label || session.text(lang, 'stateEmpty');
+    // U5: the shared state part — nothing needs attention / not permitted / head office unreachable, as word + icon.
+    const o = window.sreOffice;
+    const label = view.screenState.label || session.text(lang, 'stateEmpty');
+    if (o && typeof o.state === 'function') o.state(state, stateKind(view.screenState.tone), { title: label, detail: '' });
+    else state.textContent = label;
   } else {
     state.hidden = true;
   }

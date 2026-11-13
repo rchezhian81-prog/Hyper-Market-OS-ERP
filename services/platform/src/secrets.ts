@@ -226,7 +226,7 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
         const result = rotateSecret({
           secret: current, newVaultRef: b['newVaultRef'] as string,
           rotatedBy: isStr(b['rotatedBy']) ? b['rotatedBy'] as string : ctx.userId,
-          graceDays: b['graceDays'] as number, at: deps.now(),
+          graceDays: b['graceDays'] as number, at: deps.now(), day: await shopToday(deps, ctx.tenantId),
         });
         if (!result.rotated || result.next === undefined) {
           throw apiError(409, {
@@ -270,7 +270,7 @@ export function secretsRoutes(deps: SecretsDeps): readonly Route[] {
           secret: current, reason: b['reason'] as string,
           revokedBy: isStr(b['revokedBy']) ? b['revokedBy'] as string : ctx.userId,
           ...(Array.isArray(refs) ? { referencedBy: refs as RawRef[] } : {}),
-          at: deps.now(),
+          at: deps.now(), day: await shopToday(deps, ctx.tenantId),
         });
         await deps.record(ctx.tenantId, result.revoked);
         await deps.recordAudit?.(ctx.tenantId, {

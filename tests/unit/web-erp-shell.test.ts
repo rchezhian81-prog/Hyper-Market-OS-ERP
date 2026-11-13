@@ -19,7 +19,9 @@ import { money } from '../../packages/contracts/src/money';
 // Real words only (Stage G slice 5b): every permission here is one a cloud route checks and the role catalogue
 // grants — the menu is gated on what the server enforces, never on a word nobody checks.
 const ROLES: Role[] = [
-  { id: 'cashoffice', name: 'Cash office', permissions: ['till.dayclose.read', 'till.shift.read', 'reporting.report.read'] },
+  // OB-702 (7 Nov 2026): "Cash over / short" is the reviewer's page — its word is the sign-off right, which this cash-office
+  // role holds; a cashier with the shift read alone is no longer offered it.
+  { id: 'cashoffice', name: 'Cash office', permissions: ['till.dayclose.read', 'till.shift.read', 'till.overshort.review', 'reporting.report.read'] },
   {
     id: 'manager',
     name: 'Store manager',
@@ -60,7 +62,7 @@ describe('role-scoped navigation', () => {
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     // Round 12: Transfers (gated on the same availability read) joins the Inventory group.
     // W1: Stock health and Stock counts lead (NAV_ITEM_ORDER); the rest keep their declared order.
-    expect(nav.find((g) => g.group === 'Inventory')?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'packaging', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
+    expect(nav.find((g) => g.group === 'Inventory')?.items.map((i) => i.id)).toEqual(['stock-health', 'counts', 'transfers', 'stock-ledger', 'stock-adjustments', 'packaging', 'warehouse-supervisor', 'demand-events']); // U6: + Stock ledger and Adjust a quantity on the same availability read (Quarantine needs the quality-hold right this manager lacks); // R4 Lane 3: Store events (D-24) on the same read; round 6: Packaging and crates (M28-FR-03) on the same read
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {

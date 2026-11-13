@@ -16,8 +16,9 @@ import type { JournalEntry } from '../../finance/src/index';
 import type { Category } from '../../../packages/product/src/product';
 import {
   STREAM, streamName, segmentDataAdapter, customer360Adapter, financeAdapter, couponAdapter, productMasterAdapter,
-  categoryRegisterAdapter, inventoryAdapter, orgStructureAdapter, saleStockLocationOf,
+  categoryRegisterAdapter, inventoryAdapter, orgStructureAdapter, saleStockLocationOf, loyaltyMembersAdapter, outsidePartyLoginAdapter, enrolledMemberRefs,
 } from './adapters';
+import { memberNameOf } from '../../customer/src/loyalty-members';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { collapseConsent } from '../../customer/src/segments';
 import { customerOverviewRoutes, type CustomerOverviewDeps } from '../../customer/src/customer-overview';
@@ -67,6 +68,7 @@ export function customerOverviewAdapter(input: Base): CustomerOverviewDeps {
   const { store, now } = input;
   const seg = segmentDataAdapter({ store, now });
   const c360 = customer360Adapter({ store, now });
+  const members = loyaltyMembersAdapter({ store, now, rule: () => ({ pointsPer100Inr: 0, pointValuePaise: 0 }) });
   return {
     now,
     // FUL-10: the facts are derived from the banked sales and returns, brought up to date before each read.
@@ -74,7 +76,19 @@ export function customerOverviewAdapter(input: Base): CustomerOverviewDeps {
     complaintFacts: async (t) => seg.complaintFacts(t),
     policy: async (t) => seg.policy(t),
     consentFor: async (t, ref) => seg.consentFor(t, ref),
+    // U6 (M16-FR-02): the enrolled members are the customers the desk names — listed even before their first online order,
+    // so a consent check by name finds them (their consent records live under their own ref).
+    consentSubjects: async (t) => enrolledMemberRefs(store, t),
     merges: async (t) => c360.merges(t),
+    // U5 · G16: the member's name as given at enrolment (OB-329, sealed with the member), else an app login's display
+    // name — the same two sources the recall call list reads; a name nobody gave is not on record.
+    nameFor: async (t, ref) => {
+      const given = memberNameOf(await members.memberHistory(t, ref));
+      if (given !== undefined) return given;
+      const logins = (await outsidePartyLoginAdapter(input).invites(t)).filter((r) => r.role === 'customer' && r.partyId === ref && r.state !== 'rejected');
+      const name = logins[logins.length - 1]?.displayName;
+      return typeof name === 'string' && name.trim() !== '' ? name : undefined;
+    },
   };
 }
 

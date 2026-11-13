@@ -191,7 +191,7 @@ describe.skipIf(!HAVE_BROWSER)('the till delivery is booked in the app or at the
       const row = page.locator('#till-jobs li.row[data-order="till-S-APPDESK"]');
       await row.waitFor({ timeout: 15_000 });
       expect(await row.getAttribute('data-status')).toBe('waiting_for_customer_app');
-      expect(await row.locator('.wait').textContent()).toBe('○ Owner\'s wait: not set — enter it only after the customer phones');
+      expect(await row.locator('.wait').textContent()).toBe('Owner\'s wait: not set — enter it only after the customer phones');
       expect(await row.locator('.tj-app-h').textContent()).toBe('The customer has not chosen in the app');
       // "After the wait" cannot be chosen while the wait is not set.
       expect(await row.locator('select.tj-why option[value="wait_passed"]').evaluate((o) => (o as unknown as { disabled: boolean }).disabled)).toBe(true);

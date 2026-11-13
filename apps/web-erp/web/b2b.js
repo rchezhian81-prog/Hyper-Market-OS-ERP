@@ -34,7 +34,19 @@ const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(na
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, act, quiet) { const b = document.createElement('button'); b.type = 'button'; b.className = quiet ? 'sre-btn sre-btn-quiet' : 'sre-btn'; if (act) b.dataset.act = act; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 function field(labelWords, cls, value) { const l = document.createElement('label'); l.append(text('span', labelWords)); const i = document.createElement('input'); i.autocomplete = 'off'; i.className = cls; if (value !== undefined) i.value = value; l.append(i); return { label: l, input: i }; }
-const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
+// OB-699: the page's words of a refusal follow the toggle; head office's own sentence (whatHappened) stays English and is
+// marked so. Every status line said is remembered, so the toggle repaints it in the other language.
+const lastSaid = new Map();
+const say = (id, out) => {
+  lastSaid.set(id, out);
+  const host = $(id); host.replaceChildren();
+  const words = api.outcomeWords(lang, out);
+  const ho = out && out.result === 'refused' && typeof out.whatHappened === 'string' && out.whatHappened !== '' && words.endsWith(out.whatHappened);
+  if (!ho) { host.textContent = words; return; }
+  host.append(document.createTextNode(words.slice(0, words.length - out.whatHappened.length)));
+  const sp = document.createElement('span'); sp.setAttribute('lang', 'en'); sp.textContent = out.whatHappened; host.append(sp);
+};
+const resayAll = () => { for (const [id, out] of lastSaid) if ($(id)) say(id, out); };
 // OB-698: an invoice (money owed), a delivery challan (stock leaves) and an order placed over the credit limit (a privilege
 // used) each go to head office only after the shared confirm sheet (the chrome's) says what will happen, in whose name, and
 // the person confirms. Go back sends nothing.
@@ -302,7 +314,7 @@ async function openCustomer(id) {
 const contractInput = () => ({ customerId: customerId ?? $('c-id').value, contractId: $('k-id').value, validFrom: dateOf('k-from'), validTo: dateOf('k-to'), onExpiry: $('k-expiry').value, prices: $('k-prices').value, limitRupees: $('k-limit').value, termsDays: $('k-terms').value, note: $('k-note').value });
 
 for (const [id, name] of [['c-open', 'search'], ['k-save', 'file-text'], ['k-ask', 'hand'], ['q-add', 'list-plus'], ['q-issue', 'send'], ['pay-save', 'banknote'], ['g-save', 'shield-check'], ['g-remove', 'trash'], ['rec-save', 'repeat']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); resayAll(); });
 paint();
 if (!may.named) { $('page-status').textContent = t('nobody'); }
 else if (!may.open) { $('page-status').textContent = t('cannotRead'); }

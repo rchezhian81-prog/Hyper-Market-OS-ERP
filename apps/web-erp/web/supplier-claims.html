@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier claims</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier claims (U6 of the UI/UX gap audit · §27 "Purchase — claims" was PARTIAL · M07-FR-03 · M24-FR-02 · §28). ONE register
+      of every claim between the shop and its suppliers over a delivery, read from head office's own records (GET
+      /v1/purchase/supplier-claims): the shop's debit notes, refusals and returns on one side; the suppliers' claims through
+      the portal on the other. Two actions, each through the route that already existed and each behind the confirm sheet when
+      money moves: issue a debit note under its number (POST /v1/purchase/suppliers/:id/debit-notes/:ref/issue) and decide a
+      supplier's claim with a reason (POST /v1/supplier-portal/partners/:id/submissions/:sid/review). Its session is
+      apps/web-erp/src/supplier-claims-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      /* U5/U6: the page stands on the shared office parts — the register, the summary cards, the state, the chip and the
+         confirm sheet come from the chrome and the foundation; the page keeps only its own layout. */
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .decide { display: grid; gap: 10px; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Supplier claims</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Supplier claims</h2>
+        <p class="lead" id="lead"></p>
+        <div class="actions"><button id="reload" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="reload-text"></span></button></div>
+        <p class="meta" id="covers"></p>
+        <div id="cards"></div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="note"></p>
+      </section>
+      <section id="shop" hidden aria-labelledby="shop-h">
+        <h3 id="shop-h"></h3>
+        <p class="meta" id="shop-lead"></p>
+        <p class="status" id="shop-status" role="status" aria-live="polite"></p>
+        <div id="shop-table"></div>
+        <p class="meta" id="unattributed" hidden></p>
+      </section>
+      <section id="supplier" hidden aria-labelledby="sup-h">
+        <h3 id="sup-h"></h3>
+        <p class="meta" id="sup-lead"></p>
+        <p class="status" id="sup-status" role="status" aria-live="polite"></p>
+        <div id="sup-table"></div>
+      </section>
+      <section id="credits" hidden aria-labelledby="credit-h">
+        <h3 id="credit-h"></h3>
+        <p class="meta" id="credit-lead"></p>
+        <p class="status" id="credit-status" role="status" aria-live="polite"></p>
+        <div id="credit-table"></div>
+      </section>
+      <section id="disputes" hidden aria-labelledby="dispute-h">
+        <h3 id="dispute-h"></h3>
+        <p class="meta" id="dispute-lead"></p>
+        <p class="status" id="dispute-status" role="status" aria-live="polite"></p>
+        <div id="dispute-table"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./supplier-claims.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

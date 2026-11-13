@@ -99,7 +99,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5 reports
       await says(s.page, '#w5-dry-list li', /product-v1 · u-owner · 1 rows · 0 good · 1 with problems · not ready to load/);
       await s.page.click('#w5-qual-show');
       await says(s.page, '#w5-qual-list li[data-id="supplier-anand"]', /^supplier-anand · 1 · 10 rows · /);
-      await says(s.page, '#w5-qual-jobs li[data-id="job-1"]', /anand-oct\.csv · refused · 6\/10 · u-owner/);
+      // U7: every job is on the register now (one page from head office): the row's cells, in order
+      await says(s.page, '#w5-qual-jobs tr[data-id="job-1"]', /anand-oct\.csv.*refused.*6\/10.*u-owner/);
       expect(s.writes, 'a dry run loads nothing').toEqual([expect.stringMatching(/^POST \/v1\/import\/dry-runs\/dry-/)]);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

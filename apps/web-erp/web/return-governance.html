@@ -34,13 +34,11 @@
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .status .icon { display:inline-flex; width:1.4em; justify-content:center; }
       .row .flags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size: var(--fs-sm); }
       .row .flags-label { color:var(--muted); font-weight:600; }
       .row .chip { background:var(--warn-surface); color:var(--on-warn-surface); border:1px solid var(--degraded); border-radius:999px; padding:2px 10px; font-size: var(--fs-sm); font-weight:600; }
       .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       [hidden] { display:none !important; }
     </style>
@@ -69,7 +67,8 @@
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Refund exceptions to review"></ul>
 
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <!-- U5: an empty / refused view is the chrome's shared state (window.sreOffice.state), never a plain line with a glyph. -->
+      <div id="state" hidden></div>
     </main>
 
     <!--SCREEN-DATA-->

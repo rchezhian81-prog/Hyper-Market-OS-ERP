@@ -241,7 +241,7 @@ async function decide(requestId, decision, input, buttons) {
   }
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); el('sample').textContent = t('sampleData'); /* U3 · OB-699: the stand-in's own line follows the toggle */ });
 
 el('sample').hidden = window.approvalsSession !== undefined;
 el('sample').textContent = t('sampleData');

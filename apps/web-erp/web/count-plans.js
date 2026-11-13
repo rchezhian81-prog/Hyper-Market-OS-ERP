@@ -10,32 +10,12 @@ const session = window.countPlansSession ?? null;
 let lang = 'en';
 const t = (k) => (session === null ? k : session.text(lang, k));
 
-// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
-// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
-// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
-// list cannot be read (head office down, no right) typing the id is the fallback, never a dead end (P-01, P-08).
-const pickers = [];
-function pickerBeside(input, kind, titleKey, extra = {}) {
-  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
-  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
-  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
-  host.after(btn, name);
-  btn.addEventListener('click', async () => {
-    const office = window.sreOffice;
-    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
-    const picked = await office.pick({ kind, title: { en: session.text('en', titleKey), ta: session.text('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
-    if (!picked || picked.ok !== true) return;
-    input.value = picked.id;
-    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
-  pickers.push(btn);
-  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
-  return btn;
-}
-const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+const paintPickers = () => {}; // U5: the chrome's `pickable` keeps its own words on the toggle
 /** The signed-in person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
 function myStore() {
   const office = window.sreOffice;
@@ -87,35 +67,46 @@ const node = (tag, props = {}, ...kids) => {
   return el;
 };
 
+let register = null;
+/** The four figures as summary cards: a count the page has not read yet is "Not known", never a dash. */
 function paintPanels() {
-  for (const s of ['planned', 'counting', 'approved', 'cancelled']) {
-    $(`n-${s}`).textContent = plans === null ? '–' : String(plans.filter((p) => p.state === s).length);
-    $(`p-${s}`).textContent = t(s);
-  }
+  const o = office(); if (!o || session === null) return;
+  const n = (st) => (plans === null ? null : plans.filter((p) => p.state === st).length);
+  o.cards($('panels'), [
+    { label: both('planned'), value: n('planned'), tone: 'pending' }, { label: both('counting'), value: n('counting'), tone: 'pending' },
+    { label: both('approved'), value: n('approved'), tone: 'ok' }, { label: both('cancelled'), value: n('cancelled'), tone: 'idle' },
+  ]);
 }
-
+/** The register, drawn once on the chrome's shared part: the place and the products by NAME, the state as the one chip. */
+function ensureRegister() {
+  const o = office(); if (!o || session === null || register !== null) return register;
+  register = o.table($('register'), {
+    id: 'count-plans', label: both('registerH'), pageSize: 10, sortable: true, rows: null,
+    rowKey: (p) => p.planId, rowData: (p) => ({ plan: p.planId, state: p.state }),
+    empty: { title: both('empty'), detail: both('registerLede') },
+    columns: [
+      { key: 'plan', label: both('colPlan'), value: (p) => p.planId },
+      { key: 'place', label: both('colPlace'), value: (p) => o.nameOf('place', p.locationId) || p.locationId },
+      { key: 'products', label: both('colProducts'), sort: false, value: (p) => p.productIds.map((id) => o.nameOf('product', id) || id).join(', ') },
+      { key: 'state', label: both('colState'), filter: true, value: (p) => t(p.state), render: (p) => o.recordChip(p.state, t(p.state)) },
+      { key: 'freeze', label: both('colFreeze'), sort: false, value: (p) => session.freezeWords(lang, p) },
+      { key: 'view', label: both('view'), sort: false, value: () => '', render: (p) => { const look = node('button', { type: 'button', className: 'sre-btn sre-btn-quiet', textContent: t('view'), dataset: { act: 'view' } }); look.addEventListener('click', () => { void openDrawer(p.planId); }); return look; } },
+    ],
+  });
+  return register;
+}
 function paintRegister() {
-  const body = $('register').querySelector('tbody');
-  body.replaceChildren();
   paintPanels();
-  if (plans === null) return;
-  if (plans.length === 0) { body.append(node('tr', {}, node('td', { colSpan: 6, className: 'muted', textContent: t('empty') }))); return; }
-  for (const p of plans) {
-    const look = node('button', { type: 'button', className: 'quiet', textContent: t('view'), dataset: { act: 'view' } });
-    look.addEventListener('click', () => { void openDrawer(p.planId); });
-    body.append(node('tr', { dataset: { plan: p.planId, state: p.state } },
-      node('td', { textContent: p.planId }), node('td', { textContent: p.locationId }), node('td', { textContent: p.productIds.join(', ') }),
-      node('td', { textContent: t(p.state) }), node('td', { textContent: session.freezeWords(lang, p) }), node('td', {}, look)));
-  }
+  if (ensureRegister() === null) return;
+  register.setRows(plans);
 }
 
 async function loadList() {
   if (session === null || session.nobody) return;
-  if (!session.may.read) { $('list-status').className = 'status'; $('list-status').textContent = t('cannotRead'); return; }
+  if (!session.may.read) { $('list-status').className = 'status'; $('list-status').textContent = t('cannotRead'); ensureRegister()?.setState('denied', { detail: both('cannotRead') }); return; }
   const out = await session.list();
-  if (out.result === 'ok') { plans = out.plans; if ($('list-status').textContent === t('reading')) $('list-status').textContent = ''; }
-  else { plans = null; say($('list-status'), out); }
-  paintRegister();
+  if (out.result === 'ok') { plans = out.plans; if ($('list-status').textContent === t('reading')) $('list-status').textContent = ''; paintRegister(); }
+  else { plans = null; say($('list-status'), out); paintPanels(); if (ensureRegister() !== null) register.setState(office().stateOf(out), { detail: session.say(lang, out, false).words }); }
 }
 
 function lineNode(line) {
@@ -218,8 +209,9 @@ function adjustmentNode(r) {
   li.append(node('span', { className: 'muted', textContent: v.where }));
   li.append(node('span', { className: 'muted', textContent: v.value }));
   if (v.note !== null && v.note !== '') li.append(node('span', { className: 'muted', textContent: v.note }));
-  for (const f of v.flags) li.append(node('span', { className: 'finding', textContent: `⚠ ${f}` }));
-  li.append(node('span', { className: 'state', textContent: v.stateWord }));
+  const o = office();
+  for (const f of v.flags) li.append(o ? o.chip('degraded', f) : node('span', { className: 'finding', textContent: f }));
+  li.append(o ? o.recordChip(v.status, v.stateWord) : node('span', { className: 'state', textContent: v.stateWord }));
   if (v.status === 'pending' && v.yours) li.append(node('span', { className: 'muted yours', textContent: t('adjYours') }));
   if (v.canDecide) {
     const why = node('input', { className: 'adj-reason', 'aria-label': `${t('adjReason')}: ${v.requestId}`, placeholder: t('adjReason'), autocomplete: 'off' });
@@ -287,7 +279,7 @@ function paintWords() {
 
 if (session !== null) {
   for (const r of document.querySelectorAll('input[name="freeze"]')) r.addEventListener('change', paintKinds);
-  pickerBeside($('place'), 'place', 'whichPlace', () => ({ scope: { storeId: myStore() } }));
+  whenChrome(() => { office().pickable($('place'), 'place', both('whichPlace'), { scope: () => ({ storeId: myStore() }) }); });
   $('add-product').addEventListener('click', async () => {
     const office = window.sreOffice;
     if (!office || typeof office.pick !== 'function') { $('create-status').className = 'status err'; $('create-status').textContent = t('pickUnavailable'); return; }
@@ -313,7 +305,7 @@ if (session !== null) {
     $('d-status').textContent = ''; $('d-status').className = 'status';
     // U1 · OB-698: the consequence-and-confirm sheet before the corrections are posted — Go back sends nothing.
     const tt = current?.view?.totals;
-    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : '—').replace('{gain}', tt ? session.rupees(tt.gainMinor) : '—');
+    const sub = (l, key) => String(session.text(l, key)).replace('{plan}', current.planId).replace('{place}', current.view?.plan?.locationId ?? '').replace('{counted}', String(tt?.counted ?? '?')).replace('{products}', String(tt?.products ?? '?')).replace('{loss}', tt ? session.rupees(tt.lossMinor) : (office()?.words('notKnown') ?? 'Not known')).replace('{gain}', tt ? session.rupees(tt.gainMinor) : (office()?.words('notKnown') ?? 'Not known'));
     // With no reason written the session says so, and nothing is sent — no sheet for that.
     const answer = $('d-reason').value.trim() === '' ? { ok: true } : await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
     if (answer === 'unavailable') { $('d-status').className = 'status err'; $('d-status').textContent = t('confirmUnavailable'); return; }
@@ -332,13 +324,14 @@ if (session !== null) {
     paintPickers();
     paintPickedProducts();
     paintRegister();
+    if (register !== null) register.repaint();
     paintDrawer();
     paintAdjustments();
   });
 }
 
 paintWords();
-paintPanels();
+whenChrome(() => { paintRegister(); });
 if (session !== null && !session.nobody) { $('list-status').textContent = t('reading'); void loadList(); }
 
 if ('serviceWorker' in navigator) {

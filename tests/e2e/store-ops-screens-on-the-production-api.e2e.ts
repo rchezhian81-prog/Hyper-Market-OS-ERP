@@ -135,7 +135,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   it('(b) price mismatches: the shelf below the price of record, in the owner\'s four bands', async () => {
     const { page, close } = await open(OWNER, '/price-integrity', DEVICE_ZONE);
     try {
-      expect(await page.locator('#bands .panel').count()).toBe(4);
+      expect(await page.locator('#bands .sre-summary-card').count(), 'the owner\'s four bands, as summary cards').toBe(4);
       await page.fill('#branch', 'br-1');
       await page.click('#show');
       await page.locator('#rows tr[data-product="OIL"]').waitFor({ timeout: 15_000 });
@@ -144,7 +144,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       expect(await row.textContent()).toMatch(/Shelf label — shows LESS than the price — honour it.*₹55\.00.*₹50\.00.*Under 1 day/);
       // OB-606: open since the SHOP's date it was seen — on a device in New York, still the shop's yesterday there.
       expect(await row.textContent()).toContain(EVENING.shopDate);
-      expect(await page.locator('#bands .panel[data-band="under 1 day"] .v').textContent()).toBe('1');
+      const underADay = page.locator('#bands .sre-summary-card', { hasText: 'Under 1 day' });
+      expect(await underADay.locator('.sre-summary-value').textContent()).toBe('1');
+      expect(await underADay.getAttribute('data-tone'), 'a band with an open mismatch is said in the degraded tone').toBe('degraded');
     } finally { await close(); }
   }, 60_000);
 

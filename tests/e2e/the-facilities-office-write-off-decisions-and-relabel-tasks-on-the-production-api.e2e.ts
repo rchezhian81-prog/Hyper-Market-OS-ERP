@@ -135,7 +135,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
     const forWho = (await first.locator('.for').textContent()) ?? '';
     expect(forWho).toContain('For: the store manager');
     expect(forWho).toContain('no department owns this product here');
-    expect(forWho).toContain('✓ yours');
+    expect(forWho).toContain('· yours');
     expect(await first.locator('.for').getAttribute('data-assignee')).toBe('store_manager');
     await first.locator('input.rl-price').fill('20');
     await first.locator('input.rl-photo').fill('photo-l1');

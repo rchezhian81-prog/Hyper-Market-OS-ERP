@@ -132,6 +132,14 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (k) => WORDS[lang][k] ?? WORDS.en[k] ?? k;
+// U5 (G17 · G13): the three line grids stand on the chrome's register part — built once per host, fed by setRows; the
+// column words are pairs so the chrome repaints them on the toggle. The confirm and typing grids carry boxes a person
+// fills, so those registers neither sort nor search (a repaint would lose what was typed) and show every line on one
+// page. A line's match state, a bill's state and an advance's state are the one record chip.
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: WORDS.ta[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function grid(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
+const chipFor = (state, words) => window.sreOffice.recordChip(state, words);
 const inr = (minor) => (minor === null || minor === undefined ? '—' : '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 let register = null;
@@ -200,9 +208,7 @@ function renderRegister() {
     const what = document.createElement('span');
     what.className = 'what';
     what.textContent = d.extracted?.supplierInvoiceNo ?? d.documentId;
-    const pill = document.createElement('span');
-    pill.className = `pill ${d.state === 'confirmed' || d.state === 'captured' ? 'done' : 'waiting'}`;
-    pill.textContent = t(`st_${d.state}`);
+    const pill = chipFor(d.state === 'confirmed' || d.state === 'captured' ? 'done' : 'pending', pair(`st_${d.state}`));
     const open = document.createElement('button'); open.classList.add('sre-btn');
     open.type = 'button';
     open.dataset.act = 'open';
@@ -266,29 +272,24 @@ function renderDrawer() {
 }
 
 function renderDraft(d) {
-  const table = $('draft-lines');
-  const head = document.createElement('tr');
-  for (const [k, cls] of [['line', ''], ['itemCode', ''], ['description', ''], ['qty', 'amount'], ['price', 'amount'], ['amount', 'amount'], ['tax', 'amount'], ['product', '']]) head.append(cell('th', t(k), cls));
-  const rows = d.lines.map((l) => {
-    const tr = document.createElement('tr');
-    tr.dataset.line = String(l.lineNo);
-    if (l.needsFigures) tr.dataset.needsFigures = 'true';
-    tr.append(cell('td', String(l.lineNo)), cell('td', l.supplierItemCode ?? '—'), cell('td', l.description || '—'));
-    if (l.needsFigures) {
+  const typed = (l, cls, k) => { const box = input(cls, '', `${t('line')} ${l.lineNo} ${t(k)} — ${t('typeFigures')}`); return box; };
+  const reg = grid($('draft-lines'), {
+    id: 'draft-lines', label: pair('confirmH'), pageSize: 1000, search: false, count: false,
+    columns: [
+      { key: 'line', label: pair('line'), value: (l) => String(l.lineNo) },
+      { key: 'itemCode', label: pair('itemCode'), value: (l) => l.supplierItemCode ?? null },
+      { key: 'description', label: pair('description'), value: (l) => l.description || null },
       // The figures head office was unsure of: typed from the paper, never the machine's guess.
-      const q = cell('td'); q.append(input('f-qty', '', `${t('line')} ${l.lineNo} ${t('qty')} — ${t('typeFigures')}`));
-      const p = cell('td'); p.append(input('f-price', '', `${t('line')} ${l.lineNo} ${t('price')} — ${t('typeFigures')}`));
-      const a = cell('td'); a.append(input('f-amount', '', `${t('line')} ${l.lineNo} ${t('amount')} — ${t('typeFigures')}`));
-      tr.append(q, p, a);
-    } else {
-      tr.append(cell('td', `${l.quantity ?? '—'}${l.uom && l.uom !== 'ea' ? ` ${l.uom}` : ''}`, 'amount'), cell('td', inr(l.unitPriceMinor), 'amount'), cell('td', inr(l.lineTotalMinor), 'amount'));
-    }
-    tr.append(cell('td', inr(l.cgstMinor + l.sgstMinor + l.igstMinor), 'amount'));
-    const prod = cell('td'); prod.append(input('f-product', l.suggestedProductId ?? '', `${t('line')} ${l.lineNo} ${t('product')}`));
-    tr.append(prod);
-    return tr;
+      { key: 'qty', label: pair('qty'), align: 'end', value: (l) => (l.needsFigures ? '' : `${l.quantity ?? '—'}${l.uom && l.uom !== 'ea' ? ` ${l.uom}` : ''}`), render: (l) => (l.needsFigures ? typed(l, 'f-qty', 'qty') : null) },
+      { key: 'price', label: pair('price'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.unitPriceMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-price', 'price') : null) },
+      { key: 'amount', label: pair('amount'), align: 'end', value: (l) => (l.needsFigures ? '' : inr(l.lineTotalMinor)), render: (l) => (l.needsFigures ? typed(l, 'f-amount', 'amount') : null) },
+      { key: 'tax', label: pair('tax'), align: 'end', value: (l) => inr(l.cgstMinor + l.sgstMinor + l.igstMinor) },
+      { key: 'product', label: pair('product'), value: (l) => l.suggestedProductId ?? '', render: (l) => input('f-product', l.suggestedProductId ?? '', `${t('line')} ${l.lineNo} ${t('product')}`) },
+    ],
+    rowKey: (l) => String(l.lineNo), rowData: (l) => (l.needsFigures ? { line: String(l.lineNo), needsFigures: 'true' } : { line: String(l.lineNo) }),
   });
-  table.replaceChildren(head, ...rows);
+  if (reg === null) return;
+  reg.setRows(d.lines);
   if ($('confirm-invoice').dataset.doc !== d.documentId) {
     $('confirm-invoice').dataset.doc = d.documentId;
     $('confirm-invoice').value = safeId(`${d.supplierId ?? ''}-${d.extracted?.supplierInvoiceNo ?? ''}`);
@@ -326,27 +327,16 @@ function renderTyping(d) {
   drawTypeRows();
 }
 function drawTypeRows() {
-  const head = document.createElement('tr');
-  for (const [k, cls] of [['product', ''], ['qty', 'amount'], ['price', 'amount'], ['amount', 'amount'], ['cgst', 'amount'], ['sgst', 'amount'], ['remove', '']]) head.append(cell('th', t(k), cls));
-  const rows = typeRows.map((r, i) => {
-    const tr = document.createElement('tr');
-    tr.dataset.row = String(i + 1);
-    for (const [k, field] of [['product', 'productId'], ['qty', 'quantity'], ['price', 'unitPrice'], ['amount', 'amount'], ['cgst', 'cgst'], ['sgst', 'sgst']]) {
-      const td = cell('td');
-      const box = input(`t-${field}`, r[field], `${t('line')} ${i + 1} ${t(k)}`);
-      box.addEventListener('input', () => { typeRows[i] = { ...typeRows[i], [field]: box.value }; });
-      td.append(box);
-      tr.append(td);
-    }
-    const rm = cell('td');
-    const b = document.createElement('button'); b.classList.add('sre-btn');
-    b.type = 'button'; b.textContent = t('remove');
-    b.addEventListener('click', () => { typeRows.splice(i, 1); if (typeRows.length === 0) typeRows.push({}); drawTypeRows(); });
-    rm.append(b);
-    tr.append(rm);
-    return tr;
+  const box = (r, i, k, field) => { const b = input(`t-${field}`, r[field], `${t('line')} ${i + 1} ${t(k)}`); b.addEventListener('input', () => { typeRows[i] = { ...typeRows[i], [field]: b.value }; }); return b; };
+  const reg = grid($('type-lines'), {
+    id: 'type-lines', label: pair('typeH'), pageSize: 1000, search: false, count: false,
+    columns: [
+      ...[['product', 'productId'], ['qty', 'quantity'], ['price', 'unitPrice'], ['amount', 'amount'], ['cgst', 'cgst'], ['sgst', 'sgst']].map(([k, field]) => ({ key: field, label: pair(k), value: (r) => r[field] ?? '', render: (r) => box(r, r.i, k, field) })),
+      { key: 'remove', label: pair('remove'), value: () => t('remove'), render: (r) => { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.textContent = t('remove'); b.addEventListener('click', () => { typeRows.splice(r.i, 1); if (typeRows.length === 0) typeRows.push({}); drawTypeRows(); }); return b; } },
+    ],
+    rowKey: (r) => String(r.i + 1), rowData: (r) => ({ row: String(r.i + 1) }),
   });
-  $('type-lines').replaceChildren(head, ...rows);
+  reg.setRows(typeRows.map((r, i) => ({ ...r, i })));
 }
 $('type-add-line').addEventListener('click', () => { typeRows.push({}); drawTypeRows(); });
 
@@ -399,18 +389,18 @@ function drawMatch(m) {
   if (m.flags.length > 0) parts.push(cell('span', `${t('flags')}: ${m.flags.join(', ')}`, 'muted'));
   v.replaceChildren(...parts);
   drawOtherCharges(m);
-  const head = document.createElement('tr');
-  for (const [k, cls] of [['item', ''], ['m_matched', ''], ['payable', 'amount'], ['whatIsWrong', '']]) head.append(cell('th', k === 'm_matched' ? '' : t(k), cls));
-  $('match-lines').replaceChildren(head, ...m.lines.map((l) => {
-    const tr = document.createElement('tr');
-    tr.dataset.product = l.productId;
-    tr.dataset.status = l.status;
-    if (l.status === 'blocked') tr.className = 'blocked';
-    const status = cell('td');
-    status.append(cell('span', t(`m_${l.status}`), `pill ${l.status === 'blocked' ? 'blocked' : l.status === 'matched' ? 'done' : 'waiting'}`));
-    tr.append(cell('td', l.productId), status, cell('td', inr(l.payableMinor), 'amount'), cell('td', l.detail));
-    return tr;
-  }));
+  const reg = grid($('match-lines'), {
+    id: 'match-lines', label: pair('matchH'), pageSize: 1000, search: false, count: false,
+    columns: [
+      { key: 'item', label: pair('item'), value: (l) => window.sreOffice.nameOf('product', l.productId) ?? l.productId },
+      { key: 'status', label: pair('m_matched'), value: (l) => t(`m_${l.status}`), render: (l) => chipFor(l.status === 'blocked' ? 'error' : l.status === 'matched' ? 'matched' : 'pending', pair(`m_${l.status}`)) },
+      { key: 'payable', label: pair('payable'), align: 'end', value: (l) => inr(l.payableMinor) },
+      { key: 'detail', label: pair('whatIsWrong'), value: (l) => l.detail || null },
+    ],
+    rowKey: (l) => l.productId, rowData: (l) => ({ product: l.productId, status: l.status }),
+  });
+  if (reg === null) return;
+  reg.setRows(m.lines);
 }
 
 // ── OB-556: other charges of unknown kind — not in stock cost until a person marks them ─────────────────────
@@ -477,7 +467,7 @@ function renderWaiting() {
     li.dataset.grn = r.grnId;
     const head = document.createElement('div');
     head.className = 'head';
-    head.append(cell('span', r.number || r.grnId, 'what'), cell('span', t('cnkPill'), 'pill waiting'));
+    head.append(cell('span', r.number || r.grnId, 'what'), chipFor('unknown', pair('cnkPill')));
     const when = r.receivedAt ? shopWhen(r.receivedAt) : '';
     const facts = cell('div', [r.poId === null ? t('noOrder') : `${t('order')} ${r.poId}`, `${t('store')} ${r.warehouseId}`, `${t('receivedBy')} ${r.receivedBy}`, when].filter((x) => x !== '').join(' · '), 'facts');
     const lines = cell('div', r.waiting.map((w) => `${w.productId} × ${steps(w.inStockMinor, w.uom)} ${t('inStock')} — ${t(`because_${w.because}`)}`).join(' · '), 'facts');
@@ -604,7 +594,7 @@ function renderAsks() {
     const li = advNode('li', 'bill'); li.dataset.request = q.requestId; li.dataset.status = q.status;
     const d = q.details;
     li.append(advNode('span', 'what', `${q.subjectRef.slice('advance:'.length)} · ${at('supplier')} ${d.supplierId} · ${adv.rupees(Number(d.amountMinor))} · ${at(`m_${d.method}`)} ${d.reference}`));
-    li.append(advNode('span', `pill ${q.status === 'approved' ? 'done' : q.status === 'waiting' ? 'waiting' : ''}`, at(`st_${q.status}`)));
+    li.append(chipFor(q.status === 'approved' ? 'approved' : q.status === 'waiting' ? 'pending' : q.status, { en: adv === null ? q.status : adv.words('en', `st_${q.status}`), ta: adv === null ? q.status : adv.words('ta', `st_${q.status}`) }));
     if (q.status === 'approved') {
       const go = advNode('button', 'primary', at('record')); go.type = 'button'; go.dataset.act = 'record';
       const st = advNode('p', 'status');
@@ -696,6 +686,14 @@ if (who === null || session === null) {
 } else if (!session.mayCapture) {
   // Nothing to hand in or confirm is offered, and the register (a capture read) is not asked for — see refresh().
   $('hand-section').hidden = true;
+  // OB-702 · G15 (UI/UX gap audit, lane 1): the page opens on this role's own work — "Deliveries waiting for their bill"
+  // comes first and the register of bills handed in (a capture read the role was never given) is not drawn at all, so
+  // the dominant card is the accountant's job and not somebody else's.
+  const registerSection = $('register-h').closest('section');
+  if (registerSection !== null) {
+    registerSection.hidden = true;
+    registerSection.parentNode.insertBefore($('cnk-section'), registerSection);
+  }
 }
 paint();
 if (session !== null) { void refresh(); void refreshWaiting(); }
@@ -705,3 +703,5 @@ window.addEventListener('sre-bills-changed', () => { if (session !== null) void 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it just will not be cached */ });
 }
+// U5: the chrome's parts arrive after this script (sre-chrome.js is the page's last script) — paint again once they are here.
+document.addEventListener('sre:chrome', () => { paint(); }, { once: true });

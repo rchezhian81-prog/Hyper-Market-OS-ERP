@@ -12,44 +12,23 @@ const pickWords = {
   en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
   ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
 };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
 const pickRepaints = [];
 const repaintPickers = () => { for (const f of pickRepaints) f(); };
 function pickable(inputId, kind, titleKey, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input || input.dataset.pickable === 'on') return;
+  // U5: the chrome's own adapter (`sreOffice.pickable`, U2's page copy folded into the chrome).
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  if (!office || typeof office.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  office.pickable(inputId, kind, { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, extra);
 }
 // A date a shop person reads (dd/mm/yyyy, the shop's calendar) through the chrome's shared field; read back as ISO.
+/** The shared date fields' labels follow the language toggle like the page's own words do (OB-699). */
+const dateLabels = new Map();
+function repaintDateLabels() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of dateLabels) { const w = words(); const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = w[l] ?? w.en; } }
 function dateable(inputId, label, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input || input.dataset.dateable === 'on') return;
+  // U5: the chrome's own `shopDate` adapter — the page's date box becomes the shared dd/mm/yyyy field under the same id.
   const office = window.sreOffice;
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, label, extra), { once: true }); return; }
-  const holder = input.closest('label') ?? input;
-  const was = input.value;
-  const field = office.dateField({ id: inputId, label: typeof label === 'function' ? label() : label, required: extra.required !== false, ...(extra.min ? { min: extra.min } : {}), ...(was === '' ? {} : { value: was }) });
-  if (!field) return;
-  holder.replaceWith(field);
-  field.dataset.dateable = 'on';
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => dateable(inputId, label, extra), { once: true }); return; }
+  office.shopDate(inputId, typeof label === 'function' ? label() : label, { required: extra.required !== false, ...(extra.min ? { min: extra.min } : {}) });
 }
 const dateOf = (fieldId) => {
   const f = document.getElementById(fieldId);
@@ -98,20 +77,24 @@ async function voidOne(id, reasonInput, status) {
   if (out.result === 'ok') await showList();
 }
 
+// U5 (G16): the customer's NAME beside the code on each line, as head office holds it (the code alone when it holds none).
+let customerNames = {};
+const customerWords = (ref) => (customerNames[ref] ? `${customerNames[ref]} (${ref})` : ref);
+async function loadCustomerNames() { if (session === null || typeof session.customerNames !== 'function') return; customerNames = await session.customerNames(); }
 function paintRows() {
   $('rows').replaceChildren();
   if (rows === null) return;
   if (rows.items.length === 0) { $('rows').append(text('li', t('none'), 'meta')); return; }
   if (rows.kind === 'follow') {
     $('rows').replaceChildren(...rows.items.map((q) => {
-      const li = text('li', `${t('number')} ${q.quotationId} · ${q.customerRef} · ${api.rupees(q.valueMinor)} · ${q.daysLeft < 0 ? t('lapsed') : `${q.daysLeft} ${t('daysLeft')}`}`, q.daysLeft <= 1 ? 'attention' : '');
+      const li = text('li', `${t('number')} ${q.quotationId} · ${customerWords(q.customerRef)} · ${api.rupees(q.valueMinor)} · ${q.daysLeft < 0 ? t('lapsed') : `${q.daysLeft} ${t('daysLeft')}`}`, q.daysLeft <= 1 ? 'attention' : '');
       li.dataset.quotation = q.quotationId; return li;
     }));
     return;
   }
   $('rows').replaceChildren(...rows.items.map((q) => {
     const li = document.createElement('li'); li.dataset.quotation = q.quotationId; li.dataset.state = q.state;
-    li.append(text('div', `${t('number')} ${q.quotationId} · ${q.customerRef} · ${api.rupees(q.totalMinor)} · ${t(`s_${q.state}`)}`));
+    li.append(text('div', `${t('number')} ${q.quotationId} · ${customerWords(q.customerRef)} · ${api.rupees(q.totalMinor)} · ${t(`s_${q.state}`)}`));
     li.append(text('div', `${q.storeId} · ${t('until')} ${q.validUntil} · ${t('by')} ${q.issuedBy}${q.convertedSaleId ? ` · ${t('rungOn')} ${q.convertedSaleId}` : ''}${q.withdrawReason ? ` · ${t('voidedBecause')} ${q.withdrawReason}` : ''}`, 'meta'));
     // R8-B · OB-523: each cancelled bill that freed it again — who, why, which bill.
     for (const r of q.releases ?? []) li.append(text('div', `${t('freedFrom')} ${r.saleId} · ${r.reason} · ${t('by')} ${r.freedBy}`, 'meta freed'));
@@ -148,11 +131,12 @@ function paint() {
 async function showList() {
   const out = await session.list($('s-state').value);
   if (out.result !== 'ok') { rows = null; paintRows(); $('s-status').textContent = api.outcomeWords(lang, out); return; }
+  if (Object.keys(customerNames).length === 0) await loadCustomerNames();
   rows = { kind: 'list', items: out.value.quotations }; $('s-status').textContent = ''; paintRows();
 }
 
 for (const [id, name] of [['l-add', 'list-plus'], ['q-make', 'check'], ['q-ask', 'badge-check'], ['s-show', 'list'], ['s-follow', 'clock']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); repaintDateLabels(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
@@ -176,6 +160,7 @@ else {
     pickable('l-code', 'product', 'pickProduct', { idOf: (p) => String(p.code ?? p.id ?? '') });
     pickable('q-approval', 'approval', 'pickApproval', { scope: () => ($('q-store').value === '' ? {} : { storeId: $('q-store').value }) });
     dateable('q-until', () => ({ en: api.words('en', 'validUntil'), ta: api.words('ta', 'validUntil') }));
+    dateLabels.set('q-until', () => ({ en: api.words('en', 'validUntil'), ta: api.words('ta', 'validUntil') }));
     $('l-add').addEventListener('click', async () => {
       const out = await session.line({ code: $('l-code').value, qty: $('l-qty').value, priceRupees: $('l-price').value });
       if (out.result !== 'ok') { $('l-status').textContent = api.outcomeWords(lang, out); return; }

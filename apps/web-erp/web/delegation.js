@@ -41,6 +41,11 @@ function pickable(inputId, kind, titleKey, extra = {}) {
   input.addEventListener('input', () => { name.textContent = ''; });
 }
 // A date a shop person reads (dd/mm/yyyy, the shop's calendar) through the chrome's shared field; read back as ISO.
+/** The shared date fields' labels follow the language toggle like the page's own words do (OB-699). */
+function repaintDateLabels() {
+  const l = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  for (const [id, k] of [['from-date', 'fromDate'], ['until-date', 'untilDate']]) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = WORDS[l][k]; }
+}
 function dateable(inputId, label, extra = {}) {
   const input = document.getElementById(inputId);
   if (!input || input.dataset.dateable === 'on') return;
@@ -238,6 +243,7 @@ $('lang').addEventListener('click', () => {
   paintWords();
   render();
   repaintPickers();
+  repaintDateLabels();
 });
 
 paintWords();

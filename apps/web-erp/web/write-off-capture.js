@@ -10,6 +10,31 @@
 // fetch/XHR here — the audited POSTs live in the injected ports (browser-entry). No AI records a loss (hard rule #5).
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** The chrome's record state for a tone — the chip's words come from the chrome in both languages. */
+const stateOfTone = (tone) => (tone === 'ok' ? 'done' : tone === 'error' ? 'failed' : tone === 'degraded' ? 'warning' : tone === 'pending' ? 'pending' : 'unknown');
+/** The chrome's "Not known" in the reader's language — never a dash. */
+const notKnownWord = () => { const o = sreO(); return o && typeof o.words === 'function' ? o.words('notKnown') : 'Not known'; };
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 
 // ── U2 (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
 // The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
@@ -19,31 +44,12 @@ const pickWords = {
   en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
   ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
 };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
-const pickRepaints = [];
-const repaintPickers = () => { for (const f of pickRepaints) f(); };
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
   if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  o.pickable(input, kind, { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, extra);
 }
 let lang = 'en';
 
@@ -238,7 +244,6 @@ function paintValueHint() {
   if (p === null) { hint.hidden = true; return; }
   hint.hidden = false;
   hint.className = `material-hint tone-${p.tone}`;
-  el('value-hint-icon').textContent = p.icon;
   el('value-hint-text').textContent = p.label;
 }
 
@@ -255,7 +260,6 @@ function paintMaterialHint() {
   if (!typed) { hint.hidden = true; return; }
   hint.hidden = false;
   hint.className = `material-hint ${big ? 'tone-degraded' : 'tone-idle'}`;
-  el('material-hint-icon').textContent = big ? '⚠' : 'ℹ';
   el('material-hint-text').textContent = big ? t('materialHint') : t('immaterialHint');
 }
 
@@ -301,9 +305,7 @@ function paint() {
   const state = el('state');
   if (!view.mayCapture) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    paintState(state, view.screenState);
   } else {
     state.hidden = true;
   }
@@ -332,8 +334,7 @@ function paintResult(presentation) {
   if (!result) return;
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
-  el('result-text').textContent = presentation.label;
+  sayWith(result, presentation.tone === 'idle' ? null : stateOfTone(presentation.tone), presentation.label, 'result-text');
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
@@ -382,12 +383,7 @@ function paintLosses() {
     const status = document.createElement('p');
     status.className = `loss-status tone-${row.status.tone}`;
     status.setAttribute('aria-label', row.status.announcement || row.status.label);
-    const icon = document.createElement('span');
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = row.status.icon;
-    const words = document.createElement('span');
-    words.textContent = row.status.label;
-    status.append(icon, words);
+    fillStatus(status, row.status.tone, row.status.label);
     const why = document.createElement('p');
     why.className = 'loss-why';
     why.textContent = `${t('whyWord')} ${row.why} · ${row.askedAt}`;
@@ -441,7 +437,7 @@ el('record').addEventListener('click', () => {
     const draft = draftNow();
     // An incomplete draft skips the sheet and gets the session's own words on what is missing (nothing is sent either way).
     const complete = draft.productId.trim() !== '' && draft.locationId.trim() !== '' && Number.isFinite(draft.qty) && draft.qty > 0 && draft.lossType !== null && draft.reasonCode !== undefined;
-    const valueText = Number.isFinite(draft.valueMinor) ? rupees(draft.valueMinor) : '—';
+    const valueText = Number.isFinite(draft.valueMinor) ? rupees(draft.valueMinor) : notKnownWord();
     const sub = (l, key) => String(session.text(l, key)).replace('{qty}', `${el('wo-qty').value} ${draft.uom}`.trim()).replace('{product}', draft.productId).replace('{value}', valueText);
     const answer = complete ? await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'danger' }) : { ok: true };
     if (answer === 'unavailable') { say((l) => ({ tone: 'error', icon: '⚠', label: session.text(l, 'confirmUnavailable'), announcement: session.text(l, 'confirmUnavailable') })); return; }
@@ -476,7 +472,6 @@ el('lang').addEventListener('click', () => {
   paint();
   paintValueHint();
   if (lastSaid !== null) paintResult(lastSaid(lang));
-  repaintPickers();
   void refreshLosses();
 });
 // U2: the item and the place are picked by name (the product by name or barcode; the place from the store's own list).
@@ -486,6 +481,7 @@ pickable('wo-location', 'place', 'pickPlace');
 el('sample').hidden = window.writeOffCaptureSession !== undefined;
 el('sample').textContent = chrome('sampleData');
 paint();
+onChrome(() => paint());
 void refreshLosses();
 
 if ('serviceWorker' in navigator) {

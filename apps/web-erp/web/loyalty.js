@@ -9,7 +9,7 @@ const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const $ = (id) => document.getElementById(id);
 const api = window.loyaltyDesk ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, enrol: false, read: false, configure: false, runExpiry: false };
+const may = session?.may ?? { named: false, enrol: false, read: false, configure: false, runExpiry: false, readProgramme: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
@@ -34,7 +34,10 @@ function paintNotice() {
   if (notice === null) { $('notice-text').textContent = ''; $('notice-draft').hidden = true; $('notice-version').textContent = ''; return; }
   $('notice-text').textContent = notice[lang] ?? notice.en;
   $('notice-draft').hidden = notice.status !== 'draft_for_owner_signature';
-  $('notice-draft').textContent = `⚠ ${t('draft')}`;
+  // U5 (G13): the notice's state is the one record chip (draft, pending the owner's signature), never a ⚠ character.
+  const o = window.sreOffice;
+  if (o && typeof o.recordChip === 'function') $('notice-draft').replaceChildren(o.recordChip('draft', { en: t('draft'), ta: t('draft') }));
+  else $('notice-draft').textContent = t('draft');
   $('notice-version').textContent = `${t('noticeVersion')} ${notice.version}`;
 }
 async function enrol() {
@@ -125,6 +128,12 @@ function draftsFrom(p) {
 }
 function lastSet(last) { return last === null ? '' : ` · ${t('lastSet')} ${last.setBy} ${shopDayOf(last.setAt)}: ${last.reason}`; }
 function paintProgramme() {
+  // OB-702 (owner, 7 Nov 2026, decision 5 = A): the programme and referral panels are drawn only for who may read them
+  // (the owner sets, the store manager reads); the cashier's desk sees one line instead of six greyed buttons.
+  $('programme-section').hidden = !may.readProgramme;
+  $('referral-section').hidden = !may.readProgramme;
+  $('desk-only').hidden = may.readProgramme || !may.named;
+  $('desk-only').textContent = `○ ${t('deskOnly')}`;
   $('owner-only').hidden = may.configure || !may.read; $('owner-only').textContent = `○ ${t('ownerOnly')}`;
   for (const id of ['add-tier', 'save-tiers', 'save-expiry', 'tiers-reason', 'expiry-reason', 'expiry-months']) $(id).disabled = !may.configure;
   for (const id of ['add-tier', 'save-tiers', 'save-expiry']) whyDisabled($(id), may.configure ? '' : 'role');
@@ -141,6 +150,7 @@ function paintProgramme() {
   $('ca-text').textContent = said(programme.accountingNote);
 }
 async function loadProgramme() {
+  if (!may.readProgramme) return;
   const out = await session.programme();
   if (out.result !== 'ok') { bad('page-status', out); return; }
   programme = out.value;
@@ -184,6 +194,7 @@ function paintReferral() {
   $('referral-say').textContent = `${both ? '✓' : '○'} ${t('referrerL').replace(' (₹)', '')}: ${side(referral.referrer)} · ${t('referredL').replace(' (₹)', '')}: ${side(referral.referred)}${referral.lastSetBy ? ` · ${t('lastSet')} ${referral.lastSetBy} ${shopDayOf(referral.lastSetAt)}: ${referral.lastReason}` : ''}`;
 }
 async function loadReferral() {
+  if (!may.readProgramme) return;
   const out = await session.referralRewards();
   if (out.result !== 'ok') { bad('referral-status', out); return; }
   referral = out.value; paintReferral();

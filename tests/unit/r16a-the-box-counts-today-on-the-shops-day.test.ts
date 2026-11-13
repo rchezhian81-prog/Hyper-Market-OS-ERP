@@ -26,7 +26,7 @@ describe('deliveries today are the slots on the shop\'s day (P3)', () => {
     slot('o-next', '2026-10-31T00:30:00+05:30'), // 00:30 on the 31st in the shop — tomorrow
   ]) as StorePack['deliveries'];
   it('a slot at 00:30 shop time counts on the shop\'s day; one at 00:30 the next shop day does not', () => {
-    expect(todayFigures(input({ ...bare(), deliveries }))['deliveriesToday']).toEqual({ known: true, value: 2, note: 'customer deliveries in today\'s slots' });
+    expect(todayFigures(input({ ...bare(), deliveries }))['deliveriesToday']).toEqual({ known: true, value: 2, note: 'customer deliveries in today\'s slots', noteTa: 'இன்றைய நேரங்களில் வாடிக்கையாளர் டெலிவரிகள்' });
   });
   it('the zone is the signed pack\'s: a pack naming Europe/London counts the slots on London\'s day', () => {
     expect(todayFigures(input(withZone({ ...bare(), deliveries }, 'Europe/London')))['deliveriesToday']).toMatchObject({ value: 2 }); // o-noon (06:30 UTC) and o-next (19:00 UTC on the 30th, London's 30th)
@@ -40,6 +40,6 @@ describe('expiring soon counts the use-by on the shop\'s day (P3)', () => {
       { batchId: 'b-moment', expiresAt: '2026-10-31T19:00:00.000Z' }, // 00:30 on 1 Nov in the shop — two days on
       { batchId: 'b-date', expiresOn: '2026-10-31' }, // a plain date: tomorrow — inside the window
     ]) as StorePack['batches'];
-    expect(todayFigures(input({ ...bare(), batches, expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 1, note: 'within 1 days, of 2 batches' });
+    expect(todayFigures(input({ ...bare(), batches, expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 1, note: 'within 1 days, of 2 batches', noteTa: '1 நாட்களுக்குள், 2 தொகுதிகளில்' });
   });
 });

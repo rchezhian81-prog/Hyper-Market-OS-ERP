@@ -56,6 +56,8 @@ export function readCategory(v: unknown): Category | string {
   if (!isObj(v) || !isStr(v['categoryId']) || !isStr(v['name'])) return 'a category needs { categoryId, name, parentId }';
   const parentId = v['parentId'] === undefined || v['parentId'] === null || v['parentId'] === '' ? null : v['parentId'];
   if (parentId !== null && !isStr(parentId)) return `category "${String(v['categoryId'])}": parentId must be a category id or null`;
+  const nameTa = v['nameTa'];
+  if (nameTa !== undefined && nameTa !== null && typeof nameTa !== 'string') return `category "${String(v['categoryId'])}": nameTa must be the Tamil name as text`;
   const regulated = v['regulated'];
   if (regulated !== undefined && !(Array.isArray(regulated) && regulated.every((r) => (REGULATED_KINDS as readonly unknown[]).includes(r)))) {
     return `category "${v['categoryId']}": regulated must be a list drawn from ${REGULATED_KINDS.join(', ')}`;
@@ -66,6 +68,7 @@ export function readCategory(v: unknown): Category | string {
   }
   return {
     categoryId: (v['categoryId'] as string).trim(), name: (v['name'] as string).trim(), parentId: parentId === null ? null : (parentId as string).trim(),
+    ...(typeof nameTa === 'string' && nameTa.trim() !== '' ? { nameTa: nameTa.trim() } : {}),
     ...(regulated === undefined ? {} : { regulated: [...new Set(regulated as RegulatedKind[])].sort() }),
     ...(attributes === undefined ? {} : { attributes: attributes as AttributeDefinition[] }),
   };
@@ -75,11 +78,17 @@ export function readCategory(v: unknown): Category | string {
 const shapeOf = (c: Category): string => JSON.stringify({
   name: c.name, parentId: c.parentId, regulated: [...(c.regulated ?? [])].sort(), attributes: c.attributes ?? [],
 });
-export const sameCategory = (a: Category, b: Category): boolean => shapeOf(a) === shapeOf(b);
+/**
+ * `a` is what head office holds, `b` what arrives. U7 (OB-699): the Tamil name is compared only when the incoming side
+ * names one — a publish body that does not mention it still agrees; naming a different (or a new) one is a change.
+ */
+export const sameCategory = (a: Category, b: Category): boolean =>
+  shapeOf(a) === shapeOf(b) && (b.nameTa === undefined || a.nameTa === b.nameTa);
 
 /** Engine shape (no bookkeeping) — what the product engine judges against. */
 export const engineCategory = (c: StoredCategory | Category): Category => ({
   categoryId: c.categoryId, name: c.name, parentId: c.parentId,
+  ...(c.nameTa === undefined ? {} : { nameTa: c.nameTa }),
   ...(c.regulated === undefined ? {} : { regulated: c.regulated }),
   ...(c.attributes === undefined ? {} : { attributes: c.attributes }),
 });

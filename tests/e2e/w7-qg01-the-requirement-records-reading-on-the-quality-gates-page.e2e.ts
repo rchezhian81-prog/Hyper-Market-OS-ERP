@@ -84,7 +84,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('QG-01: the
     // ── Nothing on file: NOT KNOWN, and the gate is held by that check.
     let s = await open();
     try {
-      expect(await standing(s.page, 'not_known')).toMatch(/⚠\s*NOT KNOWN — no reading of the requirement records is on file\./);
+      expect(await standing(s.page, 'not_known')).toMatch(/NOT KNOWN — no reading of the requirement records is on file\./);
       expect(await qg01(s.page).locator('.blockers').innerText()).toMatch(/Check — the requirement records are NOT KNOWN — no reading of them is on file/);
       expect(await qg01(s.page).getAttribute('data-state')).toBe('undecided');
       expect(s.errors).toEqual([]);
@@ -118,7 +118,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('QG-01: the
     s = await open();
     try {
       const said = await standing(s.page, 'failing');
-      expect(said).toMatch(/⚠\s*Requirement records missing a field: 1/);
+      expect(said).toMatch(/Requirement records missing a field: 1/);
       expect(said).toContain(`QG-01: ${ID} is missing acceptance criteria — docs/requirements/${FILE} ${ID}`);
       expect(said).toContain('QG-01 holds until a complete reading finds nothing missing.');
       expect(await qg01(s.page).locator('.blockers').innerText()).toContain(`Security finding — open high finding "QG-01: ${ID} is missing acceptance criteria"`);
@@ -141,7 +141,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('QG-01: the
     s = await open();
     try {
       const said = await standing(s.page, 'check_clean');
-      expect(said).toMatch(/✓\s*The latest reading found all 144 records complete\./);
+      expect(said).toMatch(/The latest reading found all 144 records complete\./);
       expect(said).toContain('This is evidence for the owner\'s QG-01 decision, not the decision — the gate is not passed until he records it with his signed review.');
       expect(said).toMatch(/Latest reading: \d{4}-\d{2}-\d{2} \d{2}:\d{2} · run: local-/);
       expect(await qg01(s.page).innerText()).toContain('Nothing blocks this gate now.');

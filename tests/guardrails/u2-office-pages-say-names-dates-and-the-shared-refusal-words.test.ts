@@ -69,8 +69,12 @@ describe('U2 · a name where an id was shown (G16)', () => {
     const source = read('apps/web-erp/web/store-computers.js');
     expect(source).toMatch(/const nameOf = \(kind, id\) =>/);
     for (const raw of ['cell(b.storeId)', 'cell(z.storeId)', 'cell(u.storeId)', 'cell(z.machineTimeZone)', 'cell(b.computer)']) expect(source, `raw id still shown: ${raw}`).not.toContain(raw);
-    expect(source).toContain("cell(nameOf('zone', z.machineTimeZone))");
-    expect(source).toContain("cell(nameOf('person', b.computer))");
+    // U5 (lane 4): the rows are the chrome's register now — the names are each column's value, never the raw id
+    expect(source).toContain("value: (z) => nameOf('zone', z.machineTimeZone)");
+    expect(source).toContain("value: (b) => nameOf('person', b.computer)");
+    expect(source).toContain("value: (b) => nameOf('store', b.storeId)");
+    expect(source).toContain("value: (u) => nameOf('store', u.storeId)");
+    expect(source).toContain("value: (z) => nameOf('store', z.storeId)");
     expect(was('apps/web-erp/web/store-computers.js'), 'the audit-day page did show the raw store id').toContain('cell(z.storeId)');
   });
 
@@ -119,8 +123,13 @@ describe('U2 · a date a shop person reads (G14)', () => {
   it('every page with a date goes through the shared field and reads ISO through dateOf, and the Tally month is a named list', () => {
     for (const [page, ids] of DATE_PAGES) {
       const source = read(`apps/web-erp/web/${page}.js`);
-      expect(source, `${page}: no shopDate helper`).toMatch(/function shopDate\(id, words, opts = \{\}\)/);
-      expect(source, `${page}: labels do not follow the toggle`).toMatch(/function repaintShopDates\(\)/);
+      // U5 · G17: a page either keeps its own helper (with its own label repaint) or hands the field to the chrome's
+      // `sreOffice.shopDate`, whose label follows the toggle inside the chrome (its adapter repaints).
+      const viaChrome = /\.shopDate\(/.test(source) && /\.dateOf\(/.test(source);
+      if (!viaChrome) {
+        expect(source, `${page}: no shopDate helper`).toMatch(/function shopDate\(id, words, opts = \{\}\)/);
+        expect(source, `${page}: labels do not follow the toggle`).toMatch(/function repaintShopDates\(\)/);
+      }
       for (const id of ids) {
         expect(source, `${page}: #${id} never converted`).toContain(`shopDate('${id}'`);
         expect(source, `${page}: #${id} still read as the raw input`).not.toMatch(new RegExp(`(?:\\$|el)\\('${id}'\\)\\.value(?! =)`));

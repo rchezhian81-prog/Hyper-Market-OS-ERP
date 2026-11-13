@@ -324,8 +324,11 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await texts(page, '#flow li .n')).toEqual(['2', '1', '1', 'Not known']);
       expect(await page.textContent('#flow li:last-child .note')).toBe('the store computer has not been given the floor indents');
       // the store today
-      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Tasks today']);
-      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', '1']);
+      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Disputed supplier claims open', 'Tasks today']);
+      // U7 · OB-727: the disputed supplier claims sit on the band too; this fixture's box was not sent them, so the
+      // figure says "Not known" with the reason — never a zero (P-08).
+      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', 'Not known', '1']);
+      expect((await texts(page, '#ops .op .note'))[4]).toBe('the store computer has not said');
       // the workspaces: the rail's own groups, each a link to its first screen
       expect(await texts(page, '#workspaces a b')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
       expect(await texts(page, '#workspaces a small')).toEqual(['1 screen', '2 screens', '2 screens']);
@@ -548,7 +551,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
     // OB-380: Transfers and Store events (head-office pages on the same read) are served by the box now, so it offers them; QG-02 R4: and the Dock diary. M28-FR-03 (round 6): Packaging and crates, on the same availability read.
     // W1: task workspaces (Goods coming in · Stock & counts · Waste, expiry & returns), the most-used screens leading.
-    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Dock diary', 'Stock health', 'Stock counts', 'Transfers', 'Packaging and crates', 'Warehouse', 'Store events', 'Products nobody can sell']);
+    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Dock diary', 'Stock health', 'Stock counts', 'Transfers', 'Stock ledger', 'Adjust a quantity', 'Packaging and crates', 'Warehouse', 'Store events', 'Products nobody can sell'] /* U6: + Stock ledger, Adjust a quantity (the same availability read) */);
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
 
     await page.click('#sre-menu a:has-text("Stock health")');

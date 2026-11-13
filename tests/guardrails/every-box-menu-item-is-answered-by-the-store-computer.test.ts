@@ -101,7 +101,8 @@ describe('every menu item the store computer may offer is answered by its server
       // Round 4c: the Staff list is told it too, to fill its store boxes with this box's own store.
       // Round 4d: the Facilities set-up too — it reads and writes this box's own store's assets, rooms and checks.
       // Wave 3: the Safety incidents page too — it starts on this box's own store's incidents.
-      expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance', 'facilities-setup', 'safety-incidents', 'online-orders', 'floor-devices'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
+      // U6 (§27 label/ESL): the Electronic shelf labels page too — it asks head office for this store's label pushes.
+      expect(Object.keys(payload).sort(), p.screen).toEqual((['findings', 'staff', 'space-setup', 'display-contracts', 'floor-heat-map', 'planogram-compliance', 'facilities-setup', 'safety-incidents', 'online-orders', 'floor-devices', 'esl'] as string[]).includes(p.screen) && 'storeId' in payload ? ['permissions', 'servedBy', 'storeId', 'userId'] : ['permissions', 'servedBy', 'userId']);
       expect(payload['userId']).toBe('u-owner');
     }
   });

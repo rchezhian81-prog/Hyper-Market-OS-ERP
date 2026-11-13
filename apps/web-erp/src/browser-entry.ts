@@ -94,6 +94,7 @@ import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
+import { figureNameIn } from '../../../services/reporting/src/index';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/index';
 import {
   createServiceSession, type ServicePorts, type ServiceSession,
@@ -122,11 +123,18 @@ import { wireSalvageAndCompareScreens } from './salvage-compare-browser-wiring';
 import { wireShelfTagsAndQuotations } from './shelf-quotes-browser-wiring'; // R7-C · OB-505 · OB-506
 import { wireCertificates } from './certificates-browser-wiring'; // R8-C · OB-522
 import { wireFindings } from './findings-browser-wiring'; // OB-609
+import { wireRfqAndClaims } from './u6-rfq-claims-browser-wiring'; // U6 · M06-FR-02 RFQ to suppliers · M07-FR-03 / M24-FR-02 supplier claims
+import { wireStockScreens } from './u6-stock-screens-browser-wiring'; // U6 (7 Nov 2026)
+import { wireBankReconciliation } from './bank-reconciliation-browser-wiring'; // U6 · M23-FR-03
+import { wirePayablesReceivables } from './payables-receivables-browser-wiring'; // U6 · M23-FR-01
+import { wireKeys } from './keys-browser-wiring'; // U6 · §27 Admin/Security keys · M32-FR-03
+import { wireEsl } from './esl-browser-wiring'; // U6 · §27 label/ESL: the Electronic shelf labels page
 import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
 import { wireW3Customers } from './w3-customers-browser-wiring'; // W3 · customers: data requests, value, messages, limits, gift cards
+import { wireU6Crm } from './u6-crm-browser-wiring'; // U6 · CRM: compensation for approval, satisfaction, consent check
 import { wireW3SecOps } from './w3-secops-browser-wiring'; // Wave 3 · security, people and operations
 import { wireW3TrainingChecks } from './w3-training-checks-browser-wiring'; // Wave 3 · OB-675 Training checks (QG-02)
 import { wireW4Production } from './w4-production-browser-wiring'; // W4 · M11 plan, batch trace and production costs
@@ -279,7 +287,7 @@ import {
 import {
   createDataIoSession, exportReplyOf,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
-  type LoadedJobsRead, type LoadedJobView, type UndoRequest, type RowChangeView,
+  type LoadedJobsRead, type LoadedJobsPageRead, type LoadedJobView, type UndoRequest, type RowChangeView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
@@ -377,7 +385,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
-import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, type DispatchSession } from './dispatch-session';
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, callRequestLine as dispatchCallRequestLine, type DispatchSession } from './dispatch-session';
 import { createTillDeskSession, tillDeskWords, tillDeskOutcomeWords, type TillDeskSession } from './till-delivery-desk-session'; // OB-352
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
@@ -3714,6 +3722,7 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     askApproval: (ask) => postApprovalRequest(ask),
     approvalInbox: () => fetchApprovalInbox(),
     loadedJobs: () => fetchLoadedJobs(),
+    loadedJobsPage: (query) => fetchLoadedJobsPage(query),
     undo: (req) => postUndo(req),
   };
 }
@@ -3727,6 +3736,19 @@ async function fetchLoadedJobs(): Promise<LoadedJobsRead> {
     if (res.status >= 400) return { result: 'refused' };
     const body = (await res.json()) as { jobs?: readonly LoadedJobView[] };
     return { result: 'read', jobs: body.jobs ?? [] };
+  } catch { return { result: 'lost_link' }; }
+}
+
+/** U7 (OB-726): ONE page of the loads applied (GET /v1/import/commits?page=…) — read only, the total head office counted. */
+async function fetchLoadedJobsPage(query: string): Promise<LoadedJobsPageRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn(`/v1/import/commits?${query}`, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused' };
+    const body = (await res.json()) as { jobs?: readonly LoadedJobView[]; paging?: { total?: unknown } };
+    const total = body.paging?.total;
+    return typeof total === 'number' ? { result: 'read', jobs: body.jobs ?? [], total } : { result: 'lost_link' };
   } catch { return { result: 'lost_link' }; }
 }
 
@@ -5271,6 +5293,8 @@ interface ManagerWindow {
   unsellableSession?: UnsellableSession;
   reportingSession?: ReportingSession;
   reportingData?: ReportingData;
+  /** U3 (OB-699): a figure's name in the reader's language, from the one table head office and the box name their figures from. */
+  figureNameIn?: (lang: 'en' | 'ta', name: string) => string;
   serviceData?: ServiceData;
   serviceSession?: ServiceSession;
   expiryData?: ExpiryData;
@@ -5452,7 +5476,7 @@ interface ManagerWindow {
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
-  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote };
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote; readonly callRequestLine: typeof dispatchCallRequestLine };
   /** OB-352: the delivery desk's till jobs on the Dispatch page. */
   tillDeliveryDesk?: { readonly session: TillDeskSession; readonly words: typeof tillDeskWords; readonly outcomeWords: typeof tillDeskOutcomeWords };
   approvalRules?: {
@@ -6737,6 +6761,7 @@ if (browserWindow !== undefined) {
   if (unsellable !== null) browserWindow.unsellableSession = unsellable;
   const reporting = bootReporting(browserWindow.reportingData);
   if (reporting !== null) browserWindow.reportingSession = reporting;
+  browserWindow.figureNameIn = figureNameIn;
   const service = bootService(browserWindow.serviceData);
   if (service !== null) browserWindow.serviceSession = service;
   const expiry = bootExpiry(browserWindow.expiryData);
@@ -7496,7 +7521,7 @@ if (browserWindow !== undefined) {
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
-  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote };
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote, callRequestLine: dispatchCallRequestLine };
   // OB-352: the delivery desk's till jobs, on the same page.
   browserWindow.tillDeliveryDesk = { session: createTillDeskSession({ viewer: browserWindow.dispatchData }), words: tillDeskWords, outcomeWords: tillDeskOutcomeWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
@@ -7571,11 +7596,20 @@ if (browserWindow !== undefined) {
   wireCertificates(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
   // OB-609: Bill findings and attendance flags.
   wireFindings(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireRfqAndClaims(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6
+  // U6 (UI/UX gap audit, 7 Nov 2026): the stock ledger, the quarantine register and the stock-correction page.
+  wireStockScreens(browserWindow as unknown as Record<string, unknown>, viewerIdentity, headOfficeHttp);
+  // U6: Bank reconciliation; Payables and receivables.
+  wireBankReconciliation(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wirePayablesReceivables(browserWindow as unknown as Record<string, unknown>, viewerIdentity);
+  wireKeys(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6: Keys and credentials
+  wireEsl(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6: Electronic shelf labels
   wireUsers(browserWindow as unknown as Record<string, unknown>, viewerIdentity, HEAD_OFFICE_PEOPLE); // Round 4c
   wireRound4c(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4c
   wireRound4d(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Round 4d
   wireWave3Catalogue(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · D01-FR-05, D02-FR-04, D06-FR-05, D06-FR-06
   wireW3Customers(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W3 · customers
+  wireU6Crm(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // U6 · CRM screens
   wireW3SecOps(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · security, people and operations
   wireW3TrainingChecks(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // Wave 3 · OB-675 Training checks (QG-02)
   wireW4Production(browserWindow as unknown as Record<string, unknown>, viewerIdentity); // W4 · M11 plan, batch trace and production costs

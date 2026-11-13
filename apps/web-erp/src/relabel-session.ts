@@ -37,11 +37,11 @@ export const RELABEL_COPY = {
 export function relabelAssigneeWords(lang: Lang, row: Pick<RelabelRow, 'assignee' | 'storeManagers' | 'assignedToMe'>): string {
   const w = (k: string) => relabelWords(lang, k);
   const a = row.assignee;
-  const mine = row.assignedToMe === true ? ` · ✓ ${w('yours')}` : '';
+  const mine = row.assignedToMe === true ? ` · ${w('yours')}` : ''; // U5: words, never a ✓ character
   if (a === undefined || a === null) return `${w('for')}: ${w('notAssigned')}`;
   if (a.to === 'floor_champion') return `${w('for')}: ${a.employeeId} (${w('championOf')} ${a.departmentId})${mine}`;
   const why = a.because === 'no_department_owns_it' ? w(a.because) : `${w(a.because)} ${a.departmentId ?? ''}`.trim();
-  const who = row.storeManagers === undefined ? '' : row.storeManagers.length === 0 ? ` — ⚠ ${w('nobodyHolds')}` : ` (${row.storeManagers.join(', ')})`;
+  const who = row.storeManagers === undefined ? '' : row.storeManagers.length === 0 ? ` — ${w('nobodyHolds')}` : ` (${row.storeManagers.join(', ')})`;
   return `${w('for')}: ${w('storeManager')}${who} — ${why}${mine}`;
 }
 

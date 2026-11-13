@@ -44,7 +44,6 @@
       td, th { text-align: left; overflow-wrap: anywhere; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: grid; gap: 6px; overflow-wrap: anywhere; min-width: 0; }
-      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; font-weight: 600; }
       .status { font-size: 14px; min-height: 20px; overflow-wrap: anywhere; }
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
@@ -95,27 +94,15 @@
       <section id="view-bindings" aria-labelledby="bindings-h">
         <h3 id="bindings-h">Bill numbers</h3>
         <p class="lead" id="bindings-lead">Each till's bill-number prefix and the one store computer head office takes its word from.</p>
-        <div class="table-wrap"><table aria-labelledby="bindings-h">
-          <thead><tr><th id="c-store">Store</th><th id="c-prefix">Till prefix</th><th id="c-computer">Store computer (sign-in)</th><th id="c-via">How</th><th id="c-since">Since</th></tr></thead>
-          <tbody id="binding-rows"></tbody>
-        </table></div>
-        <p class="muted" id="no-bindings" hidden></p>
+        <div id="binding-host" class="register-host"></div>
         <!-- Round 27 · OB-100 "A": numbers each store computer took and never used, per till and day — information, nothing to look for. -->
         <h3 id="unused-h">Taken but never used</h3>
         <p class="lead" id="unused-lead">Bill numbers each store computer says it took and never put on a bill.</p>
-        <div class="table-wrap"><table aria-labelledby="unused-h">
-          <thead><tr><th id="c-u-store">Store</th><th id="c-u-prefix">Till prefix</th><th id="c-u-day">Day</th><th id="c-u-count">How many</th><th id="c-u-numbers">Numbers</th></tr></thead>
-          <tbody id="unused-rows"></tbody>
-        </table></div>
-        <p class="muted" id="no-unused" hidden></p>
+        <div id="unused-host" class="register-host"></div>
         <!-- R3 · P-08: each store computer's own time zone against the shop's, from its latest health report. -->
         <h3 id="zones-h">Time zone</h3>
         <p class="lead" id="zones-lead">Each store computer's own clock zone against the shop's.</p>
-        <div class="table-wrap"><table aria-labelledby="zones-h">
-          <thead><tr><th id="c-z-store">Store</th><th id="c-z-computer">Store computer (sign-in)</th><th id="c-z-zone">Its time zone</th><th id="c-z-shop">The shop's time zone</th><th id="c-z-says">What it means</th><th id="c-z-reported">Reported</th></tr></thead>
-          <tbody id="zone-rows"></tbody>
-        </table></div>
-        <p class="muted" id="no-zones" hidden></p>
+        <div id="zone-host" class="register-host"></div>
       </section>
 
       <section id="view-findings" aria-labelledby="findings-h" hidden>

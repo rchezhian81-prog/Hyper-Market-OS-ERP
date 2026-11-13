@@ -35,21 +35,17 @@ const el = (id) => document.getElementById(id);
 // ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
 // field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
 // carried over; the plain field stays until the chrome is there, so the page is never dead.
-const shopDates = new Map();
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+// U7 (Group C2): the shared dd/mm/yyyy field is the chrome's ONE copy (`sreOffice.shopDate`) — its label, "(required)"
+// and hint follow the language toggle inside the chrome; the page keeps its element ids and reads ISO back through
+// `sreOffice.dateOf`. Before the chrome has loaded, or off the box, the plain field stays, so the page is never dead.
+const shopDates = new Set();
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
-  if (!field) return;
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
-  repaintShopDates();
+  const o = window.sreOffice;
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (o.shopDate(id, words, opts) !== null) shopDates.add(id);
 }
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+const dateOf = (id) => { const o = window.sreOffice; return shopDates.has(id) && o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : (document.getElementById(id)?.value ?? ''); };
 
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -68,7 +64,7 @@ const WORDS = {
     unmappedTitle: 'Items with no shelf address',
     unmappedLead: 'Each of these sends the picker back across the shop.',
     nothingUnmapped: 'Every item has a shelf address.',
-    walkTitle: 'The order a picker would walk', noShelves: 'This shop has no shelf addresses yet.',
+    walkStep: 'Step', walkTitle: 'The order a picker would walk', noShelves: 'This shop has no shelf addresses yet.',
     needShelfFields: 'Pick an item, a shelf, and how many fit.',
     shelfSet: 'Shelf set', noShelfAddress: 'no shelf address',
     itemsLead: 'What is missing before each item can be sold. The ones needing least work are at the bottom.',
@@ -146,7 +142,7 @@ const WORDS = {
     unmappedTitle: 'அலமாரி முகவரி இல்லாத பொருட்கள்',
     unmappedLead: 'இவை ஒவ்வொன்றும் பிக்கரை கடையின் மறுபக்கம் மீண்டும் அனுப்பும்.',
     nothingUnmapped: 'எல்லாப் பொருட்களுக்கும் அலமாரி முகவரி உள்ளது.',
-    walkTitle: 'பிக்கர் நடக்கும் வரிசை', noShelves: 'இந்தக் கடையில் இன்னும் அலமாரி முகவரிகள் இல்லை.',
+    walkStep: 'படி', walkTitle: 'பிக்கர் நடக்கும் வரிசை', noShelves: 'இந்தக் கடையில் இன்னும் அலமாரி முகவரிகள் இல்லை.',
     needShelfFields: 'பொருள், அலமாரி, எத்தனை பொருந்தும் — எல்லாவற்றையும் தேர்ந்தெடுக்கவும்.',
     shelfSet: 'அலமாரி நிர்ணயிக்கப்பட்டது', noShelfAddress: 'அலமாரி முகவரி இல்லை',
     itemsLead: 'ஒவ்வொரு பொருளையும் விற்பதற்கு முன் என்ன தேவை. குறைந்த வேலை உள்ளவை கீழே.',
@@ -1062,49 +1058,34 @@ el('save-price').addEventListener('click', () => {
   });
 });
 
+// U5 (G17): the price history and the picker's walk stand on the chrome's register part — built once per host, fed by
+// setRows; the column words are pairs so the chrome repaints them on the toggle. A price's state is the one record chip.
+const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: WORDS.ta[k] ?? WORDS.en[k] ?? k });
+const tables = {};
+function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
+
 function renderHistory(productId) {
   el('history-title').textContent = t('historyTitle');
+  const reg = register(el('price-history'), {
+    id: 'price-history', label: pair('historyTitle'), pageSize: 10, sortable: true, search: false,
+    columns: [
+      { key: 'from', label: pair('from'), value: (e) => e.effectiveFrom },
+      { key: 'price', label: pair('price'), value: (e) => inr(e.price.minor), align: 'end' },
+      { key: 'status', label: pair('status'), value: (e) => e.status.replace(/_/g, ' '), render: (e) => window.sreOffice.recordChip(e.status, e.status.replace(/_/g, ' ')) },
+      { key: 'version', label: pair('version'), value: (e) => e.version, sort: 'number', align: 'end' },
+    ],
+    rowKey: (e) => `${e.effectiveFrom}|${e.version}`, rowData: (e) => ({ status: e.status, version: String(e.version) }),
+    empty: { title: pair('noHistory') },
+  });
+  if (reg === null) return;
   const state = prices === null ? 'loaded' : prices.state(productId);
   if (state !== 'loaded' && state !== 'none') {
     // Not read from head office (yet, or it could not be): say so — never "this item has never had a price set".
-    const note = document.createElement('p');
-    note.className = 'empty';
-    note.textContent = state === 'loading' || state === 'not_loaded' ? t('pricesReading') : (prices.why(productId) ?? t('pricesReading'));
-    el('price-history').replaceChildren(note);
+    if (state === 'loading' || state === 'not_loaded') reg.setState('loading', { detail: pair('pricesReading') });
+    else reg.setState('offline', { detail: prices.why(productId) ?? t('pricesReading') });
     return;
   }
-  const entries = session.historyFor(productId);
-  if (entries.length === 0) {
-    const none = document.createElement('p');
-    none.className = 'empty';
-    none.textContent = t('noHistory');
-    el('price-history').replaceChildren(none);
-    return;
-  }
-  const table = document.createElement('table');
-  const head = document.createElement('tr');
-  for (const [text, cls] of [[t('from'), ''], [t('price'), 'amount'], [t('status'), ''], [t('version'), 'amount']]) {
-    const th = document.createElement('th');
-    th.textContent = text;
-    if (cls) th.className = cls;
-    head.append(th);
-  }
-  table.append(head);
-  for (const entry of entries) {
-    const row = document.createElement('tr');
-    if (entry.status !== 'active') row.classList.add('blocked');
-    for (const [text, cls] of [
-      [entry.effectiveFrom, ''], [inr(entry.price.minor), 'amount'],
-      [entry.status.replace(/_/g, ' '), ''], [String(entry.version), 'amount'],
-    ]) {
-      const td = document.createElement('td');
-      td.textContent = text;
-      if (cls) td.className = cls;
-      row.append(td);
-    }
-    table.append(row);
-  }
-  el('price-history').replaceChildren(table);
+  reg.setRows(session.historyFor(productId));
 }
 
 // ── Where things sit (M04-FR-02) ────────────────────────────────────────────
@@ -1166,30 +1147,20 @@ function renderShelf() {
     }));
   }
 
-  el('walk-list').replaceChildren(...(walk.steps.length === 0 ? [] : [walkTable(walk.steps)]));
+  const walkReg = register(el('walk-list'), {
+    id: 'picker-walk', label: pair('walkTitle'), pageSize: 20, search: false, count: false,
+    columns: [
+      { key: 'n', label: pair('walkStep'), value: (step) => step.n, align: 'end' },
+      { key: 'item', label: pair('item'), value: (step) => step.name },
+      { key: 'shelf', label: pair('shelf'), value: (step) => step.shelf ?? t('noShelfAddress') },
+    ],
+    rowKey: (step) => step.productId, rowData: (step) => ({ product: step.productId, shelf: step.shelf ?? '' }),
+    empty: { title: pair('noShelves') },
+  });
+  if (walkReg === null) return;
+  walkReg.setRows(walk.steps.map((step, index) => ({ ...step, n: index + 1 })));
 }
 
-function walkTable(steps) {
-  const table = document.createElement('table');
-  const head = document.createElement('tr');
-  for (const text of ['', t('item'), t('shelf')]) {
-    const th = document.createElement('th');
-    th.textContent = text;
-    head.append(th);
-  }
-  table.append(head);
-  steps.forEach((step, index) => {
-    const row = document.createElement('tr');
-    if (step.shelf === null) row.classList.add('blocked');
-    for (const text of [String(index + 1), step.name, step.shelf ?? t('noShelfAddress')]) {
-      const td = document.createElement('td');
-      td.textContent = text;
-      row.append(td);
-    }
-    table.append(row);
-  });
-  return table;
-}
 
 el('assign-shelf').addEventListener('click', () => {
   const sku = el('shelf-product').value.trim();
@@ -1682,7 +1653,7 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintChrome();
-  repaintShopDates();
+  el('history-title').textContent = t('historyTitle'); // U3 · OB-699: the history's title follows the toggle
   renderItems();
   renderItem();
   if (lastProposal !== null) renderProposal(lastProposal, lastProposal.draft.productId);

@@ -151,6 +151,9 @@
       .ec [hidden] { display: none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      ul.old-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ul.old-steps > li > a { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; background: var(--bg); }
+      ul.old-steps > li > a > b { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; min-width: 54px; }
     </style>
   </head>
   <body>
@@ -367,6 +370,11 @@
         <p class="lead" id="old-lead">Everything the old shop keeps its records in, and anything about it nobody can answer. What is missing here is the point — a migration that starts with gaps migrates whatever somebody happened to remember.</p>
         <div class="bill" id="old-summary"></div>
         <div id="old-list"></div>
+
+        <!-- U6 · §27 Migration: source profiling, the trial load and the delta are their OWN steps on the Old system checks page -->
+        <h3 id="old-steps-title">The steps, one by one</h3>
+        <p class="lead" id="old-steps-lead"></p>
+        <ul class="old-steps" id="old-steps"></ul>
 
         <h3 id="retire-title">Switching the old system off</h3>
         <p class="lead" id="retire-lead">Switching the old system off is not the same act as deleting the old data, and this screen never does the second one.</p>

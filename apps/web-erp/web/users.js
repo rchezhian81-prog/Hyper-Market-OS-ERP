@@ -21,7 +21,9 @@ const scopeWords = (s) => (s === 'all' ? t('all') : s.join(', '));
 const say = (id, out) => { $(id).textContent = out.result === 'ok' ? '' : api.outcomeWords(lang, out); };
 
 let roles = { live: [], waiting: [] }; let holders = null; let pending = null; let mine = null;
-const roleName = (id) => roles.live.find((r) => r.id === id)?.name ?? roles.waiting.find((r) => r.id === id)?.name ?? id;
+// U3 (OB-699): a role's name is the product's own word — head office carries it in both languages; the Tamil is shown on a Tamil screen.
+const roleWord = (r) => (lang === 'ta' && typeof r?.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : r?.name);
+const roleName = (id) => roleWord(roles.live.find((r) => r.id === id) ?? roles.waiting.find((r) => r.id === id)) ?? id;
 
 function paintPending() {
   const ul = $('pending-rows'); ul.replaceChildren();
@@ -96,7 +98,7 @@ function paintWaiting() {
   const ul = $('waiting-rows'); ul.replaceChildren();
   for (const r of roles.waiting) {
     const li = document.createElement('li'); li.className = 'tone-degraded'; li.dataset.role = r.id;
-    li.append(text('h4', r.name),
+    li.append(text('h4', roleWord(r)),
       text('p', `${t('scopeLabel')}: ${r.roadmap.scope} · ${t('mayLabel')}: ${r.roadmap.may} · ${t('mustNotLabel')}: ${r.roadmap.mustNot}`, 'meta'),
       text('p', `${t('limitedBy')}: ${r.limitedBy.join(', ')}`, 'meta'), text('p', t('wordsLabel')));
     const words = document.createElement('ul'); words.className = 'why';
@@ -114,7 +116,7 @@ function paintRoleChoices() {
   for (const id of ['g-role', 'l-role']) {
     const sel = $(id); const was = sel.value; sel.replaceChildren(text('option', '—'));
     sel.firstChild.value = '';
-    for (const r of roles.live) { const o = text('option', r.name); o.value = r.id; sel.append(o); }
+    for (const r of roles.live) { const o = text('option', roleWord(r)); o.value = r.id; sel.append(o); }
     sel.value = was;
   }
   const dim = $('l-dimension'); const was = dim.value; dim.replaceChildren();

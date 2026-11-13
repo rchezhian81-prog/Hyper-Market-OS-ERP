@@ -6,6 +6,16 @@
 // No prompt/confirm/alert.
 
 const $ = (id) => document.getElementById(id);
+// OB-699: the page's words of a refusal follow the toggle; head office's own sentence stays English, marked so (WCAG 3.1.2).
+const sayOutcome = (host, wordsOf, out) => {
+  host.replaceChildren();
+  const words = wordsOf(out);
+  const ho = out && out.result === 'refused' && typeof out.whatHappened === 'string' && out.whatHappened !== '' && words.endsWith(out.whatHappened);
+  if (!ho) { host.textContent = words; return; }
+  host.append(document.createTextNode(words.slice(0, words.length - out.whatHappened.length)));
+  const sp = document.createElement('span'); sp.setAttribute('lang', 'en'); sp.textContent = out.whatHappened; host.append(sp);
+};
+
 const nt = window.b2bNotes ?? null;
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 const w = (k) => nt.words(lang, k);
@@ -16,7 +26,7 @@ let customerId = null;
 function el(tag, words, cls) { const n = document.createElement(tag); if (words !== undefined) n.textContent = words; if (cls) n.className = cls; return n; }
 function select(cls, options) { const s = document.createElement('select'); s.className = cls; for (const [value, words] of options) { const o = document.createElement('option'); o.value = value; o.textContent = words; s.append(o); } return s; }
 function labelled(words, control) { const l = document.createElement('label'); l.append(el('span', words), control); return l; }
-const status = (out, good) => { $('cn-status').textContent = nt.outcomeWords(lang, out, good); $('cn-status').dataset.result = out.result; };
+const status = (out, good) => { sayOutcome($('cn-status'), (o) => nt.outcomeWords(lang, o, good), out); $('cn-status').dataset.result = out.result; };
 const currentCustomer = () => { const shown = ($('cust-h')?.textContent ?? '').trim(); return shown !== '' ? shown : ($('c-id')?.value ?? '').trim(); };
 
 function paintInvoices(view) {
@@ -108,7 +118,7 @@ function paintReconciliation(r) {
 async function reconcile() {
   const out = await nt.session.reconcile($('cnr-period').value);
   $('cnr-status').dataset.result = out.result;
-  if (out.result !== 'ok') { $('cnr-status').textContent = nt.outcomeWords(lang, out, ''); return; }
+  if (out.result !== 'ok') { sayOutcome($('cnr-status'), (o) => nt.outcomeWords(lang, o, ''), out); return; }
   $('cnr-status').textContent = '';
   reconciled = out.value; paintReconciliation(reconciled);
 }

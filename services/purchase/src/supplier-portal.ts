@@ -25,6 +25,9 @@ import {
 } from '../../../packages/supplier-portal/src/index';
 import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import type { SupplierRebateClaim } from './rebate-claims';
+import type { RfqRequest } from './rfq';
+import type { Quote, QuoteLine } from '../../../packages/purchasing/src/index';
+import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 
 export type { PartnerDocument, StatementLine, PartnerAuditEntry } from '../../../packages/supplier-portal/src/index';
 
@@ -110,7 +113,7 @@ export interface SubmissionReview {
   readonly reason: string;
   readonly reviewedBy: string;
   readonly reviewedAt: string;
-  readonly fed: { readonly invoiceId: string } | { readonly asnId: string } | null;
+  readonly fed: { readonly invoiceId: string } | { readonly asnId: string } | { readonly quoteId: string; readonly requisitionId: string } | null;
 }
 
 /** The kinds whose document feeds purchasing once a buyer accepts it. */
@@ -213,7 +216,44 @@ export interface SupplierPortalDeps {
    * for, when the answer is due and what has been paid against it. Undefined: this head office does not list them (said).
    */
   readonly rebateClaimsOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierRebateClaim[]>;
+  /**
+   * U6 · M06-FR-02 · M24-FR-01: the requests for quotation the shop has SENT this supplier, each with the requisition's
+   * lines (what to quote for). Undefined: this head office does not send RFQs to the portal (said, never an empty list).
+   */
+  readonly rfqsOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierRfq[]>;
+  /** U6: record the supplier's reply as a QUOTE on the requisition — called only once a buyer has ACCEPTED the reply (§28). */
+  readonly recordRfqQuote?: (tenantId: string, requisitionId: string, quote: Quote) => Promise<void> | void;
+  /**
+   * U6 · M07-FR-03 · M24-FR-02: the claims the shop holds AGAINST this supplier (a debit note for short or damaged goods
+   * a second person returned or claimed, goods refused at the door, a return still to go back). Undefined: not listed.
+   */
+  readonly claimsOf?: (tenantId: string, partnerId: string) => Promise<readonly SupplierClaimAgainst[]>;
   readonly now: () => string;
+}
+
+/** U6: one RFQ as the supplier's portal reads it — the request and the lines to quote for (never another supplier's answer). */
+export interface SupplierRfq extends RfqRequest {
+  readonly partnerId: string;
+  readonly currency: string;
+  readonly lines: readonly { readonly productId: string; readonly quantity: number; readonly uom?: string }[];
+}
+
+/** U6 · M24-FR-02: one claim the shop holds against this supplier, as its portal reads it. */
+export interface SupplierClaimAgainst {
+  readonly partnerId: string;
+  readonly claimId: string;
+  readonly kind: 'debit_note' | 'refused_at_door' | 'return_pending' | 'door_debit_note';
+  readonly grnId: string;
+  readonly poId: string | null;
+  readonly productId: string | null;
+  readonly quantityMinor: number | null;
+  readonly uom?: string;
+  readonly valueMinor: number | null;
+  readonly reason: string;
+  readonly raisedAt: string;
+  /** The statutory number once issued (debit notes), else null. */
+  readonly number: string | null;
+  readonly state: 'raised' | 'issued' | 'never_owed' | 'pending' | 'returned';
 }
 
 /** OB-362: one of the supplier's own open orders, as its portal shows it — the order, never its costs. */
@@ -224,6 +264,22 @@ export interface SupplierOpenOrder {
   readonly issuedAt: string | null;
   readonly deliverToLocationId: string | null;
   readonly lines: number;
+}
+
+/** U6: the quote an accepted `rfq_response` document carries — undefined when the document is not one this head office wrote. */
+export function rfqQuoteFrom(doc: Readonly<Record<string, unknown>>, partnerId: string): { readonly requisitionId: string; readonly quote: Quote } | undefined {
+  const requisitionId = doc['requisitionId'];
+  const rfqId = doc['rfqId'];
+  const lines = doc['lines'];
+  if (!isStr(requisitionId) || !isStr(rfqId) || !Array.isArray(lines) || lines.length === 0) return undefined;
+  const out: QuoteLine[] = [];
+  for (const raw of lines) {
+    const l = raw as Record<string, unknown>;
+    const cost = l['unitCost'] as Record<string, unknown> | undefined;
+    if (!isStr(l['productId']) || typeof l['leadTimeDays'] !== 'number' || cost === undefined || typeof cost['minor'] !== 'number' || !isStr(cost['currency']) || !isCurrencyCode(cost['currency'])) return undefined;
+    out.push({ productId: l['productId'], unitCost: money(cost['minor'], cost['currency'] as CurrencyCode), leadTimeDays: l['leadTimeDays'] });
+  }
+  return { requisitionId, quote: { quoteId: `${rfqId}-${partnerId}`, supplierId: partnerId, lines: out } };
 }
 
 export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[] {
@@ -470,6 +526,16 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
             fed = { asnId: asn.asnId };
           }
         }
+        // U6 · M06-FR-02 · M24-FR-01: an ACCEPTED reply to an RFQ becomes the supplier's quote on the requisition — exactly the
+        // lines it sent, under a quote id of the RFQ + the supplier, so a re-quote supersedes and a re-send collapses. A
+        // rejected reply, or a reply this head office cannot feed, records no quote (the decision is still kept beside it).
+        if (decision === 'accepted' && submission.kind === 'rfq_response' && deps.recordRfqQuote !== undefined) {
+          const quote = rfqQuoteFrom(doc, partnerId);
+          if (quote !== undefined) {
+            await deps.recordRfqQuote(ctx.tenantId, quote.requisitionId, quote.quote);
+            fed = { quoteId: quote.quote.quoteId, requisitionId: quote.requisitionId };
+          }
+        }
         const review: SubmissionReview = { submissionId, partnerId, decision, reason: (b['reason'] as string).trim(), reviewedBy: ctx.userId, reviewedAt: at, fed };
         await deps.recordReview?.(ctx.tenantId, review);
         return { status: 201, body: { review, alreadyReviewed: false } };
@@ -648,6 +714,104 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
         }
         const rows = await scopedOrRefused(ctx.tenantId, session, await deps.rebateClaimsOf(ctx.tenantId, session.partnerId), 'view_statement', requested, 'read:rebate-claims');
         return { status: 200, body: { partnerId: session.partnerId, claimsKnown: true, claims: rows.map((c) => ({ claimId: c.claimId, schemeId: c.schemeId, amountMinor: c.amountMinor, sentOn: c.sentOn, answerDueOn: c.answerDueOn, paidMinor: c.paidMinor, leftToPayMinor: c.leftToPayMinor, state: c.state, words: c.words })), asAt: deps.now() } };
+      },
+    },
+    {
+      // U6 · M06-FR-02 · M24-FR-01 "respond to RFQs": a supplier reads the requests for quotation the shop SENT IT — the
+      // requisition's lines to quote for, the day the quote is due, and where its own answer has got to (not answered;
+      // answered, waiting for a buyer; accepted = its quote stands on the comparison; rejected with the buyer's reason).
+      // The partner is the login's stored binding (never the request); a `?partnerId=` naming another partner is refused
+      // AND recorded. Read under the `respond_rfq` grant; `mayRespond` says whether this login may answer.
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/rfqs',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        if (deps.rfqsOf === undefined) {
+          await scopedOrRefused(ctx.tenantId, session, [], 'respond_rfq', requested, 'read:rfqs');
+          return { status: 200, body: { partnerId: session.partnerId, rfqsKnown: false, rfqs: [], why: 'this head office does not send requests for quotation to the portal', mayRespond: false, asAt: deps.now() } };
+        }
+        const rows = await scopedOrRefused(ctx.tenantId, session, await deps.rfqsOf(ctx.tenantId, session.partnerId), 'respond_rfq', requested, 'read:rfqs');
+        const mine = await deps.submissions(ctx.tenantId, session.partnerId);
+        const reviews = await deps.reviews?.(ctx.tenantId, session.partnerId) ?? [];
+        const rfqs = rows.map((r) => {
+          // The supplier's replies to THIS rfq, newest first; the newest decides what the row says.
+          const replies = mine.filter((s) => s.kind === 'rfq_response' && s.document?.['rfqId'] === r.rfqId).sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1));
+          const latest = replies[0];
+          const review = latest === undefined ? undefined : reviews.find((x) => x.submissionId === latest.submissionId);
+          return {
+            rfqId: r.rfqId, requisitionId: r.requisitionId, dueOn: r.dueOn, ...(r.note === undefined ? {} : { note: r.note }), sentAt: r.sentAt, currency: r.currency, lines: r.lines,
+            replied: latest !== undefined, ...(latest === undefined ? {} : { submissionId: latest.submissionId, repliedAt: latest.receivedAt }),
+            awaitingBuyer: latest !== undefined && review === undefined,
+            answered: review?.decision === 'accepted',
+            decision: review === undefined ? null : review.decision, ...(review === undefined ? {} : { reason: review.reason }),
+          };
+        });
+        return { status: 200, body: { partnerId: session.partnerId, rfqsKnown: true, rfqs, mayRespond: session.grants.includes('respond_rfq'), asAt: deps.now() } };
+      },
+    },
+    {
+      // U6 · M24-FR-01: a supplier ANSWERS a request for quotation sent to it — its price per unit and lead time for each
+      // line the requisition asked for. Body: { lines: [{ productId, unitCost { minor, currency }, leadTimeDays }] }. The
+      // answer is the existing `rfq_response` submission with its document, so it WAITS for a buyer like every other
+      // supplier word (§28): nothing is on the comparison until a buyer accepts it on the review desk. A line naming a
+      // product the RFQ did not ask for is refused by name; an RFQ not sent to this supplier is "not found" for it.
+      api: 'API-03', method: 'POST', path: '/v1/supplier-portal/me/rfqs/:rfqId/quote',
+      permission: 'supplier.portal.self.submit', idempotent: true,
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const rfqId = (ctx.params['rfqId'] ?? '').trim();
+        if (deps.rfqsOf === undefined) {
+          throw apiError(503, { code: 'rfq_register_unavailable', whatHappened: 'This head office does not send requests for quotation to the portal.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was sent.' });
+        }
+        const rfq = (await deps.rfqsOf(ctx.tenantId, session.partnerId)).find((r) => r.rfqId === rfqId && r.partnerId === session.partnerId);
+        if (rfq === undefined) throw notFound(`request for quotation ${rfqId} sent to this supplier`);
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const raw = b['lines'];
+        const asked = new Set(rfq.lines.map((l) => l.productId));
+        const lines = Array.isArray(raw) ? raw as Record<string, unknown>[] : [];
+        const readable = lines.length > 0 && lines.every((l) => isStr(l['productId']) && typeof l['leadTimeDays'] === 'number' && Number.isSafeInteger(l['leadTimeDays']) && (l['leadTimeDays'] as number) >= 0
+          && l['unitCost'] !== null && typeof l['unitCost'] === 'object' && Number.isSafeInteger((l['unitCost'] as Record<string, unknown>)['minor']) && isStr((l['unitCost'] as Record<string, unknown>)['currency']) && isCurrencyCode((l['unitCost'] as Record<string, unknown>)['currency'] as string));
+        const notAsked = lines.filter((l) => isStr(l['productId']) && !asked.has(l['productId'] as string)).map((l) => String(l['productId']));
+        if (!readable || notAsked.length > 0) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_quote',
+            whatHappened: notAsked.length > 0
+              ? `The quote names ${notAsked.join(', ')}, which this request for quotation did not ask for (it asked for ${[...asked].join(', ')}).`
+              : 'A quote needs { lines: [{ productId, unitCost { minor, currency }, leadTimeDays (a whole number of days) }] } — at least one line, each a product the request asked for.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Quote only the lines the request asked for: a price per unit and the days to deliver. Nothing was sent.',
+          });
+        }
+        const document = {
+          rfqId, requisitionId: rfq.requisitionId,
+          lines: lines.map((l) => ({ productId: l['productId'] as string, unitCost: { minor: (l['unitCost'] as Record<string, unknown>)['minor'] as number, currency: (l['unitCost'] as Record<string, unknown>)['currency'] as string }, leadTimeDays: l['leadTimeDays'] as number })),
+        };
+        // One submission per distinct answer: the same answer again collapses (duplicate); a changed price is a new reply.
+        const digest = document.lines.map((l) => `${l.productId}:${l.unitCost.minor}:${l.unitCost.currency}:${l.leadTimeDays}`).sort().join(',');
+        let hash = 0;
+        for (const ch of digest) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+        const submissionId = `rfq-${rfqId}-${session.partnerId}-${hash.toString(36)}`;
+        return receive({ ...ctx, body: { submissionId, kind: 'rfq_response', document } }, session.partnerId, ctx.userId, true);
+      },
+    },
+    {
+      // U6 · M07-FR-03 · M24-FR-02 "see claims": a supplier reads the claims the shop holds AGAINST IT — a debit note for short
+      // or damaged goods a second person returned or claimed (with its statutory number once issued), goods refused at the
+      // door and never owed, a return still to go back. Read only, under the statement grant (money between the two
+      // businesses, like the statement). The partner is the login's binding; a `?partnerId=` naming another is refused and
+      // recorded. Its OWN claims on the shop are the `claim` submissions it sent (M24-FR-02 "raise claims").
+      api: 'API-03', method: 'GET', path: '/v1/supplier-portal/me/claims',
+      permission: 'supplier.portal.self',
+      handler: async (ctx) => {
+        const session = await meSession(ctx.tenantId, ctx.userId);
+        const requested = isStr(ctx.query['partnerId']) ? ctx.query['partnerId'] : undefined;
+        if (deps.claimsOf === undefined) {
+          await scopedOrRefused(ctx.tenantId, session, [], 'view_statement', requested, 'read:claims');
+          return { status: 200, body: { partnerId: session.partnerId, claimsKnown: false, claims: [], why: 'this head office does not list claims to the portal', asAt: deps.now() } };
+        }
+        const rows = await scopedOrRefused(ctx.tenantId, session, await deps.claimsOf(ctx.tenantId, session.partnerId), 'view_statement', requested, 'read:claims');
+        return { status: 200, body: { partnerId: session.partnerId, claimsKnown: true, claims: rows.map((c) => { const { partnerId, ...rest } = c; void partnerId; return rest; }), asAt: deps.now() } };
       },
     },
     {

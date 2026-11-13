@@ -9,6 +9,20 @@
 const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.label(n, uom ?? '') : `${n} ${uom ?? ''}`.trim());
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 // ── U2b (UI/UX gap audit G5 · G14 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code,
 // and a date is written as the shop writes it (dd/mm/yyyy) through the chrome's shared field. The field keeps the id the
 // page sends (the typed code stays possible when the list cannot be read — head office down, no right — so the form is
@@ -16,38 +30,15 @@ const el = (id) => document.getElementById(id);
 // the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
 // changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
 const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
-const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
-const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
-const u2bRepaints = [];
-const repaintPickers = () => { for (const f of u2bRepaints) f(); };
-/** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
+const u2bTitle = (titleKey) => ({ en: u2bWords.en[titleKey], ta: u2bWords.ta[titleKey] });
+/** U5 · G17: the chrome's own picker beside the field (sreOffice.pickable) — the page keeps its titles; the button and the name
+ *  it shows follow the language toggle inside the chrome. Mounted once the chrome is there; off the box nothing changes. */
 function pickableEl(input, kind, titleKey, extra = {}) {
   if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
+  o.pickable(input, kind, u2bTitle(titleKey), { ...extra, ...(typeof extra.titleOf === 'function' ? { titleOf: () => u2bTitle(extra.titleOf()) } : {}) });
 }
-// the pickers' words follow the language toggle like the page's own words
-new MutationObserver(() => { repaintPickers(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 // ── U2b end
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
@@ -218,7 +209,7 @@ function paint() {
   el('summary').textContent = readFailed ? '' : open.length === 0 ? t('noneWaiting') : `${open.length} ${t('waiting')}`;
   const state = el('state');
   state.hidden = !readFailed;
-  state.textContent = readFailed ? t('cannotRead') : '';
+  if (readFailed) paintState(state, { tone: 'error', label: t('cannotRead'), announcement: '' }); else state.replaceChildren();
   el('open-heading').hidden = open.length === 0; el('open-heading').textContent = t('openHeading');
   el('done-heading').hidden = done.length === 0; el('done-heading').textContent = t('doneHeading');
   el('rows').replaceChildren(...open.map((i) => rowNode(i, true)));
@@ -290,6 +281,7 @@ async function send(item, values, button) {
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+onChrome(() => paint());
 void refresh();
 
 if ('serviceWorker' in navigator) {

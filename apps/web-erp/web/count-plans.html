@@ -35,11 +35,6 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
-      .panel b { font-size: 22px; font-variant-numeric: tabular-nums; } .panel span { color: var(--muted); font-size: 14px; }
-      table { width: 100%; border-collapse: collapse; }
-      td, th { text-align: left; padding: 8px 10px; vertical-align: top; overflow-wrap: anywhere; }
       .tone-ok { border-left: 6px solid var(--ok); } .tone-degraded { border-left: 6px solid var(--degraded); } .tone-idle { border-left: 6px solid var(--idle); } .tone-error { border-left: 6px solid var(--error); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); }
@@ -54,8 +49,6 @@
       [hidden] { display: none !important; }
           /* U2 · G5: a place field with its "Choose…" button beside it; the products chosen one by one, then the bulk box second */
       .row label { display: grid; gap: 4px; }
-      .pick-btn { margin-top: 6px;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
-      .pick-name { display: block; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
       .products-pick { display: grid; gap: 8px; }
       .products-pick .field-name { font-weight: 600; }
       #product-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
@@ -76,12 +69,8 @@
         <p class="lead" id="lede"></p>
       </div>
 
-      <div class="panels" role="status" aria-live="polite">
-        <div class="panel"><b id="n-planned">–</b><span id="p-planned">Planned</span></div>
-        <div class="panel"><b id="n-counting">–</b><span id="p-counting">Counting</span></div>
-        <div class="panel"><b id="n-approved">–</b><span id="p-approved">Approved</span></div>
-        <div class="panel"><b id="n-cancelled">–</b><span id="p-cancelled">Cancelled</span></div>
-      </div>
+      <!-- U5 · G17: the four figures as the chrome's summary cards (a count not read yet is "Not known", never a dash) -->
+      <div id="panels" role="status" aria-live="polite"></div>
 
       <section aria-labelledby="new-h" id="new-section">
         <h3 id="new-h">Plan a count</h3>
@@ -112,10 +101,8 @@
         <h3 id="reg-h">Count plans</h3>
         <p class="lede" id="reg-lede"></p>
         <p class="status" id="list-status" role="status" aria-live="polite"></p>
-        <table id="register" aria-labelledby="reg-h">
-          <thead><tr><th id="c-plan">Plan</th><th id="c-place">Place</th><th id="c-products">Products</th><th id="c-state">State</th><th id="c-freeze">Freeze</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <!-- U5 · G17: the register is the chrome's shared part — search, sort said in words, paging, a count, rows that stack on a phone -->
+        <div id="register" aria-labelledby="reg-h"></div>
       </section>
       <!-- M08-FR-03 · §28: the stock corrections a handheld asked for, approved or rejected by a DIFFERENT person. -->
       <section aria-labelledby="adj-h" id="adj-section" hidden>

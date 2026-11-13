@@ -202,7 +202,7 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
           expect(d.writes.length).toBe(before);
           for (const input of await d.page.locator('#crate-seals input.seal').all()) await input.fill('SEAL-W4-1');
           await d.page.click('#dispatch-order');
-          await d.page.locator('#send-status', { hasText: `✓ Dispatched — manifest MF-${orderId}` }).waitFor({ timeout: 15_000 });
+          await d.page.locator('#send-status', { hasText: `Dispatched — manifest MF-${orderId}` }).waitFor({ timeout: 15_000 });
           const shown = d.page.locator(`#manifest[data-manifest="MF-${orderId}"]`);
           await shown.waitFor({ timeout: 15_000 });
           const words = await shown.innerText();
@@ -324,9 +324,9 @@ describe.skipIf(!CONNECTED)('W4 · M19-FR-02/03/04 connected: the picker and the
     const row = o.page.locator('#board li.row').first();
     await row.locator('.facts.cash', { hasText: 'counted' }).waitFor({ timeout: 15_000 });
     const words = await row.innerText();
-    expect(words).toMatch(/delivered · Code: ✓/);
+    expect(words).toMatch(/delivered · Code: matched/);
     expect(words).toMatch(/returned to origin/);
-    expect(await row.locator('.facts.cash').innerText()).toMatch(/counted ₹130\.00 · difference .*30\.00 · ⚠ cash office must look$/);
+    expect(await row.locator('.facts.cash').innerText()).toMatch(/counted ₹130\.00 · difference .*30\.00 · cash office must look$/);
     expect(await o.page.isHidden('#board-tolerance'), 'his limit is confirmed — the board no longer warns').toBe(true);
     expect(o.errors).toEqual([]);
     await o.close();

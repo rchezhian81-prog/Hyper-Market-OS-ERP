@@ -4,6 +4,16 @@
 // computer). This file only draws what they say. The office read changes nothing. Every word has a Tamil twin.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
 const office = window.facilitiesOffice ?? null;
 const rq = window.equipmentReadingQueue ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -33,7 +43,7 @@ function paintReadings() {
       form.addEventListener('submit', (ev) => {
         ev.preventDefault();
         const out = rq.record(lang(), { assetId: row.assetId, reading: reading.value, source: source.value });
-        el('eq-result').hidden = false; el('eq-result-icon').textContent = out.ok ? '✓' : '✕'; el('eq-result-text').textContent = out.ok ? w('stSavedHere') : out.words;
+        el('eq-result').hidden = false; sayWith(el('eq-result'), out.ok ? 'done' : 'failed', out.ok ? w('stSavedHere') : out.words, 'eq-result-text');
         paintReadings(); void syncReadings();
       });
       item.append(form);
@@ -55,20 +65,17 @@ const deg = (t) => (office === null ? String(t) : office.degrees(t));
 
 // U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
 // while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
-const shopDates = new Map();
-/** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = el(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
+// U7 (Group C2): the shared dd/mm/yyyy field is the chrome's ONE copy (`sreOffice.shopDate`) — its label, "(required)"
+// and hint follow the language toggle inside the chrome; the page keeps its element ids and reads ISO back through
+// `sreOffice.dateOf`. Before the chrome has loaded, or off the box, the plain field stays, so the page is never dead.
+const shopDates = new Set();
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = el(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  const o = window.sreOffice;
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (o.shopDate(id, words, opts) !== null) shopDates.add(id);
 }
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (el(id)?.value ?? ''));
+const dateOf = (id) => { const o = window.sreOffice; return shopDates.has(id) && o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : (document.getElementById(id)?.value ?? ''); };
 
 // U2 · G5 (UI/UX gap audit): the signed-in person's own store is filled in from the store computer (`sreOffice.me`) —
 // the id stays what the page sends, the store's NAME is said beside it, and a person who may hold more than one store can
@@ -83,7 +90,6 @@ function ownStore(inputId) {
   note.textContent = `${me.storeName ?? me.storeId} — ${w('yourStore')}`;
 }
 function paintOffice() {
-  repaintShopDates();
 
   ownStore('office-branch');
   if (office === null || !office.session.may.read) { el('office').hidden = true; return; }
@@ -93,17 +99,17 @@ function paintOffice() {
   if (read === null) return;
   const alerts = [...read.health.critical, ...read.health.other];
   // Round 4d (M26-FR-01): a spare part below the level wanted is a warning beside the asset alerts
-  const lowSpares = (office.lowSpareLines?.(lang(), read) ?? []).map((s) => li(`⚠ ${s.words}`, 'degraded', { spare: s.sparePartId }));
-  el('o-alerts').replaceChildren(...lowSpares, ...(alerts.length === 0 && lowSpares.length === 0 ? [li(`✓ ${w('noAlerts')}`, 'ok')] : alerts.map((a) => li(`${a.criticality === 'critical' ? '✕' : '⚠'} ${a.name} — ${w(a.kind)}${a.daysRemaining !== undefined ? ` · ${a.daysRemaining} ${w('daysLeft')}` : ''}${a.daysOverdue !== undefined ? ` · ${a.daysOverdue} ${w('daysOver')}` : ''}`, a.criticality === 'critical' ? 'error' : 'degraded', { asset: a.assetId, kind: a.kind }))));
+  const lowSpares = (office.lowSpareLines?.(lang(), read) ?? []).map((s) => withChip(li(s.words, 'degraded', { spare: s.sparePartId }), 'warning'));
+  el('o-alerts').replaceChildren(...lowSpares, ...(alerts.length === 0 && lowSpares.length === 0 ? [withChip(li(w('noAlerts'), 'ok'), 'done')] : alerts.map((a) => withChip(li(`${a.name} — ${w(a.kind)}${a.daysRemaining !== undefined ? ` · ${a.daysRemaining} ${w('daysLeft')}` : ''}${a.daysOverdue !== undefined ? ` · ${a.daysOverdue} ${w('daysOver')}` : ''}`, a.criticality === 'critical' ? 'error' : 'degraded', { asset: a.assetId, kind: a.kind }), a.criticality === 'critical' ? 'failed' : 'warning'))));
   el('o-assets').replaceChildren(...(read.assets.length === 0 ? [li(w('none'), 'idle')] : read.assets.map((a) => li(`${a.name} (${a.assetId}) · ${w(a.criticality)} · ${w('warranty')} ${a.warrantyUntil ?? w('notRecorded')} · ${w('amc')} ${a.amcUntil ?? w('notRecorded')} · ${w('lastService')} ${a.lastServicedOn ?? w('never')}`, 'idle', { asset: a.assetId }))));
   el('o-equipment').replaceChildren(...(read.equipment.length === 0 ? [li(w('none'), 'idle')] : read.equipment.map((e) => {
     const st = e.assessment.state;
-    return li(`${st === 'within_range' ? '✓' : st === 'drifting' ? '⚠' : '✕'} ${e.name} — ${w(st)} · ${w('range')} ${deg(e.range.minTenthsC)} – ${deg(e.range.maxTenthsC)} · ${w('last')} ${e.lastReading === null ? w('never') : `${deg(e.lastReading.tenthsC)} ${e.lastReading.at}`}${e.assessment.minutesOutOfRange > 0 ? ` · ${e.assessment.minutesOutOfRange} ${w('minutesOut')}` : ''}`, st === 'within_range' ? 'ok' : st === 'drifting' ? 'degraded' : 'error', { asset: e.assetId, state: st });
+    return withChip(li(`${e.name} — ${w(st)} · ${w('range')} ${deg(e.range.minTenthsC)} – ${deg(e.range.maxTenthsC)} · ${w('last')} ${e.lastReading === null ? w('never') : `${deg(e.lastReading.tenthsC)} ${e.lastReading.at}`}${e.assessment.minutesOutOfRange > 0 ? ` · ${e.assessment.minutesOutOfRange} ${w('minutesOut')}` : ''}`, st === 'within_range' ? 'ok' : st === 'drifting' ? 'degraded' : 'error', { asset: e.assetId, state: st }), st === 'within_range' ? 'done' : st === 'drifting' ? 'warning' : 'failed');
   })));
   el('o-downtime').replaceChildren(...(read.downtime.length === 0 ? [li(w('none'), 'idle')] : read.downtime.map((d) => li(`${d.name}: ${d.events} ${w('events')} · ${d.totalMinutes} ${w('minutes')} · ${d.unreportedMinutes} ${w('unreported')}${d.stillDown ? ` · ✕ ${w('stillDown')}` : ''}`, d.stillDown ? 'error' : 'idle', { asset: d.assetId }))));
   const e = read.energy;
   el('o-energy').textContent = `${e.kilowattHours} ${w('kwh')} · ${w('cost')} ${rupees(e.costMinor)} · ${w('estimated')} ${e.estimatedShareBps === 'not_meaningful' ? w('notMeaningful') : `${(e.estimatedShareBps / 100).toFixed(1)}%`} · ${w('perDay')} ${e.perDayCostMinor === 'not_meaningful' ? w('notMeaningful') : rupees(e.perDayCostMinor)}`;
-  el('o-incidents').replaceChildren(...(read.incidents.length === 0 ? [li(w('none'), 'idle')] : read.incidents.map((i) => li(`${i.open ? `⚠ ${w('open')}` : `✓ ${w('closed')}`} · ${i.kind} · ${i.severity} · ${i.occurredAt} · ${i.description} · ${w('evidence')} ${i.evidence}`, i.open ? 'degraded' : 'ok', { incident: i.incidentId }))));
+  el('o-incidents').replaceChildren(...(read.incidents.length === 0 ? [li(w('none'), 'idle')] : read.incidents.map((i) => withChip(li(`${w(i.open ? 'open' : 'closed')} · ${i.kind} · ${i.severity} · ${i.occurredAt} · ${i.description} · ${w('evidence')} ${i.evidence}`, i.open ? 'degraded' : 'ok', { incident: i.incidentId }), i.open ? 'open' : 'closed'))));
 }
 if (office !== null && office.session.may.read) {
   const i = icon('search'); if (i !== null) el('office-read').prepend(i);

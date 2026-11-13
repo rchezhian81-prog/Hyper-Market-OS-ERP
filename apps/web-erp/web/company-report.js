@@ -208,8 +208,11 @@ function renderKpis(measures) {
 function renderFreshness(freshness) {
   const el = $('freshness');
   const state = (freshness && freshness.state) || 'missing';
-  el.className = `badge ${state}`;
-  el.textContent = t(state === 'fresh' ? 'fresh' : state === 'stale' ? 'stale' : 'missing');
+  const words = t(state === 'fresh' ? 'fresh' : state === 'stale' ? 'stale' : 'missing');
+  // U5 (G13): the freshness is the shared chip — the tone's shape and the word, never a coloured dot alone.
+  const o = office();
+  if (o !== null && typeof o.chip === 'function') { el.replaceChildren(o.chip(state === 'fresh' ? 'ok' : state === 'stale' ? 'degraded' : 'error', words)); el.dataset.state = state; return; }
+  el.textContent = words; el.dataset.state = state;
 }
 
 function renderContributors(contributors) {

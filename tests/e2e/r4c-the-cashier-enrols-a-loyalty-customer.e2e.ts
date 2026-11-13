@@ -68,6 +68,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-560: th
       await page.fill('#find-mobile', '9840066601');
       await page.click('#find');
       await page.locator('#found', { hasText: '6601' }).waitFor({ timeout: 15_000 });
+      // OB-702 (decision 5 = A): the cashier's desk sees no programme panel (tiers, expiry, the CA's note, referral rewards)
+      // — one line says whose numbers they are — and nothing of the programme is read for this desk.
+      expect(await page.isHidden('#programme-section')).toBe(true);
+      expect(await page.isHidden('#referral-section')).toBe(true);
+      expect(await page.textContent('#desk-only')).toMatch(/^○ This desk enrols customers and finds members\./);
+      expect(await page.locator('#programme-section button').count()).toBeGreaterThan(0); // the panel exists for the owner; it is hidden, not emptied
       expect(errors).toEqual([]);
     } finally { await context.close(); }
   });

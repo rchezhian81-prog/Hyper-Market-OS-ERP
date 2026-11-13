@@ -46,7 +46,7 @@ export interface ForwardTrace {
 export const PRODUCTION_PLAN_COPY = {
   en: {
     planH: 'Plan production', planLead: 'How many batches of each recipe to make for a day, from what has been selling. It never plans more than will sell before the food expires. It is advice: nothing is made from here — record each run in the form below.',
-    location: 'Kitchen or bakery (stock place)', forDay: 'For which day (YYYY-MM-DD, blank for tomorrow)', showPlan: 'Show the plan',
+    location: 'Kitchen or bakery (stock place)', forDay: 'For which day (blank for tomorrow)', showPlan: 'Show the plan',
     planFor: 'Plan for', historyFrom: 'learnt from sales', to: 'to', noLines: 'No recipe to plan here — add a recipe on the Recipes page for a department this shop runs.',
     colRecipe: 'Recipe', colMakes: 'Makes', colBatches: 'Batches', colDemand: 'Will sell', colOnHand: 'Still good on hand', colLeft: 'Left over',
     s_proposed: 'Make these', s_nothing_needed: 'Nothing needed — enough on hand', s_no_sales_history: 'No sales to go by yet — decide yourself', s_batch_bigger_than_need: 'One batch is more than will sell — decide yourself',
@@ -59,12 +59,12 @@ export const PRODUCTION_PLAN_COPY = {
     batchNotKnown: 'not known', went: 'went into', sold: 'sales', none: 'No batch was made with it.', withoutInputs: 'runs recorded before ingredient batches were kept — they cannot be traced here',
     u_ea: 'pieces',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot see production.', cannotTrace: 'Tracing forward needs the batch-trace permission (quality).',
-    needLocation: 'Type the kitchen or bakery stock place.', badDay: 'Type the day as YYYY-MM-DD, or leave it blank for tomorrow.', needBatch: 'Type a batch code.',
+    needLocation: 'Type the kitchen or bakery stock place.', badDay: 'Write the day as day/month/year, or leave it blank for tomorrow.', needBatch: 'Type a batch code.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read. The plan and the trace need head office.', reading: 'Reading from head office…',
   },
   ta: {
     planH: 'உற்பத்தித் திட்டம்', planLead: 'ஒரு நாளுக்கு ஒவ்வொரு சமையல் முறையிலும் எத்தனை தொகுதிகள் செய்ய வேண்டும் — விற்பனையிலிருந்து. உணவு காலாவதியாகும் முன் விற்பதை விட அதிகமாக ஒருபோதும் திட்டமிடாது. இது ஆலோசனை மட்டுமே: இங்கிருந்து எதுவும் செய்யப்படாது — ஒவ்வொரு ஓட்டத்தையும் கீழே உள்ள படிவத்தில் பதியுங்கள்.',
-    location: 'சமையலறை அல்லது பேக்கரி (சரக்கு இடம்)', forDay: 'எந்த நாளுக்கு (YYYY-MM-DD, நாளைக்கு காலியாக விடுங்கள்)', showPlan: 'திட்டத்தைக் காட்டு',
+    location: 'சமையலறை அல்லது பேக்கரி (சரக்கு இடம்)', forDay: 'எந்த நாளுக்கு (நாளைக்கு காலியாக விடுங்கள்)', showPlan: 'திட்டத்தைக் காட்டு',
     planFor: 'திட்டம்', historyFrom: 'விற்பனையிலிருந்து கற்றது', to: 'முதல்', noLines: 'இங்கே திட்டமிட சமையல் முறை இல்லை — இந்தக் கடை நடத்தும் பிரிவுக்கு சமையல் முறைகள் பக்கத்தில் ஒன்றைச் சேருங்கள்.',
     colRecipe: 'முறை', colMakes: 'செய்வது', colBatches: 'தொகுதிகள்', colDemand: 'விற்கும்', colOnHand: 'கையிருப்பில் நல்லது', colLeft: 'மீதம்',
     s_proposed: 'இவற்றைச் செய்யுங்கள்', s_nothing_needed: 'தேவையில்லை — கையிருப்பு போதும்', s_no_sales_history: 'இன்னும் விற்பனை இல்லை — நீங்களே முடிவு செய்யுங்கள்', s_batch_bigger_than_need: 'ஒரு தொகுதி விற்பதை விட அதிகம் — நீங்களே முடிவு செய்யுங்கள்',
@@ -77,7 +77,7 @@ export const PRODUCTION_PLAN_COPY = {
     batchNotKnown: 'தெரியாது', went: 'சென்றது', sold: 'விற்பனைகள்', none: 'இதைக் கொண்டு எந்தத் தொகுதியும் செய்யப்படவில்லை.', withoutInputs: 'பொருள் தொகுதிகள் வைக்கப்படும் முன் பதிந்த ஓட்டங்கள் — இங்கே தடமறிய முடியாது',
     u_ea: 'எண்ணிக்கை',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பங்கு உற்பத்தியைப் பார்க்க முடியாது.', cannotTrace: 'முன்னோக்கித் தடமறிய தொகுதித் தடமறிதல் அனுமதி (தரம்) தேவை.',
-    needLocation: 'சமையலறை அல்லது பேக்கரி சரக்கு இடத்தைத் தட்டச்சு செய்யுங்கள்.', badDay: 'நாளை YYYY-MM-DD என்று தட்டச்சு செய்யுங்கள், அல்லது நாளைக்கு காலியாக விடுங்கள்.', needBatch: 'ஒரு தொகுதிக் குறியீட்டைத் தட்டச்சு செய்யுங்கள்.',
+    needLocation: 'சமையலறை அல்லது பேக்கரி சரக்கு இடத்தைத் தட்டச்சு செய்யுங்கள்.', badDay: 'நாளை நாள்/மாதம்/ஆண்டு என எழுதுங்கள், அல்லது நாளைக்குக் காலியாக விடுங்கள்.', needBatch: 'ஒரு தொகுதிக் குறியீட்டைத் தட்டச்சு செய்யுங்கள்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை. திட்டத்திற்கும் தடமறிதலுக்கும் தலைமை அலுவலகம் தேவை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
   },
 } as const;

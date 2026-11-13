@@ -16,28 +16,22 @@
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
     <style>
+      /* U5 (UI/UX gap audit, lane 3): the page stands on the shared office parts — the register, the summary cards, the
+         state and the chip come from the chrome and the foundation; the page keeps only its own layout. */
       :root { --tap: 48px; }
       body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
       main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
-      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
-      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
-      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
-      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
-      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      section.group { background: var(--bg); padding: 12px; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
       button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 0 1 220px; }
       .counts { font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; }
-      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-      ul.rows > li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
-      ul.rows > li.tone-error { border-left-color: var(--error); } ul.rows > li.tone-degraded { border-left-color: var(--degraded); }
-      .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
-      .chip { font-size: var(--fs-sm); font-weight: 700; }
       .meta { font-size: 14px; color: var(--muted); margin: 0; }
       .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .groups { display: grid; gap: 12px; }
       [hidden] { display: none !important; }
-          /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
     </style>
   </head>
@@ -63,7 +57,11 @@
         <div id="s-cards"></div>
         <p class="counts" id="s-counts"></p>
         <p class="status" id="s-status" role="status" aria-live="polite"></p>
-        <ul class="rows" id="s-rows"></ul>
+        <!-- U5: the findings counted by KIND (one card each), then grouped — each kind its own register with search and paging. -->
+        <h4 id="s-kinds-h"></h4>
+        <div id="s-kinds"></div>
+        <p class="meta" id="s-note"></p>
+        <div class="groups" id="s-groups"></div>
       </section>
       <section id="attendance" hidden aria-labelledby="att-h">
         <h3 id="att-h"></h3>
@@ -77,7 +75,7 @@
         <div id="a-cards"></div>
         <p class="counts" id="a-counts"></p>
         <p class="status" id="a-status" role="status" aria-live="polite"></p>
-        <ul class="rows" id="a-rows"></ul>
+        <div id="a-table"></div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

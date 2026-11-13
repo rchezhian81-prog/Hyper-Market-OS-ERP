@@ -528,7 +528,7 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
 .sre-tab[aria-current="page"] { border-top-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-sm); color: var(--ink); background: var(--panel); }
 .sre-tab[aria-current="page"]:hover { transform: none; }
 .sre-tab .t { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.sre-tab .d { color: var(--muted); font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sre-tab .d { color: var(--muted); font-size: 14px; font-weight: 400; overflow-wrap: anywhere; } /* U5 (G11): the whole purpose line, never "Saved on this scr…" */
 .sre-tab .c { color: var(--accent); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sre-tab .d[hidden], .sre-tab .c[hidden] { display: none; }
 /* A register (OB-201): hairline frame and rows, a soft lift, the head stuck to the top while its rows scroll, a row
@@ -632,14 +632,21 @@ a.sre-summary-card:hover { background: var(--hover); box-shadow: var(--shadow-sm
 .sre-datatable-filter { min-width: 0; max-width: 100%; }
 .sre-datatable-filter > .sre-select { min-width: 0; max-width: 100%; }
 .sre-datatable-tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
-.sre-datatable-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 240px; max-width: 420px; color: var(--muted); }
-.sre-datatable-search > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
-.sre-datatable-search > .sre-input { width: 100%; padding-left: 40px; }
+/* OB-205: the search box says its words above it (like a filter's), the lens sits inside the box. */
+.sre-datatable-search { display: grid; gap: 4px; flex: 1 1 240px; max-width: 420px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.sre-datatable-search-box { position: relative; display: flex; align-items: center; min-width: 0; }
+.sre-datatable-search-box > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
+.sre-datatable-search-box > .sre-input { width: 100%; padding-left: 40px; }
 .sre-datatable-filter { display: grid; gap: 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
 .sre-datatable-columns { position: relative; }
 .sre-datatable-columns > summary { list-style: none; cursor: pointer; }
 .sre-datatable-columns > summary::-webkit-details-marker { display: none; }
 .sre-datatable-columns > fieldset { position: absolute; right: 0; z-index: 5; display: grid; gap: 2px; min-width: 220px; margin: 6px 0 0; padding: var(--space-3); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+/* On a phone the column choice opens under its button across the register's width, never past the screen's left edge. */
+@media (max-width: 519px) {
+  .sre-datatable-columns { flex: 1 1 100%; }
+  .sre-datatable-columns > fieldset { position: static; min-width: 0; max-width: 100%; }
+}
 .sre-datatable-columns legend { padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
 .sre-datatable-columns label.sre-check { display: flex; align-items: center; gap: 8px; width: auto; height: auto; min-height: var(--tap); font-size: 15px; color: var(--ink); }
 .sre-datatable-columns label.sre-check > input { width: 20px; height: 20px; accent-color: var(--accent); }
@@ -775,3 +782,40 @@ body.sre-shell main :focus-visible { outline: 3px solid var(--focus); outline-of
 .sre-chart-table thead th { font-weight: 600; color: var(--muted); }
 .sre-chart-table .sre-end { text-align: right; font-variant-numeric: var(--numbers); }
 .sre-chart-toggle { justify-self: start; font-size: 15px; color: var(--accent); }
+
+/* ── U5 (7 Nov 2026 · UI/UX gap audit G11 · G13 · G17): the shared parts every office page stands on ───────────────
+   The register says its sort direction in words; a page's own input takes the picker beside it; the phone chrome shows
+   the page's name once and keeps Find and Pin in the menu; a register's rows stack on a phone instead of scrolling
+   sideways; the picker says when its list is the store computer's own copy. Tokens only. */
+.sre-sort-dir { font-weight: 400; color: var(--muted); font-size: 14px; }
+.sre-sort-dir[hidden] { display: none; }
+th[aria-sort="ascending"] > .sre-sort > .sre-sort-dir, th[aria-sort="descending"] > .sre-sort > .sre-sort-dir { color: var(--accent); }
+.sre-datatable-count[hidden] { display: none; }
+.sre-pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sre-pick-row > input { flex: 1 1 160px; min-width: 0; }
+.sre-pick-button { min-height: var(--tap); }
+.sre-pick-name { color: var(--muted); font-size: 15px; flex-basis: 100%; }
+.sre-pick-name:empty { display: none; }
+.sre-picker-source { margin: 4px 0 0; color: var(--on-warn-surface); background: var(--warn-surface); border-radius: var(--radius); padding: 8px 10px; font-size: 14px; }
+.sre-picker-source[hidden] { display: none; }
+.sre-rail-tools { display: grid; gap: 8px; margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--rail-line); }
+.sre-rail-tools-head { margin: 0; color: var(--on-rail-muted); font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.sre-rail-tools > .sre-find-wrap { width: 100%; }
+.sre-rail-tools > .sre-find-count { color: var(--on-rail-muted); }
+.sre-rail-tools > .sre-pin { color: var(--on-rail); border-color: var(--rail-line); background: var(--rail-2); justify-content: flex-start; }
+.sre-rail-tools > .sre-pin[aria-pressed="true"] { color: var(--rail-accent); }
+@media (max-width: 519px) {
+  .sre-crumbs { display: none; }
+  [data-sre-head] > .sre-eyebrow { display: none; }
+  .sre-topline:empty { display: none; }
+  header { gap: 8px; padding: 10px 12px; }
+  .sre-datatable-body > .sre-scroll-x { overflow-x: hidden; }
+  .sre-register thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .sre-register tbody tr { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--line-soft); }
+  .sre-register tbody tr:first-child { border-top: 0; }
+  .sre-register td { display: grid; grid-template-columns: minmax(0, 40%) minmax(0, 1fr); gap: 8px; align-items: start; padding: 2px 0; border: 0; min-width: 0; overflow-wrap: anywhere; }
+  .sre-register td::before { content: attr(data-label); color: var(--muted); font-size: 14px; font-weight: 600; }
+  .sre-register td.sre-end { text-align: left; }
+  .sre-register tbody tr:first-child > td { border-top: 0; }
+  .sre-register td > .sre-row-open { justify-self: start; }
+}

@@ -66,18 +66,18 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-676 —
       await s.page.fill('#run-date', ddmm(day));
       await s.page.click('#show-tolerance');
       await stateIs(s.page, 'not_confirmed');
-      expect(await s.page.innerText('#tolerance-state')).toBe('⚠ In force at this store: ₹100.00 — NOT CONFIRMED by the owner — drivers and the store computer keep using it until he confirms or changes it. Starting suggestion: ₹100.00.');
+      expect(await s.page.innerText('#tolerance-state')).toContain('In force at this store: ₹100.00 — NOT CONFIRMED by the owner — drivers and the store computer keep using it until he confirms or changes it. Starting suggestion: ₹100.00.');
       expect(await s.page.inputValue('#tolerance-value')).toBe('100');
       // The day's routes: the limit every cash difference is judged against, said "not confirmed".
       await s.page.click('#show-board');
       await s.page.waitForFunction(() => (globalThis as unknown as Doc).document.getElementById('board-tolerance')?.hidden === false, undefined, { timeout: 15_000 });
-      expect(await s.page.innerText('#board-tolerance')).toBe('⚠ Cash-difference limit for drivers: ₹100.00 — not confirmed by the owner');
+      expect(await s.page.innerText('#board-tolerance')).toContain('Cash-difference limit for drivers: ₹100.00 — not confirmed by the owner');
 
       // He confirms it as it stands.
       await s.page.click('#confirm-tolerance');
       await stateIs(s.page, 'confirmed');
-      expect(await s.page.innerText('#tolerance-status')).toBe('✓ Confirmed: ₹100.00');
-      expect(await s.page.innerText('#tolerance-state')).toMatch(/^✓ In force at this store: ₹100\.00 — Confirmed by the owner \(confirmed by u-owner, .+\)\.$/);
+      expect(await s.page.innerText('#tolerance-status')).toContain('Confirmed: ₹100.00');
+      expect(await s.page.innerText('#tolerance-state')).toMatch(/In force at this store: ₹100\.00 — Confirmed by the owner \(confirmed by u-owner, .+\)\.$/);
       expect(await s.page.locator('#tolerance-history li.row').count()).toBe(1);
       expect(await s.page.getAttribute('#tolerance-history li.row', 'data-kind')).toBe('as_suggested');
       await s.page.click('#show-board');

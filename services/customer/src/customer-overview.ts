@@ -27,6 +27,12 @@ export interface CustomerOverviewDeps {
   readonly consentSubjects?: (tenantId: string) => Promise<readonly string[]>;
   readonly consentFor: (tenantId: string, customerRef: string) => Promise<readonly ConsentRecord[]>;
   readonly merges: (tenantId: string) => Promise<readonly CustomerMerge[]>;
+  /**
+   * U5 (UI/UX gap audit G16, 7 Nov 2026): the name head office holds for a customer — the name given at enrolment
+   * (OB-329) or an app login's display name — so an office page can show the person's name beside the id. Optional:
+   * without it every name is null, and a skipped or erased name is null too, never invented.
+   */
+  readonly nameFor?: (tenantId: string, customerRef: string) => Promise<string | undefined>;
 }
 
 const SEGMENT_ORDER: readonly SegmentName[] = ['loyal', 'regular', 'new', 'lapsing', 'lapsed', 'insufficient_history', 'not_profiled'];
@@ -44,11 +50,12 @@ export function customerOverviewRoutes(deps: CustomerOverviewDeps): readonly Rou
         const consents = await Promise.all(refs.map(async (ref) => collapseConsent(ref, await deps.consentFor(t, ref))));
         const profiles = assembleProfiles({ orders, complaints, consents, purpose: 'profiling', asOf, policy: policy ?? {} });
         const byRef = new Map(profiles.map((p) => [p.customerRef, p]));
-        const customers = refs.map((ref) => {
+        const names = await Promise.all(refs.map(async (ref) => (deps.nameFor === undefined ? undefined : await deps.nameFor(t, ref))));
+        const customers = refs.map((ref, i) => {
           const p = byRef.get(ref);
           const segment: SegmentName = p?.segment ?? 'not_profiled';
           return {
-            customerRef: ref, segment, profiled: segment !== 'not_profiled',
+            customerRef: ref, name: names[i] ?? null, segment, profiled: segment !== 'not_profiled',
             orders: p?.orderCount ?? 0, lastOrderAt: p?.lastOrderAt ?? null,
             // M16-FR-04: complaints the desk still has open for them — service history, shown whatever the consent.
             openComplaints: p?.openComplaints ?? complaints.filter((c) => c.customerRef === ref && !c.resolved).length,

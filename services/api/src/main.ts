@@ -48,6 +48,9 @@ import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/in
 import { loyaltyLiabilityRoutes } from '../../finance/src/loyalty-liability';
 import { independentEvidenceRoutes } from '../../finance/src/independent-evidence';
 import { cashDepositRoutes } from '../../finance/src/cash-deposits';
+import { bankReconciliationRoutes } from '../../finance/src/bank-reconciliation'; // U6 · M23-FR-03
+import { receivablesViewRoutes } from '../../finance/src/receivables-view'; // U6 · M23-FR-01
+import { bankReconciliationAdapter, receivablesViewAdapter } from './bank-reconciliation-adapters'; // U6
 import { earnOnSale, takeBackOnReturn, giveBackOnReturn } from '../../customer/src/loyalty-effects';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
@@ -129,6 +132,9 @@ import { r3TillTraceRoutes, huidsSoldElsewhereAdapter } from './r3-till-trace-ad
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
+import { stockLedgerRoutes } from '../../inventory/src/stock-ledger';
+import { quarantineRoutes } from '../../inventory/src/quarantine';
+import { stockLedgerAdapter } from './u6-stock-screens-adapters';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import { goodsReceiptRoutes, decideReceiptExcess } from '../../inventory/src/goods-receipt';
 import { asnRoutes } from '../../inventory/src/asn';
@@ -169,6 +175,7 @@ import { saleBlockRoutes } from '../../inventory/src/sale-blocks';
 import { nearExpiryRoutes } from '../../inventory/src/near-expiry';
 import { RecallRegistry } from '../../../packages/traceability/src/index';
 import { integrationRoutes } from '../../platform/src/integration';
+import { withShelfLabelsIntegration } from './shelf-labels-integration-adapter'; // U6 · §27 label/ESL connection row
 import { webhookRoutes, webhookHasher } from '../../platform/src/webhooks';
 import { connectorRoutes } from '../../platform/src/connectors';
 import { connectorDeliveryRoutes } from '../../platform/src/connector-delivery';
@@ -371,7 +378,8 @@ import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from '.
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
-import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
+import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter, loyaltyProgrammeAdapter } from './customer-commerce-adapters';
+import { customerStandingOf } from '../../customer/src/loyalty-programme'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { tillControlsPackSectionOf, versionPolicyPackSectionOf, tillOverrideRulesForSale, clientVersionPolicyOf } from './r7a-till-controls-adapters'; // OB-500 · OB-501 (R7-A)
 import { appVersionPolicyRoutes } from './r8a-client-version-adapters'; // OB-521 (R8-A)
@@ -382,7 +390,9 @@ import { r10aQuotationHooks } from './r10a-devices-accountant-adapters'; // OB-5
 import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, earnOnDelivery } from './till-side-adapters'; // OB-288 till side — liquor by state, delivery sale, tier feed, online earn
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
-import { rebateClaimRoutesFor, withSupplierRebateClaims } from './rebate-claims-adapters'; // D03-FR-03 · OB-404 supplier rebate claims // OB-288 wave-5 follow-ups (OB-362 · OB-365)
+import { rebateClaimRoutesFor, withSupplierRebateClaims } from './rebate-claims-adapters';
+import { withRfqRequests, withSupplierRfqs, withSupplierClaims, supplierClaimsRoutesFor, claimDisputeCountsFor, claimDisputeAlertSweep } from './rfq-requests-adapters'; // U6 · M06-FR-02 RFQ to suppliers · M07-FR-03 / M24-FR-02 supplier claims
+import { SUPPLIER_PARTNER_INDEX_STREAM } from './commercial-desks-adapters'; // D03-FR-03 · OB-404 supplier rebate claims // OB-288 wave-5 follow-ups (OB-362 · OB-365)
 import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPoliciesOf, billCopyRoutesFor } from './floor-followups-adapters'; // OB-288 floor-device follow-ups (OB-373 · OB-375 · OB-376 · OB-378)
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
 import { ownerReportingSurface, ownerReportingSweep } from './owner-reporting-adapters'; // OB-288 lane 4 · P2 owner reporting
@@ -988,7 +998,13 @@ export function buildSurface(deps: {
     ...rfqRoutes(store === undefined ? {
       requisition: empty(undefined), requisitions: empty([]), quotes: empty([]),
       recordRequisition: () => {}, recordQuote: () => {}, now,
-    } : rfqAdapter({ store, now })),
+    } : withRfqRequests(rfqAdapter({ store, now }), { store, now, calendar: shopCalendar, recordAudit: auditTrail?.recordAudit })), // U6: + the RFQ sent to suppliers
+    // U6 · M07-FR-03 · M24-FR-02: the one supplier-claims register — the shop's claims against each supplier (the account
+    // fold) and the suppliers' claims on the shop (the portal's `claim` submissions, with the buyer's decision beside each).
+    ...supplierClaimsRoutesFor(store === undefined ? { store, now } : {
+      store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), portal: supplierPortalAdapter({ store, now, calendar: shopCalendar }),
+      partners: async (t: string) => [...new Set((await store.readStream(t, SUPPLIER_PARTNER_INDEX_STREAM, { type: 'SupplierPartnerIndexed' })).map((e) => (e.event.payload as { partnerId: string }).partnerId))],
+    }),
     // Import job history & supplier data-quality scoring (M30-FR-04) — which supplier files cost hours a year.
     ...calendared(importQualityRoutes)(store === undefined ? {
       jobs: empty([]), recordImportJob: () => {}, now,
@@ -1090,7 +1106,7 @@ export function buildSurface(deps: {
       partner: empty(undefined), partnerForUser: empty(undefined), submissions: empty([]), statementLines: empty([]), opening: empty(0),
       recordPartner: () => {}, recordSubmission: () => {}, recordStatementLine: () => {}, recordOpening: () => {},
       recordAudit: () => {}, auditEntries: empty([]), now,
-    } : { ...withSupplierRebateClaims(withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now }), { store, now, calendar: shopCalendar }), ...r7bAsnHooks({ store, now }) /* R7 OB-504 */ }), // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders · OB-404 the rebate claims sent to it
+    } : { ...withSupplierClaims(withSupplierRfqs(withSupplierRebateClaims(withSupplierOpenOrders(withSupplierPartnerIndex(supplierPortalAdapter({ store, now, calendar: shopCalendar }), { store, now }), { store, now }), { store, now, calendar: shopCalendar }), { rfq: withRfqRequests(rfqAdapter({ store, now }), { store, now, calendar: shopCalendar }) }), { account: supplierAccountAdapter({ store, now }) }), ...r7bAsnHooks({ store, now }) /* R7 OB-504 */ }), // U6: + the RFQs sent to it, + the claims against it // OB-288 commercial desks — the buyer's one queue · OB-362 the supplier's own open orders · OB-404 the rebate claims sent to it
     ...inventoryRoutes(store === undefined ? {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
@@ -1190,6 +1206,11 @@ export function buildSurface(deps: {
     }),
     // Adjustment REQUESTS relayed from the warehouse handheld, approved by a separate person before posting (SP-3b · W3 · M08-FR-03).
     ...adjustmentRequestRoutes(adjustmentDeps),
+    // U6 (UI/UX gap audit, 7 Nov 2026 · §27 Inventory): the stock ledger as a screen reads it (one product's movements with
+    // the running balance) and the quarantine register (quality holds + receipt lines still in quarantine). Readings only.
+    ...stockLedgerRoutes(store === undefined ? { movementsOf: empty([]), now } : { ...stockLedgerAdapter({ store }), locationBranches: locationBranchesOf(store, now), now }),
+    ...quarantineRoutes(store === undefined ? { holds: empty([]), receipts: empty([]), now }
+      : { holds: qualityHoldAdapter({ store, now }).holds, receipts: goodsReceiptAdapter({ store, now }).all, locationBranches: locationBranchesOf(store, now), now }),
     ...writeOffRoutes(store === undefined ? {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {},
@@ -1216,7 +1237,7 @@ export function buildSurface(deps: {
     ...integrationRoutes(store === undefined ? {
       matrix: empty([]), adapters: empty([]), heartbeats: empty([]),
       recordMatrixEntry: () => {}, recordAdapter: () => {}, recordHeartbeat: () => {}, now,
-    } : integrationAdapter({ store, now })),
+    } : withShelfLabelsIntegration(integrationAdapter({ store, now }), store)), // U6: the shelf labels' row, derived from their pushes and echoes
     ...webhookRoutes(store === undefined ? {
       config: empty(undefined), seenDeliveryIds: empty([]), recordConfig: () => {}, recordDelivery: () => {}, hasher: whHasher, now,
     } : webhookAdapter({ store, now, hasher: whHasher })),
@@ -1266,6 +1287,7 @@ export function buildSurface(deps: {
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
         tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
         handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
+        supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-727: the disputed supplier claims on Today
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1431,6 +1453,14 @@ export function buildSurface(deps: {
     ...cashDepositRoutes(store === undefined
       ? { deposits: async () => [], cancellations: async () => [], statements: async () => [], recordDeposit: async () => {}, recordCancel: async () => {}, now }
       : { ...cashDepositAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // U6 (M23-FR-03): the bank statement line by line — matched to a payout or a deposit, or an exception a named person
+    // owns and resolves with a reason; and (M23-FR-01) every credit customer's receivables beside the ledger's figure.
+    ...bankReconciliationRoutes(store === undefined
+      ? { statements: async () => [], batches: async () => [], depositViews: async () => [], exceptionsRaised: async () => [], exceptionsResolved: async () => [], recordRaised: async () => {}, recordResolved: async () => {}, now }
+      : { ...bankReconciliationAdapter({ store, now, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit }),
+    ...receivablesViewRoutes(store === undefined
+      ? { customers: async () => [], invoices: async () => [], outstandingMinor: async () => 0, now }
+      : receivablesViewAdapter({ store, now, calendar: shopCalendar })),
     // PF-09 step 3: the loyalty liability — what members hold against what the books carry, exactly.
     ...loyaltyLiabilityRoutes(store === undefined
       ? { outstanding: async () => ({ points: 0, pointValuePaise: 0, storeCreditMinor: 0 }), creditBalance: async () => 0, now }
@@ -1552,6 +1582,7 @@ export function buildSurface(deps: {
       // answer the customer's listing gives (B23 · A26, r4-online-adapters).
       ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
       ...(store === undefined ? {} : { pricing: onlinePricingAdapter({ store, now, pointValuePaise: async (t: string) => (await loyaltyRule(t)).pointValuePaise }) }), // OB-288 wave 3 · WF-13
+      ...(store === undefined ? {} : { memberStanding: (t: string, memberRef: string) => customerStandingOf(loyaltyProgrammeAdapter({ store, now }), t, memberRef, now()) }), // U7 · M17-FR-01
       ...(store === undefined ? {} : { routing: fulDelStorefrontRouting({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) }), // D09-FR-01 · OB-300 at placement
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
@@ -2836,6 +2867,7 @@ export async function startApi(
       contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       scaleStamp: scaleStampExpirySweep({ store, now, calendar: shopCalendar }), // Round 6 · B7 — a weighing-scale stamp due soon or lapsed
       secretUse: secretUseRollupSweep({ store, now, calendar: shopCalendar }), // W6 · M32-FR-03 · OB-688 — each finished day's secret use judged once; alerts to the IT custodian
+      claimDisputes: claimDisputeAlertSweep({ store, now, calendar: shopCalendar }), // U7 · OB-727 — a disputed supplier claim raised to the buyer and owners once; cleared when settled
       say: (line) => { out(`${line}\n`); },
     }),
   });

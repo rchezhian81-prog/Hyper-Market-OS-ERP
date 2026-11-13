@@ -89,12 +89,20 @@ describe('open recommendations read as attention; set-aside ones do not', () => 
 });
 
 describe('governance and permission', () => {
-  it('when the agent is not active, shows a plain-English note and no rows — never a bare "all clear"', () => {
-    const view = session(worklist({ agentActive: false, note: 'The kill switch is on.' })).view('en');
-    expect(view.agentActive).toBe(false);
-    expect(view.open).toEqual([]);
-    expect(view.screenState.label).toBe('The kill switch is on.');
-    expect(view.screenState.tone).not.toBe('error'); // off is not a fault
+  it('when the agent is not active, says why in the reader\'s language and shows no rows — never a bare "all clear" (U3 · OB-699)', () => {
+    // head office says WHY as a code; the session says it in its own words, in either language
+    const killed = session(worklist({ agentActive: false, reason: 'kill_switch', note: 'The AI kill switch is on, so …' }));
+    expect(killed.view('en').agentActive).toBe(false);
+    expect(killed.view('en').open).toEqual([]);
+    expect(killed.view('en').screenState.label).toMatch(/^The AI kill switch is on, so the Operations helper is stopped/);
+    expect(killed.view('ta').screenState.label).toMatch(/^AI நிறுத்தும் சுவிட்ச்/);
+    expect(killed.view('en').screenState.tone).not.toBe('error'); // off is not a fault
+    const off = session(worklist({ agentActive: false, reason: 'not_enabled' }));
+    expect(off.view('en').screenState.label).toMatch(/is not switched on for this shop/);
+    expect(off.view('ta').screenState.label).toMatch(/இயக்கப்படவில்லை/);
+    // an older head office that sends only the English note: one that names the kill switch is read as that; any other note is shown as sent
+    expect(session(worklist({ agentActive: false, note: 'The kill switch is on.' })).view('ta').screenState.label).toMatch(/^AI நிறுத்தும் சுவிட்ச்/);
+    expect(session(worklist({ agentActive: false, note: 'Head office is rebuilding the worklist.' })).view('en').screenState.label).toBe('Head office is rebuilding the worklist.');
   });
 
   it('refuses to show anything without read permission', () => {

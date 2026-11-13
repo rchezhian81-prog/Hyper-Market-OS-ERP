@@ -4,12 +4,13 @@
 // (or a screen did). A test that only runs in daylight UTC never sees that case, so the tests that were fixed for it pin
 // their clock to an EVENING UTC moment, and prove the evening case whenever CI happens to run them.
 //
-// The pinned moment is the most recent 19:30 UTC that has already passed — today's, or yesterday's before 19:30 UTC —
-// never one still to come: the store computer dates its handheld door's TLS certificate from `Date` (valid from an hour
-// before), and a clock pinned ahead of the real one served a certificate "not yet valid" (OB-422, as
-// tests/support/trading-day-clock.ts found). Only `Date` is pinned — timers and I/O run normally, and the clock keeps
-// moving from the pinned moment, so a journey of a few minutes stays inside the same shop day (19:30 UTC is 01:00 in
-// the shop; the shop's day runs on until 18:30 UTC).
+// The pinned moment is the most recent 19:30 UTC already passed — except from 18:30 to 19:30 UTC, when the shop's day
+// has turned and yesterday's 19:30 would sit a whole shop day behind every unpinned clock: then it is the real moment
+// itself, to the minute (00:00–01:00 in the shop). Never one still to come: the store computer dates its handheld door's
+// TLS certificate from `Date` (valid from an hour before), and a clock pinned ahead of the real one served a certificate
+// "not yet valid" (OB-422, as tests/support/trading-day-clock.ts found). Only `Date` is pinned — timers and I/O run
+// normally, and the clock keeps moving from the pinned moment, so a journey of a few minutes stays inside the same shop
+// day (19:30 UTC is 01:00 in the shop; the shop's day runs on until 18:30 UTC).
 
 import { vi } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
@@ -18,11 +19,21 @@ import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 /** The UTC time of day the evening tests run at: 01:00 the next morning in the shop. */
 export const EVENING_UTC = '19:30';
 
-/** The most recent 19:30 UTC at or before `nowMs` (an ISO instant). */
+/** The shop's day turns at 18:30 UTC (midnight in Asia/Kolkata), an hour before the pinned 19:30. */
+const SHOP_DAY_TURNS_BEFORE_EVENING_MS = 3_600_000;
+
+/**
+ * The evening to pin, worked out from `nowMs`: the most recent 19:30 UTC already passed — except from 18:30 to 19:30
+ * UTC, when the shop's day has already turned and yesterday's 19:30 would sit a whole shop day behind the store computer
+ * and PostgreSQL, whose clocks are not pinned (U7, 13 Nov 2026: five browser files failed on CI from 19:18 to 19:28 UTC
+ * on 12 Nov). In that hour it is the real moment, rounded down to the minute: on the shop's new day, never ahead (OB-422).
+ */
 export function lastEveningInstant(nowMs: number = Date.now()): string {
   const utcDay = new Date(nowMs).toISOString().slice(0, 10); // the UTC date on purpose: 19:30 is a UTC time of day
   const todays = Date.parse(`${utcDay}T${EVENING_UTC}:00.000Z`);
-  return new Date(todays <= nowMs ? todays : todays - 86_400_000).toISOString();
+  if (todays <= nowMs) return new Date(todays).toISOString();
+  if (nowMs >= todays - SHOP_DAY_TURNS_BEFORE_EVENING_MS) return new Date(nowMs - (nowMs % 60_000)).toISOString();
+  return new Date(todays - 86_400_000).toISOString();
 }
 
 /** What a pinned evening is: the instant, the shop's own date then, and the UTC date then (the day before the shop's). */

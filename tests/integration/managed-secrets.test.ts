@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { pinTheEveningClock, theEvening } from '../support/evening-clock';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 // M32-FR-03 managed secrets on the live API. The surface holds NO secret material — a vault reference,
@@ -61,6 +62,24 @@ describe('managed secrets: references only, rotate with overlap, revoke names br
     expect(((await inventory(h, 'u-owner')).body as { secrets: { version: number }[] }).secrets[0]?.version).toBe(2);
     // A no-grace rotation is refused — a hard cut is a revocation.
     expect(codeOf(await rotate(h, 'u-owner', 'pay', { newVaultRef: 'vault://payments/live#v3', graceDays: 0 }, 'k3'))).toBe('no_grace_on_rotation');
+  });
+
+  it('a change-over and a revocation are stamped on the SHOP\'s day, not the UTC one (after 18:30 UTC the shop is a day ahead)', async () => {
+    // CI on #906 (12 Nov 2026, 19:03–20:04 UTC): a secret changed over at 19:30 UTC was stamped 12 Nov while the shop's day
+    // was 13 Nov, so the Keys page said "due in 29 days" for a 30-day policy changed today.
+    const evening = theEvening();
+    pinTheEveningClock(evening);
+    try {
+      const h = await cast();
+      await register(h, 'u-owner', 'pay', secret({ rotateEveryDays: 30 }), 'k1');
+      const r = (await rotate(h, 'u-owner', 'pay', { newVaultRef: 'vault://payments/live#v2', graceDays: 7 }, 'k2')).body as { next: { lastRotatedOn: string }; oldValidUntil: string };
+      expect(evening.shopDate).not.toBe(evening.utcDate);
+      expect(r.next.lastRotatedOn).toBe(evening.shopDate);
+      const graceEnd = new Date(Date.parse(`${evening.shopDate}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+      expect(r.oldValidUntil).toBe(graceEnd);
+      const v = (await revoke(h, 'u-owner', 'pay', { reason: 'leaked' }, 'k3')).body as { revoked: { revokedOn: string } };
+      expect(v.revoked.revokedOn).toBe(evening.shopDate);
+    } finally { vi.useRealTimers(); }
   });
 
   it('revokes immediately and names the adapters that stop working', async () => {

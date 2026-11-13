@@ -39,9 +39,6 @@
       .panel .v { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
       .panel .v.unknown { color: var(--warn); font-size: 15px; }
       #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; display: grid; gap: 6px; }
       .rows li .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
@@ -117,19 +114,13 @@
         </div>
         <p class="status" id="price-status" role="status" aria-live="polite"></p>
         <h3 id="history-h">Every price on record for this product</h3>
-        <div class="table-wrap"><table aria-labelledby="history-h">
-          <thead><tr><th id="c-scope">Which price</th><th id="c-ref">For</th><th id="c-price">Price</th><th id="c-from">From</th><th id="c-to">Until</th><th id="c-ver">Version</th></tr></thead>
-          <tbody id="history"></tbody>
-        </table></div>
+        <div id="history-host" aria-labelledby="history-h"></div>
       </section>
 
       <section id="view-zones" aria-labelledby="zones-h" hidden>
         <h3 id="zones-h">Price zones</h3>
         <p class="lead" id="zones-lead"></p>
-        <div class="table-wrap"><table aria-labelledby="zones-h">
-          <thead><tr><th id="c-zstore">Store</th><th id="c-zone">Zone</th><th id="c-zby">Set by</th><th id="c-zat">When</th></tr></thead>
-          <tbody id="zones"></tbody>
-        </table></div>
+        <div id="zones-host" aria-labelledby="zones-h"></div>
         <div class="row" id="zone-form">
           <label for="z-store"><span id="l-z-store">Store</span><input id="z-store" list="store-list" autocomplete="off" /></label>
           <label for="z-zone"><span id="l-z-zone">Zone</span><input id="z-zone" autocomplete="off" /></label>

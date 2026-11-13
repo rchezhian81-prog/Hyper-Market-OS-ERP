@@ -36,6 +36,9 @@
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
 
 // ── U2b (UI/UX gap audit G5 · P-07): a thing is PICKED by name through the chrome's picker, never typed as a code ───────
 // The field keeps the id the page sends (the typed code stays possible when the list cannot be read — head office down,
@@ -43,37 +46,20 @@ const el = (id) => document.getElementById(id);
 // name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
 // (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
 const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
 const pickRepaints = [];
 const repaintPickers = () => { for (const f of pickRepaints) f(); };
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
   if (!input || input.dataset.pickable === 'on') return;
-  const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
+  const o = sreO();
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
   // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
   const kindNow = () => (typeof kind === 'function' ? kind() : kind);
-  const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
-  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = kindNow(); if (k === null) return;
-    const tk = titleNow();
-    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  const titleNow = () => { const k = typeof titleKey === 'function' ? titleKey() : titleKey; return { en: pickWords.en[k], ta: pickWords.ta[k] }; };
+  const row = o.pickable(input, kindNow(), titleNow(), { ...extra, kindOf: kindNow, titleOf: titleNow });
+  const btn = row === null ? null : row.querySelector('button');
+  const show = () => { if (btn) btn.hidden = kindNow() === null; };
+  show(); pickRepaints.push(show);
 }
 
 const inr = (minor) =>

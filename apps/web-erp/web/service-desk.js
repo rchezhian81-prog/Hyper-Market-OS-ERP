@@ -17,31 +17,14 @@ const pickWords = {
   en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?' },
   ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?' },
 };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
 const pickRepaints = [];
 const repaintPickers = () => { for (const f of pickRepaints) f(); };
 function pickable(inputId, kind, titleKey, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input || input.dataset.pickable === 'on') return;
+  // U5: the chrome's own adapter (`sreOffice.pickable`, U2's page copy folded into the chrome) — "Choose…" beside the
+  // page's input, the id in the input, the name beside it, the typed code kept, the label following the toggle.
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const picked = await office.pick({ kind, title: { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  if (!office || typeof office.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
+  office.pickable(inputId, kind, { en: pickWords.en[titleKey], ta: pickWords.ta[titleKey] }, extra);
 }
 const who = window.serviceDeskData && typeof window.serviceDeskData === 'object' ? window.serviceDeskData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
@@ -157,8 +140,7 @@ const say = (el, outcome, good) => {
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  for (const [id, k] of [['title', 'title'], ['off-r8', 'offUntilR8'], ['cases-h', 'casesH'], ['cases-lede', 'casesLede'], ['th-case', 'case'], ['th-kind', 'kind'], ['th-priority', 'priority'], ['th-state', 'state'], ['th-first', 'first'], ['th-resolution', 'resolution'],
-    ['open-h', 'openH'], ['l-new-id', 'caseNo'], ['l-new-kind', 'kind'], ['l-new-priority', 'priority'], ['l-new-customer', 'customer'], ['l-new-order', 'order'], ['l-new-channel', 'reachedBy'], ['o-ch-none', 'notSaid'], ['o-ch-phone', 'phone'], ['o-ch-in_person', 'in_person'], ['o-ch-email', 'email'], ['l-new-summary', 'said'], ['open-case', 'openCase'],
+  for (const [id, k] of [['title', 'title'], ['off-r8', 'offUntilR8'], ['cases-h', 'casesH'], ['cases-lede', 'casesLede'],     ['open-h', 'openH'], ['l-new-id', 'caseNo'], ['l-new-kind', 'kind'], ['l-new-priority', 'priority'], ['l-new-customer', 'customer'], ['l-new-order', 'order'], ['l-new-channel', 'reachedBy'], ['o-ch-none', 'notSaid'], ['o-ch-phone', 'phone'], ['o-ch-in_person', 'in_person'], ['o-ch-email', 'email'], ['l-new-summary', 'said'], ['open-case', 'openCase'],
     ['o-complaint', 'complaint'], ['o-enquiry', 'enquiry'], ['o-warranty', 'warranty'], ['o-lost_and_found', 'lost_and_found'], ['o-low', 'low'], ['o-normal', 'normal'], ['o-high', 'high'], ['o-urgent', 'urgent'],
     ['l-first-clock', 'firstClock'], ['l-resolution-clock', 'resolutionClock'], ['drafts-h', 'draftsH'], ['drafts-lede', 'draftsLede'], ['l-ask-note', 'askNote'], ['ask-draft', 'askDraft'],
     ['resolve-h', 'resolveH'], ['l-resolution', 'resolutionL'], ['resolve', 'resolve'], ['rc-h', 'rcH'], ['rc-lede', 'rcLede'], ['l-rc-cause', 'rcCause'], ['l-rc-note', 'rcNote'], ['l-rc-prevent', 'rcPrevent'], ['rc-save', 'rcSave'],
@@ -179,24 +161,55 @@ function paintWords() {
 
 const worst = (c) => (c.firstResponse?.status === 'breached' || c.resolution?.status === 'breached' ? 0 : c.firstResponse?.status === 'at_risk' || c.resolution?.status === 'at_risk' ? 1 : 2);
 
+// U5 (G13): an SLA clock's state as the chrome's chip — the tone's shape and the word, never a coloured dot.
+const SLA_TONE = { breached: 'error', at_risk: 'degraded', within: 'ok', met: 'ok', paused: 'idle' };
+function slaChip(status) {
+  const o = window.sreOffice;
+  const words = t(status);
+  if (o && typeof o.chip === 'function') return o.chip(SLA_TONE[status] ?? 'idle', words);
+  const span = document.createElement('span'); span.textContent = words; return span;
+}
+function stateChip(state) {
+  const o = window.sreOffice;
+  if (o && typeof o.recordChip === 'function') return o.recordChip(state, { en: WORDS.en[state] ?? state, ta: WORDS.ta[state] ?? state });
+  const span = document.createElement('span'); span.textContent = t(state); return span;
+}
+/** The list's state (reading / nothing / refused / unreachable) as the shared state part — never a plain line. */
+let lastCasesState = null; // repainted in the reader's language on the toggle
+function casesState(kind, title) {
+  lastCasesState = kind === null ? null : { kind, key: { empty: 'none', loading: 'loading', offline: 'unreachable', denied: 'nobody' }[kind] };
+  const host = $('cases-status'); const o = window.sreOffice;
+  if (kind === null) { host.replaceChildren(); host.hidden = true; return; }
+  host.hidden = false;
+  if (o && typeof o.state === 'function') o.state(host, kind, { title, detail: '' }); else host.textContent = title;
+}
+let caseRegister = null;
 function renderCases() {
-  const body = $('case-rows');
-  body.replaceChildren();
   const ordered = [...cases].sort((a, b) => worst(a) - worst(b) || a.caseId.localeCompare(b.caseId));
-  for (const c of ordered) {
-    const tr = document.createElement('tr');
-    tr.className = 'pick';
-    tr.tabIndex = 0;
-    tr.dataset.caseId = c.caseId;
-    tr.setAttribute('aria-selected', String(picked?.caseId === c.caseId));
-    const cell = (text, cls) => { const td = document.createElement('td'); if (cls) { const b = document.createElement('span'); b.className = `badge ${cls}`; b.textContent = text; td.append(b); } else td.textContent = text; return td; };
-    tr.append(cell(c.caseId), cell(t(c.kind)), cell(t(c.priority)), cell(t(c.state)), cell(t(c.firstResponse.status), c.firstResponse.status), cell(t(c.resolution.status), c.resolution.status));
-    const open = () => { void pick(c.caseId); };
-    tr.addEventListener('click', open);
-    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
-    body.append(tr);
+  const o = window.sreOffice;
+  const host = $('cases-register');
+  if (o && typeof o.table === 'function') {
+    // U5 (G17): the cases on the chrome's register — breaching first as head office orders them, searchable, sortable by any
+    // column, 10 a page; a row is picked with a tap or Enter (the whole row, 44px).
+    const columns = [
+      { key: 'caseId', label: { en: WORDS.en.case, ta: WORDS.ta.case }, sort: 'text' },
+      { key: 'kind', label: { en: WORDS.en.kind, ta: WORDS.ta.kind }, sort: 'text', filter: true, value: (c) => t(c.kind) },
+      { key: 'priority', label: { en: WORDS.en.priority, ta: WORDS.ta.priority }, sort: 'text', filter: true, value: (c) => t(c.priority) },
+      { key: 'state', label: { en: WORDS.en.state, ta: WORDS.ta.state }, sort: 'text', filter: true, value: (c) => t(c.state), render: (c) => stateChip(c.state) },
+      { key: 'first', label: { en: WORDS.en.first, ta: WORDS.ta.first }, sort: 'text', value: (c) => t(c.firstResponse.status), render: (c) => slaChip(c.firstResponse.status) },
+      { key: 'resolution', label: { en: WORDS.en.resolution, ta: WORDS.ta.resolution }, sort: 'text', value: (c) => t(c.resolution.status), render: (c) => slaChip(c.resolution.status) },
+    ];
+    if (caseRegister === null || !host.contains(document.getElementById('service-cases-table'))) {
+      caseRegister = o.table(host, { id: 'service-cases', label: { en: WORDS.en.casesH, ta: WORDS.ta.casesH }, bodyId: 'case-rows', pageSize: 10, sortable: true, rowKey: (c) => c.caseId, rowData: (c) => ({ caseId: c.caseId }), rows: ordered, columns,
+        empty: { title: { en: WORDS.en.none, ta: WORDS.ta.none }, detail: '' } });
+      // the register redraws its body on every sort / page, so a row is picked through the host (which stays)
+      const rowOf = (e) => e.target?.closest?.('#case-rows tr[data-case-id]');
+      host.addEventListener('click', (e) => { const tr = rowOf(e); if (tr) void pick(tr.dataset.caseId); });
+      host.addEventListener('keydown', (e) => { const tr = rowOf(e); if (tr && e.key === 'Enter') void pick(tr.dataset.caseId); });
+    } else caseRegister.setRows(ordered);
+    for (const tr of host.querySelectorAll('#case-rows tr[data-case-id]')) { tr.tabIndex = 0; tr.setAttribute('aria-selected', String(picked?.caseId === tr.dataset.caseId)); }
   }
-  $('cases-status').textContent = cases.length === 0 ? t('none') : '';
+  casesState(cases.length === 0 ? 'empty' : null, t('none'));
 }
 
 function renderCase() {
@@ -204,11 +217,13 @@ function renderCase() {
   section.hidden = picked === null;
   if (picked === null) return;
   $('case-h').textContent = `${t('caseH')} ${picked.caseId}`;
-  $('case-facts').textContent = `${t(picked.kind)} · ${t(picked.priority)} · ${t(picked.state)}${CHANNELS.includes(picked.channel) ? ` · ${t('cameBy')} ${t(picked.channel)}` : ''}`;
+  // U5 (G16): the customer's NAME beside the code, as head office's directory holds it (the code alone when it holds none).
+  const customer = typeof picked.customerRef === 'string' && picked.customerRef !== '' ? ` · ${t('customer')}: ${customerNames[picked.customerRef] ? `${customerNames[picked.customerRef]} (${picked.customerRef})` : picked.customerRef}` : '';
+  $('case-facts').textContent = `${t(picked.kind)} · ${t(picked.priority)} · ${t(picked.state)}${CHANNELS.includes(picked.channel) ? ` · ${t('cameBy')} ${t(picked.channel)}` : ''}${customer}`;
   for (const [id, clock] of [['first-badge', pickedSla?.firstResponse], ['resolution-badge', pickedSla?.resolution]]) {
     const b = $(id);
-    b.className = `badge ${clock?.status ?? ''}`;
-    b.textContent = clock === undefined ? '…' : t(clock.status);
+    b.dataset.status = clock?.status ?? '';
+    if (clock === undefined) b.textContent = '…'; else b.replaceChildren(slaChip(clock.status));
   }
   const resolved = picked.state === 'resolved' || picked.state === 'closed';
   $('resolve').disabled = !mayAct || resolved; whyDisabled($('resolve'), !mayAct ? 'role' : resolved ? { en: 'This case is already resolved.', ta: 'இந்த வழக்கு ஏற்கனவே தீர்க்கப்பட்டது.' } : '');
@@ -298,8 +313,11 @@ function renderSummary() {
   // U0 (P-08): "every resolved case has a root cause" is a claim about resolved cases — with none resolved it is not said.
   const resolved = summary.byCause.reduce((n, row) => n + Number(row.cases ?? 0), 0) + summary.resolvedWithoutRootCause.length;
   const unexplained = summary.resolvedWithoutRootCause.length > 0;
-  missing.className = `status ${unexplained ? 'err' : resolved === 0 ? 'muted' : 'good'}`;
-  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained');
+  // U5: "no case resolved yet" is the shared empty state; a finding about the resolved cases stays a status line.
+  const o = window.sreOffice;
+  if (!unexplained && resolved === 0 && o && typeof o.state === 'function') { missing.className = ''; o.state(missing, 'empty', { title: t('noneResolved'), detail: '' }); return; }
+  missing.className = `status ${unexplained ? 'err' : 'good'}`;
+  missing.textContent = unexplained ? `${t('noRootCause')} ${summary.resolvedWithoutRootCause.join(', ')}` : resolved === 0 ? t('noneResolved') : t('allExplained'); // never a claim about no cases
 }
 
 // W4 · M21-FR-04: head office's service report over every case — the figures exactly as it sends them, nothing worked out here.
@@ -341,14 +359,25 @@ async function pick(caseId) {
   renderCase();
 }
 
+let customerNames = {};
+async function loadCustomerNames() {
+  try {
+    const out = await getJson('/v1/customer/overview');
+    const names = {};
+    for (const c of Array.isArray(out?.customers) ? out.customers : []) if (typeof c.customerRef === 'string' && typeof c.name === 'string' && c.name !== '') names[c.customerRef] = c.name;
+    customerNames = names;
+  } catch { customerNames = {}; }
+}
 async function loadCases() {
-  $('cases-status').textContent = t('loading');
+  casesState('loading', t('loading'));
+  void loadCustomerNames().then(() => { if (picked !== null) renderCase(); });
   try {
     cases = (await getJson('/v1/service/cases')).cases;
     summary = await getJson('/v1/service/root-causes');
   } catch {
     cases = []; summary = null;
-    $('cases-status').textContent = t('unreachable');
+    renderCases();
+    casesState('offline', t('unreachable'));
     return;
   }
   if (picked !== null) picked = { ...picked, ...(cases.find((c) => c.caseId === picked.caseId) ?? {}) };
@@ -424,7 +453,9 @@ $('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintWords();
+  const was = lastCasesState;
   renderCases();
+  if (was !== null && was.kind !== 'empty') casesState(was.kind, t(was.key)); // a "reading…" / "cannot be reached" line follows the toggle
   renderCase();
   renderSummary();
   repaintPickers();
@@ -433,7 +464,7 @@ $('lang').addEventListener('click', () => {
 
 paintWords();
 if (who !== null) void loadCases();
-else $('cases-status').textContent = t('nobody');
+else casesState('denied', t('nobody'));
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
