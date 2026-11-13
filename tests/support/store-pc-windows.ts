@@ -28,6 +28,8 @@ export interface PretendWin {
   restoreLoses: number;
   /** Docker compose commands seen (stop, up …), in order. */
   composeSeen: string[][];
+  /** The folder the pretend native PostgreSQL was made in (initdb -D), as `SHOW data_directory` answers. */
+  dataDir?: string;
 }
 
 /**
@@ -75,6 +77,7 @@ export function storePc(w: World, over: Partial<Deps> = {}): { d: Deps; win: Pre
     if (exe === 'initdb.exe') {
       win.initdbRuns += 1;
       const dir = args[args.indexOf('-D') + 1]!;
+      win.dataDir = dir;
       const pw = /^--pwfile=(.*)$/.exec(args.find((a) => a.startsWith('--pwfile='))!)![1]!;
       expect(fs.readFileSync(pw, 'utf8').trim()).toBe(settingsIn(fs, win32.dirname(dir))['POSTGRES_PASSWORD']); // the password reached initdb …
       fs.mkdirSync(dir, { recursive: true });
@@ -171,6 +174,7 @@ function pretendNativePg(win: PretendWin, fs: Deps['fs'], exe: string, args: rea
   }
   win.psqlInputs.push(o.input ?? '');
   const sql = args.includes('-c') ? args[args.indexOf('-c') + 1]! : args.includes('-Atc') ? args[args.indexOf('-Atc') + 1]! : undefined;
+  if (sql === 'SHOW data_directory') return { status: 0, stdout: `${win.dataDir ?? ''}\n` };
   if (sql !== undefined && /SELECT datname FROM pg_database/.test(sql)) return { status: 0, stdout: `${['postgres', ...Object.keys(win.nativeDbs)].join('\n')}\n` };
   if (sql !== undefined && /^CREATE DATABASE "([a-z0-9_]+)"$/.test(sql)) { win.nativeDbs[/"([a-z0-9_]+)"/.exec(sql)![1]!] = { tables: {}, values: {}, maxSeq: 0, migrations: [] }; return { status: 0 }; }
   if (sql !== undefined && /^DROP DATABASE "([a-z0-9_]+)"$/.test(sql)) { delete win.nativeDbs[/"([a-z0-9_]+)"/.exec(sql)![1]!]; return { status: 0 }; }
