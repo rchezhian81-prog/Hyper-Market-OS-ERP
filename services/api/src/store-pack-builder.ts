@@ -134,7 +134,7 @@ export interface StorePackBuildInput {
    */
   readonly handoverToleranceConfirmation?: (tenantId: string, storeId: string) => Promise<{ readonly by: string; readonly at: string; readonly version: number } | undefined>;
   /**
-   * U7 · OB-726 (owner, in writing: B): the disputed supplier claims still open, company-wide, and how many are overdue —
+   * U7 · OB-727 (owner, in writing: B): the disputed supplier claims still open, company-wide, and how many are overdue —
    * head office's Supplier claims register — so the store computer's Today page counts them. Counts only (no build time).
    * Absent → the section is left out and the Today page says it was not told (never a zero).
    */
@@ -557,7 +557,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // store: an empty list is head office's own answer "none kept yet"; a box on an older pack says it was not told.
   sections['reorderSettings'] = { storeId, products: parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId) }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
   // W3 · OB-673 · OB-677: the coupons and gift cards the till judges offline (till-vouchers-adapters.ts) — no build time inside.
-  // U7 · OB-726: the disputed supplier claims for the Today page — two counts, no build time inside.
+  // U7 · OB-727: the disputed supplier claims for the Today page — two counts, no build time inside.
   if (input.supplierClaimDisputes !== undefined) sections['supplierClaimDisputes'] = await input.supplierClaimDisputes(tenantId);
   if (input.tillVouchers !== undefined) {
     sections['coupons'] = await couponPackSectionFor({ store, now }, tenantId, shopZone);

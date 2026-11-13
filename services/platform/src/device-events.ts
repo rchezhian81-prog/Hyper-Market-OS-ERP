@@ -122,7 +122,7 @@ export interface FloorDeviceDeps {
   readonly refusedBatches: (tenantId: string) => Promise<readonly RefusedFloorBatch[]>;
   readonly recordRefusedBatch: (tenantId: string, refusal: RefusedFloorBatch) => Promise<void>;
   readonly pushes: (tenantId: string) => Promise<readonly EslPush[]>;
-  /** U7 (OB-725): the product's name on head office's product master, so a person finds a push by name; absent = codes only. */
+  /** U7 (OB-726): the product's name on head office's product master, so a person finds a push by name; absent = codes only. */
   readonly productName?: (tenantId: string, productId: string) => Promise<string | undefined>;
   readonly recordPush: (tenantId: string, push: EslPush) => Promise<void>;
   /** The branches head office knows, with their state. */
@@ -458,7 +458,7 @@ export function floorDeviceRoutes(deps: FloorDeviceDeps): readonly Route[] {
         const branchId = branchQuery(ctx);
         const [pushes, events] = await Promise.all([deps.pushes(ctx.tenantId), deps.events(ctx.tenantId)]);
         const judged = pushes.filter((p) => p.branchId === branchId).sort((a, b) => b.at.localeCompare(a.at)).map((p) => judgePush(p, events));
-        // U7 (OB-725): with ?page= head office pages the pushes (search by the product's name or code, or the push; sort by
+        // U7 (OB-726): with ?page= head office pages the pushes (search by the product's name or code, or the push; sort by
         // time or product); the unconfirmed count and the summary stay the branch's WHOLE count, never the page's.
         const nameOf = new Map<string, string>();
         if (ctx.query['page'] !== undefined && deps.productName !== undefined) {

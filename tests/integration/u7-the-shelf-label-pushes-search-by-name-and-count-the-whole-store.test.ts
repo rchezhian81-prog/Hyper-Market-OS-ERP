@@ -3,7 +3,7 @@ import { floorDeviceRoutes, type FloorDeviceDeps, type EslPush, type StoredFloor
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 
 /**
- * U7 (OB-725) · the Shelf labels page pages its pushes at head office. A person searches by the product's NAME (head office
+ * U7 (OB-726) · the Shelf labels page pages its pushes at head office. A person searches by the product's NAME (head office
  * reads the product master), and the page's cards and "Send all again" read a SUMMARY of the whole store's pushes that
  * head office answers beside the page — never counted from the ten rows on screen (P-08).
  */

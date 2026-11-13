@@ -37,7 +37,7 @@ export interface DeliveryBooking {
 }
 
 /**
- * U7 (OB-725 · OB-700 · M19): a driver's "please call the customer" request as the dispatch board shows it — references only
+ * U7 (OB-726 · OB-700 · M19): a driver's "please call the customer" request as the dispatch board shows it — references only
  * (§31, never the customer's name or number) — and whether the store has called: the store ticks the request's operational
  * alert as seen (the append-only acknowledgement), so the board and the Ops alerts page read one record.
  */

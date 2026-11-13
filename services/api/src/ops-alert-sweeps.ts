@@ -10,7 +10,7 @@
 //     contract raised to every owner, cleared on renewal (`contractExpirySweep`, fg4-buying-adapters.ts).
 //   • Round 6 · B7 — a weighing scale whose Legal Metrology stamp is due within the register's notice period (or has
 //     lapsed) raised to every owner, cleared on re-stamping (`scaleStampExpirySweep`, r6b-quality-scale-adapters.ts).
-//   • U7 · OB-726 (owner, in writing: B) — each open disputed (rejected) supplier claim raised once to the buyer who rejected
+//   • U7 · OB-727 (owner, in writing: B) — each open disputed (rejected) supplier claim raised once to the buyer who rejected
 //     it and to every owner, cleared when it is settled (`claimDisputeAlertSweep`, rfq-requests-adapters.ts).
 //   • W6 · M32-FR-03 · OB-688 — each finished shop day's machine-credential use judged ONCE against the same weekday a week
 //     before, missed nights caught up, abnormal use raised to the IT custodian (`secretUseRollupSweep`, w6-secret-use-adapters.ts).
@@ -47,7 +47,7 @@ export interface EachPassSweeps {
   readonly scaleStamp?: (tenantId: string, at: string) => Promise<number>;
   /** W6 · M32-FR-03 · OB-688: each finished shop day's secret use judged once (missed nights caught up); the alerts it raised (absent → not run). */
   readonly secretUse?: (tenantId: string, at: string) => Promise<number>;
-  /** U7 · OB-726: how many disputed supplier claims it newly raised to the people who settle them; settled ones cleared (absent → not run). */
+  /** U7 · OB-727: how many disputed supplier claims it newly raised to the people who settle them; settled ones cleared (absent → not run). */
   readonly claimDisputes?: (tenantId: string, at: string) => Promise<number>;
   readonly say: (line: string) => void;
 }

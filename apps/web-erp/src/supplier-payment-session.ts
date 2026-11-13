@@ -12,7 +12,7 @@
 //      shared account, a payment above the balance owed, or a person who raised, received or matched the order it pays.
 // Nothing is read on open.
 //
-// U7 · OB-723 (owner, in writing: B): the same section sits on the SUPPLIER BILLS page, and a payment may name the BILLS it
+// U7 · OB-724 (owner, in writing: B): the same section sits on the SUPPLIER BILLS page, and a payment may name the BILLS it
 // settles (each this supplier's own; head office refuses another's by name). Recording is money, so the page asks the
 // confirm sheet first. The bank reference recorded here is what Bank reconciliation matches the statement's debit line by.
 
@@ -62,7 +62,7 @@ export { rupees };
 
 export interface PaymentForm {
   readonly supplierId: string; readonly amountRupees: string; readonly paidOn: string; readonly method: string; readonly reference: string;
-  /** U7 · OB-723 — the bills it settles, as typed: bill numbers separated by commas (or spaces). Optional. */
+  /** U7 · OB-724 — the bills it settles, as typed: bill numbers separated by commas (or spaces). Optional. */
   readonly settles?: string;
 }
 

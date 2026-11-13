@@ -1321,7 +1321,7 @@ export interface StorePack {
    */
   readonly batchesWithoutExpiry?: Register<number>;
   /**
-   * U7 · OB-726 (owner, in writing: B): the disputed (rejected) supplier claims still open company-wide, and of those how
+   * U7 · OB-727 (owner, in writing: B): the disputed (rejected) supplier claims still open company-wide, and of those how
    * many are past the shop day they were raised on — head office's own register (Supplier claims page). Counts only, no
    * build time inside. Absent: the box was not told, and the Today page says so (never a zero).
    */

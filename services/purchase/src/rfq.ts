@@ -213,7 +213,7 @@ export function rfqRoutes(deps: RfqDeps): readonly Route[] {
       permission: 'purchase.commitment.read',
       handler: async (ctx) => {
         const requisitions = await Promise.all((await deps.requisitions(ctx.tenantId)).map((r) => withUnits(deps, ctx.tenantId, r)));
-        // U7 (OB-725): with ?page= head office pages the worklist (search by requisition or product; sort by requisition).
+        // U7 (OB-726): with ?page= head office pages the worklist (search by requisition or product; sort by requisition).
         const view = requisitions.map((r, i) => ({ i, requisitionId: r.requisitionId, products: r.lines.map((l) => l.productId).join(' '), lines: r.lines.length }));
         const paged = pageOrRefuse(view, ctx.query, { search: ['requisitionId', 'products'], sort: ['requisitionId', 'lines'] });
         if (paged !== undefined) return { status: 200, body: { requisitions: paged.rows.map((v) => requisitions[v.i]!), count: paged.paging.total, paging: paged.paging } };

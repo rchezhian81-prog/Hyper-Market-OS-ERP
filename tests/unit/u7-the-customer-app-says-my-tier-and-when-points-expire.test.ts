@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { standingLines, STANDING_WORDS } from '../../apps/customer-app/src/points-standing';
 
 /**
- * **U7 (OB-725) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the points card says my tier (and what the next
+ * **U7 (OB-726) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the points card says my tier (and what the next
  * tier needs) and when my points expire, from head office's `GET /v1/me/loyalty` (Group D's `tier`/`expiry`).** Not set is
  * said as not set (OB-295) — never "no expiry" guessed; the expiry day is the SHOP's day (Asia/Kolkata), not the UTC day;
  * a reply without the fields (an older head office) shows no line rather than a guess. Both languages.

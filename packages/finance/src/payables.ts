@@ -18,7 +18,7 @@ import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
 export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance'
   /** OB-44: a signed opening reversed inside the cutover window — the posting undone by its own compensating journal. */
   | 'supplier_opening_reversal'
-  /** OB-724: a supplier's accepted claim, approved by the accountant as a credit — it raises what the shop owes. */
+  /** OB-725: a supplier's accepted claim, approved by the accountant as a credit — it raises what the shop owes. */
   | 'supplier_claim_credit';
 export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance' | 'supplier_claim_credit';
 
@@ -48,7 +48,7 @@ export interface PayablesAccount {
     readonly amountMinor: number;
     readonly paidOn: string;
   }[];
-  /** OB-724 — the supplier's claims the accountant APPROVED as credits; a draft is not here and never posts. Optional. */
+  /** OB-725 — the supplier's claims the accountant APPROVED as credits; a draft is not here and never posts. Optional. */
   readonly claimCredits?: readonly {
     readonly creditId: string;
     readonly amountMinor: number;
@@ -153,7 +153,7 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
     ],
   },
   {
-    // OB-724 (owner, 13 Nov 2026): a supplier's claim the accountant approved credits the supplier — the shop owes more —
+    // OB-725 (owner, 13 Nov 2026): a supplier's claim the accountant approved credits the supplier — the shop owes more —
     // against the goods' cost through the GRNI clearing, the same account the goods first came in through. A SUGGESTION:
     // the accountant's mapping decides; with no rule the credit is a named "not in the books" exception, never silent.
     kind: 'supplier_claim_credit',

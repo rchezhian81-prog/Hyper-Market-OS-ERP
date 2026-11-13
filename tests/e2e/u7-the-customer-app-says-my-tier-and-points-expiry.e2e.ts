@@ -9,7 +9,7 @@ import { startCustomerShop, type CustomerShop } from './lib/customer-shop';
 import { auditPage } from './lib/a11y-audit';
 
 /**
- * **U7 (OB-725) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the customer app, in real Chromium on the real API
+ * **U7 (OB-726) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the customer app, in real Chromium on the real API
  * (in memory): a signed-in member's points card says their tier and when points expire.** Before the owner sets either,
  * each line says NOT SET (never a made-up ladder, never "no expiry"); once the owner sets a ladder and an expiry rule, the
  * card says "No tier yet", what reaching Silver needs, and how long points last. Both languages; audited.

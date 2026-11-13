@@ -9,7 +9,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { prepareTillBox } from '../support/till-operator';
 
 /**
- * **U7 · OB-726 (owner, in writing: B) — the store computer's Today page counts the disputed supplier claims, in English and
+ * **U7 · OB-727 (owner, in writing: B) — the store computer's Today page counts the disputed supplier claims, in English and
  * Tamil, and says "not known" with the reason when head office has not told it.** Two real store computers (disk, screens),
  * one whose signed pack carries head office's two counts (3 open, 1 overdue) and one whose pack does not. In a real Chromium:
  *
@@ -26,7 +26,7 @@ const PEOPLE = [{ userId: 'u-mgr', displayName: 'Manager', manager: true, permis
 
 type Doc = { document: { querySelector(s: string): { textContent: string | null } | null; documentElement: { lang: string } } };
 
-describe.skipIf(!existsSync(CHROMIUM))('U7 · OB-726: disputed supplier claims on the Today page', () => {
+describe.skipIf(!existsSync(CHROMIUM))('U7 · OB-727: disputed supplier claims on the Today page', () => {
   let browser: Browser;
   const boxes: EdgeProcess[] = [];
   const dirs: string[] = [];

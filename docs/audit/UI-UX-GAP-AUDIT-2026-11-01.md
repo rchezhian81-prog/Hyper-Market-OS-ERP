@@ -168,7 +168,7 @@ rather than 0, confirm before money moves, Tamil for every word) hold on only a 
 ## Owner decisions this audit needs
 
 **All six decided.** Decision 2: A, 2 Nov 2026 (OB-698). Decisions 1, 3, 4, 5 and 6: B, B, B, A, A, 7 Nov 2026
-(OB-699 to OB-703 in `docs/registers/decisions.md`). **OB-722 (7 Nov 2026, evening):** the owner then asked for every
+(OB-699 to OB-703 in `docs/registers/decisions.md`). **OB-723 (7 Nov 2026, evening):** the owner then asked for every
 remaining round to be built at once, the staff session afterwards — U3, U5 and U6 run together. The options are kept below as they were asked.
 
 1. **Head office's own words in Tamil.** Report names, the morning brief's sentences, GST findings, role names and the store

@@ -987,7 +987,7 @@ async function renderPoints() {
   el('points-title').textContent = t('pointsTitle');
   const say = el('points-card');
   const lines = (v) => {
-    // U7 (OB-725) · M17-FR-01: my tier and when my points lapse — a line only for what head office sent and this can read.
+    // U7 (OB-726) · M17-FR-01: my tier and when my points lapse — a line only for what head office sent and this can read.
     const got = v && v.member && typeof shop.mine.standingLines === 'function' ? shop.mine.standingLines(lang, v) : {};
     for (const [id, text] of [['points-tier', got.tier], ['points-due', got.lapse]]) { el(id).hidden = typeof text !== 'string'; el(id).textContent = typeof text === 'string' ? text : ''; }
   };

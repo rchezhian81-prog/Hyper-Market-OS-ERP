@@ -138,7 +138,7 @@ export interface StorefrontDeps {
   readonly onlineListed?: (tenantId: string, productId: string) => Promise<{ readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string }>;
   /** WF-13 (OB-288 wave 3): promotions, a coupon and the points balance in the online basket. */
   readonly pricing?: OnlinePricingDeps;
-  /** U7 (OB-725) · M17-FR-01: the member's tier and points-expiry rule, as the desk reads them. Absent → said as not wired. */
+  /** U7 (OB-726) · M17-FR-01: the member's tier and points-expiry rule, as the desk reads them. Absent → said as not wired. */
   readonly memberStanding?: (tenantId: string, memberRef: string) => Promise<{ readonly tier: unknown; readonly expiry: unknown }>;
   /** D09-FR-01 · OB-300: which branch fulfils a delivery — head office's answer, never the app's. Absent → as built. */
   readonly routing?: StorefrontRouting;
@@ -686,7 +686,7 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         }
         const balance = Math.max(0, (await deps.pricing.pointsOf(ctx.tenantId, member.memberRef)) ?? 0);
         const value = await deps.pricing.pointValuePaise(ctx.tenantId);
-        // U7 (OB-725) · M17-FR-01: the tier and the expiry rule, as the desk reads them; not set is said as not set.
+        // U7 (OB-726) · M17-FR-01: the tier and the expiry rule, as the desk reads them; not set is said as not set.
         const standing = deps.memberStanding === undefined ? { tier: { state: 'not_set' }, expiry: { state: 'not_set' } } : await deps.memberStanding(ctx.tenantId, member.memberRef);
         return {
           status: 200,

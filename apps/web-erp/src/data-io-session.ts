@@ -110,7 +110,7 @@ export interface LoadedJobView {
   readonly rolledBack?: { readonly at: string; readonly requestedBy: string; readonly approvedBy: string; readonly reason: string };
 }
 export type LoadedJobsRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[] } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
-/** U7 (OB-725): one page of the applied loads, with the total head office counted. */
+/** U7 (OB-726): one page of the applied loads, with the total head office counted. */
 export type LoadedJobsPageRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[]; readonly total: number } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
 /** U7: what the register's loader is told — one page of loads, or why there is none. */
 export type LoadsPage = { readonly state: 'read'; readonly jobs: readonly LoadedJobView[]; readonly total: number } | { readonly state: 'lost_link' | 'refused' | 'not_allowed' };
@@ -165,7 +165,7 @@ export interface DataIoPorts {
   approvalInbox?(): Promise<InboxRead>;
   /** M30 round 8: the loads already applied (GET /v1/import/commits) — read only. Absent on a bare stand-in (no link). */
   loadedJobs?(): Promise<LoadedJobsRead>;
-  /** U7 (OB-725): ONE page of the loads applied (GET /v1/import/commits?page=…) — `query` is head office's query string. */
+  /** U7 (OB-726): ONE page of the loads applied (GET /v1/import/commits?page=…) — `query` is head office's query string. */
   loadedJobsPage?(query: string): Promise<LoadedJobsPageRead>;
   /** M30 round 8: undo a load (POST /v1/import/commits/:jobId/rollback) naming an approved undo request. Only from an
    *  explicit action. Absent on a bare stand-in (no link). */
@@ -463,7 +463,7 @@ export interface DataIoSession {
   presentLoadOutcome(lang: Lang, o: LoadOutcome): StatusPresentation;
   /** M30 round 8: the loads already applied (a GET — read only), newest first, each in place or undone. */
   loads(lang: Lang): Promise<LoadsView>;
-  /** U7 (OB-725): ONE page of the loads applied, for the register's loader — searched and sorted by head office, newest
+  /** U7 (OB-726): ONE page of the loads applied, for the register's loader — searched and sorted by head office, newest
    *  first unless a column is chosen (when → at, load → jobId). */
   loadsPage(ask: RegisterAsk): Promise<LoadsPage>;
   /** U7: one load as the row draws it, in the language asked at the moment it is drawn. */

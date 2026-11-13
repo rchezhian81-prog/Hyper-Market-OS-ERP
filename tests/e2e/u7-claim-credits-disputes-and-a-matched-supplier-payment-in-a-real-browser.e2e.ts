@@ -6,7 +6,7 @@ import { P3, issuedOrder, received, capturedAndMatched, caller } from '../suppor
 import { approvedRequestId } from '../support/approval-request';
 
 /**
- * **U7 · OB-724 · M24-FR-02 alt · OB-723, in a real browser on the real store computer and head office.**
+ * **U7 · OB-725 · M24-FR-02 alt · OB-724, in a real browser on the real store computer and head office.**
  *   • Supplier claims: the claim a buyer ACCEPTED is a draft credit; the buyer who accepted it is shown the Approve button
  *     grey with the reason (another person approves); the accountant approves it behind the confirm sheet (Go back sends
  *     nothing; Confirm sends once) and the row reads Approved; the claim the buyer REJECTED is an open disputed claim with

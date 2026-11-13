@@ -7,7 +7,7 @@ import { readCategory, sameCategory, engineCategory } from '../../services/catal
 import type { Category } from '../../packages/product/src/product';
 
 /**
- * U7 (OB-725) · OB-699 = B: a category's name is the product's own word, so it is carried in Tamil too. Head office keeps
+ * U7 (OB-726) · OB-699 = B: a category's name is the product's own word, so it is carried in Tamil too. Head office keeps
  * `nameTa` on the category it defines and the signed pack carries it, so the customer app's category list and the office
  * pages read it in Tamil (the app already reads `nameTa` when the pack gives it). A publish body that does not mention the
  * Tamil name still agrees with the register; one that names a different Tamil name differs (a new version, never silent).

@@ -5,7 +5,7 @@ import { SyncOutbox } from '../../packages/sync/src/index';
 import { claimDisputeAlertPlan, claimDisputeCounts, claimDisputes, claimDisputeAlertIdOf, type ClaimDisputeResolution, type SupplierRaisedClaim } from '../../services/purchase/src/supplier-claims';
 
 /**
- * **U7 · OB-726 (owner, in writing: B) — a disputed (rejected) supplier claim is counted on the Today page, and its alert
+ * **U7 · OB-727 (owner, in writing: B) — a disputed (rejected) supplier claim is counted on the Today page, and its alert
  * is planned once per open exception and cleared when it is settled (M24-FR-02 alt · P-03 · P-08).**
  *
  *   • the store computer's Today figure "Disputed supplier claims open" is the pack's count, with how many are overdue in

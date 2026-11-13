@@ -14,7 +14,7 @@ export function wireRfqAndClaims(win: Record<string, unknown>, viewerIdentity: (
   }
   if (win['supplierClaimsData'] !== undefined) {
     win['supplierClaims'] = { session: createSupplierClaimsSession({ viewer: viewerIdentity(win['supplierClaimsData']) }), words: supplierClaimsWords, outcomeWords: supplierClaimsOutcomeWords, stateTone: claimStateTone, rupees, supplierLabel,
-      // U7 · OB-724 · M24-FR-02 alt
+      // U7 · OB-725 · M24-FR-02 alt
       creditTone: creditStateTone, disputeTone, disputeStateKey, disputeOutcomes: DISPUTE_OUTCOMES };
   }
 }

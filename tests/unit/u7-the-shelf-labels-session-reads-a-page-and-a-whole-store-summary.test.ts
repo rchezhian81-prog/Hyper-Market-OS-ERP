@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createEslSession } from '../../apps/web-erp/src/esl-session';
 
-// U7 (OB-725) · the Shelf labels page pages its pushes at head office: the table reads ONE page (search by name or code,
+// U7 (OB-726) · the Shelf labels page pages its pushes at head office: the table reads ONE page (search by name or code,
 // sort by time or product), and the cards and "Send all again" read head office's summary of the WHOLE store — never
 // counted from the rows on screen (P-08).
 

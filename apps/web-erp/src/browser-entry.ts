@@ -3739,7 +3739,7 @@ async function fetchLoadedJobs(): Promise<LoadedJobsRead> {
   } catch { return { result: 'lost_link' }; }
 }
 
-/** U7 (OB-725): ONE page of the loads applied (GET /v1/import/commits?page=…) — read only, the total head office counted. */
+/** U7 (OB-726): ONE page of the loads applied (GET /v1/import/commits?page=…) — read only, the total head office counted. */
 async function fetchLoadedJobsPage(query: string): Promise<LoadedJobsPageRead> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return { result: 'lost_link' };

@@ -492,7 +492,7 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       },
     },
     {
-      // U7 (OB-725) · M21-FR-04: the scores recorded on ONE case, oldest first, so the satisfaction page says "already
+      // U7 (OB-726) · M21-FR-04: the scores recorded on ONE case, oldest first, so the satisfaction page says "already
       // rated" instead of asking again. None yet is said as rated: false — never a 0 score. Reads only.
       api: 'API-06', method: 'GET', path: '/v1/service/cases/:caseId/satisfaction',
       permission: 'service.case.read',

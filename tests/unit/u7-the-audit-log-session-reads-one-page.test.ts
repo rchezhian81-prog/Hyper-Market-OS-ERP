@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createAuditLogSession } from '../../apps/web-erp/src/audit-log-session';
 
-// U7 (OB-725) · the Audit log reads ONE page of head office's trail at a time through the register's loader: the
+// U7 (OB-726) · the Audit log reads ONE page of head office's trail at a time through the register's loader: the
 // page's own boxes (who, what, which thing, shop days) still narrow it, the register's search and sort go to head office,
 // and with no sort chosen the newest record comes first — as the page always showed it. The shop-day window (Group A,
 // U7) is kept: "until 31 Oct" runs to the shop's next midnight.

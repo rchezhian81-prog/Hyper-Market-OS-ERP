@@ -56,6 +56,8 @@ export interface Deps {
   readonly fetch: (url: string) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
   /** CR-01 step 3b: a GET with headers (GitHub). Absent: the update check says it cannot reach the internet. */
   readonly web?: (url: string, headers: Record<string, string>) => Promise<{ status: number; text(): Promise<string> }>;
+  /** CR-01 step 3d: download a release file to `file`; { status: 200 } when written. */
+  readonly download?: (url: string, headers: Record<string, string>, file: string) => Promise<{ status: number }>;
   readonly portInUse: (port: number) => Promise<boolean>;
   readonly sleep: (ms: number) => Promise<void>;
   readonly now: () => Date;
@@ -78,6 +80,8 @@ export interface Deps {
   readonly spawnDetached?: (cmd: string, args: readonly string[], opts: { cwd?: string; env?: Record<string, string | undefined>; logFile?: string }) => { pid: number | undefined };
   readonly processAlive?: (pid: number) => boolean;
   readonly killProcess?: (pid: number) => void;
+  /** What a running process was started with, or undefined when it cannot be read (the till check before stopping it). */
+  readonly processCommandLine?: (pid: number) => string | undefined;
   /** Windows Task Scheduler (or a stand-in). Absent: Windows' own via schtasks, or none off Windows. */
   readonly tasks?: { register(name: string, xml: string): { ok: boolean; said?: string }; remove(name: string): { ok: boolean; said?: string }; exists(name: string): boolean; run?(name: string): { ok: boolean; said?: string } };
   /** scrypt's cost for a NEW backup key (tests use a cheaper one; the key file records whichever was used). */
@@ -173,7 +177,7 @@ export declare function doctorRows(deps: Deps, extra?: { edition?: import('./sto
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
-  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string; lane?: string; only?: string;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string; pgBin?: string; serviceHost?: string; lane?: string; only?: string; install?: string;
   /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
   setup: Record<string, string>;
   problems: string[];

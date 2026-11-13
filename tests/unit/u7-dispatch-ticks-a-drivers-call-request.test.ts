@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createDispatchSession, DISPATCH_COPY, callRequestLine } from '../../apps/web-erp/src/dispatch-session';
 
-// U7 (OB-725 · OB-700 · M19): the Dispatch board lists the drivers' "please call the customer" requests; once the store has
+// U7 (OB-726 · OB-700 · M19): the Dispatch board lists the drivers' "please call the customer" requests; once the store has
 // called the customer from the order's own record, a person with the alert-tick word ticks it — the request's operational
 // alert's acknowledgement, the one record the Ops alerts page reads too. Synthetic data.
 

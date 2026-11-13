@@ -6,7 +6,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
 
 /**
- * U7 (OB-725) · the long lists are paged by head office. Twelve requisitions are on record; the Requisitions page's worklist
+ * U7 (OB-726) · the long lists are paged by head office. Twelve requisitions are on record; the Requisitions page's worklist
  * (the chrome's register, fed by a loader) asks head office for ONE page of ten at a time — "Showing 1–10 of 12" — turns to
  * the second page (two rows), and a search goes to head office, which answers the one match. On the PRODUCTION API over
  * real PostgreSQL, in a real browser. Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.

@@ -1,4 +1,4 @@
-// U7 (OB-725) · the long lists are paged by head office. The chrome's register (window.sreOffice.table with a `loader`)
+// U7 (OB-726) · the long lists are paged by head office. The chrome's register (window.sreOffice.table with a `loader`)
 // asks for one page as `{ page (0-based), size, search, sort (the column's key, or null), dir }` and shows `{ rows, total }`
 // exactly as given. Head office reads `?page=` from 1, `size` (up to 200), `search`, `sort` (its own field name) and `dir`,
 // and answers one page with `paging.total` beside it (services/kernel/src/paging.ts). These two helpers translate.

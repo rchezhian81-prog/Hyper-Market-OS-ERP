@@ -188,7 +188,7 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
           jobs,
           ...(isStr(ctx.query['sourceId']) ? { sourceId: ctx.query['sourceId'] } : {}),
           ...(isStr(ctx.query['templateId']) ? { templateId: ctx.query['templateId'] } : {}),
-          // U7 (OB-725): a paged read reads EVERY job (the total is all of them, never cut at fifty without a word).
+          // U7 (OB-726): a paged read reads EVERY job (the total is all of them, never cut at fifty without a word).
           ...(asked ? { limit: Math.max(jobs.length, 1) } : ctx.query['limit'] !== undefined ? { limit: posIntOr(ctx.query['limit'], 50) } : {}),
         });
         // U7: with ?page= head office pages the history — search the file, source, uploader or outcome; sort by time or file.

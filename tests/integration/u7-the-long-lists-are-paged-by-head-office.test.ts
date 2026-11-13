@@ -7,7 +7,7 @@ import { floorDeviceRoutes, type FloorDeviceDeps, type EslPush } from '../../ser
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 
 /**
- * U7 (OB-725) · G17: the five lists that can grow past a few hundred rows — the audit trail, the import history, a
+ * U7 (OB-726) · G17: the five lists that can grow past a few hundred rows — the audit trail, the import history, a
  * product's price history, the requisitions worklist and the shelf-label pushes — are paged by head office when the page
  * asks (`?page=&size=&search=&sort=&dir=`): the rows of that page, and the total it searched, so the register says
  * "Showing 1–2 of 3". Without `?page=` each answers exactly as before. A page it cannot read is refused by name.

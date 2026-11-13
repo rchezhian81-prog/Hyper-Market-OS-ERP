@@ -26,7 +26,7 @@ export const BANK_RECONCILIATION_COPY = {
     cLines: 'Lines', cMatched: 'Matched', cUnmatched: 'Unmatched', cUnmatchedValue: 'Unmatched value', cOpen: 'Open exceptions', cOverdue: 'Overdue exceptions', cCredits: 'Credits in', cDebits: 'Debits out',
     addsUp: 'The statement adds up: opening plus every line is the closing balance.', doesNotAddUp: 'The statement does NOT add up to its own closing balance — a person must look at the import.',
     provider_payout: 'Provider payout', cash_deposit: 'Cash deposit', exception: 'Exception', unmatched: 'Unmatched',
-    supplier_payment: 'Supplier payment', paymentRef: 'ref', // U7 · OB-723 — a debit line matched by its reference to a payment recorded on Supplier bills
+    supplier_payment: 'Supplier payment', paymentRef: 'ref', // U7 · OB-724 — a debit line matched by its reference to a payment recorded on Supplier bills
     open: 'open', resolved: 'resolved', overdue: 'overdue — raised on an earlier shop day', raisedOn: 'raised on', slip: 'slip', batch: 'file',
     raiseH: 'Raise an exception on an unmatched line', raiseLead: 'The line keeps its value; a named person owns the exception until it is resolved with a reason — the same shop day, if it can be (§34.1).',
     line: 'Statement line', chooseLine: 'Choose an unmatched line', ownerField: 'Who owns it', note: 'Note (what is known so far)', raise: 'Raise the exception', pickLine: 'Raise',

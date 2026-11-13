@@ -33,7 +33,7 @@ function whyDisabled(btn, why) {
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
 
-// U7 (OB-725): the cards and "Send all again" read head office's summary of the WHOLE store (`overview`); the table reads
+// U7 (OB-726): the cards and "Send all again" read head office's summary of the WHOLE store (`overview`); the table reads
 // one page at a time through the register's loader — never the whole list into the browser, never counts from one page.
 let overview = null; let overviewOutcome = null; // head office's last summary, or why there is none
 let table = null; // the register, built once

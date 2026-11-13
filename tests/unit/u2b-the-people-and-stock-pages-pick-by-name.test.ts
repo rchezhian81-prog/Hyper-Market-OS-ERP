@@ -67,7 +67,7 @@ describe('U2b: the people and stock pages pick things by name', () => {
     expect(web('help.html'), 'the drill\'s procedure from the list').toMatch(/<input id="d-sop"[^>]*list="d-sop-list"/);
     expect(web('help.js')).toMatch(/\$\('d-sop-list'\)/);
     expect(web('help.html'), 'the roles from a list').toMatch(/<input id="w-roles"[^>]*list="w-roles-list"/);
-    // U7 (OB-725): the procedure's roles are chosen on the chrome's several-role picker; the typed list stays the fallback.
+    // U7 (OB-726): the procedure's roles are chosen on the chrome's several-role picker; the typed list stays the fallback.
     expect(web('help.js'), 'the roles on the several-role picker').toMatch(/pickable\('w-roles', 'role', 'pickRoles', \{ multi: true \}\)/);
     expect(web('dispatch.js'), 'the wave number is given').toMatch(/const mintWaveId = \(\) => `W-/);
     expect(web('dispatch.html'), 'the route from the board').toMatch(/<input id="settle-route"[^>]*list="route-list"/);

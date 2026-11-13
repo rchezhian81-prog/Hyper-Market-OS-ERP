@@ -16,7 +16,7 @@ import { streamName, STREAM } from '../../services/api/src/adapters';
 const ALERTS_STREAM = streamName(STREAM.platform, 'alerts');
 
 /**
- * **U7 · OB-726 (owner, in writing: B) · M24-FR-02 alt — a disputed (rejected) supplier claim reaches the people who
+ * **U7 · OB-727 (owner, in writing: B) · M24-FR-02 alt — a disputed (rejected) supplier claim reaches the people who
  * settle it, and is counted for the Today page.** A supplier raises two claims; the buyer rejects both:
  *
  *   • the counts the store pack carries (`claimDisputeCountsFor`, in the signed pack head office serves) are the register's
@@ -46,7 +46,7 @@ if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness
 
 interface BoardAlert { alert: { alertId: string; ownerUserId: string; alsoToUserIds?: string[]; detail: string; component: string }; state: string; occurrence: number }
 
-describe.each(backings)('U7 · OB-726 — a disputed supplier claim is alerted and counted — on $name', ({ name, harness }) => {
+describe.each(backings)('U7 · OB-727 — a disputed supplier claim is alerted and counted — on $name', ({ name, harness }) => {
   it('raised once per open dispute to the buyer and the owners; settled → cleared; counted for Today', async () => {
     let h = harness();
     const T = randomUUID();

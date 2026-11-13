@@ -35,7 +35,7 @@ export interface BoardStop {
   readonly proofCheck: { readonly code: string; readonly fence: { readonly result: string; readonly distanceMetres?: number; readonly radiusMetres?: number } } | null;
   readonly failureReason: string | null;
 }
-/** U7 (OB-725 · OB-700): a driver's "please call the customer" request on a route — references only (§31). */
+/** U7 (OB-726 · OB-700): a driver's "please call the customer" request on a route — references only (§31). */
 export interface BoardCallRequest {
   readonly stopId: string; readonly orderRef: string; readonly driverId: string; readonly area: string | null; readonly at: string;
   readonly toldUserIds: readonly string[]; readonly called: { readonly by: string; readonly at: string } | null;

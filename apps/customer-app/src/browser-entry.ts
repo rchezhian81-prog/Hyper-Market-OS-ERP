@@ -412,7 +412,7 @@ export interface MyLoyalty {
   readonly worthMinor?: number;
   readonly say: string;
   readonly howToSpend?: string;
-  /** U7 (OB-725) · M17-FR-01: my tier and the expiry rule as head office sends them (read by `standingLines`). */
+  /** U7 (OB-726) · M17-FR-01: my tier and the expiry rule as head office sends them (read by `standingLines`). */
   readonly tier?: unknown;
   readonly expiry?: unknown;
 }

@@ -34,7 +34,7 @@ describe.skipIf(!HAVE_BROWSER)('Help and procedures: the manager tools on the st
     await m.page.waitForSelector('#manage:not([hidden])');
     await m.page.fill('#w-id', 'EM-FIRE'); await m.page.selectOption('#w-cat', 'emergency');
     await m.page.fill('#w-title', 'Fire'); await m.page.fill('#w-title-ta', 'தீ');
-    // U7 (OB-725): the roles are picked by name on the chrome's several-role sheet, from the role register the store
+    // U7 (OB-726): the roles are picked by name on the chrome's several-role sheet, from the role register the store
     // computer's pack holds (this test shop's register names one role per test person); the ids land in the field.
     await m.page.click('#w-roles-pick');
     await m.page.waitForSelector('#sre-picker-list .sre-picker-row[data-id="r-u-mgr"]');

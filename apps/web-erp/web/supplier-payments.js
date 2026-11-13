@@ -2,7 +2,7 @@
 // (apps/web-erp/src/supplier-payment-session.ts, window.supplierPayments). It RECORDS that money was paid — no money moves
 // from this page. Ask → a different person approves on their Approvals page → record here, naming that approval; what is
 // recorded is exactly what was approved. Nothing is read on open. No prompt/confirm/alert.
-// U7 · OB-723: the same section is on the Suppliers page AND the Supplier bills page; the supplier is picked by name, the day
+// U7 · OB-724: the same section is on the Suppliers page AND the Supplier bills page; the supplier is picked by name, the day
 // is the shop's dd/mm/yyyy field, the bills it settles may be named, and recording asks the shared confirm sheet first.
 
 const $ = (id) => document.getElementById(id);

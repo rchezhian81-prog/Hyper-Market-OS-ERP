@@ -37,7 +37,7 @@ const matchChip = (m) => {
   const o = office(); if (o === null) return document.createTextNode(t(m.kind));
   if (m.kind === 'provider_payout') return o.chip('ok', `${t('provider_payout')} · ${t('batch')} ${m.batchId}`);
   if (m.kind === 'cash_deposit') return o.chip('ok', `${t('cash_deposit')} · ${t('slip')} ${m.slipRef}`);
-  // U7 · OB-723: a debit line matched by its reference to a supplier payment recorded on the Supplier bills page
+  // U7 · OB-724: a debit line matched by its reference to a supplier payment recorded on the Supplier bills page
   if (m.kind === 'supplier_payment') { const n = o.nameOf('supplier', m.supplierId); return o.chip('ok', `${t('supplier_payment')} · ${n && n !== m.supplierId ? n : m.supplierId} · ${t('paymentRef')} ${m.reference}`); }
   if (m.kind === 'exception') return o.chip(m.state === 'resolved' ? 'ok' : m.overdue ? 'error' : 'pending', `${t('exception')} · ${m.state === 'resolved' ? t('resolved') : m.overdue ? t('overdue') : t('open')}`);
   return o.chip('degraded', t('unmatched'));

@@ -797,7 +797,7 @@ export function createImportChecksSession(input: { readonly viewer: Viewer; read
     quality: async (): Promise<W5Outcome<QualityRead>> => gate(R) ?? call<QualityRead>('GET', '/v1/purchase/import-quality'),
     source: async (sourceId: string): Promise<W5Outcome<QualityRow & { topReasons?: readonly { reason?: string; count?: number }[] }>> => gate(R) ?? call('GET', `/v1/purchase/import-quality/${enc(sourceId)}`),
     jobs: async (): Promise<W5Outcome<readonly JobRow[]>> => gate(R) ?? map(await call<{ jobs?: JobRow[] }>('GET', '/v1/purchase/import-jobs'), (b) => b.jobs ?? []),
-    /** U7 (OB-725): ONE page of every job, searched and sorted by head office, with the total of all of them. */
+    /** U7 (OB-726): ONE page of every job, searched and sorted by head office, with the total of all of them. */
     jobsPage: async (ask: RegisterAsk): Promise<W5Outcome<{ readonly rows: readonly JobRow[]; readonly total: number }>> => {
       const no = gate(R); if (no !== undefined) return no;
       const out = await call<unknown>('GET', `/v1/purchase/import-jobs?${pagedQuery(ask, { when: 'uploadedAt', file: 'fileName' })}`);

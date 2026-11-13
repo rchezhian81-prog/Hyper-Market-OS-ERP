@@ -141,7 +141,7 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     expect(await flagged.locator('.flag-words').innerText()).toBe(' · Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
     expect(await flagged.innerText()).toMatch(/Code: WRONG · Where: AWAY from the address \(\d+ m\)/);
 
-    // ── U7 (OB-725 · OB-700): the driver asks the store to call the customer; the board lists it, not called yet; the store
+    // ── U7 (OB-726 · OB-700): the driver asks the store to call the customer; the board lists it, not called yet; the store
     // calls from the order's own record and ticks it — the request's alert ticked as seen — and the board reads it called.
     const asked = await cloud.request({ method: 'POST', path: `/v1/delivery/routes/${encodeURIComponent(route.routeId)}/stops/${encodeURIComponent(stop.stopId)}/call-request/synced`, userId: OWNER, idempotencyKey: `call-${stop.stopId}`, body: {
       routeId: route.routeId, stopId: stop.stopId, driverId: 'u-driver', orderRef: 'ORD-1', area: 'Near the market', occurredAt: new Date().toISOString(),

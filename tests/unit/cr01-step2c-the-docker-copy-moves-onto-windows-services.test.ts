@@ -142,7 +142,7 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     expect(await main(['setup'], d)).toBe(0);
     const out = said(w);
     expect(out).toMatch(/^The shop database on this PC was made EMPTY, without the shop's data from Docker/m);
-    expect(out).toMatch(/^The new database holds no records \(no event at all\): it is set aside, kept, and the move from Docker runs now\.$/m);
+    expect(out).toMatch(/^The new database holds no records: it is set aside, kept, and the move from Docker runs now\.$/m);
     expect(d.fs.readdirSync('F:\\SRE-data').some((f) => f.startsWith('database-empty-not-moved-'))).toBe(true);
     expect(out).toMatch(/^MATCHED — the new database holds exactly what the Docker copy held/m);
     expect(out).toMatch(/^MOVED — /m);
@@ -159,19 +159,65 @@ describe('setup on the owner\'s PC: the Docker copy is moved, everything kept', 
     const stoppedDbRefuses: Deps = { ...d, spawn: (cmd, args, o) => (String(cmd).endsWith('psql.exe') && win.services.get(SERVICES.database)?.state !== 'running' ? { status: 2, stdout: '', stderr: 'psql: error: connection to server at "127.0.0.1", port 5432 failed: Connection refused' } : spawn(cmd, args, o)) };
     expect(await main(['setup'], stoppedDbRefuses)).toBe(0);
     const out = said(w);
-    expect(out).toMatch(/^The new database holds no records \(no event at all\)/m);
+    expect(out).toMatch(/^The new database holds no records: it is set aside/m);
     expect(out).toMatch(/^MOVED — /m);
     expect(win.nativeDbs['sre_real']).toEqual(w.docker.data['sre_real']);
   });
 
-  it('the services were made and the new database ALREADY holds records: REFUSED, nothing changed, nothing moved over it', async () => {
+  it('the new database holds MONEY records (it was traded on): REFUSED, nothing changed, nothing moved over it', async () => {
     const { w, d, win } = await leftBehind();
     win.nativeDbs['sre_real'] = { tables: { event_ledger: 3 }, values: { SaleCommitted: 5_000 }, maxSeq: 3, migrations: ['0001_a.sql'] };
     expect(await main(['setup'], d)).toBe(2);
-    expect(said(w)).toMatch(/^REFUSED — the new database on this PC already holds records \(newest event number 3\): something was done with it\. Nothing was changed/m);
+    expect(said(w)).toMatch(/^REFUSED — the new database on this PC holds money records \(SaleCommitted 5000\): it was traded on\. Nothing was changed/m);
     expect(win.services.size).toBe(3);
     expect(d.fs.readdirSync('F:\\SRE-data').some((f) => f.startsWith('database-empty-not-moved-'))).toBe(false);
     expect(w.killed).toEqual([]);
+  });
+
+  // Gap audit, 13 Nov 2026, before the owner's next run.
+  it('records with no money in them (a sign-in on the office page): set aside WITH the empty database, said, and the move runs', async () => {
+    const { w, d, win } = await leftBehind();
+    win.nativeDbs['sre_real'] = { tables: { event_ledger: 2 }, values: {}, maxSeq: 2, migrations: ['0001_a.sql'] };
+    expect(await main(['setup'], d)).toBe(0);
+    const out = said(w);
+    expect(out).toMatch(/^The new database holds no money records \(2 other record\(s\), such as sign-ins\): it is set aside with them, kept, and the move from Docker runs now\.$/m);
+    expect(out).toMatch(/^MOVED — /m);
+  });
+
+  it('Docker\'s copy is stopped BEFORE the new database is started and looked at (they listen in the same place)', async () => {
+    const { d, win } = await leftBehind();
+    const from = win.calls.length; // only this run's calls
+    expect(await main(['setup'], d)).toBe(0);
+    const calls = win.calls.slice(from);
+    const stopAt = calls.findIndex((c) => c.cmd === 'docker' && c.args.includes('stop'));
+    const dbStartAt = calls.findIndex((c) => c.cmd === 'sc.exe' && c.args[0] === 'start' && c.args[1] === SERVICES.database);
+    expect(stopAt).toBeGreaterThan(-1);
+    expect(stopAt).toBeLessThan(dbStartAt);
+  });
+
+  it('the database that answers is NOT this PC\'s new one (Docker\'s, still listening): REFUSED — nothing counted, nothing changed', async () => {
+    const { w, d, win } = await leftBehind();
+    const spawn = d.spawn;
+    const dockersAnswers: Deps = { ...d, spawn: (cmd, args, o) => (String(cmd).endsWith('psql.exe') && args.includes('SHOW data_directory') ? { status: 0, stdout: '/var/lib/postgresql/data\n', stderr: '' } : spawn(cmd, args, o)) };
+    expect(await main(['setup'], dockersAnswers)).toBe(2);
+    expect(said(w)).toMatch(/^REFUSED — the database that answered is not this PC's new one \(its files are in \/var\/lib\/postgresql\/data, not F:\\SRE-data\\database\)\. Nothing was changed\./m);
+    expect(win.services.size).toBe(3);
+    expect(d.fs.readdirSync('F:\\SRE-data').some((f) => f.startsWith('database-empty-not-moved-'))).toBe(false);
+  });
+
+  it('the till\'s old process number now belongs to ANOTHER program (after a restart): it is not stopped', async () => {
+    const { w, d } = await ownersPc();
+    const other: Deps = { ...d, processCommandLine: () => 'C:\\Windows\\explorer.exe' };
+    expect(await main(['setup'], other)).toBe(0);
+    expect(w.killed).toEqual([]);
+    expect(said(w)).not.toMatch(/The till started at sign-in .* is stopped/);
+  });
+
+  it('the till\'s process really is the till (its command line is the store edge): it is stopped for the move', async () => {
+    const { w, d } = await ownersPc();
+    const till: Deps = { ...d, processCommandLine: () => '"C:\\Program Files\\nodejs\\node.exe" C:\\SRE-2026-11\\edge\\store-edge\\dist\\start.js' };
+    expect(await main(['setup'], till)).toBe(0);
+    expect(w.killed).toEqual([4242]);
   });
 
   it('the services were made EMPTY and Docker Desktop is not running: REFUSED, nothing changed', async () => {
@@ -297,7 +343,8 @@ describe('after the move, the tool asks the database service — not Docker', ()
     expect(said(w)).toMatch(/NOT YET — this copy runs as Windows services .*CR-01 step 3/);
     w.said.length = 0;
     expect(await main(['update', '--from', 'C:\\SRE-new'], d)).toBe(2);
-    expect(said(w)).toMatch(/NOT YET — this copy runs as Windows services .*CR-01 step 3/);
+    // CR-01 step 3d: a Windows-services copy is updated from the Software update page, never from a folder.
+    expect(said(w)).toMatch(/NOT HERE — this copy runs as Windows services .*Software update page.*CR-01 step 3d/);
   });
 });
 

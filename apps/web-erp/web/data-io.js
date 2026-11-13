@@ -264,7 +264,7 @@ function renderPreview(preview, changes) {
 
 /** M30 round 8 — the loads already applied, each in place or undone; one this person may undo carries a reason box, "Ask to
  *  undo" and "Undo it". Both are explicit clicks; the list itself is a GET.
- *  U7 (OB-725): the list is the chrome's register, read ONE page at a time from head office (its loader) — search and sort
+ *  U7 (OB-726): the list is the chrome's register, read ONE page at a time from head office (its loader) — search and sort
  *  at head office, newest first. A row is drawn in the reader's language when it is drawn; "Undo it" opens the confirm
  *  sheet (it puts records back) before anything is sent. */
 let loadsTable = null; let loadsDenied = false;

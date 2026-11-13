@@ -3,7 +3,7 @@ import { creditDrafts, approvedClaimCredits, claimDisputes, type ClaimCreditDeci
 import { planPayablesPostings, type PayablesAccount } from '../../packages/finance/src/index';
 
 /**
- * U7 · OB-724 · M24-FR-02 alt — the pure reads behind the supplier-claims register: an accepted claim with a value is a draft
+ * U7 · OB-725 · M24-FR-02 alt — the pure reads behind the supplier-claims register: an accepted claim with a value is a draft
  * credit; only the FIRST decision per credit stands and only an approved one is a fact; a rejected claim is a dispute that
  * reads overdue once the shop day after the one it was raised on has begun; an approved credit posts once.
  */

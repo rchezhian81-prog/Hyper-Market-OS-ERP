@@ -5,7 +5,7 @@ import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '.
 import { sentWithApproval, approvedRequestId } from '../support/approval-request';
 
 /**
- * **U7 · OB-723 (owner, in writing: B) · M23-FR-01 · M23-FR-03 · WF-18.** The accountant records a payment to a supplier —
+ * **U7 · OB-724 (owner, in writing: B) · M23-FR-01 · M23-FR-03 · WF-18.** The accountant records a payment to a supplier —
  * amount, day, bank reference and the BILLS it settles — with a second person's approval (§28); payables outstanding falls.
  * On the bank reconciliation, the statement's debit line that names the payment's reference for exactly that amount is
  * MATCHED to the supplier payment (no exception to raise; one raised on it is refused); a line naming the same reference for
@@ -16,7 +16,7 @@ const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: '
 const [y, m, d] = day.split('-');
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-describe('U7 · a supplier payment is matched to its bank line by reference (OB-723)', () => {
+describe('U7 · a supplier payment is matched to its bank line by reference (OB-724)', () => {
   it('pays two named bills; owed falls; the bank line naming the reference is matched to the payment; a mismatched amount stays unmatched', async () => {
     const h = apiHarness();
     const T = randomUUID();

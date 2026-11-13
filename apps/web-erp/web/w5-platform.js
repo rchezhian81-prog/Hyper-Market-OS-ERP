@@ -510,7 +510,7 @@ function importChecks(root) {
       if (o.result === 'ok') await showKept();
     }), el('h3', w('dryListH')), kept);
     // M30-FR-04: data quality per source, and every job (refusals included).
-    // U7 (OB-725): every job is read ONE page at a time from head office on the chrome's register (its loader) — search
+    // U7 (OB-726): every job is read ONE page at a time from head office on the chrome's register (its loader) — search
     // and sort at head office, the total of all the jobs, never the first fifty.
     const sources = el('ul', null, { id: 'w5-qual-list' }); const talk = el('p', null, { id: 'w5-qual-talk', class: 'meta' }); const jobs = el('div', null, { id: 'w5-qual-jobs-host' });
     r.append(el('h2', w('qualH'), { id: 'w5-qual-h' }), el('p', w('qualLead'), { class: 'lede' }), button('w5-qual-show', w('show'), async () => {

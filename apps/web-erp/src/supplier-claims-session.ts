@@ -10,7 +10,7 @@
 //     reason (`POST /v1/supplier-portal/partners/:id/submissions/:sid/review`, `supplier.portal.review`, never the person
 //     who sent it; accepting is money — the confirm sheet first).
 // U7 adds the two steps after a buyer's decision on a supplier's claim:
-//   • OB-724 (owner, in writing: B) — an ACCEPTED claim with a value is a DRAFT credit to the supplier; the ACCOUNTANT (a
+//   • OB-725 (owner, in writing: B) — an ACCEPTED claim with a value is a DRAFT credit to the supplier; the ACCOUNTANT (a
 //     second person, never the buyer who accepted it) approves or refuses it with a reason
 //     (`POST /v1/purchase/supplier-claims/credits/:supplierId/:submissionId`, `purchase.supplier.pay`; approving is money —
 //     the confirm sheet first). Only an approved credit counts on the supplier's account and posts to the books.
@@ -88,7 +88,7 @@ export interface ClaimDispute {
 export interface ClaimsRegister {
   readonly shopClaims: readonly ShopClaim[];
   readonly supplierClaims: readonly SupplierClaim[];
-  /** U7 · OB-724 — absent from an older head office: read as none, said as "not known" by the page. */
+  /** U7 · OB-725 — absent from an older head office: read as none, said as "not known" by the page. */
   readonly creditDrafts?: readonly CreditDraft[];
   /** U7 · M24-FR-02 alt — absent from an older head office. */
   readonly disputes?: readonly ClaimDispute[];
@@ -122,7 +122,7 @@ export const SUPPLIER_CLAIMS_COPY = {
     needReason: 'Give the reason first. Nothing was decided.', notConfirmed: 'Not confirmed — nothing was changed.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or changed.', reading: 'Reading from head office…',
     headOfficeEnglish: 'Head office\'s own sentences are in English.', notKnownValue: 'Not known',
-    // U7 · OB-724 — draft credits from accepted claims
+    // U7 · OB-725 — draft credits from accepted claims
     creditsH: 'Credits to approve', creditsLead: 'A supplier\'s claim a buyer accepted is a draft credit: it moves no money until the accountant — someone other than the buyer who accepted it — approves it. Approved, the shop owes the supplier that much more and it goes to the books. Refused, it is kept with the reason and counts for nothing.',
     credit: 'Credit', amount: 'Amount', acceptedBy: 'Accepted by', acceptedOn: 'Accepted on', approvedBy: 'Decided by',
     credit_draft: 'Draft — waiting for the accountant', credit_approved: 'Approved — on the account', credit_refused: 'Refused — counts for nothing',

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { pageOf, PAGE_LIMITS } from '../../services/kernel/src/paging';
 
 /**
- * U7 (OB-725) · G17 "registers with search, sort and paging": a list that can grow to thousands of rows (the audit trail,
+ * U7 (OB-726) · G17 "registers with search, sort and paging": a list that can grow to thousands of rows (the audit trail,
  * import history, price history, requisitions, ESL pushes) is paged by HEAD OFFICE when the page asks for a page — the
  * search, the sort and the page come from the query, and the answer says the total it searched, so the register can say
  * "Showing 21–40 of 312". Without `?page=` a route answers as it always did (every older caller keeps working).

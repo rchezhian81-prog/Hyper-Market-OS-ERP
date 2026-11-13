@@ -1,4 +1,4 @@
-// U7 (OB-725) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the two lines under "My points": my tier (and what
+// U7 (OB-726) · M17-FR-01 "tiers, expiry" · §27 "Customer: Loyalty" — the two lines under "My points": my tier (and what
 // the next tier needs) and when my points expire, from head office's `GET /v1/me/loyalty` (`tier`, `expiry`). Read, never
 // moved from the app. Not set is said as not set (OB-295); the expiry day is the SHOP's day; a reply without the fields
 // (an older head office) or with a shape this cannot read shows no line — never a guess.

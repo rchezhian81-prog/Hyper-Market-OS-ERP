@@ -298,7 +298,7 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     stopUpdates: async (t, r) => runs.stopUpdates(t, r),
     settlement: async (t, r) => runs.settlement(t, r),
     handover: async (t, r) => runs.handover(t, r),
-    // U7 (OB-725 · OB-700): each driver call request on the route, with "called" read from its alert's acknowledgement.
+    // U7 (OB-726 · OB-700): each driver call request on the route, with "called" read from its alert's acknowledgement.
     callRequestsOnRoute: async (t, routeId) => {
       const asked = await runs.callRequests?.(t, routeId) ?? [];
       if (asked.length === 0) return [];

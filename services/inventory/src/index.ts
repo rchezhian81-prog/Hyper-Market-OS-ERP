@@ -580,7 +580,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       },
     },
     {
-      // U7 (OB-725) · the batch DIRECTORY: a product's batches on hand at every place the reader may see, by place then
+      // U7 (OB-726) · the batch DIRECTORY: a product's batches on hand at every place the reader may see, by place then
       // earliest expiry, so the office picks a batch by product (the quarantine hold form) instead of typing its id. The
       // same stock-read scope as availability: a place outside the caller's branches is never listed.
       api: 'API-04', method: 'GET', path: '/v1/inventory/batch-directory',

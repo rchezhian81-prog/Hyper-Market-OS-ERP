@@ -88,14 +88,14 @@ export interface SupplierPayment {
    */
   readonly tds?: TdsDeduction;
   /**
-   * U7 · OB-723 (owner, in writing: B): the supplier's bills this payment settles, as the accountant named them on the
+   * U7 · OB-724 (owner, in writing: B): the supplier's bills this payment settles, as the accountant named them on the
    * Supplier bills page — each one this supplier's own bill. Absent on a payment recorded without naming bills (older ones).
    */
   readonly settles?: readonly string[];
 }
 
 /**
- * OB-724 (owner, 13 Nov 2026, in writing: B) — a supplier's CLAIM on the shop that a buyer accepted becomes a DRAFT credit
+ * OB-725 (owner, 13 Nov 2026, in writing: B) — a supplier's CLAIM on the shop that a buyer accepted becomes a DRAFT credit
  * note to the supplier (supplier-claims.ts); it changes nothing until the accountant — a second person, never the buyer who
  * accepted the claim — APPROVES it. Only an approved credit is a fact the account counts: it raises what the shop owes the
  * supplier by the claim's value, and the payables run posts it through the accountant's own rule (planPayablesPostings).
@@ -283,7 +283,7 @@ export interface SupplierAccountTotals {
   readonly debitNotesMinor: number;
   /** Σ payments recorded against the supplier (SP-7c). */
   readonly paidMinor: number;
-  /** OB-724 — Σ the supplier's accepted claims the accountant APPROVED as credits: added to what is owed. */
+  /** OB-725 — Σ the supplier's accepted claims the accountant APPROVED as credits: added to what is owed. */
   readonly claimCreditsMinor: number;
   /** GT-05 — Σ SIGNED opening balances carried from the old system (supplier-openings.ts). */
   readonly openingMinor: number;
@@ -306,7 +306,7 @@ export interface SupplierAccountStatement extends PayablesAccount {
   /** Batch 2 — quarantined lines disposed of as returns, and whether they have physically gone back. */
   readonly pendingLineReturns: readonly PendingLineReturn[];
   readonly payments: readonly SupplierPayment[];
-  /** OB-724 — the supplier's accepted claims the accountant approved as credits (raise what is owed). */
+  /** OB-725 — the supplier's accepted claims the accountant approved as credits (raise what is owed). */
   readonly claimCredits: readonly SupplierClaimCredit[];
   /** GT-05 — the legacy bills still outstanding at cutover, each with its sign-off state. */
   readonly openings: readonly AccountOpening[];
@@ -339,7 +339,7 @@ export interface SupplierAccountInput {
   readonly openings?: readonly AccountOpening[];
   /** R3 · OB-196 — every door debit note (all suppliers). Optional for callers that have none. */
   readonly doorDebitNotes?: readonly DoorDebitNote[];
-  /** OB-724 — every APPROVED claim credit (all suppliers). Optional for callers that have none. */
+  /** OB-725 — every APPROVED claim credit (all suppliers). Optional for callers that have none. */
   readonly claimCredits?: readonly SupplierClaimCredit[];
   readonly asAt: string;
 }
@@ -466,7 +466,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
   const supplierIds = [...new Set([
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
     ...(input.openings ?? []).map((o) => o.supplierId), ...(input.doorDebitNotes ?? []).map((d) => d.supplierId), // OB-196
-    ...(input.claimCredits ?? []).map((c) => c.supplierId), // OB-724
+    ...(input.claimCredits ?? []).map((c) => c.supplierId), // OB-725
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -499,7 +499,7 @@ export interface SupplierAccountDeps {
   readonly openingBalances?: (tenantId: string) => Promise<readonly AccountOpening[]> | readonly AccountOpening[];
   /** R3 · OB-196 — the debit notes raised at the DSD door, numbered. Optional: a stub has none. */
   readonly doorDebitNotes?: (tenantId: string) => Promise<readonly DoorDebitNote[]> | readonly DoorDebitNote[];
-  /** OB-724 — the supplier claims the accountant approved as credits. Optional: a stub has none. */
+  /** OB-725 — the supplier claims the accountant approved as credits. Optional: a stub has none. */
   readonly claimCredits?: (tenantId: string) => Promise<readonly SupplierClaimCredit[]> | readonly SupplierClaimCredit[];
   readonly now: () => string;
 }

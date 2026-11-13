@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 /**
- * U7 (OB-725) · M21-FR-04: the Customer satisfaction page could not say "already rated" — scores were readable only folded
+ * U7 (OB-726) · M21-FR-04: the Customer satisfaction page could not say "already rated" — scores were readable only folded
  * into the report. `GET /v1/service/cases/:caseId/satisfaction` reads the scores recorded on ONE case (append-only, so
  * every one, oldest first): none yet is said as `rated: false`, never a 0 score; a case that does not exist is 404; the
  * read needs `service.case.read` (a cashier is refused).

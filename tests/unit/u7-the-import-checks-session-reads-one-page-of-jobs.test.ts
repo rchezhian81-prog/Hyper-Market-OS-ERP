@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createImportChecksSession } from '../../apps/web-erp/src/w5-platform-session';
 
-// U7 (OB-725) · Data in and out: "Every file loaded, refused or abandoned" is read ONE page at a time from head office
+// U7 (OB-726) · Data in and out: "Every file loaded, refused or abandoned" is read ONE page at a time from head office
 // through the register's loader (search and sort at head office), with the total of every job — never the first fifty.
 
 function fake() {

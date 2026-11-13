@@ -4,7 +4,7 @@ import { apiHarness } from '../support/api-harness';
 import { seedOnlineShop, callsFor, CUSTOMER, MANAGER } from '../support/online-shop';
 
 /**
- * U7 (OB-725) · M17-FR-01 "tiers, expiry": the customer's own points card says their TIER and when points EXPIRE, the
+ * U7 (OB-726) · M17-FR-01 "tiers, expiry": the customer's own points card says their TIER and when points EXPIRE, the
  * same standing the desk reads (`/v1/loyalty/members/:ref/standing`), as a customer-facing slice of it. With no tiers or
  * no expiry set by the owner, each is SAID as not set — never a made-up ladder, never "no expiry" when the owner simply
  * has not decided. Nothing here moves a point.

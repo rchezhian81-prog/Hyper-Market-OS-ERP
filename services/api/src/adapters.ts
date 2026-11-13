@@ -214,7 +214,7 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy, OtherChargesMarking } from '../../purchase/src/index';
 import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
-import { approvedClaimCredits, type ClaimCreditDecision } from '../../purchase/src/supplier-claims'; // U7 · OB-724
+import { approvedClaimCredits, type ClaimCreditDecision } from '../../purchase/src/supplier-claims'; // U7 · OB-725
 import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff, type SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
@@ -1547,7 +1547,7 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
 const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
-/** U7 · OB-724 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
+/** U7 · OB-725 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
 export const SUPPLIER_CLAIM_CREDITS_STREAM = streamName(STREAM.purchase, 'supplier-claim-credits');
 /** U7 · M24-FR-02 alt — how each disputed (rejected) supplier claim was settled (append-only; first per dispute stands). */
 export const SUPPLIER_CLAIM_DISPUTES_STREAM = streamName(STREAM.purchase, 'supplier-claim-disputes');
@@ -8628,7 +8628,7 @@ export function supplierAccountAdapter(input: {
     ),
     // R3 OB-196: the numbered debit notes raised at the DSD door (the check-in register, r3-ops-adapters.ts) — on the statement.
     doorDebitNotes: async (tenantId) => doorDebitNotesFrom(await allOf<DoorCheckInForAccount>(input.store, tenantId, streamName(STREAM.inventory, 'dsd-checkins'), 'DsdCheckInRecorded')),
-    // U7 · OB-724: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
+    // U7 · OB-725: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
     claimCredits: async (tenantId) => approvedClaimCredits(await allOf<ClaimCreditDecision>(input.store, tenantId, SUPPLIER_CLAIM_CREDITS_STREAM, 'SupplierClaimCreditDecided')),
   };
 }

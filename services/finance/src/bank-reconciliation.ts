@@ -17,7 +17,7 @@
 // supplier payment ref) so the books can follow — the posting itself stays with the day book and the payables.
 // No card number, no account number: a statement line carries only the bank's reference and narrative (hard rule #3).
 //
-// U7 · OB-723 (owner, in writing: B): a DEBIT line is also matched to a SUPPLIER PAYMENT the accountant recorded (with a
+// U7 · OB-724 (owner, in writing: B): a DEBIT line is also matched to a SUPPLIER PAYMENT the accountant recorded (with a
 // second person's approval) on the Supplier bills page — by the payment's bank reference, for exactly what left the
 // account (the net after any TDS withheld). A cash payment never reached the bank and is never matched; one payment
 // matches one line (the first that names it); a line naming a reference whose amount differs stays unmatched — the
@@ -30,7 +30,7 @@ import type { BankStatement, BankStatementLine } from '../../../packages/finance
 import type { CashDepositView } from './cash-deposits';
 import type { SettlementBatch } from './settlement';
 
-/** U7 · OB-723 — what bank reconciliation needs of a recorded supplier payment (supplier-account.ts `SupplierPayment`). */
+/** U7 · OB-724 — what bank reconciliation needs of a recorded supplier payment (supplier-account.ts `SupplierPayment`). */
 export interface BankSupplierPayment {
   readonly paymentId: string;
   readonly supplierId: string;
@@ -121,7 +121,7 @@ export function reconcileBankStatement(input: {
   readonly batches: readonly SettlementBatch[];
   readonly deposits: readonly CashDepositView[];
   readonly exceptions: readonly BankLineExceptionView[];
-  /** U7 · OB-723 — the supplier payments recorded on the books. Optional: none known matches none. */
+  /** U7 · OB-724 — the supplier payments recorded on the books. Optional: none known matches none. */
   readonly supplierPayments?: readonly BankSupplierPayment[];
 }): StatementReconciliation {
   const s = input.statement;
@@ -130,7 +130,7 @@ export function reconcileBankStatement(input: {
   const exceptionByLine = new Map<string, BankLineExceptionView>();
   for (const e of input.exceptions) if (e.statementId === s.statementId && !exceptionByLine.has(e.lineId)) exceptionByLine.set(e.lineId, e);
   const names = (l: BankStatementLine, id: string): boolean => l.reference.includes(id) || (l.narrative ?? '').includes(id);
-  // OB-723: each non-cash supplier payment claims the first debit line of exactly its net that names its reference.
+  // OB-724: each non-cash supplier payment claims the first debit line of exactly its net that names its reference.
   const paymentByLine = new Map<string, BankSupplierPayment>();
   for (const p of input.supplierPayments ?? []) {
     const ref = p.reference.trim();
@@ -173,7 +173,7 @@ export interface BankReconciliationDeps {
   readonly statements: (tenantId: string) => Promise<readonly BankStatement[]>;
   readonly batches: (tenantId: string) => Promise<readonly SettlementBatch[]>;
   readonly depositViews: (tenantId: string) => Promise<readonly CashDepositView[]>;
-  /** U7 · OB-723 — the supplier payments recorded (and approved) on the books. Optional: none wired matches none. */
+  /** U7 · OB-724 — the supplier payments recorded (and approved) on the books. Optional: none wired matches none. */
   readonly supplierPayments?: (tenantId: string) => Promise<readonly BankSupplierPayment[]>;
   readonly exceptionsRaised: (tenantId: string) => Promise<readonly BankLineException[]>;
   readonly exceptionsResolved: (tenantId: string) => Promise<readonly BankLineExceptionResolved[]>;

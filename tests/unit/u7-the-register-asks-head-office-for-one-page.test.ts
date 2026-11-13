@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { pagedQuery, pagedAnswer } from '../../apps/web-erp/src/register-paging';
 import { createRequisitionsSession } from '../../apps/web-erp/src/requisitions-session';
 
-// U7 (OB-725) · the long lists are paged by head office. The chrome's register hands a loader
+// U7 (OB-726) · the long lists are paged by head office. The chrome's register hands a loader
 // `{ page (0-based), size, search, sort (column key | null), dir }`; head office reads `?page=` from 1, `size`, `search`,
 // `sort` (its own field name) and `dir`, and answers one page with `paging.total`. These helpers translate both ways.
 

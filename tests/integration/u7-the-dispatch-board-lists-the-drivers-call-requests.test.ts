@@ -3,7 +3,7 @@ import { useRestartableBackings } from '../support/p3-backings';
 import { fulfilmentShop, dayFigures, OWNER, DISPATCHER, DRIVER, STORE_ID, DOORS, type Shop } from '../support/fulfilment-shop';
 
 /**
- * **U7 (OB-725 · OB-700 · M19 · §31) — the Dispatch board lists the drivers' "please call the customer" requests.**
+ * **U7 (OB-726 · OB-700 · M19 · §31) — the Dispatch board lists the drivers' "please call the customer" requests.**
  * Through the real API, in memory and on real PostgreSQL: the board's route carries each request (the stop, the order
  * reference, the driver, the area, when, who at the store was told) and whether the store has called — "called" is the
  * store ticking the request's operational alert as seen (the append-only acknowledgement every alert rides), so the board

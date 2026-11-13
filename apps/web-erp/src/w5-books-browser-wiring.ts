@@ -50,7 +50,7 @@ export function wireW5Books(win: Record<string, unknown>, viewerIdentity: (raw: 
     win['relatedPartyOrders'] = { session: createRelatedPartyOrderSession({ viewer: buyerOf(win['buyingData']) }), words: relatedPartyOrderWords, outcomeWords: relatedPartyOrderOutcomeWords };
   }
   // M23-FR-01 · §28: Suppliers — record a payment to a supplier, asked for and approved by a second person.
-  // U7 · OB-723: and on the Supplier bills page, where the bills a payment settles are read.
+  // U7 · OB-724: and on the Supplier bills page, where the bills a payment settles are read.
   const payViewer = win['suppliersData'] ?? win['supplierBillsData'];
   if (payViewer !== undefined) {
     win['supplierPayments'] = { session: createSupplierPaymentSession({ viewer: viewerIdentity(payViewer) }), words: supplierPaymentWords, outcomeWords: supplierPaymentOutcomeWords, rupees, methods: PAY_METHODS, today: shopToday };

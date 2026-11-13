@@ -4,7 +4,7 @@ import type { ImportJobRecord } from '../../packages/import/src/job-history';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 
 /**
- * U7 (OB-725) · the import job history (every job, refusals included — M30-FR-04) is paged by head office when the page
+ * U7 (OB-726) · the import job history (every job, refusals included — M30-FR-04) is paged by head office when the page
  * asks: one page, the total of ALL the jobs that match (no longer cut at the first 50 without a word — P-08), a search
  * over the file, the source, the uploader and the outcome, and a sort by time or file. Without ?page= the old answer.
  */

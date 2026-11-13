@@ -219,7 +219,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
         const all = await deps.entries(ctx.tenantId, productId);
         if (all.length === 0) throw notFound(`a price list for ${productId}`);
         const entries = priceHistory(all, productId);
-        // U7 (OB-725): with ?page= head office pages the history (search by entry, scope, store; sort by day or version).
+        // U7 (OB-726): with ?page= head office pages the history (search by entry, scope, store; sort by day or version).
         const view = entries.map((e, i) => ({ i, id: e.id, scope: e.scope, scopeRef: e.scopeRef ?? '', effectiveFrom: e.effectiveFrom, version: e.version }));
         const paged = pageOrRefuse(view, ctx.query, { search: ['id', 'scope', 'scopeRef'], sort: ['effectiveFrom', 'version'] });
         if (paged !== undefined) return { status: 200, body: { productId, entries: paged.rows.map((v) => entries[v.i]!), paging: paged.paging } };

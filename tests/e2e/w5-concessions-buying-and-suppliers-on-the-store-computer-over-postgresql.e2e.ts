@@ -190,7 +190,7 @@ describe.skipIf(!HAVE_BROWSER)('W5 · concessions, buying and suppliers on the s
   it('M23-FR-01 · §28: a supplier payment asked, approved by a second person, recorded as approved; one above the balance refused', async () => {
     const p = await open(P3.PAYER, '/suppliers');
     await p.page.waitForSelector('#pay:not([hidden])');
-    // U7 · OB-723: the day is the shop's shared date field — it shows the shop's own day as dd/mm/yyyy and reads back as ISO.
+    // U7 · OB-724: the day is the shop's shared date field — it shows the shop's own day as dd/mm/yyyy and reads back as ISO.
     await p.page.waitForFunction('globalThis.sreOffice !== undefined && document.querySelector("#pay-on")?.dataset.shopDate === "on"');
     expect(await p.page.inputValue('#pay-on'), 'the shop\'s own date, as a shop person writes it').toBe(`${TODAY.slice(8, 10)}/${TODAY.slice(5, 7)}/${TODAY.slice(0, 4)}`);
     expect(await p.page.evaluate(() => (globalThis as unknown as { sreOffice: { dateOf(id: string): string | null } }).sreOffice.dateOf('pay-on')), 'the shop\'s own date').toBe(TODAY);

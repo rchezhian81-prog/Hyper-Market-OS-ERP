@@ -11,7 +11,7 @@
 // supplier-master.ts; decide a supplier's claim: supplier-portal.ts review).
 //
 // Round U7 adds two governed steps after a buyer's decision on a supplier's claim:
-//   • OB-724 (owner, 13 Nov 2026, in writing: B) — an ACCEPTED claim with a value is a DRAFT credit note to the supplier. It is
+//   • OB-725 (owner, 13 Nov 2026, in writing: B) — an ACCEPTED claim with a value is a DRAFT credit note to the supplier. It is
 //     read, never stored: the accepted claim IS the draft. It moves no money until the ACCOUNTANT approves it — a second
 //     person, never the buyer who accepted the claim nor whoever sent it — and only then is it a fact
 //     (`SupplierClaimCreditDecided`, approved) the supplier account counts (what the shop owes rises) and the payables run
@@ -38,7 +38,7 @@ export interface SupplierClaimsDeps {
   readonly reviews?: (tenantId: string, partnerId: string) => Promise<readonly SubmissionReview[]> | readonly SubmissionReview[];
   /** The supplier's name on the master, for the register's rows. */
   readonly supplierName?: (tenantId: string, supplierId: string) => Promise<string | undefined> | string | undefined;
-  /** OB-724 — the accountant's decisions on draft credits (append-only; the first per credit stands). Optional: none yet. */
+  /** OB-725 — the accountant's decisions on draft credits (append-only; the first per credit stands). Optional: none yet. */
   readonly creditDecisions?: (tenantId: string) => Promise<readonly ClaimCreditDecision[]> | readonly ClaimCreditDecision[];
   readonly recordCreditDecision?: (tenantId: string, d: ClaimCreditDecision) => Promise<void> | void;
   /** M24-FR-02 alt — how each disputed (rejected) claim was settled (append-only; the first per claim stands). */
@@ -50,7 +50,7 @@ export interface SupplierClaimsDeps {
   readonly now: () => string;
 }
 
-/** OB-724 — the accountant's decision on one draft credit: approved (a fact the account counts) or refused (counts nothing). */
+/** OB-725 — the accountant's decision on one draft credit: approved (a fact the account counts) or refused (counts nothing). */
 export interface ClaimCreditDecision {
   readonly creditId: string;
   readonly supplierId: string;
@@ -120,7 +120,7 @@ const firstBy = <T>(xs: readonly T[], key: (x: T) => string): Map<string, T> => 
   return m;
 };
 
-/** OB-724 — every accepted claim with a value, as a draft credit with the accountant's decision beside it. Pure. */
+/** OB-725 — every accepted claim with a value, as a draft credit with the accountant's decision beside it. Pure. */
 export function creditDrafts(claims: readonly SupplierRaisedClaim[], decisions: readonly ClaimCreditDecision[]): readonly ClaimCreditDraft[] {
   const byCredit = firstBy(decisions, (d) => d.creditId);
   return claims
@@ -236,7 +236,7 @@ async function raisedClaimsOf(deps: SupplierClaimsDeps, t: string): Promise<read
 }
 
 /**
- * U7 · OB-726 (owner, in writing: B) — every disputed (rejected) supplier claim as the register reads it, for the readers
+ * U7 · OB-727 (owner, in writing: B) — every disputed (rejected) supplier claim as the register reads it, for the readers
  * OUTSIDE the register: the Today page's count (through the store pack) and the alert to the people who settle it. The
  * SAME fold the Supplier claims page shows, so the three never disagree (P-02). Company-wide: claims are not per store.
  */
@@ -245,16 +245,16 @@ export async function readClaimDisputes(deps: SupplierClaimsDeps, t: string): Pr
   return claimDisputes(await raisedClaimsOf(deps, t), (await deps.disputeResolutions?.(t)) ?? [], dayOf, dayOf(deps.now()));
 }
 
-/** U7 · OB-726 — the Today figure's two numbers: disputes still open, and of those how many are past their shop day. Pure. */
+/** U7 · OB-727 — the Today figure's two numbers: disputes still open, and of those how many are past their shop day. Pure. */
 export function claimDisputeCounts(disputes: readonly ClaimDispute[]): { readonly open: number; readonly overdue: number } {
   return { open: disputes.filter((d) => d.state === 'open').length, overdue: disputes.filter((d) => d.state === 'open' && d.overdue).length };
 }
 
-/** U7 · OB-726 — the alert id of one disputed claim: one alert per exception, never per pass. */
+/** U7 · OB-727 — the alert id of one disputed claim: one alert per exception, never per pass. */
 export const claimDisputeAlertIdOf = (exceptionId: string): string => `supplier-claim-dispute:${exceptionId}`;
 
 /**
- * U7 · OB-726 — what the alert sweep does with the disputes: raise one alert per OPEN dispute that has no open alert yet,
+ * U7 · OB-727 — what the alert sweep does with the disputes: raise one alert per OPEN dispute that has no open alert yet,
  * and clear every open dispute alert whose dispute is no longer open (settled). Pure; the sweep writes the facts.
  */
 export function claimDisputeAlertPlan(
@@ -301,7 +301,7 @@ export function supplierClaimsRoutes(deps: SupplierClaimsDeps): readonly Route[]
           awaitingBuyer: supplierClaims.filter((c) => c.state === 'awaiting_buyer').length,
           accepted: supplierClaims.filter((c) => c.state === 'accepted').length,
           rejected: supplierClaims.filter((c) => c.state === 'rejected').length,
-          // OB-724 · M24-FR-02 alt
+          // OB-725 · M24-FR-02 alt
           creditDrafts: drafts.filter((d) => d.state === 'draft').length,
           creditsApproved: drafts.filter((d) => d.state === 'approved').length,
           creditsRefused: drafts.filter((d) => d.state === 'refused').length,
@@ -321,7 +321,7 @@ export function supplierClaimsRoutes(deps: SupplierClaimsDeps): readonly Route[]
       },
     },
     {
-      // OB-724 — the ACCOUNTANT decides a draft credit: { decision: 'approve' | 'refuse', reason }. Approved, it is a fact the
+      // OB-725 — the ACCOUNTANT decides a draft credit: { decision: 'approve' | 'refuse', reason }. Approved, it is a fact the
       // supplier account counts (the shop owes more) and the payables run posts; refused, it is kept with its reason and
       // counts for nothing. Never the buyer who accepted the claim, never whoever sent it (§28). Once per credit: the same
       // decision again is 200 (a retry), a different one 409 — a second decision would be a second truth.

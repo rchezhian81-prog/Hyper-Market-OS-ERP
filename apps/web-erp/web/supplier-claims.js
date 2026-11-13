@@ -2,7 +2,7 @@
 // (apps/web-erp/src/supplier-claims-session.ts, in the bundle as window.supplierClaims) does every call and every rule; this
 // page lays out what it is told on the shared office parts (window.sreOffice: cards, table, state, chip, confirm). Every word
 // has a Tamil twin; head office's own sentences stay in English (OB-553). Money moves only after the confirm sheet (OB-698).
-// U7: the credits to approve (OB-724 — an accepted claim is a draft until the accountant, a second person, approves it) and
+// U7: the credits to approve (OB-725 — an accepted claim is a draft until the accountant, a second person, approves it) and
 // the disputed claims (M24-FR-02 alt — a rejected claim is an exception until a person says how it was settled).
 
 const $ = (id) => document.getElementById(id);
@@ -136,7 +136,7 @@ function paintSupplier() {
   });
 }
 
-/** OB-724 — approve or refuse a draft credit. Approving is money (the shop owes the supplier more): the confirm sheet first. */
+/** OB-725 — approve or refuse a draft credit. Approving is money (the shop owes the supplier more): the confirm sheet first. */
 async function decideCredit(d, decision, reason, status) {
   const o = office();
   if (reason.trim() === '') { status.textContent = t('needReason'); return; }

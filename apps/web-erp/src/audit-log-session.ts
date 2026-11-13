@@ -99,7 +99,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 export interface AuditLogSession {
   readonly may: { readonly named: boolean; readonly read: boolean };
   search(q: AuditSearch): Done<readonly AuditRow[]>;
-  /** U7 (OB-725): ONE page of the trail, the page's boxes kept, the register's search and sort done by head office. */
+  /** U7 (OB-726): ONE page of the trail, the page's boxes kept, the register's search and sort done by head office. */
   page(q: AuditSearch, ask: RegisterAsk): Done<{ readonly rows: readonly AuditRow[]; readonly total: number }>;
   verify(): Done<ChainCheck>;
   rebuild(objectType: string, objectId: string): Done<Rebuilt>;

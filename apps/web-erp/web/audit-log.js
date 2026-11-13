@@ -13,7 +13,7 @@ const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(na
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 
 let check = null; let rebuilt = null;
-// U7 (OB-725): the found changes are ONE page at a time from head office, on the chrome's register (its loader); the
+// U7 (OB-726): the found changes are ONE page at a time from head office, on the chrome's register (its loader); the
 // page's own boxes narrow the search, the register's search box and column sort go to head office too.
 let table = null; let boxes = null; // the register (built once); the boxes as last pressed (null until the first search)
 const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });

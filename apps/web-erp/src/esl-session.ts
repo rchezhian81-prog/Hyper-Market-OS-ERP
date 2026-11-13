@@ -42,7 +42,7 @@ export interface EslPushes {
   readonly asAt: string | null;
 }
 
-/** U7 (OB-725): head office's summary of the WHOLE store's pushes — what the cards and "Send all again" read. */
+/** U7 (OB-726): head office's summary of the WHOLE store's pushes — what the cards and "Send all again" read. */
 export interface EslOverview {
   readonly sent: number;
   readonly confirmed: number;

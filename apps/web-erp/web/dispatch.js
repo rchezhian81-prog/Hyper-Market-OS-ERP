@@ -200,7 +200,7 @@ async function showBoard() {
       stops.append(item);
     }
     li.append(stops);
-    // U7 (OB-725 · OB-700): a driver asked the store to call a stop's customer — the store calls from the order's own
+    // U7 (OB-726 · OB-700): a driver asked the store to call a stop's customer — the store calls from the order's own
     // record (the phone holds no number), then ticks it; "called" is the request's alert ticked as seen.
     const calls = r.callRequests ?? [];
     if (calls.length > 0) {

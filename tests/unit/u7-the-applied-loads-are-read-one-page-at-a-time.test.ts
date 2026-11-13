@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createDataIoSession, type DataIoPorts, type LoadedJobView } from '../../apps/web-erp/src/data-io-session';
 
-// U7 (OB-725) · Data in and out: the loads already applied are read ONE page at a time from head office through the
+// U7 (OB-726) · Data in and out: the loads already applied are read ONE page at a time from head office through the
 // register's loader (search and sort at head office, newest first by default), each still saying whether it is in place
 // or undone — in the reader's language at the moment it is drawn — and whether this person may undo it.
 

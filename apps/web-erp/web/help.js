@@ -177,7 +177,7 @@ document.addEventListener('sre:chrome', () => { shopDate('d-on', { en: wordsIn('
 pickable('d-branch', 'store', 'pickStore');
 ownStore('d-branch');
 document.addEventListener('sre:chrome', () => ownStore('d-branch'), { once: true });
-// U7 (OB-725): a procedure's roles are picked by name, several at once — the typed list below stays the fallback.
+// U7 (OB-726): a procedure's roles are picked by name, several at once — the typed list below stays the fallback.
 pickable('w-roles', 'role', 'pickRoles', { multi: true });
 pickable('d-who', 'person', 'pickPerson', { append: (input, id) => { const have = input.value.trim(); input.value = have === '' ? id : `${have.replace(/,\s*$/, '')}, ${id}`; } });
 // the roles a procedure is for, from the roles the store computer knows (the typed list stays the fallback)

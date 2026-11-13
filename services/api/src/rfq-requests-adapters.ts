@@ -106,7 +106,7 @@ function supplierClaimsDepsOf(input: { readonly store: EventStore; readonly now:
     ...(input.partners === undefined ? {} : { partners: input.partners }),
     ...(input.portal === undefined ? {} : { submissions: input.portal.submissions, reviews: async (t: string, p: string) => (await input.portal!.reviews?.(t, p)) ?? [] }),
     supplierName: async (t, supplierId) => (await master.record(t, supplierId))?.name,
-    // U7 · OB-724 — the accountant's decisions on draft credits; M24-FR-02 alt — how each disputed claim was settled.
+    // U7 · OB-725 — the accountant's decisions on draft credits; M24-FR-02 alt — how each disputed claim was settled.
     // Both append-only, keyed on the credit / dispute: two writers of one meet on the key and the first stands.
     creditDecisions: async (t) => (await store.readStream(t, SUPPLIER_CLAIM_CREDITS_STREAM, { type: 'SupplierClaimCreditDecided' })).map((e) => e.event.payload as ClaimCreditDecision),
     recordCreditDecision: async (t, d) => {
@@ -121,7 +121,7 @@ function supplierClaimsDepsOf(input: { readonly store: EventStore; readonly now:
         id: `supplier-claim-dispute-${r.exceptionId}`, type: 'SupplierClaimDisputeResolved', occurredAt: r.at,
         idempotencyKey: `supplier-claim-dispute-${t}-${r.exceptionId}`, source: 'api/purchase', payload: r,
       }));
-      // U7 · OB-726: settled → its alert is cleared at once (the sweep would on its next pass; the people who settle it
+      // U7 · OB-727: settled → its alert is cleared at once (the sweep would on its next pass; the people who settle it
       // should not see it open in between). Keyed on the dispute: a replay writes nothing new.
       await clearDisputeAlert(store, input.now, t, r.exceptionId, r.by, r.at);
     },
@@ -131,7 +131,7 @@ function supplierClaimsDepsOf(input: { readonly store: EventStore; readonly now:
   };
 }
 
-// ── U7 · OB-726 (owner, in writing: B) — a disputed supplier claim counted on Today and alerted to who settles it ───────
+// ── U7 · OB-727 (owner, in writing: B) — a disputed supplier claim counted on Today and alerted to who settles it ───────
 
 interface DisputeReadInput { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }
 

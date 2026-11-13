@@ -87,7 +87,7 @@ function paintList() {
   $('none').hidden = true;
   const reg = register($('list-host'), {
     id: 'requisitions', label: pair('worklist'), pageSize: 10, sortable: true, bodyId: 'list',
-    // U7 (OB-725): head office pages, searches and sorts the worklist (by requisition or product, by id or number of
+    // U7 (OB-726): head office pages, searches and sorts the worklist (by requisition or product, by id or number of
     // lines); the register shows the page it is given, never the whole list read into the browser.
     loader: pageOfWorklist,
     columns: [

@@ -128,7 +128,7 @@ export function paiseFromRupees(text: string): number | undefined {
 export interface RequisitionsSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly raise: boolean };
   list(): Promise<Outcome<readonly RequisitionView[]>>;
-  /** U7 (OB-725): ONE page of the worklist, searched and sorted by head office — for the register's loader. */
+  /** U7 (OB-726): ONE page of the worklist, searched and sorted by head office — for the register's loader. */
   page(ask: RegisterAsk): Promise<Outcome<{ readonly rows: readonly RequisitionView[]; readonly total: number }>>;
   raise(requisitionId: string, lines: readonly { readonly productId: string; readonly quantity: string }[]): Promise<Outcome<RequisitionView>>;
   recordQuote(requisitionId: string, quoteId: string, supplierId: string, lines: readonly { readonly productId: string; readonly unitRupees: string; readonly leadDays: string }[]): Promise<Outcome<unknown>>;

@@ -252,7 +252,7 @@ function paintBasis() {
 function paintHistory() {
   const reg = register($('history-host'), {
     id: 'price-history', label: pair('historyH'), pageSize: 10, sortable: true, bodyId: 'history',
-    // U7 (OB-725): head office pages, searches (by entry, which price, or for whom) and sorts (by the day it starts, or
+    // U7 (OB-726): head office pages, searches (by entry, which price, or for whom) and sorts (by the day it starts, or
     // its version) a product's price history; the register shows the page it is given.
     loader: pageOfHistory,
     columns: [

@@ -429,7 +429,7 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           const conflict = firstSegregationConflict(await deps.segregation.ordersPaidBy(t, supplierId), 'payment', [ctx.userId, approvedBy]);
           if (conflict !== undefined) throw segregationRefusal(conflict);
         }
-        // U7 · OB-723: the bills this payment settles, when named — each must be this supplier's own bill on the account;
+        // U7 · OB-724: the bills this payment settles, when named — each must be this supplier's own bill on the account;
         // refused before the approval is spent, so nothing is recorded and the approval stays usable.
         const settles = Array.isArray(b['settles']) ? [...new Set((b['settles'] as unknown[]).filter(isStr).map((x) => x.trim()))] : [];
         const strangers = settles.filter((id) => !account.invoices.some((i) => i.invoiceId === id));

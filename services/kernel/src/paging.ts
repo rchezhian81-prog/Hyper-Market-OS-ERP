@@ -1,4 +1,4 @@
-// U7 (OB-725) · G17 "registers with search, sort and paging": a long list paged by HEAD OFFICE when the page asks for a
+// U7 (OB-726) · G17 "registers with search, sort and paging": a long list paged by HEAD OFFICE when the page asks for a
 // page. The search runs across the fields the route names, the sort is one of the keys the route allows, the page is
 // 1-based, and the answer says the total it searched so a register can say "Showing 21–40 of 312". A route calls this
 // only when `?page=` is present: without it the route answers as it always did, so every older caller keeps working.

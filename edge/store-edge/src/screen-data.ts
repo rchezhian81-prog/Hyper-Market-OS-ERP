@@ -658,7 +658,7 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
     ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt, zone) === input.tradingDay).length, note: 'customer deliveries in today\'s slots', noteTa: 'இன்றைய நேரங்களில் வாடிக்கையாளர் டெலிவரிகள்' }
     : notGiven('the delivery slots', 'டெலிவரி நேரங்கள்');
 
-  // U7 · OB-726 (owner, in writing: B): the disputed supplier claims still open, company-wide — head office's register, sent
+  // U7 · OB-727 (owner, in writing: B): the disputed supplier claims still open, company-wide — head office's register, sent
   // in the pack as two counts. Not sent (or unreadable): "not known" with the reason, never a zero (P-08).
   const disputes = pack.supplierClaimDisputes;
   const disputeCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;

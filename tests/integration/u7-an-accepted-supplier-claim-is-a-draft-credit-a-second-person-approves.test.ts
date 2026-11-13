@@ -5,7 +5,7 @@ import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier'
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
 /**
- * **U7 · OB-724 (owner, in writing: B) · M24-FR-02 "a supplier raises claims" and its alternative flow "a disputed claim
+ * **U7 · OB-725 (owner, in writing: B) · M24-FR-02 "a supplier raises claims" and its alternative flow "a disputed claim
  * becomes an exception".** After a buyer decides a supplier's claim:
  *   • ACCEPTED with a value → a DRAFT credit note to that supplier. It moves nothing until the ACCOUNTANT — a second person,
  *     never the buyer who accepted it — approves it. Approved, what the shop owes the supplier rises by it and the payables
@@ -24,7 +24,7 @@ interface Dispute { exceptionId: string; supplierId: string; submissionId: strin
 interface Register { creditDrafts: Draft[]; disputes: Dispute[]; counts: Record<string, number> }
 const owed = async (h: ApiHarness, s: string): Promise<{ owedMinor: number; claimCreditsMinor: number }> => ((await get(h, `/v1/purchase/suppliers/${s}/account`, 'u-acct')).body as { totals: { owedMinor: number; claimCreditsMinor: number } }).totals;
 
-describe('U7 · an accepted supplier claim is a draft credit a second person approves; a rejected one is a disputed exception (OB-724 · M24-FR-02)', () => {
+describe('U7 · an accepted supplier claim is a draft credit a second person approves; a rejected one is a disputed exception (OB-725 · M24-FR-02)', () => {
   it('draft → refused for the wrong people → approved by the accountant → owed rises and posts once; rejected → an open exception, settled once', async () => {
     const h = apiHarness();
     await h.seedOwner(T, 'u-owner');

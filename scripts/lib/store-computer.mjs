@@ -54,6 +54,7 @@ import { installServices, removeServices, servicesStatus } from './store-compute
 import { driveChoices, firstRun, releaseInfo, writeShortcuts } from './store-computer-setup.mjs';
 import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
+import { applyUpdate } from './store-pc-updater.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1256,6 +1257,8 @@ export const USAGE = [
   '  check-update                             ask GitHub whether a newer, signed store PC version is ready (CR-01 3b)',
   '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
   '                                           is made private (OB-721); pasted with nothing shown, never said again',
+  '  apply-update                             what the task "SRE\\Software update" runs: acts ONLY on the owner\'s request',
+  '                                           from the Software update page; puts the old version back if anything fails',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
   '  setup-screens                            the first-run screens in this PC\'s browser (what SRE-Setup.exe opens)',
   '  shortcuts [--only till,office,import]    the desktop shortcuts: the till, the office pages, import & export',
@@ -1418,7 +1421,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1456,6 +1459,7 @@ export function parseCommandLine(argv) {
     else if (a === '--service-host') out.serviceHost = value();
     else if (a === '--lane') out.lane = value();
     else if (a === '--only') out.only = value();
+    else if (a === '--install') out.install = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1497,6 +1501,7 @@ export async function main(argv, given) {
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'check-update': return checkUpdateCommand(deps, resolveLayout(deps));
     case 'update-key': return updateKeyCommand(deps, resolveLayout(deps), { remove: cl.remove === true });
+    case 'apply-update': return applyUpdate(deps, { install: cl.install });
     case 'import': return importPage(deps);
     case 'setup-screens': return setupScreens(deps);
     case 'setup-state': return setupState(deps);
@@ -1600,6 +1605,16 @@ export function defaultDeps() {
       return { pid: child.pid };
     },
     processAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+    // What a running process was started with (its command line), or undefined when it cannot be read.
+    processCommandLine: (pid) => {
+      if (!Number.isInteger(pid)) return undefined;
+      if (process.platform === 'win32') {
+        const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: 'utf8', windowsHide: true });
+        const line = String(r.stdout ?? '').trim();
+        return r.status === 0 && line !== '' ? line : undefined;
+      }
+      try { return nodeFs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' ').trim() || undefined; } catch { return undefined; }
+    },
     killProcess: (pid) => { try { process.kill(pid); } catch { /* already gone */ } },
     askSecret,
     diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
@@ -1607,6 +1622,13 @@ export function defaultDeps() {
     fetch: (url) => heldFetch(url, {}, 5_000),
     // CR-01 step 3b: GitHub, with headers; a redirect to another host drops the Authorization header (fetch's own rule).
     web: async (url, headers) => { const r = await heldFetch(url, { headers, redirect: 'follow' }, 30_000); return { status: r.status, text: () => r.text() }; },
+    // CR-01 step 3d: the setup program (about 70 MB), written to a file only the updater's folder holds; up to 15 minutes.
+    download: async (url, headers, file) => {
+      const r = await heldFetch(url, { headers, redirect: 'follow' }, 15 * 60_000);
+      if (r.status !== 200) return { status: r.status };
+      nodeFs.writeFileSync(file, Buffer.from(await r.arrayBuffer()), { mode: 0o600 });
+      return { status: 200 };
+    },
     portInUse,
     sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
     now: () => new Date(),

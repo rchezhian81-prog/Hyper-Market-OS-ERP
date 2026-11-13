@@ -89,14 +89,14 @@ export async function standingAt(deps: Pick<LoyaltyProgrammeDeps, 'tiers' | 'spe
   return tierFor(tiers, await deps.spendBetween(tenantId, memberRef, w.from, w.to));
 }
 
-/** U7 (OB-725) · M17-FR-01: the customer's own slice of their standing — tier, the next tier, the expiry rule. */
+/** U7 (OB-726) · M17-FR-01: the customer's own slice of their standing — tier, the next tier, the expiry rule. */
 export interface CustomerStanding {
   readonly tier: { readonly state: 'not_set' } | { readonly state: 'set'; readonly name: string | null; readonly nameTa?: string; readonly next?: { readonly name: string; readonly nameTa?: string; readonly moreSpendMinor: number } };
   readonly expiry: { readonly state: 'not_set' } | { readonly state: 'set'; readonly months: number; readonly next: { readonly expiresAt: string; readonly points: number } | null };
 }
 
 /**
- * U7 (OB-725) · M17-FR-01 "tiers, expiry": what the member reads about themselves in the app — the same standing the desk
+ * U7 (OB-726) · M17-FR-01 "tiers, expiry": what the member reads about themselves in the app — the same standing the desk
  * reads (`/v1/loyalty/members/:ref/standing`), without the desk's fields. Not set is said as not set (OB-295).
  */
 export async function customerStandingOf(deps: Pick<LoyaltyProgrammeDeps, 'tiers' | 'spendBetween' | 'expiry' | 'movements'>, tenantId: string, memberRef: string, at: string): Promise<CustomerStanding> {

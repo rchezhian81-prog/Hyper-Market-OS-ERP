@@ -9,6 +9,15 @@ Docker's own copy is never deleted.
 
 ## Before you start
 
+**Pre-flight (from the gap audit of 13 November 2026) — all five, every time:**
+- Use the newest release from **13 November 2026 or later** (Releases → newest "Store PC 1.0.…"), and delete older
+  SRE-Setup.exe files from Downloads.
+- **Docker Desktop open, saying "Engine running"** — without it the setup now refuses and changes nothing.
+- **Close the Services window and Task Manager.** If they are open, Windows can keep a removed service "marked for
+  deletion" and the new one cannot be made.
+- **Do not delete or move the November release folder** (e.g. `C:\SRE-2026-11c`): Docker's copy was made from it.
+- **No sales on SRE Till** until I confirm the move (use the old billing system meanwhile).
+
 1. **Check the last backup is recent.** Open any office page and look at the banner at the top: it must not be red
    (a red banner names what is wrong, for example an old backup). If it is red, stop and send me a photo.
 2. **Open Docker Desktop** from the Start menu and wait until it says **Engine running**. It is needed one last time,

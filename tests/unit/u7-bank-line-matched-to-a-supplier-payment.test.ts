@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reconcileBankStatement, type BankSupplierPayment } from '../../services/finance/src/bank-reconciliation';
 
-/** U7 · OB-723 — a debit line is matched to a supplier payment by its reference, for exactly what left the account. Pure. */
+/** U7 · OB-724 — a debit line is matched to a supplier payment by its reference, for exactly what left the account. Pure. */
 const line = (lineId: string, amountMinor: number, reference: string, narrative?: string) => ({ lineId, date: '2026-11-12', amountMinor, reference, ...(narrative === undefined ? {} : { narrative }) });
 const statement = (lines: ReturnType<typeof line>[]) => ({ statementId: 'S', accountRef: 'current', fromDate: '2026-11-01', toDate: '2026-11-30', openingMinor: 0, closingMinor: lines.reduce((n, l) => n + l.amountMinor, 0), lines }) as never;
 const payment = (paymentId: string, amountMinor: number, reference: string, extra: Partial<BankSupplierPayment> = {}): BankSupplierPayment => ({ paymentId, supplierId: 's-1', amountMinor, paidOn: '2026-11-12', method: 'bank_transfer', reference, ...extra });

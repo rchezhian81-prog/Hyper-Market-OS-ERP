@@ -625,7 +625,7 @@ function renderAttention(floor, today) {
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
   add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
-  // U7 · OB-726 (owner: B): the disputed supplier claims still open, settled on Supplier claims.
+  // U7 · OB-727 (owner: B): the disputed supplier claims still open, settled on Supplier claims.
   add(today.claimDisputes, 'claimDisputesOpen', 'attnClaimDisputes', { rail: 'supplier-claims' });
   add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
   add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });

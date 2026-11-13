@@ -49,7 +49,7 @@ import { rolesAtThisStore } from './office-sign-in';
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
-import { OWNER_ROLE, UPDATE_PATHS, requestUpdate, updatePage, type UpdateDeps } from './update-page'; // CR-01 step 3c (OI-05)
+import { OWNER_ROLE, UPDATE_PATHS, openShiftsAnswer, requestUpdate, updatePage, type UpdateDeps, type UpdateProgressView } from './update-page'; // CR-01 step 3c/3d (OI-05)
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -504,7 +504,13 @@ export function startScreenServer(input: {
    * CR-01 step 3c (OI-05 · OB-718 · OB-719): the Software update page (/update/) — the last update check, and the owner's
    * PIN-confirmed request, refused while a till shift is open. Served only with the office PIN sign-in on.
    */
-  readonly update?: { readonly deps: Omit<UpdateDeps, 'rolesOf'>; readonly updaterPending: () => boolean };
+  readonly update?: {
+    readonly deps: Omit<UpdateDeps, 'rolesOf'>;
+    readonly updaterPending: () => boolean;
+    /** CR-01 step 3d: the updater's latest word, and the time of a request still waiting for it. */
+    readonly progress?: () => UpdateProgressView | undefined;
+    readonly waitingSince?: () => string | undefined;
+  };
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -608,6 +614,15 @@ export function startScreenServer(input: {
    * their own PIN); a box serving its screens openly, or behind the hosted front, has no update page at all.
    */
   const updateDoor = async (req: IncomingMessage, res: ServerResponse, path: string, update: NonNullable<typeof input.update>): Promise<void> => {
+    // CR-01 step 3d (OB-718): the updater's one question before it stops anything — which tills are open — answered from
+    // this box's own till-cash log, on this PC only (never behind a forwarding proxy). Till ids only; no name, no money.
+    if (path === UPDATE_PATHS.openShifts) {
+      req.resume();
+      if (input.trustForwardedUser === true) { send(res, 403, 'text/plain; charset=utf-8', 'answered on the store computer itself only'); return; }
+      if (req.method !== 'GET') { send(res, 405, 'text/plain; charset=utf-8', 'this is only read'); return; }
+      json(res, 200, openShiftsAnswer(await update.deps.openShifts()));
+      return;
+    }
     if (office === undefined || input.trustForwardedUser === true) {
       req.resume();
       send(res, 403, 'text/plain; charset=utf-8', 'The software update page needs the office PIN sign-in on this store computer.');
@@ -620,7 +635,7 @@ export function startScreenServer(input: {
       if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'this page is only read; the request is sent from it'); return; }
       if (!session.ok) { page(res, 401, signInPage({ next: UPDATE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
       const isOwner = (rolesAtThisStore(session.userId, snap.pack) ?? []).includes(OWNER_ROLE);
-      page(res, 200, updatePage({ check: update.deps.check(), isOwner, displayName: displayNameIn(snap.pack, session.userId), openShifts: await update.deps.openShifts(), updaterPending: update.updaterPending() }));
+      page(res, 200, updatePage({ check: update.deps.check(), isOwner, displayName: displayNameIn(snap.pack, session.userId), openShifts: await update.deps.openShifts(), updaterPending: update.updaterPending(), progress: update.progress?.(), waitingSince: update.waitingSince?.() }));
       return;
     }
     if (req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, refusedBecause: 'wrong_method', en: 'Send with POST.', ta: '' }); return; }
@@ -765,7 +780,7 @@ export function startScreenServer(input: {
         return;
       }
       // CR-01 step 3c (OI-05): the Software update page and the owner's request — routed before the read-only rule.
-      if (input.update !== undefined && (doorPath === UPDATE_PATHS.page || doorPath === UPDATE_PATHS.page.slice(0, -1) || doorPath === UPDATE_PATHS.request)) {
+      if (input.update !== undefined && (doorPath === UPDATE_PATHS.page || doorPath === UPDATE_PATHS.page.slice(0, -1) || doorPath === UPDATE_PATHS.request || doorPath === UPDATE_PATHS.openShifts)) {
         await updateDoor(req, res, doorPath, input.update);
         return;
       }

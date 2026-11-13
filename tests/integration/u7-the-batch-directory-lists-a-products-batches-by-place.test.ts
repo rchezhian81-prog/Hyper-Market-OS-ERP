@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
 
 /**
- * U7 (OB-725) · M10 / §27 Inventory "Quarantine": the hold form asked a TYPED batch id because head office had no list a
+ * U7 (OB-726) · M10 / §27 Inventory "Quarantine": the hold form asked a TYPED batch id because head office had no list a
  * picker could read — `/v1/inventory/batches` needs a place and a product. The batch directory answers "which batches of
  * this product are on hand, at which of MY places, earliest expiry first", so the office picks a batch by product, never
  * by typing its id. A place outside the caller's branches is never listed (the same stock-read scope as availability).

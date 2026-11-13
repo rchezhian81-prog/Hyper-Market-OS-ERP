@@ -5,7 +5,7 @@ import { createSupplierPaymentSession, paymentBody, billsOf, SUPPLIER_PAYMENT_CO
 import { createBankReconciliationSession, BANK_RECONCILIATION_COPY } from '../../apps/web-erp/src/bank-reconciliation-session';
 
 /**
- * **U7 · OB-723 · OB-724 · M24-FR-02 alt — the pages' tested, DOM-free sessions.**
+ * **U7 · OB-724 · OB-725 · M24-FR-02 alt — the pages' tested, DOM-free sessions.**
  *   • Supplier claims: approving / refusing a draft credit needs `purchase.supplier.pay`, is refused before any request for
  *     the buyer who ACCEPTED the claim (or whoever sent it) and without a reason, and calls the credit route; settling a
  *     disputed claim needs `supplier.portal.review`, one of head office's outcomes and a reason; tones; Tamil twins.

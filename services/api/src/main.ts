@@ -1287,7 +1287,7 @@ export function buildSurface(deps: {
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
         tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
         handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
-        supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-726: the disputed supplier claims on Today
+        supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-727: the disputed supplier claims on Today
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -2867,7 +2867,7 @@ export async function startApi(
       contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       scaleStamp: scaleStampExpirySweep({ store, now, calendar: shopCalendar }), // Round 6 · B7 — a weighing-scale stamp due soon or lapsed
       secretUse: secretUseRollupSweep({ store, now, calendar: shopCalendar }), // W6 · M32-FR-03 · OB-688 — each finished day's secret use judged once; alerts to the IT custodian
-      claimDisputes: claimDisputeAlertSweep({ store, now, calendar: shopCalendar }), // U7 · OB-726 — a disputed supplier claim raised to the buyer and owners once; cleared when settled
+      claimDisputes: claimDisputeAlertSweep({ store, now, calendar: shopCalendar }), // U7 · OB-727 — a disputed supplier claim raised to the buyer and owners once; cleared when settled
       say: (line) => { out(`${line}\n`); },
     }),
   });
