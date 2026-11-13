@@ -301,7 +301,7 @@ export async function update(deps, opts) {
   if (ctx.code !== undefined) return ctx.code;
   if (!dataFolderReady(deps, ctx)) return 2;
   if (ctx.native !== undefined) {
-    say('NOT YET — this copy runs as Windows services (ADR-0032). A new release is installed by running its SRE-Setup.exe; the one-click update with automatic rollback comes in CR-01 step 3. Nothing was changed.');
+    say('NOT HERE — this copy runs as Windows services (ADR-0032). A new version is installed from the Software update page (http://127.0.0.1:8091/update/, the owner with his PIN), which puts the old version back by itself if anything fails (CR-01 step 3d). Nothing was changed.');
     return 2;
   }
   const L = ctx.L;

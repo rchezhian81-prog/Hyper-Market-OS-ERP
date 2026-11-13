@@ -87,7 +87,8 @@ How the decision is carried out. Nothing here changes the decision; each point i
   and 2, the red light, `up` and `autostart` use the PostgreSQL programs on 127.0.0.1, the administrator's password in
   PGPASSWORD only. The backup's Windows script keeps the one-snapshot guarantee (GT-07) with psql's `\o` file for the totals
   and the Windows shell's `%SRE_SNAPSHOT%` for pg_dump.
-- **Still Docker-only, said plainly:** the timed rollback drill and `update` — their Windows versions are CR-01 step 3.
+- **Still Docker-only, said plainly:** the timed rollback drill and `update` — their Windows versions are CR-01 step 3
+  (the update: step 3d, below; the drill: step 3e).
 
 ## Implementation note — Microsoft's Visual C++ runtime (11 November 2026)
 
@@ -99,3 +100,21 @@ fetched from Microsoft by CI and refused unless validly signed by Microsoft Corp
 place, so a hash pin would break) and runs it quietly, before anything of the shop is touched, when the runtime is
 missing. Installed system-wide rather than copied beside PostgreSQL, so Windows Update keeps it patched (P-04). Offline:
 unchanged — nothing is downloaded on the shop's PC. Portability, cost: none (Microsoft's free redistributable).
+
+## Implementation note — the one-click update (CR-01 step 3d, 12 November 2026)
+
+- **Who acts:** a Windows task as SYSTEM (`SRE\Software update`, every 5 minutes), because only an administrator may stop
+  the services and replace the program. It acts only on the owner's request; the request, written by the till's own
+  low-privilege account, is a wish, never authority — only a release signed with the shop's key, verifying with the PC's
+  own public key, and newer, can be installed.
+- **The program, not the data, is what is updated and put back.** SRE-Setup.exe installs into one fixed folder, so "beside
+  the old one" is done by KEEPING the running release whole (`…\SRE Retail OS kept\<version>`, under Program Files, so only
+  administrators may write it) and mirroring it back on failure. The database and the till's data are never restored or
+  copied over (hard rule #2; the rollback drill's own rule). An encrypted backup is taken first.
+- **Two halves:** SRE-Setup.exe stops every node.exe of the program's folder before it copies, so the install and the way
+  back run from the kept copy's node.exe, as their own task.
+- **Offline:** a sale never waits on any of this (P-01): the update runs only when the owner asks, with every till closed.
+  No internet, no update — the shop keeps the version it has. **Security:** least privilege kept for the services; SYSTEM
+  only for the updater; no secret in any task, file or log. **Portability, cost:** Windows' own Task Scheduler and
+  robocopy; nothing bought.
+

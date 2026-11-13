@@ -343,7 +343,8 @@ describe('after the move, the tool asks the database service — not Docker', ()
     expect(said(w)).toMatch(/NOT YET — this copy runs as Windows services .*CR-01 step 3/);
     w.said.length = 0;
     expect(await main(['update', '--from', 'C:\\SRE-new'], d)).toBe(2);
-    expect(said(w)).toMatch(/NOT YET — this copy runs as Windows services .*CR-01 step 3/);
+    // CR-01 step 3d: a Windows-services copy is updated from the Software update page, never from a folder.
+    expect(said(w)).toMatch(/NOT HERE — this copy runs as Windows services .*Software update page.*CR-01 step 3d/);
   });
 });
 

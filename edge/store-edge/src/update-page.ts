@@ -12,12 +12,43 @@
 //   • every request and every refusal is written, before the answer, to an append-only log on this box (update-requests.log,
 //     never rewritten — hard rule #6); an accepted request is also left as update-request.json for the updater (step 3d),
 //     which stops the services, installs and rolls back by itself. This page never stops, installs or downloads anything.
+//   • CR-01 step 3d: the page shows the updater's own latest word (status\update-progress.json) — updating, updated, not
+//     started (and why), put back, or NOT put back — and answers the updater's one question, which tills are open
+//     (/update/open-shifts, this PC only), from the same till-cash log.
 
-export const UPDATE_PATHS = Object.freeze({ page: '/update/', request: '/update/request' });
+export const UPDATE_PATHS = Object.freeze({ page: '/update/', request: '/update/request', openShifts: '/update/open-shifts' });
 export const UPDATE_AUTHORITY = 'platform.setup.write';
 export const OWNER_ROLE = 'owner';
 export const UPDATE_LOG = 'update-requests.log';
 export const UPDATE_REQUEST_FILE = 'update-request.json';
+/** CR-01 step 3d: what the updater (scripts/lib/store-pc-updater.mjs) writes for this page, in the status folder. */
+export const UPDATE_PROGRESS_FILE = 'update-progress.json';
+export const UPDATER_MARK_FILE = 'updater.json';
+
+/** The updater's latest word (status\update-progress.json). */
+export interface UpdateProgressView {
+  readonly at: string;
+  readonly state: 'working' | 'updated' | 'refused' | 'rolled-back' | 'rollback-failed';
+  readonly version: string;
+  readonly from: string | null;
+  readonly said: string;
+}
+
+/** Read status\update-progress.json; anything unreadable is "nothing to show" (undefined), never a made-up state. */
+export function readUpdateProgress(text: string | undefined): UpdateProgressView | undefined {
+  if (text === undefined) return undefined;
+  try {
+    const r = JSON.parse(text) as Record<string, unknown>;
+    const states = ['working', 'updated', 'refused', 'rolled-back', 'rollback-failed'];
+    if (r['kind'] !== 'sre-store-pc-update-progress-v1' || typeof r['at'] !== 'string' || typeof r['said'] !== 'string' || typeof r['version'] !== 'string' || !states.includes(String(r['state']))) return undefined;
+    return { at: r['at'] as string, state: r['state'] as UpdateProgressView['state'], version: r['version'] as string, from: typeof r['from'] === 'string' ? (r['from'] as string) : null, said: r['said'] as string };
+  } catch { return undefined; }
+}
+
+/** What the updater asks before it stops anything (OB-718): the tills whose shift is open now, by this box's own log. */
+export function openShiftsAnswer(open: readonly OpenShift[]): { readonly kind: 'sre-open-shifts-v1'; readonly open: readonly { readonly tillId: string }[] } {
+  return { kind: 'sre-open-shifts-v1', open: open.map((s) => ({ tillId: s.tillId })) };
+}
 
 /** What step 3b kept (status\update-check.json). Unknown fields are ignored. */
 export interface UpdateCheckView {
@@ -135,9 +166,21 @@ export interface UpdatePageView {
   readonly isOwner: boolean;
   readonly displayName: string;
   readonly openShifts: readonly OpenShift[];
-  /** True when the updater (step 3d) is not installed yet: the page says so beside the button. */
+  /** True when the updater (step 3d) is not set up on this PC: the page says so beside the button. */
   readonly updaterPending: boolean;
+  /** The updater's latest word, when there is one (step 3d). */
+  readonly progress?: UpdateProgressView | undefined;
+  /** When a request is waiting for the updater: the time it was made. */
+  readonly waitingSince?: string | undefined;
 }
+
+const PROGRESS_WORDS: Readonly<Record<UpdateProgressView['state'], { readonly en: string; readonly ta: string; readonly tone: string }>> = Object.freeze({
+  working: { en: 'Updating now', ta: 'இப்போது புதுப்பிக்கப்படுகிறது', tone: 'amber' },
+  updated: { en: 'Updated', ta: 'புதுப்பிக்கப்பட்டது', tone: 'green' },
+  refused: { en: 'The update was not started', ta: 'புதுப்பிப்பு தொடங்கப்படவில்லை', tone: 'amber' },
+  'rolled-back': { en: 'The update did not work — the old version was put back by itself', ta: 'புதுப்பிப்பு வேலை செய்யவில்லை — பழைய பதிப்பு தானாகத் திரும்ப வைக்கப்பட்டது', tone: 'amber' },
+  'rollback-failed': { en: 'THE UPDATE FAILED AND THE OLD VERSION COULD NOT BE PUT BACK — call for help now', ta: 'புதுப்பிப்பு தோல்வி; பழைய பதிப்பைத் திரும்ப வைக்க முடியவில்லை — உடனே உதவி அழைக்கவும்', tone: 'red' },
+});
 
 /** The page, English and Tamil. Server-rendered; one small script posts the request as JSON from this page only. */
 export function updatePage(v: UpdatePageView): string {
@@ -156,15 +199,24 @@ export function updatePage(v: UpdatePageView): string {
     `<tr><th>What the check said <span lang="ta">சரிபார்ப்பு கூறியது</span></th><td>${esc(c.said)}</td></tr>`,
     '</table>',
   ].join('');
+  const pr = v.progress;
+  const progress = [
+    v.waitingSince === undefined ? '' : `<p class="note" id="waiting">An update was asked for at ${esc(v.waitingSince)}; the store computer starts it within 5 minutes. <span lang="ta">கோரிக்கை பெறப்பட்டது; 5 நிமிடங்களுக்குள் தொடங்கும்.</span></p>`,
+    pr === undefined ? '' : `<h2 class="${PROGRESS_WORDS[pr.state].tone}" id="progress">${esc(PROGRESS_WORDS[pr.state].en)}: ${esc(pr.version)} <span lang="ta">· ${esc(PROGRESS_WORDS[pr.state].ta)}</span></h2><p id="progress-said">${esc(pr.said)} <span class="note">(${esc(pr.at)})</span></p>`,
+  ].join('');
   const shifts = v.openShifts.length === 0 ? '' : `<p class="warn" id="shifts">${esc(REFUSAL_WORDS.shift_open.en)} <span lang="ta">${esc(REFUSAL_WORDS.shift_open.ta)}</span><br>${v.openShifts.map((s) => `${esc(s.tillId)} — ${esc(s.custodian)}`).join('<br>')}</p>`;
-  const action = c?.state !== 'available' ? '' : !v.isOwner
+  // While a request waits or an update runs, there is nothing to press.
+  const busy = v.waitingSince !== undefined || v.progress?.state === 'working';
+  const action = busy || c?.state !== 'available' ? '' : !v.isOwner
     ? `<p class="note" id="owner-only">${esc(REFUSAL_WORDS.not_the_owner.en)} <span lang="ta">${esc(REFUSAL_WORDS.not_the_owner.ta)}</span></p>`
     : [
       '<form id="update-form" autocomplete="off">',
       `<label for="pin">${esc(v.displayName)}, type your own till PIN to confirm <span lang="ta">உறுதிசெய்ய உங்கள் PIN-ஐ உள்ளிடவும்</span></label>`,
       '<input id="pin" name="pin" type="password" inputmode="numeric" maxlength="12" required>',
       `<button type="submit" id="update-button"${v.openShifts.length > 0 ? ' disabled' : ''}>Update to ${esc(c.latest ?? '')} <span lang="ta">· புதுப்பிக்கவும்</span></button>`,
-      v.updaterPending ? '<p class="note" id="updater-pending">The updater that installs it arrives in the next part of this change (CR-01 step 3d). Until then a request is written down and nothing is installed. <span lang="ta">நிறுவும் பகுதி அடுத்த கட்டத்தில் வரும்; அதுவரை கோரிக்கை மட்டும் பதிவு செய்யப்படும்.</span></p>' : '',
+      v.updaterPending
+        ? '<p class="warn" id="updater-pending">The updater is not set up on this PC, so a request would wait and nothing would be installed. Run SRE-Setup.exe once more as administrator. <span lang="ta">இந்தக் கணினியில் புதுப்பிப்பான் அமைக்கப்படவில்லை; SRE-Setup.exe-ஐ மீண்டும் இயக்கவும்.</span></p>'
+        : '<p class="note" id="updater-note">After you press Update, the store computer starts within 5 minutes: it backs up, installs, checks, and puts the old version back by itself if anything fails. The till pauses for a few minutes. <span lang="ta">5 நிமிடங்களுக்குள் தொடங்கும்; ஏதேனும் தோல்வியடைந்தால் பழைய பதிப்பு தானாகத் திரும்பும்.</span></p>',
       '<p id="answer" role="status" aria-live="polite"></p>',
       '</form>',
       '<script>',
@@ -182,11 +234,11 @@ export function updatePage(v: UpdatePageView): string {
     'h1{font-size:22px;margin:0 0 8px}h2{font-size:19px;margin:16px 0 8px}.green{color:#1d6b3a}.amber{color:#8a4b00}.grey{color:#5b6470}',
     'table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d6dae0;border-radius:8px}th,td{text-align:left;padding:10px 12px;border-top:1px solid #d6dae0;vertical-align:top}th{width:40%;font-weight:600}',
     'label{display:block;margin-top:16px;font-weight:600}input{font-size:20px;padding:8px;width:12em;margin:8px 0}button{font-size:18px;padding:12px 20px;min-height:48px;border:0;border-radius:8px;background:#1d6b3a;color:#fff;cursor:pointer}button[disabled]{opacity:.5;cursor:default}',
-    '.warn{color:#8a1f11;font-weight:600}.ok{color:#1d6b3a;font-weight:600}.note{color:#5b6470}</style>',
+    '.red{color:#8a1f11}.warn{color:#8a1f11;font-weight:600}.ok{color:#1d6b3a;font-weight:600}.note{color:#5b6470}</style>',
     '</head><body><main>',
     '<h1>Software update <span lang="ta">· மென்பொருள் புதுப்பிப்பு</span></h1>',
     `<h2 class="${headline.tone}" id="headline">${esc(headline.en)} <span lang="ta">· ${esc(headline.ta)}</span></h2>`,
-    facts, shifts, action,
+    progress, facts, shifts, action,
     '<p class="note">Only the owner may update, with his own PIN, and never while a till shift is open. Every request is written down on this PC. <span lang="ta">உரிமையாளர் மட்டுமே, தன் PIN-உடன், எந்த ஷிஃப்டும் திறந்திருக்காத போது புதுப்பிக்கலாம்.</span></p>',
     '</main></body></html>',
   ].join('');

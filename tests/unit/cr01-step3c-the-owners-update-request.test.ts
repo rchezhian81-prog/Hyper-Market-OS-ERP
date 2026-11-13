@@ -128,7 +128,7 @@ describe('the last check, as step 3b kept it', () => {
 
 describe('the page says what is known, in English and Tamil', () => {
   const view = { check: READY, isOwner: true, displayName: 'Owner', openShifts: [], updaterPending: true };
-  it('ready, for the owner: the version, the PIN box, the button, and that installing arrives in step 3d', () => {
+  it('ready, for the owner: the version, the PIN box, the button — and, with no updater set up on this PC, that it is not (step 3d)', () => {
     const html = updatePage(view);
     expect(html).toContain('<h1>Software update');
     expect(html).toContain('A new version is ready: 1.0.2012');

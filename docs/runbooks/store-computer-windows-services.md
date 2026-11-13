@@ -99,8 +99,9 @@ kept), the Docker copy is started again and the snapshot is kept for a person to
 the till back.
 
 After the move the tool reaches the database as a service: `backup` (same one-snapshot guarantee), `restore-check`,
-`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill and `update` refuse in plain words:
-their Windows versions come with the one-click update (CR-01 step 3). Docker Desktop can be uninstalled later; its stopped
+`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill refuses in plain words: its Windows
+version is CR-01 step 3e. `update --from <folder>` is not used on Windows services: a new version comes from the Software
+update page (below). Docker Desktop can be uninstalled later; its stopped
 copy is the only thing it still holds.
 
 ## Desktop shortcuts and the About screen (CR-01 step 2d)
@@ -113,3 +114,38 @@ The **About** screen, `http://127.0.0.1:8091/about/` (this PC only, no sign-in, 
 (made by the setup program, never typed), the store, this till and the release.
 
 The owner's step-by-step for his store PC: `docs/runbooks/store-pc-move-checklist.md`.
+
+## One-click update (CR-01 step 3d, OI-05)
+
+**Who:** the owner only, with his own PIN (OB-719), when every till shift is closed (OB-718).
+
+1. Close every till (end every shift).
+2. Open **SRE Office** → About → **Software update** (`http://127.0.0.1:8091/update/`), sign in with your own PIN.
+3. If it says **A new version is ready**, type your PIN again and press **Update**.
+4. Within 5 minutes the store computer starts by itself. The page says what it is doing. The till pauses for a few minutes.
+5. The page ends with one of:
+   - **Updated** — nothing to do.
+   - **The update did not work — the old version was put back by itself** — nothing to do now; send a photo of the page.
+   - **The update was not started** — it says why (for example a till was open); nothing was changed.
+   - **THE UPDATE FAILED AND THE OLD VERSION COULD NOT BE PUT BACK** (red) — call for help now; the page names the backup
+     taken first.
+
+What happens, in order (`scripts/lib/store-pc-updater.mjs`): the request is taken and kept; the till is asked whether any
+shift is open; the new version is downloaded from GitHub and checked — signed with the shop's release key, verifying with
+this PC's own copy of the public key, the very file that was signed, newer, and the version the owner was shown; an
+encrypted backup goes to the backup drive (no backup drive, no update); the running version is kept whole in
+`C:\Program Files\SRE Retail OS kept\<version>`; then a second task, run from that kept copy, runs the new SRE-Setup.exe
+silently and checks the result with the new program (`services-status`, the till's screens). On any failure the kept copy
+is put back over the program, its own setup is run, and the same checks run again.
+
+**Never touched:** the shop's data. Putting the old version back puts back the program only; the old version runs on the
+same database, as the rollback drill proves it can. Nothing the updater writes is ever deleted.
+
+**Where it is written down:** `<data>\updates\update-outcomes.log` (every step, append-only), `<data>\updates\<id>\`
+(the request, the plan, the setup program and its own log), `<data>\till\edge-data\update-requests.log` (who asked,
+and every refusal), `<data>\status\update-progress.json` (what the page shows).
+
+**The two tasks:** `SRE\Software update` (SYSTEM, every 5 minutes, does nothing without a request) is set up by
+SRE-Setup.exe; `SRE\Software update - install` is made for each update. If the page says *the updater is not set up*,
+run SRE-Setup.exe once more as administrator.
+

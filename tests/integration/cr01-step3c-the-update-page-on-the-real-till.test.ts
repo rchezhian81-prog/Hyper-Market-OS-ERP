@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { openFileLog, readLog } from '../../edge/store-edge/src/file-log';
-import { UPDATE_LOG, UPDATE_PATHS, UPDATE_REQUEST_FILE } from '../../edge/store-edge/src/update-page';
+import { UPDATE_LOG, UPDATE_PATHS, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE } from '../../edge/store-edge/src/update-page';
 import { prepareTillBox, pinOf } from '../support/till-operator';
 
 /**
@@ -137,5 +137,44 @@ describe('the Software update page on the real till (CR-01 step 3c)', () => {
   it('the About screen links to the Software update page', async () => {
     const { url } = await box();
     expect(await (await fetch(`${url}/about/`)).text()).toContain('href="/update/"');
+  });
+});
+
+describe('CR-01 step 3d on the real till: the updater\'s question, and its word on the page', () => {
+  it('OB-718: /update/open-shifts answers the updater from this box\'s own till-cash log — till ids only, no sign-in needed on this PC', async () => {
+    const shut = await box();
+    expect(await (await fetch(`${shut.url}${UPDATE_PATHS.openShifts}`)).json()).toEqual({ kind: 'sre-open-shifts-v1', open: [] });
+    const open = await box({ openShift: true });
+    const r = await fetch(`${open.url}${UPDATE_PATHS.openShifts}`);
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    expect(JSON.parse(text)).toEqual({ kind: 'sre-open-shifts-v1', open: [{ tillId: 'lane-1' }] });
+    expect(text).not.toContain('u-lanecash');
+    expect((await fetch(`${open.url}${UPDATE_PATHS.openShifts}`, { method: 'POST' })).status).toBe(405);
+  });
+
+  it('with the updater set up: a waiting request hides the button; the updater\'s word is shown', async () => {
+    const { url, dir } = await box();
+    await writeFile(join(dir, 'status', UPDATER_MARK_FILE), JSON.stringify({ kind: 'sre-store-pc-updater-v1' }), 'utf8');
+    const cookie = await signIn(url, 'u-owner');
+    let html = await (await fetch(`${url}${UPDATE_PATHS.page}`, { headers: { cookie } })).text();
+    expect(html).toContain('id="updater-note"');
+    expect(html).not.toContain('id="updater-pending"');
+    expect((await ask(url, cookie, pinOf('u-owner'))).status).toBe(200);
+    html = await (await fetch(`${url}${UPDATE_PATHS.page}`, { headers: { cookie } })).text();
+    expect(html).toContain('id="waiting"');
+    expect(html).not.toContain('id="update-button"');
+    await rm(join(dir, UPDATE_REQUEST_FILE));
+    await writeFile(join(dir, 'status', UPDATE_PROGRESS_FILE), JSON.stringify({ kind: 'sre-store-pc-update-progress-v1', at: '2026-11-12T04:20:00.000Z', version: '1.0.2012', from: '1.0.2005', state: 'rolled-back', said: 'Version 1.0.2005 was put back by itself and every check passed.' }), 'utf8');
+    html = await (await fetch(`${url}${UPDATE_PATHS.page}`, { headers: { cookie } })).text();
+    expect(html).toContain('the old version was put back by itself');
+    expect(html).toContain('Version 1.0.2005 was put back by itself and every check passed.');
+  });
+
+  it('with no updater set up on this PC, the page says so beside the button', async () => {
+    const { url } = await box();
+    const cookie = await signIn(url, 'u-owner');
+    const html = await (await fetch(`${url}${UPDATE_PATHS.page}`, { headers: { cookie } })).text();
+    expect(html).toContain('id="updater-pending"');
   });
 });
