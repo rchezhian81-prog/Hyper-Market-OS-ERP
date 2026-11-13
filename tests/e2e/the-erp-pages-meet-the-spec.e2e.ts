@@ -324,8 +324,11 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await texts(page, '#flow li .n')).toEqual(['2', '1', '1', 'Not known']);
       expect(await page.textContent('#flow li:last-child .note')).toBe('the store computer has not been given the floor indents');
       // the store today
-      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Tasks today']);
-      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', '1']);
+      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Disputed supplier claims open', 'Tasks today']);
+      // U7 · OB-727: the disputed supplier claims sit on the band too; this fixture's box was not sent them, so the
+      // figure says "Not known" with the reason — never a zero (P-08).
+      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', 'Not known', '1']);
+      expect((await texts(page, '#ops .op .note'))[4]).toBe('the store computer has not said');
       // the workspaces: the rail's own groups, each a link to its first screen
       expect(await texts(page, '#workspaces a b')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
       expect(await texts(page, '#workspaces a small')).toEqual(['1 screen', '2 screens', '2 screens']);
