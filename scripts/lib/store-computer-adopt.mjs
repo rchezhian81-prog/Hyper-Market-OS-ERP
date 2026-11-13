@@ -92,32 +92,60 @@ export async function finishLeftBehindMove(deps) {
   const L = ctx.L;
   say('The shop database on this PC was made EMPTY, without the shop\'s data from Docker (an earlier setup could not ask Docker). That is put right now.');
   if (ctx.native === undefined) { say('NOT DONE — the services record cannot be read. Nothing was changed. Send me a photo of this screen.'); return 1; }
+  const dbDir = p.join(L.dataRoot, 'database');
+
+  // Docker's copy listens where the new database does (127.0.0.1, the same port) whenever Docker Desktop runs, and its
+  // login is the same: it is stopped first (kept, never removed), so the count below can only reach the NEW database.
+  const made = dockerCopyMadeFrom(deps);
+  if (made.problem !== undefined) { say(`REFUSED — ${made.problem}. Nothing was changed. Send me a photo of this screen.`); return 2; }
+  const stoppedDocker = deps.spawn('docker', [...madeFromCompose(L, made), 'stop'], { cwd: made.dir, env: composeEnv(deps.env, ctx.settings) });
+  if (stoppedDocker.error !== undefined || stoppedDocker.status !== 0) { say(`REFUSED — the Docker copy could not be stopped to look at the new database (${said(stoppedDocker)}). Nothing was changed.`); return 2; }
+
   // SRE-Setup.exe stops the three services before it copies its files (the owner's PC, 12 Nov 2026: "Connection refused"
-  // and the repair refused). The database is started to be counted, and asked again until it answers (2 minutes at most).
+  // and the repair refused). The database is started, and asked until it answers (2 minutes at most) — and it must say
+  // that its files are THIS PC's new database folder, or nothing is counted.
   deps.spawn('sc.exe', ['start', SERVICES.database], {});
-  let counted;
+  let where;
   for (let tries = 0; tries < 60; tries += 1) {
-    counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: `${totalsScript().join('\n')}\n` });
-    if (counted.error === undefined && counted.status === 0) break;
+    where = dbSpawn(deps, ctx, 'psql', [...psqlArgs(ctx.user, ctx.database), '-Atc', 'SHOW data_directory'], {});
+    if (where.error === undefined && where.status === 0) break;
     await deps.sleep(2_000);
   }
-  const got = parseTotals(counted.stdout ?? '');
+  if (where.error !== undefined || where.status !== 0) {
+    say(`REFUSED — the new database did not start or answer (${said(where) || 'no reason given'}). Nothing was changed. Send me a photo of this screen.`);
+    return 2;
+  }
+  const answered = String(where.stdout ?? '').trim();
+  if (!sameDir(answered, dbDir)) {
+    say(`REFUSED — the database that answered is not this PC's new one (its files are in ${answered || 'an unknown folder'}, not ${dbDir}). Nothing was changed. Send me a photo of this screen.`);
+    return 2;
+  }
+  const counted = dbSpawn(deps, ctx, 'psql', psqlArgs(ctx.user, ctx.database), { input: `${totalsScript().join('\n')}\n` });
   if (counted.error !== undefined || counted.status !== 0) {
     say(`REFUSED — the new database could not be counted (${said(counted) || 'no reason given'}). Nothing was changed. Send me a photo of this screen.`);
     return 2;
   }
-  const events = got.maxEventSeq ?? 0;
-  if (events !== 0) {
-    say(`REFUSED — the new database on this PC already holds records (newest event number ${events}): something was done with it. Nothing was changed, nothing is moved over it. Send me a photo of this screen.`);
+  const got = parseTotals(counted.stdout ?? '');
+  // Money in it (a sale, a refund — anything with a total) means it was traded on: it is never set aside by itself.
+  const money = Object.entries(got.valueTotals).filter(([, v]) => v !== 0);
+  if (money.length > 0) {
+    say(`REFUSED — the new database on this PC holds money records (${money.map(([k, v]) => `${k} ${v}`).join(', ')}): it was traded on. Nothing was changed, nothing is moved over it. Send me a photo of this screen.`);
     return 2;
   }
-  say('The new database holds no records (no event at all): it is set aside, kept, and the move from Docker runs now.');
+  const events = got.rowCounts['event_ledger'] ?? 0;
+  say(events === 0
+    ? 'The new database holds no records: it is set aside, kept, and the move from Docker runs now.'
+    : `The new database holds no money records (${events} other record(s), such as sign-ins): it is set aside with them, kept, and the move from Docker runs now.`);
+
   const removed = await removeServices(deps);
   if (removed !== 0) { say('NOT DONE — the services could not be removed. Send me a photo of this screen.'); return 1; }
-  const dbDir = p.join(L.dataRoot, 'database');
   if (fs.existsSync(dbDir)) {
     const aside = `${dbDir}-empty-not-moved-${stampOf(deps.now())}`;
-    fs.renameSync(dbDir, aside);
+    let moved = false;
+    for (let tries = 0; tries < 15 && !moved; tries += 1) {
+      try { fs.renameSync(dbDir, aside); moved = true; } catch { await deps.sleep(2_000); }
+    }
+    if (!moved) { say(`NOT DONE — Windows would not let ${dbDir} be moved aside (a program still has it open). Restart the computer and run SRE-Setup.exe again. Nothing was lost.`); return 1; }
     say(`  The empty database folder is kept at ${aside}.`);
   }
   fs.rmSync(p.join(L.dataRoot, 'run', 'services', 'database.json'), { force: true });
@@ -128,6 +156,9 @@ export async function finishLeftBehindMove(deps) {
   }
   return 0;
 }
+
+/** The same folder, as Windows sees names (no case, either slash, no trailing slash). */
+const sameDir = (a, b) => String(a).replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase() === String(b).replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase();
 
 const said = (r) => lines(`${r.stdout ?? ''}\n${r.stderr ?? ''}`).slice(-3).join(' / ');
 

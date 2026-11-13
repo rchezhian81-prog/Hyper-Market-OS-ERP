@@ -513,6 +513,13 @@ export async function startAtSignIn(deps) {
 /** For update and migrate: the till's box this tool started (run\till.json), if it is still running. */
 export function runningTill(deps, L) {
   const t = readJson(deps.fs, pathFor(deps.platform).join(L.runDir ?? '', 'till.json'));
-  return t !== undefined && Number.isInteger(t.pid) && deps.processAlive(t.pid) ? t : undefined;
+  if (t === undefined || !Number.isInteger(t.pid) || !deps.processAlive(t.pid)) return undefined;
+  // till.json can be days old: after a restart Windows may have given its number to another program. Only a process whose
+  // command line is the till's (edge\store-edge) is taken for it — never anything else is stopped as "the till".
+  if (deps.processCommandLine !== undefined) {
+    const line = deps.processCommandLine(t.pid);
+    if (line === undefined || !/store-edge/i.test(line)) return undefined;
+  }
+  return t;
 }
 

@@ -78,6 +78,8 @@ export interface Deps {
   readonly spawnDetached?: (cmd: string, args: readonly string[], opts: { cwd?: string; env?: Record<string, string | undefined>; logFile?: string }) => { pid: number | undefined };
   readonly processAlive?: (pid: number) => boolean;
   readonly killProcess?: (pid: number) => void;
+  /** What a running process was started with, or undefined when it cannot be read (the till check before stopping it). */
+  readonly processCommandLine?: (pid: number) => string | undefined;
   /** Windows Task Scheduler (or a stand-in). Absent: Windows' own via schtasks, or none off Windows. */
   readonly tasks?: { register(name: string, xml: string): { ok: boolean; said?: string }; remove(name: string): { ok: boolean; said?: string }; exists(name: string): boolean; run?(name: string): { ok: boolean; said?: string } };
   /** scrypt's cost for a NEW backup key (tests use a cheaper one; the key file records whichever was used). */

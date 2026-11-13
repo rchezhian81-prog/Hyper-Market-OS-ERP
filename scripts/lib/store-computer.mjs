@@ -1600,6 +1600,16 @@ export function defaultDeps() {
       return { pid: child.pid };
     },
     processAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+    // What a running process was started with (its command line), or undefined when it cannot be read.
+    processCommandLine: (pid) => {
+      if (!Number.isInteger(pid)) return undefined;
+      if (process.platform === 'win32') {
+        const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: 'utf8', windowsHide: true });
+        const line = String(r.stdout ?? '').trim();
+        return r.status === 0 && line !== '' ? line : undefined;
+      }
+      try { return nodeFs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' ').trim() || undefined; } catch { return undefined; }
+    },
     killProcess: (pid) => { try { process.kill(pid); } catch { /* already gone */ } },
     askSecret,
     diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
