@@ -51,6 +51,7 @@ describe('U3 · the store computer\'s Today notes', () => {
       recalls: known([] as never),
       checklist: known([{ done: false, blocking: true }] as never),
       deliveries: known([] as never),
+      supplierClaimDisputes: known({ open: 2, overdue: 1 }), // U7 · OB-727
     };
     const figures = todayFigures(input(pack));
     for (const [key, f] of Object.entries(figures)) {
