@@ -13,6 +13,7 @@ const REASONS = ['damaged', 'expired', 'miscount', 'found', 'theft_suspected', '
 
 let requests = null; let pending = 0; let asAt = '';
 let outcome = null;
+let announced = null; // the last decision's outcome, kept on the status line until the person acts again
 
 function say(el, out, good) { const s = session.say(lang, out, good); el.className = `status ${s.tone}`; el.textContent = s.words; }
 function myStore() {
@@ -45,6 +46,7 @@ function paintReasons() {
 }
 
 async function decide(r, decision, why, status) {
+  announced = null;
   status.className = 'status'; status.textContent = '';
   // No reason written: the session says so and nothing is sent — no sheet for that.
   if (why.value.trim() === '') { say(status, { result: 'invalid', key: 'needWhy' }); return; }
@@ -55,7 +57,7 @@ async function decide(r, decision, why, status) {
     if (answer === null) return;
   }
   const out = await session.decide(r.requestId, decision, why.value);
-  if (out.result === 'ok') { say($('reg-status'), out, out.alreadyDecided ? 'already' : decision === 'approved' ? 'approvedNow' : 'rejectedNow'); await load(); return; }
+  if (out.result === 'ok') { announced = { out, key: out.alreadyDecided ? 'already' : decision === 'approved' ? 'approvedNow' : 'rejectedNow' }; say($('reg-status'), announced.out, announced.key); await load(); return; }
   say(status, out);
 }
 
@@ -67,7 +69,10 @@ function paintRegister() {
   if (o === null) return;
   $('covers').textContent = t('covers');
   $('as-at').textContent = asAt === '' ? '' : `${t('asAt')} ${session.shopMomentOf(asAt)}`;
-  $('reg-status').className = 'status'; $('reg-status').textContent = `${pending} ${t('waiting')}`;
+  // A decision's outcome stays on the line until the person acts again: the list's reload must not wipe the answer they
+  // are waiting to read (it did, on a fast machine, before anyone could see it).
+  if (announced !== null) say($('reg-status'), announced.out, announced.key);
+  else { $('reg-status').className = 'status'; $('reg-status').textContent = `${pending} ${t('waiting')}`; }
   host.replaceChildren();
   if (requests.length === 0) { const all = $('all').checked; o.state(host, 'empty', { title: t(all ? 'emptyAll' : 'empty'), detail: t(all ? 'emptyAllDetail' : 'emptyDetail') }); return; }
   const rows = requests.map((r) => session.requestView(lang, r));
