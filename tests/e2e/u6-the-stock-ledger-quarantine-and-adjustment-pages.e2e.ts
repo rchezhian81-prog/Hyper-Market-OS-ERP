@@ -224,6 +224,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the stock 
       await says(t.page, '#reg-status', /^Approved\. Head office posted the correction once\.$/);
       await t.page.check('#all');
       await t.page.locator('#requests-grid tbody tr[data-status="posted"]').waitFor({ timeout: 15_000 });
+      // The answer stays on the line after the list has reloaded twice — the reload once wiped it before anyone read it.
+      expect(await t.page.textContent('#reg-status')).toBe('Approved. Head office posted the correction once.');
       expect(await t.page.locator('#requests-grid tbody tr[data-status="posted"]').innerText()).toMatch(/Approved — correction posted[\s\S]*decided by u-mgr2-u6 — sack torn by the forklift/);
       await t.page.click('#lang');
       await says(t.page, '#page-h', /^அளவைத் திருத்து$/);
