@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## #906 merged and live on the demo box (13 November 2026)
+- **What happened:** the owner asked me to merge #906 (rounds U3, U5, U6, U7 and OB-727). Three checks went red on the way, all test-side, none a product fault: (1) a customer-segments test used fixed September order dates that crossed the 60-day "lapsing" line on 13 Nov, so it now dates orders back from today's clock; (2) a Tamil-words test fixture lacked the new "disputed supplier claims" section; (3) the office spec sweep's Today band list lacked the new figure (it now expects "Not known" with its reason, never a zero, P-08). Merged as e612189.
+- **Main after the merge:** every job green — type check and tests, stage gate (PostgreSQL), browser suites, security scans, both clean-Windows jobs, Keycloak, container, performance; the store PC release was published, the canary stage passed, and **the merged release is deployed to the demo box**.
+- **Next:** the real-staff session UAT-06 on the demo box, using `docs/design/usability-session-UAT-06.md`; its findings become a fix round of their own.
+- **Blocked:** nothing. **Owner decisions needed:** none (the UAT-06 date is the owner's to set).
+
 ## Round U7 (13 November 2026): the UI/UX leftovers, built before the real-staff session (OB-726)
 - **Why:** after U3/U5/U6 the owner chose (OB-726 = B) to build OB-724, OB-725 and every item the builders had deferred, then run UAT-06 on the finished screens.
 - **Money (OB-724 = B, OB-725 = B, M24-FR-02):** Supplier bills records a payment to a supplier naming the bills it settles (supplier picked by name, the shop's day, the confirm sheet); Bank reconciliation matches the bank's debit line to it by reference and exact amount. An accepted supplier claim with an amount is a DRAFT credit; the accountant approves or refuses it with a reason (never the buyer who accepted it), and only an approved credit posts. A disputed claim raises an exception with its value, overdue after its shop day, settled with an outcome and a reason. All append-only, audited.
