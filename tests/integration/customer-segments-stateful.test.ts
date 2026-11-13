@@ -22,10 +22,13 @@ const ranking = (h: ApiHarness, query: Record<string, string> = {}) =>
   h.request({ method: 'GET', path: '/v1/customer/segments/value-ranking', userId: 'u-owner', tenantId: A, query });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code ?? (res.body as { code?: string }).code;
 
-// Three recent orders → "loyal" once the tenant sets loyalAtOrders:3.
+// Three RECENT orders → "loyal" once the tenant sets loyalAtOrders:3. Dated back from today, never fixed dates: the engine
+// calls a customer 'lapsing' 60 days after the last order, so fixed September dates turned these customers 'lapsing' on
+// 13 Nov 2026 and the test failed by the calendar alone (as customer-segment-policy.test.ts did the day before).
+const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
 async function threeRecentOrders(h: ApiHarness, ref: string): Promise<void> {
-  for (const [i, day] of ['05', '09', '14'].entries()) {
-    await recordOrder(h, 'u-owner', `${ref}-${i}`, { customerRef: ref, at: `2026-09-${day}T10:00:00.000Z`, netMinor: 20000, marginMinor: 6000, channel: 'store' });
+  for (const [i, ago] of [20, 16, 12].entries()) {
+    await recordOrder(h, 'u-owner', `${ref}-${i}`, { customerRef: ref, at: daysAgo(ago), netMinor: 20000, marginMinor: 6000, channel: 'store' });
   }
 }
 
