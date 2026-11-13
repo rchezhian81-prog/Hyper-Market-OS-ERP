@@ -391,7 +391,7 @@ import { shopStateOf, tillSidePoliciesOf, tillDeliveryOnSale, withWalletTiers, e
 import { tillDeliveryJobsRoutes, withWalletAppLinks } from './till-delivery-adapters'; // OB-352 the till delivery's address and slot
 import { withSupplierOpenOrders, tillSignInLogRoutesFor } from './wave5-followups-adapters';
 import { rebateClaimRoutesFor, withSupplierRebateClaims } from './rebate-claims-adapters';
-import { withRfqRequests, withSupplierRfqs, withSupplierClaims, supplierClaimsRoutesFor } from './rfq-requests-adapters'; // U6 · M06-FR-02 RFQ to suppliers · M07-FR-03 / M24-FR-02 supplier claims
+import { withRfqRequests, withSupplierRfqs, withSupplierClaims, supplierClaimsRoutesFor, claimDisputeCountsFor, claimDisputeAlertSweep } from './rfq-requests-adapters'; // U6 · M06-FR-02 RFQ to suppliers · M07-FR-03 / M24-FR-02 supplier claims
 import { SUPPLIER_PARTNER_INDEX_STREAM } from './commercial-desks-adapters'; // D03-FR-03 · OB-404 supplier rebate claims // OB-288 wave-5 follow-ups (OB-362 · OB-365)
 import { queueTillHandhelds, floorDeviceSettingRoutesFor, floorDevicePackPoliciesOf, billCopyRoutesFor } from './floor-followups-adapters'; // OB-288 floor-device follow-ups (OB-373 · OB-375 · OB-376 · OB-378)
 import { lpWorkforceSurface, staffPurchaseTillPolicyOf } from './lp-workforce-adapters'; // OB-288 loss prevention, workforce, facilities and adoption · OB-301 at the till
@@ -1287,6 +1287,7 @@ export function buildSurface(deps: {
         reportingRecords: REPORTING_RECORDS, // Round A: the store's Reports page reads the same list head office's catalogue does
         tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
         handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
+        supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-726: the disputed supplier claims on Today
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -2866,6 +2867,7 @@ export async function startApi(
       contractExpiry: contractExpirySweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // FG-4 — an expired / expiring display or supplier contract (M04-FR-04 · M06-FR-03)
       scaleStamp: scaleStampExpirySweep({ store, now, calendar: shopCalendar }), // Round 6 · B7 — a weighing-scale stamp due soon or lapsed
       secretUse: secretUseRollupSweep({ store, now, calendar: shopCalendar }), // W6 · M32-FR-03 · OB-688 — each finished day's secret use judged once; alerts to the IT custodian
+      claimDisputes: claimDisputeAlertSweep({ store, now, calendar: shopCalendar }), // U7 · OB-726 — a disputed supplier claim raised to the buyer and owners once; cleared when settled
       say: (line) => { out(`${line}\n`); },
     }),
   });

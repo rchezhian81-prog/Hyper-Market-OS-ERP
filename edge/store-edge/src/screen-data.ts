@@ -658,6 +658,18 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
     ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt, zone) === input.tradingDay).length, note: 'customer deliveries in today\'s slots', noteTa: 'இன்றைய நேரங்களில் வாடிக்கையாளர் டெலிவரிகள்' }
     : notGiven('the delivery slots', 'டெலிவரி நேரங்கள்');
 
+  // U7 · OB-726 (owner, in writing: B): the disputed supplier claims still open, company-wide — head office's register, sent
+  // in the pack as two counts. Not sent (or unreadable): "not known" with the reason, never a zero (P-08).
+  const disputes = pack.supplierClaimDisputes;
+  const disputeCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+  const supplierClaimDisputes: TodayFigure = disputes !== undefined && disputes.known && disputeCount(disputes.value?.open) && disputeCount(disputes.value?.overdue)
+    ? {
+      known: true, value: disputes.value.open,
+      note: disputes.value.overdue > 0 ? `${disputes.value.overdue} overdue — settle them on Supplier claims` : 'none overdue',
+      noteTa: disputes.value.overdue > 0 ? `${disputes.value.overdue} தாமதமானவை — விநியோகஸ்தர் உரிமைக்கோரல்கள் பக்கத்தில் தீர்க்கவும்` : 'தாமதமானவை இல்லை',
+    }
+    : notGiven('the disputed supplier claims', 'சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள்');
+
   // D04-FR-05: the tills' devices — how many are failed or not working properly, each named. No report is "not known",
   // never "all fine" (P-08). Only on a box that has a till.
   const tillDevices: TodayFigure | undefined = input.peripheralReports === undefined ? undefined
@@ -676,7 +688,7 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
         };
       })();
 
-  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, ...(tillDevices === undefined ? {} : { tillDevices }) };
+  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, supplierClaimDisputes, ...(tillDevices === undefined ? {} : { tillDevices }) };
 }
 
 /** OB-392: the devices a lane card names, in the order it names them (printer, scanner, card machine). */

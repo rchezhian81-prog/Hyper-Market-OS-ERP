@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2358,
+  "testFiles": 2361,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2300,9 +2300,9 @@
       "id": "M24",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 7,
-        "integration": 14,
-        "realDb": 5,
+        "unit": 8,
+        "integration": 15,
+        "realDb": 6,
         "browser": 6,
         "connected": 2,
         "device": 0,
@@ -2314,6 +2314,7 @@
           "tests/unit/supplier-portal-session.test.ts",
           "tests/unit/supplier-portal.test.ts",
           "tests/unit/the-commercial-desk-sessions.test.ts",
+          "tests/unit/u7-a-disputed-supplier-claim-is-counted-on-today.test.ts",
           "tests/unit/u7-supplier-claim-credits-and-disputes.test.ts",
           "tests/unit/u7-the-claim-credit-dispute-and-payment-sessions.test.ts",
           "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts"
@@ -2331,6 +2332,7 @@
           "tests/integration/supplier-portal.test.ts",
           "tests/integration/u6-an-rfq-is-sent-to-suppliers-and-their-quotes-come-back-through-the-portal.test.ts",
           "tests/integration/u6-supplier-claims-are-one-register-on-both-sides.test.ts",
+          "tests/integration/u7-a-disputed-supplier-claim-reaches-the-people-who-settle-it.test.ts",
           "tests/integration/u7-an-accepted-supplier-claim-is-a-draft-credit-a-second-person-approves.test.ts",
           "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
@@ -2339,6 +2341,7 @@
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/supplier-portal-feeds-purchasing.test.ts",
+          "tests/integration/u7-a-disputed-supplier-claim-reaches-the-people-who-settle-it.test.ts",
           "tests/integration/w5-the-programmers-limits-are-labelled-or-gone.test.ts"
         ],
         "browser": [

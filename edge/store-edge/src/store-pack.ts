@@ -1320,6 +1320,12 @@ export interface StorePack {
    * list, so the page counts them rather than leaving them out silently (P-08). Absent: none (or not told).
    */
   readonly batchesWithoutExpiry?: Register<number>;
+  /**
+   * U7 · OB-726 (owner, in writing: B): the disputed (rejected) supplier claims still open company-wide, and of those how
+   * many are past the shop day they were raised on — head office's own register (Supplier claims page). Counts only, no
+   * build time inside. Absent: the box was not told, and the Today page says so (never a zero).
+   */
+  readonly supplierClaimDisputes?: Register<{ readonly open: number; readonly overdue: number }>;
   /** The near-expiry window and who is on the desk. Per-tenant. */
   readonly expiryPolicy: Register<PackExpiryPolicy>;
   /**
@@ -1626,6 +1632,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     batches: notKnown(why),
     recalls: notKnown(why),
     batchesWithoutExpiry: notKnown(why),
+    supplierClaimDisputes: notKnown(why),
     expiryPolicy: notKnown(why),
     tallyPostings: notKnown(why),
     financeLedger: notKnown(why),
@@ -1780,6 +1787,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),
     batchesWithoutExpiry: section<number>('batchesWithoutExpiry'),
+    supplierClaimDisputes: section<{ readonly open: number; readonly overdue: number }>('supplierClaimDisputes'),
     expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),
     tallyPostings: section<readonly unknown[]>('tallyPostings'),
     financeLedger: section<unknown>('financeLedger'),

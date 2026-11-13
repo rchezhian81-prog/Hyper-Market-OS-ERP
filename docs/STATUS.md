@@ -14,7 +14,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Left, with reasons (in the builders' notes):** the sessions' unused `icon` fields stay (the accessibility check and the till read them); lane-4 inputs keep their own visible labels rather than the shared field wrapper (cosmetic only).
 - **Tests (this box, PostgreSQL 16):** every new test seen failing first; type check 0; lint clean; guardrails 170 files / 2,088 passed; per-group browser runs green (notes in the round's folder). 21 traceability rows added; contracts, API surface, evidence ledger and service-worker stamps regenerated.
 - **Next:** #906 merges (owner); this round then goes up as its own pull request on the latest main; then UAT-06.
-- **Owner decisions needed:** where a disputed claim is surfaced (A only on Supplier claims — built; B also on Today and alerts — recommended; C a new shop-wide exceptions list).
+- **OB-726 = B (owner, 13 Nov 2026):** a disputed supplier claim is also counted on the Today page (open and overdue, EN/TA, "Not known" when head office has not said) and raises one alert to the buyer who rejected it and every owner, closed when the dispute is settled; append-only and idempotent.
+- **Owner decisions needed:** none.
 
 ## Rounds U3, U5 and U6 of the UI/UX gap audit (7–12 November 2026): every remaining round built (OB-722)
 - **Why now:** the owner wrote "complete the all order of rounds fully, don't wait for me" (OB-722, which changes OB-703's order); the real-staff session (UAT-06) runs on the finished screens afterwards and its findings become a fix round of their own.

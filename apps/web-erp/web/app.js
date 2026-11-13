@@ -54,8 +54,8 @@ const WORDS = {
     salesTodayLabel: 'Sales today', boxSilent: 'the store computer has not said',
     needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing on this list needs you right now. It covers only the figures on this page — it is not a check of the whole store.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
-    deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
-    attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
+    deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices', claimDisputesOpen: 'Disputed supplier claims open',
+    attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnClaimDisputes: 'disputed supplier claims to settle — open Supplier claims', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
     // OB-392: lane health on Today — one tap per lane.
     lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
     lanePrinter: 'Printer', laneScanner: 'Scanner', laneCard: 'Card machine', laneLastHeard: 'Till last reported', laneUnsent: 'Not yet at head office', laneLastSync: 'Last sent to head office',
@@ -141,8 +141,8 @@ const WORDS = {
     salesTodayLabel: 'இன்றைய விற்பனை', boxSilent: 'கடை கணினி சொல்லவில்லை',
     needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இந்தப் பட்டியலில் இப்போது உங்கள் கவனம் தேவைப்படுவது எதுவும் இல்லை. இது இந்தப் பக்கத்தின் எண்களை மட்டுமே பார்க்கிறது — முழுக் கடையின் சோதனை அல்ல.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
-    deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
-    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
+    deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்', claimDisputesOpen: 'திறந்த சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள்',
+    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnClaimDisputes: 'தீர்க்க வேண்டிய சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள் — விநியோகஸ்தர் உரிமைக்கோரல்கள் பக்கத்தைத் திறக்கவும்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
     lanesTitle: 'கல்லாக்கள்', laneWord: 'கல்லா', laneAllWorking: 'எல்லாச் சாதனங்களும் வேலை செய்கின்றன', laneProblems: 'சாதனச் சிக்கல்(கள்)', laneNotReported: 'கல்லா இன்னும் தன் சாதனங்களைப் பற்றிச் சொல்லவில்லை',
     lanePrinter: 'அச்சுப்பொறி', laneScanner: 'ஸ்கேனர்', laneCard: 'கார்டு இயந்திரம்', laneLastHeard: 'கல்லா கடைசியாகச் சொன்னது', laneUnsent: 'தலைமை அலுவலகத்துக்கு இன்னும் செல்லாதவை', laneLastSync: 'தலைமை அலுவலகத்துக்குக் கடைசியாக அனுப்பியது',
     devOk: 'வேலை செய்கிறது', devDegraded: 'சரியாக வேலை செய்யவில்லை', devFailed: 'செயலிழந்தது', devNotReported: 'சொல்லப்படவில்லை', laneNever: 'ஒருபோதும் இல்லை', laneBills: 'இந்தக் கல்லாவின் பில்(கள்) அல்லது திருப்பம்(கள்)',
@@ -625,6 +625,8 @@ function renderAttention(floor, today) {
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
   add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
+  // U7 · OB-726 (owner: B): the disputed supplier claims still open, settled on Supplier claims.
+  add(today.claimDisputes, 'claimDisputesOpen', 'attnClaimDisputes', { rail: 'supplier-claims' });
   add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
   add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });
   add(today.counts, 'countsAwaiting', 'attnCounts', { rail: 'counts' });
@@ -664,7 +666,8 @@ function figureBox(tag, figure, label, target) {
   const n = document.createElement('b'); n.className = 'n';
   if (figure.known) n.textContent = String(amountOf(figure)); else { n.textContent = t('notKnown'); n.classList.add('unknown'); }
   const l = document.createElement('span'); l.className = 'l'; l.textContent = label;
-  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (figure.note ?? '') : figure.why;
+  // U3 (OB-699) · U7: the box's note or reason in the reader's language — the Tamil it sent, else the English.
+  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
   box.append(n, l, note);
   const go = goLink(target);
   if (go) box.append(go);
@@ -684,6 +687,7 @@ function renderOps(floor, today) {
     figureBox('div', today.checklist, t('checklistOpen'), { rail: 'checklist' }),
     figureBox('div', today.expiring, t('expiringSoon'), { rail: 'expiry' }),
     figureBox('div', today.recalls, t('recallsOpen'), { rail: 'expiry' }),
+    figureBox('div', today.claimDisputes, t('claimDisputesOpen'), { rail: 'supplier-claims' }),
     figureBox('div', floor.tasks, t('tasksLabel'), null),
   );
 }
@@ -794,7 +798,7 @@ function renderHome() {
   const today = {
     sales: figureOf('salesToday'), po: liveFigures ? liveFigures.purchaseOrdersOpen : figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
     hoApprovals: liveFigures ? liveFigures.headOffice : null,
-    counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'),
+    counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'), claimDisputes: figureOf('supplierClaimDisputes'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
   };
   el('tiles').replaceChildren(

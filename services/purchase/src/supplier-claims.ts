@@ -215,23 +215,61 @@ export async function claimsAgainst(deps: SupplierAccountDeps, tenantId: string,
   return claimsAgainstSupplier(foldSupplierAccount({ ...(await accountRegisters(deps, tenantId)), supplierId }));
 }
 
-export function supplierClaimsRoutes(deps: SupplierClaimsDeps): readonly Route[] {
-  const dayOfIn = async (t: string): Promise<(iso: string) => string> => {
-    const cal = await shopClock(deps.calendar).calendar(t);
-    return (iso: string) => tradingDayIn(iso, cal);
-  };
-  const raisedClaims = async (t: string): Promise<readonly SupplierRaisedClaim[]> => {
-    const out: SupplierRaisedClaim[] = [];
-    if (deps.partners === undefined || deps.submissions === undefined) return out;
-    for (const partnerId of await deps.partners(t)) {
-      const reviews = (await deps.reviews?.(t, partnerId)) ?? [];
-      for (const s of await deps.submissions(t, partnerId)) {
-        if (s.kind !== 'claim') continue;
-        out.push(supplierRaisedClaim(partnerId, s, reviews.find((r) => r.submissionId === s.submissionId)));
-      }
+/** The shop's trading day of a moment, by the shop's own calendar (never the UTC date). */
+async function dayOfIn(deps: Pick<SupplierClaimsDeps, 'calendar'>, t: string): Promise<(iso: string) => string> {
+  const cal = await shopClock(deps.calendar).calendar(t);
+  return (iso: string) => tradingDayIn(iso, cal);
+}
+
+/** Every claim a supplier raised through the portal, with the buyer's decision beside it (M24-FR-02). */
+async function raisedClaimsOf(deps: SupplierClaimsDeps, t: string): Promise<readonly SupplierRaisedClaim[]> {
+  const out: SupplierRaisedClaim[] = [];
+  if (deps.partners === undefined || deps.submissions === undefined) return out;
+  for (const partnerId of await deps.partners(t)) {
+    const reviews = (await deps.reviews?.(t, partnerId)) ?? [];
+    for (const s of await deps.submissions(t, partnerId)) {
+      if (s.kind !== 'claim') continue;
+      out.push(supplierRaisedClaim(partnerId, s, reviews.find((r) => r.submissionId === s.submissionId)));
     }
-    return out;
+  }
+  return out;
+}
+
+/**
+ * U7 · OB-726 (owner, in writing: B) — every disputed (rejected) supplier claim as the register reads it, for the readers
+ * OUTSIDE the register: the Today page's count (through the store pack) and the alert to the people who settle it. The
+ * SAME fold the Supplier claims page shows, so the three never disagree (P-02). Company-wide: claims are not per store.
+ */
+export async function readClaimDisputes(deps: SupplierClaimsDeps, t: string): Promise<readonly ClaimDispute[]> {
+  const dayOf = await dayOfIn(deps, t);
+  return claimDisputes(await raisedClaimsOf(deps, t), (await deps.disputeResolutions?.(t)) ?? [], dayOf, dayOf(deps.now()));
+}
+
+/** U7 · OB-726 — the Today figure's two numbers: disputes still open, and of those how many are past their shop day. Pure. */
+export function claimDisputeCounts(disputes: readonly ClaimDispute[]): { readonly open: number; readonly overdue: number } {
+  return { open: disputes.filter((d) => d.state === 'open').length, overdue: disputes.filter((d) => d.state === 'open' && d.overdue).length };
+}
+
+/** U7 · OB-726 — the alert id of one disputed claim: one alert per exception, never per pass. */
+export const claimDisputeAlertIdOf = (exceptionId: string): string => `supplier-claim-dispute:${exceptionId}`;
+
+/**
+ * U7 · OB-726 — what the alert sweep does with the disputes: raise one alert per OPEN dispute that has no open alert yet,
+ * and clear every open dispute alert whose dispute is no longer open (settled). Pure; the sweep writes the facts.
+ */
+export function claimDisputeAlertPlan(
+  disputes: readonly ClaimDispute[], openAlertIds: readonly string[],
+): { readonly raise: readonly ClaimDispute[]; readonly clear: readonly string[] } {
+  const open = new Set(openAlertIds);
+  const stillOpen = new Set(disputes.filter((d) => d.state === 'open').map((d) => claimDisputeAlertIdOf(d.exceptionId)));
+  return {
+    raise: disputes.filter((d) => d.state === 'open' && !open.has(claimDisputeAlertIdOf(d.exceptionId))),
+    clear: openAlertIds.filter((id) => id.startsWith('supplier-claim-dispute:') && !stillOpen.has(id)),
   };
+}
+
+export function supplierClaimsRoutes(deps: SupplierClaimsDeps): readonly Route[] {
+  const raisedClaims = (t: string): Promise<readonly SupplierRaisedClaim[]> => raisedClaimsOf(deps, t);
   const isStr = (x: unknown): x is string => typeof x === 'string' && x.trim() !== '';
   return [
     {
@@ -244,7 +282,7 @@ export function supplierClaimsRoutes(deps: SupplierClaimsDeps): readonly Route[]
         const folded = foldAllSupplierAccounts(await accountRegisters(deps.account, t));
         const shopClaims = folded.accounts.flatMap((a) => claimsAgainstSupplier(a));
         const supplierClaims: SupplierRaisedClaim[] = [...(await raisedClaims(t))];
-        const dayOf = await dayOfIn(t);
+        const dayOf = await dayOfIn(deps, t);
         const drafts = creditDrafts(supplierClaims, (await deps.creditDecisions?.(t)) ?? []);
         const disputes = claimDisputes(supplierClaims, (await deps.disputeResolutions?.(t)) ?? [], dayOf, dayOf(deps.now()));
         const names: Record<string, string> = {};
