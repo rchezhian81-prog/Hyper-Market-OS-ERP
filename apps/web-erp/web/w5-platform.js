@@ -32,15 +32,31 @@ function labelled(words, control) {
   return l;
 }
 function button(id, words, onClick) { const b = el('button', words, { id, type: 'button' }); b.addEventListener('click', onClick); return b; }
-function say(node, out, good) { node.textContent = H.w5OutcomeWords(lang, out, good); node.dataset.result = out.result; }
+// U7 · the shared parts (UI/UX audit G6): a refusal, a read in progress and an empty list are the chrome's state part.
+const office = () => (window.sreOffice && typeof window.sreOffice.state === 'function' ? window.sreOffice : null);
+function say(node, out, good) {
+  const words = H.w5OutcomeWords(lang, out, good);
+  node.dataset.result = out.result;
+  const o = office();
+  if (o !== null && out.result !== 'ok') { o.state(node, o.stateOf(out), { title: words, detail: '' }); return; }
+  node.textContent = words;
+}
+/** "Reading…" on a status line, as the chrome's loading state. */
+function reading(node) { const o = office(); if (o !== null) o.state(node, 'loading', { title: w('reading'), detail: '' }); else node.textContent = w('reading'); }
 function lines(ul, items, line, attr) {
   ul.replaceChildren();
-  if (items.length === 0) { ul.append(el('li', w('none'), { class: 'meta' })); return; }
+  if (items.length === 0) {
+    const li = el('li', null, { class: 'w5-none' });
+    const o = office();
+    if (o !== null) o.state(li, 'empty', { title: w('none'), detail: '' }); else li.textContent = w('none');
+    ul.append(li);
+    return;
+  }
   for (const it of items) { const li = el('li', line(it)); if (attr !== undefined) li.dataset.id = attr(it); ul.append(li); }
 }
 /** One section: its heading, lead, an optional form, a status line and what was read. `build` fills the rest. */
 function section(root, key, build) {
-  const status = el('p', null, { id: `w5-${key}-status`, class: 'status', role: 'status' });
+  const status = el('div', null, { id: `w5-${key}-status`, class: 'status', role: 'status' });
   const paint = () => {
     root.replaceChildren();
     build(root, status);
@@ -60,7 +76,7 @@ function registers(root) {
     const conflicts = el('ul', null, { id: 'w5-conflicts' }); const refusals = el('ul', null, { id: 'w5-refusals' });
     const overruled = el('ul', null, { id: 'w5-overruled' }); const stamps = el('ul', null, { id: 'w5-stamps' });
     r.append(button('w5-reg-show', w('show'), async () => {
-      status.textContent = w('reading');
+      reading(status);
       const [c, f, st] = await Promise.all([s.conflicts(), s.refusals(), s.stamps()]);
       for (const out of [c, f, st]) if (out.result !== 'ok') { say(status, out, ''); return; }
       lines(conflicts, c.value, (x) => H.conflictLine(lang, x, when), (x) => x.conflictId);
@@ -81,7 +97,7 @@ function aged(root) {
     if (!s.may.read) { status.textContent = gateWords(false); return; }
     const waiting = el('ul', null, { id: 'w5-aged-waiting' }); const escalated = el('ul', null, { id: 'w5-aged-escalated' });
     r.append(button('w5-aged-show', w('show'), async () => {
-      status.textContent = w('reading');
+      reading(status);
       const out = await s.read();
       if (out.result !== 'ok') { say(status, out, ''); return; }
       lines(waiting, out.value.waiting, (x) => H.waitingLine(lang, x, when), (x) => x.requestId);
@@ -117,7 +133,7 @@ function ruleHistory(root) {
       }
     };
     const show = async () => {
-      status.textContent = w('reading');
+      reading(status);
       const out = await s.history(picked);
       if (out.result !== 'ok') { say(status, out, ''); return; }
       const h = out.value;
@@ -241,7 +257,7 @@ function fleetControl(root) {
     const sessions = el('ul', null, { id: 'w5-rs-list' });
     const vp = el('ul', null, { id: 'w5-vp-now' });
     const show = async () => {
-      status.textContent = w('reading');
+      reading(status);
       const [a, b] = await Promise.all([s.sessions(), s.policy()]);
       if (a.result !== 'ok') { say(status, a, ''); return; }
       if (b.result !== 'ok') { say(status, b, ''); return; }
@@ -282,7 +298,7 @@ function licences(root) {
     if (!s.may.read) { status.textContent = gateWords(false); return; }
     const alerts = el('ul', null, { id: 'w5-lic-alerts' }); const list = el('ul', null, { id: 'w5-lic-list' });
     const show = async () => {
-      status.textContent = w('reading');
+      reading(status);
       const [a, l] = await Promise.all([s.alerts(), s.list()]);
       for (const out of [a, l]) if (out.result !== 'ok') { say(status, out, ''); return; }
       alerts.replaceChildren();
@@ -315,7 +331,7 @@ function secrets(root) {
     const uses = el('ul', null, { id: 'w5-sec-use' }); const checked = el('p', null, { id: 'w5-sec-checked', class: 'meta' });
     const unusual = el('ul', null, { id: 'w5-sec-unusual' });
     r.append(button('w5-sec-show', w('show'), async () => {
-      status.textContent = w('reading');
+      reading(status);
       const [out, use] = await Promise.all([s.inventory(), s.usage()]);
       if (out.result !== 'ok') { say(status, out, ''); return; }
       if (use.result !== 'ok') { say(status, use, ''); return; }
@@ -494,15 +510,41 @@ function importChecks(root) {
       if (o.result === 'ok') await showKept();
     }), el('h3', w('dryListH')), kept);
     // M30-FR-04: data quality per source, and every job (refusals included).
-    const sources = el('ul', null, { id: 'w5-qual-list' }); const talk = el('p', null, { id: 'w5-qual-talk', class: 'meta' }); const jobs = el('ul', null, { id: 'w5-qual-jobs' });
+    // U7 (OB-725): every job is read ONE page at a time from head office on the chrome's register (its loader) — search
+    // and sort at head office, the total of all the jobs, never the first fifty.
+    const sources = el('ul', null, { id: 'w5-qual-list' }); const talk = el('p', null, { id: 'w5-qual-talk', class: 'meta' }); const jobs = el('div', null, { id: 'w5-qual-jobs-host' });
     r.append(el('h2', w('qualH'), { id: 'w5-qual-h' }), el('p', w('qualLead'), { class: 'lede' }), button('w5-qual-show', w('show'), async () => {
-      const [q, j] = await Promise.all([s.quality(), s.jobs()]);
-      for (const out of [q, j]) if (out.result !== 'ok') { say(status, out, ''); return; }
+      const q = await s.quality();
+      if (q.result !== 'ok') { say(status, q, ''); return; }
       talk.textContent = `${w('qualTalk')}: ${q.value.worthAConversation.length === 0 ? '—' : q.value.worthAConversation.join(', ')} · ${q.value.detail}`;
       lines(sources, q.value.sources, (x) => H.qualityLine(lang, x), (x) => x.sourceId);
-      lines(jobs, j.value, (x) => H.jobLine(lang, x, when), (x) => x.jobId);
+      jobsRegister(jobs, s);
       status.textContent = '';
     }), talk, sources, el('h3', w('qualJobsH')), jobs);
+  });
+}
+
+/** U7: "Every file loaded, refused or abandoned" on the register, one page at a time from head office. */
+function jobsRegister(host, s) {
+  const o = office(); if (o === null || typeof o.table !== 'function') return;
+  const pair = (k) => ({ en: H.w5Words('en', k), ta: H.w5Words('ta', k) });
+  o.table(host, {
+    id: 'w5-qual-jobs-table', label: pair('qualJobsH'), pageSize: 10, sortable: true, bodyId: 'w5-qual-jobs',
+    loader: async (ask) => {
+      const out = await s.jobsPage(ask);
+      if (out.result === 'ok') return { rows: out.value.rows, total: out.value.total };
+      return { state: o.stateOf(out), stateOpts: { title: { en: H.w5OutcomeWords('en', out, ''), ta: H.w5OutcomeWords('ta', out, '') } } };
+    },
+    rowKey: (x) => x.jobId, rowData: (x) => ({ id: x.jobId }),
+    columns: [
+      { key: 'when', label: pair('jobWhen'), value: (x) => when(x.uploadedAt) },
+      { key: 'file', label: pair('jobFile'), value: (x) => x.fileName },
+      { key: 'outcome', label: pair('jobOutcome'), sort: false, value: (x) => x.outcome, render: (x) => { const n = el('span', x.outcome); n.setAttribute('lang', 'en'); return n; } }, // head office's own word (OB-699)
+      { key: 'rows', label: pair('jobRows'), sort: false, align: 'end', value: (x) => x.rows },
+      { key: 'by', label: pair('jobBy'), sort: false, value: (x) => x.uploadedBy },
+      { key: 'detail', label: pair('jobDetail'), sort: false, value: (x) => x.detail, render: (x) => { const n = el('span', x.detail); n.setAttribute('lang', 'en'); return n; } },
+    ],
+    empty: { title: pair('none') },
   });
 }
 

@@ -14,37 +14,17 @@ const $ = (id) => document.getElementById(id);
 // name is shown beside the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`).
 // (one line on purpose: the page's own `  en: {` / `  ta: {` blocks stay the first ones the screen guardrails find)
 const pickWords = { en: { choose: 'Choose…', pickProduct: 'Which product?', pickSupplier: 'Which supplier?', pickStore: 'Which store?', pickCustomer: 'Which customer?' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickSupplier: 'எந்த விநியோகஸ்தர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?' } };
-const pw = (k) => pickWords[document.documentElement.lang === 'ta' ? 'ta' : 'en'][k] ?? pickWords.en[k];
 const pickRepaints = [];
 const repaintPickers = () => { for (const f of pickRepaints) f(); };
+// U7 (Group C2): the picker is the chrome's ONE copy (`sreOffice.pickable`) — "Choose…" beside the field, the picked id in
+// the field the page sends, the name beside it, the typed code the fallback; a kind may follow the form (null = no list,
+// so no button). The page keeps its element ids (`#<id>-pick`, `#<id>-name`) and its own titles in both languages.
 function pickable(inputId, kind, titleKey, extra = {}) {
-  const input = document.getElementById(inputId);
-  if (!input || input.dataset.pickable === 'on') return;
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  // the kind may depend on the form (a store price picks a store, a customer price a customer); null = no list exists, so no button
-  const kindNow = () => (typeof kind === 'function' ? kind() : kind);
+  if (!office || typeof office.pickable !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey, extra), { once: true }); return; }
   const titleNow = () => (typeof titleKey === 'function' ? titleKey() : titleKey);
-  const paint = () => { btn.hidden = kindNow() === null; btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleNow())}`); };
-  paint(); pickRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = kindNow(); if (k === null) return;
-    const tk = titleNow();
-    const picked = await office.pick({ kind: k, title: { en: pickWords.en[tk], ta: pickWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    input.value = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    name.textContent = typeof picked.name === 'string' && picked.name !== input.value ? picked.name : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
+  const row = office.pickable(inputId, typeof kind === 'function' ? null : kind, null, { ...extra, ...(typeof kind === 'function' ? { kindOf: kind } : {}), titleOf: () => ({ en: pickWords.en[titleNow()], ta: pickWords.ta[titleNow()] }) });
+  if (row && typeof row.sreRepaint === 'function') pickRepaints.push(row.sreRepaint);
 }
 const who = window.productDetailsData && typeof window.productDetailsData === 'object' ? window.productDetailsData : null;
 const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
@@ -150,20 +130,17 @@ const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
 // U2 · G14 (UI/UX gap audit): a date a shop person reads — dd/mm/yyyy in the chrome's shared field (`sreOffice.dateField`),
 // while the page goes on sending ISO (`dateOf`). Before the chrome has loaded, or off the box, the field stays as it was.
 const wordsIn = (l, k) => WORDS[l]?.[k] ?? WORDS.en[k] ?? k;
-const shopDates = new Map();
-/** The shared fields' labels follow the language toggle like the page's own words do. */
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = $(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
+// U7 (Group C2): the shared dd/mm/yyyy field is the chrome's ONE copy (`sreOffice.shopDate`) — its label, "(required)"
+// and hint follow the language toggle inside the chrome; the page keeps its element ids and reads ISO back through
+// `sreOffice.dateOf`. Before the chrome has loaded, or off the box, the plain field stays, so the page is never dead.
+const shopDates = new Set();
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  const o = window.sreOffice;
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (o.shopDate(id, words, opts) !== null) shopDates.add(id);
 }
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
+const dateOf = (id) => { const o = window.sreOffice; return shopDates.has(id) && o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : (document.getElementById(id)?.value ?? ''); };
 const setShopDate = (id, iso) => { const n = $(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 
@@ -454,7 +431,6 @@ function paintWords() {
 }
 
 function paint() {
-  repaintShopDates();
   paintWords();
   const shown = productId !== '' && !readFailed && mayRead;
   $('tabs').hidden = false; // the tiles always say what the page holds; a section opens once a product is shown

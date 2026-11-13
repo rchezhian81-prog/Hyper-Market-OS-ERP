@@ -24,6 +24,10 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
 });
 
 describe('U2: the store computer names who and where', () => {
+  it('U7: carries a role\'s Tamil name where the pack holds it (OB-699)', () => {
+    const d = directoryPayload(pack({ roles: known([{ id: 'cashier', name: 'Cashier', nameTa: 'காசாளர்', permissions: ['pos.sale.read'] }]) }), null);
+    expect(d.roles).toEqual([{ id: 'cashier', name: 'Cashier', nameTa: 'காசாளர்' }]);
+  });
   it('names the store, the shop zone, the people and the places from the signed pack, and the person signed in with their roles', () => {
     const d = directoryPayload(pack(), 'u-mgr');
     expect(d.store).toEqual({ id: 'S1', name: 'SRE Hyper Market' });
@@ -36,7 +40,9 @@ describe('U2: the store computer names who and where', () => {
       { id: 'Q-01', name: 'Q-01 (quarantine)', kind: 'bin', zone: 'quarantine' },
     ]);
     expect({ ...d.me, permissions: [...(d.me?.permissions ?? [])].sort() }).toEqual({ userId: 'u-mgr', name: 'Ravi Kumar', roleIds: ['store_manager'], permissions: ['inventory.count.plan', 'till.dayclose.read'] });
-    expect(d.known).toEqual({ people: true, places: true, store: true });
+    // U7: the roles the pack's register holds, for the picker's role kind (several at once) — by name
+    expect(d.roles).toEqual([{ id: 'cashier', name: 'Cashier' }, { id: 'store_manager', name: 'Store manager' }]);
+    expect(d.known).toEqual({ people: true, places: true, store: true, roles: true });
   });
 
   it('a register the pack never held is an empty list said as such; a person the pack does not name is their id; nobody signed in is null', () => {
@@ -48,7 +54,8 @@ describe('U2: the store computer names who and where', () => {
     expect(directoryPayload(pack(), null).me).toBeNull();
     const bare = directoryPayload(emptyPack('never pulled'), null);
     expect(bare.store).toBeNull();
-    expect(bare.known).toEqual({ people: false, places: false, store: false });
+    expect(bare.known).toEqual({ people: false, places: false, store: false, roles: false });
+    expect(bare.roles).toEqual([]);
     expect(bare.places).toEqual([]);
   });
 

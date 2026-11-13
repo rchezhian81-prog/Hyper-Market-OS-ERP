@@ -85,9 +85,7 @@ export async function partsFindings(page: Page, width: number): Promise<Finding[
     // 2b. an empty / not-read / refused view said as a plain line, not the shared state part
     for (const el of Array.from(main.querySelectorAll('p, div, li'))) {
       if (!visible(el) || inChrome(el) || el.closest('.sre-state') !== null || el.querySelector('.sre-state') !== null) continue;
-      // The W5 shared section scripts (main's `w5-sections.js`, drawn into 25 pages) say an answer of "none" on their own
-      // status line — the section script's, not this page's (noted for the join; the page's own views are held to the rule).
-      if (el.closest('[data-w5], .w5-section') !== null) continue;
+      // U7: main's W5 shared section scripts now draw their empty / refused / reading views as the state part too — held to the rule.
       const classes = Array.from({ length: el.classList.length }, (_, i) => el.classList[i]!);
       if (!classes.some((c) => /^(status|state|result|said|empty|lead)$/.test(c))) continue;
       const own = (el.textContent ?? '').replace(/\s+/g, ' ').trim().replace(GLYPH, '');

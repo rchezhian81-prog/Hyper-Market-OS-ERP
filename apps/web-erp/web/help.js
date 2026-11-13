@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 // never a dead end, P-01 · P-08); the chrome's sheet finds the thing by name, code or barcode and the name is shown beside
 // the field. Mounted when the chrome is there (a page that paints first listens for `sre:chrome`); off the box nothing
 // changes. The same six-line pattern as the U2 pages (store-tasks, delegation, floor-heat-map).
-const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
+const u2bWords = Object.freeze({ en: { choose: 'Choose…', pickProduct: 'Which product?', pickPlace: 'Which place in the store?', pickPerson: 'Which person?', pickRoles: 'Which roles does it apply to?', pickStore: 'Which store?', pickCustomer: 'Which customer?', pickApproval: 'Which approval?', pickSupplier: 'Which supplier?', yourStore: 'your store' }, ta: { choose: 'தேர்ந்தெடு…', pickProduct: 'எந்தப் பொருள்?', pickPlace: 'கடையில் எந்த இடம்?', pickPerson: 'எந்த நபர்?', pickRoles: 'இது எந்தப் பங்குகளுக்குப் பொருந்தும்?', pickStore: 'எந்தக் கடை?', pickCustomer: 'எந்த வாடிக்கையாளர்?', pickApproval: 'எந்த அனுமதி?', pickSupplier: 'எந்த விநியோகஸ்தர்?', yourStore: 'உங்கள் கடை' } }); // one line on purpose: a page's own word tables start a line with `en: {`
 const u2bLang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const u2bWord = (k) => u2bWords[u2bLang()][k] ?? u2bWords.en[k];
 const u2bRepaints = [];
@@ -177,6 +177,8 @@ document.addEventListener('sre:chrome', () => { shopDate('d-on', { en: wordsIn('
 pickable('d-branch', 'store', 'pickStore');
 ownStore('d-branch');
 document.addEventListener('sre:chrome', () => ownStore('d-branch'), { once: true });
+// U7 (OB-725): a procedure's roles are picked by name, several at once — the typed list below stays the fallback.
+pickable('w-roles', 'role', 'pickRoles', { multi: true });
 pickable('d-who', 'person', 'pickPerson', { append: (input, id) => { const have = input.value.trim(); input.value = have === '' ? id : `${have.replace(/,\s*$/, '')}, ${id}`; } });
 // the roles a procedure is for, from the roles the store computer knows (the typed list stays the fallback)
 (function roleList() {

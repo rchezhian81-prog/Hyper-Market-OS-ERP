@@ -87,6 +87,34 @@ export interface SupplierPayment {
    * liability until a challan covers it. Absent when nothing was withheld.
    */
   readonly tds?: TdsDeduction;
+  /**
+   * U7 · OB-723 (owner, in writing: B): the supplier's bills this payment settles, as the accountant named them on the
+   * Supplier bills page — each one this supplier's own bill. Absent on a payment recorded without naming bills (older ones).
+   */
+  readonly settles?: readonly string[];
+}
+
+/**
+ * OB-724 (owner, 13 Nov 2026, in writing: B) — a supplier's CLAIM on the shop that a buyer accepted becomes a DRAFT credit
+ * note to the supplier (supplier-claims.ts); it changes nothing until the accountant — a second person, never the buyer who
+ * accepted the claim — APPROVES it. Only an approved credit is a fact the account counts: it raises what the shop owes the
+ * supplier by the claim's value, and the payables run posts it through the accountant's own rule (planPayablesPostings).
+ * No statutory number: the shop is not the supplier's tax-invoice issuer; the claim's submission id names it.
+ */
+export interface SupplierClaimCredit {
+  /** `SCC-<submissionId>` — one credit per accepted claim. */
+  readonly creditId: string;
+  readonly supplierId: string;
+  /** The supplier's `claim` submission it rests on. */
+  readonly submissionId: string;
+  readonly amountMinor: number;
+  readonly currency: 'INR';
+  readonly why: string;
+  /** The buyer who accepted the claim. */
+  readonly acceptedBy: string;
+  readonly approvedBy: string;
+  readonly approvedAt: string;
+  readonly reason: string;
 }
 
 /** SP-7c — a debit note ISSUED to the supplier under a number from the tenant's series (M23-FR-02). */
@@ -255,11 +283,13 @@ export interface SupplierAccountTotals {
   readonly debitNotesMinor: number;
   /** Σ payments recorded against the supplier (SP-7c). */
   readonly paidMinor: number;
+  /** OB-724 — Σ the supplier's accepted claims the accountant APPROVED as credits: added to what is owed. */
+  readonly claimCreditsMinor: number;
   /** GT-05 — Σ SIGNED opening balances carried from the old system (supplier-openings.ts). */
   readonly openingMinor: number;
   /** GT-05 — Σ opening balances recorded but not yet signed off by a second person: shown, NOT owed. */
   readonly openingPendingSignOffMinor: number;
-  /** accrued + signed openings − debit notes − paid: the balance the supplier's statement should show. */
+  /** accrued + signed openings + approved claim credits − debit notes − paid: the balance the supplier's statement should show. */
   readonly owedMinor: number;
   readonly unmatchedInvoices: number;
   readonly blockedInvoices: number;
@@ -276,6 +306,8 @@ export interface SupplierAccountStatement extends PayablesAccount {
   /** Batch 2 — quarantined lines disposed of as returns, and whether they have physically gone back. */
   readonly pendingLineReturns: readonly PendingLineReturn[];
   readonly payments: readonly SupplierPayment[];
+  /** OB-724 — the supplier's accepted claims the accountant approved as credits (raise what is owed). */
+  readonly claimCredits: readonly SupplierClaimCredit[];
   /** GT-05 — the legacy bills still outstanding at cutover, each with its sign-off state. */
   readonly openings: readonly AccountOpening[];
   /** R3 · D-11 · OB-196 — the numbered debit notes raised at the DSD door; shown, not netted (see `DoorDebitNote`). */
@@ -307,6 +339,8 @@ export interface SupplierAccountInput {
   readonly openings?: readonly AccountOpening[];
   /** R3 · OB-196 — every door debit note (all suppliers). Optional for callers that have none. */
   readonly doorDebitNotes?: readonly DoorDebitNote[];
+  /** OB-724 — every APPROVED claim credit (all suppliers). Optional for callers that have none. */
+  readonly claimCredits?: readonly SupplierClaimCredit[];
   readonly asAt: string;
 }
 
@@ -398,12 +432,14 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const debitNotesMinor = debitNotes.reduce((s, d) => s + d.valueMinor, 0);
   const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
   const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
+  const claimCredits = (input.claimCredits ?? []).filter((c) => c.supplierId === input.supplierId);
+  const claimCreditsMinor = claimCredits.reduce((s, c) => s + c.amountMinor, 0);
   const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
   const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
   const doorDebitNotes = (input.doorDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
   return {
     supplierId: input.supplierId, currency: 'INR',
-    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, openings,
+    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, claimCredits, openings,
     doorDebitNotes,
     doorDebitNotesTotal: {
       valueMinor: doorDebitNotes.reduce((s, d) => s + (d.valueMinor ?? 0), 0),
@@ -413,7 +449,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),
       openingMinor, openingPendingSignOffMinor: openings.filter((o) => !o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0),
-      debitNotesMinor, paidMinor, owedMinor: accruedMinor + openingMinor - debitNotesMinor - paidMinor,
+      debitNotesMinor, paidMinor, claimCreditsMinor, owedMinor: accruedMinor + openingMinor + claimCreditsMinor - debitNotesMinor - paidMinor,
       unmatchedInvoices: invoices.filter((i) => !i.matched).length,
       blockedInvoices: invoices.filter((i) => i.blocked).length,
       pendingReturns: pendingSupplierReturns.filter((p) => !p.returned).length,
@@ -430,6 +466,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
   const supplierIds = [...new Set([
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
     ...(input.openings ?? []).map((o) => o.supplierId), ...(input.doorDebitNotes ?? []).map((d) => d.supplierId), // OB-196
+    ...(input.claimCredits ?? []).map((c) => c.supplierId), // OB-724
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -462,16 +499,19 @@ export interface SupplierAccountDeps {
   readonly openingBalances?: (tenantId: string) => Promise<readonly AccountOpening[]> | readonly AccountOpening[];
   /** R3 · OB-196 — the debit notes raised at the DSD door, numbered. Optional: a stub has none. */
   readonly doorDebitNotes?: (tenantId: string) => Promise<readonly DoorDebitNote[]> | readonly DoorDebitNote[];
+  /** OB-724 — the supplier claims the accountant approved as credits. Optional: a stub has none. */
+  readonly claimCredits?: (tenantId: string) => Promise<readonly SupplierClaimCredit[]> | readonly SupplierClaimCredit[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
     deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [], deps.doorDebitNotes?.(tenantId) ?? [],
+    deps.claimCredits?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, claimCredits, asAt: deps.now() };
 }
 const registers = accountRegisters;
 

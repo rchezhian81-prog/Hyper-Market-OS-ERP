@@ -1569,7 +1569,7 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
     ...(input.pack.categories.known ? {
       categories: input.pack.categories.value.map((c) => ({
         categoryId: c.categoryId, name: c.name, parentId: c.parentId,
-        ...((c as { nameTa?: unknown }).nameTa === undefined ? {} : { nameTa: (c as { nameTa?: string }).nameTa }),
+        ...(c.nameTa === undefined ? {} : { nameTa: c.nameTa }),
       })),
     } : {}),
   };

@@ -13,6 +13,7 @@
 // (OB-553, OB-699); every word this page adds has a Tamil twin. No vendor is connected: every answer is a stand-in.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
+import { pagedQuery, pagedAnswer, type RegisterAsk } from './register-paging';
 
 export type Lang = 'en' | 'ta';
 
@@ -38,6 +39,17 @@ export interface EslPushes {
   readonly notConfirmed: number;
   readonly rule: string;
   readonly hardware: string;
+  readonly asAt: string | null;
+}
+
+/** U7 (OB-725): head office's summary of the WHOLE store's pushes — what the cards and "Send all again" read. */
+export interface EslOverview {
+  readonly sent: number;
+  readonly confirmed: number;
+  readonly waiting: number;
+  readonly noLabels: number;
+  /** The pushes not yet shown by every label — what "Send all again" sends (the same price, never a new one). */
+  readonly waitingPushes: readonly { readonly pushId: string; readonly productId: string; readonly priceMinor: number; readonly unconfirmed: number }[];
   readonly asAt: string | null;
 }
 
@@ -169,6 +181,10 @@ export interface EslSession {
   readonly may: { readonly named: boolean; readonly read: boolean; readonly labels: boolean };
   readonly store: string;
   pushes(): Promise<Outcome<EslPushes> | { result: 'invalid'; why: Why }>;
+  /** U7: ONE page of the pushes, searched (product name or code) and sorted (time, product) by head office. */
+  page(ask: RegisterAsk): Promise<Outcome<{ readonly rows: readonly EslPushRow[]; readonly total: number }> | { result: 'invalid'; why: Why }>;
+  /** U7: the whole store's summary (sent, shown everywhere, waiting, no label) — without reading every row. */
+  overview(): Promise<Outcome<EslOverview> | { result: 'invalid'; why: Why }>;
   labels(): Promise<Outcome<EslLabels> | { result: 'invalid'; why: Why }>;
   /** The SAME price again to the labels that have not confirmed it — never a new price. */
   retry(pushId: string): Promise<Outcome<RetryAnswer> | { result: 'invalid'; why: Why }>;
@@ -194,6 +210,25 @@ export function createEslSession(input: {
       const no = gate('read'); if (no !== undefined) return no;
       const out = await call<unknown>('GET', `/v1/devices/esl/pushes${q}`);
       return out.result === 'ok' ? { result: 'ok', value: readPushes(out.value) } : out;
+    },
+    page: async (ask) => {
+      const no = gate('read'); if (no !== undefined) return no;
+      const out = await call<unknown>('GET', `/v1/devices/esl/pushes${q}&${pagedQuery(ask, { at: 'at', productId: 'productId' })}`);
+      if (out.result !== 'ok') return out;
+      const page = pagedAnswer(out.value, 'pushes');
+      return page === undefined ? { result: 'lost_link' } : { result: 'ok', value: { rows: readPushes(out.value).rows, total: page.total } };
+    },
+    overview: async () => {
+      const no = gate('read'); if (no !== undefined) return no;
+      const out = await call<unknown>('GET', `/v1/devices/esl/pushes${q}&page=1&size=1`);
+      if (out.result !== 'ok') return out;
+      const b = isObj(out.value) ? out.value : {};
+      const sm = isObj(b['summary']) ? b['summary'] : null;
+      if (sm === null) return { result: 'lost_link' };
+      const waitingPushes = (Array.isArray(sm['waitingPushes']) ? sm['waitingPushes'] : []).filter(isObj)
+        .map((w) => ({ pushId: str(w['pushId']), productId: str(w['productId']), priceMinor: num(w['priceMinor']), unconfirmed: num(w['unconfirmed']) }))
+        .filter((w) => w.pushId !== '');
+      return { result: 'ok', value: { sent: num(sm['sent']), confirmed: num(sm['confirmed']), waiting: num(sm['waiting']), noLabels: num(sm['noLabels']), waitingPushes, asAt: str(b['asAt']) || null } };
     },
     labels: async () => {
       const no = gate('labels'); if (no !== undefined) return no;

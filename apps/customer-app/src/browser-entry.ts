@@ -51,6 +51,7 @@ import {
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest, type ShopCommerceRequest } from './shop-transport';
 import { categoriesOf, productsInCategory, type CatalogueCategory, type BrowseCategory } from './categories';
+import { standingLines } from './points-standing';
 import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
 import { basketKey, COUPON_CODE, repeatOrderBody, todayAtShop, quoteRows, deliveryHandover, readReferralCode, referralWhy, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
 import { createScanAndGo, linesForTheShop, type ScanAndGo, type ScanProduct } from './scan-and-go';
@@ -411,11 +412,16 @@ export interface MyLoyalty {
   readonly worthMinor?: number;
   readonly say: string;
   readonly howToSpend?: string;
+  /** U7 (OB-725) · M17-FR-01: my tier and the expiry rule as head office sends them (read by `standingLines`). */
+  readonly tier?: unknown;
+  readonly expiry?: unknown;
 }
 
 export interface MyShop {
   /** U6: my points and what they are worth at the till (`GET /v1/me/loyalty`). */
   loyalty(): Promise<MineOutcome<MyLoyalty>>;
+  /** U7: the tier and expiry lines for the points card, in the reader's language, on the shop's day (no line for a missing field). */
+  standingLines(language: 'en' | 'ta', loyalty: MyLoyalty): { tier?: string; lapse?: string };
   favourites(): Promise<MineOutcome<readonly string[]>>;
   setFavourite(productId: string, favourite: boolean): Promise<MineOutcome<boolean>>;
   lists(): Promise<MineOutcome<readonly { readonly listId: string; readonly name: string; readonly items: readonly { readonly productId: string; readonly quantityMinor: number }[] }[]>>;
@@ -678,6 +684,7 @@ export function bootShop(
         const a = await mineCall({ method: 'GET', path: 'loyalty' });
         return a.ok ? { ok: true, value: a.body as MyLoyalty } : a;
       },
+      standingLines: (language, loyalty) => standingLines(language, loyalty),
       favourites: async () => {
         const a = await mineCall({ method: 'GET', path: 'favourites' });
         return a.ok ? { ok: true, value: ((a.body as { favourites?: { productId: string }[] }).favourites ?? []).map((f) => f.productId) } : a;

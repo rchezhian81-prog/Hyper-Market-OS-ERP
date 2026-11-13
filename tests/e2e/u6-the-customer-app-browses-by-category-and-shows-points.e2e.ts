@@ -90,9 +90,11 @@ describe.skipIf(!existsSync(CHROMIUM))('the customer app browses by category and
     expect(await page.textContent('#points-title')).toBe('My points');
     expect(await page.textContent('#points-card')).toBe('Sign in to see your points.');
     expect(await page.isHidden('#points-spend')).toBe(true);
-    // Two targets on the account view were under 44px before this round (the occasion tick box, the referral code field) —
-    // the view's own owner's; ignored here so this test judges only the points card, and recorded in the notes.
-    expect(await auditPage(page, { expectLang: 'en', ignore: [/occasion-yes|referral-claim-code/] })).toEqual([]);
+    // U7: the account view's last two small targets reach 44px — the occasion tick box sits in its 44px label, the
+    // referral code field is a text field like the others. No exception left in the audit.
+    expect((await page.locator('#referral-claim-code').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect((await page.locator('label:has(#occasion-yes)').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(await auditPage(page, { expectLang: 'en' })).toEqual([]);
     await page.click('#lang');
     expect(await page.textContent('#points-title')).toBe('என் புள்ளிகள்');
     expect(await page.textContent('#points-card')).toBe('உங்கள் புள்ளிகளைப் பார்க்க உள்நுழையுங்கள்.');

@@ -34,6 +34,7 @@
 //                  holds the room's stock exactly as it would from a probe (M26-FR-02, PA-07).
 //   cctv.event   → camera METADATA only (no footage, nothing that identifies a person — OB-217).
 
+import { pageOrRefuse } from '../../kernel/src/paging';
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError, notFound, assertBranchInScope, ApiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -121,6 +122,8 @@ export interface FloorDeviceDeps {
   readonly refusedBatches: (tenantId: string) => Promise<readonly RefusedFloorBatch[]>;
   readonly recordRefusedBatch: (tenantId: string, refusal: RefusedFloorBatch) => Promise<void>;
   readonly pushes: (tenantId: string) => Promise<readonly EslPush[]>;
+  /** U7 (OB-725): the product's name on head office's product master, so a person finds a push by name; absent = codes only. */
+  readonly productName?: (tenantId: string, productId: string) => Promise<string | undefined>;
   readonly recordPush: (tenantId: string, push: EslPush) => Promise<void>;
   /** The branches head office knows, with their state. */
   readonly branches: (tenantId: string) => Promise<readonly { readonly branchId: string; readonly status: string }[]>;
@@ -455,10 +458,29 @@ export function floorDeviceRoutes(deps: FloorDeviceDeps): readonly Route[] {
         const branchId = branchQuery(ctx);
         const [pushes, events] = await Promise.all([deps.pushes(ctx.tenantId), deps.events(ctx.tenantId)]);
         const judged = pushes.filter((p) => p.branchId === branchId).sort((a, b) => b.at.localeCompare(a.at)).map((p) => judgePush(p, events));
+        // U7 (OB-725): with ?page= head office pages the pushes (search by the product's name or code, or the push; sort by
+        // time or product); the unconfirmed count and the summary stay the branch's WHOLE count, never the page's.
+        const nameOf = new Map<string, string>();
+        if (ctx.query['page'] !== undefined && deps.productName !== undefined) {
+          for (const id of new Set(judged.map((j) => j.push.productId))) { const n = await deps.productName(ctx.tenantId, id); if (n !== undefined) nameOf.set(id, n); }
+        }
+        const view = judged.map((j, i) => ({ i, pushId: j.push.pushId, productId: j.push.productId, productName: nameOf.get(j.push.productId) ?? '', at: j.push.at }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['pushId', 'productId', 'productName'], sort: ['at', 'productId'] });
+        // The page's cards and "Send all again" read this, so they speak for the whole store, not for the rows on screen.
+        const labelsOf = (j: (typeof judged)[number]): number => j.push.commands.length;
+        const waiting = judged.filter((j) => labelsOf(j) > 0 && j.confirmed.length < labelsOf(j));
+        const summary = {
+          sent: judged.length,
+          confirmed: judged.filter((j) => labelsOf(j) > 0 && j.confirmed.length >= labelsOf(j)).length,
+          waiting: waiting.length,
+          noLabels: judged.filter((j) => labelsOf(j) === 0).length,
+          waitingPushes: waiting.map((j) => ({ pushId: j.push.pushId, productId: j.push.productId, priceMinor: j.push.priceMinor, unconfirmed: j.unconfirmed.length })),
+        };
         return {
           status: 200,
           body: {
-            branchId, pushes: judged, notConfirmed: judged.filter((j) => !j.safeToChangeAtTill).length,
+            branchId, pushes: paged === undefined ? judged : paged.rows.map((v) => judged[v.i]!), ...(paged === undefined ? {} : { paging: paged.paging }),
+            notConfirmed: judged.filter((j) => !j.safeToChangeAtTill).length, summary,
             rule: 'A shelf is known to match the till only once every label has echoed the new price back; until then the price-integrity check treats it as unconfirmed.',
             hardware: HARDWARE_NOT_VERIFIED, asAt: deps.now(),
           },

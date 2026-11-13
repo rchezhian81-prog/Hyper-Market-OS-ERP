@@ -20,6 +20,7 @@
 // name; the committee reads them through its own access log (GET /v1/hr/posh/access-log). VERIFY still checks every
 // record's seal — the chain is one, and a gap would be a break — but it returns no record's content.
 
+import { pageOrRefuse } from '../../kernel/src/paging';
 import type { Route } from '../../kernel/src/index';
 import { apiError, narrowScope, scopeNotHeld, assertBranchInScope } from '../../kernel/src/index';
 import {
@@ -70,6 +71,10 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
         const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
         const records = generalAuditRecords(await deps.records(ctx.tenantId)).filter((r) => scope === 'all' || (r.origin.branchId !== null && scope.includes(r.origin.branchId)));
         const matches = trailOf(records).search(queryFrom(ctx.query));
+        // U7 (OB-725): with ?page= head office pages the matches (search across who/what/action, sort by time or kind).
+        const view = matches.map((m, i) => ({ i, actorId: m.actorId, action: m.action, objectType: m.objectType, objectId: m.objectId, at: m.at, sequence: m.sequence }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['actorId', 'action', 'objectType', 'objectId'], sort: ['at', 'sequence', 'actorId', 'action', 'objectType'] });
+        if (paged !== undefined) return { status: 200, body: { matches: paged.rows.map((v) => matches[v.i]!), total: paged.paging.total, paging: paged.paging } };
         return { status: 200, body: { matches, total: matches.length } };
       },
     },

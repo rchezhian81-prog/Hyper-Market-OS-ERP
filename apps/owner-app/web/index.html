@@ -30,7 +30,7 @@
         padding-bottom: 40px; overflow-x: hidden;
       }
       header { padding: 10px 16px 12px; background: var(--panel); position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); }
-      .title { font-size: 14px; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
+      .title { margin: 0; font-size: 14px; line-height: inherit; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
       .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .lang { background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; min-height: var(--tap); min-width: var(--tap); padding: 0 12px; border-radius: 12px; }
       /* Freshness is persistent and prominent — never implied (P-08), never colour alone. */
@@ -186,7 +186,7 @@
   <body>
     <header>
       <div class="top">
-        <span class="title" id="title">Today · SRE Hyper Market</span>
+        <h1 class="title" id="title">Today · SRE Hyper Market</h1>
         <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </div>
       <div class="freshness">

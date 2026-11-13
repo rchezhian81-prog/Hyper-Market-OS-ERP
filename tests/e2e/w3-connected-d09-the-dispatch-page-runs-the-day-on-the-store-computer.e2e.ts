@@ -141,6 +141,22 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     expect(await flagged.locator('.flag-words').innerText()).toBe(' · Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
     expect(await flagged.innerText()).toMatch(/Code: WRONG · Where: AWAY from the address \(\d+ m\)/);
 
+    // ── U7 (OB-725 · OB-700): the driver asks the store to call the customer; the board lists it, not called yet; the store
+    // calls from the order's own record and ticks it — the request's alert ticked as seen — and the board reads it called.
+    const asked = await cloud.request({ method: 'POST', path: `/v1/delivery/routes/${encodeURIComponent(route.routeId)}/stops/${encodeURIComponent(stop.stopId)}/call-request/synced`, userId: OWNER, idempotencyKey: `call-${stop.stopId}`, body: {
+      routeId: route.routeId, stopId: stop.stopId, driverId: 'u-driver', orderRef: 'ORD-1', area: 'Near the market', occurredAt: new Date().toISOString(),
+    } });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(201);
+    await page.click('#show-board');
+    const call = page.locator(`#board .call-list li[data-stop="${stop.stopId}"]`);
+    await call.waitFor({ timeout: 15_000 });
+    expect(await call.getAttribute('data-called')).toBe('no');
+    expect(await call.innerText()).toMatch(/Order ORD-1 · Near the market · .* asked at .* · not called yet/);
+    expect(await call.innerText()).not.toMatch(/c-1/);
+    await call.locator('button.mark-called').click();
+    await page.locator(`#board .call-list li[data-stop="${stop.stopId}"][data-called="yes"]`).waitFor({ timeout: 15_000 });
+    expect(await page.locator(`#board .call-list li[data-stop="${stop.stopId}"]`).innerText()).toMatch(/called by .* at /);
+
     // ── The contribution rule: not set — the rule only flags.
     await page.click('#show-held');
     await page.locator('#threshold').waitFor({ state: 'visible', timeout: 15_000 });

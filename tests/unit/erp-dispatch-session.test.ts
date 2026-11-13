@@ -33,7 +33,7 @@ describe('what the page offers, by the viewer\'s own grants', () => {
     const nobody = createDispatchSession({ viewer: undefined, fetch: f.fetch });
     expect(await nobody.board('2026-10-24', 'S1')).toEqual({ result: 'invalid', why: 'nobody' });
     const cashier = createDispatchSession({ viewer: { userId: 'u-cash', permissions: ['pos.sale.read'] }, fetch: f.fetch });
-    expect(cashier.may).toEqual({ named: true, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false });
+    expect(cashier.may).toEqual({ named: true, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false, tickCalls: false });
     expect(await cashier.candidates('S1')).toEqual({ result: 'invalid', why: 'cannotWave' });
     expect(await cashier.plan({ runDate: '2026-10-24', storeId: 'S1', driversText: 'u, 1, 09:00, 10:00', speed: '20', minutes: '5' })).toEqual({ result: 'invalid', why: 'cannotDispatch' });
     expect(await cashier.setNumber('geofenceRadiusMetres', '150')).toEqual({ result: 'invalid', why: 'cannotSet' });

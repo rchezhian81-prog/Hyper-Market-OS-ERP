@@ -163,6 +163,8 @@ export function floorDevicesAdapter(input: { readonly store: EventStore; readonl
       const res = await reading({ ...ctx, params: { assetId: r.assetId, readingId: r.readingId }, body: { tenthsC: r.tenthsC, at, source: 'sensor', recordedBy: r.recordedBy } });
       return { state: String((res.body as { state?: unknown } | null)?.state ?? 'unknown') };
     },
+    // U7 (OB-725): a push is found by the product's name on head office's product master.
+    productName: async (t, productId) => (await productMasterAdapter({ store, now }).product(t, productId))?.name,
     bookUnits: async (t, locationId, productId): Promise<BookUnits> => {
       const product = await productMasterAdapter({ store, now }).product(t, productId);
       if (product === undefined) return { known: false, why: `head office has no product ${productId}` };

@@ -67,15 +67,17 @@ describe.skipIf(!existsSync(CHROMIUM))('the owner\'s phone compares branches and
     expect(await links.nth(1).getAttribute('href')).toBe('/shop/store-computers');
     expect(await links.nth(2).getAttribute('href')).toBe('/shop/branch-compare');
     expect(await page.textContent('#office-note')).toBe('These open the office\'s own pages. Nothing is copied to this phone.');
-    // The audit's one-h1 rule is ignored here: the owner app's title is the header's span, a shape older than this round
-    // (lane 5: "R7 not cited") — recorded for U5's owner-app pass, not changed from a comparison test.
-    expect(await auditPage(page, { expectLang: 'en', ignore: [/^h1$/] })).toEqual([]);
+    // U7: the owner phone carries one main heading — the header's title is the page's h1 (the audit's one-h1 rule holds).
+    expect(await page.locator('h1').count()).toBe(1);
+    expect(await page.textContent('h1#title')).toBe('Today · SRE Hyper Market');
+    expect(await auditPage(page, { expectLang: 'en' })).toEqual([]);
 
     await page.click('#lang');
     expect(await page.textContent('#compare-title')).toBe('கிளைகள் அருகருகே');
     expect(await page.textContent('#office-title')).toBe('அலுவலகத்திலும்');
     expect(await links.nth(0).textContent()).toBe('தணிக்கைப் பதிவு — யார் என்ன செய்தார்');
-    expect(await auditPage(page, { expectLang: 'ta', ignore: [/^h1$/] })).toEqual([]);
+    expect(await page.textContent('h1#title')).toBe('இன்று · SRE Hyper Market');
+    expect(await auditPage(page, { expectLang: 'ta' })).toEqual([]);
   });
 
   it('one shop: no comparison; served without the office links the section says so rather than guessing a path', async () => {

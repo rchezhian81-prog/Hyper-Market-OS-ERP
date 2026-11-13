@@ -378,7 +378,8 @@ import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from '.
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
-import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
+import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter, loyaltyProgrammeAdapter } from './customer-commerce-adapters';
+import { customerStandingOf } from '../../customer/src/loyalty-programme'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { tillControlsPackSectionOf, versionPolicyPackSectionOf, tillOverrideRulesForSale, clientVersionPolicyOf } from './r7a-till-controls-adapters'; // OB-500 · OB-501 (R7-A)
 import { appVersionPolicyRoutes } from './r8a-client-version-adapters'; // OB-521 (R8-A)
@@ -1001,7 +1002,7 @@ export function buildSurface(deps: {
     // U6 · M07-FR-03 · M24-FR-02: the one supplier-claims register — the shop's claims against each supplier (the account
     // fold) and the suppliers' claims on the shop (the portal's `claim` submissions, with the buyer's decision beside each).
     ...supplierClaimsRoutesFor(store === undefined ? { store, now } : {
-      store, now, portal: supplierPortalAdapter({ store, now, calendar: shopCalendar }),
+      store, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), portal: supplierPortalAdapter({ store, now, calendar: shopCalendar }),
       partners: async (t: string) => [...new Set((await store.readStream(t, SUPPLIER_PARTNER_INDEX_STREAM, { type: 'SupplierPartnerIndexed' })).map((e) => (e.event.payload as { partnerId: string }).partnerId))],
     }),
     // Import job history & supplier data-quality scoring (M30-FR-04) — which supplier files cost hours a year.
@@ -1580,6 +1581,7 @@ export function buildSurface(deps: {
       // answer the customer's listing gives (B23 · A26, r4-online-adapters).
       ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
       ...(store === undefined ? {} : { pricing: onlinePricingAdapter({ store, now, pointValuePaise: async (t: string) => (await loyaltyRule(t)).pointValuePaise }) }), // OB-288 wave 3 · WF-13
+      ...(store === undefined ? {} : { memberStanding: (t: string, memberRef: string) => customerStandingOf(loyaltyProgrammeAdapter({ store, now }), t, memberRef, now()) }), // U7 · M17-FR-01
       ...(store === undefined ? {} : { routing: fulDelStorefrontRouting({ store, now, signer, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) }), // D09-FR-01 · OB-300 at placement
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.

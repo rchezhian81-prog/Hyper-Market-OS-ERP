@@ -24,6 +24,7 @@
 // REFERENCES, and this page shows only which secrets exist, their dates and their state.
 
 import { makeCaller, newId, type Outcome } from './r4-insight-call';
+import { pagedQuery, pagedAnswer, type RegisterAsk } from './register-paging';
 
 export type Lang = 'en' | 'ta';
 export type Viewer = { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
@@ -127,7 +128,7 @@ const WORDS = {
     dryH: 'Keep a check of a file (a dry run)', dryLead: 'The same check as "Check the file", kept on the record with every row\'s problem, in your name. Nothing is loaded.',
     dryTemplate: 'What the file is', dryFile: 'The file', dryTotal: 'Declared total in paise (optional)', dryKeep: 'Keep this check', dryKept: 'Kept.', dryListH: 'Checks kept', dryRows: 'rows', dryGood: 'good', dryBad: 'with problems', dryReady: 'ready to load', dryNotReady: 'not ready to load',
     qualH: 'How clean each source\'s files are', qualLead: 'Files from each supplier or system: how many rows were accepted, which way it is going, and the hours a year spent fixing them. The ones worth a conversation are named.',
-    qualAccepted: 'accepted', qualNotEnough: 'not enough files yet', qualHours: 'hours a year to fix', qualTalk: 'Worth a conversation', qualJobsH: 'Every file loaded, refused or abandoned', qualSource: 'Show this source',
+    qualAccepted: 'accepted', qualNotEnough: 'not enough files yet', qualHours: 'hours a year to fix', qualTalk: 'Worth a conversation', qualJobsH: 'Every file loaded, refused or abandoned', jobWhen: 'When', jobFile: 'File', jobOutcome: 'What happened', jobRows: 'Good rows', jobBy: 'Uploaded by', jobDetail: 'Head office says', qualSource: 'Show this source',
   },
   ta: {
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
@@ -208,7 +209,7 @@ const WORDS = {
     dryH: 'கோப்பின் சோதனையை வை (முன் ஓட்டம்)', dryLead: '"கோப்பைச் சரிபார்" போன்ற அதே சோதனை, ஒவ்வொரு வரியின் பிரச்சினையுடன், உங்கள் பெயரில் பதிவில் வைக்கப்படும். எதுவும் ஏற்றப்படாது.',
     dryTemplate: 'கோப்பு என்ன', dryFile: 'கோப்பு', dryTotal: 'அறிவிக்கப்பட்ட மொத்தம் பைசாவில் (விருப்பம்)', dryKeep: 'இந்தச் சோதனையை வை', dryKept: 'வைக்கப்பட்டது.', dryListH: 'வைக்கப்பட்ட சோதனைகள்', dryRows: 'வரிகள்', dryGood: 'சரியானவை', dryBad: 'பிரச்சினை உள்ளவை', dryReady: 'ஏற்றத் தயார்', dryNotReady: 'ஏற்றத் தயாரில்லை',
     qualH: 'ஒவ்வொரு மூலத்தின் கோப்புகளும் எவ்வளவு சுத்தம்', qualLead: 'ஒவ்வொரு விநியோகஸ்தர் அல்லது அமைப்பின் கோப்புகள்: எத்தனை வரிகள் ஏற்கப்பட்டன, எந்தத் திசையில் செல்கிறது, திருத்த ஆண்டுக்கு எத்தனை மணி நேரம். பேச வேண்டியவை பெயரிடப்படும்.',
-    qualAccepted: 'ஏற்கப்பட்டது', qualNotEnough: 'இன்னும் போதுமான கோப்புகள் இல்லை', qualHours: 'திருத்த ஆண்டுக்கு மணி நேரம்', qualTalk: 'பேச வேண்டியவை', qualJobsH: 'ஏற்றப்பட்ட, மறுக்கப்பட்ட, கைவிடப்பட்ட ஒவ்வொரு கோப்பும்', qualSource: 'இந்த மூலத்தைக் காட்டு',
+    qualAccepted: 'ஏற்கப்பட்டது', qualNotEnough: 'இன்னும் போதுமான கோப்புகள் இல்லை', qualHours: 'திருத்த ஆண்டுக்கு மணி நேரம்', qualTalk: 'பேச வேண்டியவை', qualJobsH: 'ஏற்றப்பட்ட, மறுக்கப்பட்ட, கைவிடப்பட்ட ஒவ்வொரு கோப்பும்', jobWhen: 'எப்போது', jobFile: 'கோப்பு', jobOutcome: 'என்ன ஆனது', jobRows: 'சரியான வரிகள்', jobBy: 'பதிவேற்றியவர்', jobDetail: 'தலைமை அலுவலகம் கூறுவது', qualSource: 'இந்த மூலத்தைக் காட்டு',
   },
 } as const;
 
@@ -796,6 +797,14 @@ export function createImportChecksSession(input: { readonly viewer: Viewer; read
     quality: async (): Promise<W5Outcome<QualityRead>> => gate(R) ?? call<QualityRead>('GET', '/v1/purchase/import-quality'),
     source: async (sourceId: string): Promise<W5Outcome<QualityRow & { topReasons?: readonly { reason?: string; count?: number }[] }>> => gate(R) ?? call('GET', `/v1/purchase/import-quality/${enc(sourceId)}`),
     jobs: async (): Promise<W5Outcome<readonly JobRow[]>> => gate(R) ?? map(await call<{ jobs?: JobRow[] }>('GET', '/v1/purchase/import-jobs'), (b) => b.jobs ?? []),
+    /** U7 (OB-725): ONE page of every job, searched and sorted by head office, with the total of all of them. */
+    jobsPage: async (ask: RegisterAsk): Promise<W5Outcome<{ readonly rows: readonly JobRow[]; readonly total: number }>> => {
+      const no = gate(R); if (no !== undefined) return no;
+      const out = await call<unknown>('GET', `/v1/purchase/import-jobs?${pagedQuery(ask, { when: 'uploadedAt', file: 'fileName' })}`);
+      if (out.result !== 'ok') return out;
+      const page = pagedAnswer(out.value, 'jobs');
+      return page === undefined ? { result: 'lost_link' } : { result: 'ok', value: { rows: page.rows as readonly JobRow[], total: page.total } };
+    },
   };
 }
 export function dryRunLine(lang: Lang, d: DryRunRow, when: When = plainWhen): string {

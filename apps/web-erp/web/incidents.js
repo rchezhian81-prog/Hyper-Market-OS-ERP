@@ -68,8 +68,20 @@ function say(el, out, good) {
   el.textContent = out.result === 'ok' ? good : api.outcomeWords(lang, out);
 }
 
+// U7 (Group C2 · notes-P4): the summary figures are the chrome's summary cards (`sreOffice.cards`) — a figure head office
+// has not given reads "Not known", never a dash, and a figure that needs a person carries the card's tone (shape + words
+// stay with the label). The parts keep the page's ids (`p-`, `k-`, `v-`). Off the box the page's own panels stay.
+function summaryCards(rows) {
+  const o = window.sreOffice; const host = document.querySelector('.panels');
+  if (!o || typeof o.cards !== 'function' || host === null) return false;
+  o.cards(host, rows.map(([k, value, wordKey, attention]) => ({ label: W(wordKey), value: value === null || value === undefined ? null : String(value), ...(attention ? { tone: 'degraded' } : {}), ids: { card: `p-${k}`, label: `k-${k}`, value: `v-${k}` } })));
+  return true;
+}
 function paintSummary() {
   const s = api.summarise(board?.incidents ?? null, drillRegister);
+  const drills = s.drills === null ? null : t('drillsLine', { passed: s.drills.passed, missed: s.drills.missed });
+  const posture = s.posture === null ? null : s.posture.length === 0 ? t('postureNone') : s.posture.map((p) => `${p.service}: ${p.passed ? t('passed') : t('missed')}`).join(' · ');
+  if (summaryCards([['open', s.openIncidents, 'sumOpen', (s.openIncidents ?? 0) > 0], ['actions', s.openActions, 'sumActions', (s.openActions ?? 0) > 0], ['drills', drills, 'sumDrills', (s.drills?.missed ?? 0) > 0], ['posture', posture, 'sumPosture', s.posture === null || s.posture.length === 0 || s.posture.some((p) => !p.passed)]])) return;
   $('v-open').textContent = s.openIncidents === null ? '—' : String(s.openIncidents);
   $('p-open').classList.toggle('attention', (s.openIncidents ?? 0) > 0);
   $('v-actions').textContent = s.openActions === null ? '—' : String(s.openActions);
@@ -313,3 +325,5 @@ document.addEventListener('sre:chrome', () => { shopDate('a-due', { en: wordsIn(
 
 // ── U2b (G5): the owner of a follow-up is picked by name
 pickable('a-owner', 'person', 'pickPerson');
+// U7: the summary figures become the chrome's cards as soon as the chrome is there.
+document.addEventListener('sre:chrome', () => { if (api !== null) paintSummary(); }, { once: true });

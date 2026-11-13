@@ -84,10 +84,10 @@ describe('U6 · the Supplier claims session', () => {
   it('gates reading, issuing and deciding on three different rights; a decision needs a reason; the two routes are the ones that already existed', async () => {
     const { calls, fetch } = stub(() => ({ status: 201, body: { number: 'DN-000001' } }));
     const reader = createSupplierClaimsSession({ viewer: { userId: 'u-acct', permissions: ['purchase.commitment.read', 'purchase.invoice.match'] }, fetch, newKey: () => 'k' });
-    expect(reader.may).toEqual({ named: true, read: true, issue: true, decide: false });
+    expect(reader.may).toEqual({ named: true, read: true, issue: true, decide: false, credit: false, settle: false }); // U7: + credit, settle
     expect(await reader.decide({ supplierId: 's-1', submissionId: 'c-1' }, 'accept', 'fine')).toEqual({ result: 'invalid', why: 'cannotDecide' });
     const buyerS = createSupplierClaimsSession({ viewer: { userId: 'u-mgr', permissions: ['purchase.commitment.read', 'supplier.portal.review'] }, fetch, newKey: () => 'k' });
-    expect(buyerS.may).toEqual({ named: true, read: true, issue: false, decide: true });
+    expect(buyerS.may).toEqual({ named: true, read: true, issue: false, decide: true, credit: false, settle: true }); // U7: + credit, settle
     expect(await buyerS.issue({ supplierId: 's-1', claimId: 'dn-1' })).toEqual({ result: 'invalid', why: 'cannotIssue' });
     expect(await buyerS.decide({ supplierId: 's-1', submissionId: 'c-1' }, 'reject', '   ')).toEqual({ result: 'invalid', why: 'needReason' });
     expect(calls).toEqual([]);

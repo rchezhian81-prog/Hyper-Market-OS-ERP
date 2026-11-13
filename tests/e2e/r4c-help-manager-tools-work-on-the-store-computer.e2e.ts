@@ -33,7 +33,17 @@ describe.skipIf(!HAVE_BROWSER)('Help and procedures: the manager tools on the st
     const m = await shop.open(MGR, '/help/');
     await m.page.waitForSelector('#manage:not([hidden])');
     await m.page.fill('#w-id', 'EM-FIRE'); await m.page.selectOption('#w-cat', 'emergency');
-    await m.page.fill('#w-title', 'Fire'); await m.page.fill('#w-title-ta', 'தீ'); await m.page.fill('#w-roles', 'cashier, store_manager');
+    await m.page.fill('#w-title', 'Fire'); await m.page.fill('#w-title-ta', 'தீ');
+    // U7 (OB-725): the roles are picked by name on the chrome's several-role sheet, from the role register the store
+    // computer's pack holds (this test shop's register names one role per test person); the ids land in the field.
+    await m.page.click('#w-roles-pick');
+    await m.page.waitForSelector('#sre-picker-list .sre-picker-row[data-id="r-u-mgr"]');
+    expect(await m.page.locator('#sre-picker-use-these').isDisabled()).toBe(true);
+    await m.page.click('#sre-picker-list .sre-picker-row[data-id="r-u-mgr"]');
+    await m.page.click('#sre-picker-list .sre-picker-row[data-id="r-u-cash"]');
+    expect(await m.page.locator('#sre-picker-use-these').innerText()).toBe('Use these (2)');
+    await m.page.click('#sre-picker-use-these');
+    expect(await m.page.inputValue('#w-roles')).toBe('r-u-mgr,r-u-cash');
     await m.page.fill('#w-en', 'Leave by the nearest door.'); await m.page.fill('#w-ta', 'அருகிலுள்ள கதவு வழியாக வெளியேறவும்.');
     await m.page.click('#w-save');
     await says(m.page, '#w-status', /^Saved\.$/);
@@ -42,8 +52,9 @@ describe.skipIf(!HAVE_BROWSER)('Help and procedures: the manager tools on the st
     await m.page.fill('#d-who', 'u-mgr, u-cash'); await m.page.fill('#d-found', 'The back door was blocked by crates.');
     await m.page.click('#d-save');
     await says(m.page, '#d-status', /^Saved\.$/);
-    const lib = (await shop.call('GET', '/v1/hr/workforce/help', MGR)).body as { sops: { sopId: string; category: string }[] };
-    expect(lib.sops.find((s) => s.sopId === 'EM-FIRE')).toMatchObject({ category: 'emergency' });
+    // The whole library (the roles picked are this test shop's register's, not the manager's own sign-in role).
+    const lib = (await shop.call('GET', '/v1/hr/workforce/help?all=1', MGR)).body as { sops: { sopId: string; category: string; forRoles: string[] }[] };
+    expect(lib.sops.find((s) => s.sopId === 'EM-FIRE')).toMatchObject({ category: 'emergency', forRoles: ['r-u-mgr', 'r-u-cash'] });
     const drills = (await shop.call('GET', '/v1/hr/workforce/emergency-drills', MGR)).body as { procedures: { sopId: string; lastHeldOn: string | null }[] };
     expect(drills.procedures.find((p) => p.sopId === 'EM-FIRE')?.lastHeldOn).toBe('2026-10-30');
     expect(m.errors).toEqual([]);

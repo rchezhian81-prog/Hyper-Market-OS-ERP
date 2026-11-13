@@ -382,6 +382,8 @@
         <!-- U6 · M17 · §27 "Customer: Loyalty": my points as head office holds them; spent at the till, never from here. -->
         <h2 id="points-title">My points</h2>
         <p class="say" id="points-card">—</p>
+        <p class="note" id="points-tier" hidden></p>
+        <p class="note" id="points-due" hidden></p>
         <p class="note" id="points-spend" hidden></p>
 
         <h2 id="repeat-orders-title">My repeat orders</h2>
@@ -428,7 +430,7 @@
         <div class="pick" id="occasion-kind" role="radiogroup" aria-labelledby="occasions-title"></div>
         <label for="occasion-day" id="occasion-day-label">The day</label>
         <input id="occasion-day" type="date" />
-        <div class="pick"><input type="checkbox" id="occasion-yes" /> <label for="occasion-yes" id="occasion-yes-label">Yes, the shop may keep this day to greet me</label></div>
+        <div class="pick"><label for="occasion-yes"><input type="checkbox" id="occasion-yes" /> <span id="occasion-yes-label">Yes, the shop may keep this day to greet me</span></label></div>
         <button id="occasion-save" class="wide" type="button">Save the day</button>
         <p class="note" id="occasion-say" role="status" aria-live="polite"></p>
 
@@ -442,7 +444,7 @@
         </dl>
         <div class="rows" id="referrals"></div>
         <label for="referral-claim-code" id="referral-claim-label">A friend gave me a code</label>
-        <input id="referral-claim-code" autocomplete="off" autocapitalize="characters" maxlength="12" />
+        <input id="referral-claim-code" type="text" autocomplete="off" autocapitalize="characters" maxlength="12" />
         <button id="referral-claim" class="wide" type="button">Use my friend's code</button>
         <p class="note" id="referral-say" role="status" aria-live="polite"></p>
 

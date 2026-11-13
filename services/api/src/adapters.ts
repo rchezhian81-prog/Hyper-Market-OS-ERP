@@ -214,6 +214,7 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy, OtherChargesMarking } from '../../purchase/src/index';
 import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
+import { approvedClaimCredits, type ClaimCreditDecision } from '../../purchase/src/supplier-claims'; // U7 · OB-724
 import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff, type SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
@@ -1546,6 +1547,10 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
 const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+/** U7 · OB-724 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
+export const SUPPLIER_CLAIM_CREDITS_STREAM = streamName(STREAM.purchase, 'supplier-claim-credits');
+/** U7 · M24-FR-02 alt — how each disputed (rejected) supplier claim was settled (append-only; first per dispute stands). */
+export const SUPPLIER_CLAIM_DISPUTES_STREAM = streamName(STREAM.purchase, 'supplier-claim-disputes');
 /** GT-05 — opening supplier balances carried from the old system, and the second person's sign-off of each load. */
 const SUPPLIER_OPENINGS_STREAM = streamName(STREAM.purchase, 'supplier-openings');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
@@ -8623,6 +8628,8 @@ export function supplierAccountAdapter(input: {
     ),
     // R3 OB-196: the numbered debit notes raised at the DSD door (the check-in register, r3-ops-adapters.ts) — on the statement.
     doorDebitNotes: async (tenantId) => doorDebitNotesFrom(await allOf<DoorCheckInForAccount>(input.store, tenantId, streamName(STREAM.inventory, 'dsd-checkins'), 'DsdCheckInRecorded')),
+    // U7 · OB-724: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
+    claimCredits: async (tenantId) => approvedClaimCredits(await allOf<ClaimCreditDecision>(input.store, tenantId, SUPPLIER_CLAIM_CREDITS_STREAM, 'SupplierClaimCreditDecided')),
   };
 }
 
@@ -9034,11 +9041,11 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
     supplierAccounts: async (tenantId) => {
-      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
+      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
         registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-        registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
+        registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
       ]);
-      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() }).accounts;
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() }).accounts;
     },
     payablesJournals: async (tenantId) =>
       (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
@@ -9065,11 +9072,11 @@ export function supplierPortalAdapter(input: {
   const registers = supplierAccountAdapter(input);
   /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
   const accountStatementLines = async (tenantId: string, partnerId: string): Promise<readonly StatementLine[]> => {
-    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
+    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
       registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-      registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
+      registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
     ]);
-    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() });
+    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() });
     const lines: StatementLine[] = [];
     const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone; // R1b: the shop's dates on the statement
     for (const i of a.invoices) {

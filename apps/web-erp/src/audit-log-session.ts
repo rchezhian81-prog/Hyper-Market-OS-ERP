@@ -10,6 +10,9 @@
 // the accountant); head office re-checks it. Head office's own words stay in English (OB-553); this page's have Tamil twins.
 
 import { makeCaller, outcomeIn, type Outcome } from './r4-insight-call';
+import { tradingDayWindow } from '../../../packages/calendar/src/trading-day';
+import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
+import { pagedQuery, type RegisterAsk } from './register-paging';
 
 export type Lang = 'en' | 'ta';
 
@@ -23,6 +26,7 @@ export const AUDIT_LOG_COPY = {
     verify: 'Check every record',
     rebuildH: 'Rebuild one thing from the record', rebuildLead: 'Name a kind and an id (from a row above) to see its state built from the evidence alone, and each change that made it.',
     rebuild: 'Rebuild',
+    cWhen: 'When', cChange: 'What changed', cWho: 'Who and where', cRecord: 'The record',
     found: 'changes found', none: 'No recorded change matches.', who: 'by', where: 'at store', headOffice: 'head office', before: 'Before', after: 'After', why: 'Why', approval: 'Approval',
     intact: 'The chain holds: {n} records checked, every seal and link intact.',
     broken: 'The chain does NOT hold: {f} problem(s) in {n} records. Report this to the owner now.',
@@ -41,6 +45,7 @@ export const AUDIT_LOG_COPY = {
     verify: 'ஒவ்வொரு பதிவையும் சரிபார்',
     rebuildH: 'பதிவிலிருந்து ஒன்றை மீண்டும் உருவாக்கு', rebuildLead: 'ஒரு வகையையும் அடையாளத்தையும் (மேலே உள்ள வரிசையிலிருந்து) குறிப்பிட்டு, சான்றிலிருந்து மட்டும் அதன் நிலையையும் அதை உருவாக்கிய மாற்றங்களையும் பாருங்கள்.',
     rebuild: 'மீண்டும் உருவாக்கு',
+    cWhen: 'எப்போது', cChange: 'என்ன மாறியது', cWho: 'யார், எங்கே', cRecord: 'பதிவு',
     found: 'மாற்றங்கள் கிடைத்தன', none: 'பொருந்தும் பதிவான மாற்றம் இல்லை.', who: 'செய்தவர்', where: 'கடை', headOffice: 'தலைமை அலுவலகம்', before: 'முன்பு', after: 'பின்பு', why: 'ஏன்', approval: 'ஒப்புதல்',
     intact: 'சங்கிலி சரியாக உள்ளது: {n} பதிவுகள் சரிபார்க்கப்பட்டன, ஒவ்வொரு முத்திரையும் இணைப்பும் சரி.',
     broken: 'சங்கிலி சரியாக இல்லை: {n} பதிவுகளில் {f} சிக்கல்(கள்). இதை இப்போதே உரிமையாளரிடம் சொல்லுங்கள்.',
@@ -94,6 +99,8 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 export interface AuditLogSession {
   readonly may: { readonly named: boolean; readonly read: boolean };
   search(q: AuditSearch): Done<readonly AuditRow[]>;
+  /** U7 (OB-725): ONE page of the trail, the page's boxes kept, the register's search and sort done by head office. */
+  page(q: AuditSearch, ask: RegisterAsk): Done<{ readonly rows: readonly AuditRow[]; readonly total: number }>;
   verify(): Done<ChainCheck>;
   rebuild(objectType: string, objectId: string): Done<Rebuilt>;
 }
@@ -103,24 +110,45 @@ export function createAuditLogSession(input: { readonly viewer: { readonly userI
   const read = named && (input.viewer?.permissions ?? []).includes('audit.retention.read');
   const call = makeCaller({ keyPrefix: 'audit', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
   const gate = (): { result: 'invalid'; why: Why } | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !read ? { result: 'invalid', why: 'cannotRead' } : undefined);
+  /** The page's own boxes as head office's query — or 'badDate' when a day is not a date. */
+  const boxes = (q: AuditSearch): URLSearchParams | 'badDate' => {
+    const params = new URLSearchParams();
+    for (const k of ['actorId', 'objectType', 'objectId', 'action'] as const) { const v = q[k]?.trim() ?? ''; if (v !== '') params.set(k, v); }
+    for (const k of ['from', 'until'] as const) {
+      const v = q[k]?.trim() ?? '';
+      if (v === '') continue;
+      if (!DAY.test(v)) return 'badDate';
+      // A shop day is the shop's (Asia/Kolkata), not the UTC day: "from 31 Oct" starts at the shop's midnight and "until
+      // 31 Oct" runs up to (not including) the next one — the trail's `until` is exclusive (U7, 13 Nov 2026).
+      const day = tradingDayWindow(v, DEFAULT_SHOP_CALENDAR);
+      params.set(k, k === 'from' ? day.from : day.to);
+    }
+    return params;
+  };
   return {
     may: { named, read },
     search: async (q) => {
       const g = gate(); if (g) return g;
-      const params = new URLSearchParams();
-      for (const k of ['actorId', 'objectType', 'objectId', 'action'] as const) { const v = q[k]?.trim() ?? ''; if (v !== '') params.set(k, v); }
-      for (const k of ['from', 'until'] as const) {
-        const v = q[k]?.trim() ?? '';
-        if (v === '') continue;
-        if (!DAY.test(v)) return { result: 'invalid', why: 'badDate' };
-        // A shop day reaches its last moment: "until 31 Oct" includes the whole of 31 Oct.
-        params.set(k, k === 'from' ? v : `${v}T23:59:59.999Z`);
-      }
+      const params = boxes(q);
+      if (params === 'badDate') return { result: 'invalid', why: 'badDate' };
       const qs = params.toString();
       const out = await call<{ matches?: unknown[] }>('GET', `/v1/audit/trail${qs === '' ? '' : `?${qs}`}`);
       if (out.result !== 'ok') return out;
       const rows = (out.value.matches ?? []).map(auditRowOf).filter((r): r is AuditRow => r !== undefined).sort((a, b) => b.sequence - a.sequence);
       return { result: 'ok', value: rows };
+    },
+    page: async (q, ask) => {
+      const g = gate(); if (g) return g;
+      const params = boxes(q);
+      if (params === 'badDate') return { result: 'invalid', why: 'badDate' };
+      // With no column chosen the newest record comes first, as this page always showed it.
+      const paged = pagedQuery(ask.sort === null ? { ...ask, sort: 'at', dir: 'desc' } : ask, { at: 'sequence', change: 'action', who: 'actorId' });
+      const qs = [params.toString(), paged].filter((x) => x !== '').join('&');
+      const out = await call<{ matches?: unknown[]; paging?: { total?: unknown } }>('GET', `/v1/audit/trail?${qs}`);
+      if (out.result !== 'ok') return out;
+      const total = out.value.paging?.total;
+      if (typeof total !== 'number') return { result: 'lost_link' };
+      return { result: 'ok', value: { rows: (out.value.matches ?? []).map(auditRowOf).filter((r): r is AuditRow => r !== undefined), total } };
     },
     verify: async () => {
       const g = gate(); if (g) return g;

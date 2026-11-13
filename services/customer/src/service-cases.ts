@@ -492,6 +492,19 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       },
     },
     {
+      // U7 (OB-725) · M21-FR-04: the scores recorded on ONE case, oldest first, so the satisfaction page says "already
+      // rated" instead of asking again. None yet is said as rated: false — never a 0 score. Reads only.
+      api: 'API-06', method: 'GET', path: '/v1/service/cases/:caseId/satisfaction',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        if (await deps.serviceCase(ctx.tenantId, caseId) === undefined) throw notFound(`service case ${caseId}`);
+        const scores = (await deps.scores(ctx.tenantId)).filter((s) => s.caseId === caseId)
+          .slice().sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+        return { status: 200, body: { caseId, rated: scores.length > 0, scores } };
+      },
+    },
+    {
       // A customer rates a RESOLVED case (M21-FR-04 · CSAT). You rate a case that has been dealt with —
       // a score on an open case is a complaint in another field, not satisfaction. Append-only. Body:
       // { customerRef, score (a whole number 1–5), comment? }.

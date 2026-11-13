@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1721 | 988 | 988 | 196 | 445 |
+| 13 | 1725 | 990 | 990 | 196 | 445 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -295,6 +295,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/requisitions/:requisitionId/rfq/:rfqId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/rfqs` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/supplier-claims` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/supplier-claims/credits/:supplierId/:submissionId` | `purchase.supplier.pay` | core | yes |
+| POST | `/v1/purchase/supplier-claims/disputes/:supplierId/:submissionId/resolve` | `supplier.portal.review` | core | yes |
 | GET | `/v1/purchase/suppliers` | `supplier.view` | core | — |
 | GET | `/v1/purchase/suppliers/:supplierId` | `supplier.view` | core | — |
 | POST | `/v1/purchase/suppliers/:supplierId` | `purchase.supplier.manage` | core | yes |
@@ -360,6 +362,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/ageing` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/batch-directory` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/count-plans` | `inventory.count.plan` | core | — |
 | GET | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | — |
@@ -787,6 +790,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/service/cases/:caseId/first-response` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/resolution` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/root-cause` | `service.case.manage` | core | yes |
+| GET | `/v1/service/cases/:caseId/satisfaction` | `service.case.read` | core | — |
 | POST | `/v1/service/cases/:caseId/satisfaction` | `service.case.manage` | core | yes |
 | GET | `/v1/service/cases/:caseId/sla` | `service.case.read` | core | — |
 | GET | `/v1/service/compensation-policy` | `service.case.read` | core | — |

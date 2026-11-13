@@ -43,7 +43,7 @@ new MutationObserver(() => { if (typeof ownStores !== 'undefined') for (const id
 // ── U2b end
 const api = window.dispatch ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false };
+const may = session?.may ?? { named: false, read: false, waves: false, dispatch: false, decide: false, setNumbers: false, approveSettlement: false, readPacks: false, sendOrders: false, tickCalls: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
@@ -200,6 +200,32 @@ async function showBoard() {
       stops.append(item);
     }
     li.append(stops);
+    // U7 (OB-725 · OB-700): a driver asked the store to call a stop's customer — the store calls from the order's own
+    // record (the phone holds no number), then ticks it; "called" is the request's alert ticked as seen.
+    const calls = r.callRequests ?? [];
+    if (calls.length > 0) {
+      const box = document.createElement('div'); box.className = 'calls'; box.dataset.calls = String(calls.length);
+      box.append(text('strong', t('callsH')), text('p', t('callsLead'), 'facts'));
+      const list = document.createElement('ul'); list.className = 'call-list';
+      const named = (id) => { const o = sreO(); return (o && o.nameOf ? o.nameOf('person', id) : null) || id; };
+      for (const c of calls) {
+        const item = document.createElement('li'); item.dataset.stop = c.stopId; item.dataset.called = c.called === null ? 'no' : 'yes';
+        item.append(withChip(text('span', api.callRequestLine(lang, c, named, clock)), c.called === null ? 'pending' : 'done'));
+        if (c.called === null) {
+          const tick = document.createElement('button'); tick.type = 'button'; tick.className = 'sre-btn sre-btn-quiet mark-called';
+          tick.textContent = t('markCalled'); tick.disabled = !may.tickCalls; whyDisabled(tick, may.tickCalls ? '' : 'role');
+          tick.addEventListener('click', async () => {
+            tick.disabled = true;
+            const out = await session.markCalled(r.routeId, c.stopId);
+            if (out.result !== 'ok') { say('board-status', out); tick.disabled = false; return; }
+            await showBoard();
+          });
+          item.append(' ', tick);
+        }
+        list.append(item);
+      }
+      box.append(list); li.append(box);
+    }
     const h = r.cash.handover;
     li.append(text('span', `${t('expectedK')} ${api.rupees(r.cash.fromStops.expectedMinor)} · ${t('collectedK')} ${api.rupees(r.cash.fromStops.collectedMinor)}${h === null ? '' : ` · ${t('countedK')} ${api.rupees(h.countedMinor)} · ${t('varianceK')} ${api.rupees(h.varianceMinor)}${h.material ? ` · ${t('cashOffice')}` : ''}${tolConfirmed ? '' : ` · ${t('tolNotConfirmedShort')}`}`}`, 'facts cash'));
     return li;

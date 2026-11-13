@@ -17,8 +17,10 @@ import { DEFAULT_SHOP_CALENDAR } from '../../calendar/src/shop-clock';
 
 export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance'
   /** OB-44: a signed opening reversed inside the cutover window — the posting undone by its own compensating journal. */
-  | 'supplier_opening_reversal';
-export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance';
+  | 'supplier_opening_reversal'
+  /** OB-724: a supplier's accepted claim, approved by the accountant as a credit — it raises what the shop owes. */
+  | 'supplier_claim_credit';
+export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance' | 'supplier_claim_credit';
 
 /** The supplier account as the payables posting reads it — a structural subset of the purchase service's statement. */
 export interface PayablesAccount {
@@ -45,6 +47,12 @@ export interface PayablesAccount {
     readonly paymentId: string;
     readonly amountMinor: number;
     readonly paidOn: string;
+  }[];
+  /** OB-724 — the supplier's claims the accountant APPROVED as credits; a draft is not here and never posts. Optional. */
+  readonly claimCredits?: readonly {
+    readonly creditId: string;
+    readonly amountMinor: number;
+    readonly approvedAt: string;
   }[];
   /** GT-05 (MG-08) — legacy bills outstanding at cutover. Only a SIGNED opening is owed and posts. Optional: most have none. */
   readonly openings?: readonly {
@@ -145,6 +153,16 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
     ],
   },
   {
+    // OB-724 (owner, 13 Nov 2026): a supplier's claim the accountant approved credits the supplier — the shop owes more —
+    // against the goods' cost through the GRNI clearing, the same account the goods first came in through. A SUGGESTION:
+    // the accountant's mapping decides; with no rule the credit is a named "not in the books" exception, never silent.
+    kind: 'supplier_claim_credit',
+    legs: [
+      { account: 'purchases_grni', side: 'debit', component: 'amount' },
+      { account: 'supplier_payable', side: 'credit', component: 'amount' },
+    ],
+  },
+  {
     // OB-44 (owner, 11 Oct 2026): an opening reversed inside the cutover window — the opening's own journal, undone.
     kind: 'supplier_opening_reversal',
     legs: [
@@ -227,6 +245,14 @@ export function planPayablesPostings(
       out.push({
         kind: 'supplier_payment', sourceKind: 'supplier_payment', sourceId: pay.paymentId, supplierId: a.supplierId,
         documentDate: pay.paidOn, components: { amount: delta },
+      });
+    }
+    for (const c of a.claimCredits ?? []) {
+      const delta = c.amountMinor - ledgerHolds(prior, 'supplier_claim_credit', c.creditId);
+      if (delta <= 0) continue; // an approved credit is a fact recorded once, at its amount
+      out.push({
+        kind: 'supplier_claim_credit', sourceKind: 'supplier_claim_credit', sourceId: c.creditId, supplierId: a.supplierId,
+        documentDate: dayOf(c.approvedAt), components: { amount: delta },
       });
     }
     for (const op of a.openings ?? []) {
@@ -361,6 +387,7 @@ export function reconcilePayables(
     const registerOwedMinor = a.invoices.filter((i) => i.matched).reduce((s, i) => s + i.payableMinor, 0)
       - a.debitNotes.reduce((s, d) => s + d.valueMinor, 0)
       - a.payments.reduce((s, p) => s + p.amountMinor, 0)
+      + (a.claimCredits ?? []).reduce((s, c) => s + c.amountMinor, 0)
       + (a.openings ?? []).filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0);
     const ledgerOwedMinor = control === undefined ? 0 : journals
       .filter((j) => j.supplierId === a.supplierId)

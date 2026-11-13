@@ -25,6 +25,7 @@
 // load writes the real records (a captured supplier invoice) in the SAME atomic save as the job's record. A committed
 // load can be ROLLED BACK by compensating records once a second person approves it, while nothing downstream uses it.
 
+import { pageOrRefuse } from '../../kernel/src/paging';
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { fingerprintOf, namedSecondPersonRefusal, openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
@@ -394,7 +395,12 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
       handler: async (ctx) => {
         const all = await deps.commits(ctx.tenantId);
         const ordered = [...all].sort((a, b) => b.at.localeCompare(a.at));
-        return { status: 200, body: { jobs: ordered.map(summary), total: ordered.length, asAt: deps.now() } };
+        // U7 (OB-725): with ?page= head office pages the history (search by job, template, kind, who; sort by time).
+        const jobs = ordered.map(summary);
+        const view = jobs.map((j, i) => ({ i, jobId: j.jobId, templateId: j.templateId, domain: String(j.domain), uploadedBy: j.uploadedBy, at: j.at }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['jobId', 'templateId', 'domain', 'uploadedBy'], sort: ['at', 'jobId', 'domain'] });
+        if (paged !== undefined) return { status: 200, body: { jobs: paged.rows.map((v) => jobs[v.i]!), total: paged.paging.total, paging: paged.paging, asAt: deps.now() } };
+        return { status: 200, body: { jobs, total: ordered.length, asAt: deps.now() } };
       },
     },
     {

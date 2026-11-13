@@ -10,10 +10,10 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { withUnits, type RfqDeps, type RfqRequest } from '../../purchase/src/rfq';
 import type { SupplierPortalDeps, SupplierRfq } from '../../purchase/src/supplier-portal';
-import { claimsAgainst, supplierClaimsRoutes } from '../../purchase/src/supplier-claims';
+import { claimsAgainst, supplierClaimsRoutes, type ClaimCreditDecision, type ClaimDisputeResolution } from '../../purchase/src/supplier-claims';
 import type { SupplierAccountDeps } from '../../purchase/src/supplier-account';
 import type { Route } from '../../kernel/src/index';
-import { STREAM, streamName, supplierMasterAdapter, supplierAccountAdapter } from './adapters';
+import { STREAM, streamName, supplierMasterAdapter, supplierAccountAdapter, SUPPLIER_CLAIM_CREDITS_STREAM, SUPPLIER_CLAIM_DISPUTES_STREAM } from './adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 interface Base { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf; readonly recordAudit?: Recorder }
@@ -84,7 +84,7 @@ export function withSupplierClaims(deps: SupplierPortalDeps, input: { readonly a
 }
 
 /** The supplier-claims register routes. With no store, the bare surface the guardrails and the contract documents build. */
-export function supplierClaimsRoutesFor(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly portal?: Pick<SupplierPortalDeps, 'submissions' | 'reviews'>; readonly partners?: (tenantId: string) => Promise<readonly string[]> }): readonly Route[] {
+export function supplierClaimsRoutesFor(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly calendar?: ShopCalendarOf; readonly recordAudit?: Recorder; readonly portal?: Pick<SupplierPortalDeps, 'submissions' | 'reviews'>; readonly partners?: (tenantId: string) => Promise<readonly string[]> }): readonly Route[] {
   if (input.store === undefined) {
     return supplierClaimsRoutes({
       account: { invoices: () => [], latestMatches: () => new Map(), purchaseOrders: () => [], receipts: () => [], payments: () => [], debitNoteIssues: () => [], now: input.now },
@@ -98,6 +98,24 @@ export function supplierClaimsRoutesFor(input: { readonly store: EventStore | un
     ...(input.partners === undefined ? {} : { partners: input.partners }),
     ...(input.portal === undefined ? {} : { submissions: input.portal.submissions, reviews: async (t: string, p: string) => (await input.portal!.reviews?.(t, p)) ?? [] }),
     supplierName: async (t, supplierId) => (await master.record(t, supplierId))?.name,
+    // U7 · OB-724 — the accountant's decisions on draft credits; M24-FR-02 alt — how each disputed claim was settled.
+    // Both append-only, keyed on the credit / dispute: two writers of one meet on the key and the first stands.
+    creditDecisions: async (t) => (await store.readStream(t, SUPPLIER_CLAIM_CREDITS_STREAM, { type: 'SupplierClaimCreditDecided' })).map((e) => e.event.payload as ClaimCreditDecision),
+    recordCreditDecision: async (t, d) => {
+      await store.append(t, SUPPLIER_CLAIM_CREDITS_STREAM, makeEvent({
+        id: `supplier-claim-credit-${d.creditId}`, type: 'SupplierClaimCreditDecided', occurredAt: d.decidedAt,
+        idempotencyKey: `supplier-claim-credit-${t}-${d.creditId}`, source: 'api/purchase', payload: d,
+      }));
+    },
+    disputeResolutions: async (t) => (await store.readStream(t, SUPPLIER_CLAIM_DISPUTES_STREAM, { type: 'SupplierClaimDisputeResolved' })).map((e) => e.event.payload as ClaimDisputeResolution),
+    recordDisputeResolution: async (t, r) => {
+      await store.append(t, SUPPLIER_CLAIM_DISPUTES_STREAM, makeEvent({
+        id: `supplier-claim-dispute-${r.exceptionId}`, type: 'SupplierClaimDisputeResolved', occurredAt: r.at,
+        idempotencyKey: `supplier-claim-dispute-${t}-${r.exceptionId}`, source: 'api/purchase', payload: r,
+      }));
+    },
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+    ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
     now: input.now,
   });
 }

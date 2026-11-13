@@ -35,9 +35,16 @@ export interface BoardStop {
   readonly proofCheck: { readonly code: string; readonly fence: { readonly result: string; readonly distanceMetres?: number; readonly radiusMetres?: number } } | null;
   readonly failureReason: string | null;
 }
+/** U7 (OB-725 · OB-700): a driver's "please call the customer" request on a route — references only (§31). */
+export interface BoardCallRequest {
+  readonly stopId: string; readonly orderRef: string; readonly driverId: string; readonly area: string | null; readonly at: string;
+  readonly toldUserIds: readonly string[]; readonly called: { readonly by: string; readonly at: string } | null;
+}
 export interface BoardRoute {
   readonly routeId: string; readonly driverId: string | null; readonly status: 'not_assigned' | 'assigned' | 'withdrawn' | 'settled';
   readonly stops: readonly BoardStop[]; readonly flags: readonly string[];
+  /** U7: absent on a board from an older head office — read as none. */
+  readonly callRequests?: readonly BoardCallRequest[];
   readonly cash: { readonly fromStops: { readonly expectedMinor: number; readonly collectedMinor: number; readonly cashHeldMinor: number }; readonly settlement: unknown; readonly handover: { readonly countedMinor: number; readonly varianceMinor: number; readonly material: boolean } | null };
 }
 /** OB-676: the driver cash hand-over limit in force at the store, and whether the owner has confirmed it. */
@@ -120,6 +127,7 @@ export const DISPATCH_COPY = {
     customerToldL: 'The customer has been told', dispatchedK: 'Dispatched — manifest', manifestK: 'Manifest', cratesK: 'crates', sealsK: 'Seals', tempK: 'Cold-chain readings',
     dispatchedByK: 'dispatched by',
     nobody: 'Nobody is signed in on this screen — you can read nothing.', cannotRead: 'Your role cannot read deliveries.', cannotWave: 'Your role cannot build waves.',
+    callsH: 'Asked to call the customer', callsLead: 'A driver asked the store to call a customer. Call from the order\'s own record (the phone holds no number), then tick it.', markCalled: 'We called — tick it', cannotTickCalls: 'Your role cannot tick a call request.', calledChip: 'Called', notCalledChip: 'Not called yet', callOrder: 'Order', callAsked: 'asked at', callTold: 'told', callNobodyTold: 'nobody at the store could be told', callNotYet: 'not called yet', callCalledBy: 'called by', callAt: 'at',
     cannotDispatch: 'Your role cannot plan or hand out routes.', cannotDecide: 'Your role cannot decide on held orders.', cannotSet: 'Only the owner enters these numbers.',
     cannotApprove: 'Your role cannot approve settlements.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or changed.',
@@ -167,12 +175,20 @@ export const DISPATCH_COPY = {
     customerToldL: 'வாடிக்கையாளரிடம் சொல்லப்பட்டது', dispatchedK: 'அனுப்பப்பட்டது — பட்டியல்', manifestK: 'பட்டியல்', cratesK: 'பெட்டிகள்', sealsK: 'முத்திரைகள்', tempK: 'குளிர்ச் சங்கிலி அளவீடுகள்',
     dispatchedByK: 'அனுப்பியவர்',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்க முடியாது.', cannotRead: 'உங்கள் பங்கு டெலிவரிகளைப் படிக்க முடியாது.', cannotWave: 'உங்கள் பங்கு அலைகளை உருவாக்க முடியாது.',
+    callsH: 'வாடிக்கையாளரை அழைக்கக் கேட்கப்பட்டது', callsLead: 'ஓட்டுநர் ஒரு வாடிக்கையாளரை அழைக்கக் கடையைக் கேட்டார். ஆர்டரின் சொந்தப் பதிவிலிருந்து அழையுங்கள் (தொலைபேசியில் எண் இல்லை), பிறகு குறியிடுங்கள்.', markCalled: 'அழைத்தோம் — குறியிடு', cannotTickCalls: 'உங்கள் பங்கு அழைப்புக் கோரிக்கையைக் குறியிட முடியாது.', calledChip: 'அழைக்கப்பட்டது', notCalledChip: 'இன்னும் அழைக்கவில்லை', callOrder: 'ஆர்டர்', callAsked: 'கேட்ட நேரம்', callTold: 'தெரிவிக்கப்பட்டவர்', callNobodyTold: 'கடையில் யாருக்கும் தெரிவிக்க முடியவில்லை', callNotYet: 'இன்னும் அழைக்கவில்லை', callCalledBy: 'அழைத்தவர்', callAt: 'நேரம்',
     cannotDispatch: 'உங்கள் பங்கு வழிகளைத் திட்டமிடவோ கொடுக்கவோ முடியாது.', cannotDecide: 'உங்கள் பங்கு நிறுத்திய ஆர்டர்களில் முடிவெடுக்க முடியாது.', cannotSet: 'இந்த எண்களை உரிமையாளர் மட்டுமே உள்ளிடுவார்.',
     cannotApprove: 'உங்கள் பங்கு தீர்வுகளை அனுமதிக்க முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, மாற்றப்படவில்லை.',
   },
 } as const;
 export const dispatchWords = (lang: Lang, key: string): string => (DISPATCH_COPY[lang] as Record<string, string>)[key] ?? (DISPATCH_COPY.en as Record<string, string>)[key] ?? key;
+/** U7: one call request in the reader's words — the order, the area, who asked and when, who was told, called or not. */
+export function callRequestLine(lang: Lang, c: BoardCallRequest, nameOf: (userId: string) => string, clock: (iso: string) => string): string {
+  const w = (k: string): string => dispatchWords(lang, k);
+  const told = c.toldUserIds.length === 0 ? w('callNobodyTold') : `${w('callTold')} ${c.toldUserIds.map(nameOf).join(', ')}`;
+  const state = c.called === null ? w('callNotYet') : `${w('callCalledBy')} ${nameOf(c.called.by)} ${w('callAt')} ${clock(c.called.at)}`;
+  return [`${w('callOrder')} ${c.orderRef}`, ...(c.area === null ? [] : [c.area]), `${nameOf(c.driverId)} ${w('callAsked')} ${clock(c.at)}`, told, state].join(' · ');
+}
 /** A stop's flags in the reader's words (OB-343 · OB-344) — a flag with no words is shown as itself, never hidden. */
 export const flagWords = (lang: Lang, flags: readonly string[]): readonly string[] => flags.map((f) => {
   const w = dispatchWords(lang, `flag_${f}`);
@@ -224,7 +240,9 @@ export function readDrivers(text: string, runDate: string, offsetMinutes: number
 }
 
 export interface DispatchSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean; readonly readPacks: boolean; readonly sendOrders: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly waves: boolean; readonly dispatch: boolean; readonly decide: boolean; readonly setNumbers: boolean; readonly approveSettlement: boolean; readonly readPacks: boolean; readonly sendOrders: boolean; readonly tickCalls: boolean };
+  /** U7 · OB-700: the store called the customer — tick the driver's request (its alert's acknowledgement, append-only). */
+  markCalled(routeId: string, stopId: string): Promise<Outcome<unknown>>;
   candidates(storeId: string): Promise<Outcome<Candidates>>;
   buildWave(input: { readonly waveId: string; readonly storeId: string; readonly pickerId: string; readonly orderIds: readonly string[] }): Promise<Outcome<WaveBuilt>>;
   waves(storeId: string): Promise<Outcome<{ readonly waves: readonly WaveRow[] }>>;
@@ -265,6 +283,8 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
     decide: has('delivery.contribution.approve'), setNumbers: has('delivery.controls.set'), approveSettlement: has('delivery.settlement.approve'),
     // W4 · M19-FR-02: each route's own word — reading a pack or a manifest, and dispatching an order.
     readPacks: has('fulfilment.pack.read'), sendOrders: has('fulfilment.pack.record'),
+    // U7 · OB-700: ticking a driver's call request is ticking its alert as seen — the alert-tick word (OB-690).
+    tickCalls: has('platform.alert.acknowledge'),
   };
   const orderOk = (o: string): Outcome<never> | undefined => (o.trim() === '' ? { result: 'invalid', why: 'needOrder' } : undefined);
   const call = makeCaller({ ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }), keyPrefix: 'dispatch' });
@@ -304,6 +324,7 @@ export function createDispatchSession(input: { readonly viewer: ViewerIdentity |
       const body = dayInputs(i); if ('result' in body) return body;
       return call<PlanResult>('POST', `/v1/delivery/dispatch/${i.runDate.trim()}/reassign-driver`, { ...body, withoutDriverId: i.driverId.trim(), reason: i.reason.trim() });
     },
+    markCalled: async (routeId, stopId) => gate(may.tickCalls, 'cannotTickCalls') ?? call('POST', `/v1/platform/alerts/${enc(`delivery-call:${routeId}:${stopId}`)}/acknowledge`, {}),
     board: async (runDate, storeId) => gate(may.read, 'cannotRead') ?? dayOk(runDate) ?? storeOk(storeId) ?? call<Board>('GET', `/v1/delivery/dispatch/${runDate.trim()}/board?storeId=${enc(storeId.trim())}`),
     contribution: async (storeId) => gate(may.read, 'cannotRead') ?? storeOk(storeId) ?? call<ContributionRead>('GET', `/v1/delivery/contribution?storeId=${enc(storeId.trim())}`),
     decide: async (orderId, decision, reason) => {

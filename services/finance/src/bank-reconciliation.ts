@@ -16,6 +16,12 @@
 // Nothing here moves money or posts a journal; a hand-match records WHAT the person matched the line to (a bill, a
 // supplier payment ref) so the books can follow — the posting itself stays with the day book and the payables.
 // No card number, no account number: a statement line carries only the bank's reference and narrative (hard rule #3).
+//
+// U7 · OB-723 (owner, in writing: B): a DEBIT line is also matched to a SUPPLIER PAYMENT the accountant recorded (with a
+// second person's approval) on the Supplier bills page — by the payment's bank reference, for exactly what left the
+// account (the net after any TDS withheld). A cash payment never reached the bank and is never matched; one payment
+// matches one line (the first that names it); a line naming a reference whose amount differs stays unmatched — the
+// difference is the accountant's exception, never a silent match.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -23,6 +29,17 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { BankStatement, BankStatementLine } from '../../../packages/finance/src/bank-statement';
 import type { CashDepositView } from './cash-deposits';
 import type { SettlementBatch } from './settlement';
+
+/** U7 · OB-723 — what bank reconciliation needs of a recorded supplier payment (supplier-account.ts `SupplierPayment`). */
+export interface BankSupplierPayment {
+  readonly paymentId: string;
+  readonly supplierId: string;
+  readonly amountMinor: number;
+  readonly paidOn: string;
+  readonly method: string;
+  readonly reference: string;
+  readonly tds?: { readonly netMinor: number };
+}
 import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 import { tradingDayIn } from '../../../packages/calendar/src/trading-day';
 
@@ -64,6 +81,7 @@ export interface BankLineExceptionView extends BankLineException {
 export type LineMatch =
   | { readonly kind: 'provider_payout'; readonly batchId: string; readonly providerId: string; readonly declaredNetMinor: number }
   | { readonly kind: 'cash_deposit'; readonly depositId: string; readonly slipRef: string }
+  | { readonly kind: 'supplier_payment'; readonly paymentId: string; readonly supplierId: string; readonly reference: string; readonly paidOn: string }
   | { readonly kind: 'exception'; readonly exceptionId: string; readonly state: 'open' | 'resolved'; readonly overdue: boolean; readonly ownerUserId: string; readonly raisedOn: string; readonly outcome?: ExceptionOutcome; readonly matchedTo?: string; readonly reason?: string }
   | { readonly kind: 'unmatched' };
 
@@ -103,6 +121,8 @@ export function reconcileBankStatement(input: {
   readonly batches: readonly SettlementBatch[];
   readonly deposits: readonly CashDepositView[];
   readonly exceptions: readonly BankLineExceptionView[];
+  /** U7 · OB-723 — the supplier payments recorded on the books. Optional: none known matches none. */
+  readonly supplierPayments?: readonly BankSupplierPayment[];
 }): StatementReconciliation {
   const s = input.statement;
   const depositByLine = new Map<string, CashDepositView>();
@@ -110,11 +130,22 @@ export function reconcileBankStatement(input: {
   const exceptionByLine = new Map<string, BankLineExceptionView>();
   for (const e of input.exceptions) if (e.statementId === s.statementId && !exceptionByLine.has(e.lineId)) exceptionByLine.set(e.lineId, e);
   const names = (l: BankStatementLine, id: string): boolean => l.reference.includes(id) || (l.narrative ?? '').includes(id);
+  // OB-723: each non-cash supplier payment claims the first debit line of exactly its net that names its reference.
+  const paymentByLine = new Map<string, BankSupplierPayment>();
+  for (const p of input.supplierPayments ?? []) {
+    const ref = p.reference.trim();
+    if (p.method === 'cash' || ref === '') continue;
+    const net = p.tds?.netMinor ?? p.amountMinor;
+    const line = s.lines.find((l) => l.amountMinor === -net && !paymentByLine.has(l.lineId) && names(l, ref));
+    if (line !== undefined) paymentByLine.set(line.lineId, p);
+  }
   const lines: ReconciledLine[] = s.lines.map((l) => {
     const batch = l.amountMinor > 0 ? input.batches.find((b) => names(l, b.batchId)) : undefined;
     if (batch !== undefined) return { ...l, match: { kind: 'provider_payout', batchId: batch.batchId, providerId: batch.providerId, declaredNetMinor: batch.declaredNetMinor } };
     const deposit = depositByLine.get(l.lineId);
     if (deposit !== undefined) return { ...l, match: { kind: 'cash_deposit', depositId: deposit.depositId, slipRef: deposit.slipRef } };
+    const paid = paymentByLine.get(l.lineId);
+    if (paid !== undefined) return { ...l, match: { kind: 'supplier_payment', paymentId: paid.paymentId, supplierId: paid.supplierId, reference: paid.reference, paidOn: paid.paidOn } };
     const e = exceptionByLine.get(l.lineId);
     if (e !== undefined) {
       return { ...l, match: { kind: 'exception', exceptionId: e.exceptionId, state: e.state, overdue: e.overdue, ownerUserId: e.ownerUserId, raisedOn: e.raisedOn, ...(e.resolution === undefined ? {} : { outcome: e.resolution.outcome, reason: e.resolution.reason, ...(e.resolution.matchedTo === undefined ? {} : { matchedTo: e.resolution.matchedTo }) }) } };
@@ -122,7 +153,7 @@ export function reconcileBankStatement(input: {
     return { ...l, match: { kind: 'unmatched' } };
   });
   const sum = (xs: readonly ReconciledLine[]): number => xs.reduce((n, l) => n + l.amountMinor, 0);
-  const matched = lines.filter((l) => l.match.kind === 'provider_payout' || l.match.kind === 'cash_deposit');
+  const matched = lines.filter((l) => l.match.kind === 'provider_payout' || l.match.kind === 'cash_deposit' || l.match.kind === 'supplier_payment');
   const unmatched = lines.filter((l) => l.match.kind === 'unmatched');
   const exceptions = lines.map((l) => l.match).filter((m): m is Extract<LineMatch, { kind: 'exception' }> => m.kind === 'exception');
   return {
@@ -142,6 +173,8 @@ export interface BankReconciliationDeps {
   readonly statements: (tenantId: string) => Promise<readonly BankStatement[]>;
   readonly batches: (tenantId: string) => Promise<readonly SettlementBatch[]>;
   readonly depositViews: (tenantId: string) => Promise<readonly CashDepositView[]>;
+  /** U7 · OB-723 — the supplier payments recorded (and approved) on the books. Optional: none wired matches none. */
+  readonly supplierPayments?: (tenantId: string) => Promise<readonly BankSupplierPayment[]>;
   readonly exceptionsRaised: (tenantId: string) => Promise<readonly BankLineException[]>;
   readonly exceptionsResolved: (tenantId: string) => Promise<readonly BankLineExceptionResolved[]>;
   readonly recordRaised: (tenantId: string, e: BankLineException) => Promise<void>;
@@ -178,8 +211,8 @@ export function bankReconciliationRoutes(deps: BankReconciliationDeps): readonly
         if (statement === undefined) {
           return { status: 200, body: { statements: [], statement: null, lines: [], totals: null, statementAddsUp: null, exceptions, asAt: deps.now() } };
         }
-        const [batches, deposits] = await Promise.all([deps.batches(t), deps.depositViews(t)]);
-        const r = reconcileBankStatement({ statement, batches, deposits, exceptions });
+        const [batches, deposits, supplierPayments] = await Promise.all([deps.batches(t), deps.depositViews(t), deps.supplierPayments?.(t) ?? []]);
+        const r = reconcileBankStatement({ statement, batches, deposits, exceptions, supplierPayments });
         return { status: 200, body: { statements: statements.map(summary), statement: summary(statement), ...r, exceptions: exceptions.filter((e) => e.statementId === statement.statementId), asAt: deps.now() } };
       },
     },
@@ -209,13 +242,13 @@ export function bankReconciliationRoutes(deps: BankReconciliationDeps): readonly
           if (prior.statementId === statementId && prior.lineId === lineId && prior.ownerUserId === ownerUserId) return { status: 200, body: { exception: prior, alreadyRaised: true } };
           throw apiError(409, { code: 'exception_id_used', whatHappened: `Exception ${exceptionId} is already raised on line ${prior.lineId} of ${prior.statementId}, owned by ${prior.ownerUserId}.`, wasItSaved: 'not_saved', nextSafeAction: 'Raise the new exception under its own id. Nothing was changed.' });
         }
-        const [batches, deposits, exceptions] = await Promise.all([deps.batches(t), deps.depositViews(t), views(t)]);
-        const r = reconcileBankStatement({ statement, batches, deposits, exceptions });
+        const [batches, deposits, exceptions, supplierPayments] = await Promise.all([deps.batches(t), deps.depositViews(t), views(t), deps.supplierPayments?.(t) ?? []]);
+        const r = reconcileBankStatement({ statement, batches, deposits, exceptions, supplierPayments });
         const matched = r.lines.find((l) => l.lineId === lineId)!.match;
-        if (matched.kind === 'provider_payout' || matched.kind === 'cash_deposit') {
+        if (matched.kind === 'provider_payout' || matched.kind === 'cash_deposit' || matched.kind === 'supplier_payment') {
           throw apiError(409, {
             code: 'line_already_matched',
-            whatHappened: `Line ${lineId} is already matched: ${matched.kind === 'provider_payout' ? `the provider payout ${matched.batchId}` : `cash deposit ${matched.depositId} (slip ${matched.slipRef})`}. A matched line needs no exception.`,
+            whatHappened: `Line ${lineId} is already matched: ${matched.kind === 'provider_payout' ? `the provider payout ${matched.batchId}` : matched.kind === 'cash_deposit' ? `cash deposit ${matched.depositId} (slip ${matched.slipRef})` : `supplier payment ${matched.paymentId} to ${matched.supplierId} (ref ${matched.reference})`}. A matched line needs no exception.`,
             wasItSaved: 'not_saved', nextSafeAction: 'Raise an exception on an unmatched line only. Nothing was recorded.',
           });
         }

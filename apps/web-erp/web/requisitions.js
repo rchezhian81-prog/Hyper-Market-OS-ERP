@@ -65,7 +65,6 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 const pair = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
 const tables = {};
 function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
-let rows = [];
 let open = null; // the requisition opened
 let comparison = null;
 let newLines = [{ productId: '', quantity: '' }];
@@ -88,18 +87,28 @@ function paintList() {
   $('none').hidden = true;
   const reg = register($('list-host'), {
     id: 'requisitions', label: pair('worklist'), pageSize: 10, sortable: true, bodyId: 'list',
+    // U7 (OB-725): head office pages, searches and sorts the worklist (by requisition or product, by id or number of
+    // lines); the register shows the page it is given, never the whole list read into the browser.
+    loader: pageOfWorklist,
     columns: [
       { key: 'id', label: pair('id'), value: (r) => r.requisitionId },
-      { key: 'lines', label: pair('lines'), value: (r) => r.lines.map((l) => lineText(l)).join(', ') },
-      { key: 'by', label: pair('raisedBy'), value: (r) => (r.raisedBy === undefined || r.raisedBy === null ? null : (window.sreOffice.nameOf('person', r.raisedBy) ?? r.raisedBy)) },
-      { key: 'from', label: pair('from'), value: (r) => sourceWords(r) },
+      { key: 'lines', label: pair('lines'), sort: 'number', value: (r) => r.lines.map((l) => lineText(l)).join(', ') },
+      { key: 'by', label: pair('raisedBy'), sort: false, value: (r) => (r.raisedBy === undefined || r.raisedBy === null ? null : (window.sreOffice.nameOf('person', r.raisedBy) ?? r.raisedBy)) },
+      { key: 'from', label: pair('from'), sort: false, value: (r) => sourceWords(r) },
       { key: 'open', label: pair('open'), sort: false, value: () => t('open'), render: (r) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open sre-btn sre-btn-quiet'; label(b, 'search', 'open'); b.addEventListener('click', () => { void openRequisition(r); }); return b; } },
     ],
     rowKey: (r) => r.requisitionId, rowData: (r) => ({ requisition: r.requisitionId }),
     empty: { title: pair('none') },
   });
-  if (reg === null) return;
-  reg.setRows(rows);
+  return reg;
+}
+
+/** U7: the register's loader — one page from head office, or the register's own words for why there is none. */
+async function pageOfWorklist(ask) {
+  if (session === null || !may.read) return { state: 'denied' };
+  const out = await session.page(ask);
+  if (out.result === 'ok') return { rows: out.value.rows, total: out.value.total };
+  return { state: out.result === 'lost_link' ? 'offline' : out.result === 'refused' && out.status === 403 ? 'denied' : 'error', stateOpts: { title: { en: api.outcomeWords('en', out), ta: api.outcomeWords('ta', out) } } };
 }
 
 function paintNewLines() {
@@ -192,9 +201,9 @@ function paint() {
 }
 
 async function refresh() {
-  const out = await session.list();
-  if (out.result === 'ok') rows = [...out.value]; else say(api.outcomeWords(lang, out), true);
+  // U7: the register reads its page from head office again (page 1); its own state says when it cannot.
   paint();
+  await tables['requisitions']?.reload();
 }
 
 async function openRequisition(r) {
@@ -229,9 +238,8 @@ $('raise-order').addEventListener('click', async () => {
   say(`${t('proposed')} (${out.value.order.poId} · ${api.rupees(out.value.order.totalMinor)})`);
 });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
-paint();
+paint(); // the register reads its first page from head office as it is drawn (U7)
 if (may.named && !may.read) say(t('cannotRead'), true);
-else if (may.read) void refresh();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

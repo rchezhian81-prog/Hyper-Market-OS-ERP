@@ -982,15 +982,23 @@ function paintChrome() {
  * the account view opens; signed out it says to sign in; a refusal is said in the reader's words. Nothing moves a point.
  */
 let pointsAsked = false;
+let pointsHeld;
 async function renderPoints() {
   el('points-title').textContent = t('pointsTitle');
   const say = el('points-card');
-  if (shop.mine === undefined || typeof shop.mine.loyalty !== 'function' || !shop.isSignedIn()) { say.textContent = t('pointsSignIn'); el('points-spend').hidden = true; pointsAsked = false; return; }
-  if (pointsAsked) return;
+  const lines = (v) => {
+    // U7 (OB-725) · M17-FR-01: my tier and when my points lapse — a line only for what head office sent and this can read.
+    const got = v && v.member && typeof shop.mine.standingLines === 'function' ? shop.mine.standingLines(lang, v) : {};
+    for (const [id, text] of [['points-tier', got.tier], ['points-due', got.lapse]]) { el(id).hidden = typeof text !== 'string'; el(id).textContent = typeof text === 'string' ? text : ''; }
+  };
+  if (shop.mine === undefined || typeof shop.mine.loyalty !== 'function' || !shop.isSignedIn()) { say.textContent = t('pointsSignIn'); el('points-spend').hidden = true; el('points-tier').hidden = true; el('points-due').hidden = true; pointsAsked = false; pointsHeld = undefined; return; }
+  if (pointsAsked) { lines(pointsHeld); return; }
   pointsAsked = true;
   say.textContent = t('pointsChecking');
   const out = await shop.mine.loyalty();
-  if (!out.ok) { say.textContent = mineWords(out); el('points-spend').hidden = true; pointsAsked = false; return; }
+  if (!out.ok) { say.textContent = mineWords(out); el('points-spend').hidden = true; lines(undefined); pointsAsked = false; return; }
+  pointsHeld = out.value;
+  lines(out.value);
   // Head office's own sentence (a finding about MY membership, in English by decision OB-699); the figures beside it.
   say.textContent = out.value.say;
   say.className = out.value.member ? 'say done' : 'say warn';

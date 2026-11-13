@@ -223,7 +223,6 @@ let basis = null;        // head office's figures for the form as it stood when 
 let basisFor = '';       // the form it was read for
 let entryId = null;      // the entry the form is about to make — kept while the form is unchanged, so an approval matches
 let pending = null;      // { subjectRef, details, valueMinor } the last save needed approval for
-let history = null;
 let channel = null;
 let zones = null;
 let stores = [];
@@ -253,20 +252,37 @@ function paintBasis() {
 function paintHistory() {
   const reg = register($('history-host'), {
     id: 'price-history', label: pair('historyH'), pageSize: 10, sortable: true, bodyId: 'history',
+    // U7 (OB-725): head office pages, searches (by entry, which price, or for whom) and sorts (by the day it starts, or
+    // its version) a product's price history; the register shows the page it is given.
+    loader: pageOfHistory,
     columns: [
-      { key: 'scope', label: pair('cScope'), value: (e) => scopeWords(e.scope) },
-      { key: 'ref', label: pair('cRef'), value: (e) => `${e.scopeRef}${e.batchId === undefined ? '' : ` · ${e.batchId}`}` },
-      { key: 'price', label: pair('cPrice'), value: (e) => rupees(e.price.minor), align: 'end' },
+      { key: 'scope', label: pair('cScope'), sort: false, value: (e) => scopeWords(e.scope) },
+      { key: 'ref', label: pair('cRef'), sort: false, value: (e) => `${e.scopeRef}${e.batchId === undefined ? '' : ` · ${e.batchId}`}` },
+      { key: 'price', label: pair('cPrice'), sort: false, value: (e) => rupees(e.price.minor), align: 'end' },
       { key: 'from', label: pair('cFrom'), value: (e) => shopDay(e.effectiveFrom) },
-      { key: 'to', label: pair('cTo'), value: (e) => (e.effectiveTo ? shopDay(e.effectiveTo) : t('open')) },
+      { key: 'to', label: pair('cTo'), sort: false, value: (e) => (e.effectiveTo ? shopDay(e.effectiveTo) : t('open')) },
       { key: 'ver', label: pair('cVer'), value: (e) => e.version, sort: 'number', align: 'end' },
     ],
     rowKey: (e) => e.id, rowData: (e) => ({ entry: e.id }),
     empty: { title: pair('noHistory') },
   });
-  if (reg === null) return;
-  // Before a product is chosen there is no list to read; once chosen, head office's answer or "Not known"
-  if (history === null) reg.setState('unknown'); else reg.setRows(history);
+  return reg;
+}
+
+/** U7: the register's loader — one page of the chosen product's price history from head office. Before a product is
+ *  chosen there is no list to read ("Not known"); a product never priced is an honest empty list; a refusal says why. */
+async function pageOfHistory(ask) {
+  const id = $('p-product').value.trim();
+  if (id === '') return { state: 'unknown' };
+  const q = new URLSearchParams({ page: String(ask.page + 1), size: String(ask.size) });
+  if (ask.search !== '') q.set('search', ask.search);
+  const field = { from: 'effectiveFrom', ver: 'version' }[ask.sort ?? ''];
+  if (field !== undefined) { q.set('sort', field); q.set('dir', ask.dir); }
+  const out = await call('GET', `/v1/prices/list/${encodeURIComponent(id)}/history?${q}`);
+  if (out.ok && Array.isArray(out.body?.entries) && typeof out.body?.paging?.total === 'number') return { rows: out.body.entries, total: out.body.paging.total };
+  if (out.status === 404) return { rows: [], total: 0 };
+  const words = (l) => (out.status === 0 ? WORDS[l].unreachable : `${WORDS[l].refused} ${out.body?.error?.whatHappened ?? out.status}`);
+  return { state: out.status === 0 ? 'offline' : out.status === 403 ? 'denied' : 'error', stateOpts: { title: { en: words('en'), ta: words('ta') } } };
 }
 
 function paintZones() {
@@ -377,12 +393,9 @@ async function loadChannels() {
 }
 
 async function loadHistory() {
-  const id = $('p-product').value.trim();
-  if (id === '') { history = null; paintHistory(); return; }
-  const out = await call('GET', `/v1/prices/list/${encodeURIComponent(id)}/history`);
-  history = out.ok && Array.isArray(out.body?.entries) ? out.body.entries : out.status === 404 ? [] : null;
-  if (!out.ok && out.status !== 404) say($('price-status'), out, '');
-  paintHistory();
+  // U7: the register reads page 1 of the chosen product's history again (its loader asks head office).
+  const reg = paintHistory();
+  await reg?.reload();
 }
 
 async function readBasis() {

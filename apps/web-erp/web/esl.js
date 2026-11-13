@@ -33,7 +33,10 @@ function whyDisabled(btn, why) {
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
 
-let pushes = null; let pushesOutcome = null; // head office's last answer, or why there is none
+// U7 (OB-725): the cards and "Send all again" read head office's summary of the WHOLE store (`overview`); the table reads
+// one page at a time through the register's loader — never the whole list into the browser, never counts from one page.
+let overview = null; let overviewOutcome = null; // head office's last summary, or why there is none
+let table = null; // the register, built once
 let labels = null; let labelsOutcome = null;
 
 function setText(id, words) { const n = $(id); if (n !== null) n.textContent = words; }
@@ -58,9 +61,9 @@ const stateWords = (row) => (row.state === 'partial' ? fill(t('st_partial'), { n
 function paintCards() {
   const o = office(); if (o === null) return;
   const unknown = (why) => ({ value: null, note: why });
-  const sent = pushes === null ? unknown(pushesOutcome === null ? '' : api.outcomeWords(lang, pushesOutcome)) : { value: pushes.rows.length, note: '' };
-  const confirmed = pushes === null ? unknown('') : { value: pushes.rows.filter((r) => r.state === 'confirmed').length, note: '', tone: 'ok' };
-  const notConfirmed = pushes === null ? unknown('') : { value: pushes.rows.filter((r) => r.state === 'partial' || r.state === 'unconfirmed').length, note: '', tone: pushes.rows.some((r) => r.state === 'partial' || r.state === 'unconfirmed') ? 'degraded' : 'ok' };
+  const sent = overview === null ? unknown(overviewOutcome === null ? '' : api.outcomeWords(lang, overviewOutcome)) : { value: overview.sent, note: '' };
+  const confirmed = overview === null ? unknown('') : { value: overview.confirmed, note: '', tone: 'ok' };
+  const notConfirmed = overview === null ? unknown('') : { value: overview.waiting, note: '', tone: overview.waiting > 0 ? 'degraded' : 'ok' };
   const lab = labels === null ? unknown(labelsOutcome === null ? '' : (labelsOutcome.result === 'invalid' ? t(labelsOutcome.why) : api.outcomeWords(lang, labelsOutcome))) : { value: labels.total, note: '' };
   const active = labels === null ? unknown('') : { value: labels.active, note: '', tone: 'ok' };
   const never = labels === null ? unknown('') : { value: labels.neverHeard, note: '', tone: labels.neverHeard > 0 ? 'degraded' : 'ok' };
@@ -73,10 +76,13 @@ function paintCards() {
     { label: pair('cNever'), ...never, icon: 'circle-help' },
   ]);
   setText('labels-note', labels === null && labelsOutcome !== null && labelsOutcome.result === 'invalid' ? t(labelsOutcome.why) : '');
-  setText('covers', pushes === null ? '' : fill(t('readAt'), { time: shopTime(pushes.asAt) }));
+  setText('covers', overview === null ? '' : fill(t('readAt'), { time: shopTime(overview.asAt) }));
 }
 
-function unconfirmedRows() { return pushes === null ? [] : pushes.rows.filter((r) => r.state === 'partial' || r.state === 'unconfirmed'); }
+/** The whole store's pushes still waiting for a label (head office's summary), not the rows on this page. */
+function unconfirmedRows() { return overview === null ? [] : overview.waitingPushes; }
+/** How many labels have not shown a push yet — a table row lists them, a summary entry counts them. */
+const waitingOf = (r) => (Array.isArray(r.unconfirmed) ? r.unconfirmed.length : r.unconfirmed);
 
 function paintPrimary() {
   const b = $('send-all'); if (b === null) return;
@@ -97,28 +103,31 @@ function rowButton(row) {
 function paintPushes() {
   const o = office(); const host = $('pushes-table'); if (o === null || host === null) return;
   if (!may.read) return;
-  if (pushes === null) {
-    if (pushesOutcome === null) o.state(host, 'loading', { title: pair('loading') });
-    else o.state(host, o.stateOf(pushesOutcome), { title: api.outcomeWords(lang, pushesOutcome), detail: pair('notReadDetail') });
-    paintPrimary(); return;
-  }
-  if (pushes.rows.length === 0) { o.state(host, 'empty', { title: pair('noPushes'), detail: pair('noPushesDetail') }); paintPrimary(); return; }
-  o.table(host, {
-    id: 'esl-pushes', label: pair('pushesH'), rows: pushes.rows, pageSize: 10, sortable: true,
+  if (table === null || !table.connected()) table = o.table(host, {
+    id: 'esl-pushes', label: pair('pushesH'), pageSize: 10, sortable: true, loader: pageOfPushes,
     rowKey: (r) => r.pushId, rowData: (r) => ({ push: r.pushId, state: r.state, product: r.productId }),
     columns: [
       { key: 'productId', label: pair('product'), sort: 'text', value: (r) => nameOf(r.productId) },
-      { key: 'priceMinor', label: pair('price'), sort: 'number', align: 'end', value: (r) => api.rupees(r.priceMinor) },
+      { key: 'priceMinor', label: pair('price'), sort: false, align: 'end', value: (r) => api.rupees(r.priceMinor) },
       { key: 'at', label: pair('sentWhen'), sort: 'text', value: (r) => shopTime(r.at) },
-      { key: 'because', label: pair('why'), sort: 'text', value: (r) => t(`because_${r.because}`) },
-      { key: 'labels', label: pair('labelsCol'), sort: 'number', align: 'end', value: (r) => `${r.confirmed.length} / ${r.labels}` },
-      { key: 'state', label: pair('state'), sort: 'text', value: (r) => stateWords(r), render: (r) => o.chip(toneOf(r.state), stateWords(r)) },
+      { key: 'because', label: pair('why'), sort: false, value: (r) => t(`because_${r.because}`) },
+      { key: 'labels', label: pair('labelsCol'), sort: false, align: 'end', value: (r) => `${r.confirmed.length} / ${r.labels}` },
+      { key: 'state', label: pair('state'), sort: false, value: (r) => stateWords(r), render: (r) => o.chip(toneOf(r.state), stateWords(r)) },
       { key: 'detail', label: { en: 'Head office says', ta: 'தலைமை அலுவலகம் கூறுவது' }, sort: false, value: (r) => (r.detail === '' ? null : r.detail) },
       { key: 'action', label: pair('action'), sort: false, value: (r) => (r.state === 'partial' || r.state === 'unconfirmed' ? t('sendAgain') : null), render: (r) => rowButton(r) },
     ],
     empty: { title: pair('noPushes'), detail: pair('noPushesDetail') },
   });
   paintPrimary();
+}
+
+/** U7: the register's loader — one page from head office (search by the product's name or code), or why there is none. */
+async function pageOfPushes(ask) {
+  if (session === null) return { state: 'unknown' };
+  const out = await session.page(ask);
+  if (out.result === 'ok') return { rows: out.value.rows, total: out.value.total };
+  const words = (l) => (out.result === 'invalid' ? api.words(l, out.why) : api.outcomeWords(l, out));
+  return { state: office()?.stateOf(out) ?? 'error', stateOpts: { title: { en: words('en'), ta: words('ta') }, detail: pair('notReadDetail') } };
 }
 
 function paint() { paintWords(); paintCards(); paintPushes(); }
@@ -129,7 +138,7 @@ async function sendAgain(rows) {
   const asked = await o.confirm({
     title: one ? pair('confirmTitle') : pair('confirmAllTitle'),
     detail: one
-      ? { en: fill(api.words('en', 'confirmDetail'), { price: api.rupees(one.priceMinor), product: nameOf(one.productId), n: one.unconfirmed.length }), ta: fill(api.words('ta', 'confirmDetail'), { price: api.rupees(one.priceMinor), product: nameOf(one.productId), n: one.unconfirmed.length }) }
+      ? { en: fill(api.words('en', 'confirmDetail'), { price: api.rupees(one.priceMinor), product: nameOf(one.productId), n: waitingOf(one) }), ta: fill(api.words('ta', 'confirmDetail'), { price: api.rupees(one.priceMinor), product: nameOf(one.productId), n: waitingOf(one) }) }
       : { en: fill(api.words('en', 'confirmAllDetail'), { n: rows.length }), ta: fill(api.words('ta', 'confirmAllDetail'), { n: rows.length }) },
     authority: pair('authority'), confirmLabel: pair('confirmLabel'), tone: 'primary',
   });
@@ -147,9 +156,10 @@ async function sendAgain(rows) {
 
 async function read() {
   if (session === null) { paint(); return; }
-  pushes = null; pushesOutcome = null; labels = null; labelsOutcome = null; paint();
-  const [p, l] = await Promise.all([session.pushes(), session.labels()]);
-  if (p.result === 'ok') pushes = p.value; else pushesOutcome = p;
+  const drawn = table !== null && table.connected(); // a register drawn now reads its first page by itself
+  overview = null; overviewOutcome = null; labels = null; labelsOutcome = null; paint();
+  const [p, l] = await Promise.all([may.read ? session.overview() : Promise.resolve(null), session.labels(), drawn ? table.reload() : null]);
+  if (p !== null) { if (p.result === 'ok') overview = p.value; else overviewOutcome = p; }
   if (l.result === 'ok') labels = l.value; else labelsOutcome = l;
   paint();
 }

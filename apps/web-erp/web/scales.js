@@ -59,8 +59,19 @@ function register(hostId, opts) {
 }
 const chip = (tone, label) => { const o = window.sreOffice; if (o && typeof o.chip === 'function') return o.chip(tone, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.dataset.tone = tone; s.textContent = typeof label === 'string' ? label : (label?.en ?? ''); return s; };
 
+// U7 (Group C2 · notes-P4): the summary figures are the chrome's summary cards (`sreOffice.cards`) — a figure head office
+// has not given reads "Not known", never a dash, and a figure that needs a person carries the card's tone (shape + words
+// stay with the label). The parts keep the page's ids (`p-`, `k-`, `v-`). Off the box the page's own panels stay.
+function summaryCards(rows) {
+  const o = window.sreOffice; const host = document.querySelector('.panels');
+  if (!o || typeof o.cards !== 'function' || host === null) return false;
+  o.cards(host, rows.map(([k, value, wordKey, attention]) => ({ label: W(wordKey), value: value === null || value === undefined ? null : String(value), ...(attention ? { tone: 'degraded' } : {}), ids: { card: `p-${k}`, label: `k-${k}`, value: `v-${k}` } })));
+  return true;
+}
 function paintSummary() {
   const s = api.summarise(reg);
+  $('as-of').textContent = reg === null ? '' : t('asOf', { day: reg.asOf });
+  if (summaryCards([['scales', s.scales, 'sumScales'], ['lapsed', s.lapsed, 'sumLapsed', (s.lapsed ?? 0) > 0], ['soon', s.soon, 'sumSoon'], ['waiting', s.waiting, 'sumWaiting']])) return;
   for (const [k, v] of [['scales', s.scales], ['lapsed', s.lapsed], ['soon', s.soon], ['waiting', s.waiting]]) $(`v-${k}`).textContent = v === null ? '—' : String(v);
   $('p-lapsed').classList.toggle('attention', (s.lapsed ?? 0) > 0);
   $('as-of').textContent = reg === null ? '' : t('asOf', { day: reg.asOf });
@@ -209,3 +220,5 @@ if (api !== null) {
   shopDate('f-stamped', { en: api.words('en', 'fStamped'), ta: api.words('ta', 'fStamped') });
   shopDate('f-valid', { en: api.words('en', 'fValid'), ta: api.words('ta', 'fValid') });
 }
+// U7: the summary figures become the chrome's cards as soon as the chrome is there.
+document.addEventListener('sre:chrome', () => { if (api !== null) paintSummary(); }, { once: true });

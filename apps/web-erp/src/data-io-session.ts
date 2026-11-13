@@ -26,6 +26,7 @@
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
+import { pagedQuery, type RegisterAsk } from './register-paging';
 import {
   presentRequestStatus, rupees, shopTime,
   type ApprovalAsk, type ApprovalRequestView, type AskResult, type InboxRead,
@@ -109,6 +110,10 @@ export interface LoadedJobView {
   readonly rolledBack?: { readonly at: string; readonly requestedBy: string; readonly approvedBy: string; readonly reason: string };
 }
 export type LoadedJobsRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[] } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
+/** U7 (OB-725): one page of the applied loads, with the total head office counted. */
+export type LoadedJobsPageRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[]; readonly total: number } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
+/** U7: what the register's loader is told — one page of loads, or why there is none. */
+export type LoadsPage = { readonly state: 'read'; readonly jobs: readonly LoadedJobView[]; readonly total: number } | { readonly state: 'lost_link' | 'refused' | 'not_allowed' };
 export interface UndoRequest { readonly jobId: string; readonly reason: string; readonly approvalId: string }
 
 /** What a plain (undated) export answered — the same shape as a dated one: the file to save, or why there is none. */
@@ -160,6 +165,8 @@ export interface DataIoPorts {
   approvalInbox?(): Promise<InboxRead>;
   /** M30 round 8: the loads already applied (GET /v1/import/commits) — read only. Absent on a bare stand-in (no link). */
   loadedJobs?(): Promise<LoadedJobsRead>;
+  /** U7 (OB-725): ONE page of the loads applied (GET /v1/import/commits?page=…) — `query` is head office's query string. */
+  loadedJobsPage?(query: string): Promise<LoadedJobsPageRead>;
   /** M30 round 8: undo a load (POST /v1/import/commits/:jobId/rollback) naming an approved undo request. Only from an
    *  explicit action. Absent on a bare stand-in (no link). */
   undo?(req: UndoRequest): Promise<CommitResult>;
@@ -203,7 +210,7 @@ export type CopyKey =
   | 'requestsHeading' | 'requestsEmpty' | 'requestsLostLink' | 'requestIdLabel' | 'askedAtLabel'
   | 'noImport' | 'noCommit'
   | 'changesHeading' | 'changeLine' | 'loadsHeading' | 'loadsEmpty' | 'loadsLostLink' | 'loadLine' | 'loadUndone' | 'loadInPlace'
-  | 'undoWhyLabel' | 'askUndoBtn' | 'undoBtn' | 'undoSummary' | 'undoAsked' | 'undoDone' | 'undoNeedsWhy' | 'undoNotAsked' | 'undoWaiting'
+  | 'undoWhyLabel' | 'askUndoBtn' | 'undoBtn' | 'undoSheetTitle' | 'undoSheetDetail' | 'undoSheetAuthority' | 'loadCol' | 'undoCol' | 'undoSummary' | 'undoAsked' | 'undoDone' | 'undoNeedsWhy' | 'undoNotAsked' | 'undoWaiting'
   | 'undoRejected' | 'undoExpired' | 'undoUsed' | 'undoRefused' | 'undoRefusedNoWords' | 'undoLostLink' | 'undoAlready';
 
 export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
@@ -256,6 +263,7 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     changesHeading: 'What this file changes', changeLine: 'line {line} · {key}: {field} "{from}" → "{to}"',
     loadsHeading: 'Loads already applied', loadsEmpty: 'Nothing has been loaded yet.', loadsLostLink: 'Could not read the loads just now — no connection.',
     loadLine: '{rows} {rowWord} · loaded by {by}, approved by {approver} · {at}', loadUndone: 'Undone — {by} asked, {approver} approved: "{reason}"', loadInPlace: 'In place',
+    undoSheetTitle: 'Undo the load "{job}" — {rows} {rowWord} put back', undoSheetDetail: 'Every record this load changed goes back to what it was before. Both the load and its undo stay on the record; nothing is deleted.', undoSheetAuthority: 'In your name, with the second person\'s approval of this undo.', loadCol: 'Load', undoCol: 'Undo',
     undoWhyLabel: 'Why undo this load (the approver reads it)', askUndoBtn: 'Ask to undo', undoBtn: 'Undo it', undoSummary: 'Undo the load "{job}"',
     undoAsked: 'Asked. Waiting for a second person to approve the undo:', undoDone: 'Undone. Everything this load wrote has been put back by new records; nothing was deleted.',
     undoNeedsWhy: 'Say why this load should be undone — the person approving reads it.',
@@ -314,6 +322,7 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     changesHeading: 'இந்தக் கோப்பு எதை மாற்றுகிறது', changeLine: 'வரி {line} · {key}: {field} "{from}" → "{to}"',
     loadsHeading: 'ஏற்கனவே ஏற்றப்பட்டவை', loadsEmpty: 'இதுவரை எதுவும் ஏற்றப்படவில்லை.', loadsLostLink: 'ஏற்றங்களை இப்போது படிக்க முடியவில்லை — இணைப்பு இல்லை.',
     loadLine: '{rows} {rowWord} · ஏற்றியவர் {by}, அனுமதித்தவர் {approver} · {at}', loadUndone: 'திரும்பப் பெறப்பட்டது — {by} கேட்டார், {approver} அனுமதித்தார்: "{reason}"', loadInPlace: 'நடைமுறையில் உள்ளது',
+    undoSheetTitle: '"{job}" ஏற்றத்தைத் திரும்பப் பெறுதல் — {rows} {rowWord} பழையபடி', undoSheetDetail: 'இந்த ஏற்றம் மாற்றிய ஒவ்வொரு பதிவும் முன்பு இருந்தபடி திரும்பும். ஏற்றமும் அதன் திரும்பப் பெறுதலும் பதிவில் இருக்கும்; எதுவும் நீக்கப்படாது.', undoSheetAuthority: 'உங்கள் பெயரில், இந்தத் திரும்பப் பெறுதலுக்கு இரண்டாம் நபரின் அனுமதியுடன்.', loadCol: 'ஏற்றம்', undoCol: 'திரும்பப் பெறுதல்',
     undoWhyLabel: 'இந்த ஏற்றத்தை ஏன் திரும்பப் பெற வேண்டும் (அனுமதிப்பவர் படிப்பார்)', askUndoBtn: 'திரும்பப் பெற அனுமதி கேள்', undoBtn: 'திரும்பப் பெறு', undoSummary: '"{job}" ஏற்றத்தைத் திரும்பப் பெறுதல்',
     undoAsked: 'கேட்கப்பட்டது. திரும்பப் பெறுவதற்கு இரண்டாம் நபரின் அனுமதிக்காகக் காத்திருக்கிறது:', undoDone: 'திரும்பப் பெறப்பட்டது. இந்த ஏற்றம் எழுதிய அனைத்தும் புதிய பதிவுகளால் சரிசெய்யப்பட்டன; எதுவும் நீக்கப்படவில்லை.',
     undoNeedsWhy: 'இந்த ஏற்றத்தை ஏன் திரும்பப் பெற வேண்டும் என்று சொல்லுங்கள் — அனுமதிப்பவர் அதைப் படிப்பார்.',
@@ -454,6 +463,11 @@ export interface DataIoSession {
   presentLoadOutcome(lang: Lang, o: LoadOutcome): StatusPresentation;
   /** M30 round 8: the loads already applied (a GET — read only), newest first, each in place or undone. */
   loads(lang: Lang): Promise<LoadsView>;
+  /** U7 (OB-725): ONE page of the loads applied, for the register's loader — searched and sorted by head office, newest
+   *  first unless a column is chosen (when → at, load → jobId). */
+  loadsPage(ask: RegisterAsk): Promise<LoadsPage>;
+  /** U7: one load as the row draws it, in the language asked at the moment it is drawn. */
+  presentLoad(lang: Lang, job: LoadedJobView): PresentedLoad;
   /** M30 round 8: ask a second person to approve undoing THIS load. Refused locally without load permission or a reason. */
   askToUndo(lang: Lang, input: { readonly jobId: string; readonly why: string }): Promise<AskOutcome>;
   /** M30 round 8: undo the load, naming the caller's own APPROVED undo request for it. Says plainly when it is not approved
@@ -473,6 +487,17 @@ const fill = (template: string, values: Readonly<Record<string, string>>): strin
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
 
 export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): DataIoSession {
+  /** One applied load, in place or undone (by whom, why), and whether this person may undo it — in the language asked. */
+  const presentLoad = (lang: Lang, j: LoadedJobView): PresentedLoad => {
+    const t = translator(DATA_IO_COPY, lang);
+    const label = findTemplate(j.templateId)?.label ?? j.templateId;
+    const line = `${label} · ${fill(t('loadLine'), { rows: String(j.rowsApplied), rowWord: t(j.rowsApplied === 1 ? 'rowOne' : 'rowMany'), by: j.uploadedBy, approver: j.approvedBy, at: shopTime(j.at) })}`;
+    const undone = j.rolledBack !== undefined;
+    const status = undone
+      ? presentStatus({ tone: 'idle', icon: '↺', label: fill(t('loadUndone'), { by: j.rolledBack!.requestedBy, approver: j.rolledBack!.approvedBy, reason: j.rolledBack!.reason }), needsAttention: false })
+      : presentStatus({ tone: 'ok', icon: '✓', label: t('loadInPlace'), needsAttention: false });
+    return { jobId: j.jobId, line, status, undone, mayUndo: !undone && ports.mayCommitImport() };
+  };
   const text = (lang: Lang, key: CopyKey): string => translator(DATA_IO_COPY, lang)(key);
 
   const findTemplate = (id: string): ImportTemplateView | undefined => ports.importTemplates().find((t) => t.id === id);
@@ -699,18 +724,16 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
       if (ports.loadedJobs === undefined) return { state: 'lost_link', rows: [] };
       const read = await ports.loadedJobs();
       if (read.result !== 'read') return { state: read.result, rows: [] };
-      const t = translator(DATA_IO_COPY, lang);
-      const labelOf = (id: string): string => findTemplate(id)?.label ?? id;
-      const rows = read.jobs.slice().sort((a, b) => b.at.localeCompare(a.at)).map((j): PresentedLoad => {
-        const line = `${labelOf(j.templateId)} · ${fill(t('loadLine'), { rows: String(j.rowsApplied), rowWord: t(j.rowsApplied === 1 ? 'rowOne' : 'rowMany'), by: j.uploadedBy, approver: j.approvedBy, at: shopTime(j.at) })}`;
-        const undone = j.rolledBack !== undefined;
-        const status = undone
-          ? presentStatus({ tone: 'idle', icon: '↺', label: fill(t('loadUndone'), { by: j.rolledBack!.requestedBy, approver: j.rolledBack!.approvedBy, reason: j.rolledBack!.reason }), needsAttention: false })
-          : presentStatus({ tone: 'ok', icon: '✓', label: t('loadInPlace'), needsAttention: false });
-        return { jobId: j.jobId, line, status, undone, mayUndo: !undone && ports.mayCommitImport() };
-      });
+      const rows = read.jobs.slice().sort((a, b) => b.at.localeCompare(a.at)).map((j) => presentLoad(lang, j));
       return { state: 'read', rows };
     },
+    loadsPage: async (ask) => {
+      if (!ports.mayImport()) return { state: 'not_allowed' };
+      if (ports.loadedJobsPage === undefined) return { state: 'lost_link' };
+      const read = await ports.loadedJobsPage(pagedQuery(ask.sort === null ? { ...ask, sort: 'when', dir: 'desc' } : ask, { when: 'at', job: 'jobId' }));
+      return read.result === 'read' ? { state: 'read', jobs: read.jobs, total: read.total } : { state: read.result };
+    },
+    presentLoad: (lang, job) => presentLoad(lang, job),
     askToUndo: async (lang, { jobId, why }) => {
       if (!ports.mayCommitImport()) return { kind: 'not_allowed' };
       if (jobId.trim() === '') return { kind: 'incomplete', missing: 'job' };

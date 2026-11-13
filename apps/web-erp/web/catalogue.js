@@ -35,21 +35,17 @@ const el = (id) => document.getElementById(id);
 // ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
 // field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
 // carried over; the plain field stays until the chrome is there, so the page is never dead.
-const shopDates = new Map();
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; const hint = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-hint'); if (hint && !hint.dataset.own && window.sreOffice && typeof window.sreOffice.words === 'function') hint.textContent = window.sreOffice.words('dateHint'); } }
+// U7 (Group C2): the shared dd/mm/yyyy field is the chrome's ONE copy (`sreOffice.shopDate`) — its label, "(required)"
+// and hint follow the language toggle inside the chrome; the page keeps its element ids and reads ISO back through
+// `sreOffice.dateOf`. Before the chrome has loaded, or off the box, the plain field stays, so the page is never dead.
+const shopDates = new Set();
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
-  if (!field) return;
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
-  repaintShopDates();
+  const o = window.sreOffice;
+  if (!o || typeof o.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (o.shopDate(id, words, opts) !== null) shopDates.add(id);
 }
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+const dateOf = (id) => { const o = window.sreOffice; return shopDates.has(id) && o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : (document.getElementById(id)?.value ?? ''); };
 
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1657,7 +1653,6 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paintChrome();
-  repaintShopDates();
   el('history-title').textContent = t('historyTitle'); // U3 · OB-699: the history's title follows the toggle
   renderItems();
   renderItem();

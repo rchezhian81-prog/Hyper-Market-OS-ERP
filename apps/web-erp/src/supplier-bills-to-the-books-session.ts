@@ -41,7 +41,7 @@ export const SUPPLIER_BOOKS_COPY = {
     apPost: 'Put supplier bills in the books', apShow: 'Show supplier bills in the books', apPosted: 'Put in the books:', apNothing: 'Nothing new to put in the books.',
     apJournalsNone: 'No supplier bill is in the books yet.', apRegister: 'register', apBooks: 'books', apAgrees: 'agrees', apDiffers: 'does not agree',
     dr: 'Debit', cr: 'Credit', apExceptions: 'Not in the books', kind_supplier_invoice: 'Bill', kind_supplier_invoice_reversal: 'Bill reduced', kind_supplier_debit_note: 'Debit note', kind_supplier_payment: 'Payment',
-    kind_supplier_opening_balance: 'Opening balance', kind_supplier_opening_reversal: 'Opening reversed',
+    kind_supplier_opening_balance: 'Opening balance', kind_supplier_opening_reversal: 'Opening reversed', kind_supplier_claim_credit: 'Supplier claim credited',
     // Tally files — the month's supplier-bill file
     tapH: 'Supplier bills for Tally, for a month', tapLead: 'The month\'s supplier-bill vouchers as one Tally import file, checked before it is offered. A voucher whose account has no Tally ledger name is kept out and named.',
     tapPeriodL: 'Month', tapShow: 'Make the month\'s supplier-bill file', tapEmpty: 'No supplier bill is in the books for this month — there is no file to make.',
@@ -64,7 +64,7 @@ export const SUPPLIER_BOOKS_COPY = {
     apPost: 'சப்ளையர் பில்களைப் புத்தகத்தில் சேர்', apShow: 'புத்தகத்தில் உள்ள சப்ளையர் பில்களைக் காட்டு', apPosted: 'புத்தகத்தில் சேர்க்கப்பட்டது:', apNothing: 'புத்தகத்தில் சேர்க்கப் புதிதாக எதுவும் இல்லை.',
     apJournalsNone: 'இன்னும் எந்தச் சப்ளையர் பில்லும் புத்தகத்தில் இல்லை.', apRegister: 'பதிவேடு', apBooks: 'புத்தகம்', apAgrees: 'பொருந்துகிறது', apDiffers: 'பொருந்தவில்லை',
     dr: 'பற்று', cr: 'வரவு', apExceptions: 'புத்தகத்தில் இல்லாதவை', kind_supplier_invoice: 'பில்', kind_supplier_invoice_reversal: 'பில் குறைப்பு', kind_supplier_debit_note: 'பற்றுக் குறிப்பு', kind_supplier_payment: 'செலுத்தியது',
-    kind_supplier_opening_balance: 'தொடக்க இருப்பு', kind_supplier_opening_reversal: 'தொடக்க இருப்பு திரும்பப் பெறப்பட்டது',
+    kind_supplier_opening_balance: 'தொடக்க இருப்பு', kind_supplier_opening_reversal: 'தொடக்க இருப்பு திரும்பப் பெறப்பட்டது', kind_supplier_claim_credit: 'சப்ளையர் கோரிக்கை வரவு வைக்கப்பட்டது',
     tapH: 'ஒரு மாதத்தின் சப்ளையர் பில்கள் டேலிக்கு', tapLead: 'மாதத்தின் சப்ளையர்-பில் வவுச்சர்கள் ஒரே டேலி இறக்குமதிக் கோப்பாக, தருவதற்கு முன் சரிபார்க்கப்படுகின்றன. டேலி லெட்ஜர் பெயர் இல்லாத கணக்கின் வவுச்சர் வெளியே வைக்கப்பட்டுப் பெயரிடப்படுகிறது.',
     tapPeriodL: 'மாதம்', tapShow: 'மாதத்தின் சப்ளையர்-பில் கோப்பை உருவாக்கு', tapEmpty: 'இந்த மாதத்துக்குப் புத்தகத்தில் எந்தச் சப்ளையர் பில்லும் இல்லை — உருவாக்கக் கோப்பு இல்லை.',
     tapReady: 'இறக்குமதிக்குத் தயார்:', tapVouchers: 'வவுச்சர்கள்', tapIncomplete: 'முழுமையில்லை — இவை வெளியே வைக்கப்பட்டன:', tapDownload: 'டேலிக்குப் பதிவிறக்கு', tapChecked: 'டேலியின் இறக்குமதிச் சரிபார்ப்பு இதை ஏற்கிறது.',

@@ -12,6 +12,7 @@
 // comparison and the worklist are `purchase.commitment.read`. Requisitions and quotes are event-sourced
 // and latest-wins (a re-quote supersedes), so the comparison always reflects the newest offer.
 
+import { pageOrRefuse } from '../../kernel/src/paging';
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
@@ -212,6 +213,10 @@ export function rfqRoutes(deps: RfqDeps): readonly Route[] {
       permission: 'purchase.commitment.read',
       handler: async (ctx) => {
         const requisitions = await Promise.all((await deps.requisitions(ctx.tenantId)).map((r) => withUnits(deps, ctx.tenantId, r)));
+        // U7 (OB-725): with ?page= head office pages the worklist (search by requisition or product; sort by requisition).
+        const view = requisitions.map((r, i) => ({ i, requisitionId: r.requisitionId, products: r.lines.map((l) => l.productId).join(' '), lines: r.lines.length }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['requisitionId', 'products'], sort: ['requisitionId', 'lines'] });
+        if (paged !== undefined) return { status: 200, body: { requisitions: paged.rows.map((v) => requisitions[v.i]!), count: paged.paging.total, paging: paged.paging } };
         return { status: 200, body: { requisitions, count: requisitions.length } };
       },
     },

@@ -2,11 +2,13 @@
 // (apps/web-erp/src/supplier-claims-session.ts, in the bundle as window.supplierClaims) does every call and every rule; this
 // page lays out what it is told on the shared office parts (window.sreOffice: cards, table, state, chip, confirm). Every word
 // has a Tamil twin; head office's own sentences stay in English (OB-553). Money moves only after the confirm sheet (OB-698).
+// U7: the credits to approve (OB-724 — an accepted claim is a draft until the accountant, a second person, approves it) and
+// the disputed claims (M24-FR-02 alt — a rejected claim is an exception until a person says how it was settled).
 
 const $ = (id) => document.getElementById(id);
 const api = window.supplierClaims ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false, issue: false, decide: false };
+const may = session?.may ?? { named: false, read: false, issue: false, decide: false, credit: false, settle: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const both = (k) => (api === null ? { en: k, ta: k } : { en: api.words('en', k), ta: api.words('ta', k) });
@@ -134,19 +136,129 @@ function paintSupplier() {
   });
 }
 
+/** OB-724 — approve or refuse a draft credit. Approving is money (the shop owes the supplier more): the confirm sheet first. */
+async function decideCredit(d, decision, reason, status) {
+  const o = office();
+  if (reason.trim() === '') { status.textContent = t('needReason'); return; }
+  if (decision === 'approve' && o !== null) {
+    const ok = await o.confirm({ title: fill(t('approveTitle'), { value: money(d.amountMinor), supplier: supplierOf(d.supplierId) }), detail: t('approveDetail'), authority: t('creditAuthority'), confirmLabel: t('approveCredit'), tone: 'primary' });
+    if (!ok.ok) { status.textContent = t('notConfirmed'); return; }
+  }
+  status.textContent = t('reading');
+  const out = await session.decideCredit(d, decision, reason);
+  status.textContent = out.result === 'ok' ? t('creditDecided') : api.outcomeWords(lang, out);
+  if (out.result === 'ok') await load();
+}
+/** M24-FR-02 alt — say how a disputed claim was settled. No money moves, so no confirm sheet; the outcome and reason are required. */
+async function settleDispute(d, outcomeKey, reason, status) {
+  status.textContent = t('reading');
+  const out = await session.settleDispute(d, outcomeKey, reason);
+  status.textContent = out.result === 'ok' ? t('settledDone') : api.outcomeWords(lang, out);
+  if (out.result === 'ok') await load();
+}
+
+function paintCredits() {
+  const o = office(); if (o === null || reg === null) return;
+  const rows = reg.creditDrafts ?? null;
+  if (rows === null) { o.state($('credit-table'), 'unknown', { title: t('notKnown'), detail: t('notKnownDetail') }); return; }
+  if (rows.length === 0) { o.state($('credit-table'), 'empty', { title: t('noneCredits'), detail: t('noneCreditsDetail') }); return; }
+  o.table($('credit-table'), {
+    id: 'claim-credits', label: both('creditsH'), rows, pageSize: 10, sortable: true,
+    rowKey: (d) => d.creditId, rowData: (d) => ({ credit: d.creditId, supplier: d.supplierId, state: d.state }),
+    columns: [
+      { key: 'supplierId', label: both('supplier'), sort: 'text', filter: true, value: (d) => supplierOf(d.supplierId) },
+      { key: 'creditId', label: both('credit'), sort: 'text', value: (d) => d.creditId },
+      { key: 'amountMinor', label: both('amount'), sort: 'number', align: 'end', value: (d) => money(d.amountMinor) },
+      { key: 'why', label: both('why'), value: (d) => d.why || null },
+      { key: 'acceptedBy', label: both('acceptedBy'), sort: 'text', value: (d) => personOf(d.acceptedBy) },
+      { key: 'state', label: both('state'), sort: 'text', filter: true, value: (d) => t(`credit_${d.state}`), render: (d) => o.chip(api.creditTone(d.state), t(`credit_${d.state}`)) },
+    ],
+    drawer: {
+      title: (d) => `${t('credit')} · ${d.creditId}`,
+      body: (d) => {
+        const box = document.createElement('div');
+        box.append(o.facts([[both('supplier'), supplierOf(d.supplierId)], [both('amount'), money(d.amountMinor)], [both('why'), d.why || '—'], [both('acceptedBy'), personOf(d.acceptedBy)],
+          [both('acceptedOn'), shopDayOf(d.acceptedAt)], [both('state'), t(`credit_${d.state}`)],
+          ...(d.decision === null ? [] : [[both('approvedBy'), personOf(d.decision.decidedBy)], [both('reason'), d.decision.reason]])]));
+        if (d.state === 'draft') {
+          const form = document.createElement('div'); form.className = 'decide';
+          form.append(o.field({ id: `credit-reason-${d.submissionId}`, label: both('reason'), required: true }));
+          const why = session.whyNotCredit(d);
+          const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'sre-btn sre-btn-primary'; yes.textContent = t('approveCredit'); yes.dataset.act = 'approve-credit'; yes.id = `approve-${d.submissionId}`;
+          const no = document.createElement('button'); no.type = 'button'; no.className = 'sre-btn sre-btn-quiet'; no.textContent = t('refuseCredit'); no.dataset.act = 'refuse-credit'; no.id = `refuse-${d.submissionId}`;
+          yes.disabled = why !== ''; no.disabled = why !== '';
+          const acts = document.createElement('div'); acts.className = 'actions'; acts.append(yes, no);
+          form.append(acts); box.append(form);
+          whyDisabled(yes, why === '' ? '' : t(why)); whyDisabled(no, why === '' ? '' : t(why));
+          const reasonOf = () => $(`credit-reason-${d.submissionId}`)?.value ?? '';
+          yes.addEventListener('click', () => { const r = reasonOf(); o.closeDrawer(); void decideCredit(d, 'approve', r, $('credit-status')); });
+          no.addEventListener('click', () => { const r = reasonOf(); o.closeDrawer(); void decideCredit(d, 'refuse', r, $('credit-status')); });
+        }
+        return box;
+      },
+    },
+    empty: { title: t('noneCredits'), detail: t('noneCreditsDetail') },
+  });
+}
+
+function paintDisputes() {
+  const o = office(); if (o === null || reg === null) return;
+  const rows = reg.disputes ?? null;
+  if (rows === null) { o.state($('dispute-table'), 'unknown', { title: t('notKnown'), detail: t('notKnownDetail') }); return; }
+  if (rows.length === 0) { o.state($('dispute-table'), 'empty', { title: t('noneDisputes'), detail: t('noneDisputesDetail') }); return; }
+  o.table($('dispute-table'), {
+    id: 'claim-disputes', label: both('disputesH'), rows, pageSize: 10, sortable: true,
+    rowKey: (d) => d.exceptionId, rowData: (d) => ({ exception: d.exceptionId, supplier: d.supplierId, state: d.state, overdue: String(d.overdue) }),
+    columns: [
+      { key: 'supplierId', label: both('supplier'), sort: 'text', filter: true, value: (d) => supplierOf(d.supplierId) },
+      { key: 'valueMinor', label: both('value'), sort: 'number', align: 'end', value: (d) => money(d.valueMinor) },
+      { key: 'rejectedBecause', label: both('rejectedBecause'), value: (d) => d.rejectedBecause || null },
+      { key: 'ownerUserId', label: both('owner'), sort: 'text', filter: true, value: (d) => personOf(d.ownerUserId) },
+      { key: 'raisedOn', label: both('raisedOn'), sort: 'text', value: (d) => shopDayOf(d.raisedOn) },
+      { key: 'state', label: both('state'), sort: 'text', filter: true, value: (d) => t(api.disputeStateKey(d)), render: (d) => o.chip(api.disputeTone(d), t(api.disputeStateKey(d))) },
+    ],
+    drawer: {
+      title: (d) => `${t('disputesH')} · ${d.exceptionId}`,
+      body: (d) => {
+        const box = document.createElement('div');
+        box.append(o.facts([[both('supplier'), supplierOf(d.supplierId)], [both('value'), money(d.valueMinor)], [both('why'), d.why || '—'], [both('rejectedBecause'), d.rejectedBecause || '—'],
+          [both('owner'), personOf(d.ownerUserId)], [both('raisedOn'), shopDayOf(d.raisedOn)], [both('state'), t(api.disputeStateKey(d))],
+          ...(d.resolution === null ? [] : [[both('outcome'), t(`outcome_${d.resolution.outcome}`)], [both('reason'), d.resolution.reason], [both('settled'), `${personOf(d.resolution.by)} · ${shopTime(d.resolution.at)}`]])]));
+        if (d.state === 'open') {
+          const form = document.createElement('div'); form.className = 'decide';
+          form.append(o.field({ id: `outcome-${d.submissionId}`, type: 'select', label: both('outcome'), required: true, options: [{ value: '', label: both('outcome') }, ...api.disputeOutcomes.map((k) => ({ value: k, label: both(`outcome_${k}`) }))] }));
+          form.append(o.field({ id: `settle-reason-${d.submissionId}`, label: both('reason'), required: true }));
+          const go = document.createElement('button'); go.type = 'button'; go.className = 'sre-btn sre-btn-primary'; go.textContent = t('settle'); go.dataset.act = 'settle'; go.id = `settle-${d.submissionId}`;
+          go.disabled = !may.settle;
+          const acts = document.createElement('div'); acts.className = 'actions'; acts.append(go);
+          form.append(acts); box.append(form);
+          whyDisabled(go, may.settle ? '' : t('cannotSettle'));
+          go.addEventListener('click', () => {
+            const outcomeKey = $(`outcome-${d.submissionId}`)?.value ?? ''; const r = $(`settle-reason-${d.submissionId}`)?.value ?? '';
+            o.closeDrawer(); void settleDispute(d, outcomeKey, r, $('dispute-status'));
+          });
+        }
+        return box;
+      },
+    },
+    empty: { title: t('noneDisputes'), detail: t('noneDisputesDetail') },
+  });
+}
+
 function paint() {
   const o = office();
   $('title-text').textContent = t('title'); document.title = `SRE ${t('title')}`; $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
   $('reload-text').textContent = t('refresh'); $('shop-h').textContent = t('shopH'); $('shop-lead').textContent = t('shopLead'); $('sup-h').textContent = t('supplierH'); $('sup-lead').textContent = t('supplierLead');
+  $('credit-h').textContent = t('creditsH'); $('credit-lead').textContent = t('creditsLead'); $('dispute-h').textContent = t('disputesH'); $('dispute-lead').textContent = t('disputesLead');
   $('covers').textContent = ''; $('cards').replaceChildren(); $('note').textContent = '';
   if (!may.read) return;
   if (outcome !== null) {
     $('page-status').textContent = api.outcomeWords(lang, outcome);
-    if (o !== null) { o.state($('shop-table'), o.stateOf(outcome), { title: t('notKnown'), detail: t('notKnownDetail') }); o.state($('sup-table'), o.stateOf(outcome), { title: t('notKnown'), detail: t('notKnownDetail') }); }
+    if (o !== null) for (const id of ['shop-table', 'sup-table', 'credit-table', 'dispute-table']) o.state($(id), o.stateOf(outcome), { title: t('notKnown'), detail: t('notKnownDetail') });
     return;
   }
-  if (reg === null) { if (o !== null) { o.state($('shop-table'), 'loading'); o.state($('sup-table'), 'loading'); } return; }
+  if (reg === null) { if (o !== null) for (const id of ['shop-table', 'sup-table', 'credit-table', 'dispute-table']) o.state($(id), 'loading'); return; }
   $('page-status').textContent = '';
   $('covers').textContent = t('covers').split('{time}').join(shopTime(readAt));
   $('note').textContent = t('headOfficeEnglish');
@@ -157,9 +269,13 @@ function paint() {
       { label: both('state_never_owed'), value: reg.counts.neverOwed ?? 0, icon: 'package-minus' },
       { label: both('state_pending'), value: reg.counts.returnPending ?? 0, tone: (reg.counts.returnPending ?? 0) > 0 ? 'pending' : undefined, icon: 'truck' },
       { label: both('state_awaiting_buyer'), value: reg.counts.awaitingBuyer ?? 0, tone: (reg.counts.awaitingBuyer ?? 0) > 0 ? 'pending' : undefined, icon: 'clock' },
+      // U7: a count head office did not send is "Not known", never 0 (empty is never "all clear")
+      { label: both('countsCredits'), value: reg.counts.creditDrafts ?? t('notKnownValue'), tone: (reg.counts.creditDrafts ?? 0) > 0 ? 'pending' : undefined, icon: 'indian-rupee' },
+      { label: both('countsDisputes'), value: reg.counts.openDisputes ?? t('notKnownValue'), tone: (reg.counts.openDisputes ?? 0) > 0 ? 'pending' : undefined, icon: 'triangle-alert' },
+      { label: both('countsOverdue'), value: reg.counts.overdueDisputes ?? t('notKnownValue'), tone: (reg.counts.overdueDisputes ?? 0) > 0 ? 'error' : undefined, icon: 'clock' },
     ]);
   }
-  paintShop(); paintSupplier();
+  paintShop(); paintSupplier(); paintCredits(); paintDisputes();
 }
 
 async function load() {
@@ -175,5 +291,5 @@ $('reload').addEventListener('click', () => { void load(); });
 paint();
 if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
-else { $('reload').hidden = false; $('shop').hidden = false; $('supplier').hidden = false; void load(); }
+else { $('reload').hidden = false; $('shop').hidden = false; $('supplier').hidden = false; $('credits').hidden = false; $('disputes').hidden = false; void load(); }
 document.addEventListener('sre:chrome', () => { paint(); });

@@ -14,6 +14,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { pageOrRefuse } from '../../kernel/src/paging';
 import {
   scoreSource, jobHistory, compareSources,
   type ImportJobRecord, type JobOutcome, type QualityScore,
@@ -182,13 +183,21 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
       permission: 'purchase.import.read',
       handler: async (ctx) => {
         const jobs = await deps.jobs(ctx.tenantId);
+        const asked = ctx.query['page'] !== undefined;
         const rows = jobHistory({
           jobs,
           ...(isStr(ctx.query['sourceId']) ? { sourceId: ctx.query['sourceId'] } : {}),
           ...(isStr(ctx.query['templateId']) ? { templateId: ctx.query['templateId'] } : {}),
-          ...(ctx.query['limit'] !== undefined ? { limit: posIntOr(ctx.query['limit'], 50) } : {}),
+          // U7 (OB-725): a paged read reads EVERY job (the total is all of them, never cut at fifty without a word).
+          ...(asked ? { limit: Math.max(jobs.length, 1) } : ctx.query['limit'] !== undefined ? { limit: posIntOr(ctx.query['limit'], 50) } : {}),
         });
-        return { status: 200, body: { jobs: rows, count: rows.length } };
+        // U7: with ?page= head office pages the history — search the file, source, uploader or outcome; sort by time or file.
+        const sourceOf = new Map(jobs.map((j) => [j.jobId, j.sourceId] as const));
+        const view = rows.map((r, i) => ({ i, jobId: r.jobId, fileName: r.fileName, sourceId: sourceOf.get(r.jobId) ?? '', uploadedBy: r.uploadedBy, outcome: r.outcome, uploadedAt: r.uploadedAt }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['jobId', 'fileName', 'sourceId', 'uploadedBy', 'outcome'], sort: ['uploadedAt', 'fileName'] });
+        if (paged === undefined) return { status: 200, body: { jobs: rows, count: rows.length } };
+        const page = paged.rows.map((v) => rows[v.i]!);
+        return { status: 200, body: { jobs: page, count: page.length, paging: paged.paging } };
       },
     },
   ];

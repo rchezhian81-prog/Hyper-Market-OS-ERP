@@ -51,8 +51,18 @@ function say(el, out, good) {
   el.textContent = out.result === 'ok' ? good : api.outcomeWords(lang, out);
 }
 
+// U7 (Group C2 · notes-P4): the summary figures are the chrome's summary cards (`sreOffice.cards`) — a figure head office
+// has not given reads "Not known", never a dash, and a figure that needs a person carries the card's tone (shape + words
+// stay with the label). The parts keep the page's ids (`p-`, `k-`, `v-`). Off the box the page's own panels stay.
+function summaryCards(rows) {
+  const o = window.sreOffice; const host = document.querySelector('.panels');
+  if (!o || typeof o.cards !== 'function' || host === null) return false;
+  o.cards(host, rows.map(([k, value, wordKey, attention]) => ({ label: W(wordKey), value: value === null || value === undefined ? null : String(value), ...(attention ? { tone: 'degraded' } : {}), ids: { card: `p-${k}`, label: `k-${k}`, value: `v-${k}` } })));
+  return true;
+}
 function paintSummary() {
   const s = api.summarise(board);
+  if (summaryCards([['bindings', s.bindings, 'sumBindings'], ['replaced', s.replaced, 'sumReplaced'], ['needs', s.needs, 'sumNeeds', (s.needs ?? 0) > 0], ['waiting', s.waiting, 'sumWaiting'], ['unused', s.unused, 'sumUnused'], ['zones', s.zones, 'sumZones', (s.zones ?? 0) > 0]])) return;
   for (const [k, v] of [['bindings', s.bindings], ['replaced', s.replaced], ['needs', s.needs], ['waiting', s.waiting], ['unused', s.unused], ['zones', s.zones]]) $(`v-${k}`).textContent = v === null || v === undefined ? '—' : String(v);
   $('p-needs').classList.toggle('attention', (s.needs ?? 0) > 0);
   $('p-zones').classList.toggle('attention', (s.zones ?? 0) > 0);
@@ -292,3 +302,5 @@ if ('serviceWorker' in navigator) {
 
 // ── U2b (G5): the store is picked by name
 pickable('f-store', 'store', 'pickStore');
+// U7: the summary figures become the chrome's cards as soon as the chrome is there.
+document.addEventListener('sre:chrome', () => { if (api !== null) paintSummary(); }, { once: true });

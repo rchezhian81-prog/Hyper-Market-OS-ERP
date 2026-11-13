@@ -126,6 +126,28 @@
         </div>
       </section>
 
+      <!-- U7 · OB-723 (owner, in writing: B) · M23-FR-01 · §28: record a payment made to a supplier, with the bills it settles —
+           it RECORDS that money went, it never sends any; asked here, approved by a different person who may pay suppliers on
+           their Approvals page, then recorded here (the confirm sheet first). Bank reconciliation matches the statement's debit
+           line to it by the reference. Session: apps/web-erp/src/supplier-payment-session.ts (window.supplierPayments). -->
+      <section aria-labelledby="pay-h" id="pay" hidden>
+        <h2 id="pay-h"></h2>
+        <p class="lede" id="pay-lead"></p>
+        <div class="row">
+          <label for="pay-supplier"><span id="l-pay-supplier"></span><input id="pay-supplier" type="text" autocomplete="off" /></label>
+          <label for="pay-amount"><span id="l-pay-amount"></span><input id="pay-amount" type="text" inputmode="decimal" autocomplete="off" /></label>
+          <label for="pay-on"><span id="l-pay-on"></span><input id="pay-on" type="date" /></label>
+          <label for="pay-method"><span id="l-pay-method"></span><select id="pay-method"></select></label>
+          <label for="pay-ref"><span id="l-pay-ref"></span><input id="pay-ref" type="text" autocomplete="off" /></label>
+          <label for="pay-settles"><span id="l-pay-settles"></span><input id="pay-settles" type="text" autocomplete="off" /></label>
+        </div>
+        <div><button id="pay-ask" type="button" class="sre-btn"></button></div>
+        <p class="status" id="pay-status" role="status" aria-live="polite"></p>
+        <h3 id="pay-asks-h"></h3>
+        <div><button id="pay-asks-show" type="button" class="sre-btn sre-btn-quiet"></button></div>
+        <ul class="register" id="pay-asks"></ul>
+      </section>
+
       <!-- W4 · WF-05 (M07 · §28): the second person's check of a typed bill — asked from the typing form, given on the checker's
            own Approvals page, then the bill is saved here exactly as checked — and the debit notes for goods sent back, issued
            their DN number once. Session: apps/web-erp/src/supplier-bills-to-the-books-session.ts (window.billCheck). -->
@@ -214,6 +236,7 @@
     <script src="./web-erp.bundle.js" type="module"></script>
     <script type="module" src="./supplier-bills.js"></script>
     <script type="module" src="./supplier-bills-check.js"></script>
+    <script type="module" src="./supplier-payments.js"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

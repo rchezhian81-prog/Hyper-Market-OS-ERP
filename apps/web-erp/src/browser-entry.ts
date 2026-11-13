@@ -287,7 +287,7 @@ import {
 import {
   createDataIoSession, exportReplyOf,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
-  type LoadedJobsRead, type LoadedJobView, type UndoRequest, type RowChangeView,
+  type LoadedJobsRead, type LoadedJobsPageRead, type LoadedJobView, type UndoRequest, type RowChangeView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
@@ -385,7 +385,7 @@ import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, area
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 // OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
-import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, type DispatchSession } from './dispatch-session';
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, flagWords as dispatchFlagWords, rupees as dispatchRupees, toleranceNote as dispatchToleranceNote, callRequestLine as dispatchCallRequestLine, type DispatchSession } from './dispatch-session';
 import { createTillDeskSession, tillDeskWords, tillDeskOutcomeWords, type TillDeskSession } from './till-delivery-desk-session'; // OB-352
 // OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
 import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
@@ -3722,6 +3722,7 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     askApproval: (ask) => postApprovalRequest(ask),
     approvalInbox: () => fetchApprovalInbox(),
     loadedJobs: () => fetchLoadedJobs(),
+    loadedJobsPage: (query) => fetchLoadedJobsPage(query),
     undo: (req) => postUndo(req),
   };
 }
@@ -3735,6 +3736,19 @@ async function fetchLoadedJobs(): Promise<LoadedJobsRead> {
     if (res.status >= 400) return { result: 'refused' };
     const body = (await res.json()) as { jobs?: readonly LoadedJobView[] };
     return { result: 'read', jobs: body.jobs ?? [] };
+  } catch { return { result: 'lost_link' }; }
+}
+
+/** U7 (OB-725): ONE page of the loads applied (GET /v1/import/commits?page=…) — read only, the total head office counted. */
+async function fetchLoadedJobsPage(query: string): Promise<LoadedJobsPageRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn(`/v1/import/commits?${query}`, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused' };
+    const body = (await res.json()) as { jobs?: readonly LoadedJobView[]; paging?: { total?: unknown } };
+    const total = body.paging?.total;
+    return typeof total === 'number' ? { result: 'read', jobs: body.jobs ?? [], total } : { result: 'lost_link' };
   } catch { return { result: 'lost_link' }; }
 }
 
@@ -5462,7 +5476,7 @@ interface ManagerWindow {
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page.
   dispatchData?: ViewerIdentity;
-  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote };
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees; readonly flagWords: typeof dispatchFlagWords; readonly toleranceNote: typeof dispatchToleranceNote; readonly callRequestLine: typeof dispatchCallRequestLine };
   /** OB-352: the delivery desk's till jobs on the Dispatch page. */
   tillDeliveryDesk?: { readonly session: TillDeskSession; readonly words: typeof tillDeskWords; readonly outcomeWords: typeof tillDeskOutcomeWords };
   approvalRules?: {
@@ -7507,7 +7521,7 @@ if (browserWindow !== undefined) {
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
   browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
-  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote };
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees, flagWords: dispatchFlagWords, toleranceNote: dispatchToleranceNote, callRequestLine: dispatchCallRequestLine };
   // OB-352: the delivery desk's till jobs, on the same page.
   browserWindow.tillDeliveryDesk = { session: createTillDeskSession({ viewer: browserWindow.dispatchData }), words: tillDeskWords, outcomeWords: tillDeskOutcomeWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);

@@ -56292,6 +56292,50 @@
         }
       }
     },
+    "/v1/inventory/batch-directory": {
+      "get": {
+        "operationId": "getInventoryBatchDirectory",
+        "tags": [
+          "API-04 Inventory"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "inventory.availability.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInventoryBatchDirectoryReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"inventory.availability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/inventory/batches": {
       "get": {
         "operationId": "getInventoryBatches",
@@ -102037,6 +102081,210 @@
         }
       }
     },
+    "/v1/purchase/supplier-claims/credits/{supplierId}/{submissionId}": {
+      "post": {
+        "operationId": "postPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionId",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "purchase.supplier.pay",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "supplierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "submissionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"purchase.supplier.pay\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/purchase/supplier-claims/disputes/{supplierId}/{submissionId}/resolve": {
+      "post": {
+        "operationId": "postPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolve",
+        "tags": [
+          "API-03 Purchase"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "supplier.portal.review",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "supplierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "submissionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveReply200"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveReply201"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"supplier.portal.review\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/purchase/suppliers": {
       "get": {
         "operationId": "getPurchaseSuppliers",
@@ -110831,6 +111079,61 @@
       }
     },
     "/v1/service/cases/{caseId}/satisfaction": {
+      "get": {
+        "operationId": "getServiceCasesByCaseIdSatisfaction",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "service.case.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetServiceCasesByCaseIdSatisfactionReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"service.case.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
       "post": {
         "operationId": "postServiceCasesByCaseIdSatisfaction",
         "tags": [
@@ -122545,23 +122848,50 @@
         "x-derived-from": "services/finance/src/audit-trail-store.ts"
       },
       "GetAuditTrailReply": {
-        "type": "object",
-        "required": [
-          "matches",
-          "total"
-        ],
-        "properties": {
-          "matches": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AuditRecord"
-            }
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "matches",
+              "total",
+              "paging"
+            ],
+            "properties": {
+              "matches": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditRecord"
+                }
+              },
+              "total": {
+                "type": "number"
+              },
+              "paging": {
+                "$ref": "#/components/schemas/Paging"
+              }
+            },
+            "additionalProperties": true
           },
-          "total": {
-            "type": "number"
+          {
+            "type": "object",
+            "required": [
+              "matches",
+              "total"
+            ],
+            "properties": {
+              "matches": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditRecord"
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/audit-trail-store.ts"
       },
@@ -128952,14 +129282,82 @@
       "GetDevicesEslPushesReply": {
         "type": "object",
         "required": [
-          "branchId",
-          "pushes",
           "notConfirmed",
+          "summary",
           "rule",
           "hardware",
-          "asAt"
+          "asAt",
+          "branchId",
+          "pushes"
         ],
         "properties": {
+          "notConfirmed": {
+            "type": "number"
+          },
+          "summary": {
+            "type": "object",
+            "required": [
+              "sent",
+              "confirmed",
+              "waiting",
+              "noLabels",
+              "waitingPushes"
+            ],
+            "properties": {
+              "sent": {
+                "type": "number"
+              },
+              "confirmed": {
+                "type": "number"
+              },
+              "waiting": {
+                "type": "number"
+              },
+              "noLabels": {
+                "type": "number"
+              },
+              "waitingPushes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "pushId",
+                    "productId",
+                    "priceMinor",
+                    "unconfirmed"
+                  ],
+                  "properties": {
+                    "pushId": {
+                      "type": "string"
+                    },
+                    "productId": {
+                      "type": "string"
+                    },
+                    "priceMinor": {
+                      "type": "number"
+                    },
+                    "unconfirmed": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "rule": {
+            "type": "string"
+          },
+          "hardware": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "paging": {
+            "$ref": "#/components/schemas/Paging"
+          },
           "branchId": {
             "type": "string"
           },
@@ -129018,18 +129416,6 @@
               },
               "additionalProperties": true
             }
-          },
-          "notConfirmed": {
-            "type": "number"
-          },
-          "rule": {
-            "type": "string"
-          },
-          "hardware": {
-            "type": "string"
-          },
-          "asAt": {
-            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -133576,6 +133962,7 @@
                 "kind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_invoice_reversal",
@@ -133587,6 +133974,7 @@
                 "sourceKind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_opening_balance",
@@ -133645,6 +134033,7 @@
                 "sourceKind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_opening_balance",
@@ -133660,6 +134049,7 @@
                 "kind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_invoice_reversal",
@@ -141942,96 +142332,196 @@
         "x-derived-from": "services/purchase/src/data-import.ts"
       },
       "GetImportCommitsReply": {
-        "type": "object",
-        "required": [
-          "jobs",
-          "total",
-          "asAt"
-        ],
-        "properties": {
-          "jobs": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "jobId",
-                "templateId",
-                "domain",
-                "uploadedBy",
-                "approvedBy",
-                "rowsApplied",
-                "at"
-              ],
-              "properties": {
-                "reconciles": {
-                  "type": "boolean"
-                },
-                "sumMinor": {
-                  "type": "number"
-                },
-                "rolledBack": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "jobs",
+              "total",
+              "asAt"
+            ],
+            "properties": {
+              "jobs": {
+                "type": "array",
+                "items": {
                   "type": "object",
                   "required": [
-                    "at",
-                    "requestedBy",
+                    "jobId",
+                    "templateId",
+                    "domain",
+                    "uploadedBy",
                     "approvedBy",
-                    "reason"
+                    "rowsApplied",
+                    "at"
                   ],
                   "properties": {
-                    "at": {
+                    "reconciles": {
+                      "type": "boolean"
+                    },
+                    "sumMinor": {
+                      "type": "number"
+                    },
+                    "rolledBack": {
+                      "type": "object",
+                      "required": [
+                        "at",
+                        "requestedBy",
+                        "approvedBy",
+                        "reason"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "requestedBy": {
+                          "type": "string"
+                        },
+                        "approvedBy": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "effects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportEffectRef"
+                      }
+                    },
+                    "jobId": {
                       "type": "string"
                     },
-                    "requestedBy": {
+                    "templateId": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "uploadedBy": {
                       "type": "string"
                     },
                     "approvedBy": {
                       "type": "string"
                     },
-                    "reason": {
+                    "rowsApplied": {
+                      "type": "number"
+                    },
+                    "at": {
                       "type": "string"
                     }
                   },
                   "additionalProperties": true
-                },
-                "effects": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportEffectRef"
-                  }
-                },
-                "jobId": {
-                  "type": "string"
-                },
-                "templateId": {
-                  "type": "string"
-                },
-                "domain": {
-                  "type": "string"
-                },
-                "uploadedBy": {
-                  "type": "string"
-                },
-                "approvedBy": {
-                  "type": "string"
-                },
-                "rowsApplied": {
-                  "type": "number"
-                },
-                "at": {
-                  "type": "string"
                 }
               },
-              "additionalProperties": true
-            }
+              "total": {
+                "type": "number"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           },
-          "total": {
-            "type": "number"
-          },
-          "asAt": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "jobs",
+              "total",
+              "paging",
+              "asAt"
+            ],
+            "properties": {
+              "jobs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "jobId",
+                    "templateId",
+                    "domain",
+                    "uploadedBy",
+                    "approvedBy",
+                    "rowsApplied",
+                    "at"
+                  ],
+                  "properties": {
+                    "reconciles": {
+                      "type": "boolean"
+                    },
+                    "sumMinor": {
+                      "type": "number"
+                    },
+                    "rolledBack": {
+                      "type": "object",
+                      "required": [
+                        "at",
+                        "requestedBy",
+                        "approvedBy",
+                        "reason"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "requestedBy": {
+                          "type": "string"
+                        },
+                        "approvedBy": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "effects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportEffectRef"
+                      }
+                    },
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "templateId": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "uploadedBy": {
+                      "type": "string"
+                    },
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "rowsApplied": {
+                      "type": "number"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "total": {
+                "type": "number"
+              },
+              "paging": {
+                "$ref": "#/components/schemas/Paging"
+              },
+              "asAt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/data-import.ts"
       },
@@ -142830,6 +143320,39 @@
             "items": {
               "$ref": "#/components/schemas/InTransitStock"
             }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BranchScope"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/inventory/src/index.ts"
+      },
+      "GetInventoryBatchDirectoryReply": {
+        "type": "object",
+        "required": [
+          "productId",
+          "batches",
+          "order",
+          "scope",
+          "asAt"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchBalance"
+            }
+          },
+          "order": {
+            "type": "string"
           },
           "scope": {
             "$ref": "#/components/schemas/BranchScope"
@@ -149377,6 +149900,8 @@
           {
             "type": "object",
             "required": [
+              "tier",
+              "expiry",
               "say",
               "howToSpend",
               "asAt",
@@ -149385,6 +149910,12 @@
               "pointValuePaise"
             ],
             "properties": {
+              "tier": {
+                "x-untyped": "unknown"
+              },
+              "expiry": {
+                "x-untyped": "unknown"
+              },
               "say": {
                 "type": "string"
               },
@@ -158561,23 +159092,50 @@
         "x-derived-from": "services/api/src/w1-products-prices-adapters.ts"
       },
       "GetPricesListByProductIdHistoryReply": {
-        "type": "object",
-        "required": [
-          "productId",
-          "entries"
-        ],
-        "properties": {
-          "productId": {
-            "type": "string"
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "productId",
+              "entries",
+              "paging"
+            ],
+            "properties": {
+              "productId": {
+                "type": "string"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PriceEntry"
+                }
+              },
+              "paging": {
+                "$ref": "#/components/schemas/Paging"
+              }
+            },
+            "additionalProperties": true
           },
-          "entries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PriceEntry"
-            }
+          {
+            "type": "object",
+            "required": [
+              "productId",
+              "entries"
+            ],
+            "properties": {
+              "productId": {
+                "type": "string"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PriceEntry"
+                }
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/pricing/src/price-list.ts"
       },
@@ -160652,23 +161210,50 @@
         "x-derived-from": "services/purchase/src/purchase-orders.ts"
       },
       "GetPurchaseImportJobsReply": {
-        "type": "object",
-        "required": [
-          "jobs",
-          "count"
-        ],
-        "properties": {
-          "jobs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/JobHistoryRow"
-            }
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "jobs",
+              "count",
+              "paging"
+            ],
+            "properties": {
+              "jobs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/JobHistoryRow"
+                }
+              },
+              "count": {
+                "type": "number"
+              },
+              "paging": {
+                "$ref": "#/components/schemas/Paging"
+              }
+            },
+            "additionalProperties": true
           },
-          "count": {
-            "type": "number"
+          {
+            "type": "object",
+            "required": [
+              "jobs",
+              "count"
+            ],
+            "properties": {
+              "jobs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/JobHistoryRow"
+                }
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/import-quality.ts"
       },
@@ -162508,23 +163093,50 @@
         "x-derived-from": "services/purchase/src/rfq.ts"
       },
       "GetPurchaseRequisitionsReply": {
-        "type": "object",
-        "required": [
-          "requisitions",
-          "count"
-        ],
-        "properties": {
-          "requisitions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Requisition"
-            }
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "requisitions",
+              "count",
+              "paging"
+            ],
+            "properties": {
+              "requisitions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Requisition"
+                }
+              },
+              "count": {
+                "type": "number"
+              },
+              "paging": {
+                "$ref": "#/components/schemas/Paging"
+              }
+            },
+            "additionalProperties": true
           },
-          "count": {
-            "type": "number"
+          {
+            "type": "object",
+            "required": [
+              "requisitions",
+              "count"
+            ],
+            "properties": {
+              "requisitions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Requisition"
+                }
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/rfq.ts"
       },
@@ -162587,6 +163199,8 @@
         "required": [
           "shopClaims",
           "supplierClaims",
+          "creditDrafts",
+          "disputes",
           "counts",
           "supplierNames",
           "unattributed",
@@ -162709,6 +163323,18 @@
               "$ref": "#/components/schemas/SupplierRaisedClaim"
             }
           },
+          "creditDrafts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClaimCreditDraft"
+            }
+          },
+          "disputes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClaimDispute"
+            }
+          },
           "counts": {
             "type": "object",
             "required": [
@@ -162719,7 +163345,12 @@
               "returned",
               "awaitingBuyer",
               "accepted",
-              "rejected"
+              "rejected",
+              "creditDrafts",
+              "creditsApproved",
+              "creditsRefused",
+              "openDisputes",
+              "overdueDisputes"
             ],
             "properties": {
               "raised": {
@@ -162744,6 +163375,21 @@
                 "type": "number"
               },
               "rejected": {
+                "type": "number"
+              },
+              "creditDrafts": {
+                "type": "number"
+              },
+              "creditsApproved": {
+                "type": "number"
+              },
+              "creditsRefused": {
+                "type": "number"
+              },
+              "openDisputes": {
+                "type": "number"
+              },
+              "overdueDisputes": {
                 "type": "number"
               }
             },
@@ -166308,6 +166954,31 @@
           },
           "count": {
             "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/customer/src/service-cases.ts"
+      },
+      "GetServiceCasesByCaseIdSatisfactionReply": {
+        "type": "object",
+        "required": [
+          "caseId",
+          "rated",
+          "scores"
+        ],
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "scores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SatisfactionScore"
+            }
           }
         },
         "additionalProperties": true,
@@ -177653,6 +178324,9 @@
                   "type": "string"
                 },
                 "name": {
+                  "type": "string"
+                },
+                "nameTa": {
                   "type": "string"
                 },
                 "parentId": {
@@ -192560,6 +193234,7 @@
                 "kind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_invoice_reversal",
@@ -192571,6 +193246,7 @@
                 "sourceKind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_opening_balance",
@@ -192668,6 +193344,7 @@
                 "kind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_invoice_reversal",
@@ -192679,6 +193356,7 @@
                 "sourceKind": {
                   "type": "string",
                   "enum": [
+                    "supplier_claim_credit",
                     "supplier_debit_note",
                     "supplier_invoice",
                     "supplier_opening_balance",
@@ -246128,6 +246806,124 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/purchase/src/rfq.ts"
       },
+      "PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdReply200": {
+        "type": "object",
+        "required": [
+          "decision",
+          "alreadyDecided"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ClaimCreditDecision"
+          },
+          "alreadyDecided": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
+      "PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdReply201": {
+        "type": "object",
+        "required": [
+          "decision",
+          "alreadyDecided"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ClaimCreditDecision"
+          },
+          "alreadyDecided": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
+      "PostPurchaseSupplierClaimsCreditsBySupplierIdBySubmissionIdRequest": {
+        "type": "object",
+        "required": [
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "refuse"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
+      "PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveReply200": {
+        "type": "object",
+        "required": [
+          "resolution",
+          "alreadyResolved"
+        ],
+        "properties": {
+          "resolution": {
+            "$ref": "#/components/schemas/ClaimDisputeResolution"
+          },
+          "alreadyResolved": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
+      "PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveReply201": {
+        "type": "object",
+        "required": [
+          "resolution",
+          "alreadyResolved"
+        ],
+        "properties": {
+          "resolution": {
+            "$ref": "#/components/schemas/ClaimDisputeResolution"
+          },
+          "alreadyResolved": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
+      "PostPurchaseSupplierClaimsDisputesBySupplierIdBySubmissionIdResolveRequest": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "reason"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agreed_another_way",
+              "other",
+              "shop_position_upheld",
+              "supplier_withdrew"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/purchase/src/supplier-claims.ts"
+      },
       "PostPurchaseSuppliersBySupplierIdApprovalReply": {
         "type": "object",
         "required": [
@@ -273319,6 +274115,241 @@
         },
         "additionalProperties": true
       },
+      "ClaimCreditDecision": {
+        "type": "object",
+        "required": [
+          "creditId",
+          "supplierId",
+          "submissionId",
+          "decision",
+          "amountMinor",
+          "why",
+          "acceptedBy",
+          "decidedBy",
+          "decidedAt",
+          "reason"
+        ],
+        "properties": {
+          "creditId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "refused"
+            ]
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "why": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ClaimCreditDraft": {
+        "type": "object",
+        "required": [
+          "creditId",
+          "supplierId",
+          "submissionId",
+          "amountMinor",
+          "why",
+          "acceptedBy",
+          "acceptedAt",
+          "submittedBy",
+          "state",
+          "decision"
+        ],
+        "properties": {
+          "creditId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "why": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "acceptedAt": {
+            "type": "string"
+          },
+          "submittedBy": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "draft",
+              "refused"
+            ]
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimCreditDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ClaimDispute": {
+        "type": "object",
+        "required": [
+          "exceptionId",
+          "supplierId",
+          "submissionId",
+          "valueMinor",
+          "why",
+          "rejectedBecause",
+          "ownerUserId",
+          "raisedAt",
+          "raisedOn",
+          "state",
+          "overdue",
+          "resolution"
+        ],
+        "properties": {
+          "exceptionId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "valueMinor": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "why": {
+            "type": "string"
+          },
+          "rejectedBecause": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "raisedOn": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimDisputeResolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ClaimDisputeResolution": {
+        "type": "object",
+        "required": [
+          "exceptionId",
+          "supplierId",
+          "submissionId",
+          "outcome",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "exceptionId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agreed_another_way",
+              "other",
+              "shop_position_upheld",
+              "supplier_withdrew"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "CleaningReport": {
         "type": "object",
         "required": [
@@ -295078,6 +296109,35 @@
           {
             "type": "object",
             "required": [
+              "kind",
+              "paymentId",
+              "supplierId",
+              "reference",
+              "paidOn"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "supplier_payment"
+              },
+              "paymentId": {
+                "type": "string"
+              },
+              "supplierId": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "paidOn": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
               "kind"
             ],
             "properties": {
@@ -301141,6 +302201,60 @@
         },
         "additionalProperties": true
       },
+      "Paging": {
+        "type": "object",
+        "required": [
+          "page",
+          "size",
+          "total",
+          "pages",
+          "search",
+          "sort",
+          "dir"
+        ],
+        "properties": {
+          "page": {
+            "type": "number"
+          },
+          "size": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          },
+          "pages": {
+            "type": "number"
+          },
+          "search": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
       "ParallelDaySignature": {
         "type": "object",
         "required": [
@@ -301581,6 +302695,7 @@
           "sourceKind": {
             "type": "string",
             "enum": [
+              "supplier_claim_credit",
               "supplier_debit_note",
               "supplier_invoice",
               "supplier_opening_balance",
@@ -301596,6 +302711,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "supplier_claim_credit",
               "supplier_debit_note",
               "supplier_invoice",
               "supplier_invoice_reversal",
@@ -301636,6 +302752,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "supplier_claim_credit",
               "supplier_debit_note",
               "supplier_invoice",
               "supplier_invoice_reversal",
@@ -301647,6 +302764,7 @@
           "sourceKind": {
             "type": "string",
             "enum": [
+              "supplier_claim_credit",
               "supplier_debit_note",
               "supplier_invoice",
               "supplier_opening_balance",
@@ -313216,6 +314334,33 @@
         },
         "additionalProperties": true
       },
+      "SatisfactionScore": {
+        "type": "object",
+        "required": [
+          "caseId",
+          "customerRef",
+          "score",
+          "at"
+        ],
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "customerRef": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "at": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "ScaleLabelRuleEvent": {
         "type": "object",
         "required": [
@@ -317882,6 +319027,9 @@
           "name": {
             "type": "string"
           },
+          "nameTa": {
+            "type": "string"
+          },
           "parentId": {
             "anyOf": [
               {
@@ -319990,6 +321138,7 @@
           "pendingSupplierReturns",
           "pendingLineReturns",
           "payments",
+          "claimCredits",
           "openings",
           "doorDebitNotes",
           "doorDebitNotesTotal",
@@ -320038,6 +321187,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SupplierPayment"
+            }
+          },
+          "claimCredits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierClaimCredit"
             }
           },
           "openings": {
@@ -320090,6 +321245,7 @@
           "withheldMinor",
           "debitNotesMinor",
           "paidMinor",
+          "claimCreditsMinor",
           "openingMinor",
           "openingPendingSignOffMinor",
           "owedMinor",
@@ -320111,6 +321267,9 @@
             "type": "number"
           },
           "paidMinor": {
+            "type": "number"
+          },
+          "claimCreditsMinor": {
             "type": "number"
           },
           "openingMinor": {
@@ -320153,6 +321312,55 @@
             "type": "string"
           },
           "changedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SupplierClaimCredit": {
+        "type": "object",
+        "required": [
+          "creditId",
+          "supplierId",
+          "submissionId",
+          "amountMinor",
+          "currency",
+          "why",
+          "acceptedBy",
+          "approvedBy",
+          "approvedAt",
+          "reason"
+        ],
+        "properties": {
+          "creditId": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "const": "INR"
+          },
+          "why": {
+            "type": "string"
+          },
+          "acceptedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         },
@@ -320635,6 +321843,12 @@
           },
           "tds": {
             "$ref": "#/components/schemas/TdsDeduction"
+          },
+          "settles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true

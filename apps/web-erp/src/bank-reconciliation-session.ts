@@ -19,13 +19,14 @@ export type ExceptionOutcome = (typeof EXCEPTION_OUTCOMES)[number];
 export const BANK_RECONCILIATION_COPY = {
   en: {
     title: 'Bank reconciliation',
-    lead: 'Every line of the bank statement, matched to what the books know — a provider payout or a cash deposit — or left unmatched with its value. An unmatched line is raised as an exception a named person owns and resolves with a reason. Nothing here moves money. Statements are imported on the Card, UPI and bank page.',
+    lead: 'Every line of the bank statement, matched to what the books know — a provider payout, a cash deposit or a supplier payment (by its bank reference) — or left unmatched with its value. An unmatched line is raised as an exception a named person owns and resolves with a reason. Nothing here moves money. Statements are imported on the Card, UPI and bank page.',
     statement: 'Statement', chooseStatement: 'Which statement', show: 'Show', reload: 'Read again from head office', noStatements: 'No bank statement has been imported yet.',
     noStatementsDetail: 'Import the bank\'s statement on the Card, UPI and bank page; this page then reads it line by line.', importPage: 'Open Card, UPI and bank',
     linesH: 'Statement lines', date: 'Date', amount: 'Amount', reference: 'Bank reference', narrative: 'Narrative', match: 'Matched to', owner: 'Owner', action: 'Action',
     cLines: 'Lines', cMatched: 'Matched', cUnmatched: 'Unmatched', cUnmatchedValue: 'Unmatched value', cOpen: 'Open exceptions', cOverdue: 'Overdue exceptions', cCredits: 'Credits in', cDebits: 'Debits out',
     addsUp: 'The statement adds up: opening plus every line is the closing balance.', doesNotAddUp: 'The statement does NOT add up to its own closing balance — a person must look at the import.',
     provider_payout: 'Provider payout', cash_deposit: 'Cash deposit', exception: 'Exception', unmatched: 'Unmatched',
+    supplier_payment: 'Supplier payment', paymentRef: 'ref', // U7 · OB-723 — a debit line matched by its reference to a payment recorded on Supplier bills
     open: 'open', resolved: 'resolved', overdue: 'overdue — raised on an earlier shop day', raisedOn: 'raised on', slip: 'slip', batch: 'file',
     raiseH: 'Raise an exception on an unmatched line', raiseLead: 'The line keeps its value; a named person owns the exception until it is resolved with a reason — the same shop day, if it can be (§34.1).',
     line: 'Statement line', chooseLine: 'Choose an unmatched line', ownerField: 'Who owns it', note: 'Note (what is known so far)', raise: 'Raise the exception', pickLine: 'Raise',
@@ -46,13 +47,14 @@ export const BANK_RECONCILIATION_COPY = {
   },
   ta: {
     title: 'வங்கி சரிக்கட்டல்',
-    lead: 'வங்கி அறிக்கையின் ஒவ்வொரு வரியும் கணக்குகளுக்குத் தெரிந்தவற்றுடன் — வழங்குநர் செலுத்துதல் அல்லது பணம் செலுத்தல் — பொருத்தப்படுகிறது; பொருந்தாதது அதன் மதிப்புடன் தனியே காட்டப்படுகிறது. பொருந்தாத வரி, பெயரிடப்பட்ட ஒருவர் பொறுப்பேற்று காரணத்துடன் தீர்க்கும் விதிவிலக்காகப் பதிவாகும். இங்கே பணம் நகராது. அறிக்கைகள் "அட்டை, UPI மற்றும் வங்கி" பக்கத்தில் ஏற்றப்படுகின்றன.',
+    lead: 'வங்கி அறிக்கையின் ஒவ்வொரு வரியும் கணக்குகளுக்குத் தெரிந்தவற்றுடன் — வழங்குநர் செலுத்துதல், பணம் செலுத்தல் அல்லது (வங்கிக் குறிப்பின்படி) விநியோகஸ்தருக்குச் செலுத்தியது — பொருத்தப்படுகிறது; பொருந்தாதது அதன் மதிப்புடன் தனியே காட்டப்படுகிறது. பொருந்தாத வரி, பெயரிடப்பட்ட ஒருவர் பொறுப்பேற்று காரணத்துடன் தீர்க்கும் விதிவிலக்காகப் பதிவாகும். இங்கே பணம் நகராது. அறிக்கைகள் "அட்டை, UPI மற்றும் வங்கி" பக்கத்தில் ஏற்றப்படுகின்றன.',
     statement: 'அறிக்கை', chooseStatement: 'எந்த அறிக்கை', show: 'காட்டு', reload: 'தலைமை அலுவலகத்திலிருந்து மீண்டும் படி', noStatements: 'இன்னும் வங்கி அறிக்கை எதுவும் ஏற்றப்படவில்லை.',
     noStatementsDetail: '"அட்டை, UPI மற்றும் வங்கி" பக்கத்தில் வங்கி அறிக்கையை ஏற்றுங்கள்; பிறகு இந்தப் பக்கம் அதை வரிவரியாகப் படிக்கும்.', importPage: 'அட்டை, UPI மற்றும் வங்கி பக்கத்தைத் திற',
     linesH: 'அறிக்கை வரிகள்', date: 'தேதி', amount: 'தொகை', reference: 'வங்கிக் குறிப்பு', narrative: 'விவரம்', match: 'பொருத்தம்', owner: 'பொறுப்பாளர்', action: 'செயல்',
     cLines: 'வரிகள்', cMatched: 'பொருந்தியவை', cUnmatched: 'பொருந்தாதவை', cUnmatchedValue: 'பொருந்தாத மதிப்பு', cOpen: 'திறந்த விதிவிலக்குகள்', cOverdue: 'காலம் கடந்த விதிவிலக்குகள்', cCredits: 'வரவுகள்', cDebits: 'செலவுகள்',
     addsUp: 'அறிக்கை சரியாகக் கூடுகிறது: தொடக்க இருப்பு + ஒவ்வொரு வரி = இறுதி இருப்பு.', doesNotAddUp: 'அறிக்கை அதன் இறுதி இருப்புக்குக் கூடவில்லை — ஏற்றுமதியை ஒருவர் பார்க்க வேண்டும்.',
     provider_payout: 'வழங்குநர் செலுத்துதல்', cash_deposit: 'பணம் செலுத்தல்', exception: 'விதிவிலக்கு', unmatched: 'பொருந்தவில்லை',
+    supplier_payment: 'விநியோகஸ்தருக்குச் செலுத்தியது', paymentRef: 'குறிப்பு',
     open: 'திறந்தது', resolved: 'தீர்க்கப்பட்டது', overdue: 'காலம் கடந்தது — முந்தைய கடை நாளில் எழுப்பப்பட்டது', raisedOn: 'எழுப்பிய நாள்', slip: 'சீட்டு', batch: 'கோப்பு',
     raiseH: 'பொருந்தாத வரிக்கு விதிவிலக்கை எழுப்பு', raiseLead: 'வரி அதன் மதிப்பை வைத்திருக்கும்; காரணத்துடன் தீர்க்கப்படும் வரை பெயரிடப்பட்ட ஒருவர் பொறுப்பேற்பார் — முடிந்தால் அதே கடை நாளில் (§34.1).',
     line: 'அறிக்கை வரி', chooseLine: 'பொருந்தாத வரியைத் தேர்ந்தெடுங்கள்', ownerField: 'யார் பொறுப்பு', note: 'குறிப்பு (இதுவரை தெரிந்தது)', raise: 'விதிவிலக்கை எழுப்பு', pickLine: 'எழுப்பு',
@@ -79,6 +81,7 @@ export const bankReconciliationWords = (lang: Lang, key: string): string =>
 export type LineMatch =
   | { readonly kind: 'provider_payout'; readonly batchId: string; readonly providerId: string; readonly declaredNetMinor: number }
   | { readonly kind: 'cash_deposit'; readonly depositId: string; readonly slipRef: string }
+  | { readonly kind: 'supplier_payment'; readonly paymentId: string; readonly supplierId: string; readonly reference: string; readonly paidOn: string }
   | { readonly kind: 'exception'; readonly exceptionId: string; readonly state: 'open' | 'resolved'; readonly overdue: boolean; readonly ownerUserId: string; readonly raisedOn: string; readonly outcome?: ExceptionOutcome; readonly matchedTo?: string; readonly reason?: string }
   | { readonly kind: 'unmatched' };
 export interface StatementLine { readonly lineId: string; readonly date: string; readonly amountMinor: number; readonly reference: string; readonly narrative?: string; readonly match: LineMatch }
@@ -112,6 +115,9 @@ const readMatch = (raw: unknown): LineMatch => {
   const m = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   if (m['kind'] === 'provider_payout' && isStr(m['batchId'])) return { kind: 'provider_payout', batchId: m['batchId'], providerId: isStr(m['providerId']) ? m['providerId'] : '', declaredNetMinor: typeof m['declaredNetMinor'] === 'number' ? m['declaredNetMinor'] : 0 };
   if (m['kind'] === 'cash_deposit' && isStr(m['depositId'])) return { kind: 'cash_deposit', depositId: m['depositId'], slipRef: isStr(m['slipRef']) ? m['slipRef'] : '' };
+  if (m['kind'] === 'supplier_payment' && isStr(m['paymentId'])) {
+    return { kind: 'supplier_payment', paymentId: m['paymentId'], supplierId: isStr(m['supplierId']) ? m['supplierId'] : '', reference: isStr(m['reference']) ? m['reference'] : '', paidOn: isStr(m['paidOn']) ? m['paidOn'] : '' };
+  }
   if (m['kind'] === 'exception' && isStr(m['exceptionId'])) {
     return {
       kind: 'exception', exceptionId: m['exceptionId'], state: m['state'] === 'resolved' ? 'resolved' : 'open', overdue: m['overdue'] === true,

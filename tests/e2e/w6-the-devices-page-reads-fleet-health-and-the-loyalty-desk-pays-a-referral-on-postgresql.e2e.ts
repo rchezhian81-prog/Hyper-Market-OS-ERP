@@ -71,7 +71,7 @@ describe.skipIf(!existsSync(CHROMIUM))('W6 · the Devices page reads fleet healt
       await says(after.page, '#health-text', /^The fleet as head office holds it\.$/);
       await says(after.page, '#rows li:first-child', /Till 2.*Must update before trading/);
       await says(after.page, '#rows', /Till 1.*Up to date/);
-      await says(after.page, '#tiles', /^2Devices/);
+      await says(after.page, '#tiles', /^Devices2/); // U7: the chrome's summary card reads its label, then the figure
       await says(after.page, '#attention-count', /^1 need a look$/); // Till 2 must update; Till 1 checked in when it was registered
       await after.page.click('#lang');
       await says(after.page, '#health-text', /^தலைமை அலுவலகம் வைத்துள்ளபடி சாதனங்கள்\.$/);

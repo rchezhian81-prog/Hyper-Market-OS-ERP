@@ -33,11 +33,20 @@ function choose(id, key, options) {
   for (const [value, k] of options) sel.append(el('option', { value, key: k }));
   return { label: el('label', { for: id }, el('span', { key }), sel), input: sel };
 }
+// U7 · the shared parts (UI/UX audit G6): "Reading…", a refusal and an empty list are the chrome's state part.
+const office = () => (window.sreOffice && typeof window.sreOffice.state === 'function' ? window.sreOffice : null);
 /** A status line that keeps what it said as a key or an outcome, so it is said again in the other language. */
 function statusLine(id) {
-  const p = el('p', { id, class: 'status', role: 'status', 'aria-live': 'polite' });
+  const p = el('div', { id, class: 'status', role: 'status', 'aria-live': 'polite' });
   let said = null;
-  const set = (v) => { said = v; p.textContent = v === null ? '' : typeof v === 'string' ? t(v) : say(v); };
+  const set = (v) => {
+    said = v;
+    const o = office();
+    if (v === null) { p.replaceChildren(); return; }
+    if (o !== null && v === 'reading') { o.state(p, 'loading', { title: t('reading'), detail: '' }); return; }
+    if (o !== null && typeof v !== 'string' && v.result !== 'ok') { o.state(p, o.stateOf(v), { title: say(v), detail: '' }); return; }
+    p.textContent = typeof v === 'string' ? t(v) : say(v);
+  };
   repaints.push(() => set(said));
   return { node: p, set };
 }
@@ -47,7 +56,15 @@ function form(id, kids, submitKey, onSubmit) {
   return f;
 }
 const li = (text, data) => { const n = el('li', { text }); for (const [k, v] of Object.entries(data ?? {})) n.dataset[k] = v; return n; };
-const listOf = (id, rows, emptyKey) => { const ul = el('ul', { id, class: 'rows' }); if (rows.length === 0) ul.append(el('li', { class: 'meta', key: emptyKey })); else ul.append(...rows); return ul; };
+const listOf = (id, rows, emptyKey) => {
+  const ul = el('ul', { id, class: 'rows' });
+  if (rows.length > 0) { ul.append(...rows); return ul; }
+  const item = el('li', { class: 'cd-none' });
+  const o = office();
+  if (o !== null) o.state(item, 'empty', { title: t(emptyKey), detail: '' }); else item.textContent = t(emptyKey);
+  ul.append(item);
+  return ul;
+};
 /** One result area: `paint(value)` draws it now and again after a language switch. */
 function resultArea(id, draw) {
   const box = el('div', { id });
@@ -256,10 +273,20 @@ const SECTIONS = {
       const cust = field('cd-case-customer', 'customer'); const score = choose('cd-case-score', 'score', []);
       for (const n of ['', '1', '2', '3', '4', '5']) score.input.append(el('option', { value: n, text: n === '' ? '—' : n }));
       const note = field('cd-case-comment', 'comment'); const stR = statusLine('cd-case-rate-status');
+      const op = office();
+      if (op !== null && typeof op.pickable === 'function') {
+        op.pickable(appr.input, 'approval', { en: 'Which approval?', ta: 'எந்த ஒப்புதல்?' });
+        op.pickable(cust.input, 'customer', { en: 'Which customer?', ta: 'எந்த வாடிக்கையாளர்?' });
+      }
       work.append(first, stF.node,
         form('cd-case-grant', [kind.label, amt.label, why.label, appr.label], 'grant', () => act(stG, () => s.grant(caseId, { kind: kind.input.value, rupees: amt.input.value, reason: why.input.value, approvalId: appr.input.value }), () => void readComp(), 'granted')), stG.node,
         el('h4', { key: 'rateH' }),
         form('cd-case-rate', [cust.label, score.label, note.label], 'rate', () => act(stR, () => s.rate(caseId, { customerRef: cust.input.value, score: score.input.value, comment: note.input.value }), undefined, 'rated')), stR.node);
+    }
+    // U7 (G5): the case, the approval and the customer are PICKED by name (the typed number stays the fallback)
+    const o = office();
+    if (o !== null && typeof o.pickable === 'function') {
+      o.pickable(c.input, 'case', { en: 'Which case?', ta: 'எந்த வழக்கு?' });
     }
     sec.append(form('cd-case-form', [c.label], 'caseOpen', async () => { caseId = c.input.value.trim(); const out = await readComp(); work.hidden = out.result !== 'ok'; }), st.node, comp.node, work);
   } },

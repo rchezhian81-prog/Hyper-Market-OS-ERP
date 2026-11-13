@@ -37,7 +37,7 @@ const inr = (minor) =>
 const WORDS = {
   en: {
     staleShell: 'No connection. These figures are what this phone was last given, at',
-    today: 'Today', needsAttention: 'Needs your attention', todaysNumbers: "Today's numbers",
+    appTitle: 'Today · SRE Hyper Market', today: 'Today', needsAttention: 'Needs your attention', todaysNumbers: "Today's numbers",
     waitingForYou: 'Waiting for you', alerts: 'Alerts', lookAgain: 'Look at these again',
     decidedNotSent: 'Decided, not yet sent', nothingToDecide: 'Nothing needs a decision right now.',
     noAlerts: 'No alerts today.', nothingWaiting: 'Nothing is waiting for you.',
@@ -89,7 +89,7 @@ const WORDS = {
   },
   ta: {
     staleShell: 'இணைப்பு இல்லை. இந்த எண்கள் இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்டவை:',
-    today: 'இன்று', needsAttention: 'உங்கள் கவனம் தேவை', todaysNumbers: 'இன்றைய எண்கள்',
+    appTitle: 'இன்று · SRE Hyper Market', today: 'இன்று', needsAttention: 'உங்கள் கவனம் தேவை', todaysNumbers: 'இன்றைய எண்கள்',
     waitingForYou: 'உங்களுக்காகக் காத்திருப்பவை', alerts: 'எச்சரிக்கைகள்', lookAgain: 'இவற்றை மீண்டும் பாருங்கள்',
     decidedNotSent: 'முடிவு செய்யப்பட்டது, இன்னும் அனுப்பப்படவில்லை', nothingToDecide: 'இப்போது எந்த முடிவும் தேவையில்லை.',
     noAlerts: 'இன்று எச்சரிக்கை எதுவும் இல்லை.', nothingWaiting: 'உங்களுக்காக எதுவும் காத்திருக்கவில்லை.',
@@ -681,6 +681,7 @@ el('drill-close').addEventListener('click', () => { el('drill').hidden = true; }
 // ── Paint ───────────────────────────────────────────────────────────────────
 
 function paintChrome() {
+  el('title').textContent = t('appTitle');
   el('attention-title').textContent = t('needsAttention');
   el('kpis-title').textContent = t('todaysNumbers');
   el('approvals-title').textContent = t('waitingForYou');

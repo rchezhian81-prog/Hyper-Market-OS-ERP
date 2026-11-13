@@ -4,7 +4,7 @@
 // identity only). Nothing is read or written here.
 
 import { createRfqSession, rfqWords, rfqOutcomeWords, rfqStateTone, requisitionLinesText, addSupplier } from './rfq-session';
-import { createSupplierClaimsSession, supplierClaimsWords, supplierClaimsOutcomeWords, claimStateTone, rupees, supplierLabel } from './supplier-claims-session';
+import { createSupplierClaimsSession, supplierClaimsWords, supplierClaimsOutcomeWords, claimStateTone, rupees, supplierLabel, creditStateTone, disputeTone, disputeStateKey, DISPUTE_OUTCOMES } from './supplier-claims-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -13,6 +13,8 @@ export function wireRfqAndClaims(win: Record<string, unknown>, viewerIdentity: (
     win['rfq'] = { session: createRfqSession({ viewer: viewerIdentity(win['rfqData']) }), words: rfqWords, outcomeWords: rfqOutcomeWords, stateTone: rfqStateTone, linesText: requisitionLinesText, addSupplier };
   }
   if (win['supplierClaimsData'] !== undefined) {
-    win['supplierClaims'] = { session: createSupplierClaimsSession({ viewer: viewerIdentity(win['supplierClaimsData']) }), words: supplierClaimsWords, outcomeWords: supplierClaimsOutcomeWords, stateTone: claimStateTone, rupees, supplierLabel };
+    win['supplierClaims'] = { session: createSupplierClaimsSession({ viewer: viewerIdentity(win['supplierClaimsData']) }), words: supplierClaimsWords, outcomeWords: supplierClaimsOutcomeWords, stateTone: claimStateTone, rupees, supplierLabel,
+      // U7 · OB-724 · M24-FR-02 alt
+      creditTone: creditStateTone, disputeTone, disputeStateKey, disputeOutcomes: DISPUTE_OUTCOMES };
   }
 }

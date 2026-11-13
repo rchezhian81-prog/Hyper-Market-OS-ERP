@@ -274,6 +274,8 @@ export interface PackSupplierInvoice {
 export interface PackCategory {
   readonly categoryId: string;
   readonly name: string;
+  /** U7 (OB-699 = B): the Tamil name head office holds for the category, when it holds one. */
+  readonly nameTa?: string;
   readonly parentId: string | null;
   readonly attributes?: readonly {
     readonly key: string;

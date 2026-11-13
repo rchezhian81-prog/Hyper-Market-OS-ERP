@@ -1137,7 +1137,23 @@
   function paintRegisters() {
     for (const table of document.querySelectorAll('main table')) table.classList.add('sre-register');
   }
-  function paintAnatomy() { paintHead(); paintTabs(); paintRegisters(); }
+  function paintAnatomy() { paintHead(); paintTabs(); paintRegisters(); paintNoChoice(); }
+  // U7 · the empty choice in a list reads a WORD, never a dash: an <option value=""> whose text is "—", "-", empty or the
+  // chrome's own word in either language says "Choose…" / "தேர்வு செய்க" in the reader's language (P2's deferred item).
+  // A page that names its empty choice itself ("All stores", "No reason") is left alone. Written only when it changes,
+  // so the page's observer settles after one pass.
+  const NO_CHOICE_FORMS = new Set(['', '—', '–', '-', 'Choose…', 'தேர்வு செய்க']);
+  function paintNoChoice() {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const word = ow('noChoice');
+    for (const o of main.querySelectorAll('option[value=""]')) {
+      const t = (o.textContent ?? '').trim();
+      if (!NO_CHOICE_FORMS.has(t) || t === word) continue;
+      o.textContent = word;
+      o.dataset.sreNoChoice = '1';
+    }
+  }
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
@@ -1160,6 +1176,10 @@
       thisPage: 'This page', datePlaceholder: 'dd/mm/yyyy',
       loading: 'Reading the records…', loadingDetail: 'This takes a moment. Nothing is shown until it is read.',
       empty: 'Nothing here yet', emptyDetail: 'No records have been found for this list. An empty list does not mean everything is fine — it means there is nothing to show yet.',
+      'pick_role': 'Which roles?', 'pickHint_role': 'A few letters of the role', 'pick_batch': 'Which batch?', 'pickHint_batch': 'The batch code, or its use-by day',
+      'pick_case': 'Which case?', 'pickHint_case': 'The case number, or the customer', caseRow: '{id} — {kind} · {who}',
+      useThese: 'Use these ({n})', batchRow: 'Batch {id} — use by {day}', pickBatchFirst: 'Choose the product first — the batches are listed for one product at a time. Or type the batch code.',
+      noMatchServer: 'Head office found nothing matching this search. Clear the search to see the whole list.', noChoice: 'Choose…',
       noMatch: 'No rows match', noMatchDetail: 'Nothing in this list matches the search or filter. The list itself still has {n} row(s).',
       error: 'Could not read this list', errorDetail: 'Nothing was changed. Try again; if it keeps happening, tell the manager.',
       offline: 'Head office cannot be reached', offlineDetail: 'This list could not be read, so nothing here is current. Nothing was changed.',
@@ -1188,6 +1208,10 @@
       thisPage: 'இந்தப் பக்கம்', datePlaceholder: 'நா/மா/ஆண்டு',
       loading: 'பதிவுகளைப் படிக்கிறது…', loadingDetail: 'சிறிது நேரம் ஆகும். படிக்கும் வரை எதுவும் காட்டப்படாது.',
       empty: 'இன்னும் எதுவும் இல்லை', emptyDetail: 'இந்தப் பட்டியலுக்கு எந்தப் பதிவும் கிடைக்கவில்லை. காலியான பட்டியல் எல்லாம் சரி என்று பொருளல்ல — காட்ட இன்னும் எதுவும் இல்லை என்று பொருள்.',
+      'pick_role': 'எந்தப் பணிப் பொறுப்புகள்?', 'pickHint_role': 'பொறுப்பின் சில எழுத்துகள்', 'pick_batch': 'எந்தத் தொகுதி?', 'pickHint_batch': 'தொகுதிக் குறியீடு, அல்லது பயன்படுத்தும் கடைசி நாள்',
+      'pick_case': 'எந்த வழக்கு?', 'pickHint_case': 'வழக்கு எண், அல்லது வாடிக்கையாளர்', caseRow: '{id} — {kind} · {who}',
+      useThese: 'இவற்றைப் பயன்படுத்து ({n})', batchRow: 'தொகுதி {id} — {day} வரை பயன்படுத்தலாம்', pickBatchFirst: 'முதலில் பொருளைத் தேர்வு செய்க: தொகுதிகள் ஒரு பொருளுக்கு ஒரு முறை பட்டியலிடப்படும். அல்லது தொகுதிக் குறியீட்டைத் தட்டச்சு செய்க.',
+      noMatchServer: 'இந்தத் தேடலுக்குப் பொருந்துவது எதையும் தலைமை அலுவலகம் கண்டுபிடிக்கவில்லை. முழுப் பட்டியலைக் காண தேடலை அழிக்கவும்.', noChoice: 'தேர்வு செய்க',
       noMatch: 'பொருந்தும் வரிசை இல்லை', noMatchDetail: 'தேடலுக்கோ வடிகட்டிக்கோ இந்தப் பட்டியலில் எதுவும் பொருந்தவில்லை. பட்டியலில் இன்னும் {n} வரிசை(கள்) உள்ளன.',
       error: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை', errorDetail: 'எதுவும் மாற்றப்படவில்லை. மீண்டும் முயலவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
       offline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை', offlineDetail: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை, எனவே இங்கு எதுவும் தற்போதையது அல்ல. எதுவும் மாற்றப்படவில்லை.',
@@ -1309,6 +1333,7 @@
   /**
    * Summary cards: `{ label, value, note?, tone?, href?, icon? }` each. `value` null or undefined is "Not known" — never 0.
    * A number is drawn as the page gave it (a page formats money itself, from its own figures).
+   * U7: `ids: { card, label, value }` keeps a page's own element ids on the card's parts (its tests and its toggle read them).
    */
   function officeCards(host, cards) {
     const list = document.createElement('div');
@@ -1318,6 +1343,7 @@
       card.className = 'sre-summary-card';
       if (c.href) card.href = c.href;
       if (c.tone) card.dataset.tone = c.tone;
+      if (c.ids?.card) card.id = c.ids.card;
       const head = document.createElement('span');
       head.className = 'sre-summary-label';
       const mark = c.icon ? icon(c.icon, 18) : null;
@@ -1328,6 +1354,8 @@
       const known = c.value !== null && c.value !== undefined && c.value !== '';
       value.textContent = known ? String(c.value) : ow('notKnown');
       if (!known) value.classList.add('sre-unknown');
+      if (c.ids?.label) head.id = c.ids.label;
+      if (c.ids?.value) value.id = c.ids.value;
       card.append(head, value);
       if (c.note !== undefined && said(c.note) !== '') {
         const note = document.createElement('span');
@@ -1611,7 +1639,7 @@
   // where the page allows, offers "Type the code instead", so nothing is ever a dead end (P-08). The last ten picks per
   // kind are this browser's convenience only.
   const directory = () => (window.sreDirectory && typeof window.sreDirectory === 'object' ? window.sreDirectory : null);
-  const PICK_KINDS = Object.freeze(['product', 'supplier', 'person', 'place', 'store', 'customer', 'approval', 'tax-class']);
+  const PICK_KINDS = Object.freeze(['product', 'supplier', 'person', 'place', 'store', 'customer', 'approval', 'tax-class', 'role', 'batch', 'case']);
   const listCache = new Map(); // kind → { at, rows } for a minute: the person types, the list does not re-read on every key
   const LIST_TTL_MS = 60_000;
   const pickKey = (kind) => `sre.pick.${kind}.${String(navigation()?.userId ?? directory()?.me?.userId ?? 'nobody')}`;
@@ -1659,9 +1687,27 @@
       }
       return rows.length > 0 ? { state: 'ok', rows } : got;
     }
+    // U7: the roles the shop gives (the store's signed directory first, then the menu's own role list) — several may be
+    // ticked at once (`multi`), e.g. who a procedure is for. Never a role the box does not know.
+    if (kind === 'role') {
+      const fromDir = d?.known?.roles === true && Array.isArray(d.roles) ? d.roles : null;
+      const fromNav = Array.isArray(navigation()?.roles) ? navigation().roles : null;
+      const list = fromDir ?? fromNav;
+      if (!list) return { state: 'unknown' };
+      return { state: 'ok', rows: list.filter((r) => r && typeof r.id === 'string').map((r) => asRow(r.id, lang() === 'ta' && typeof r.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : (r.name ?? r.id), r.id, r)) };
+    }
+    // U7: the batches of one product at one place, with their use-by day — head office's batch directory. With no product
+    // chosen yet the sheet says to choose it first (the typed batch code stays offered).
+    if (kind === 'batch') {
+      if (typeof scope.productId !== 'string' || scope.productId === '') return { state: 'ok', rows: [], emptyKey: 'pickBatchFirst' };
+      const q = `productId=${encodeURIComponent(scope.productId)}${typeof scope.locationId === 'string' && scope.locationId !== '' ? `&locationId=${encodeURIComponent(scope.locationId)}` : ''}`;
+      const got = await readHeadOffice(`/v1/inventory/batches?${q}`).catch(() => ({ state: 'offline' }));
+      if (got.state !== 'ok') return got;
+      return { state: 'ok', rows: (got.body.batches ?? []).map((b) => asRow(b.batchId, typeof b.expiry === 'string' && b.expiry !== '' ? fill(ow('batchRow'), { id: b.batchId, day: dateWords(b.expiry) }) : String(b.batchId), b.batchId, b)) };
+    }
     const cached = listCache.get(kind);
     if (cached && Date.now() - cached.at < LIST_TTL_MS) return { state: 'ok', rows: cached.rows };
-    const paths = { product: '/v1/catalogue/products', supplier: '/v1/purchase/suppliers', customer: '/v1/customer/overview', approval: '/v1/approvals/requests', 'tax-class': '/v1/catalogue/products' };
+    const paths = { product: '/v1/catalogue/products', supplier: '/v1/purchase/suppliers', customer: '/v1/customer/overview', approval: '/v1/approvals/requests', 'tax-class': '/v1/catalogue/products', case: '/v1/service/cases' };
     const got = await readHeadOffice(paths[kind]).catch(() => ({ state: 'offline' }));
     // U5 (P-01): a product can still be picked with head office down — from this store computer's own signed catalogue,
     // and the sheet SAYS so (a product published since is not in that copy). Any other list stays honest: unreadable.
@@ -1678,6 +1724,8 @@
     }
     else if (kind === 'supplier') rows = (got.body.suppliers ?? []).map((s) => asRow(s.supplierId, s.name ?? s.supplierId, s.status, s));
     else if (kind === 'customer') rows = (got.body.customers ?? []).map((c) => asRow(c.customerRef, typeof c.name === 'string' && c.name.trim() !== '' ? c.name : c.customerRef, c.customerRef, c));
+    // U7: a customer case by its number, what it is and whose — the service desk's own list (`service.case.read`)
+    else if (kind === 'case') rows = (got.body.cases ?? []).map((c) => asRow(c.caseId, fill(ow('caseRow'), { id: c.caseId, kind: String(c.kind ?? '').replace(/_/g, ' '), who: nameOf('customer', c.customerRef) }), c.state, c));
     else if (kind === 'approval') rows = [...(got.body.waitingForMe ?? []), ...(got.body.mine ?? [])].map((a) => asRow(a.requestId, a.summary ?? a.label ?? a.requestId, a.status, a));
     listCache.set(kind, { at: Date.now(), rows });
     return { state: 'ok', rows };
@@ -1714,6 +1762,8 @@
   function officePick(spec) {
     if (pickOpen) pickOpen.finish({ ok: false });
     const kind = PICK_KINDS.includes(spec.kind) ? spec.kind : 'product';
+    const multi = spec.multi === true; // U7: several may be ticked; "Use these" finishes
+    const ticked = new Map();
     return new Promise((resolve) => {
       const opener = document.activeElement;
       const sheet = document.createElement('div');
@@ -1773,12 +1823,20 @@
       back.className = 'sre-btn';
       back.id = 'sre-picker-back';
       actions.append(back);
+      const useThese = document.createElement('button');
+      useThese.type = 'button';
+      useThese.className = 'sre-btn sre-btn-primary';
+      useThese.id = 'sre-picker-use-these';
+      useThese.hidden = !multi;
+      if (multi) actions.append(useThese);
       inner.append(h, searchWrap, stateHost, list, codeWrap, actions);
       sheet.append(inner);
 
       let rows = null; // null until read
       let listState = 'loading';
       let listSource = null; // 'box' when the rows are this store computer's copy
+      let emptyKey = null; // U7: a kind may say why its list is empty (the batch kind: "choose the product first")
+
       let shownRows = [];
       const MAX = 50;
       const paintWords = () => {
@@ -1789,6 +1847,8 @@
         search.placeholder = ow(`pickHint_${kind}`) ?? ow('pickHint');
         back.textContent = ow('goBack');
         useCode.textContent = ow('useThisCode');
+        useThese.textContent = fill(ow('useThese'), { n: ticked.size });
+        useThese.disabled = ticked.size === 0;
         const lab = codeField.querySelector('.sre-field-label');
         if (lab) lab.replaceChildren(document.createTextNode(ow('typeCodeInstead')));
         list.setAttribute('aria-label', said(spec.title ?? ow(`pick_${kind}`)));
@@ -1811,7 +1871,15 @@
           small.textContent = [row.code, recent ? ow('recentPick') : ''].filter((x) => x).join(' · ');
           b.append(small);
         }
-        b.addEventListener('click', () => choose(row));
+        if (multi) {
+          b.setAttribute('aria-pressed', ticked.has(row.id) ? 'true' : 'false');
+          b.addEventListener('click', () => {
+            if (ticked.has(row.id)) ticked.delete(row.id); else ticked.set(row.id, row);
+            b.setAttribute('aria-pressed', ticked.has(row.id) ? 'true' : 'false');
+            useThese.textContent = fill(ow('useThese'), { n: ticked.size });
+            useThese.disabled = ticked.size === 0;
+          });
+        } else b.addEventListener('click', () => choose(row));
         li.append(b);
         return li;
       };
@@ -1837,7 +1905,7 @@
           if (remembered.length > 0) { hits = remembered; recent = true; } else hits = pool.slice(0, MAX);
         } else hits = pool.filter((r) => matches(r, q));
         shownRows = hits.slice(0, MAX);
-        if (pool.length === 0) { stateHost.append(officeState(document.createElement('div'), 'empty', { detail: ow('pickEmptyDetail') })); count.textContent = ''; codeWrap.hidden = !spec.allowCode; return; }
+        if (pool.length === 0) { stateHost.append(officeState(document.createElement('div'), 'empty', { detail: ow(emptyKey ?? 'pickEmptyDetail') })); count.textContent = ''; codeWrap.hidden = !spec.allowCode; return; }
         if (hits.length === 0) {
           stateHost.append(officeState(document.createElement('div'), 'noMatch', { detail: fill(ow('pickNoMatchDetail'), { n: pool.length }) }));
           count.textContent = '';
@@ -1866,6 +1934,12 @@
       pickOpen = me;
       window.addEventListener('pagehide', onLeave);
       back.addEventListener('click', () => finish({ ok: false }));
+      useThese.addEventListener('click', () => {
+        if (ticked.size === 0) return;
+        const picked = [...ticked.values()];
+        for (const r of picked) rememberPick(kind, r);
+        finish({ ok: true, ids: picked.map((r) => r.id), names: picked.map((r) => r.name), id: picked.map((r) => r.id).join(','), name: picked.map((r) => r.name).join(', '), item: null });
+      });
       useCode.addEventListener('click', () => {
         const typed = String(codeField.querySelector('input').value ?? '').trim();
         const msg = codeField.querySelector('.sre-field-msg');
@@ -1910,6 +1984,7 @@
         rows = got.state === 'ok' ? got.rows : [];
         listSource = got.source ?? null;
         sourceVersion = got.version ?? null;
+        emptyKey = got.emptyKey ?? null;
         paintWords();
       }).catch(() => { if (pickOpen !== me) return; listState = 'error'; rows = []; paintList(); });
     });
@@ -2070,15 +2145,22 @@
     name.className = 'sre-pick-name';
     row.append(btn, name);
     const titleOf = () => { const t = typeof extra.titleOf === 'function' ? extra.titleOf() : title; return t && typeof t === 'object' ? t : { en: ow(`pick_${kind}`), ta: ow(`pick_${kind}`) }; };
-    const paint = () => { btn.textContent = ow('choose'); btn.setAttribute('aria-label', `${ow('choose')} — ${said(titleOf())}`); };
+    // U7: a kind may follow the form (a store price picks a store, a customer price a customer); `kindOf()` → null means no
+    // list exists for what the form says now, so there is no "Choose…" button — the typed code is the way in.
+    const kindNow = () => (typeof extra.kindOf === 'function' ? extra.kindOf() : kind);
+    const paint = () => { btn.hidden = kindNow() === null; btn.textContent = ow('choose'); btn.setAttribute('aria-label', `${ow('choose')} — ${said(titleOf())}`); };
     paint();
     adapterRepaints.add(paint);
+    row.sreRepaint = paint;
     btn.addEventListener('click', async () => {
-      const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-      const picked = await officePick({ kind: k, title: titleOf(), allowCode: extra.allowCode !== false, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+      const k = kindNow();
+      if (k === null) return;
+      const picked = await officePick({ kind: k, title: titleOf(), allowCode: extra.allowCode !== false, ...(extra.multi === true ? { multi: true } : {}), ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
       if (!picked || picked.ok !== true) return;
       const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
       if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+      // a page that recomputes as a person types hears the pick too (before the name is shown — `input` clears a stale one)
+      input.dispatchEvent(new Event('input', { bubbles: true }));
       name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
       input.dispatchEvent(new Event('change', { bubbles: true }));
       if (typeof extra.onPick === 'function') extra.onPick(picked);
@@ -2098,7 +2180,8 @@
     const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : parseShopDate(typed);
     const field = officeDateField({ id, label, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.min ? { min: opts.min } : {}), ...(opts.max ? { max: opts.max } : {}) });
     const ownLabel = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-    if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true;
+    // the page's own label is hidden and lets go of the field, so the shared field's label is the one that names it
+    if (ownLabel && !ownLabel.contains(input)) { ownLabel.hidden = true; ownLabel.removeAttribute('for'); }
     (input.closest('label') ?? input).replaceWith(field);
     field.querySelector('input').dataset.shopDate = 'on';
     const paint = () => { const lab = field.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = said(label); };
@@ -2175,8 +2258,34 @@
   const liveTables = new Set();
   function officeTable(host, opts) {
     const id = opts.id;
-    const state = { rows: opts.rows === undefined ? null : opts.rows, query: '', filters: {}, sort: null, dir: 1, page: 0, kind: null, kindOpts: {} };
+    const state = { rows: opts.rows === undefined ? null : opts.rows, query: '', filters: {}, sort: null, dir: 1, page: 0, kind: null, kindOpts: {}, total: 0, seq: 0 };
     const pageSize = opts.pageSize ?? 10;
+    // U7 · server paging: a page whose list can grow past a few hundred rows hands the register a LOADER instead of the
+    // rows — `loader({ page, size, search, sort, dir })` → `{ rows, total }` (or `{ state, stateOpts }` when head office
+    // did not answer). Search, sort and paging then go to head office; the register shows exactly one page of rows and
+    // the count head office gives ("Showing 21–40 of 3,412"). Column filters are drawn from rows, so a loader-fed register
+    // offers none (a page that needs one asks head office with its own field).
+    const loader = typeof opts.loader === 'function' ? opts.loader : null;
+    let searchTimer = null;
+    async function load() {
+      if (!loader) { paintBody(); return; }
+      const seq = ++state.seq;
+      state.rows = null; state.kind = null;
+      paintBody();
+      let res;
+      try { res = await loader({ page: state.page, size: pageSize, search: state.query.trim(), sort: state.sort, dir: state.dir === 1 ? 'asc' : 'desc' }); }
+      catch { res = { state: 'error' }; }
+      if (seq !== state.seq) return; // a newer read is on its way: this answer is for a question nobody is asking now
+      if (res && Array.isArray(res.rows)) {
+        state.rows = res.rows;
+        state.total = Number.isFinite(res.total) ? res.total : res.rows.length;
+        state.kind = null;
+      } else {
+        state.kind = (res && typeof res.state === 'string') ? res.state : 'error';
+        state.kindOpts = (res && res.stateOpts) || {};
+      }
+      paintBody();
+    }
     // U5: `sortable: true` makes every column sortable (a column may say `sort: false`); `search: false` hides the search box
     const sortableCol = (col) => (col.sort !== undefined && col.sort !== null && col.sort !== false) || (opts.sortable === true && col.sort !== false);
     const showSearch = opts.search !== false;
@@ -2246,12 +2355,17 @@
         search.value = state.query;
         search.placeholder = ow('search');
         search.setAttribute('aria-label', `${ow('search')} — ${said(opts.label)}`);
-        search.addEventListener('input', () => { state.query = search.value; state.page = 0; paintBody(); });
+        search.addEventListener('input', () => {
+          state.query = search.value; state.page = 0;
+          if (!loader) { paintBody(); return; }
+          if (searchTimer !== null) clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => { searchTimer = null; void load(); }, 300);
+        });
         searchBox.append(search);
         searchLabel.append(searchWord, searchBox);
         bar.append(searchLabel);
       }
-      for (const col of opts.columns.filter((c) => c.filter)) {
+      for (const col of loader ? [] : opts.columns.filter((c) => c.filter)) {
         const values = [...new Set((state.rows ?? []).map((r) => textOf(col, r)).filter((v) => v !== ''))].sort((a, b) => a.localeCompare(b));
         const wrap = document.createElement('label');
         wrap.className = 'sre-datatable-filter';
@@ -2303,16 +2417,22 @@
       if (!body) { body = document.createElement('div'); body.className = 'sre-datatable-body'; root.append(body); }
       if (state.kind !== null) { officeState(body, state.kind, state.kindOpts); return; }
       if (state.rows === null) { officeState(body, 'loading'); return; }
-      if (state.rows.length === 0) { officeState(body, 'empty', opts.empty ?? {}); return; }
-      const rows = visibleRows();
-      if (rows.length === 0) {
+      if (loader && state.total === 0) {
+        if (state.query.trim() === '') { officeState(body, 'empty', opts.empty ?? {}); return; }
+        officeState(body, 'noMatch', { detail: ow('noMatchServer'), action: () => { state.query = ''; state.page = 0; paint(); void load(); }, actionLabel: ow('clear') });
+        return;
+      }
+      if (!loader && state.rows.length === 0) { officeState(body, 'empty', opts.empty ?? {}); return; }
+      const rows = loader ? state.rows : visibleRows();
+      if (!loader && rows.length === 0) {
         officeState(body, 'noMatch', { values: { n: state.rows.length }, action: () => { state.query = ''; state.filters = {}; state.page = 0; paint(); }, actionLabel: ow('clear') });
         return;
       }
-      const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+      const total = loader ? state.total : rows.length;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
       state.page = Math.min(state.page, pages - 1);
       const from = state.page * pageSize;
-      const slice = rows.slice(from, from + pageSize);
+      const slice = loader ? rows : rows.slice(from, from + pageSize);
       const scroll = document.createElement('div');
       scroll.className = 'sre-scroll-x';
       const table = document.createElement('table');
@@ -2345,8 +2465,9 @@
           b.append(dir);
           b.addEventListener('click', () => {
             if (state.sort === col.key) state.dir = -state.dir; else { state.sort = col.key; state.dir = 1; }
-            state.page = 0; paintBody();
-            root.querySelector(`.sre-sort[data-col="${col.key}"]`)?.focus();
+            state.page = 0;
+            const refocus = () => root.querySelector(`.sre-sort[data-col="${col.key}"]`)?.focus();
+            if (loader) void load().then(refocus); else { paintBody(); refocus(); }
           });
           th.append(b);
         } else th.textContent = said(col.label);
@@ -2392,17 +2513,17 @@
       count.className = 'sre-datatable-count';
       count.id = `${id}-count`;
       count.setAttribute('role', 'status');
-      count.textContent = fill(ow('showing'), { from: from + 1, to: from + slice.length, n: rows.length });
+      count.textContent = fill(ow('showing'), { from: from + 1, to: from + slice.length, n: new Intl.NumberFormat(lang() === 'ta' ? 'ta-IN' : 'en-IN').format(total) });
       count.hidden = opts.count === false;
       const nav = document.createElement('div');
       nav.className = 'sre-pager';
       const prev = document.createElement('button');
       prev.type = 'button'; prev.className = 'sre-btn'; prev.id = `${id}-prev`; prev.textContent = ow('previous'); prev.disabled = state.page === 0;
-      prev.addEventListener('click', () => { state.page -= 1; paintBody(); byId(`${id}-prev`)?.focus(); });
+      prev.addEventListener('click', () => { state.page -= 1; if (loader) void load().then(() => byId(`${id}-prev`)?.focus()); else { paintBody(); byId(`${id}-prev`)?.focus(); } });
       const where = document.createElement('span'); where.className = 'sre-pager-where'; where.textContent = fill(ow('page'), { p: state.page + 1, q: pages });
       const next = document.createElement('button');
       next.type = 'button'; next.className = 'sre-btn'; next.id = `${id}-next`; next.textContent = ow('next'); next.disabled = state.page >= pages - 1;
-      next.addEventListener('click', () => { state.page += 1; paintBody(); byId(`${id}-next`)?.focus(); });
+      next.addEventListener('click', () => { state.page += 1; if (loader) void load().then(() => byId(`${id}-next`)?.focus()); else { paintBody(); byId(`${id}-next`)?.focus(); } });
       nav.append(prev, where, next);
       foot.append(count, nav);
       body.replaceChildren(scroll, foot);
@@ -2415,7 +2536,10 @@
       if (focused) byId(focused)?.focus();
     }
     const controller = {
-      setRows(rows) { state.rows = rows; state.kind = null; paint(); },
+      setRows(rows) { if (loader) { void load(); return; } state.rows = rows; state.kind = null; paint(); },
+      /** U7: read the current page again from head office (a loader-fed register) — after the page changed a record. */
+      reload() { if (loader) { state.page = 0; return load(); } paint(); return Promise.resolve(); },
+      total: () => (loader ? state.total : (state.rows ?? []).length),
       setState(kind, kindOpts = {}) { state.kind = kind; state.kindOpts = kindOpts; paint(); },
       rows: () => state.rows,
       shownRows: () => visibleRows(),
@@ -2424,6 +2548,7 @@
     };
     liveTables.add(controller);
     paint();
+    if (loader) void load();
     return controller;
   }
 

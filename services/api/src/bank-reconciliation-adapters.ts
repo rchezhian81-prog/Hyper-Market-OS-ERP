@@ -12,7 +12,7 @@ import type { ImportedStatement } from '../../finance/src/independent-evidence';
 import { cashDepositViews } from '../../finance/src/cash-deposits';
 import type { BankReconciliationDeps, BankLineException, BankLineExceptionResolved } from '../../finance/src/bank-reconciliation';
 import type { ReceivablesViewDeps } from '../../finance/src/receivables-view';
-import { STREAM, streamName, cashDepositAdapter, b2bCollectionsAdapter, b2bReceivableCustomers } from './adapters';
+import { STREAM, streamName, cashDepositAdapter, b2bCollectionsAdapter, b2bReceivableCustomers, supplierAccountAdapter } from './adapters';
 
 const BANK_STATEMENTS = streamName(STREAM.settlement, 'bank-statements');
 /** The reconciliation's own facts: `ReconciliationExceptionRaised` and `ReconciliationExceptionResolved`, append-only. */
@@ -30,6 +30,8 @@ export function bankReconciliationAdapter(input: { readonly store: EventStore; r
     ...(input.calendar === undefined ? {} : { calendar: input.calendar }),
     statements: (t) => payloads<ImportedStatement>(input.store, t, BANK_STATEMENTS, 'BankStatementImported'),
     batches: (t) => payloads<SettlementBatch>(input.store, t, STREAM.settlement, 'SettlementBatchImported'),
+    // U7 · OB-723: the supplier payments recorded on the books (SP-7c, second-person approved) — a debit line names one.
+    supplierPayments: async (t) => supplierAccountAdapter({ store: input.store, now: input.now }).payments(t),
     depositViews: async (t) => cashDepositViews({ deposits: await deposits.deposits(t), cancelled: await deposits.cancellations(t), statements: await deposits.statements(t) }),
     exceptionsRaised: (t) => payloads<BankLineException>(input.store, t, BANK_RECONCILIATION, 'ReconciliationExceptionRaised'),
     exceptionsResolved: (t) => payloads<BankLineExceptionResolved>(input.store, t, BANK_RECONCILIATION, 'ReconciliationExceptionResolved'),
