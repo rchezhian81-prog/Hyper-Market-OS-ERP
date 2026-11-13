@@ -99,9 +99,8 @@ kept), the Docker copy is started again and the snapshot is kept for a person to
 the till back.
 
 After the move the tool reaches the database as a service: `backup` (same one-snapshot guarantee), `restore-check`,
-`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill refuses in plain words: its Windows
-version is CR-01 step 3e. `update --from <folder>` is not used on Windows services: a new version comes from the Software
-update page (below). Docker Desktop can be uninstalled later; its stopped
+`check` (G4), `status`, `up` and `autostart` work without Docker, and so does the rollback drill (below). `update --from
+<folder>` is not used on Windows services: a new version comes from the Software update page (below). Docker Desktop can be uninstalled later; its stopped
 copy is the only thing it still holds.
 
 ## Desktop shortcuts and the About screen (CR-01 step 2d)
@@ -148,4 +147,22 @@ and every refusal), `<data>\status\update-progress.json` (what the page shows).
 **The two tasks:** `SRE\Software update` (SYSTEM, every 5 minutes, does nothing without a request) is set up by
 SRE-Setup.exe; `SRE\Software update - install` is made for each update. If the page says *the updater is not set up*,
 run SRE-Setup.exe once more as administrator.
+
+## The rollback drill on Windows services (CR-01 step 3e, G9)
+
+**Who:** the store's IT person or the owner, as administrator, with the owner watching (UAT-53). **When:** a quiet time,
+every till closed — the till pauses for a few minutes in steps 3 and 4. **Needs:** the backup drive plugged in, the backup
+passphrase, and a previous release on the PC (one is kept by itself at every update; before the first update there is
+none, and the drill says so).
+
+1. See what it will do (changes nothing): `store-computer drill --by "Your Name" --to E:\sre-real`
+2. Run it: the same command with `--run` at the end. Type the backup passphrase when asked.
+3. It backs up and restores into a scratch database and reconciles (you see each time), then says **STARTED** — steps 3
+   and 4 run by themselves.
+4. After 10–15 minutes: `store-computer drill-result`. It says **G9 PASSED** or **G9 NOT PASSED**, each step with its time
+   against its target (database back within 4 hours, service back within 30 minutes).
+5. Keep the record with the workbook: `<data>\records\g9-drill-<time>.json` (a read-only copy is on the backup drive).
+
+If it says **THIS PC MAY NOT BE ON <version> NOW**, restart the PC; if the till does not come back, run that version's
+SRE-Setup.exe again, and send a photo. The database is never rolled back by the drill: only the program is put back.
 

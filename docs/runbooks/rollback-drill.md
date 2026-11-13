@@ -14,6 +14,16 @@ no git and no PostgreSQL tools on the PC — the previous release is its kept ZI
 the current schema (checked compatible first). This page is the Linux box's way, with `infra/deploy/release.sh`. **Never against production, never from a
 developer's machine.** The drill refuses `MIGRATION_TARGET_KIND=production` before it touches anything.
 
+
+**On the store PC once it runs as Windows services (CR-01 step 3e, ADR-0032):** the same drill, the same order and
+targets, with `store-computer drill --by "<name>" --to <backup drive folder> [--previous <installed release folder>]
+[--run]`, run as administrator with every till closed. The previous release is, by default, the newest copy the updater
+kept (`C:\Program Files\SRE Retail OS kept\<version>` — one is kept at every update from the Software update page).
+Steps 1–2 (backup; restore into a scratch database and reconcile) run at the keyboard; steps 3–4 (the previous release's
+program put back and its own setup run, checked; then this release put back and checked) run by themselves as the task
+`SRE\Rollback drill`, from the kept copy of this release. Read the outcome with `store-computer drill-result`; the record
+is written to the records folder and, read-only, to the backup drive. The database is never rolled back. See
+`docs/runbooks/store-computer-windows-services.md`, "The rollback drill on Windows services".
 ---
 
 ## What the drill does, in order

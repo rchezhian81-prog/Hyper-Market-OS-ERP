@@ -55,6 +55,7 @@ import { driveChoices, firstRun, releaseInfo, writeShortcuts } from './store-com
 import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-db.mjs';
 import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
 import { applyUpdate } from './store-pc-updater.mjs';
+import { drillResult } from './store-pc-drill.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1244,6 +1245,7 @@ export const USAGE = [
   '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
   '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
   '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
+  '                                           (Windows services: --previous is optional — the newest kept release)',
   '  schedule-backup --to <folder on the drive that stays plugged in> --every 60',
   '                                           automatic encrypted backup every N minutes (Windows Task Scheduler)',
   '  unschedule-backup                        turn the automatic backup off (every backup is kept)',
@@ -1257,6 +1259,7 @@ export const USAGE = [
   '  check-update                             ask GitHub whether a newer, signed store PC version is ready (CR-01 3b)',
   '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
   '                                           is made private (OB-721); pasted with nothing shown, never said again',
+  '  drill-result                             the newest rollback drill (G9) record, in plain words (CR-01 3e)',
   '  apply-update                             what the task "SRE\\Software update" runs: acts ONLY on the owner\'s request',
   '                                           from the Software update page; puts the old version back if anything fails',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
@@ -1421,7 +1424,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1460,6 +1463,7 @@ export function parseCommandLine(argv) {
     else if (a === '--lane') out.lane = value();
     else if (a === '--only') out.only = value();
     else if (a === '--install') out.install = value();
+    else if (a === '--continue') out.continue = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1491,7 +1495,8 @@ export async function main(argv, given) {
     case 'fingerprints': return fingerprints(deps, { settings: cl.settings, out: cl.out });
     case 'backup': return backup(deps, { to: cl.to });
     case 'restore-check': return restoreCheck(deps, { from: cl.from });
-    case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out });
+    case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out, continue: cl.continue });
+    case 'drill-result': return drillResult(deps, resolveLayout(deps));
     case 'schedule-backup': return scheduleBackup(deps, { to: cl.to, every: cl.every });
     case 'unschedule-backup': return unscheduleBackup(deps);
     case 'backup-status': return backupStatus(deps);

@@ -38,9 +38,10 @@
 import { databaseProblem, dbSpawn, nativeBackupScript, otherLines, readServicesMarker } from './store-computer-db.mjs';
 import { createHash } from 'node:crypto';
 import { DRILL_TARGETS } from './rollback-drill.mjs';
+import { nativeDrill } from './store-pc-drill.mjs';
 import {
   DEMO_PROJECT, FINGERPRINT_KEYS, PROJECT, SETTINGS_NAME, composeBase, composeEnv, fingerprintsOf, guarded, lines,
-  loadSettings, ownDriveProblem, parseEnvText, pathFor, rel, stampOf, waitReady,
+  loadSettings, ownDriveProblem, parseEnvText, pathFor, rel, resolveLayout, stampOf, waitReady,
 } from './store-computer.mjs';
 import {
   MIN_PASSPHRASE, SCRYPT, decryptFile, encryptFile, keyFileProblem, makeBackupKey, openJson, passphraseProblem, publicKeyOf,
@@ -901,6 +902,12 @@ export function drillVerdict(steps) {
 export async function drill(deps, opts) {
   const { say, fs } = deps;
   const p = pathFor(deps.platform);
+  // CR-01 step 3e (ADR-0032): a copy that runs as Windows services has its own drill (store-pc-drill.mjs), same steps.
+  if (deps.platform === 'win32' && readServicesMarker(deps, resolveLayout(deps)) !== undefined) {
+    const nctx = ready(deps);
+    if (nctx.code !== undefined) return nctx.code;
+    if (nctx.native !== undefined) return nativeDrill(deps, nctx, opts);
+  }
   const by = typeof opts.by === 'string' ? opts.by.trim() : '';
   const missing = [];
   if (by === '') missing.push('--by "<your name>"');
@@ -909,10 +916,7 @@ export async function drill(deps, opts) {
   if (missing.length > 0) { say(`REFUSED — the drill needs: ${missing.join(', ')}`); say('  pnpm run store-computer -- drill --by "Your Name" --to E:\\sre-real --previous C:\\SRE-previous'); return 2; }
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
-  if (ctx.native !== undefined) {
-    say('NOT YET — this copy runs as Windows services (ADR-0032). The timed rollback drill for Windows services comes with the one-click update (CR-01 step 3); until then it runs on the Docker copy only. Nothing was changed.');
-    return 2;
-  }
+  if (ctx.native !== undefined) return nativeDrill(deps, ctx, opts);
   const { problems, plan } = drillPlan(deps, ctx, opts);
   if (problems.length > 0) { for (const pr of problems) say(`REFUSED — ${pr}`); say('  Nothing was changed.'); return 2; }
 
