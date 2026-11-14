@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## #911 merged and the new look is live on the demo box (14 November 2026)
+- **What happened:** #911 (OB-728 emerald and gold, OB-729) merged as a2c882f on the owner's instruction ("merge when green"). On the way: main moved twice (CR-01 steps 3e and 3f), so the branch took main twice (only STATUS clashed, both kept); the type check caught a browser test using DOM names (fixed); the browser suite caught 5 real effects of the new fonts — a scan read the Tamil face (₹) mid-sale, now every face is asked for as a screen opens (`sre-faces.js`); Tamil words widened the driver's phone past 360px, now its button rows shrink; one test pinned the old amber.
+- **Main after the merge:** every job green, the store PC release published, the canary stage passed, and **the merged release is deployed to the demo box**.
+- **Next:** the owner's four checks on the demo box (till offline in the new face, the look against the design page, arm's length under the shop lights, "Not known" burnt amber not gold); then the real-staff session UAT-06 on the new look (`docs/design/usability-session-UAT-06.md`).
+- **Blocked:** nothing. **Owner decisions needed:** none (the UAT-06 date is the owner's to set).
+
 ## Emerald and gold, rounded and matte — the new look on every screen (14 November 2026) · OB-728, OB-729
 - **Why:** the owner's brief of 2 Nov 2026 (OB-728) chose a new look for every screen. On 14 Nov he chose to restyle BEFORE the real-staff session UAT-06, and to move the sign-in page in the same pull request.
 - **What changed (styling only — no layout, flow, price, tax, payment or data change):** both colour sets in the shared foundation per the brief (ivory canvas, emerald rail and actions, four new gold tokens; the dark set on a deep green-black); corners 6/12/16/20px in both sets; pill buttons and language toggle; chips by tint and icon; icons a touch bolder (1.75); emerald-tinted shadows; matte (no gradient, shine, glass or glow). Plus Jakarta Sans and Anek Tamil are self-hosted (SIL OFL, ~130 KB), copied to every store screen, precached by every service worker and served as `font/woff2` by every door of the store computer — nothing comes from the internet. The sign-in page takes the same palette (gold SRE mark, emerald pill buttons).
