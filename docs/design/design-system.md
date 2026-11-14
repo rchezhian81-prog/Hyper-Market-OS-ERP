@@ -56,9 +56,12 @@ reason on the record. Every text pair is proven AA in
 the one file. Components (§4) ship namespaced as `.sre-*` and the screens move onto them slice by slice (G2–G5).
 
 ### 3.2 The look the owner chose (OB-13, 4 October 2026) — tokens, and the rules it keeps
+> **Superseded in colour, corners, type and shadow by OB-728 (emerald and gold, 2 Nov 2026) — see §3.5.** The rules
+> below ("Rules the look keeps") still hold unchanged; the table is kept as the record of the October look.
+
 The owner's reference (`reference/professional-pack-2026-10-04/`, README there) sets the visual language from here on:
 a dark-forest navigation rail, white work surfaces on a cool neutral canvas, one emerald primary action, fine edge
-stripes on tiles, compact panels, status as words with amber and red kept for exceptions. Contrast is against white
+stripes on tiles, compact panels (rounded since OB-728, §3.5), status as words with amber and red kept for exceptions. Contrast is against white
 unless said.
 
 | Token (light set) | Value | Use | Contrast |
@@ -83,7 +86,7 @@ as written; base 16px with nothing a person must read under 14px (uppercase lett
 mark, avatar initials and a keyboard hint are the only exceptions); controls ≥ 44px on the back-office desktop, 48px for
 the primary action, 56px on the till and the handhelds; every word in English and Tamil; status as word + icon, never
 colour alone; a freshness line on every figure, and **Not known** in `--warn` with the reason instead of a zero; the
-sample-data strip at 14px; the system font stack with the Tamil faces before Arial; one primary action per screen.
+sample-data strip at 14px; the system font stack with the Tamil faces before Arial (since OB-728: the two self-hosted faces first, then that stack, §3.5); one primary action per screen.
 The handhelds keep their task-first layouts and take only the palette.
 
 **How it reaches the product (UX-1, through the shared foundation only, no feature changes) — UX-1a IMPLEMENTED (4 Oct 2026):**
@@ -144,7 +147,7 @@ added:
 | `--fs-sm` · `--fs-base` · `--fs-md` · `--fs-lg` · `--fs-xl` · `--fs-2xl` · `--fs-figure` | 14 · 16 · 17 · 20 · 24 · 30 · 40 px | the type scale; nothing a person must read is under 14px |
 | `--leading-tight` · `--tracking-caps` · `--tracking-tight` | 1.25 · .06em · −.01em | headings and figures; uppercase labels |
 | `--numbers` | `tabular-nums lining-nums` | money and quantities (`.money .qty .amount .total .n .sre-num`, every register) |
-| `--radius-sm` · `--radius` · `--radius-lg` · `--radius-xl` · `--radius-pill` | 4 · 6 · 8 · 12 · 999 px | one radius scale; 6px stays the default |
+| `--radius-sm` · `--radius` · `--radius-lg` · `--radius-xl` · `--radius-pill` | 4 · 6 · 8 · 12 · 999 px (**6 · 12 · 16 · 20 · 999 px since OB-728, §3.5**) | one radius scale |
 | `--hairline` | 1px | every border |
 | `--shadow-xs` · `--shadow-sm` · `--shadow-md` · `--shadow-lg` | two layers each, forest-tinted, opacity ≤ .16 | a control off its panel · a resting card · a card under the pointer · the drawer, a sheet, a toast |
 | `--hover` | `#F6F8F7` | a row or quiet button under the pointer (ink 12:1, muted 6.0:1) |
@@ -203,6 +206,64 @@ search with a magnifier inside the field.
 pair at AA in both sets), and `tests/e2e/the-chrome-wears-the-one-icon-set.e2e.ts` (the whole menu rendered, an icon per
 screen beside its name, no icon-only element, no console error, the audit clean at a desk and on a phone in English and
 Tamil, and no animation after twenty till scans).
+
+### 3.5 Emerald and gold, rounded and matte (OB-728, owner, 2 November 2026)
+The owner chose a new look for every screen: **emerald and gold, rounded and matte** (brief: "Developer brief: emerald and
+gold look for SRE Retail OS", 2 Nov 2026; reference: the SRE Retail OS design system page). It is a **styling change
+only**: layouts, flows, prices, tax, payments and data are untouched; token NAMES did not change, so no screen changed.
+
+**What does not change:** every §1 hard rule (English and Tamil on every word; status as word + icon; nothing a person
+must read under 14px; targets 44 / 48 / 56 / 64px); the meaning of every colour (green ok, amber pending or not known,
+red a problem, grey idle); the three-reds rule; no motion on the till's scan or total and reduced motion respected;
+offline first — nothing loads from the internet at run time, fonts included.
+
+**Colour.** Both sets in `packages/ui/web/sre-foundation.css`; the dark set moves from slate blue to a deep green-black
+of the same palette. Every token not listed keeps its value (the reds, `--info`, the demo stripes, the heat-map scale).
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `--bg` · `--panel` · `--panel-2` · `--field` | `#fbf8f1` · `#ffffff` · `#f5f0e4` · `#ffffff` | `#0d1714` · `#15231e` · `#0f1b17` · `#0f1b17` |
+| `--hover` · `--mint` | `#f9f5ec` · `#e8f2ec` | `#1a2b25` · `#163a2d` |
+| `--line` · `--line-soft` · `--line-strong` · `--field-line` | `#ece4d2` · `#f3eee2` · `#d8cbae` · `#8a806d` | `#2a3c35` · `#213129` · `#3d5248` · `#71877d` |
+| `--ink` · `--ink-2` · `--muted` | `#173328` · `#2f4339` · `#5c5646` | `#f4efe3` · `#e2dccd` · `#a9b5ae` |
+| `--on-accent` · `--on-warn` · `--on-idle` | `#ffffff` · `#ffffff` · `#ffffff` | `#062018` · `#2b1405` · `#0d1714` (see note) |
+| `--ok` · `--accent-hover` · `--accent-press` | `#17654f` · `#11533f` · `#0e3b2e` | `#4cbf8e` · `#6fd0a5` · `#93ddba` |
+| `--degraded` (burnt amber, never gold) · `--idle` | `#9c4f17` · `#6e746a` | `#f0a050` · `#7d8c85` |
+| `--warn-surface` / `--on-warn-surface` | `#fbe7d6` / `#66310e` | `#3d2610` / `#fcd9b0` |
+| `--ok-surface` / `--on-ok-surface` · `--error-surface` | `#e3f1e8` / `#0e4a35` · `#fbeae6` | `#0f3326` / `#bdebd3` · `#45120f` |
+| `--scrim` · `--focus` · `--focus-halo` | `rgba(14,59,46,.55)` · `#0e3b2e` · `rgba(23,101,79,.22)` | `rgba(3,10,8,.8)` · `#e0b456` · `rgba(224,180,86,.25)` |
+| `--rail` · `--rail-2` · `--rail-line` | `#0e3b2e` · `#17493a` · `#215443` | `#091210` · `#15231e` · `#1e2e28` |
+| `--on-rail` · `--on-rail-muted` · `--rail-accent` | `#f7f2e6` · `#afc6bb` · `#d4a23a` | `#f4efe3` · `#9fb2a9` · `#e0b456` |
+| **new** `--gold` / `--on-gold` | `#d4a23a` / `#0e3b2e` | `#e0b456` / `#1a1405` |
+| **new** `--gold-soft` / `--on-gold-soft` | `#f6ebcf` / `#6a4b0f` | `#3a2e12` / `#f3dda6` |
+
+**Note (found while building, 14 Nov 2026):** the brief's dark `--on-idle` `#f4efe3` reads **3.1:1** on the dark
+`--idle`, under the 4.5:1 floor the brief itself requires; the build uses the dark ink `#0d1714` (5.2:1) and keeps
+`--idle` as given. And `--on-rail-warn` — "Not known" on the Today band, not in the brief's table — is burnt amber
+`#f5b06a` (5.4:1), not the pale yellow `#ffd166` that read as gold. Every other pair passes in both sets (tests/unit/ui-foundation.test.ts, ui-token-contrast.test.ts).
+
+**Gold is decoration only:** the SRE mark, the current screen's marker in the rail, a highlight on a featured card.
+Never a status, never words on white, never more than one gold element on a card. (The rail's branch-card dot was
+`--rail-accent`; it is now a neutral, so no gold dot reads as a warning light.) A guardrail fails the build if any status
+rule — a chip, a dot, a row, a toast, a banner, a strip — uses gold.
+
+**Shape and shadow:** radii **6 / 12 / 16 / 20px** (one scale for both sets — the dark set's own override is gone);
+`.sre-btn` and the language toggle are **pills**; a chip shows its tone by tint and icon with **no left border**; rows,
+summary cards, toasts and tiles keep their tone edge on the rounder corners; icons are thickened to **1.75** in the
+stylesheet (the SVG keeps 1.5); shadows are tinted with the emerald (black in the dark set). **Matte:** no gradient, shine,
+glass or glow anywhere in the foundation (a guardrail checks).
+
+**Type:** `"Plus Jakarta Sans", "Anek Tamil"`, then the system's Tamil-capable faces. Both are **self-hosted** woff2 files
+(Plus Jakarta Sans 400–800, Anek Tamil 400–700, ~130 KB in all) under `packages/ui/web/fonts/` with their SIL Open Font
+Licences, copied into each app by `scripts/sync-ui-foundation.mjs` and precached by each service worker, declared with
+`font-display: swap` so nothing waits on a font. Anek Tamil also draws the rupee sign. Google Fonts is never linked at run
+time. **Exception — OB-729 (owner, 14 Nov 2026):** the customer app keeps the phone's own faces (`<html
+class="sre-system-type">`), carries no font file and precaches none, so its first load stays within the 150 KB
+low-bandwidth budget (M20 · D08).
+
+**The sign-in page** (§3.3, `infra/pilot/demo-login/ui.ts`, regenerated into the identity server's theme) takes the same
+palette: ivory canvas, gold SRE mark, emerald pill buttons, burnt-amber notices, rounder corners. It fetches nothing; it
+names the two faces first and uses them only where a device has them installed.
 
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |

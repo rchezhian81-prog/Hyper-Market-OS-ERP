@@ -149,6 +149,8 @@ const TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  // OB-728: the self-hosted faces every screen carries (fonts/*.woff2), named so no browser second-guesses them.
+  '.woff2': 'font/woff2',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',

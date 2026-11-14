@@ -5,6 +5,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Emerald and gold, rounded and matte — the new look on every screen (14 November 2026) · OB-728, OB-729
+- **Why:** the owner's brief of 2 Nov 2026 (OB-728) chose a new look for every screen. On 14 Nov he chose to restyle BEFORE the real-staff session UAT-06, and to move the sign-in page in the same pull request.
+- **What changed (styling only — no layout, flow, price, tax, payment or data change):** both colour sets in the shared foundation per the brief (ivory canvas, emerald rail and actions, four new gold tokens; the dark set on a deep green-black); corners 6/12/16/20px in both sets; pill buttons and language toggle; chips by tint and icon; icons a touch bolder (1.75); emerald-tinted shadows; matte (no gradient, shine, glass or glow). Plus Jakarta Sans and Anek Tamil are self-hosted (SIL OFL, ~130 KB), copied to every store screen, precached by every service worker and served as `font/woff2` by every door of the store computer — nothing comes from the internet. The sign-in page takes the same palette (gold SRE mark, emerald pill buttons).
+- **Owner decision OB-729 (14 Nov):** the customer app keeps the phone's own fonts, so its first load stays within its 150 KB weak-link budget (it would have been ~175 KB).
+- **Three notes from the build (recorded in OB-728):** the brief's dark `--on-idle` failed its own 4.5:1 rule (3.1:1) — dark words used instead; the rail's branch dot is neutral, not gold; "Not known" on the Today band was a pale yellow that read as gold — now burnt amber `#f5b06a` (5.4:1).
+- **Tests (this box):** type check 0; lint clean; secret scan clean; guardrails 170 files all pass; unit 979 files / 10,777 pass; performance suite passes; the screen-serving integration suite (180) passes; a new browser test opens the till, Today, picker, warehouse and price kiosk, cuts the network, reloads, and finds both faces (Tamil and ₹ included) loaded from the screen's own cache. Screenshots light and dark: `docs/design/reference/emerald-gold-2026-11-14/`.
+- **Next:** the pull request's full checks; then the merge deploys to the demo box; then UAT-06 on the new look.
+- **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## #906 merged and live on the demo box (13 November 2026)
 - **What happened:** the owner asked me to merge #906 (rounds U3, U5, U6, U7 and OB-727). Three checks went red on the way, all test-side, none a product fault: (1) a customer-segments test used fixed September order dates that crossed the 60-day "lapsing" line on 13 Nov, so it now dates orders back from today's clock; (2) a Tamil-words test fixture lacked the new "disputed supplier claims" section; (3) the office spec sweep's Today band list lacked the new figure (it now expects "Not known" with its reason, never a zero, P-08). Merged as e612189.
 - **Main after the merge:** every job green — type check and tests, stage gate (PostgreSQL), browser suites, security scans, both clean-Windows jobs, Keycloak, container, performance; the store PC release was published, the canary stage passed, and **the merged release is deployed to the demo box**.

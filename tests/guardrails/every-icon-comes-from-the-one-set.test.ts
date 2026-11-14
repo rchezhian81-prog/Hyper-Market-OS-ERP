@@ -103,7 +103,8 @@ describe('the one set — its shapes are the owner\'s pack, drawn thin', () => {
     expect(svg.children.length).toBe(SET['wallet']!.length);
     expect(window.sreIcon('no-such-icon')).toBeNull();
     // the foundation agrees: the icon class carries the same stroke
-    expect(readFileSync('packages/ui/web/sre-foundation.css', 'utf8')).toMatch(/\.sre-icon \{[^}]*stroke-width: 1\.5;/);
+    // OB-728: the SVG keeps its 1.5 attribute; the stylesheet thickens every icon to 1.75 for the emerald-and-gold look.
+    expect(readFileSync('packages/ui/web/sre-foundation.css', 'utf8')).toMatch(/\.sre-icon \{[^}]*stroke-width: 1\.75;/);
   });
 
   it('is vendored honestly — the licence, the attribution, and the notices in every copy', () => {

@@ -23,7 +23,7 @@ describe('the concession tag page and the customer sign-in switch language', () 
     const js = readFileSync(p.js, 'utf8');
 
     it(`${p.html}: a #lang toggle, one language shown at a time, English by default`, () => {
-      expect(html).toMatch(/<html lang="en">/);
+      expect(html).toMatch(/<html lang="en"( class="sre-system-type")?>/); // OB-729: the customer app keeps the phone's faces
       expect(html).toMatch(/<button id="lang" type="button"[^>]*aria-label="Language"/);
       expect(html).toMatch(/html:not\(\[lang="ta"\]\) \[lang="ta"\], html\[lang="ta"\] \[lang="en"\] \{ display: none; \}/);
     });

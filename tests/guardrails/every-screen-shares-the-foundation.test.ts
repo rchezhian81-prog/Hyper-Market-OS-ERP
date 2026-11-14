@@ -82,7 +82,7 @@ describe('the copies are the source, byte for byte', () => {
   it('the sync script agrees, in --check mode, without writing anything', () => {
     const before = apps.map((a) => statSync(`apps/${a}/web/sre-foundation.css`).mtimeMs);
     const out = execFileSync(process.execPath, ['scripts/sync-ui-foundation.mjs', '--check'], { encoding: 'utf8' });
-    expect(out).toMatch(/sre-foundation\.css and sre-update\.js matches packages\/ui\/web/);
+    expect(out).toMatch(/sre-foundation\.css, sre-update\.js and fonts\/ matches packages\/ui\/web/);
     expect(apps.map((a) => statSync(`apps/${a}/web/sre-foundation.css`).mtimeMs)).toEqual(before);
   });
 
@@ -102,6 +102,49 @@ describe('a lane opens with the right look and no network', () => {
 
   it('the store box serves a stylesheet as text/css, not as a download', () => {
     expect(read('edge/store-edge/src/screen-server.ts')).toMatch(/'\.css': 'text\/css; charset=utf-8'/);
+  });
+
+  // OB-728 (emerald and gold): the two faces are the app's own files, so a lane draws its words in them with the
+  // internet down. Every app carries all nine and both licences, byte for byte; every worker precaches all nine.
+  const FONTS = [
+    ...[400, 500, 600, 700, 800].map((w) => `fonts/plus-jakarta-sans-${w}.woff2`),
+    ...[400, 500, 600, 700].map((w) => `fonts/anek-tamil-${w}.woff2`),
+  ];
+  // OB-729 (owner, 14 Nov 2026): the customer app keeps the phone's own faces — its 150 KB first load on a weak link.
+  const SYSTEM_TYPE = ['customer-app'];
+  const fontApps = apps.filter((a) => !SYSTEM_TYPE.includes(a));
+  it('the customer app keeps the phone\'s own faces: every page opts out, it carries no font file and its worker asks for none (OB-729)', () => {
+    expect(fontApps.length).toBe(apps.length - 1);
+    for (const app of SYSTEM_TYPE) {
+      for (const p of pages.filter((x) => x.startsWith(`apps/${app}/`))) expect(read(p), p).toMatch(/<html lang="en" class="sre-system-type">/);
+      expect(existsSync(`apps/${app}/web/fonts`)).toBe(false);
+      expect(read(`apps/${app}/web/sw.js`)).not.toMatch(/woff2/);
+    }
+    expect(read(SOURCE)).toMatch(/html\.sre-system-type \{ --font: var\(--font-system\); \}/);
+    // and no store screen opts out: the till, the handhelds, the kiosks and the back office draw the two faces
+    for (const p of pages.filter((x) => !SYSTEM_TYPE.some((a) => x.startsWith(`apps/${a}/`)))) expect(read(p), p).not.toMatch(/sre-system-type/);
+  });
+
+  it('every screen app carries the nine font files and their two licences, identical to packages/ui/web/fonts', () => {
+    for (const file of [...FONTS, 'fonts/OFL-plus-jakarta-sans.txt', 'fonts/OFL-anek-tamil.txt']) {
+      const source = readFileSync(`packages/ui/web/${file}`);
+      if (file.endsWith('.woff2')) expect(source.subarray(0, 4).toString('latin1'), `${file} is a woff2 file`).toBe('wOF2');
+      else expect(source.toString('utf8')).toMatch(/SIL Open Font License, Version 1\.1/);
+      for (const app of fontApps) expect(readFileSync(`apps/${app}/web/${file}`).equals(source), `apps/${app}/web/${file}`).toBe(true);
+    }
+  });
+
+  it('every service worker precaches every font file, so a till opens in its face with no network', () => {
+    for (const app of fontApps) {
+      const shell = /const SHELL = \[([^\]]*)\]/.exec(read(`apps/${app}/web/sw.js`))?.[1] ?? '';
+      for (const f of FONTS) expect(shell, `apps/${app}/web/sw.js does not precache ${f}`).toContain(`'./${f}'`);
+    }
+  });
+
+  it('every door of the store box serves a font as font/woff2', () => {
+    for (const door of ['screen-server.ts', 'device-server.ts', 'queue-pos-door.ts']) {
+      expect(read(`edge/store-edge/src/${door}`), door).toMatch(/'\.woff2': 'font\/woff2'/);
+    }
   });
 });
 
@@ -141,7 +184,8 @@ describe('a page owns its touch target and nothing else the foundation owns', ()
     const outside = pages.filter((p) => !p.startsWith('apps/web-erp/'));
     expect(outside.length).toBeGreaterThanOrEqual(10);
     for (const p of pages) expect(read(p), `${p} pins a set; the light default is the look everywhere`).not.toMatch(/data-theme=/);
-    for (const p of pages) expect(read(p)).toMatch(/<html lang="en">/);
+    // (the customer app's pages also carry the phone's-own-faces class, OB-729 — a type choice, never a colour set)
+    for (const p of pages) expect(read(p)).toMatch(/<html lang="en"( class="sre-system-type")?>/);
   });
 
   it('the foundation carries both sets — the light default and the dark set under data-theme — and no media query chooses for a screen', () => {

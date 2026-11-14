@@ -25,10 +25,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-driver-shell-7521f3ea2654';
+const CACHE = 'sre-driver-shell-e8f6bc459d44';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './fonts/plus-jakarta-sans-400.woff2', './fonts/plus-jakarta-sans-500.woff2', './fonts/plus-jakarta-sans-600.woff2', './fonts/plus-jakarta-sans-700.woff2', './fonts/plus-jakarta-sans-800.woff2', './fonts/anek-tamil-400.woff2', './fonts/anek-tamil-500.woff2', './fonts/anek-tamil-600.woff2', './fonts/anek-tamil-700.woff2', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE

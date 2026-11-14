@@ -36,7 +36,11 @@ describe('the customer app loads within a low-bandwidth budget (M20 · D08)', ()
     expect(refs.length).toBeGreaterThan(0);
     for (const r of refs) expect(r, r).toMatch(/^\.\//);
     expect(html()).not.toMatch(/<img\b|@font-face|fonts\.googleapis|https?:\/\//);
-    for (const r of refs.filter((x) => x.endsWith('.css'))) expect(readFileSync(join(WEB, r), 'utf8')).not.toMatch(/@font-face|url\(\s*['"]?https?:/);
+    for (const r of refs.filter((x) => x.endsWith('.css'))) expect(readFileSync(join(WEB, r), 'utf8')).not.toMatch(/url\(\s*['"]?https?:/);
+    // OB-729: the shared look names two self-hosted faces (OB-728); this app opts out, so its words never ask for a font
+    // file — it keeps the phone's own faces, carries no font file and precaches none.
+    expect(html()).toMatch(/<html lang="en" class="sre-system-type">/);
+    expect(readFileSync(join(WEB, 'sw.js'), 'utf8')).not.toMatch(/woff2/);
   });
 
   it(`the whole first load, compressed, is within ${FIRST_LOAD_GZIP_BUDGET / 1024} KB (~${Math.round((FIRST_LOAD_GZIP_BUDGET * 8) / (LINK_KBPS * 1000))} s at ${LINK_KBPS} kbit/s)`, () => {

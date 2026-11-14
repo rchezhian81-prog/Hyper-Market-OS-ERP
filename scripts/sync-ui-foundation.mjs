@@ -26,7 +26,7 @@
 // The marketing site (apps/site) has its own identity on purpose and is not a screen; it is left alone.
 
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +40,18 @@ export const ICONS_FILE = 'sre-icons.js';
 export const BACK_OFFICE = 'web-erp';
 export const NOT_A_SCREEN = new Set(['site']);
 export const WORKER_FILE = 'sw.js';
+// The two self-hosted faces (OB-728, emerald and gold): Plus Jakarta Sans 400–800 and Anek Tamil 400–700, each under the
+// SIL Open Font License kept beside them. Every screen carries them so a lane draws its words in the right face with no
+// network (P-01), and every service worker precaches them (the guardrail checks both).
+// OB-729 (owner, 14 Nov 2026): the customer app keeps the phone's own faces, so its first load stays within 150 KB on a weak
+// link; it carries no font file and its worker precaches none.
+export const SYSTEM_TYPE_APPS = new Set(['customer-app']);
+export const FONTS_DIR = 'fonts';
+export const FONT_FILES = Object.freeze([
+  ...[400, 500, 600, 700, 800].map((w) => `${FONTS_DIR}/plus-jakarta-sans-${w}.woff2`),
+  ...[400, 500, 600, 700].map((w) => `${FONTS_DIR}/anek-tamil-${w}.woff2`),
+]);
+export const FONT_LICENCES = Object.freeze([`${FONTS_DIR}/OFL-plus-jakarta-sans.txt`, `${FONTS_DIR}/OFL-anek-tamil.txt`]);
 const CACHE_LINE = /^const CACHE = '(sre-[a-z0-9-]+-shell)-[0-9a-z]+';$/m;
 
 /** The shared files, and which apps take a copy of each. */
@@ -48,6 +60,8 @@ export const SHARED_FILES = [
   // The one icon set (OB-201 "Icons A"): every screen, the back office included — its chrome draws the rail's icons.
   { source: ICONS_SOURCE, file: ICONS_FILE, takes: () => true },
   { source: UPDATE_SOURCE, file: UPDATE_FILE, takes: (app) => app !== BACK_OFFICE },
+  // The faces and their licences (OB-728): every screen, the back office included — the customer app excepted (OB-729).
+  ...[...FONT_FILES, ...FONT_LICENCES].map((file) => ({ source: `packages/ui/web/${file}`, file, takes: (app) => !SYSTEM_TYPE_APPS.has(app) })),
 ];
 
 /** Every `apps/<app>/web` folder that holds at least one screen (an .html page), the marketing site excepted. */
@@ -76,7 +90,10 @@ export function syncFoundation({ root = ROOT, write = true } = {}) {
       const target = join(root, 'apps', app, 'web', shared.file);
       if (existsSync(target) && readFileSync(target).equals(source)) continue;
       drifted.push(`apps/${app}/web/${shared.file}`);
-      if (write) writeFileSync(target, source);
+      if (write) {
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
     }
   }
   return drifted;
@@ -145,7 +162,7 @@ if (isMain) {
     process.exit(1);
   }
   console.log(check
-    ? `every apps/*/web/${ICONS_FILE}, ${FOUNDATION_FILE} and ${UPDATE_FILE} matches packages/ui/web; every apps/*/web/${WORKER_FILE} cache name matches its shell`
+    ? `every apps/*/web/${ICONS_FILE}, ${FOUNDATION_FILE}, ${UPDATE_FILE} and ${FONTS_DIR}/ matches packages/ui/web; every apps/*/web/${WORKER_FILE} cache name matches its shell`
     : drifted.length === 0
       ? `every shared copy was already current`
       : `shared copies written: ${drifted.join(', ')}`);

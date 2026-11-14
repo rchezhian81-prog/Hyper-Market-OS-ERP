@@ -5,10 +5,10 @@
 // (`window.shellCachedAt`). The page is fetched from the network first every time: it carries the box's signed price
 // list, and yesterday's prices must never be served as today's (P-08). A missing script is never answered with a page.
 
-const CACHE = 'sre-price-kiosk-shell-ddd81644d1f4';
+const CACHE = 'sre-price-kiosk-shell-1754ac270c9f';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './fonts/plus-jakarta-sans-400.woff2', './fonts/plus-jakarta-sans-500.woff2', './fonts/plus-jakarta-sans-600.woff2', './fonts/plus-jakarta-sans-700.woff2', './fonts/plus-jakarta-sans-800.woff2', './fonts/anek-tamil-400.woff2', './fonts/anek-tamil-500.woff2', './fonts/anek-tamil-600.woff2', './fonts/anek-tamil-700.woff2', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: a missing build must not stop the rest of the shell being cached. */
 const BUILT = ['./price-kiosk.bundle.js'];
