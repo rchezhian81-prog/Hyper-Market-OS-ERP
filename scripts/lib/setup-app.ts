@@ -174,6 +174,18 @@ export interface SetupState {
   readonly release?: string;
 }
 
+/**
+ * CR-01 step 5 (OI-10 · OB-710): the licence on the screens' last page. The tenant id is made by the setup itself (OI-03),
+ * so the licence that names it is asked for AFTER the setup: the page shows the tenant id and the licence request to send the
+ * seller, and loads the file the seller sends back — checked offline on this PC (scripts/lib/store-licence.mjs).
+ */
+export interface SetupLicence {
+  /** The standing now, the tenant id, and the request (names only) to send the seller. */
+  view(): { readonly state: string; readonly en: string; readonly ta: string; readonly keyBuiltIn: boolean; readonly tenantId?: string; readonly request?: Record<string, unknown> };
+  /** Check and load a licence file's text. */
+  load(text: string): { readonly ok: boolean; readonly en: string; readonly ta: string; readonly refusedBecause?: string; readonly detail?: string };
+}
+
 export interface SetupDoor {
   /** The one-time key the setup program put in the page's address; every call must carry it (no other page can call). */
   readonly key: string;
@@ -185,6 +197,8 @@ export interface SetupDoor {
   keep(progress: Progress): Promise<boolean>;
   /** OI-04: the chosen desktop shortcuts (store-computer `shortcuts --only …`). Returns the lines said. */
   shortcuts(chosen: readonly Shortcut[]): Promise<{ ok: boolean; lines: string[] }>;
+  /** CR-01 step 5 (OI-10): the licence step. Absent: the screens offer none. */
+  readonly licence?: SetupLicence;
 }
 
 /** The desktop shortcuts the last screen offers (CR-01 step 2d, OI-04). */
@@ -214,6 +228,16 @@ export function createSetupDoor(door: SetupDoor): (req: { method: string; path: 
     const what = path.slice('/setup/api/'.length);
     if (req.method === 'GET' && what === 'state') return json(200, door.state());
     if (req.method === 'GET' && what === 'progress') return json(200, running ?? { lines: [], done: false, ok: false });
+    if (what === 'licence') {
+      if (door.licence === undefined) return json(404, { error: 'not here' });
+      if (req.method === 'GET') return json(200, door.licence.view());
+      if (req.method !== 'POST') return json(405, { error: 'not allowed' });
+      // Loaded once this PC is set up on this page (the tenant id it names exists only then).
+      if (running === undefined || !running.done || !running.ok) return json(409, { error: 'The licence is loaded once the setup has finished.' });
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const r = door.licence.load(typeof b['licence'] === 'string' ? b['licence'] : '');
+      return json(r.ok ? 200 : 422, r);
+    }
     if (req.method !== 'POST') return json(405, { error: 'not allowed' });
     if (what === 'check') {
       const st = door.state();

@@ -85,12 +85,13 @@ export function readUpdateCheck(text: string | undefined): UpdateCheckView | und
 
 export interface OpenShift { readonly tillId: string; readonly custodian: string; readonly openedAt: string }
 
-export type UpdateRefusal = 'not_signed_in' | 'not_the_owner' | 'pin_not_confirmed' | 'shift_open' | 'nothing_to_install' | 'not_checked' | 'not_recorded';
+export type UpdateRefusal = 'not_signed_in' | 'not_the_owner' | 'pin_not_confirmed' | 'licence_reduced' | 'shift_open' | 'nothing_to_install' | 'not_checked' | 'not_recorded';
 
 export const REFUSAL_WORDS: Readonly<Record<UpdateRefusal, { readonly en: string; readonly ta: string }>> = Object.freeze({
   not_signed_in: { en: 'Your office sign-in has ended. Sign in again with your own PIN.', ta: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. உங்கள் PIN-உடன் மீண்டும் உள்நுழையவும்.' },
   not_the_owner: { en: 'Only the owner may update the store computer.', ta: 'கடை உரிமையாளர் மட்டுமே கணினியைப் புதுப்பிக்க முடியும்.' },
   pin_not_confirmed: { en: 'Your PIN was not confirmed.', ta: 'உங்கள் PIN உறுதிசெய்யப்படவில்லை.' },
+  licence_reduced: { en: 'The licence is in reduced mode: no new version is installed until a licence (or a renewal) is loaded on the Licence screen. The till keeps selling.', ta: 'உரிமம் குறைந்த பயன்முறையில் உள்ளது: உரிமத் திரையில் உரிமம் ஏற்றும் வரை புதிய பதிப்பு நிறுவப்படாது. பணப்பெட்டி தொடர்ந்து விற்கும்.' },
   shift_open: { en: 'A till shift is open. Close every till first, then update.', ta: 'ஒரு பணப்பெட்டி ஷிஃப்ட் திறந்துள்ளது. முதலில் எல்லா பணப்பெட்டிகளையும் மூடவும்.' },
   nothing_to_install: { en: 'There is no newer signed version to install.', ta: 'நிறுவ புதிய கையொப்பமிட்ட பதிப்பு இல்லை.' },
   not_checked: { en: 'This PC has not checked for a new version yet.', ta: 'இந்தக் கணினி இன்னும் புதிய பதிப்பைச் சரிபார்க்கவில்லை.' },
@@ -111,6 +112,11 @@ export interface UpdateDeps {
   /** Leave the accepted request for the updater (update-request.json). Throws when it cannot. */
   readonly leaveRequest: (request: Record<string, unknown>) => Promise<void>;
   readonly now: () => string;
+  /**
+   * CR-01 step 5 (OI-10 · OB-750): whether the licence lets a new version be installed now (false only in reduced mode).
+   * Absent: no licence check (a box with no licence screen).
+   */
+  readonly licenceAllowsUpdates?: () => boolean;
 }
 
 export type UpdateAnswer =
@@ -136,6 +142,7 @@ export async function requestUpdate(deps: UpdateDeps, who: { readonly userId: st
   if (!(deps.rolesOf(who.userId) ?? []).includes(OWNER_ROLE)) return refuse('not_the_owner');
   const confirmed = await deps.verifyPin(who.userId, typeof pin === 'string' ? pin : '', UPDATE_AUTHORITY);
   if (!confirmed.ok) return refuse('pin_not_confirmed', {}, confirmed.laneMessage);
+  if (deps.licenceAllowsUpdates !== undefined && !deps.licenceAllowsUpdates()) return refuse('licence_reduced');
   const open = await deps.openShifts();
   if (open.length > 0) {
     const tills = open.map((s) => `${s.tillId} (${s.custodian}, since ${s.openedAt})`).join(', ');

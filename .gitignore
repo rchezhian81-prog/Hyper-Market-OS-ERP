@@ -28,6 +28,10 @@ playwright-report/
 *.pfx
 secrets/
 credentials.json
+# CR-01 step 5 (OI-10): the seller's licence key's paper backup and its register of issued licences — the owner's own
+# USB drive only, never here (the key itself is *.pem, above).
+PAPER-BACKUP-*.txt
+issued-licences.log
 service-account*.json
 
 # Logs

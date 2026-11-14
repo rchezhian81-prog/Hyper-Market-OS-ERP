@@ -50,6 +50,7 @@ import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 import { OWNER_ROLE, UPDATE_PATHS, openShiftsAnswer, requestUpdate, updatePage, type UpdateDeps, type UpdateProgressView } from './update-page'; // CR-01 step 3c/3d (OI-05)
+import { LICENCE_PATHS, LICENCE_POST_MAX_BYTES, licenceNotice, licencePage, requestLicenceLoad, withLicenceNotice, type LicenceDeps } from './licence-page'; // CR-01 step 5 (OI-10)
 import { PRIVILEGE_BODY_MAX_BYTES, PRIVILEGE_PATHS, privilegeAct, privilegeDoorOf, type PrivilegeDeps } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
 
 /**
@@ -515,6 +516,12 @@ export function startScreenServer(input: {
     readonly waitingSince?: () => string | undefined;
   };
   /**
+   * CR-01 step 5 (OI-10 · OB-710): the Licence screen (/licence/) — the licence's standing, terms and history, the request
+   * to send the seller, and the owner's PIN-confirmed load of a new licence. Its standing also puts a notice on every
+   * office page while the licence needs attention. Served only with the office PIN sign-in on. Never read by the till.
+   */
+  readonly licence?: { readonly deps: Omit<LicenceDeps, 'rolesOf'> };
+  /**
    * CR-01 step 4a (OI-06 · ADR-0033 · OB-731 "A"): the office screens' privilege acts — ask for a role, approve one — each
    * confirmed by the person's PIN typed again, sealed with the privilege-seal key and relayed under the store token. Served
    * only with the office PIN sign-in on and NO head-office link (with the link on, the person's own session is used).
@@ -658,6 +665,47 @@ export function startScreenServer(input: {
       : answer.refusedBecause === 'not_signed_in' ? 401
         : answer.refusedBecause === 'not_the_owner' || answer.refusedBecause === 'pin_not_confirmed' ? 403
           : answer.refusedBecause === 'not_recorded' ? 503 : 409;
+    json(res, status, answer);
+  };
+  /**
+   * CR-01 step 5 (OI-10): the Licence screen, its request download, and the owner's load. Only with the office PIN on (the
+   * person is known by their own PIN); a box serving its screens openly, or behind the hosted front, has no licence screen.
+   */
+  const licenceDoor = async (req: IncomingMessage, res: ServerResponse, path: string, licence: NonNullable<typeof input.licence>): Promise<void> => {
+    if (office === undefined || input.trustForwardedUser === true) {
+      req.resume();
+      send(res, 403, 'text/plain; charset=utf-8', 'The licence screen needs the office PIN sign-in on this store computer.');
+      return;
+    }
+    const snap = input.snapshot();
+    const session = await office.check(officeTokenOf(req.headers['cookie']));
+    if (path !== LICENCE_PATHS.load) {
+      req.resume();
+      if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'this page is only read; a licence is loaded from it'); return; }
+      if (!session.ok) { page(res, 401, signInPage({ next: LICENCE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
+      if (path === LICENCE_PATHS.request) {
+        const r = licence.deps.request();
+        if (r === undefined) { json(res, 404, { ok: false, en: 'This PC does not know its tenant id, so it cannot write a licence request.' }); return; }
+        res.setHeader('content-disposition', 'attachment; filename="licence-request.json"');
+        json(res, 200, r);
+        return;
+      }
+      const isOwner = (rolesAtThisStore(session.userId, snap.pack) ?? []).includes(OWNER_ROLE);
+      page(res, 200, licencePage({ ...licence.deps.now(), isOwner, displayName: displayNameIn(snap.pack, session.userId) }));
+      return;
+    }
+    if (req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, refusedBecause: 'wrong_method', en: 'Send with POST.', ta: '' }); return; }
+    if (!sameOrigin(req)) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'not_from_this_screen', en: 'Refused: not from a page this store computer served. Nothing was loaded.', ta: '' }); return; }
+    if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { req.resume(); json(res, 415, { ok: false, refusedBecause: 'not_json', en: 'Send JSON.', ta: '' }); return; }
+    const raw = await readBody(req, LICENCE_POST_MAX_BYTES);
+    if (raw === null) { json(res, 413, { ok: false, refusedBecause: 'too_large', en: 'That file is far too large to be a licence. Nothing was loaded.', ta: 'இந்தக் கோப்பு உரிமமாக இருக்க மிகப் பெரியது.' }); return; }
+    let body: { pin?: unknown; licence?: unknown } = {};
+    try { const parsed = JSON.parse(raw) as unknown; if (parsed !== null && typeof parsed === 'object') body = parsed as typeof body; } catch { body = {}; }
+    const answer = await requestLicenceLoad({ ...licence.deps, rolesOf: (userId) => rolesAtThisStore(userId, snap.pack) }, session.ok ? { userId: session.userId } : null, body.pin, body.licence, new Date().toISOString());
+    const status = answer.ok ? 200
+      : answer.refusedBecause === 'not_signed_in' ? 401
+        : answer.refusedBecause === 'not_the_owner' || answer.refusedBecause === 'pin_not_confirmed' ? 403
+          : answer.refusedBecause === 'not_recorded' ? 503 : 422;
     json(res, status, answer);
   };
   /**
@@ -818,6 +866,11 @@ export function startScreenServer(input: {
       // CR-01 step 3c (OI-05): the Software update page and the owner's request — routed before the read-only rule.
       if (input.update !== undefined && (doorPath === UPDATE_PATHS.page || doorPath === UPDATE_PATHS.page.slice(0, -1) || doorPath === UPDATE_PATHS.request || doorPath === UPDATE_PATHS.openShifts)) {
         await updateDoor(req, res, doorPath, input.update);
+        return;
+      }
+      // CR-01 step 5 (OI-10): the Licence screen and the owner's load — routed before the read-only rule.
+      if (input.licence !== undefined && (doorPath === LICENCE_PATHS.page || doorPath === LICENCE_PATHS.page.slice(0, -1) || doorPath === LICENCE_PATHS.load || doorPath === LICENCE_PATHS.request)) {
+        await licenceDoor(req, res, doorPath, input.licence);
         return;
       }
       if (req.method !== 'GET') {
@@ -1016,7 +1069,12 @@ export function startScreenServer(input: {
       );
       // The Sign out bar goes on every office page, drawn by the box, just before the page's own end.
       const barred = officeUser !== null || headOfficeUser !== null;
-      send(res, 200, type, !barred ? served : served.includes('</body>') ? served.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${served}${SIGN_OUT_BAR}`);
+      // CR-01 step 5 (OI-10, P-03 · P-08): while the licence needs attention (ending soon, grace, none yet, reduced mode) every
+      // office page and the owner's phone carry one notice at the top, naming it and linking the Licence screen. Never the
+      // till or a customer-facing screen: a sale never reads the licence.
+      const notice = input.licence !== undefined && (APP_SHELL[route.screen].dir === 'web-erp' || route.screen === 'owner') ? licenceNotice(input.licence.deps.now().standing) : null;
+      const noticed = withLicenceNotice(served, notice);
+      send(res, 200, type, !barred ? noticed : noticed.includes('</body>') ? noticed.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${noticed}${SIGN_OUT_BAR}`);
     })();
   });
 

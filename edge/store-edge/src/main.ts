@@ -148,6 +148,9 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
+import * as licenceFs from 'node:fs'; // CR-01 step 5 (OI-10): the licence folder, read and appended synchronously (small files)
+import * as licencePath from 'node:path';
+import { appendHistory, licenceNow, loadLicence, readHistory, requestFor, sellerKeys, LICENCE_DIR } from '../../../scripts/lib/store-licence.mjs';
 import { UPDATE_LOG, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE, readUpdateCheck, readUpdateProgress } from './update-page'; // CR-01 step 3c/3d (OI-05)
 import { PRIVILEGE_LOG, privilegeSealKey, type PrivilegeDeps, type RelayAnswer } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
 import { randomUUID as newPrivilegeRequestId } from 'node:crypto';
@@ -2308,7 +2311,27 @@ export async function startEdge(
   // folder (update-request.json) for the updater (step 3d), which alone may stop and replace the services.
   const updateLog = screenPort === undefined ? null : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: UPDATE_LOG });
   const updateCheckFile = settings['EDGE_STORE_COMPUTER_STATUS_FILE'] === undefined ? undefined : join(dirname(settings['EDGE_STORE_COMPUTER_STATUS_FILE']), 'update-check.json');
+  // CR-01 step 5 (OI-10 · OB-710 · OB-750): the shop's licence — its folder in this box's data folder, checked OFFLINE with
+  // the seller's PUBLIC key the release carries (licence-signing.pub beside release.json). Read per request; never by a sale.
+  const licenceIo = { fs: licenceFs, path: licencePath };
+  const licenceKeys = sellerKeys(licenceIo, dirname(resolve(appsDirForAbout)));
+  const licenceShop = (): { tenantId?: string; gstin?: string; shopName?: string } => {
+    let kept: { gstin?: unknown; shopName?: unknown } = {};
+    try { kept = JSON.parse(readFileSync(join(settings['EDGE_DATA_DIR']!, LICENCE_DIR, 'licence-request.json'), 'utf8')) as typeof kept; } catch { /* the setup screens left none */ }
+    return {
+      ...(settings['EDGE_TENANT_ID'] === undefined ? {} : { tenantId: settings['EDGE_TENANT_ID'] }),
+      ...(typeof kept.gstin === 'string' ? { gstin: kept.gstin } : {}),
+      ...(typeof kept.shopName === 'string' ? { shopName: kept.shopName } : {}),
+    };
+  };
+  const licenceStandingNow = () => licenceNow(licenceIo, settings['EDGE_DATA_DIR']!, { keys: licenceKeys, shop: licenceShop(), now: () => new Date() });
+  if (screenPort !== undefined && settings['EDGE_DATA_DIR'] !== undefined) {
+    const n = licenceStandingNow();
+    say(`licence: ${n.standing.state} — ${n.standing.en}${licenceKeys.length === 0 ? ' (this release carries no seller key)' : ''}`);
+  }
   const updateDeps = updateLog === null ? undefined : {
+    // OB-750: in reduced mode no new version is installed until a licence is loaded; the till keeps selling.
+    licenceAllowsUpdates: () => settings['EDGE_DATA_DIR'] === undefined || licenceStandingNow().standing.updates,
     check: () => readUpdateCheck((() => { try { return updateCheckFile === undefined ? undefined : readFileSync(updateCheckFile, 'utf8'); } catch { return undefined; } })()),
     // OB-718: every till whose float is issued and not closed — from this box's own till-cash log, never the screen's word.
     openShifts: async () => {
@@ -2377,6 +2400,25 @@ export async function startEdge(
       },
     }),
     handheldSeal: () => sealRelay.current(),
+    // CR-01 step 5 (OI-10): the Licence screen — only with the office PIN on (the owner's own PIN loads a licence).
+    ...(officeGate === null || settings['EDGE_DATA_DIR'] === undefined ? {} : {
+      licence: {
+        deps: {
+          now: () => { const n = licenceStandingNow(); return { ...n, tenantId: settings['EDGE_TENANT_ID'], history: readHistory(licenceIo, settings['EDGE_DATA_DIR']!) }; },
+          verifyPin: async (userId: string, pin: string, authority: string) => {
+            if (staffSignIn === null) return { ok: false as const, laneMessage: 'This store computer checks no PINs (it serves no till).' };
+            const who = await staffSignIn.verifyPerson({ staffId: userId, pin, laneId: OFFICE_LANE, authority, lacking: 'no_approval_authority' });
+            return who.ok ? { ok: true as const } : { ok: false as const, laneMessage: who.laneMessage };
+          },
+          load: (text: string, by: string) => loadLicence(licenceIo, settings['EDGE_DATA_DIR']!, { text, keys: licenceKeys, shop: licenceShop(), by, via: 'licence_screen', now: () => new Date() }),
+          record: (entry: Record<string, unknown>) => { appendHistory(licenceIo, settings['EDGE_DATA_DIR']!, entry); },
+          request: () => {
+            const shop = licenceShop();
+            return shop.tenantId === undefined ? undefined : requestFor({ tenantId: shop.tenantId, ...(shop.shopName === undefined ? {} : { shopName: shop.shopName }), ...(shop.gstin === undefined ? {} : { gstin: shop.gstin }), ...(aboutFacts.release === undefined ? {} : { release: aboutFacts.release }) }, () => new Date());
+          },
+        },
+      },
+    }),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {
       headOffice: (origin: string) => createHeadOfficeLink({

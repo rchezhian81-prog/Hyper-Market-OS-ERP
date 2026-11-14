@@ -57,6 +57,7 @@ import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-d
 import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
 import { applyUpdate } from './store-pc-updater.mjs';
 import { drillResult } from './store-pc-drill.mjs';
+import { licenceCommand } from './store-computer-licence.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1314,6 +1315,9 @@ export const USAGE = [
   '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
   '                                           is made private (OB-721); pasted with nothing shown, never said again',
   '  drill-result                             the newest rollback drill (G9) record, in plain words (CR-01 3e)',
+  '  licence [--load <licence file>] [--request [--out <folder>]]',
+  '                                           the shop\'s licence: its standing; load one the seller sent; or write the',
+  '                                           licence request to send the seller (CR-01 step 5, OI-10)',
   '  apply-update                             what the task "SRE\\Software update" runs: acts ONLY on the owner\'s request',
   '                                           from the Software update page; puts the old version back if anything fails',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
@@ -1478,7 +1482,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, load: undefined, request: false, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1501,6 +1505,8 @@ export function parseCommandLine(argv) {
     else if (a === '--every') out.every = value();
     else if (a === '--off') out.off = true;
     else if (a === '--remove') out.remove = true;
+    else if (a === '--load') out.load = value();
+    else if (a === '--request') out.request = true;
     else if (a === '--quiet') out.quiet = true;
     else if (a === '--dir') out.dir = value();
     else if (a === '--as') out.as = value();
@@ -1551,6 +1557,7 @@ export async function main(argv, given) {
     case 'restore-check': return restoreCheck(deps, { from: cl.from });
     case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out, continue: cl.continue });
     case 'drill-result': return drillResult(deps, resolveLayout(deps));
+    case 'licence': return licenceCommand(deps, { load: cl.load, request: cl.request, out: cl.out });
     case 'schedule-backup': return scheduleBackup(deps, { to: cl.to, every: cl.every });
     case 'unschedule-backup': return unscheduleBackup(deps);
     case 'backup-status': return backupStatus(deps);

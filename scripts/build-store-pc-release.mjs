@@ -3,7 +3,7 @@
 //
 //   node scripts/build-store-pc-release.mjs --out <folder> --pgsql <PostgreSQL 16 'pgsql' folder> --winsw <WinSW-x64.exe>
 //                                           [--vcredist <vc_redist.x64.exe>]
-//        [--node-exe <node.exe>] [--version <v>] [--commit <sha>] [--public-key <pub>] [--skip-build]
+//        [--node-exe <node.exe>] [--version <v>] [--commit <sha>] [--public-key <pub>] [--licence-public-key <pub>] [--skip-build]
 //
 // The folder holds, and nothing more:
 //   • the built programs — the office API and the till (services/api/dist, edge/store-edge/dist), the operator tools
@@ -18,6 +18,9 @@
 //   • release.json — the version and commit, which the setup reads;
 //   • release-signing.pub — the PUBLIC release signing key, when one is committed at infra/deploy/release-signing.pub:
 //     the key this PC checks the NEXT release's signature with (CR-01 step 3a · OB-717). Not a secret.
+//   • licence-signing.pub — the seller's PUBLIC licence key, when one is committed at infra/licence/licence-signing.pub:
+//     the key this PC checks the shop's LICENCE with, offline (CR-01 step 5 · OI-10 · OB-710). Not a secret. Without it,
+//     licensing is not switched on in this release (nothing is limited). A test build may pass --licence-public-key.
 // Never: tests, documents, seed data, any settings file but the example, TypeScript sources, build tools.
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -65,6 +68,12 @@ export function releasePackageJson(root = ROOT) {
   return { name: 'sre-retail-os-store-pc', version: pkg.version ?? '0.0.0', private: true, type: 'module', dependencies: { pg: pgVersion(root) } };
 }
 
+/** The committed PUBLIC licence key (the seller's), if any — the shop's licence is checked with it (CR-01 step 5). */
+export function licencePublicKey(root = ROOT) {
+  const p = join(root, 'infra', 'licence', 'licence-signing.pub');
+  return existsSync(p) ? p : undefined;
+}
+
 /** The committed PUBLIC release signing key, if any — the next release's signature is checked with it. */
 export function releasePublicKey(root = ROOT) {
   const p = join(root, 'infra', 'deploy', 'release-signing.pub');
@@ -79,7 +88,7 @@ async function main(argv) {
   const winsw = arg(argv, '--winsw');
   const nodeExe = arg(argv, '--node-exe') ?? process.execPath;
   if (out === undefined || pgsql === undefined || winsw === undefined) {
-    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--vcredist <vc_redist.x64.exe>] [--node-exe <node.exe>] [--version v] [--commit sha] [--public-key <release-signing.pub>] [--skip-build]\n');
+    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--vcredist <vc_redist.x64.exe>] [--node-exe <node.exe>] [--version v] [--commit sha] [--public-key <release-signing.pub>] [--licence-public-key <licence-signing.pub>] [--skip-build]\n');
     return 2;
   }
   const vcredist = arg(argv, '--vcredist');
@@ -120,11 +129,17 @@ async function main(argv) {
   // CR-01 step 3f: a test build may carry a throwaway test key instead (the clean-Windows update job); never a private key.
   const pub = arg(argv, '--public-key') ?? releasePublicKey();
   if (pub !== undefined) cpSync(pub, join(out, 'release-signing.pub'));
+  // CR-01 step 5: the seller's PUBLIC licence key (a test build may carry a throwaway one — never a private key).
+  const licencePub = arg(argv, '--licence-public-key') ?? licencePublicKey();
+  if (licencePub !== undefined) {
+    if (!readFileSync(licencePub, 'utf8').includes('BEGIN PUBLIC KEY')) { process.stderr.write(`${licencePub} is not a PUBLIC key; a release never carries a private key\n`); return 1; }
+    cpSync(licencePub, join(out, 'licence-signing.pub'));
+  }
 
   const commit = arg(argv, '--commit') ?? (() => { try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return undefined; } })();
-  const release = { kind: 'sre-store-pc-release', version: arg(argv, '--version') ?? releasePackageJson().version, commit, builtAt: new Date().toISOString(), node: process.version, postgresql: 16, updatesChecked: pub !== undefined };
+  const release = { kind: 'sre-store-pc-release', version: arg(argv, '--version') ?? releasePackageJson().version, commit, builtAt: new Date().toISOString(), node: process.version, postgresql: 16, updatesChecked: pub !== undefined, licensing: licencePub !== undefined };
   writeFileSync(join(out, 'release.json'), `${JSON.stringify(release, null, 2)}\n`);
-  process.stdout.write(`store PC release written to ${out} (version ${release.version}${commit ? `, commit ${commit.slice(0, 8)}` : ''}; ${pub === undefined ? 'NO release public key — this PC will refuse every update until one is committed' : 'release public key included'})\n`);
+  process.stdout.write(`store PC release written to ${out} (version ${release.version}${commit ? `, commit ${commit.slice(0, 8)}` : ''}; ${pub === undefined ? 'NO release public key — this PC will refuse every update until one is committed' : 'release public key included'}; ${licencePub === undefined ? 'no licence key — licensing not switched on' : 'licence public key included'})\n`);
   return 0;
 }
 

@@ -774,18 +774,29 @@ jobs:
           "PGSQL=$dir\pgsql" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "WINSW=$winsw" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
-      - name: Build the release folder
+      - name: Build the release folder (a test build carrying a THROWAWAY seller licence key's public half — CR-01 step 5)
         shell: pwsh
         run: |
           $stage = Join-Path $env:RUNNER_TEMP 'sre-release'
-          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)"
+          # CR-01 step 5 (OI-10): the owner's own tool makes a throwaway seller key in this job's temporary folder (never the
+          # owner's key, never in the repository), with this job's own random passphrase; the test build carries its PUBLIC half.
+          $lk = Join-Path $env:RUNNER_TEMP 'sre-test-licence-key'
+          $env:LICENCE_TEST_PASSPHRASE = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+          Write-Output "::add-mask::$($env:LICENCE_TEST_PASSPHRASE)"
+          "LICENCE_TEST_PASSPHRASE=$($env:LICENCE_TEST_PASSPHRASE)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          node tests/windows/licence-test-key.mjs $lk
+          if ($LASTEXITCODE -ne 0) { throw 'the throwaway seller key was not made' }
+          node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --version "0.0.0-ci.$($env:GITHUB_RUN_NUMBER)" --licence-public-key "$lk\licence-signing.pub"
           if ($LASTEXITCODE -ne 0) { throw 'the release folder was not built' }
+          if (-not (Test-Path "$stage\licence-signing.pub")) { throw 'the test build does not carry the licence public key' }
+          if (Select-String -Path "$stage\licence-signing.pub" -Pattern 'PRIVATE' -Quiet) { throw 'a private key reached the release folder' }
           "STAGE=$stage" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "LICENCE_KEY_DIR=$lk" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
-      - name: Fill in the first-run screens — two people, nothing typed at a command line
+      - name: Fill in the first-run screens — two people, nothing typed at a command line; then the licence (CR-01 step 5)
         shell: pwsh
         run: |
-          & "$env:STAGE\runtime\node\node.exe" tests/windows/first-run-screens.drive.mjs $env:STAGE D:
+          & "$env:STAGE\runtime\node\node.exe" tests/windows/first-run-screens.drive.mjs $env:STAGE D: $env:LICENCE_KEY_DIR
           if ($LASTEXITCODE -ne 0) { throw 'the first-run screens did not set the shop up' }
 
       - name: Prove it — ask Windows about every claim
