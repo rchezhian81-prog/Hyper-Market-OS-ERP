@@ -21,6 +21,18 @@ import { currentRelease, runningTill, tasksFor, TASKS, writeLauncher } from './s
 
 export const ADOPTED_MARKER = 'adopted-from-docker.json';
 export const adoptedMarkerPath = (platform, dataRoot) => pathFor(platform).join(dataRoot, 'run', 'services', ADOPTED_MARKER);
+/**
+ * CR-01 step 3f: a shop whose settings the setup program MADE on this PC never lived in Docker. Written then, so a later
+ * setup or update never has to ask Docker (found on a clean Windows machine, 14 Nov 2026: with Docker installed but not
+ * running, such a shop's update was refused as "its shop may still be in Docker").
+ */
+export const MADE_AS_SERVICES_MARKER = 'made-as-services.json';
+export const madeAsServicesPath = (platform, dataRoot) => pathFor(platform).join(dataRoot, 'run', 'services', MADE_AS_SERVICES_MARKER);
+export function writeMadeAsServices(deps, dataRoot) {
+  const file = madeAsServicesPath(deps.platform, dataRoot);
+  deps.fs.mkdirSync(pathFor(deps.platform).dirname(file), { recursive: true });
+  deps.fs.writeFileSync(file, `${JSON.stringify({ kind: 'sre-made-as-services', version: 1, madeAt: deps.now().toISOString(), note: 'This shop was made by the setup program as Windows services; it never lived in Docker. No secret is in this file.' }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+}
 
 /** Does this PC hold a Docker copy of this shop (its storage), not yet moved? */
 export function dockerCopyToMove(deps, L) {
@@ -66,6 +78,7 @@ export const madeFromCompose = (L, made) => ['compose', '-p', PROJECT, ...made.f
 export function dockerCopyState(deps, L, settingsKept) {
   if (L?.dataRoot === undefined) return 'none';
   if (deps.fs.existsSync(adoptedMarkerPath(deps.platform, L.dataRoot))) return 'none';
+  if (deps.fs.existsSync(madeAsServicesPath(deps.platform, L.dataRoot))) return 'none';
   const v = deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {});
   if (v.error !== undefined || v.status !== 0) {
     const installed = deps.spawn('docker', ['--version'], {});

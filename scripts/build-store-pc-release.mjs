@@ -3,7 +3,7 @@
 //
 //   node scripts/build-store-pc-release.mjs --out <folder> --pgsql <PostgreSQL 16 'pgsql' folder> --winsw <WinSW-x64.exe>
 //                                           [--vcredist <vc_redist.x64.exe>]
-//        [--node-exe <node.exe>] [--version <v>] [--commit <sha>] [--skip-build]
+//        [--node-exe <node.exe>] [--version <v>] [--commit <sha>] [--public-key <pub>] [--skip-build]
 //
 // The folder holds, and nothing more:
 //   • the built programs — the office API and the till (services/api/dist, edge/store-edge/dist), the operator tools
@@ -79,7 +79,7 @@ async function main(argv) {
   const winsw = arg(argv, '--winsw');
   const nodeExe = arg(argv, '--node-exe') ?? process.execPath;
   if (out === undefined || pgsql === undefined || winsw === undefined) {
-    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--vcredist <vc_redist.x64.exe>] [--node-exe <node.exe>] [--version v] [--commit sha] [--skip-build]\n');
+    process.stderr.write('Usage: node scripts/build-store-pc-release.mjs --out <folder> --pgsql <pgsql folder> --winsw <WinSW-x64.exe> [--vcredist <vc_redist.x64.exe>] [--node-exe <node.exe>] [--version v] [--commit sha] [--public-key <release-signing.pub>] [--skip-build]\n');
     return 2;
   }
   const vcredist = arg(argv, '--vcredist');
@@ -117,7 +117,8 @@ async function main(argv) {
     cpSync(vcredist, join(out, 'runtime', 'vcredist', 'vc_redist.x64.exe'));
   }
 
-  const pub = releasePublicKey();
+  // CR-01 step 3f: a test build may carry a throwaway test key instead (the clean-Windows update job); never a private key.
+  const pub = arg(argv, '--public-key') ?? releasePublicKey();
   if (pub !== undefined) cpSync(pub, join(out, 'release-signing.pub'));
 
   const commit = arg(argv, '--commit') ?? (() => { try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return undefined; } })();
