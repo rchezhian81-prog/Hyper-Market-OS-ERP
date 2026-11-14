@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2366,
+  "testFiles": 2370,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4261,10 +4261,10 @@
       "id": "A02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
-        "integration": 10,
-        "realDb": 5,
-        "browser": 1,
+        "unit": 10,
+        "integration": 11,
+        "realDb": 6,
+        "browser": 2,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -4273,6 +4273,7 @@
         "unit": [
           "tests/unit/ai-agents-catalogue-route.test.ts",
           "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-auto-approve.test.ts",
           "tests/unit/ai-budget.test.ts",
           "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
@@ -4288,6 +4289,7 @@
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/cr01-oi12-auto-approve-limits-are-set-by-two-people-and-applied-by-a-rule.test.ts",
           "tests/integration/scopes-reach-relayed-records-sourced-requisitions-and-relabel-tasks.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts",
@@ -4298,9 +4300,11 @@
           "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/cr01-oi12-auto-approve-limits-are-set-by-two-people-and-applied-by-a-rule.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [
+          "tests/e2e/cr01-oi12-the-owner-sets-auto-approve-limits-in-a-real-browser.e2e.ts",
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts"
         ],
         "connected": [
@@ -4316,9 +4320,9 @@
       "id": "A03",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 10,
-        "realDb": 5,
+        "unit": 9,
+        "integration": 11,
+        "realDb": 6,
         "browser": 2,
         "connected": 2,
         "device": 0,
@@ -4327,6 +4331,7 @@
       "files": {
         "unit": [
           "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-auto-approve.test.ts",
           "tests/unit/ai-budget.test.ts",
           "tests/unit/ai-gateway.test.ts",
           "tests/unit/ai-governance-rules.test.ts",
@@ -4343,6 +4348,7 @@
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/ai-inventory-predicts-expiry-and-overstock.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/cr01-oi12-auto-approve-limits-are-set-by-two-people-and-applied-by-a-rule.test.ts",
           "tests/integration/inventory-near-expiry.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/security/separation-of-duties.test.ts"
@@ -4352,7 +4358,8 @@
           "tests/integration/ai-agents-draft-for-people.test.ts",
           "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts"
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/cr01-oi12-auto-approve-limits-are-set-by-two-people-and-applied-by-a-rule.test.ts"
         ],
         "browser": [
           "tests/e2e/w3-the-assistants-draft-and-people-commit-on-their-own-pages.e2e.ts",
