@@ -21,7 +21,8 @@ import { ConcurrencyConflictError } from '../../../packages/persistence/src/even
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding, checkVariant, dualMrpConflict, dualMrpMessage,
-  type ProductRecord, type ProductLifecycle, type HandlingClass,
+  LABEL_FACT_KEYS, LABEL_FACT_FIELD, LABEL_FACTS_MAY_FOLLOW_IN, labelFactRecorded, missingLabelFacts, outstandingLabelFacts,
+  type ProductRecord, type ProductLifecycle, type HandlingClass, type LabelFactsFollow,
 } from '../../../packages/product/src/index';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
 import { medicineReason, MEDICINE_NOT_SOLD } from '../../../packages/restricted-sales/src/medicines';
@@ -199,7 +200,9 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
   // B16 (OB-140 "A"): the tobacco-warning confirmations are authored on their own route by a named person and are
   // carried forward here — never taken from the body, so a publish cannot type a confirmation in.
   const carried: ProductRecord = current?.tobaccoWarning === undefined ? read : { ...read, tobaccoWarning: current.tobaccoWarning };
-  const record: ProductRecord = current?.appContent === undefined ? carried : { ...carried, appContent: current.appContent };
+  const withContent: ProductRecord = current?.appContent === undefined ? carried : { ...carried, appContent: current.appContent };
+  // OB-733: whether this item's label facts may follow its load — head office's own mark, never the body's record.
+  const record: ProductRecord = await settleLabelFactsFollow(deps, ctx, c, withContent);
   // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
   // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
   const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
@@ -500,6 +503,24 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
         approvalId: regulatedApproval.decision.requestId, correlationId: `regulated-product:${productId}:${gained.join(',')}`,
       });
     }
+    // OB-733: the mark that lets an item's label facts follow its load is audited when it is set, and again when the last
+    // outstanding fact is recorded and the mark is dropped (the full M03-FR-03 rule applies to the item from then on).
+    if (current?.labelFactsFollow === undefined && published.labelFactsFollow !== undefined) {
+      await deps.recordAudit?.(ctx.tenantId, {
+        actorId: ctx.userId, action: 'catalogue.product.label_facts.follow', objectType: 'product', objectId: productId,
+        at: published.labelFactsFollow.markedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+        before: { labelFactsOutstanding: '' }, after: { labelFactsOutstanding: outstandingLabelFacts(published).join(','), loadId: published.labelFactsFollow.loadId, decision: 'OB-733' },
+        reason: 'OB-733: loaded from the old system before its label facts were read off the pack; sold at the till, listed until filled',
+        correlationId: `label-facts-follow:${productId}`,
+      });
+    } else if (current?.labelFactsFollow !== undefined && published.labelFactsFollow === undefined) {
+      await deps.recordAudit?.(ctx.tenantId, {
+        actorId: ctx.userId, action: 'catalogue.product.label_facts.complete', objectType: 'product', objectId: productId,
+        at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+        before: { labelFactsOutstanding: outstandingLabelFacts(current).join(','), loadId: current.labelFactsFollow.loadId }, after: { labelFactsOutstanding: '' },
+        reason: 'OB-733: every label fact is now recorded; the item leaves the outstanding list', correlationId: `label-facts-follow:${productId}`,
+      });
+    }
     if (classChange !== undefined && hsnApproval !== undefined) {
       await deps.recordAudit?.(ctx.tenantId, {
         actorId: ctx.userId, action: 'catalogue.product.tax_class.change', objectType: 'product', objectId: productId,
@@ -518,6 +539,11 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
           : `Kept as a draft — not on sale and not in any pack. Before it can go on sale it still needs: ${stillNeeded.join('; ')}.` } }),
         ...(classChange === undefined || hsnApproval === undefined ? {} : { taxClassChange: { from: classChange.from, to: classChange.to, approvedBy: hsnApproval.decision.decidedBy } }),
         ...(replacement === undefined ? {} : { mrpReplacement: replacement }), // OB-512
+        // OB-733: on sale at the till, with label facts still to read — said in every reply until they are filled (P-08).
+        ...(outstandingLabelFacts(published).length === 0 ? {} : { labelFactsOutstanding: {
+          facts: outstandingLabelFacts(published), onSaleAtTheTill: true, soldOnline: false,
+          detail: `On sale at the till. Still to read off the pack: ${outstandingLabelFacts(published).map((f) => f.replace(/_/g, ' ')).join(', ')} — listed until filled; not sold online or by scan-and-go meanwhile (OB-733).`,
+        } }),
         ...(regulatedApproval === undefined ? {} : { regulatedApproval: { regulated: gained, approvedBy: regulatedApproval.decision.decidedBy, approvalId: regulatedApproval.decision.requestId } }), // OB-503
         // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
         ...(activationRefused === undefined || activationRefused.sellable ? {} : {
@@ -529,6 +555,51 @@ async function judgeAndSave(deps: ProductMasterDeps, ctx: RequestContext, c: Pro
       },
     };
   }
+}
+
+const refuseFollow = (status: number, code: string, whatHappened: string, nextSafeAction: string) =>
+  apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
+
+/**
+ * OB-733 (owner, 14 Nov 2026; option A "sell at the till only"): the mark that lets a loaded item's label facts follow.
+ *   • It is carried forward from head office's record — never read from the body's product.
+ *   • It is SET only when the body asks (`labelFactsFollow: { loadId }`), on a product's first publish (never published,
+ *     or held only as a draft), in the one department the decision names, by a person who runs the old-system load
+ *     (`migration.load.record`). Anything else is refused by name — a product made on a screen keeps the full rule.
+ *   • A label fact once recorded on a marked item is never blanked again (it would silently re-open the list).
+ *   • It is DROPPED once all five facts are recorded: the item then stands on the full M03-FR-03 rule.
+ */
+async function settleLabelFactsFollow(deps: ProductMasterDeps, ctx: RequestContext, c: ProductSave, sent: ProductRecord): Promise<ProductRecord> {
+  const { labelFactsFollow: _fromBody, ...bare } = sent;
+  void _fromBody;
+  const current = c.current;
+  const asked = c.body['labelFactsFollow'];
+  let follow: LabelFactsFollow | undefined = current?.labelFactsFollow;
+  if (follow === undefined && asked !== undefined && asked !== null) {
+    const loadId = isObj(asked) && typeof asked['loadId'] === 'string' ? asked['loadId'].trim() : '';
+    if (!/^[A-Za-z0-9._:-]{1,120}$/.test(loadId)) {
+      throw refuseFollow(400, 'not_readable_as_label_facts_follow', 'labelFactsFollow must name the old-system load the item comes from: { loadId }.', 'Send it as the import page does, or leave it out. Nothing was saved.');
+    }
+    if (current !== undefined && current.lifecycle !== 'draft') {
+      throw refuseFollow(422, 'label_facts_follow_only_on_first_load', `"${bare.name}" is already published, so its label facts cannot be set to follow now (OB-733 covers an item's first load from the old system only).`, 'Record its label facts with the safety save. Nothing was saved.');
+    }
+    if (bare.primaryCategoryId !== LABEL_FACTS_MAY_FOLLOW_IN) {
+      throw refuseFollow(422, 'label_facts_follow_not_this_department', `Only the packaged-groceries department's items may be loaded before their label facts are read (OB-733); "${bare.name}" is in "${bare.primaryCategoryId ?? 'no category'}".`, 'Read its label facts off the pack and publish it with them. Nothing was saved.');
+    }
+    const perms = (await deps.categoryRegister.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? [];
+    if (!perms.includes('migration.load.record')) {
+      throw refuseFollow(403, 'label_facts_follow_is_the_load', 'Only a person who runs the load from the old system (the owner or the store manager) may load an item before its label facts are read (OB-733).', 'Publish it with its label facts, or ask the person running the load. Nothing was saved.');
+    }
+    follow = { decision: 'OB-733', loadId, markedBy: ctx.userId, markedAt: deps.now?.() ?? new Date().toISOString() };
+  }
+  if (follow === undefined) return bare;
+  if (current?.labelFactsFollow !== undefined) {
+    const unread = LABEL_FACT_KEYS.filter((k) => labelFactRecorded(current.safety, k) && !labelFactRecorded(bare.safety, k));
+    if (unread.length > 0) {
+      throw refuseFollow(422, 'label_fact_cannot_be_unread', `"${bare.name}" already has its ${unread.map((k) => k.replace(/_/g, ' ')).join(', ')} recorded; a label fact once read is corrected, never blanked (OB-733).`, 'Send the fact as the pack prints it now. Nothing was saved.');
+    }
+  }
+  return missingLabelFacts(bare).length === 0 ? bare : { ...bare, labelFactsFollow: follow };
 }
 
 /** Build a ProductRecord from the request body — coerce the shape, and let the ENGINE judge completeness
@@ -560,6 +631,79 @@ function readProduct(productId: string, tenantId: string, p: Record<string, unkn
       },
     } : {}),
   };
+}
+
+/**
+ * Owner decision 2A (1 Nov 2026, in writing · M03-FR-03 · hard rule 10): a published product's safety and label facts are
+ * changed through a SAFETY SAVE, never a full re-publish that could silently overwrite someone else's change. The body names
+ * the version the person opened (`expectedVersion`, from GET /v1/catalogue/products/:productId); a different version now
+ * held → 409 product_changed_meanwhile, nothing written. Otherwise the new record is head office's record with ONLY `safety`
+ * replaced (what `safetyOf` builds), judged by exactly the publish's rules (`judgeAndSave`). A reason is required and kept on
+ * the audit trail. Concurrent safety saves on one product are serialised by the write guard `product-safety:<productId>`,
+ * and the version is re-checked inside it. The remaining window: a FULL publish racing within the same millisecond does not
+ * hold this guard, so it can still land between the re-check and the append. Shared by the safety save and the OB-733
+ * label-facts save, so a rule can never be on one door and missing from the other.
+ */
+async function saveSafety(deps: ProductMasterDeps, ctx: RequestContext, how: {
+  readonly audit: string;
+  readonly keyPrefix: string;
+  /** What is wrong with the body itself, checked with the other problems before anything is read. Undefined: nothing. */
+  readonly bodyProblem?: (body: Record<string, unknown>) => string | undefined;
+  /** The whole new safety content from head office's record and the body — or the problem with the body, in words. */
+  readonly safetyOf: (current: ProductRecord, body: Record<string, unknown>) => { readonly safety: ProductRecord['safety'] } | { readonly problem: string };
+}) {
+  const productId = (ctx.params['productId'] ?? '').trim();
+  const b = (ctx.body ?? {}) as Record<string, unknown>;
+  const expectedVersion = b['expectedVersion'];
+  const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+  const problems: string[] = [];
+  if (productId === '') problems.push('the product id is missing from the address');
+  if (!(typeof expectedVersion === 'number' && Number.isInteger(expectedVersion) && expectedVersion > 0)) problems.push('expectedVersion must be the version of the product you opened (a whole number, 1 or more)');
+  const own = how.bodyProblem?.(b);
+  if (own !== undefined) problems.push(own);
+  if (reason === '') problems.push('a reason is needed — the next person reads why the safety facts changed');
+  const notReadable = (more: readonly string[]) => apiError(400, { code: 'not_readable_as_a_safety_save', whatHappened: `The safety facts were not saved: ${more.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct it and send again. Nothing was changed.' });
+  if (problems.length > 0) throw notReadable(problems);
+  const expected = expectedVersion as number;
+  const versionOf = deps.productVersion;
+  const guardOf = deps.safetyGuardVersion;
+  if (versionOf === undefined || guardOf === undefined) {
+    throw apiError(503, { code: 'safety_save_unavailable', whatHappened: 'Head office cannot tell which version of this product it holds here, so it cannot make sure nobody else\'s change is overwritten.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was saved.' });
+  }
+  const changed = (held: number) => apiError(409, {
+    code: 'product_changed_meanwhile',
+    whatHappened: `Someone else saved this product since you opened it (you opened version ${expected}; head office now holds version ${held}). Nothing of yours was saved.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'Reload the product and make your change again.',
+  });
+  const seen = Number(await versionOf(ctx.tenantId, productId)); // the version FIRST, then the record (see the read below)
+  const current = await deps.product(ctx.tenantId, productId);
+  if (current === undefined) throw notFound(`product ${productId}`);
+  const built = how.safetyOf(current, b);
+  if ('problem' in built) throw notReadable([built.problem]);
+  if (seen !== expected) throw changed(seen);
+  const read: ProductRecord = { ...current, safety: built.safety };
+  const saved = await judgeAndSave(deps, ctx, {
+    productId, read, current,
+    // Head office's own categories; no MRP replacement on a safety save. A second person's approval (OB-503) may be named.
+    body: { ...(b['approvalId'] === undefined ? {} : { approvalId: b['approvalId'] }), ...(b['approvedBy'] === undefined ? {} : { approvedBy: b['approvedBy'] }) },
+    key: `${how.keyPrefix}-${ctx.idempotencyKey ?? `${productId}-v${expected}`}`,
+    beforeWrite: async () => {
+      // The guard's version is read BEFORE the product's version: if the append then holds the guard, no other safety
+      // save landed after this re-check. (A full publish does not hold this guard — the same-millisecond window above.)
+      const guardVersion = Number(await guardOf(ctx.tenantId, productId));
+      const now = Number(await versionOf(ctx.tenantId, productId));
+      if (now !== expected) throw changed(now);
+      return { key: `product-safety:${productId}`, expectedVersion: guardVersion };
+    },
+  });
+  const version = Number(await versionOf(ctx.tenantId, productId));
+  await deps.recordAudit?.(ctx.tenantId, {
+    actorId: ctx.userId, action: how.audit, objectType: 'product', objectId: productId,
+    at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+    before: { version: String(expected) }, after: { version: String(version) }, reason, correlationId: `product-safety:${productId}:v${expected}`,
+  });
+  return { status: saved.status, body: { ...saved.body, version, reason } };
 }
 
 export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
@@ -597,59 +741,53 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
       // within the same millisecond does not hold this guard, so it can still land between the re-check and the append.
       api: 'API-02', method: 'POST', path: '/v1/catalogue/products/:productId/safety',
       permission: 'catalogue.pack.publish', idempotent: true,
-      handler: async (ctx) => {
-        const productId = (ctx.params['productId'] ?? '').trim();
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const expectedVersion = b['expectedVersion'];
-        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
-        const problems: string[] = [];
-        if (productId === '') problems.push('the product id is missing from the address');
-        if (!(typeof expectedVersion === 'number' && Number.isInteger(expectedVersion) && expectedVersion > 0)) problems.push('expectedVersion must be the version of the product you opened (a whole number, 1 or more)');
-        if (!isObj(b['safety'])) problems.push('safety must be the product\'s safety and label facts, as one object');
-        if (reason === '') problems.push('a reason is needed — the next person reads why the safety facts changed');
-        if (problems.length > 0) {
-          throw apiError(400, { code: 'not_readable_as_a_safety_save', whatHappened: `The safety facts were not saved: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct it and send again. Nothing was changed.' });
-        }
-        const expected = expectedVersion as number;
-        refuseUnreadableMinimumAge(b['safety']);
-        const versionOf = deps.productVersion;
-        const guardOf = deps.safetyGuardVersion;
-        if (versionOf === undefined || guardOf === undefined) {
-          throw apiError(503, { code: 'safety_save_unavailable', whatHappened: 'Head office cannot tell which version of this product it holds here, so it cannot make sure nobody else\'s change is overwritten.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was saved.' });
-        }
-        const changed = (held: number) => apiError(409, {
-          code: 'product_changed_meanwhile',
-          whatHappened: `Someone else saved this product since you opened it (you opened version ${expected}; head office now holds version ${held}). Nothing of yours was saved.`,
-          wasItSaved: 'not_saved',
-          nextSafeAction: 'Reload the product and make your change again.',
-        });
-        const seen = Number(await versionOf(ctx.tenantId, productId)); // the version FIRST, then the record (see the read below)
-        const current = await deps.product(ctx.tenantId, productId);
-        if (current === undefined) throw notFound(`product ${productId}`);
-        if (seen !== expected) throw changed(seen);
-        const read: ProductRecord = { ...current, safety: b['safety'] as ProductRecord['safety'] };
-        const saved = await judgeAndSave(deps, ctx, {
-          productId, read, current,
-          // Head office's own categories; no MRP replacement on a safety save. A second person's approval (OB-503) may be named.
-          body: { ...(b['approvalId'] === undefined ? {} : { approvalId: b['approvalId'] }), ...(b['approvedBy'] === undefined ? {} : { approvedBy: b['approvedBy'] }) },
-          key: `safety-${ctx.idempotencyKey ?? `${productId}-v${expected}`}`,
-          beforeWrite: async () => {
-            // The guard's version is read BEFORE the product's version: if the append then holds the guard, no other safety
-            // save landed after this re-check. (A full publish does not hold this guard — the same-millisecond window above.)
-            const guardVersion = Number(await guardOf(ctx.tenantId, productId));
-            const now = Number(await versionOf(ctx.tenantId, productId));
-            if (now !== expected) throw changed(now);
-            return { key: `product-safety:${productId}`, expectedVersion: guardVersion };
-          },
-        });
-        const version = Number(await versionOf(ctx.tenantId, productId));
-        await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'catalogue.product.safety.save', objectType: 'product', objectId: productId,
-          at: deps.now?.() ?? new Date().toISOString(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-          before: { version: String(expected) }, after: { version: String(version) }, reason, correlationId: `product-safety:${productId}:v${expected}`,
-        });
-        return { status: saved.status, body: { ...saved.body, version, reason } };
-      },
+      handler: async (ctx) => saveSafety(deps, ctx, {
+        audit: 'catalogue.product.safety.save', keyPrefix: 'safety',
+        bodyProblem: (b) => (isObj(b['safety']) ? undefined : 'safety must be the product\'s safety and label facts, as one object'),
+        safetyOf: (_current, b) => {
+          refuseUnreadableMinimumAge(b['safety']);
+          return { safety: b['safety'] as ProductRecord['safety'] };
+        },
+      }),
+    },
+    {
+      // OB-733 (owner, 14 Nov 2026; option A "sell at the till only") · OB-704: the label facts of an item loaded before
+      // they were read off the pack, filled in LATER by the same people who enter them before a load — whoever runs the
+      // load from the old system (`migration.load.record`: the owner or the store manager). Narrow on purpose: only an
+      // item still on the outstanding list, only the five label facts (allergens as a list — [] is the declaration "none" —
+      // country of origin, net quantity, packer, consumer care), never anything else on the product, never a fact blanked.
+      // Everything else is exactly the safety save: the version the person opened, the write guard, a reason, the same
+      // publish rules, a new version (hard rule #2) and the audit trail in the person's own name (P-04). The item leaves
+      // the list when the fifth fact is recorded.
+      api: 'API-02', method: 'POST', path: '/v1/catalogue/products/:productId/label-facts',
+      permission: 'migration.load.record', idempotent: true,
+      handler: async (ctx) => saveSafety(deps, ctx, {
+        audit: 'catalogue.product.label_facts.save', keyPrefix: 'label-facts',
+        safetyOf: (current, b) => {
+          if (current.labelFactsFollow === undefined) {
+            throw apiError(409, {
+              code: 'not_waiting_for_label_facts',
+              whatHappened: `"${current.name}" is not on the list of items with label facts still to read, so its facts are not filled here.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'A change to the label facts of an item that already has all five is made with the product\'s safety save, by someone who may publish the catalogue. Nothing was saved.',
+            });
+          }
+          const f = b['facts'];
+          if (!isObj(f)) return { problem: 'facts must be the label facts read off the pack, as one object' };
+          const allowed = Object.values(LABEL_FACT_FIELD) as readonly string[];
+          const strange = Object.keys(f).filter((k) => !allowed.includes(k));
+          if (strange.length > 0) return { problem: `only the five label facts are filled here (${allowed.join(', ')}), not ${strange.join(', ')}` };
+          if (f['allergens'] !== undefined && !(Array.isArray(f['allergens']) && f['allergens'].every((a) => typeof a === 'string' && a.trim() !== ''))) {
+            return { problem: 'allergens must be a list of the allergens the pack declares — an empty list when it declares none' };
+          }
+          for (const k of allowed.filter((x) => x !== 'allergens')) {
+            if (f[k] !== undefined && (typeof f[k] !== 'string' || (f[k] as string).trim() === '')) return { problem: `${k} must be the words printed on the pack` };
+          }
+          if (Object.keys(f).length === 0) return { problem: 'give at least one label fact' };
+          const given = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : (v as string[]).map((a) => a.trim())]));
+          return { safety: { ...(current.safety ?? {}), ...given } as ProductRecord['safety'] };
+        },
+      }),
     },
     {
       // D01-FR-06 (round 8): the customer app's content for a product — a Tamil name, a description in each language and the
@@ -697,6 +835,22 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         const record: ProductRecord = { ...current, appContent: merged };
         await deps.publish(ctx.tenantId, record, `content-${ctx.idempotencyKey ?? productId}`);
         return { status: 201, body: { product: record } };
+      },
+    },
+    {
+      // OB-733 (P-03 · P-08): every item on sale at the till whose label facts are still to be read off the pack — the facts
+      // each one lacks, the load it came from and who loaded it. An item leaves this list only when all five are recorded
+      // (the safety save). Never pruned otherwise; an empty list says so in words.
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/label-facts-outstanding',
+      permission: 'catalogue.pack.read',
+      handler: async (ctx) => {
+        const items = (await deps.products(ctx.tenantId))
+          .filter((p) => outstandingLabelFacts(p).length > 0)
+          .map((p) => ({ productId: p.productId, name: p.name, lifecycle: p.lifecycle, facts: outstandingLabelFacts(p), loadId: p.labelFactsFollow!.loadId, loadedBy: p.labelFactsFollow!.markedBy, loadedAt: p.labelFactsFollow!.markedAt }))
+          .sort((a, b) => a.productId.localeCompare(b.productId, 'en', { numeric: true }));
+        return { status: 200, body: { items, count: items.length, decision: 'OB-733', detail: items.length === 0
+          ? 'No item is on sale with label facts still to read.'
+          : `${items.length} item(s) are on sale at the till with label facts still to read off the pack. They are not sold online or by scan-and-go until filled.` } };
       },
     },
     {

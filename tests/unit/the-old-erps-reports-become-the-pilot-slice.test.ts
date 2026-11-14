@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bpalToSlice, isGtin, inPilotDepartment, labelFactsFrom, purchaseDay, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, type SheetRow } from '../../packages/migration/src/bpal-slice';
+import { bpalToSlice, isGtin, inPilotDepartment, labelFactsFrom, purchaseDay, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, type LabelFact, type SheetRow } from '../../packages/migration/src/bpal-slice';
 import { stageSlice } from '../../packages/migration/src/slice-import';
 import { readXlsxTable } from '../../scripts/lib/xlsx-read.mjs';
 import { xlsx } from '../support/xlsx';
@@ -40,7 +40,7 @@ const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Item Name', 'Qty', 'Cost', 'N
 
 const tableOf = (rows: readonly (readonly string[])[]): SheetRow[] => rows.slice(1).map((r) => Object.fromEntries(rows[0]!.map((h, i) => [h, (r[i] ?? '').trim()])));
 const FACTS = new Map([['1001', { allergens: 'none', country_of_origin: 'India', net_quantity: '1 kg', packer: 'Test Foods, Testville', consumer_care: 'Test Foods 1800 000 000' }]]);
-const run = (labelFacts?: typeof FACTS, already?: Set<string>) => bpalToSlice({
+const run = (labelFacts?: ReadonlyMap<string, Readonly<Partial<Record<LabelFact, string>>>>, already?: Set<string>) => bpalToSlice({
   eanRows: tableOf(EAN), hsnRows: tableOf(HSN), purchaseRows: tableOf(BUYS), ratesFrom: '2026-11-06', today: '2026-11-06',
   ...(labelFacts === undefined ? {} : { labelFacts }), ...(already === undefined ? {} : { alreadyLoaded: already }),
 });
@@ -72,25 +72,40 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(readCsv(out.setAsideCsv).length).toBe(out.setAside.length);
   });
 
-  it('M03-FR-03: with no label facts nothing is ready — the item waits in the sheet, best sellers first, and products.csv is empty', () => {
+  it('OB-733 (replacing OB-696): with no label facts the item is still written — its facts BLANK, never "none" — and listed in the sheet as not all read', () => {
     const out = run();
-    expect(out.counts.ready).toBe(0);
-    expect(readCsv(out.files['products.csv'])).toEqual([]);
+    expect(out.counts).toMatchObject({ ready: 1, factsStillToRead: 1 });
+    expect(readCsv(out.files['products.csv'])).toEqual([{ item_code: '1001', description: 'TEST RICE 1KG', uom: 'pcs', category: PILOT_CATEGORY_ID, hsn_code: '10063020', status: 'active',
+      allergens: '', country_of_origin: '', net_quantity: '', packer: '', consumer_care: '' }]);
     const sheet = readCsv(out.labelFactsSheet);
-    expect(sheet.map((r) => [r['item_code'], r['ready']])).toEqual([['1001', 'no']]);
+    expect(sheet.map((r) => [r['item_code'], r['all_facts_read']])).toEqual([['1001', 'no']]);
     expect(sheet[0]!['barcode']).toBe('8901234567890');
+    // The real slice importer stages it with no exception, its facts marked to follow and listed.
+    const staged = stageSlice({ department: { categoryId: PILOT_CATEGORY_ID, name: 'Packaged groceries', regulated: ['food', 'packed'] }, files: out.files });
+    expect(staged.exceptions).toEqual([]);
+    expect(staged.bundle.products.map((p) => [p.productId, p.labelFactsFollow, p.safety?.allergens])).toEqual([['1001', true, undefined]]);
+    expect(staged.factsToRead.map((f) => [f.itemId, f.facts.length])).toEqual([['1001', 5]]);
+  });
+
+  it('OB-733: some facts read, the rest still to read — the read ones are written, the item is counted as still to read', () => {
+    const out = run(new Map([['1001', { allergens: 'none', country_of_origin: 'India' }]]));
+    expect(out.counts).toMatchObject({ ready: 1, factsStillToRead: 1 });
+    expect(readCsv(out.files['products.csv'])[0]).toMatchObject({ allergens: 'none', country_of_origin: 'India', net_quantity: '', packer: '', consumer_care: '' });
+    const staged = stageSlice({ department: { categoryId: PILOT_CATEGORY_ID, name: 'Packaged groceries', regulated: ['food', 'packed'] }, files: out.files });
+    expect(staged.bundle.products[0]!.safety?.allergens).toEqual([]); // "none" read off the pack is the declaration "none"
+    expect(staged.factsToRead[0]!.facts).toEqual(['net_quantity', 'packer', 'consumer_care']);
   });
 
   it('OB-695 + the five facts filled: the item is written with its NEWEST price, both barcodes, its tax class from the day the rates were read', () => {
     const out = run(FACTS);
-    expect(out.counts.ready).toBe(1);
+    expect(out.counts).toMatchObject({ ready: 1, factsStillToRead: 0 });
     expect(readCsv(out.files['products.csv'])).toEqual([{ item_code: '1001', description: 'TEST RICE 1KG', uom: 'pcs', category: PILOT_CATEGORY_ID, hsn_code: '10063020', status: 'active',
       allergens: 'none', country_of_origin: 'India', net_quantity: '1 kg', packer: 'Test Foods, Testville', consumer_care: 'Test Foods 1800 000 000' }]);
     expect(readCsv(out.files['prices.csv'])).toEqual([{ item_code: '1001', mrp: '82.00', selling_price: '72.00', cost_price: '62.00' }]);
     expect(readCsv(out.files['barcodes.csv']).map((r) => r['barcode'])).toEqual(['8901234567890', '8901234567906']);
     expect(readCsv(out.files['tax-classes.csv'])).toEqual([{ hsn_code: '10063020', effective_from: '2026-11-06', rate_percent: '5' }]);
-    // The sheet keeps the filled facts (marked ready), so the same file can be filled and given back again.
-    expect(readCsv(out.labelFactsSheet)[0]).toMatchObject({ item_code: '1001', allergens: 'none', ready: 'yes' });
+    // The sheet keeps the filled facts (marked all read), so the same file can be filled and given back again.
+    expect(readCsv(out.labelFactsSheet)[0]).toMatchObject({ item_code: '1001', allergens: 'none', all_facts_read: 'yes' });
     expect(labelFactsFrom(readCsv(out.labelFactsSheet)).get('1001')?.packer).toBe('Test Foods, Testville');
   });
 
@@ -100,6 +115,8 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(staged.headerProblems).toEqual([]);
     expect(staged.exceptions).toEqual([]);
     expect(staged.bundle.products.map((p) => [p.productId, p.priceMinor, p.mrpMinor, p.barcodes?.length])).toEqual([['1001', 7200, 8200, 2]]);
+    expect(staged.bundle.products[0]!.labelFactsFollow).toBeUndefined(); // all five read: the full rule, nothing to follow
+    expect(staged.factsToRead).toEqual([]);
   });
 
   it('an item already loaded by an earlier slice is not written again', () => {
@@ -165,16 +182,19 @@ describe('the command on the store PC: three .xlsx reports in, the slice folder 
     expect(readXlsxTable(readFileSync(join(dir, 'HSN.xlsx')), 'Item Id')[0]!['Hsn Code']).toBe('10063020');
     const first = cmd(dir);
     expect(first.status, first.stdout + first.stderr).toBe(0);
-    expect(first.stdout).toContain('Ready to load (barcode, HSN, price and all five label facts): 0 item(s)');
+    expect(first.stdout).toContain('Ready to load (barcode, HSN and price): 1 item(s), 2 barcode(s), 1 tax class(es).');
+    expect(first.stdout).toContain('Of those, label facts still to read off the pack: 1 item(s)');
     for (const f of ['tax-classes.csv', 'products.csv', 'prices.csv', 'barcodes.csv', 'label-facts.csv', 'bpal-set-aside.csv', 'hsn-to-check.csv', 'slice.json']) expect(existsSync(join(dir, 'slice', f)), f).toBe(true);
     expect(JSON.parse(readFileSync(join(dir, 'slice', 'slice.json'), 'utf8'))).toMatchObject({ storeId: 'TEST-STORE', operator: 'owner-01', department: { categoryId: PILOT_CATEGORY_ID, regulated: ['food', 'packed'] }, files: {} });
 
     // Staff fill the sheet (as Excel saves it) and give it back.
     const sheet = readFileSync(join(dir, 'slice', 'label-facts.csv'), 'utf8').replace('1001,TEST RICE 1KG,8901234567890,400,,,,,,no', '1001,TEST RICE 1KG,8901234567890,400,none,India,1 kg,"Test Foods, Testville",Test Foods 1800 000 000,no');
+    expect(sheet).toContain('none,India,1 kg');
     writeFileSync(join(dir, 'slice', 'label-facts.csv'), sheet);
     const second = cmd(dir, ['--label-facts', join(dir, 'slice', 'label-facts.csv')]);
     expect(second.status, second.stdout).toBe(0);
-    expect(second.stdout).toContain('Ready to load (barcode, HSN, price and all five label facts): 1 item(s), 2 barcode(s), 1 tax class(es).');
+    expect(second.stdout).toContain('Ready to load (barcode, HSN and price): 1 item(s), 2 barcode(s), 1 tax class(es).');
+    expect(second.stdout).toContain('Of those, label facts still to read off the pack: 0 item(s)');
     expect(second.stdout).toContain('slice.json was already there and was kept as it is.');
   });
 

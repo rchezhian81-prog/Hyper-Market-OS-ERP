@@ -11,6 +11,9 @@
 //                fingerprint (they never leave the PC).
 //   fix          each gap, by the person whose job it is (head office refuses anyone else by name): a GST rate by Finance;
 //                a barcode, a price, the label facts or "not in this department" by whoever runs the load.
+//   facts later  OB-733: a label fact never holds an item back. A loaded item still missing one is listed from head
+//                office's own list ("facts still to read") until filled; facts saved here for a loaded item are also
+//                sent to head office as the product's safety save (a new version, audited, in that person's name).
 //   load         the ready items → the four published slice files → SEALED (MG-02), STAGED (MG-05), ACCEPTED by a
 //                second person (MG-06), APPLIED — the same tested steps as `migration:slice`, each step re-asking the
 //                acting person's PIN. The person who prepares a load can never accept it.
@@ -25,6 +28,8 @@ import { join } from 'node:path';
 import { PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME, readPurchaseReport, csv, forExcel, LABEL_FACTS, paiseText } from '../../packages/migration/src/bpal-slice';
 import { analyseOldSystem, importSummary, isReady, resolveImport, sliceFilesFor, type ImportFix, type OldItem, type ResolvedItem } from '../../packages/migration/src/old-system-import';
 import { runSliceCommand } from '../../packages/migration/src/slice-command';
+import { list } from '../../packages/migration/src/load-csv';
+import { LABEL_FACT_FIELD, type LabelFactKey } from '../../packages/product/src/product';
 import { sealSlice, type PinVerdict, type SetupClient } from '../../packages/migration/src/owner-steps-command';
 import type { CommandClient } from '../../packages/migration/src/load-command';
 import { readXlsxTable } from './xlsx-read.mjs';
@@ -123,7 +128,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
   const saveLoads = (importId: string, loads: readonly LoadEntry[]): void => write(join(dirOf(importId), 'loads.json'), `${JSON.stringify(loads, null, 2)}\n`);
 
   /** The import as it stands: what the PC read, every fix from head office, what has been loaded — each item resolved. */
-  const standing = async (s: Session, importId: string): Promise<{ read: StoredRead; record: Record<string, unknown>; fixes: readonly ImportFix[]; resolved: ResolvedItem[]; loads: LoadEntry[]; finance: boolean }> => {
+  const standing = async (s: Session, importId: string): Promise<{ read: StoredRead; record: Record<string, unknown>; fixes: readonly ImportFix[]; resolved: ResolvedItem[]; loads: LoadEntry[]; finance: boolean; factsFrom: 'head office' | 'this import' }> => {
     const read = readOf(importId);
     const call = as(s);
     let finance = false;
@@ -143,7 +148,50 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       if (changed) saveLoads(importId, loads);
     }
     const loaded = new Set(loads.filter((l) => l.applied === true).flatMap((l) => l.itemIds));
-    return { read, record: body.import, fixes: body.fixes, resolved: resolveImport(read.items, body.fixes, loaded), loads, finance };
+    const resolved = resolveImport(read.items, body.fixes, loaded);
+    // OB-733 (P-08): for an item already loaded, "facts still to read" is head office's own list — the item on sale — not
+    // what this import's fixes say. When head office cannot be asked, the import's view is shown and said to be so.
+    let factsFrom: 'head office' | 'this import' = 'this import';
+    if (loaded.size > 0) {
+      const o = await call('GET', '/v1/catalogue/label-facts-outstanding');
+      if (o.status === 200 && isObj(o.body) && Array.isArray(o.body['items'])) {
+        factsFrom = 'head office';
+        const onSale = new Map((o.body['items'] as { productId: string; facts: LabelFactKey[] }[]).map((x) => [x.productId, x.facts] as const));
+        for (let i = 0; i < resolved.length; i += 1) {
+          const r = resolved[i]!;
+          if (r.loaded && !r.excluded) resolved[i] = { ...r, factsToRead: onSale.get(r.itemId) ?? [] };
+        }
+      }
+    }
+    return { read, record: body.import, fixes: body.fixes, resolved, loads, finance, factsFrom };
+  };
+
+  /**
+   * OB-733: the label facts just saved for an item ALREADY LOADED, sent to head office's label-facts save for that product
+   * (the same people who enter them before a load, `migration.load.record`) — the product's version read first, only the
+   * facts given sent, the rest of the product untouched. Head office keeps it as a new version in this person's name,
+   * audited with the reason, and drops the item from its list once all five are recorded. A fact left blank here is not
+   * sent (it is never "unread").
+   */
+  const sendFactsToTheItemOnSale = async (s: Session, itemId: string, value: Record<string, unknown>, reason: string): Promise<readonly string[]> => {
+    const call = as(s);
+    const notUpdated = 'Kept on the import, but the item on sale was not updated — save it again to retry';
+    const got = await call('GET', `/v1/catalogue/products/${encodeURIComponent(itemId)}`);
+    if (got.status !== 200 || !isObj(got.body) || !isObj(got.body['product'])) said(got, notUpdated);
+    const version = (got.body as { version?: number }).version;
+    const given: Record<string, unknown> = {};
+    for (const k of LABEL_FACTS) {
+      const v = typeof value[k] === 'string' ? (value[k] as string).trim() : '';
+      if (v === '') continue;
+      given[LABEL_FACT_FIELD[k]] = k === 'allergens' ? (v.toLowerCase() === 'none' ? [] : list(v)) : v;
+    }
+    const r = await call('POST', `/v1/catalogue/products/${encodeURIComponent(itemId)}/label-facts`,
+      { expectedVersion: version, facts: given, reason: `label facts read off the pack (OB-733): ${reason}` },
+      `label-facts-${itemId}-v${String(version)}-${sha256(JSON.stringify(given)).slice(0, 16)}`);
+    if (r.status === 403) throw new Said(403, `${notUpdated}: label facts are filled in by whoever runs the load (the owner or the store manager), signed in as themselves.`);
+    if (r.status !== 201 && r.status !== 200) said(r, notUpdated);
+    const left = isObj(r.body) && isObj(r.body['labelFactsOutstanding']) && Array.isArray(r.body['labelFactsOutstanding']['facts']) ? r.body['labelFactsOutstanding']['facts'] as string[] : [];
+    return left;
   };
 
   const loadPaths = (importId: string, loadId: string): { dir: string; manifest: string } => {
@@ -259,7 +307,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
 
     if (m === 'GET' && rest === '') {
       const st = await standing(s, importId);
-      return { json: { importId, record: st.record, summary: importSummary(st.resolved), items: st.resolved, loads: st.loads, finance: st.finance, fixes: st.fixes.length } };
+      return { json: { importId, record: st.record, summary: importSummary(st.resolved), items: st.resolved, loads: st.loads, finance: st.finance, fixes: st.fixes.length, factsFrom: st.factsFrom } };
     }
 
     if (m === 'POST' && rest === '/fix') {
@@ -273,6 +321,15 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
           : 'Not saved: a barcode, a price, the label facts or leaving an item out is fixed by whoever runs the load (the owner or the store manager), signed in as themselves.');
       }
       if (r.status !== 201 && r.status !== 200) said(r, 'Not saved');
+      // OB-733: facts read for an item already on sale go to the item itself too, so it leaves head office's list.
+      if (kind === 'label' && isObj(b['value'])) {
+        const itemId = String(b['itemId']);
+        const loaded = loadsOf(importId).some((l) => l.applied === true && l.itemIds.includes(itemId));
+        if (loaded) {
+          const left = await sendFactsToTheItemOnSale(s, itemId, b['value'], typeof b['reason'] === 'string' ? b['reason'].trim() : '');
+          return { status: 201, json: { ...(isObj(r.body) ? r.body : {}), onSale: { updated: true, factsStillToRead: left } } };
+        }
+      }
       return { status: 201, json: r.body };
     }
 
@@ -282,6 +339,11 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       const live = st.resolved.filter((r) => !r.excluded && !r.loaded);
       if (what === 'gaps.csv') {
         return { csv: { name: `${importId}-gaps.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'gap', 'what_to_do'], live.flatMap((r) => r.gaps.map((g) => [r.itemId, r.name, String(r.sold), g.kind, g.why])))) } };
+      }
+      if (what === 'facts-to-read.csv') {
+        // OB-733: every item in the department, loaded or not, with label facts still to read — best sellers first.
+        return { csv: { name: `${importId}-facts-to-read.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'facts_still_to_read', ...LABEL_FACTS],
+          st.resolved.filter((r) => !r.excluded && r.factsToRead.length > 0).map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'on sale at the till' : 'not loaded yet', r.factsToRead.map((k) => k.replace(/_/g, ' ')).join('; '), ...LABEL_FACTS.map((k) => r.facts[k] ?? '')]))) } };
       }
       if (what === 'items.csv') {
         return { csv: { name: `${importId}-items.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'barcodes', 'hsn', 'gst_percent', 'mrp', 'selling_price', 'cost', ...LABEL_FACTS],

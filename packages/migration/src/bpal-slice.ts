@@ -13,9 +13,11 @@
 //   • OB-694 — an item is in the department when its HSN is in chapters 07 08 09 10 11 12 15 17 18 19 20 21 (not 2105,
 //     ice cream) or 22, or heading 0402 (milk powder) / 0409 (honey). Sold per piece (`pcs`): barcode only.
 //   • OB-695 — its MRP, selling price and cost are those of its NEWEST purchase row in the last 12 months.
-//   • A label fact a packed food must carry (M03-FR-03) is never invented: the packs are read by staff into
-//     label-facts.csv (best sellers first, OB-696), and only an item whose five facts are all there is written into
-//     products.csv. The rest wait in the sheet; a later load takes them.
+//   • OB-733 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a label fact a packed food
+//     must carry (M03-FR-03) is never invented, and its absence no longer holds an item back. Every item is written into
+//     products.csv with the facts staff have read into label-facts.csv (best sellers first) and the rest BLANK — never
+//     "none". The loader lets the blank ones follow; head office lists them until read, and the item sells at the till
+//     only (never online or by scan-and-go) meanwhile. label-facts.csv stays the staff's working sheet.
 //
 // Nothing is guessed. A row the rules cannot read is SET ASIDE with its reason (bpal-set-aside.csv) — never loaded,
 // never dropped silently (P-08). The slice importer then judges every row again (MG-05) and a named person accepts the
@@ -71,14 +73,15 @@ export interface BpalSliceInput {
 
 export interface BpalSliceOutput {
   readonly files: { readonly 'tax-classes.csv': string; readonly 'products.csv': string; readonly 'prices.csv': string; readonly 'barcodes.csv': string };
-  /** The staff's label-facts sheet: every item not yet loaded, best sellers first, with what is filled (OB-696). */
+  /** The staff's label-facts sheet: every item not yet loaded, best sellers first, with what is filled (OB-733). */
   readonly labelFactsSheet: string;
   readonly setAsideCsv: string;
   /** For the accountant: each HSN whose items the old ERP taxes at more than one rate, with the items at each rate. */
   readonly hsnToCheckCsv: string;
   readonly setAside: readonly SetAside[];
   readonly counts: {
-    readonly inDepartment: number; readonly ready: number; readonly waitingForLabelFacts: number;
+    /** `ready`: every item written into the four files. `factsStillToRead`: those of them with a label fact blank (OB-733). */
+    readonly inDepartment: number; readonly ready: number; readonly factsStillToRead: number;
     readonly setAside: number; readonly alreadyLoaded: number; readonly barcodes: number; readonly taxClasses: number;
   };
 }
@@ -280,20 +283,19 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     priced.set(id, { mrp: p.mrp, sell: p.sell, cost: p.cost });
   }
 
-  // ── label facts (M03-FR-03): only an item with all five is ready; the rest wait in the sheet ─────────
+  // ── label facts (M03-FR-03 · OB-733): every item is ready; a fact not read yet is written blank and listed ─────────
   const already = input.alreadyLoaded ?? new Set<string>();
-  const facts = input.labelFacts ?? new Map();
+  const facts: ReadonlyMap<string, Readonly<Partial<Record<LabelFact, string>>>> = input.labelFacts ?? new Map();
   const ready: string[] = [];
-  const waiting: string[] = [];
   let alreadyLoaded = 0;
   for (const id of dept.keys()) {
     if (already.has(id)) { alreadyLoaded += 1; continue; }
-    const f = facts.get(id);
-    if (f !== undefined && LABEL_FACTS.every((k) => (f[k] ?? '').trim() !== '')) ready.push(id); else waiting.push(id);
+    ready.push(id);
   }
   const bySales = (a: string, b: string): number => (dept.get(b)!.sold - dept.get(a)!.sold) || a.localeCompare(b, 'en', { numeric: true });
   ready.sort(bySales);
-  waiting.sort(bySales);
+  const factOf = (id: string, k: LabelFact): string => (facts.get(id)?.[k] ?? '').trim();
+  const allRead = (id: string): boolean => LABEL_FACTS.every((k) => factOf(id, k) !== '');
 
   const hsnUsed = new Map<string, number>();
   for (const id of ready) hsnUsed.set(dept.get(id)!.hsn, dept.get(id)!.gstBps);
@@ -301,7 +303,7 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     'tax-classes.csv': csv(['hsn_code', 'effective_from', 'rate_percent'],
       [...hsnUsed].sort(([a], [b]) => a.localeCompare(b)).map(([h, bps]) => [h, input.ratesFrom, String(bps / 100)])),
     'products.csv': csv(['item_code', 'description', 'uom', 'category', 'hsn_code', 'status', ...LABEL_FACTS],
-      ready.map((id) => { const d = dept.get(id)!; const f = facts.get(id)!; return [id, d.name, 'pcs', PILOT_CATEGORY_ID, d.hsn, 'active', ...LABEL_FACTS.map((k) => f[k]!.trim())]; })),
+      ready.map((id) => { const d = dept.get(id)!; return [id, d.name, 'pcs', PILOT_CATEGORY_ID, d.hsn, 'active', ...LABEL_FACTS.map((k) => factOf(id, k))]; })),
     'prices.csv': csv(['item_code', 'mrp', 'selling_price', 'cost_price'],
       ready.map((id) => { const p = priced.get(id)!; return [id, paiseText(p.mrp), paiseText(p.sell), paiseText(p.cost)]; })),
     'barcodes.csv': csv(['item_code', 'barcode'], ready.flatMap((id) => codesOf.get(id)!.map((c) => [id, c]))),
@@ -309,10 +311,10 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
 
   // The staff's working sheet: every item not yet loaded, best sellers first, the facts already filled kept in it — so
   // the same file is filled, saved and given back with --label-facts as often as needed, and nothing typed is lost.
-  const labelFactsSheet = forExcel(csv(['item_code', 'description', 'barcode', 'sold_qty', ...LABEL_FACTS, 'ready'],
-    [...ready, ...waiting].sort(bySales).map((id) => {
-      const d = dept.get(id)!; const f = facts.get(id) ?? {};
-      return [id, d.name, codesOf.get(id)![0]!, String(d.sold), ...LABEL_FACTS.map((k) => (f[k] ?? '').trim()), ready.includes(id) ? 'yes' : 'no'];
+  const labelFactsSheet = forExcel(csv(['item_code', 'description', 'barcode', 'sold_qty', ...LABEL_FACTS, 'all_facts_read'],
+    ready.map((id) => {
+      const d = dept.get(id)!;
+      return [id, d.name, codesOf.get(id)![0]!, String(d.sold), ...LABEL_FACTS.map((k) => factOf(id, k)), allRead(id) ? 'yes' : 'no'];
     })));
   setAside.sort((a, b) => a.itemId.localeCompare(b.itemId, 'en', { numeric: true }));
   const setAsideCsv = forExcel(csv(['item_code', 'description', 'reason'], setAside.map((s) => [s.itemId, s.name, s.reason])));
@@ -321,7 +323,7 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     files, labelFactsSheet, setAsideCsv, setAside,
     hsnToCheckCsv: forExcel(csv(['hsn_code', 'rate_percent', 'items', 'for_example'], hsnCheck)),
     counts: {
-      inDepartment: dept.size + [...asideIds].length, ready: ready.length, waitingForLabelFacts: waiting.length,
+      inDepartment: dept.size + [...asideIds].length, ready: ready.length, factsStillToRead: ready.filter((id) => !allRead(id)).length,
       setAside: setAside.length, alreadyLoaded, barcodes: ready.reduce((n, id) => n + codesOf.get(id)!.length, 0), taxClasses: hsnUsed.size,
     },
   };

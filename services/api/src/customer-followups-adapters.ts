@@ -16,7 +16,8 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
-import { STREAM, streamName, catalogueAdapter } from './adapters';
+import { STREAM, streamName, catalogueAdapter, productMasterAdapter } from './adapters';
+import { outstandingLabelFacts } from '../../../packages/product/src/product';
 import {
   referralProgrammeRoutes, claimIdOf, type ReferralProgrammeDeps, type ReferralRewardSetting, type ReferralCode, type ReferralClaim, type ReferralGrant,
 } from '../../customer/src/referral-programme';
@@ -123,6 +124,11 @@ export function customerFollowupsDeps(input: { readonly store: EventStore; reado
         products: p.snapshot.products.filter((x) => x.status === 'active' || x.status === 'clearance').map((x) => ({ productId: x.productId, name: x.name, baseUom: x.baseUom, unitPriceMinor: x.unitPriceMinor })),
         barcodes: p.snapshot.barcodes.map((c) => ({ code: c.code, productId: c.productId, kind: c.kind })),
       };
+    },
+    // OB-733: an item still waiting for its label facts is sold at the till only — never through a phone basket.
+    labelFactsOutstanding: async (t, productId) => {
+      const record = await productMasterAdapter({ store, now }).product(t, productId);
+      return record === undefined ? [] : outstandingLabelFacts(record);
     },
     basket: async (t, code) => (await payloads<PhoneBasket>(store, t, S.basket(code), 'PhoneBasketHeld'))[0],
     recalls: (t, code) => payloads<PhoneBasketRecall>(store, t, S.basket(code), 'PhoneBasketRecalled'),

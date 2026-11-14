@@ -22,7 +22,7 @@
 
 import { cell, moneyToMinor, percentToBps, inferBarcodeKind, list } from './load-csv';
 import { validateBundle, type BarcodeKind, type ExtractBundle, type ExtractProduct, type ExtractTaxRate } from './load';
-import { validateProduct, CategoryNotFoundError, type Category, type ProductRecord, type RegulatedKind } from '../../product/src/product';
+import { validateProduct, CategoryNotFoundError, LABEL_FACTS_MAY_FOLLOW_IN, missingLabelFacts, type Category, type LabelFactKey, type ProductRecord, type RegulatedKind } from '../../product/src/product';
 import { simpleHasher, type Hasher } from './discovery';
 
 // ── The templates ────────────────────────────────────────────────────────────────────────────────────
@@ -64,11 +64,11 @@ export const SLICE_TEMPLATES: Readonly<Record<SliceFile, SliceTemplate>> = Objec
       hsn_code: 'One of the HSN codes in tax-classes.csv.',
       brand: 'Optional.',
       status: 'active, new or clearance (discontinued counts as clearance). Blank means active.',
-      allergens: 'Food: the allergens separated by |, or the word none. Blank is silence, and a food item is refused for it.',
-      country_of_origin: 'Food: required.',
-      net_quantity: 'Packed or weighed: required (e.g. 500 g).',
-      packer: 'Packed: the packer or importer name and address.',
-      consumer_care: 'Packed: who a customer complains to — a name with a phone or email (Legal Metrology).',
+      allergens: 'Food: the allergens separated by |, or the word none. Blank is silence, never "none": a food item is refused for it — except in the packaged-groceries department (OB-733), where it loads, sells at the till only, and is listed as a fact still to read until filled.',
+      country_of_origin: 'Food: required (packaged groceries, OB-733: may follow — listed until filled).',
+      net_quantity: 'Packed or weighed: required, e.g. 500 g (packaged groceries, OB-733: may follow — listed until filled).',
+      packer: 'Packed: the packer or importer name and address (packaged groceries, OB-733: may follow — listed until filled).',
+      consumer_care: 'Packed: who a customer complains to — a name with a phone or email, Legal Metrology (packaged groceries, OB-733: may follow — listed until filled).',
       ingredients: 'Optional.',
       storage: 'Optional storage conditions.',
       minimum_age: 'Age-restricted: the minimum age in whole years.',
@@ -215,6 +215,11 @@ export interface StagedSlice {
   readonly digest: string;
   /** A file whose HEADER could not be read — then the slice is not stageable at all. */
   readonly headerProblems: readonly string[];
+  /**
+   * OB-733: the staged items whose label facts are still to be read off the pack — loaded, sold at the till only, and listed
+   * until filled. Not exceptions (nothing is held back for them); the acceptor reads them beside the exception list.
+   */
+  readonly factsToRead: readonly { readonly line: number; readonly itemId: string; readonly facts: readonly LabelFactKey[] }[];
 }
 
 const REGULATED: readonly RegulatedKind[] = ['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous'];
@@ -345,14 +350,22 @@ export function stageSlice(input: {
       ...(ageText === undefined ? {} : { minimumAge: Number(ageText) }),
     };
     const brand = cell(r.row, 'brand');
+    // OB-733 (option A, 14 Nov 2026): in the packaged-groceries department an item whose label facts are not read yet is
+    // STAGED, its blank facts kept blank (never "none", never a guess) and listed as facts still to read; head office lets
+    // them follow, sells it at the till only and lists it until they are filled. Every other department: the full rule.
+    const follow = dept.categoryId === LABEL_FACTS_MAY_FOLLOW_IN && missingLabelFacts({ safety }).length > 0;
     const product = {
       productId: id, sku, name: name!, baseUom: uom!, primaryCategoryId: dept.categoryId, taxClass: hsn!, lifecycle,
       ...(brand === undefined ? {} : { brand }),
       ...(Object.keys(safety).length === 0 ? {} : { safety }),
+      ...(follow ? { labelFactsFollow: true as const } : {}),
     };
     // The SAME product engine the publish route runs: a food item with no allergen declaration is quarantined here,
     // with the engine's own words, never a 422 half-way through the load.
-    const record: ProductRecord = { ...product, tenantId: 'slice' } as ProductRecord;
+    const record: ProductRecord = {
+      ...product, tenantId: 'slice',
+      ...(follow ? { labelFactsFollow: { decision: 'OB-733', loadId: 'slice', markedBy: 'slice', markedAt: '' } } : {}),
+    } as ProductRecord;
     let ruleProblems: string[] = [];
     try {
       ruleProblems = validateProduct(record, [category]).issues.filter((i) => i.severity === 'blocks_publish').map((i) => i.message);
@@ -464,7 +477,12 @@ export function stageSlice(input: {
   // A row can only be staged or quarantined. Products are the one file where the count can differ (a later
   // dependent quarantine re-uses the product's own line), so the arithmetic is said, never assumed.
   const digest = hasher(canonical({ department: dept, bundle, exceptions, headerProblems }));
-  return { department: dept, bundle, exceptions, counts, digest, headerProblems };
+  // OB-733: the bundle already carries each item's mark (so the acceptance binds to it); this is the list in words.
+  const factsToRead = [...drafts.values()]
+    .filter((d) => d.product.labelFactsFollow === true)
+    .map((d) => ({ line: d.line, itemId: d.product.productId, facts: missingLabelFacts(d.product) }))
+    .filter((f) => f.facts.length > 0);
+  return { department: dept, bundle, exceptions, counts, digest, headerProblems, factsToRead };
 }
 
 /** The exception list as a CSV the acceptor reads — one quarantined row per line, with its reason. */
