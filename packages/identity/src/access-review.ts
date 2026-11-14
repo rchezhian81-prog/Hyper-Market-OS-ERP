@@ -8,7 +8,8 @@
 // The last sign-in time is kept by the identity server (Keycloak), not by head office — so the review says that, by name,
 // rather than printing a blank that reads like "never" (P-08: never a fake zero).
 
-export type SignInState = 'issued' | 'requested' | 'ended' | 'none';
+/** `store_pc` (CR-01 step 4b-1 · OB-733): recorded on the store PC — staff id and till PIN there, no sign-in (no second factor). */
+export type SignInState = 'issued' | 'requested' | 'ended' | 'store_pc' | 'none';
 
 export interface ReviewPerson {
   readonly userId: string;

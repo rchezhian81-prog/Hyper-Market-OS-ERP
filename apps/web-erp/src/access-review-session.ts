@@ -12,7 +12,7 @@ import { refusalWords } from './refusal-words';
 
 export type Lang = 'en' | 'ta';
 export interface AccessRowView {
-  readonly userId: string; readonly displayName: string | null; readonly signIn: 'issued' | 'requested' | 'ended' | 'none';
+  readonly userId: string; readonly displayName: string | null; readonly signIn: 'issued' | 'requested' | 'ended' | 'store_pc' | 'none';
   readonly secondFactor: boolean | null; readonly privileged: boolean; readonly machine: boolean;
   readonly roles: readonly {
     readonly roleId: string; readonly roleName: string; readonly branchScope: readonly string[] | 'all'; readonly departmentScope: readonly string[] | 'all';
@@ -33,7 +33,7 @@ export const ACCESS_REVIEW_COPY = {
     countK: 'People and machines', flaggedK: 'Need a look',
     rolesK: 'Roles', whereK: 'Where', allBranches: 'all branches', allDepartments: 'all departments', departmentsK: 'departments',
     suppliersK: 'suppliers', categoriesK: 'categories', locationsK: 'places',
-    signInK: 'Sign-in', si_issued: 'Live', si_requested: 'Being set up', si_ended: 'Ended', si_none: 'No sign-in at head office',
+    signInK: 'Sign-in', si_issued: 'Live', si_requested: 'Being set up', si_store_pc: 'Store PC only (staff id and till PIN)', si_ended: 'Ended', si_none: 'No sign-in at head office',
     secondK: 'Second factor', yes: 'Yes', no: 'No', machine: 'Machine (store computer or job)',
     limitsK: 'Money limits', k_refund: 'Refund', k_purchase_order: 'Purchase order', k_stock_adjustment: 'Stock adjustment', notSet: 'Not set', unlimited: 'Unlimited',
     lastSignIn: 'Last sign-in: kept by the identity server, not by head office.', emergencyK: 'Emergency access until',
@@ -53,7 +53,7 @@ export const ACCESS_REVIEW_COPY = {
     countK: 'நபர்களும் இயந்திரங்களும்', flaggedK: 'பார்வை தேவை',
     rolesK: 'பங்குகள்', whereK: 'எங்கே', allBranches: 'எல்லாக் கிளைகளும்', allDepartments: 'எல்லாத் துறைகளும்', departmentsK: 'துறைகள்',
     suppliersK: 'விநியோகஸ்தர்கள்', categoriesK: 'வகைகள்', locationsK: 'இடங்கள்',
-    signInK: 'உள்நுழைவு', si_issued: 'இயக்கத்தில்', si_requested: 'அமைக்கப்படுகிறது', si_ended: 'முடிந்தது', si_none: 'தலைமை அலுவலகத்தில் உள்நுழைவு இல்லை',
+    signInK: 'உள்நுழைவு', si_issued: 'இயக்கத்தில்', si_requested: 'அமைக்கப்படுகிறது', si_store_pc: 'கடைக் கணினியில் மட்டும் (பணியாளர் எண், PIN)', si_ended: 'முடிந்தது', si_none: 'தலைமை அலுவலகத்தில் உள்நுழைவு இல்லை',
     secondK: 'இரண்டாம் அடையாளம்', yes: 'ஆம்', no: 'இல்லை', machine: 'இயந்திரம் (கடைக் கணினி அல்லது பணி)',
     limitsK: 'பண வரம்புகள்', k_refund: 'பணத்திருப்பம்', k_purchase_order: 'கொள்முதல் ஆணை', k_stock_adjustment: 'சரக்குத் திருத்தம்', notSet: 'அமைக்கப்படவில்லை', unlimited: 'வரம்பு இல்லை',
     lastSignIn: 'கடைசி உள்நுழைவு: அடையாளச் சேவையகத்தில் வைக்கப்படுகிறது, தலைமை அலுவலகத்தில் அல்ல.', emergencyK: 'அவசர அணுகல் இதுவரை',

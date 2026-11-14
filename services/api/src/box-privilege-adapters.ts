@@ -38,7 +38,7 @@ export function boxPrivilegeAdapter(input: { readonly store: EventStore; readonl
       const event: AlertLifecycleEvent = {
         alertId, change: 'raised', by: `system:box-privilege:${a.relayedBy}`, at: a.at,
         alert: {
-          alertId, component: `Privilege change on the store PC (${a.kind === 'role_request' ? 'role asked for' : 'role approved'})`,
+          alertId, component: `Privilege change on the store PC (${a.kind === 'person_provision' ? 'person added' : a.kind === 'role_request' ? 'role asked for' : 'role approved'})`,
           status: 'degraded', ownerUserId: owner, ownerName: owner, detail: privilegeAlertWords(a),
           raisedAt: a.at, ackDueBy: a.at, ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1) } : {}),
         },

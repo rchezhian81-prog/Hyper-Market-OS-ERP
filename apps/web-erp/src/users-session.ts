@@ -55,8 +55,13 @@ export const USERS_COPY = {
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or sent.', reading: 'Reading from head office…',
     signInsH: 'Sign-ins', signInsLead: 'Give a new person their own sign-in (one person, one sign-in). What they may do is asked for above and approved by the owner.',
     pinNeeded: 'Type your own PIN again to confirm. Nothing was changed.',
-    rejectNotHere: 'On the store PC a request is approved here; to turn one down, the owner rejects it at head office. Nothing was changed.',
     pinAskGive: 'Type your own PIN again to ask for this role.', pinAskApprove: 'Type your own PIN again to approve this role.',
+    pinAskReject: 'Type your own PIN again to reject this request.', pinAskAdd: 'Type your own PIN again to add this person.',
+    addH: 'Add a person on this store PC', addLead: 'A new member of staff, for this store PC and its tills only (no office or phone login). Adding the name gives them nothing: then ask for a role for them (a second person approves) and set their till PIN.',
+    addName: 'Their full name', addStaffId: 'Their staff id (a–z, 0–9, . _ -)', addBtn: 'Add this person', added: 'Added — for this store PC only. Now ask for a role for them.',
+    needName: 'Type the person\'s full name.', needStaffId: 'Type their staff id: 3 to 64 of a–z, 0–9, . _ -',
+    storePcOnly: 'On this store PC: adding a person, asking for a role, approving and rejecting work here, each with your PIN. Taking a role back and "They have left" come in the next part (4b-2); limiting a role needs the head-office link.',
+    notOnStorePc: 'Not on this store PC yet. Nothing was changed.',
     pinOk: 'Confirm', pinCancel: 'Cancel',
   },
   ta: {
@@ -92,8 +97,13 @@ export const USERS_COPY = {
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, அனுப்பப்படவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
     signInsH: 'உள்நுழைவுகள்', signInsLead: 'புதிய நபருக்கு அவருக்கே உரிய உள்நுழைவைக் கொடுங்கள் (ஒருவருக்கு ஒன்று). அவர் என்ன செய்யலாம் என்பது மேலே கேட்கப்பட்டு உரிமையாளரால் அனுமதிக்கப்படுகிறது.',
     pinNeeded: 'உறுதிசெய்ய உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள். எதுவும் மாற்றப்படவில்லை.',
-    rejectNotHere: 'கடைக் கணினியில் கோரிக்கை இங்கே அனுமதிக்கப்படுகிறது; மறுக்க, உரிமையாளர் தலைமை அலுவலகத்தில் மறுப்பார். எதுவும் மாற்றப்படவில்லை.',
     pinAskGive: 'இந்தப் பங்கைக் கேட்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskApprove: 'இந்தப் பங்கை அனுமதிக்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
+    pinAskReject: 'இந்தக் கோரிக்கையை மறுக்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskAdd: 'இந்த நபரைச் சேர்க்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
+    addH: 'இந்தக் கடைக் கணினியில் ஒரு நபரைச் சேர்', addLead: 'புதிய பணியாளர், இந்தக் கடைக் கணினிக்கும் அதன் கவுண்டர்களுக்கும் மட்டும் (அலுவலக அல்லது கைபேசி உள்நுழைவு இல்லை). பெயரைச் சேர்ப்பது அவருக்கு எதையும் தராது: பிறகு அவருக்குப் பங்கு கேளுங்கள் (இரண்டாவது நபர் அனுமதிப்பார்), அவரது PIN-ஐ அமையுங்கள்.',
+    addName: 'அவரது முழுப் பெயர்', addStaffId: 'அவரது பணியாளர் எண் (a–z, 0–9, . _ -)', addBtn: 'இந்த நபரைச் சேர்', added: 'சேர்க்கப்பட்டார் — இந்தக் கடைக் கணினிக்கு மட்டும். இப்போது அவருக்குப் பங்கு கேளுங்கள்.',
+    needName: 'நபரின் முழுப் பெயரைத் தட்டச்சு செய்யுங்கள்.', needStaffId: 'அவரது பணியாளர் எண்ணைத் தட்டச்சு செய்யுங்கள்: a–z, 0–9, . _ - இல் 3 முதல் 64',
+    storePcOnly: 'இந்தக் கடைக் கணினியில்: நபரைச் சேர்த்தல், பங்கு கேட்டல், அனுமதித்தல், மறுத்தல் ஆகியவை இங்கே, ஒவ்வொன்றும் உங்கள் PIN-உடன். பங்கைத் திரும்பப் பெறுதலும் "அவர் வெளியேறிவிட்டார்" என்பதும் அடுத்த பகுதியில் (4b-2) வரும்; பங்கை வரம்பிட தலைமை அலுவலக இணைப்பு தேவை.',
+    notOnStorePc: 'இந்தக் கடைக் கணினியில் இன்னும் இல்லை. எதுவும் மாற்றப்படவில்லை.',
     pinOk: 'உறுதிசெய்', pinCancel: 'ரத்து',
   },
 } as const;
@@ -103,7 +113,7 @@ export const usersWords = (lang: Lang, key: string): string =>
   (USERS_COPY[lang] as Record<string, string>)[key] ?? (USERS_COPY.en as Record<string, string>)[key] ?? key;
 
 type Why = 'nobody' | 'cannotRead' | 'cannotAsk' | 'cannotDecide' | 'needPerson' | 'needRole' | 'needStores' | 'needReason'
-  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady' | 'pinNeeded' | 'rejectNotHere';
+  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady' | 'pinNeeded' | 'needName' | 'needStaffId' | 'notOnStorePc';
 type Done<T> = Promise<Outcome<T, Why>>;
 export const usersOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => usersWords(lang, k), out);
 
@@ -142,6 +152,10 @@ export interface UsersSession {
   askLimit(input: { readonly userId: string; readonly roleId: string; readonly dimension: LimitDimension; readonly values: string; readonly reason: string }): Done<{ readonly requestId: string }>;
   /** Apply an approved change of mine, with exactly the details that were approved. */
   apply(change: MyChange): Done<{ readonly applied: true; readonly blockers?: readonly string[] }>;
+  /** CR-01 step 4b-1: true on the store PC with the head-office link off — the page offers only what works there. */
+  readonly onStorePc: boolean;
+  /** CR-01 step 4b-1 (OB-733 "A"): add a store-PC person — their name and staff id, by the asker's PIN. Store PC only. */
+  addPerson(input: { readonly userId: string; readonly displayName: string }): Done<{ readonly userId: string }>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
@@ -186,14 +200,20 @@ export interface OfficePrivilege {
   readonly grants: string;
   /** The door for approving one, with `{grantId}` in it (`/office/privilege/grants/{grantId}/approve`). */
   readonly approve: string;
-  readonly askPin: (what: 'give' | 'approve') => Promise<string | null>;
+  /** CR-01 step 4b-1: turning one down (`/office/privilege/grants/{grantId}/reject`), adding a person, and the lists. */
+  readonly reject: string;
+  readonly people: string;
+  readonly view: string;
+  readonly askPin: (what: 'give' | 'approve' | 'reject' | 'add') => Promise<string | null>;
 }
 
 /** The store PC's doors from the page's injected global (`window.sreOfficePrivilege`), or undefined. */
 export function officePrivilegeFrom(raw: unknown, askPin: OfficePrivilege['askPin']): OfficePrivilege | undefined {
-  if (!isObj(raw) || !isStr(raw['grants']) || !isStr(raw['approve'])) return undefined;
-  if (!raw['grants'].startsWith('/office/') || !raw['approve'].startsWith('/office/') || !raw['approve'].includes('{grantId}')) return undefined;
-  return { grants: raw['grants'], approve: raw['approve'], askPin };
+  if (!isObj(raw)) return undefined;
+  const doors = ['grants', 'approve', 'reject', 'people', 'view'] as const;
+  if (!doors.every((d) => isStr(raw[d]) && (raw[d] as string).startsWith('/office/'))) return undefined;
+  if (!(raw['approve'] as string).includes('{grantId}') || !(raw['reject'] as string).includes('{grantId}')) return undefined;
+  return { grants: raw['grants'] as string, approve: raw['approve'] as string, reject: raw['reject'] as string, people: raw['people'] as string, view: raw['view'] as string, askPin };
 }
 
 export function createUsersSession(input: {
@@ -222,6 +242,19 @@ export function createUsersSession(input: {
       return { result: 'ok', value: json };
     } catch { return { result: 'lost_link' }; }
   };
+  /** CR-01 step 4b-1: the page's lists through the store PC (head office answers for the signed-in person, this store only). */
+  const officeView = async (): Promise<Outcome<Record<string, unknown>, never>> => {
+    try {
+      const res = await http(input.office!.view, { method: 'GET', credentials: 'same-origin', headers: { accept: 'application/json' } });
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || json['ok'] !== true) {
+        const code = isStr(json['code']) ? json['code'] : isStr(json['refusedBecause']) ? json['refusedBecause'] : String(res.status);
+        return { result: 'refused', status: res.status, code, whatHappened: isStr(json['en']) ? json['en'] : `status ${res.status}` };
+      }
+      return { result: 'ok', value: json };
+    } catch { return { result: 'lost_link' }; }
+  };
+  const onStorePc = input.office !== undefined;
   const no = (why: Why): { result: 'invalid'; why: Why } => ({ result: 'invalid', why });
   const gate = (need: 'read' | 'ask' | 'decide'): { result: 'invalid'; why: Why } | undefined =>
     !named ? no('nobody') : !may[need] ? no(need === 'read' ? 'cannotRead' : need === 'ask' ? 'cannotAsk' : 'cannotDecide') : undefined;
@@ -232,11 +265,24 @@ export function createUsersSession(input: {
   };
 
   return {
-    may, userId,
+    may, userId, onStorePc,
+    addPerson: async (p) => {
+      const g = gate('ask'); if (g) return g;
+      if (input.office === undefined) return no('notOnStorePc');
+      const name = p.displayName.trim().replace(/\s+/g, ' '); const staffId = p.userId.trim().toLowerCase();
+      if (name === '') return no('needName');
+      if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(staffId)) return no('needStaffId');
+      if (staffId === userId) return no('yourself');
+      const pin = await input.office.askPin('add');
+      if (pin === null || pin.trim() === '') return no('pinNeeded');
+      const out = await viaStorePc(input.office.people, { pin, request: { userId: staffId, displayName: name } });
+      return out.result === 'ok' ? { result: 'ok', value: { userId: staffId } } : out;
+    },
     roles: async () => {
       // The owner reads the catalogue (identity.role.read); a maker (the store manager) reads it with who holds what.
       const g = !named ? no('nobody') : !may.read && !may.ask ? no('cannotRead') : undefined; if (g) return g;
-      const out = await call<{ roles?: unknown[]; awaitingOwnerApproval?: unknown[] }>('GET', may.read ? '/v1/identity/roles' : '/v1/identity/grants');
+      const out = onStorePc ? await officeView() as Outcome<{ roles?: unknown[]; awaitingOwnerApproval?: unknown[] }, never>
+        : await call<{ roles?: unknown[]; awaitingOwnerApproval?: unknown[] }>('GET', may.read ? '/v1/identity/roles' : '/v1/identity/grants');
       if (out.result !== 'ok') return out;
       const row = (r: unknown): RoleRow | undefined => (isObj(r) && isStr(r['id']) && isStr(r['name']) && Array.isArray(r['permissions'])
         ? { id: r['id'], name: r['name'], ...(isStr(r['nameTa']) ? { nameTa: r['nameTa'] } : {}), permissions: (r['permissions'] as unknown[]).filter(isStr) } : undefined);
@@ -254,7 +300,7 @@ export function createUsersSession(input: {
     },
     holders: async () => {
       const g = gate('ask'); if (g) return g;
-      const out = await call<{ grants?: unknown[] }>('GET', '/v1/identity/grants');
+      const out = onStorePc ? await officeView() as Outcome<{ grants?: unknown[] }, never> : await call<{ grants?: unknown[] }>('GET', '/v1/identity/grants');
       if (out.result !== 'ok') return out;
       const by = new Map<string, Grant[]>();
       for (const raw of out.value.grants ?? []) {
@@ -266,9 +312,10 @@ export function createUsersSession(input: {
     },
     pending: async () => {
       const g = gate('read'); if (g) return g;
-      const out = await call<{ requests?: unknown[] }>('GET', '/v1/identity/grants/pending');
+      const out = onStorePc ? await officeView() as Outcome<{ pending?: unknown[] }, never> : await call<{ requests?: unknown[] }>('GET', '/v1/identity/grants/pending');
       if (out.result !== 'ok') return out;
-      const rows = (out.value.requests ?? []).flatMap((r): PendingGrant[] => {
+      const listed = 'pending' in out.value ? out.value.pending : (out.value as { requests?: unknown[] }).requests;
+      const rows = (listed ?? []).flatMap((r): PendingGrant[] => {
         if (!isObj(r) || !isStr(r['grantId']) || !isStr(r['userId']) || !isStr(r['roleId']) || !isStr(r['requestedBy'])) return [];
         const scope = scopeOf(r['branchScope']); if (scope === undefined) return [];
         return [{ grantId: r['grantId'], userId: r['userId'], roleId: r['roleId'], branchScope: scope, requestedBy: r['requestedBy'],
@@ -278,6 +325,7 @@ export function createUsersSession(input: {
     },
     mine: async () => {
       const g = gate('ask'); if (g) return g;
+      if (onStorePc) return no('notOnStorePc'); // the approvals engine is head office's; take-backs on the store PC come in 4b-2
       const out = await call<{ mine?: unknown[] }>('GET', '/v1/approvals/requests');
       if (out.result !== 'ok') return out;
       const rows = (out.value.mine ?? []).flatMap((r): MyChange[] => {
@@ -313,17 +361,18 @@ export function createUsersSession(input: {
       const g = gate('decide'); if (g) return g;
       if (decision === 'reject' && reason.trim() === '') return no('needReason');
       if (input.office !== undefined) {
-        if (decision === 'reject') return no('rejectNotHere');
-        const pin = await input.office.askPin('approve');
+        const pin = await input.office.askPin(decision);
         if (pin === null || pin.trim() === '') return no('pinNeeded');
-        const out = await viaStorePc(input.office.approve.replace('{grantId}', encodeURIComponent(grantId)), { pin });
-        return out.result === 'ok' ? { result: 'ok', value: { decided: 'approved' } } : out;
+        const door = (decision === 'reject' ? input.office.reject : input.office.approve).replace('{grantId}', encodeURIComponent(grantId));
+        const out = await viaStorePc(door, decision === 'reject' ? { pin, request: { reason: reason.trim() } } : { pin });
+        return out.result === 'ok' ? { result: 'ok', value: { decided: decision === 'approve' ? 'approved' : 'rejected' } } : out;
       }
       const out = await call('POST', `/v1/identity/grants/${encodeURIComponent(grantId)}/${decision}`, decision === 'reject' ? { reason: reason.trim() } : {});
       return out.result === 'ok' ? { result: 'ok', value: { decided: decision === 'approve' ? 'approved' : 'rejected' } } : out;
     },
     askTakeBack: async (holder, grant, reason) => {
       const g = gate('ask'); if (g) return g;
+      if (onStorePc) return no('notOnStorePc'); // CR-01 step 4b-2 (OB-735)
       if (holder.userId === userId) return no('yourself');
       if (reason.trim() === '') return no('needReason');
       const requestId = id('access');
@@ -338,6 +387,7 @@ export function createUsersSession(input: {
     },
     askLimit: async (l) => {
       const g = gate('ask'); if (g) return g;
+      if (onStorePc) return no('notOnStorePc');
       const person = l.userId.trim(); const values = readIds(l.values);
       if (person === '') return no('needPerson');
       if (person === userId) return no('yourself');
@@ -353,6 +403,7 @@ export function createUsersSession(input: {
     },
     apply: async (change) => {
       const g = gate('ask'); if (g) return g;
+      if (onStorePc) return no('notOnStorePc');
       if (change.status !== 'approved') return no('notReady');
       const c = applyCall(change);
       if (c === undefined) return no('notReady');

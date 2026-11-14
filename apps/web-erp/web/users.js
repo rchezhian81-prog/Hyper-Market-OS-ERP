@@ -8,6 +8,9 @@ const api = window.users ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, ask: false, decide: false };
 const signIns = api?.signIns ?? null;
+// CR-01 step 4b-1: on the store PC with the head-office link off, only what works there is offered (add a person, give,
+// approve, reject — each by PIN); take-backs come in 4b-2 and limits need the head-office link.
+const onStorePc = session?.onStorePc === true;
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
@@ -60,12 +63,12 @@ function paintHolders() {
     for (const g of h.grants) {
       const row = document.createElement('div'); row.className = 'head'; row.dataset.role = g.roleId;
       row.append(text('span', `${roleName(g.roleId)} · ${t('where')}: ${scopeWords(g.branchScope)}`));
-      if (may.ask && h.userId !== session.userId) {
+      if (may.ask && !onStorePc && h.userId !== session.userId) {
         row.append(button(t('takeBack'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, g, why.input.value); status.textContent = out.result === 'ok' ? t('asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void loadMine(); }));
       }
       li.append(row);
     }
-    if (may.ask && h.userId !== session.userId) {
+    if (may.ask && !onStorePc && h.userId !== session.userId) {
       const acts = document.createElement('div'); acts.className = 'acts';
       acts.append(why.label, button(t('leaver'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, 'leaver', why.input.value); status.textContent = out.result === 'ok' ? t('asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void loadMine(); }));
       li.append(acts);
@@ -146,7 +149,7 @@ function paint() {
   for (const [id, key] of [['reload-text', 'reload'], ['pending-h', 'pendingH'], ['pending-lead', 'pendingLead'], ['holders-h', 'holdersH'], ['holders-lead', 'holdersLead'],
     ['give-h', 'giveH'], ['give-lead', 'giveLead'], ['g-person-l', 'person'], ['g-role-l', 'role'], ['g-stores-l', 'stores'], ['g-reason-l', 'reason'], ['g-ask-text', 'give'],
     ['limit-h', 'limitH'], ['limit-lead', 'limitLead'], ['l-person-l', 'person'], ['l-role-l', 'role'], ['l-dimension-l', 'dimension'], ['l-values-l', 'values'], ['l-reason-l', 'reason'], ['l-ask-text', 'limit'],
-    ['mine-h', 'mineH'], ['mine-lead', 'mineLead'], ['waiting-h', 'waitingH'], ['waiting-lead', 'waitingLead'], ['signins-h', 'signInsH'], ['signins-lead', 'signInsLead']]) $(id).textContent = t(key);
+    ['mine-h', 'mineH'], ['mine-lead', 'mineLead'], ['add-h', 'addH'], ['add-lead', 'addLead'], ['a-name-l', 'addName'], ['a-staff-l', 'addStaffId'], ['a-add-text', 'addBtn'], ['store-pc-note', 'storePcOnly'], ['waiting-h', 'waitingH'], ['waiting-lead', 'waitingLead'], ['signins-h', 'signInsH'], ['signins-lead', 'signInsLead']]) $(id).textContent = t(key);
   paintRoleChoices(); paintPending(); paintHolders(); paintMine(); paintWaiting(); paintSignIns();
 }
 
@@ -156,7 +159,7 @@ async function loadRoles() {
 }
 async function loadHolders() { $('holders-status').textContent = t('reading'); const out = await session.holders(); holders = out.result === 'ok' ? out.value : null; say('holders-status', out); paintHolders(); }
 async function loadPending() { $('pending-status').textContent = t('reading'); const out = await session.pending(); pending = out.result === 'ok' ? out.value : null; say('pending-status', out); paintPending(); }
-async function loadMine() { if (!may.ask) return; $('mine-status').textContent = t('reading'); const out = await session.mine(); mine = out.result === 'ok' ? out.value : null; say('mine-status', out); paintMine(); }
+async function loadMine() { if (!may.ask || onStorePc) return; $('mine-status').textContent = t('reading'); const out = await session.mine(); mine = out.result === 'ok' ? out.value : null; say('mine-status', out); paintMine(); }
 async function loadAll() { await loadRoles(); paint(); await Promise.all([may.ask ? loadHolders() : Promise.resolve(), may.read ? loadPending() : Promise.resolve(), loadMine()]); }
 
 for (const [id, name] of [['reload', 'refresh-cw'], ['g-ask', 'user-round']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
@@ -167,6 +170,13 @@ $('give-form').addEventListener('submit', async (e) => {
   const out = await session.give({ userId: $('g-person').value, roleId: $('g-role').value, stores: $('g-stores').value, reason: $('g-reason').value }, roles.waiting.map((r) => r.id));
   $('give-status').textContent = out.result === 'ok' ? t('given') : api.outcomeWords(lang, out);
   if (out.result === 'ok') void loadPending();
+});
+$('add-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('add-status').textContent = t('reading');
+  const out = await session.addPerson({ userId: $('a-staff').value, displayName: $('a-name').value });
+  $('add-status').textContent = out.result === 'ok' ? t('added') : api.outcomeWords(lang, out);
+  if (out.result === 'ok') { $('g-person').value = out.value.userId; $('a-staff').value = ''; $('a-name').value = ''; void loadHolders(); }
 });
 $('limit-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -192,7 +202,8 @@ else {
   // The owner (identity.role.read) sees what waits for a second person; whoever asks (identity.role.request) sees who holds
   // what and gives, takes back and limits.
   if (may.read) $('pending').hidden = false;
-  if (may.ask) { $('holders').hidden = false; $('give').hidden = false; $('limit').hidden = false; $('mine').hidden = false; }
+  if (may.ask) { $('holders').hidden = false; $('give').hidden = false; $('limit').hidden = onStorePc; $('mine').hidden = onStorePc; $('add').hidden = !onStorePc; }
+  $('store-pc-note').hidden = !onStorePc;
   if (may.read || may.ask) { $('reload').hidden = false; $('reload').addEventListener('click', () => { void loadAll(); }); void loadAll(); }
   if (signIns !== null) { $('signins').hidden = false; void signIns.refresh().then(paintSignIns); }
 }
