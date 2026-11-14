@@ -99,8 +99,8 @@ kept), the Docker copy is started again and the snapshot is kept for a person to
 the till back.
 
 After the move the tool reaches the database as a service: `backup` (same one-snapshot guarantee), `restore-check`,
-`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill refuses in plain words: its Windows
-version is CR-01 step 3e. `update --from <folder>` is not used on Windows services: a new version comes from the Software
+`check` (G4), `status`, `up` and `autostart` work without Docker. The rollback drill has its own Windows version
+(CR-01 step 3e, below). `update --from <folder>` is not used on Windows services: a new version comes from the Software
 update page (below). Docker Desktop can be uninstalled later; its stopped
 copy is the only thing it still holds.
 
@@ -149,3 +149,32 @@ and every refusal), `<data>\status\update-progress.json` (what the page shows).
 SRE-Setup.exe; `SRE\Software update - install` is made for each update. If the page says *the updater is not set up*,
 run SRE-Setup.exe once more as administrator.
 
+## The timed rollback drill on Windows services (CR-01 step 3e, pilot gate G9, QG-08)
+
+**Who:** the store's IT person (the custodian), in a PowerShell window opened **as administrator**, with the owner
+watching (UAT-53). **When:** the shop is shut and every till shift is closed — the drill stops the till twice, for a few
+minutes each, and refuses while a shift is open (OB-718's rule for an update). **Needs:** an earlier version kept on
+this PC — the updater keeps the running version in `C:\Program Files\SRE Retail OS kept\<version>` before every update,
+so the first drill is possible after the first update — the backup drive plugged in, and the backup passphrase.
+
+1. Dry run (changes nothing; also says how the last drill went):
+
+   ```powershell
+   & "C:\Program Files\SRE Retail OS\runtime\node\node.exe" "C:\Program Files\SRE Retail OS\scripts\store-computer.mjs" drill --by "Your Name"
+   ```
+
+2. The drill: the same command with `--run` at the end. Type the backup passphrase when asked. The window backs up,
+   restores that backup into a scratch database and reconciles it, keeps the running version, and ends with
+   **STARTED**. The task `SRE\Rollback drill` (as Windows itself, run from the kept copy) then puts the earlier version
+   back and checks it, and puts the running version back and checks it.
+3. About 20 minutes later, run the dry-run command again. Its last line is the result: **G9 PASSED** (every step worked
+   inside its target: 30 minutes for each version change, 4 hours for backup plus restore) or **G9 NOT PASSED** (the
+   step is named). The record is in `<data>\records\g9-drill-….json`, with a read-only copy on the backup drive; a
+   passed drill also writes `g9-drill-….qg08-rollback.json`, the QG-08 evidence the custodian records on head office's
+   register.
+
+Options: `--to <folder>` another backup drive folder than the automatic backup's; `--previous <folder>` another earlier
+version's folder (a whole installed version, never the program's own folder). Every step is in
+`<data>\drills\drill-outcomes.log` (append-only). The shop's database is never rolled back or touched: only the program
+is swapped, exactly as the updater swaps it when an update fails. If the record says **A PERSON IS NEEDED NOW**, run
+SRE-Setup.exe of the running version again as administrator and send a photo of the record.

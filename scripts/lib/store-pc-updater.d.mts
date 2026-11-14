@@ -28,3 +28,8 @@ export declare function systemTaskXml(t: { description: string; everyMinutes?: n
 export declare function registerUpdater(deps: Deps, L: Layout & Record<string, unknown>): boolean;
 export declare function checkRequest(r: unknown, runningVersion: string | null | undefined, now: Date): { request: Record<string, string> } | { refuse: string };
 export declare function applyUpdate(deps: Deps, opts?: { install?: string }): Promise<number>;
+// Shared with the Windows-services rollback drill (CR-01 step 3e, store-pc-drill.mjs).
+export declare function mirror(deps: Deps, from: string, to: string): { ok: true } | { ok: false; said: string };
+export declare function stopServices(deps: Deps): Promise<void>;
+export declare function openShifts(deps: Deps, L: Layout & Record<string, unknown>): Promise<{ open: string[] } | { unknown: true }>;
+export declare function theChecks(deps: Deps, L: Layout & Record<string, unknown>, P: ReturnType<typeof updaterPaths>, version: string): Promise<string | undefined>;

@@ -8,7 +8,9 @@ restored within **4 hours**.
 **How long:** about an hour.
 **Where:** the store computer's real-data copy (`docs/runbooks/store-computer-real-data-environment.md`, project
 `sre-real`) before the first real load — or the pilot box, for G9 there.
-**On the owner's Windows store computer (OB-246):** use `pnpm run store-computer -- drill` instead
+**On a store PC that runs as Windows services (CR-01, ADR-0032):** use the Windows-services drill —
+`docs/runbooks/store-computer-windows-services.md`, "The timed rollback drill on Windows services" (CR-01 step 3e).
+**On the owner's Windows store computer while it still ran on Docker (OB-246):** use `pnpm run store-computer -- drill` instead
 (`docs/runbooks/store-computer-owner-guide-windows.md`, Part 11): the same order and the same §32 targets, with no bash,
 no git and no PostgreSQL tools on the PC — the previous release is its kept ZIP folder, and its services run against
 the current schema (checked compatible first). This page is the Linux box's way, with `infra/deploy/release.sh`. **Never against production, never from a

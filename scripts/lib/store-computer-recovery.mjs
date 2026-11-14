@@ -901,6 +901,12 @@ export function drillVerdict(steps) {
 export async function drill(deps, opts) {
   const { say, fs } = deps;
   const p = pathFor(deps.platform);
+  // CR-01 step 3e: a copy that runs as Windows services (ADR-0032) has its own drill — the program is swapped as the
+  // updater swaps it, not started from a Docker compose file. Asked quietly here; the drill says everything itself.
+  if (opts.legs !== undefined || ready({ ...deps, say: () => {} }).native !== undefined) {
+    const { nativeDrill } = await import('./store-pc-drill.mjs');
+    return nativeDrill(deps, opts);
+  }
   const by = typeof opts.by === 'string' ? opts.by.trim() : '';
   const missing = [];
   if (by === '') missing.push('--by "<your name>"');
@@ -909,10 +915,6 @@ export async function drill(deps, opts) {
   if (missing.length > 0) { say(`REFUSED — the drill needs: ${missing.join(', ')}`); say('  pnpm run store-computer -- drill --by "Your Name" --to E:\\sre-real --previous C:\\SRE-previous'); return 2; }
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
-  if (ctx.native !== undefined) {
-    say('NOT YET — this copy runs as Windows services (ADR-0032). The timed rollback drill for Windows services comes with the one-click update (CR-01 step 3); until then it runs on the Docker copy only. Nothing was changed.');
-    return 2;
-  }
   const { problems, plan } = drillPlan(deps, ctx, opts);
   if (problems.length > 0) { for (const pr of problems) say(`REFUSED — ${pr}`); say('  Nothing was changed.'); return 2; }
 
