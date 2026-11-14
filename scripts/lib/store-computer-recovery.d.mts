@@ -11,6 +11,11 @@ export declare function keyFilePath(deps: Deps, L: Layout): string;
 export declare function driveKeyName(keyId: string): string;
 export declare function readBackupKey(deps: Deps, L: Layout): { present: false } | { present: true; key: BackupKeyFile; problem?: undefined } | { present: true; key?: undefined; problem: string };
 export declare function ensureBackupKey(deps: Deps, L: Layout): Promise<BackupKeyFile | undefined>;
+/** OB-730: a new backup passphrase when the old one is lost. */
+export declare const KEY_CHANGES_LOG: string;
+export declare function retiredKeyName(keyId: string, at: Date): string;
+export declare function replacePassphraseRefusals(f: { by: string | undefined; current: { present: boolean; key?: unknown; problem?: string } }): string[];
+export declare function replaceBackupPassphrase(deps: Deps, opts: { by?: string }): Promise<number>;
 export declare function unlockWithPassphrase(deps: Deps, key: BackupKeyFile, why: string): Promise<{ ok: true; privateKey: KeyObject } | { ok: false; problem: string }>;
 export declare function keyForBackup(deps: Deps, L: Layout, dir: string, keyId: string): { key: BackupKeyFile; problem?: undefined } | { key?: undefined; problem: string };
 export declare function tillFolders(deps: Deps, L: Layout): { installed: boolean; env: Settings | undefined; edgeData: string; witness: string; lanePort: number };

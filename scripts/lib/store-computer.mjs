@@ -46,7 +46,7 @@ import { createConnection, createServer } from 'node:net';
 import * as os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { backup, drill, restoreCheck, tillFolders } from './store-computer-recovery.mjs';
+import { backup, drill, replaceBackupPassphrase, restoreCheck, tillFolders } from './store-computer-recovery.mjs';
 import { deviceDoorRow } from './store-computer-device-door.mjs';
 import { autostart, backupStatus, currentRelease, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup, writeLauncher } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
@@ -1297,6 +1297,8 @@ export const USAGE = [
   '  backup --to <folder on your backup drive>',
   '                                           back this copy up onto your backup drive, with a manifest',
   '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
+  '  new-backup-passphrase --by "<name>"      the old backup passphrase is lost: choose a new one (OB-730); the old key is',
+  '                                           kept, so old backups still open if the old paper is found',
   '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
   '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
   '                                           (Windows services: --previous is optional — the newest kept release)',
@@ -1549,6 +1551,7 @@ export async function main(argv, given) {
     case 'fingerprints': return fingerprints(deps, { settings: cl.settings, out: cl.out });
     case 'backup': return backup(deps, { to: cl.to });
     case 'restore-check': return restoreCheck(deps, { from: cl.from });
+    case 'new-backup-passphrase': return replaceBackupPassphrase(deps, { by: cl.by });
     case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out, continue: cl.continue });
     case 'drill-result': return drillResult(deps, resolveLayout(deps));
     case 'schedule-backup': return scheduleBackup(deps, { to: cl.to, every: cl.every });

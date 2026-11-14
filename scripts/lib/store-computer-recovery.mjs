@@ -320,6 +320,65 @@ export async function ensureBackupKey(deps, L) {
   return undefined;
 }
 
+// ── A new backup passphrase, when the old one is lost (OB-730, owner, 14 Nov 2026) ─────────────────────────────────
+// The passphrase opens the sealed key; it is kept nowhere, so nobody can recover it. If the owner has lost it, the only
+// honest step is a NEW key under a NEW passphrase: every backup from then on is encrypted to the new key. Nothing is
+// deleted (hard rule #6): the old key file in the data folder is RENAMED to `backup-key-retired-<keyId>-<UTC>.json`, and
+// every old backup already has its own key copy beside it on the drive — so if the old paper is ever found, the old
+// backups still open with it. Each change is appended to `backup-key-changes.log` (who, when, old key, new key; never a
+// passphrase). It runs only with a person at THIS keyboard, who names themselves and types REPLACE.
+
+export const KEY_CHANGES_LOG = 'backup-key-changes.log';
+export const retiredKeyName = (keyId, at) => `backup-key-retired-${keyId}-${stampOf(at)}.json`;
+
+/** Why a new backup passphrase must not be set. Empty = go ahead. Pure, so it is tested on its own. */
+export function replacePassphraseRefusals({ by, current }) {
+  const out = [];
+  if (typeof by !== 'string' || by.trim() === '') out.push('name yourself: --by "<your name>" — the change is recorded under that name');
+  if (!current.present) out.push('this computer has no backup key yet — there is nothing to replace; the first backup asks for the passphrase');
+  else if (current.problem !== undefined) out.push(`the backup key file cannot be read (${current.problem}) — send me a photo of this screen; nothing was changed`);
+  return out;
+}
+
+export async function replaceBackupPassphrase(deps, { by }) {
+  const { say } = deps;
+  const L = resolveLayout(deps);
+  const current = readBackupKey(deps, L);
+  const refusals = replacePassphraseRefusals({ by, current });
+  if (refusals.length > 0) { for (const r of refusals) say(`REFUSED — ${r}`); return 2; }
+  const old = current.key;
+  say('A NEW BACKUP PASSPHRASE — for when the old one is lost.');
+  say(`  The backups made so far (backup key ${old.keyId}) can be opened ONLY with the old passphrase. They are all kept.`);
+  say('  From now on every backup is locked with the new passphrase you choose here.');
+  const typed = await deps.askSecret('Type REPLACE to continue (it will not show), then Enter: ');
+  if (typed === undefined) { say('NOT DONE — there is no keyboard here. Run this command yourself in PowerShell on the store PC.'); return 1; }
+  if (typed.trim() !== 'REPLACE') { say('NOT DONE — you did not type REPLACE. Nothing was changed.'); return 1; }
+  const p = pathFor(deps.platform);
+  const at = deps.now();
+  const keyFile = keyFilePath(deps, L);
+  const retired = p.join(L.backupDir, retiredKeyName(old.keyId, at));
+  // Keep the old key first (renamed, never deleted); if the new one cannot be made, put it back as it was.
+  deps.fs.renameSync(keyFile, retired);
+  let key;
+  try {
+    key = await ensureBackupKey(deps, L);
+  } catch (e) {
+    key = undefined;
+    say(`  The new key could not be written (${e instanceof Error ? e.message : String(e)}).`);
+  }
+  if (key === undefined) {
+    if (!deps.fs.existsSync(keyFile)) deps.fs.renameSync(retired, keyFile);
+    say('NOT DONE — no new passphrase was set. The old backup key is back in place; nothing was changed.');
+    return 1;
+  }
+  deps.fs.appendFileSync(p.join(L.backupDir, KEY_CHANGES_LOG), `${JSON.stringify({ at: new Date(at).toISOString(), by: by.trim(), oldKeyId: old.keyId, newKeyId: key.keyId, oldKeyKeptAs: retiredKeyName(old.keyId, at), reason: 'the old backup passphrase was lost (OB-730)' })}\n`, 'utf8');
+  say(`DONE — new backup key ${key.keyId}. The old key ${old.keyId} is kept as ${retiredKeyName(old.keyId, at)}.`);
+  say('  NOW: write the new passphrase on paper and lock it away with the BitLocker key. Then make one backup and check it:');
+  say('    pnpm run store-computer -- backup --to <your backup drive folder>');
+  say('    pnpm run store-computer -- restore-check --from <the new backup file>     (type the NEW passphrase)');
+  return 0;
+}
+
 /** Ask for the passphrase and open the key: up to three tries. Returns { ok, privateKey } or { ok: false, problem }. */
 export async function unlockWithPassphrase(deps, key, why) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
