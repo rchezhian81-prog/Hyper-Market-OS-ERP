@@ -11,7 +11,7 @@ export declare function keyFilePath(deps: Deps, L: Layout): string;
 export declare function driveKeyName(keyId: string): string;
 export declare function readBackupKey(deps: Deps, L: Layout): { present: false } | { present: true; key: BackupKeyFile; problem?: undefined } | { present: true; key?: undefined; problem: string };
 export declare function ensureBackupKey(deps: Deps, L: Layout): Promise<BackupKeyFile | undefined>;
-/** OB-730: a new backup passphrase when the old one is lost. */
+/** OB-733: a new backup passphrase when the old one is lost. */
 export declare const KEY_CHANGES_LOG: string;
 export declare function retiredKeyName(keyId: string, at: Date): string;
 export declare function replacePassphraseRefusals(f: { by: string | undefined; current: { present: boolean; key?: unknown; problem?: string } }): string[];

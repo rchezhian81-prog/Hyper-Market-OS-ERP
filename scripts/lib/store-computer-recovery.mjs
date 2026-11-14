@@ -320,7 +320,7 @@ export async function ensureBackupKey(deps, L) {
   return undefined;
 }
 
-// ── A new backup passphrase, when the old one is lost (OB-730, owner, 14 Nov 2026) ─────────────────────────────────
+// ── A new backup passphrase, when the old one is lost (OB-733, owner, 14 Nov 2026) ─────────────────────────────────
 // The passphrase opens the sealed key; it is kept nowhere, so nobody can recover it. If the owner has lost it, the only
 // honest step is a NEW key under a NEW passphrase: every backup from then on is encrypted to the new key. Nothing is
 // deleted (hard rule #6): the old key file in the data folder is RENAMED to `backup-key-retired-<keyId>-<UTC>.json`, and
@@ -371,7 +371,7 @@ export async function replaceBackupPassphrase(deps, { by }) {
     say('NOT DONE — no new passphrase was set. The old backup key is back in place; nothing was changed.');
     return 1;
   }
-  deps.fs.appendFileSync(p.join(L.backupDir, KEY_CHANGES_LOG), `${JSON.stringify({ at: new Date(at).toISOString(), by: by.trim(), oldKeyId: old.keyId, newKeyId: key.keyId, oldKeyKeptAs: retiredKeyName(old.keyId, at), reason: 'the old backup passphrase was lost (OB-730)' })}\n`, 'utf8');
+  deps.fs.appendFileSync(p.join(L.backupDir, KEY_CHANGES_LOG), `${JSON.stringify({ at: new Date(at).toISOString(), by: by.trim(), oldKeyId: old.keyId, newKeyId: key.keyId, oldKeyKeptAs: retiredKeyName(old.keyId, at), reason: 'the old backup passphrase was lost (OB-733)' })}\n`, 'utf8');
   say(`DONE — new backup key ${key.keyId}. The old key ${old.keyId} is kept as ${retiredKeyName(old.keyId, at)}.`);
   say('  NOW: write the new passphrase on paper and lock it away with the BitLocker key. Then make one backup and check it:');
   say('    pnpm run store-computer -- backup --to <your backup drive folder>');

@@ -1297,7 +1297,7 @@ export const USAGE = [
   '  backup --to <folder on your backup drive>',
   '                                           back this copy up onto your backup drive, with a manifest',
   '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
-  '  new-backup-passphrase --by "<name>"      the old backup passphrase is lost: choose a new one (OB-730); the old key is',
+  '  new-backup-passphrase --by "<name>"      the old backup passphrase is lost: choose a new one (OB-733); the old key is',
   '                                           kept, so old backups still open if the old paper is found',
   '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
   '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
