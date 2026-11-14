@@ -71,7 +71,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Incide
     let s = await open(OWNER);
     let incidentId = '';
     try {
-      await says(s.page, 'no-incidents', /No incident has been recorded/);
+      // U5: the empty register is the chrome's state part inside the register (`#incidents-table`), never a page-own line
+      await says(s.page, 'incidents-table', /No incident has been recorded/);
       await says(s.page, 'v-open', /^0$/);
       await says(s.page, 'v-posture', /No drill recorded yet/);
       expect(s.writes, 'nothing is written on open').toEqual([]);

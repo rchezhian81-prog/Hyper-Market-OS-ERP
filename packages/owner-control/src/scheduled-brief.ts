@@ -211,6 +211,15 @@ export function buildScheduledBrief(input: {
   };
 }
 
+/**
+ * U3 (OB-699, 7 Nov 2026): the brief's sentence FRAMES are the product's own words, so head office prepares the lines in
+ * both languages at once and the office page shows the reader's. The attention lines' headlines are findings and go
+ * into both readings as they were written.
+ */
+export function briefLinesIn(input: Omit<Parameters<typeof buildScheduledBrief>[0], 'language'>): { readonly en: readonly string[]; readonly ta: readonly string[] } {
+  return { en: buildScheduledBrief({ ...input, language: 'en' }).lines, ta: buildScheduledBrief({ ...input, language: 'ta' }).lines };
+}
+
 export interface ScheduleState {
   readonly scheduleId: string;
   /** Local hour and minute the brief is due, per-tenant. */

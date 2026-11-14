@@ -95,7 +95,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     const staples = page.locator('#floor .area[data-area="staples"]');
     expect(await staples.getAttribute('data-band')).toBe('4');
     expect(await page.locator('#areas tr[data-area="staples"] .fig').innerText()).toBe('₹3.15 per sq ft');
-    expect(await page.textContent('#off-plan')).toBe('⚠ Sold but not on the floor plan: soap (₹21.00)');
+    // U5 (G13): the warning is the one chip — its shape and its words, never a bare character
+    expect(await page.textContent('#off-plan')).toContain('Sold but not on the floor plan: soap (₹21.00)');
+    expect(await page.getAttribute('#off-plan .sre-chip', 'data-tone')).toBe('degraded');
     // Each area sits at its own coordinates: staples at the left, dairy half-way across.
     const [sBox, dBox, floor] = await Promise.all([staples.boundingBox(), page.locator('#floor .area[data-area="dairy"]').boundingBox(), page.locator('#floor').boundingBox()]);
     expect(Math.round(((sBox!.x - floor!.x) * 40) / floor!.width)).toBe(0);
@@ -107,7 +109,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     await page.click('#m-margin');
     await page.locator('#areas tr[data-area="dairy"] .heat').filter({ hasText: 'Not known' }).waitFor({ timeout: 15_000 });
     expect(await page.locator('#floor .area[data-area="dairy"]').getAttribute('data-band')).toBe('unknown');
-    expect(await page.locator('#areas tr[data-area="dairy"] .note').innerText()).toBe('⚠ Margin not known — no buying cost for milk');
+    expect(await page.locator('#areas tr[data-area="dairy"] .note').innerText()).toBe('Margin not known — no buying cost for milk'); // U5: a warning chip, its words
     expect(await page.locator('#areas tr[data-area="staples"] .fig').innerText()).toBe('₹0.60 per sq ft');
     expect(await page.getAttribute('#m-margin', 'aria-pressed')).toBe('true');
     if (process.env['HEATMAP_SHOT'] !== undefined) await page.screenshot({ path: process.env['HEATMAP_SHOT'], fullPage: true });

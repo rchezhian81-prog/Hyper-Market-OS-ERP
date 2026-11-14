@@ -26,10 +26,6 @@
       input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
-      .panel .k { color: var(--muted); font-size: 14px; } .panel .v { font-size: 22px; font-weight: 700; }
-      .panel.attention { border-left: 6px solid var(--degraded); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
       li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--danger-text); }
@@ -54,12 +50,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">Food-safety checks</h2>
         <p class="lead" id="lead"></p>
-        <div class="panels" role="status" aria-live="polite">
-          <div class="panel" id="p-missed"><span class="k" id="k-missed">Missed</span><span class="v" id="v-missed">—</span></div>
-          <div class="panel" id="p-due"><span class="k" id="k-due">Due now</span><span class="v" id="v-due">—</span></div>
-          <div class="panel" id="p-done"><span class="k" id="k-done">Done</span><span class="v" id="v-done">—</span></div>
-          <div class="panel" id="p-failed"><span class="k" id="k-failed">Failed</span><span class="v" id="v-failed">—</span></div>
-        </div>
+        <div id="panels" role="status" aria-live="polite"></div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
       <section aria-labelledby="today-h">

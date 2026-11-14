@@ -148,7 +148,8 @@ export interface GstReturnsConfig {
 // ── the copy: ONE bilingual object for the whole screen (a guardrail binds to it) ────────────────────────
 
 export type CopyKey =
-  | 'title' | 'lead' | 'langName'
+  'tcsLine' |
+  'title' | 'lead' | 'langName'
   | 'stPreviewed' | 'stApproved' | 'stSubmitting' | 'stFiled' | 'stFailed' | 'stUnknown' | 'stCancelled'
   | 'actNone' | 'actApprove' | 'actFile' | 'actWait' | 'actRefile' | 'actReconcile'
   | 'btnApprove' | 'btnSubmit' | 'btnCancel' | 'btnReconcile' | 'btnPrepare' | 'btnFileByHand'
@@ -165,7 +166,7 @@ export type CopyKey =
 
 export const GST_RETURNS_COPY: BilingualCopy<CopyKey> = {
   en: {
-    title: 'GST returns', langName: 'தமிழ்',
+    title: 'GST returns', langName: 'தமிழ்', tcsLine: 'TCS (section 52): not applicable: own goods only',
     lead: 'Every GSTR-1 filing period and what it needs next, read live from head office. The ones needing attention are first — a return the portal rejected, or one whose outcome is unknown and must be reconciled. A return is prepared by one person and approved by a different one; nothing is filed to the portal from here.',
     stPreviewed: 'Prepared — awaiting approval', stApproved: 'Approved — ready to file', stSubmitting: 'Being filed',
     stFiled: 'Filed', stFiledByHand: 'Filed by hand on the portal', stFailed: 'Rejected by the portal', stUnknown: 'Outcome unknown — reconcile', stCancelled: 'Withdrawn before filing',
@@ -200,7 +201,7 @@ export const GST_RETURNS_COPY: BilingualCopy<CopyKey> = {
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
   },
   ta: {
-    title: 'GST வருமானங்கள்', langName: 'English',
+    title: 'GST வருமானங்கள்', langName: 'English', tcsLine: 'TCS (பிரிவு 52): பொருந்தாது: கடையின் சொந்தப் பொருட்கள் மட்டும்',
     lead: 'ஒவ்வொரு GSTR-1 தாக்கல் காலமும் அடுத்து என்ன தேவை என்பதும், தலைமை அலுவலகத்திலிருந்து நேரடியாக. கவனம் தேவைப்படுபவை முதலில் — போர்ட்டல் மறுத்த வருமானம், அல்லது முடிவு தெரியாத ஒன்று. ஒருவர் தயாரிக்கிறார், வேறொருவர் ஒப்புதல் அளிக்கிறார்; இங்கிருந்து போர்ட்டலில் எதுவும் தாக்கல் செய்யப்படாது.',
     stPreviewed: 'தயாரிக்கப்பட்டது — ஒப்புதலுக்குக் காத்திருக்கிறது', stApproved: 'ஒப்புதல் — தாக்கல் செய்யத் தயார்', stSubmitting: 'தாக்கல் செய்யப்படுகிறது',
     stFiled: 'தாக்கல் செய்யப்பட்டது', stFiledByHand: 'போர்ட்டலில் கைமுறையாகத் தாக்கல் செய்யப்பட்டது', stFailed: 'போர்ட்டல் மறுத்தது', stUnknown: 'முடிவு தெரியவில்லை — சரிபார்க்கவும்', stCancelled: 'தாக்கலுக்கு முன் திரும்பப்பெறப்பட்டது',

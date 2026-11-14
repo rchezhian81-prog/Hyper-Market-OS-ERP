@@ -50,8 +50,10 @@ export interface OperationsWorklistData {
   readonly agentActive: boolean;
   readonly open: readonly OperationsWorklistEntry[];
   readonly dismissed: readonly OperationsWorklistEntry[];
-  /** Plain-English reason there is nothing to show when the agent is not active. */
+  /** Plain-English reason there is nothing to show when the agent is not active (older head offices). */
   readonly note?: string;
+  /** Why the agent shows nothing, as a code (U3 · OB-699): said in the reader's language by this session. */
+  readonly reason?: 'kill_switch' | 'not_enabled';
 }
 
 /** The outcome of a dismiss/reopen — recorded, refused by the server, or a lost link (retryable). */
@@ -89,7 +91,7 @@ export type CopyKey =
   | 'componentLabel' | 'runbookLabel' | 'dismissedByLabel' | 'reasonLabel'
   | 'dismissBtn' | 'reopenBtn' | 'reasonPlaceholder'
   | 'dismissRecorded' | 'dismissRefused' | 'dismissLostLink'
-  | 'scrReady' | 'scrEmpty' | 'scrOff' | 'stateNotPermitted'
+  | 'scrReady' | 'scrEmpty' | 'scrOff' | 'scrKilled' | 'scrNotEnabled' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
 export const OPERATIONS_INBOX_COPY: BilingualCopy<CopyKey> = {
@@ -104,6 +106,8 @@ export const OPERATIONS_INBOX_COPY: BilingualCopy<CopyKey> = {
     dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed, or you do not have permission.', dismissLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the recommendations', scrEmpty: 'Nothing to act on — the shop is running cleanly.',
     scrOff: 'The Operations helper is switched off, so there are no recommendations to show.',
+    scrKilled: 'The AI kill switch is on, so the Operations helper is stopped and shows no recommendations. Turn it off to see them again — nothing else in the shop is affected.',
+    scrNotEnabled: 'The Operations helper (A06) is not switched on for this shop, so it shows no recommendations. Switch it on by name to see them.',
     stateNotPermitted: 'You do not have permission to see the operations recommendations.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
@@ -119,6 +123,8 @@ export const OPERATIONS_INBOX_COPY: BilingualCopy<CopyKey> = {
     dismissRecorded: 'ஒதுக்கப்பட்டது.', dismissRefused: 'சேமிக்க முடியவில்லை — ஒரு சிறு காரணம் தேவை, அல்லது உங்களுக்கு அனுமதி இல்லை.', dismissLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'பரிந்துரைகளைக் காட்டுகிறது', scrEmpty: 'செயல்பட எதுவும் இல்லை — கடை சுத்தமாக இயங்குகிறது.',
     scrOff: 'செயல்பாட்டு உதவியாளர் அணைக்கப்பட்டுள்ளது, எனவே காட்ட பரிந்துரைகள் இல்லை.',
+    scrKilled: 'AI நிறுத்தும் சுவிட்ச் இயக்கத்தில் உள்ளது, எனவே செயல்பாட்டு உதவியாளர் நிறுத்தப்பட்டு பரிந்துரைகள் எதையும் காட்டாது. மீண்டும் பார்க்க அதை அணையுங்கள் — கடையின் வேறு எதையும் இது பாதிக்காது.',
+    scrNotEnabled: 'செயல்பாட்டு உதவியாளர் (A06) இந்தக் கடைக்கு இயக்கப்படவில்லை, எனவே பரிந்துரைகள் எதையும் காட்டாது. பார்க்க அதைப் பெயர் சொல்லி இயக்குங்கள்.',
     stateNotPermitted: 'செயல்பாட்டு பரிந்துரைகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -213,7 +219,11 @@ export function createOperationsInboxSession(
         // Governance honoured: the agent is off or killed, so there is nothing to show — say so plainly, not an
         // empty screen a person reads as "all clear". `locked` is the deliberate, non-fault state (idle tone,
         // never the red of an error — the helper being off is a choice, not a breakage).
-        return EMPTY_VIEW(presentScreenState({ state: 'locked', label: worklist.note ?? t('scrOff') }), nobodyNamed, mayDismiss);
+        // U3 · OB-699: head office's reason is a product word — said in the reader's language from its code (the English
+        // note only for a head office that sends no code; an older note that names the kill switch is read as that).
+        const why = worklist.reason ?? (/kill switch/i.test(worklist.note ?? '') ? 'kill_switch' : undefined);
+        const label = why === 'kill_switch' ? t('scrKilled') : why === 'not_enabled' ? t('scrNotEnabled') : (worklist.note ?? t('scrOff'));
+        return EMPTY_VIEW(presentScreenState({ state: 'locked', label }), nobodyNamed, mayDismiss);
       }
 
       const open = worklist.open.map((e) => present(lang, e));

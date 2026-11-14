@@ -138,6 +138,8 @@ export interface StorefrontDeps {
   readonly onlineListed?: (tenantId: string, productId: string) => Promise<{ readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string }>;
   /** WF-13 (OB-288 wave 3): promotions, a coupon and the points balance in the online basket. */
   readonly pricing?: OnlinePricingDeps;
+  /** U7 (OB-726) · M17-FR-01: the member's tier and points-expiry rule, as the desk reads them. Absent → said as not wired. */
+  readonly memberStanding?: (tenantId: string, memberRef: string) => Promise<{ readonly tier: unknown; readonly expiry: unknown }>;
   /** D09-FR-01 · OB-300: which branch fulfils a delivery — head office's answer, never the app's. Absent → as built. */
   readonly routing?: StorefrontRouting;
 }
@@ -669,6 +671,33 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
       handler: async (ctx) => {
         const own = await ownOrRefused(ctx.tenantId, ctx.userId, ctx.params['orderId'] ?? '', 'read');
         return { status: 200, body: await view(ctx.tenantId, own) };
+      },
+    },
+    {
+      // U6 · M17-FR-01 · M20 · §27 "Customer: Loyalty" (7 Nov 2026): MY points, as the till would spend them — the balance
+      // head office holds for the member this app account is tied to (at the desk, OB-29), what a point is worth, and how
+      // to spend them. The same figures the basket quote carries, readable without a basket. Nothing here moves a point.
+      api: 'API-07', method: 'GET', path: '/v1/me/loyalty',
+      permission: 'storefront.order.read', entitlement: 'customer_app',
+      handler: async (ctx) => {
+        const member = deps.pricing === undefined ? undefined : await deps.pricing.memberOf(ctx.tenantId, ctx.userId);
+        if (deps.pricing === undefined || member === undefined) {
+          return { status: 200, body: { member: false, say: 'Your app is not tied to a loyalty membership. Show your app reference at the service desk to see your points here.', asAt: deps.now() } };
+        }
+        const balance = Math.max(0, (await deps.pricing.pointsOf(ctx.tenantId, member.memberRef)) ?? 0);
+        const value = await deps.pricing.pointValuePaise(ctx.tenantId);
+        // U7 (OB-726) · M17-FR-01: the tier and the expiry rule, as the desk reads them; not set is said as not set.
+        const standing = deps.memberStanding === undefined ? { tier: { state: 'not_set' }, expiry: { state: 'not_set' } } : await deps.memberStanding(ctx.tenantId, member.memberRef);
+        return {
+          status: 200,
+          body: {
+            member: true, pointsBalance: balance, pointValuePaise: value, ...(value > 0 ? { worthMinor: balance * value } : {}),
+            tier: standing.tier, expiry: standing.expiry,
+            say: value > 0 ? `You have ${balance} point(s), worth ₹${((balance * value) / 100).toFixed(2)} at the till.` : `You have ${balance} point(s). The shop has not set what a point is worth yet.`,
+            howToSpend: 'At the till, tell the cashier the mobile number your membership is on; the points come off the bill before you pay.',
+            asAt: deps.now(),
+          },
+        };
       },
     },
   ];

@@ -82,12 +82,12 @@
         <h3 id="demand-h">Staff needed</h3>
         <div class="panels" id="hours"></div>
         <p class="muted" id="not-set" hidden></p>
-        <div class="table-wrap"><table aria-labelledby="demand-h"><tbody id="demand-rows"></tbody></table></div>
+        <div id="demand-host" class="register-host"></div>
       </section>
       <section aria-labelledby="draft-h" id="draft-section" hidden>
         <h3 id="draft-h">Draft roster</h3>
         <p class="muted" id="draft-state"></p>
-        <div class="table-wrap"><table aria-labelledby="draft-h"><tbody id="draft-rows"></tbody></table></div>
+        <div id="draft-host" class="register-host"></div>
         <h3 id="uncovered-h">Not covered</h3>
         <ul class="rows" id="uncovered"></ul>
         <h3 id="breaches-h">Rule breaches</h3>
@@ -99,7 +99,7 @@
       </section>
       <section aria-labelledby="actuals-h" id="actuals-section" hidden>
         <h3 id="actuals-h">Actual against roster</h3>
-        <div class="table-wrap"><table aria-labelledby="actuals-h"><tbody id="actual-rows"></tbody></table></div>
+        <div id="actual-host" class="register-host"></div>
       </section>
       <!-- W5 (C18 · OB-152 · OB-166 · OB-142 · M25-FR-01): check and publish the week, service standards, labour cost — schedule-roster.js. -->
       <section id="roster-pub" hidden aria-labelledby="rc-h"></section>

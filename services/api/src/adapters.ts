@@ -214,6 +214,7 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy, OtherChargesMarking } from '../../purchase/src/index';
 import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
+import { approvedClaimCredits, type ClaimCreditDecision } from '../../purchase/src/supplier-claims'; // U7 · OB-725
 import { foldAllSupplierAccounts, foldSupplierAccount, doorDebitNotesFrom, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue, type DoorCheckInForAccount } from '../../purchase/src/supplier-account'; // R3 OB-196: doorDebitNotesFrom
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff, type SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
@@ -309,7 +310,7 @@ import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-lo
 import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
 import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
-import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
+import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord, DriverCallRequest } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
@@ -1546,6 +1547,10 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
 const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+/** U7 · OB-725 — the accountant's decisions on draft credits from accepted supplier claims (append-only; first per credit stands). */
+export const SUPPLIER_CLAIM_CREDITS_STREAM = streamName(STREAM.purchase, 'supplier-claim-credits');
+/** U7 · M24-FR-02 alt — how each disputed (rejected) supplier claim was settled (append-only; first per dispute stands). */
+export const SUPPLIER_CLAIM_DISPUTES_STREAM = streamName(STREAM.purchase, 'supplier-claim-disputes');
 /** GT-05 — opening supplier balances carried from the old system, and the second person's sign-off of each load. */
 const SUPPLIER_OPENINGS_STREAM = streamName(STREAM.purchase, 'supplier-openings');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
@@ -8623,6 +8628,8 @@ export function supplierAccountAdapter(input: {
     ),
     // R3 OB-196: the numbered debit notes raised at the DSD door (the check-in register, r3-ops-adapters.ts) — on the statement.
     doorDebitNotes: async (tenantId) => doorDebitNotesFrom(await allOf<DoorCheckInForAccount>(input.store, tenantId, streamName(STREAM.inventory, 'dsd-checkins'), 'DsdCheckInRecorded')),
+    // U7 · OB-725: only the credits the accountant APPROVED count on the account; a draft or a refused one never does.
+    claimCredits: async (tenantId) => approvedClaimCredits(await allOf<ClaimCreditDecision>(input.store, tenantId, SUPPLIER_CLAIM_CREDITS_STREAM, 'SupplierClaimCreditDecided')),
   };
 }
 
@@ -9034,11 +9041,11 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
     supplierAccounts: async (tenantId) => {
-      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
+      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
         registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-        registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
+        registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
       ]);
-      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() }).accounts;
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() }).accounts;
     },
     payablesJournals: async (tenantId) =>
       (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
@@ -9065,11 +9072,11 @@ export function supplierPortalAdapter(input: {
   const registers = supplierAccountAdapter(input);
   /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
   const accountStatementLines = async (tenantId: string, partnerId: string): Promise<readonly StatementLine[]> => {
-    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
+    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, claimCredits] = await Promise.all([
       registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-      registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
+      registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId), registers.claimCredits!(tenantId),
     ]);
-    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() });
+    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, claimCredits, asAt: input.now() });
     const lines: StatementLine[] = [];
     const zone = (await shopCalendarOf(input.calendar)(tenantId)).timeZone; // R1b: the shop's dates on the statement
     for (const i of a.invoices) {
@@ -9644,6 +9651,15 @@ export function loyaltyMembersAdapter(input: {
     rule: input.rule,
     now: input.now,
   };
+}
+
+/**
+ * U6 (M16-FR-02 · §27 "CRM · consent"): every member ever enrolled (OB-329), by ref, once each — the customers a desk can
+ * name, so the customer directory lists a member who gave or refused consent but has not bought online. A read of the one
+ * members stream; nothing is written.
+ */
+export async function enrolledMemberRefs(store: EventStore, tenantId: string): Promise<readonly string[]> {
+  return [...new Set((await allOf<MemberRecord>(store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).map((m) => m.memberRef))].sort();
 }
 
 /**
@@ -10893,7 +10909,47 @@ export function driverRunAdapter(input: {
     recordDeliveryTransition: orders.recordDeliveryTransition,
     // OB-09: the phone's door outcomes join the driver's own run register — the stream `/v1/delivery/runs/:driverId` reads.
     recordAttempt: orders.appendAttempt,
+    // U6 · OB-700: the driver's requests that the store call a stop's customer — one per stop, on the route's own stream.
+    callRequests: (tenantId, routeId) => allOf<DriverCallRequest>(input.store, tenantId, forRoute(routeId), 'DriverCallRequestRecorded'),
+    recordCallRequest: async (tenantId, r) => {
+      await input.store.append(tenantId, forRoute(r.routeId), makeEvent({
+        id: `route-call-${r.routeId}-${r.stopId}`,
+        type: 'DriverCallRequestRecorded',
+        occurredAt: r.at,
+        idempotencyKey: `route-call-${tenantId}-${r.routeId}-${r.stopId}`,
+        source: 'api/fulfilment',
+        payload: r,
+      }));
+    },
+    tellStoreToCall: (tenantId, r) => tellStoreToCallCustomer(input.store, input.now, tenantId, r),
   };
+}
+
+/**
+ * U6 · OB-700 (owner, 7 Nov 2026): put a driver's call request in front of the store — an operational alert on the same
+ * lifecycle every alert rides (the Ops alerts page shows it, with who owns it and by when), owned by a store manager, the
+ * others also told; the owners when the shop has no store manager. One alert per stop while it is open; a request re-sent
+ * while the alert is open adds nothing. The alert's words name the order and the driver, never the customer.
+ */
+export async function tellStoreToCallCustomer(store: EventStore, now: () => string, tenantId: string, r: DriverCallRequest): Promise<{ readonly toldUserIds: readonly string[] }> {
+  const grants = await effectiveGrants(store, tenantId);
+  const managers = [...new Set(grants.filter((g) => g.roleId === STORE_MANAGER_ROLE_ID).map((g) => g.userId))].sort();
+  const owners = [...new Set(grants.filter((g) => g.roleId === OWNER_ROLE_ID).map((g) => g.userId))].sort();
+  const told = managers.length > 0 ? managers : owners;
+  if (told.length === 0) return { toldUserIds: [] };
+  const lifecycle = alertLifecycleAdapter({ store, now });
+  const alertId = `delivery-call:${r.routeId}:${r.stopId}`;
+  const current = (await lifecycle.alerts(tenantId)).find((a) => a.alert.alertId === alertId);
+  if (current !== undefined && current.state !== 'cleared') return { toldUserIds: told };
+  const at = r.at;
+  const ackDueBy = new Date(Date.parse(at) + 15 * 60_000).toISOString();
+  const detail = `Driver ${r.driverId} on route ${r.routeId} asks the store to call the customer of order ${r.orderRef}${r.area === null ? '' : ` (${r.area})`}. The phone holds no customer number (OB-700): call from the order's own record.`;
+  const event: AlertLifecycleEvent = {
+    alertId, change: 'raised', by: r.driverId, at,
+    alert: { alertId, component: 'delivery', status: 'degraded', ownerUserId: told[0]!, ownerName: told[0]!, detail, raisedAt: at, ackDueBy, ...(told.length > 1 ? { alsoToUserIds: told.slice(1) } : {}) },
+  };
+  await lifecycle.recordAlertEvent(tenantId, event, `${alertId}|${at}|${current?.clearedAt ?? 'first'}`);
+  return { toldUserIds: told };
 }
 
 /**

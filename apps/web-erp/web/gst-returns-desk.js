@@ -286,7 +286,11 @@ async function loadTds() {
 }
 function paintTds() {
   const v = tdsState;
-  el('tds-state').textContent = v === null ? '' : v.state;
+  // OB-699: the switch's state is the page's own sentence, built from what head office returned (on/off, a list or not);
+  // head office's English sentence is kept only as the evidence attribute.
+  const listFilled = v !== null && ((Array.isArray(v.sections) && v.sections.length > 0) || (tdsDraft !== null && tdsDraft.sections.length > 0));
+  el('tds-state').textContent = v === null ? '' : w(v.enabled ? 'tdsOn' : listFilled ? 'tdsOffFilled' : 'tdsOffEmpty');
+  if (v !== null && typeof v.state === 'string') el('tds-state').dataset.said = v.state;
   el('tds-state').dataset.enabled = v === null ? '' : String(v.enabled);
   const secs = el('tds-sections'); secs.replaceChildren();
   const pays = el('tds-payees'); pays.replaceChildren();

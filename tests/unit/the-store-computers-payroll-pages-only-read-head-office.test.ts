@@ -103,12 +103,13 @@ describe('Payroll on the box: read only', () => {
     expect(rupees(-500_00)).toBe('-₹500.00');
   });
 
-  it('the switch is said as head office says it: held while off (OB-228), with who set it and why when it was set', () => {
-    expect(holdWords('en', HOLD)).toEqual({ headline: 'Pay release: Held — switched off', detail: HOLD.state, on: false });
+  it('the switch is said in the page\'s own words from its state — held while off (OB-228), with who set it and why when it was set; both languages (OB-699)', () => {
+    expect(holdWords('en', HOLD)).toEqual({ headline: 'Pay release: Held — switched off', detail: 'Pay release is switched off: approving or locking a pay run and building the salary bank file are refused until the owner switches release on.', on: false });
     const on = holdWords('en', { on: true, state: 'Pay release is switched ON by the owner.', setBy: 'u-owner', setAt: '2026-11-01T09:00:00.000Z', reason: 'GO in writing' });
     expect(on.headline).toBe('Pay release: Switched on by the owner');
-    expect(on.detail).toBe('Pay release is switched ON by the owner. Set by: u-owner · 2026-11-01T09:00:00.000Z · Why: GO in writing');
+    expect(on.detail).toBe('Pay release is switched on: approving or locking a pay run and building the salary bank file may go ahead, each with its own checks (a fresh sign-in, a different approver). Set by: u-owner · 2026-11-01T09:00:00.000Z · Why: GO in writing');
     expect(holdWords('ta', HOLD).headline).toBe('சம்பள வெளியீடு: நிறுத்தி வைக்கப்பட்டுள்ளது — அணைக்கப்பட்டது');
+    expect(holdWords('ta', HOLD).detail).toMatch(/^சம்பள வெளியீடு நிறுத்தப்பட்டுள்ளது/);
   });
 });
 

@@ -73,6 +73,19 @@ function sampleSession() {
 
 let session = window.dataIoSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+/** The exportable records and the import templates by name in the reader's language (OB-699); the code is shown beside. */
+const DOMAIN_WORDS = {
+  en: { priceLists: 'Price lists', promotions: 'Offers', goodsReceipts: 'Goods receipts', supplierInvoices: 'Supplier bills', returns: 'Returns', stockMovements: 'Stock movements', transfers: 'Transfers', stockCounts: 'Stock counts', tillShifts: 'Till shifts', cashMovements: 'Cash movements', writeOffs: 'Write-offs', wasteRecords: 'Waste records', serviceCases: 'Customer cases', attendance: 'Attendance', purchaseOrders: 'Purchase orders', customers: 'Customers', loyaltyWallets: 'Loyalty wallets', orders: 'Online orders', payslips: 'Payslips', sales: 'Bills', stockOnHand: 'Stock on hand', suppliers: 'Suppliers', ledgerJournals: 'Ledger journals', products: 'Products', importCommits: 'Imports loaded' },
+  ta: { priceLists: 'விலைப் பட்டியல்கள்', promotions: 'சலுகைகள்', goodsReceipts: 'சரக்கு வரவுகள்', supplierInvoices: 'விநியோகஸ்தர் பில்கள்', returns: 'திருப்பங்கள்', stockMovements: 'சரக்கு நகர்வுகள்', transfers: 'மாற்றங்கள்', stockCounts: 'சரக்கு எண்ணிக்கைகள்', tillShifts: 'கல்லா ஷிப்ட்கள்', cashMovements: 'பண நகர்வுகள்', writeOffs: 'தள்ளுபடிகள்', wasteRecords: 'கழிவுப் பதிவுகள்', serviceCases: 'வாடிக்கையாளர் வழக்குகள்', attendance: 'வருகை', purchaseOrders: 'கொள்முதல் ஆணைகள்', customers: 'வாடிக்கையாளர்கள்', loyaltyWallets: 'விசுவாசப் பணப்பைகள்', orders: 'ஆன்லைன் ஆர்டர்கள்', payslips: 'சம்பளச் சீட்டுகள்', sales: 'பில்கள்', stockOnHand: 'கையிருப்பு', suppliers: 'விநியோகஸ்தர்கள்', ledgerJournals: 'பேரேட்டுப் பதிவுகள்', products: 'பொருட்கள்', importCommits: 'ஏற்றப்பட்ட இறக்குமதிகள்' },
+};
+const TEMPLATE_WORDS = {
+  en: { supplierInvoiceV1: 'Supplier invoices (one row per invoice line)', productV1: 'New products (one row per product)', productUpdateV1: 'Change existing products (one row per product; a blank cell keeps what is there)', supplierV1: 'New suppliers (one row per supplier; each arrives proposed, for finance to approve)', priceListV1: 'Store selling prices (one row per product and store; never above MRP, never below cost or the store\'s margin floor)', openingStockV1: 'Opening stock (one row per product, place and batch — the first stock fact at that place, at its cost)', customerV1: 'Customers from the old system (one row per customer; only with their recorded yes to loyalty — the number is never kept)', loyaltyOpeningV1: 'Opening loyalty points (one row per member — the first fact on their points; the number is never kept)' },
+  ta: { supplierInvoiceV1: 'விநியோகஸ்தர் பில்கள் (ஒரு பில் வரிக்கு ஒரு வரி)', productV1: 'புதிய பொருட்கள் (ஒரு பொருளுக்கு ஒரு வரி)', productUpdateV1: 'இருக்கும் பொருட்களை மாற்று (ஒரு பொருளுக்கு ஒரு வரி; காலி கட்டம் இருப்பதை வைத்திருக்கும்)', supplierV1: 'புதிய விநியோகஸ்தர்கள் (ஒருவருக்கு ஒரு வரி; ஒவ்வொன்றும் முன்மொழிவாக வந்து நிதித்துறை ஒப்புதலுக்குக் காத்திருக்கும்)', priceListV1: 'கடை விற்பனை விலைகள் (ஒரு பொருள்-கடைக்கு ஒரு வரி; MRP-க்கு மேல் இல்லை, செலவுக்கும் கடையின் லாப வரம்புக்கும் கீழ் இல்லை)', openingStockV1: 'தொடக்கச் சரக்கு (ஒரு பொருள், இடம், தொகுதிக்கு ஒரு வரி — அந்த இடத்தின் முதல் சரக்கு உண்மை, அதன் செலவில்)', customerV1: 'பழைய அமைப்பிலிருந்து வாடிக்கையாளர்கள் (ஒருவருக்கு ஒரு வரி; விசுவாசத்திற்குப் பதிவான சம்மதத்துடன் மட்டும் — எண் ஒருபோதும் வைக்கப்படாது)', loyaltyOpeningV1: 'தொடக்க விசுவாசப் புள்ளிகள் (ஒரு உறுப்பினருக்கு ஒரு வரி — அவர்களின் புள்ளிகளின் முதல் உண்மை; எண் ஒருபோதும் வைக்கப்படாது)' },
+};
+const wordKey = (id) => id.replace(/[-._](\w)/g, (_, c) => c.toUpperCase()); // 'price-lists' → priceLists (the tables' bare keys)
+const domainName = (id) => DOMAIN_WORDS[lang]?.[wordKey(id)] ?? DOMAIN_WORDS.en[wordKey(id)] ?? id;
+const templateName = (tpl) => TEMPLATE_WORDS[lang]?.[wordKey(tpl.id)] ?? tpl.label;
+
 /** The uploader's own requests, as last read (a GET). Kept so a language switch repaints them without a new read. */
 let lastRequests = null;
 
@@ -100,9 +113,13 @@ function paintExport() {
   el('export-domains').replaceChildren(...view.domains.map((d) => {
     const li = document.createElement('li'); li.className = 'row';
     const what = document.createElement('span'); what.className = 'what';
-    const name = document.createElement('strong'); name.textContent = d.domain;
-    if (d.sensitiveCount > 0) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = `${d.sensitiveCount} ${t('sensitiveTag')}`; name.append(tag); }
-    what.append(name, line(d.columns.map((c) => c.name).join(', ')));
+    const name = document.createElement('strong'); name.textContent = domainName(d.domain);
+    const code = document.createElement('code'); code.className = 'domain-code'; code.textContent = d.domain; name.append(document.createTextNode(' '), code);
+    // U5 · G13: "n sensitive" as the chrome's chip (tone + icon), never a page-own pill
+    if (d.sensitiveCount > 0) { const o = window.sreOffice; const words = `${d.sensitiveCount} ${t('sensitiveTag')}`; const tag = o && typeof o.chip === 'function' ? o.chip('degraded', words) : document.createElement('span'); if (!tag.classList.contains('sre-chip')) tag.textContent = words; tag.classList.add('sensitive'); name.append(' ', tag); }
+    // The file's column names are codes: shown as code.
+    const cols = line(''); const colCode = document.createElement('code'); colCode.textContent = d.columns.map((c) => c.name).join(', '); cols.append(colCode);
+    what.append(name, cols);
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act small export-btn sre-btn'; btn.textContent = t('exportBtn'); btn.dataset.domain = d.domain;
     if (d.period) {
       // A dated domain (attendance): From / To, defaulting to the last 7 days ending yesterday in the shop's calendar.
@@ -168,7 +185,7 @@ function paintImport() {
   el('ask').textContent = t('askBtn');
   el('commit').textContent = t('commitBtn');
   const chosen = el('import-template').value;
-  el('import-template').replaceChildren(...view.templates.map((tpl) => { const o = document.createElement('option'); o.value = tpl.id; o.textContent = tpl.label; return o; }));
+  el('import-template').replaceChildren(...view.templates.map((tpl) => { const o = document.createElement('option'); o.value = tpl.id; o.textContent = templateName(tpl); return o; }));
   if (chosen && view.templates.some((tpl) => tpl.id === chosen)) el('import-template').value = chosen;
   paintRequests();
 }
@@ -246,89 +263,129 @@ function renderPreview(preview, changes) {
 }
 
 /** M30 round 8 — the loads already applied, each in place or undone; one this person may undo carries a reason box, "Ask to
- *  undo" and "Undo it". Both are explicit clicks; the list itself is a GET. */
+ *  undo" and "Undo it". Both are explicit clicks; the list itself is a GET.
+ *  U7 (OB-726): the list is the chrome's register, read ONE page at a time from head office (its loader) — search and sort
+ *  at head office, newest first. A row is drawn in the reader's language when it is drawn; "Undo it" opens the confirm
+ *  sheet (it puts records back) before anything is sent. */
+let loadsTable = null; let loadsDenied = false;
+const loadsPair = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
 function paintLoads() {
   const heading = el('loads-heading');
-  const list = el('my-loads');
-  if (lastLoads === null) { heading.hidden = true; list.hidden = true; return; }
-  heading.hidden = false; list.hidden = false;
+  const host = el('my-loads-host');
+  if (lastLoads === null) { heading.hidden = true; host.hidden = true; return; }
+  heading.hidden = false; host.hidden = false;
   heading.textContent = t('loadsHeading');
-  list.setAttribute('aria-label', t('loadsHeading'));
-  if (lastLoads.state !== 'read' || lastLoads.rows.length === 0) {
-    const li = document.createElement('li'); li.className = 'row';
-    li.append(line(lastLoads.state === 'read' ? t('loadsEmpty') : t('loadsLostLink')));
-    list.replaceChildren(li);
-    return;
-  }
-  list.replaceChildren(...lastLoads.rows.map((r) => {
-    const li = document.createElement('li'); li.className = `row tone-${r.status.tone}`; li.dataset.jobId = r.jobId;
-    const what = document.createElement('span'); what.className = 'what';
-    const name = document.createElement('strong'); name.textContent = r.jobId;
-    const chip = document.createElement('span'); chip.className = 'chip load-status';
-    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-    const words = document.createElement('span'); words.textContent = r.status.label;
-    chip.append(icon, words);
-    chip.setAttribute('aria-label', r.status.announcement || r.status.label);
-    what.append(name, chip, line(r.line));
-    li.append(what);
-    if (r.mayUndo) {
-      const box = document.createElement('div'); box.className = 'undo';
-      const id = `undo-why-${r.jobId}`;
-      const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = t('undoWhyLabel');
-      const input = document.createElement('input'); input.type = 'text'; input.id = id; input.className = 'undo-why'; input.maxLength = 300; input.autocomplete = 'off';
-      input.value = undoWhy.get(r.jobId) ?? '';
-      input.addEventListener('input', () => { undoWhy.set(r.jobId, input.value); });
-      const actions = document.createElement('div'); actions.className = 'actions';
-      const ask = document.createElement('button'); ask.type = 'button'; ask.className = 'act small ask-undo sre-btn'; ask.textContent = t('askUndoBtn'); ask.dataset.job = r.jobId;
-      const go = document.createElement('button'); go.type = 'button'; go.className = 'act primary undo-btn sre-btn sre-btn-primary'; go.textContent = t('undoBtn'); go.dataset.job = r.jobId;
-      const result = document.createElement('p'); result.className = 'result undo-result'; result.hidden = true; result.setAttribute('role', 'status'); result.setAttribute('aria-live', 'polite');
-      const show = (presentation) => {
-        result.hidden = false; result.className = `result undo-result tone-${presentation.tone}`;
-        result.textContent = `${presentation.icon} ${presentation.label}`;
-        result.setAttribute('aria-label', presentation.announcement || presentation.label);
-      };
-      ask.addEventListener('click', () => {
-        void (async () => {
-          ask.disabled = true;
-          try {
-            const o = await session.askToUndo(lang, { jobId: r.jobId, why: input.value });
-            show(typeof session.presentUndoAskOutcome === 'function' ? session.presentUndoAskOutcome(lang, o) : session.presentAskOutcome(lang, o));
-            if (o.kind === 'asked') await readRequests();
-          } finally { ask.disabled = false; }
-        })();
-      });
-      go.addEventListener('click', () => {
-        void (async () => {
-          go.disabled = true;
-          try {
-            const o = await session.undo({ jobId: r.jobId, why: input.value });
-            const presentation = session.presentUndoOutcome(lang, o);
-            if (o.kind !== 'undone') { show(presentation); return; }
-            // Undone: the list is read again (the row now says who undid it and why) and the answer is said on that row.
-            undoWhy.delete(r.jobId);
-            await readLoads();
-            const row = el('my-loads').querySelector(`li[data-job-id="${CSS.escape(r.jobId)}"]`);
-            const note = document.createElement('p'); note.className = `result undo-result tone-${presentation.tone}`; note.setAttribute('role', 'status');
-            note.textContent = `${presentation.icon} ${presentation.label}`;
-            row?.append(note);
-          } finally { go.disabled = false; }
-        })();
-      });
-      actions.append(ask, go);
-      box.append(lab, input, actions, result);
-      li.append(box);
-    }
-    return li;
-  }));
+  const o = window.sreOffice;
+  if (!o || typeof o.table !== 'function') return; // the chrome's parts arrive after this script (sre:chrome)
+  if (loadsTable !== null && loadsTable.connected()) { loadsTable.repaint(); return; }
+  loadsTable = o.table(host, {
+    id: 'loads', label: loadsPair('loadsHeading'), pageSize: 10, sortable: true, bodyId: 'my-loads', loader: pageOfLoads,
+    rowKey: (j) => j.jobId, rowData: (j) => ({ jobId: j.jobId }),
+    columns: [
+      { key: 'when', label: { en: 'When', ta: 'எப்போது' }, value: (j) => session.presentLoad(lang, j).line, render: loadCell },
+      { key: 'job', label: loadsPair('loadCol'), value: (j) => j.jobId, render: (j) => { const n = document.createElement('strong'); n.textContent = j.jobId; return n; } },
+      { key: 'undo', label: loadsPair('undoCol'), sort: false, value: (j) => (session.presentLoad(lang, j).mayUndo ? t('undoBtn') : null), render: undoCell },
+    ],
+    empty: { title: loadsPair('loadsEmpty') },
+  });
 }
 
-/** Read the loads already applied (a GET — read only) and draw them. */
-async function readLoads() {
-  if (typeof session.loads !== 'function') return;
-  const view = await session.loads(lang);
-  lastLoads = view.state === 'not_allowed' ? null : view;
-  paintLoads();
+/** U7: the register's loader — one page of loads from head office, or the register's words for why there is none. */
+async function pageOfLoads(ask) {
+  if (typeof session.loadsPage !== 'function') return { state: 'offline', stateOpts: { title: loadsPair('loadsLostLink') } };
+  const page = await session.loadsPage(ask);
+  if (page.state === 'read') return { rows: page.jobs, total: page.total };
+  // A person who may not read the loads is not shown the list at all (as before) — never an empty "nothing loaded".
+  if (page.state === 'not_allowed') { loadsDenied = true; lastLoads = null; paintLoads(); return { state: 'denied' }; }
+  if (page.state === 'refused') return { state: 'denied' };
+  return { state: 'offline', stateOpts: { title: loadsPair('loadsLostLink') } };
 }
+
+/** The load's line and its chip (in place / undone — by whom, why), in the reader's language now. */
+function loadCell(j) {
+  const r = session.presentLoad(lang, j);
+  const what = document.createElement('span'); what.className = `what tone-${r.status.tone}`;
+  const chip = document.createElement('span'); chip.className = 'chip load-status';
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
+  const words = document.createElement('span'); words.textContent = r.status.label;
+  chip.append(icon, words);
+  chip.setAttribute('aria-label', r.status.announcement || r.status.label);
+  what.append(chip, line(r.line));
+  return what;
+}
+
+/** One load's undo: the reason box, "Ask to undo" and "Undo it" (behind the confirm sheet), and what came of it. */
+function undoCell(j) {
+  const r = session.presentLoad(lang, j);
+  if (!r.mayUndo) return null;
+  const box = document.createElement('div'); box.className = 'undo';
+  const id = `undo-why-${r.jobId}`;
+  const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = t('undoWhyLabel');
+  const input = document.createElement('input'); input.type = 'text'; input.id = id; input.className = 'undo-why'; input.maxLength = 300; input.autocomplete = 'off';
+  input.value = undoWhy.get(r.jobId) ?? '';
+  input.addEventListener('input', () => { undoWhy.set(r.jobId, input.value); });
+  const actions = document.createElement('div'); actions.className = 'actions';
+  const ask = document.createElement('button'); ask.type = 'button'; ask.className = 'act small ask-undo sre-btn'; ask.textContent = t('askUndoBtn'); ask.dataset.job = r.jobId;
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'act primary undo-btn sre-btn sre-btn-primary'; go.textContent = t('undoBtn'); go.dataset.job = r.jobId;
+  const result = document.createElement('p'); result.className = 'result undo-result'; result.hidden = true; result.setAttribute('role', 'status'); result.setAttribute('aria-live', 'polite');
+  const show = (presentation) => {
+    result.hidden = false; result.className = `result undo-result tone-${presentation.tone}`;
+    result.textContent = `${presentation.icon} ${presentation.label}`;
+    result.setAttribute('aria-label', presentation.announcement || presentation.label);
+  };
+  ask.addEventListener('click', () => {
+    void (async () => {
+      ask.disabled = true;
+      try {
+        const o = await session.askToUndo(lang, { jobId: r.jobId, why: input.value });
+        show(typeof session.presentUndoAskOutcome === 'function' ? session.presentUndoAskOutcome(lang, o) : session.presentAskOutcome(lang, o));
+        if (o.kind === 'asked') await readRequests();
+      } finally { ask.disabled = false; }
+    })();
+  });
+  go.addEventListener('click', () => {
+    void (async () => {
+      // Undoing puts records back — the confirm sheet first (OB-698): the load, how many rows, and that nothing is deleted.
+      // The chrome's consequence sheet (sreOffice.confirm) — a page sheet with "Go back", never the browser's dialog.
+      const office = window.sreOffice;
+      const consequenceSheet = office && typeof office.confirm === 'function' ? office.confirm.bind(office) : null;
+      if (consequenceSheet !== null) {
+        const fillIn = (l) => session.text(l, 'undoSheetTitle').replace('{job}', r.jobId).replace('{rows}', String(j.rowsApplied)).replace('{rowWord}', session.text(l, j.rowsApplied === 1 ? 'rowOne' : 'rowMany'));
+        const asked = await consequenceSheet({
+          title: { en: fillIn('en'), ta: fillIn('ta') }, detail: loadsPair('undoSheetDetail'),
+          authority: loadsPair('undoSheetAuthority'), confirmLabel: loadsPair('undoBtn'), tone: 'danger',
+        });
+        if (!asked.ok) return;
+      }
+      go.disabled = true;
+      try {
+        const o = await session.undo({ jobId: r.jobId, why: input.value });
+        const presentation = session.presentUndoOutcome(lang, o);
+        if (o.kind !== 'undone') { show(presentation); return; }
+        // Undone: the page is read again (the row now says who undid it and why) and the answer is said on that row.
+        undoWhy.delete(r.jobId);
+        await readLoads();
+        const row = el('my-loads')?.querySelector(`tr[data-job-id="${CSS.escape(r.jobId)}"]`);
+        const note = document.createElement('p'); note.className = `result undo-result tone-${presentation.tone}`; note.setAttribute('role', 'status');
+        note.textContent = `${presentation.icon} ${presentation.label}`;
+        (row?.lastElementChild ?? row)?.append(note);
+      } finally { go.disabled = false; }
+    })();
+  });
+  actions.append(ask, go);
+  box.append(lab, input, actions, result);
+  return box;
+}
+
+/** Show the loads list and have the register read page 1 from head office again (after a load or an undo). */
+async function readLoads() {
+  if (typeof session.loadsPage !== 'function' && typeof session.loads !== 'function') return;
+  const drawn = loadsTable !== null && loadsTable.connected();
+  if (lastLoads === null && !loadsDenied) lastLoads = { state: 'read' };
+  paintLoads();
+  if (drawn) await loadsTable.reload();
+}
+document.addEventListener('sre:chrome', () => { paintLoads(); });
 
 /** What the import form currently says — the same four facts the approval and the load are bound to. */
 function importInput() {

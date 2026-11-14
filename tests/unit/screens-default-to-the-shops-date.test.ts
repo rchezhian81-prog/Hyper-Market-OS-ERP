@@ -1,3 +1,4 @@
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { todayAtShop as wasteToday } from '../../apps/web-erp/src/store-ops-session';
 import { todayAtShop as heatMapToday } from '../../apps/web-erp/src/floor-heat-map-session';
@@ -38,7 +39,20 @@ describe('the screens default to the shop\'s date, at any hour', () => {
   it('the evening the browser tests pin is the most recent 19:30 UTC already passed — never one still to come', () => {
     expect(lastEveningInstant(Date.parse('2026-10-28T19:30:00.000Z'))).toBe('2026-10-28T19:30:00.000Z');
     expect(lastEveningInstant(Date.parse('2026-10-28T23:59:00.000Z'))).toBe('2026-10-28T19:30:00.000Z');
-    expect(lastEveningInstant(Date.parse('2026-10-28T19:29:59.000Z'))).toBe('2026-10-27T19:30:00.000Z');
+    // U7 (13 Nov 2026): from 18:30 UTC the shop's day has already turned. Yesterday's 19:30 would sit a whole shop day
+    // behind the store computer and PostgreSQL (five browser files failed on CI from 19:18 to 19:28 UTC on 12 Nov), and
+    // today's 19:30 is still to come (OB-422 forbids it). So in that hour the pin is the real moment itself, to the minute:
+    // already on the shop's new day (00:00–01:00 there), never ahead. Before 18:30 UTC yesterday's 19:30 is on the shop's day.
+    expect(lastEveningInstant(Date.parse('2026-10-28T19:29:59.000Z'))).toBe('2026-10-28T19:29:00.000Z');
+    expect(lastEveningInstant(Date.parse('2026-10-28T18:30:00.000Z'))).toBe('2026-10-28T18:30:00.000Z');
+    expect(lastEveningInstant(Date.parse('2026-10-28T18:29:59.000Z'))).toBe('2026-10-27T19:30:00.000Z');
+    for (const at of ['2026-11-12T18:30:00.000Z', '2026-11-12T18:45:30.000Z', '2026-11-12T19:15:00.000Z', '2026-11-12T19:29:59.999Z', '2026-11-12T19:45:00.000Z', '2026-11-12T18:29:00.000Z', '2026-11-13T08:00:00.000Z']) {
+      const nowMs = Date.parse(at);
+      const evening = theEvening(nowMs);
+      expect(evening.shopDate, at).toBe(shopDateIn(at)); // the pinned evening is always on the shop's own day now
+      expect(Date.parse(evening.at), at).toBeLessThanOrEqual(nowMs); // never a moment still to come (OB-422)
+      expect(evening.utcDate < evening.shopDate, at).toBe(true); // and still the evening case: the UTC date is the day before
+    }
     expect(lastEveningInstant(Date.parse('2026-11-01T03:00:00.000Z'))).toBe('2026-10-31T19:30:00.000Z');
     const now = Date.now();
     expect(Date.parse(lastEveningInstant(now))).toBeLessThanOrEqual(now);

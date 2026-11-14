@@ -6,24 +6,11 @@
 
 const $ = (id) => document.getElementById(id);
 
-// ── U2b (UI/UX gap audit G14 · NFR-08): a date is written as the shop writes it — dd/mm/yyyy on the chrome's shared ──────
-// field, the shop's calendar (31/02 refused beside the field), ISO to head office. A value already on the plain field is
-// carried over; the plain field stays until the chrome is there, so the page is never dead.
-const shopDates = new Map();
-function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = document.getElementById(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
-function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = document.getElementById(id);
-  if (!office || typeof office.dateField !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
-  if (input === null || shopDates.has(id)) return;
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}) });
-  if (!field) return;
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
-  repaintShopDates();
-}
-const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (document.getElementById(id)?.value ?? ''));
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+const dateOf = (id) => { const o = office(); return o && typeof o.dateOf === 'function' ? (o.dateOf(id) ?? '') : ($(id)?.value ?? ''); };
 const api = window.demandEvents ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, manage: false };
@@ -34,32 +21,7 @@ let events = null;
 let forecast = null;
 
 
-// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
-// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
-// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
-// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
-const pickers = [];
-function pickerBeside(input, kind, titleKey, extra = {}) {
-  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
-  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
-  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
-  host.after(btn, name);
-  btn.addEventListener('click', async () => {
-    const office = window.sreOffice;
-    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
-    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
-    if (!picked || picked.ok !== true) return;
-    input.value = picked.id;
-    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
-  pickers.push(btn);
-  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
-  return btn;
-}
-const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+const paintPickers = () => {}; // U5: the chrome's `pickable` keeps its own words on the toggle
 /** The signed-in person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
 function myStore() {
   const office = window.sreOffice;
@@ -88,11 +50,25 @@ function paintEffectWords() {
   $('effect-words').textContent = pct === null ? '' : w('effectHint').replace('{effect}', pct === 0 ? w('effectSame') : w(effect > 1 ? 'effectMore' : 'effectLess').replace('{pct}', String(pct)));
 }
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-function row(cells, attrs = {}) {
-  const tr = document.createElement('tr');
-  for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
-  for (const [k, v] of Object.entries(attrs)) tr.dataset[k] = v;
-  return tr;
+let forecastTable = null;
+/** The next seven days on the chrome's register: the day, the forecast, the corrected figure, the events named on that day. */
+function paintForecast(days) {
+  const o = office(); const host = $('forecast-list');
+  host.hidden = forecast === null;
+  if (!o || forecast === null) return;
+  const both = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+  if (forecastTable === null || !forecastTable.connected()) {
+    forecastTable = o.table(host, {
+      id: 'forecast', label: both('forecastH'), pageSize: 14, sortable: false, search: false, count: false, bodyId: 'forecast-rows', rows: null,
+      rowKey: (d) => d.day, rowData: (d) => ({ day: d.day, events: d.appliedSignals.join('|') }),
+      columns: [
+        { key: 'day', label: both('day'), value: (d) => d.day }, { key: 'forecast', label: both('forecastCol'), align: 'end', value: (d) => String(d.forecastQty) },
+        { key: 'corrected', label: both('correctedCol'), align: 'end', value: (d) => (d.correctedQty === null ? null : String(d.correctedQty)) },
+        { key: 'events', label: both('eventsCol'), value: (d) => d.appliedSignals.join(', '), render: (d) => (d.appliedSignals.length === 0 ? document.createTextNode('') : document.createTextNode(d.appliedSignals.join(', '))) },
+      ],
+    });
+  }
+  forecastTable.setRows(days);
 }
 function say(id, out, good) { $(id).className = `status ${good ? 'good' : 'err'}`; $(id).textContent = good ? out : api.outcomeWords(lang, out); }
 const fill = (s, vars) => Object.entries(vars).reduce((acc, [k, v]) => acc.replace(`{${k}}`, v), s);
@@ -128,7 +104,7 @@ function paint() {
 
   const sh = forecast?.shortHorizon;
   const days = sh?.horizon ?? (forecast?.horizon ?? []).map((d) => ({ ...d, correctedQty: null }));
-  $('forecast-rows').replaceChildren(...(forecast === null ? [] : [row([t('day'), t('forecastCol'), t('correctedCol'), t('eventsCol')], { head: 'true' }), ...days.map((d) => row([d.day, String(d.forecastQty), d.correctedQty === null ? '—' : String(d.correctedQty), d.appliedSignals.join(', ')], { day: d.day, events: d.appliedSignals.join('|') }))]));
+  paintForecast(days);
   $('backtest').textContent = sh === undefined ? '' : `${fill(t('factor'), { factor: String(sh.correction.factor) })} ${sh.backtest.notBackTested ? t('notBackTested') : fill(t('backtest'), { days: String(sh.backtest.testedDays), plain: pct(sh.backtest.plainWape), corrected: pct(sh.backtest.correctedWape) })}`;
 }
 
@@ -199,9 +175,13 @@ async function showForecast(event) {
 $('ask').addEventListener('submit', (e) => { void show(e); });
 $('record').addEventListener('submit', (e) => { void record(e); });
 $('fc').addEventListener('submit', (e) => { void showForecast(e); });
-$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintShopDates(); });
-pickerBeside($('store'), 'store', 'whichStore');
-pickerBeside($('product'), 'product', 'whichProduct');
+$('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); if (forecastTable !== null) forecastTable.repaint(); });
+whenChrome(() => {
+  const o = office(); const both = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
+  o.pickable($('store'), 'store', both('whichStore'));
+  o.pickable($('product'), 'product', both('whichProduct'));
+  if (api !== null) { o.shopDate('ev-from', both('from'), { required: true }); o.shopDate('ev-to', both('to'), { required: true }); }
+});
 $('add-product').addEventListener('click', async () => {
   const office = window.sreOffice;
   if (!office || typeof office.pick !== 'function') { say('record-status', t('pickUnavailable'), false); return; }
@@ -222,4 +202,3 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-if (api !== null) { shopDate('ev-from', { en: api.words('en', 'from'), ta: api.words('ta', 'from') }, { required: true }); shopDate('ev-to', { en: api.words('en', 'to'), ta: api.words('ta', 'to') }, { required: true }); }

@@ -32,11 +32,6 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--line); color: var(--ink); }
       button[disabled] { opacity: .5; cursor: not-allowed; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
-      .panel b { font-size: 22px; font-variant-numeric: tabular-nums; } .panel span { color: var(--muted); font-size: 14px; }
-      table { width: 100%; border-collapse: collapse; }
-      td, th { text-align: left; padding: 8px 10px; vertical-align: top; overflow-wrap: anywhere; }
       .tone-ok { border-left: 6px solid var(--ok); } .tone-degraded { border-left: 6px solid var(--degraded); } .tone-idle { border-left: 6px solid var(--idle); } .tone-error { border-left: 6px solid var(--error); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       ul.rows li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); }
@@ -64,21 +59,15 @@
         <p class="lead" id="lede"></p>
       </div>
 
-      <div class="panels" role="status" aria-live="polite">
-        <div class="panel"><b id="n-proposed">–</b><span id="p-proposed">Waiting</span></div>
-        <div class="panel"><b id="n-in_transit">–</b><span id="p-in_transit">On the road</span></div>
-        <div class="panel"><b id="n-received">–</b><span id="p-received">Received</span></div>
-        <div class="panel"><b id="n-short">–</b><span id="p-short">Shortfall open</span></div>
-      </div>
+      <!-- U5 · G17: the four figures as the chrome's summary cards (a count not read yet is "Not known", never a dash) -->
+      <div id="panels" role="status" aria-live="polite"></div>
 
       <section aria-labelledby="reg-h">
         <h3 id="reg-h">Transfers</h3>
         <p class="lede" id="reg-lede"></p>
         <p class="status" id="list-status" role="status" aria-live="polite"></p>
-        <table id="register" aria-labelledby="reg-h">
-          <thead><tr><th id="c-transfer">Transfer</th><th id="c-route">Route</th><th id="c-lines">Lines</th><th id="c-state">State</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <!-- U5 · G17: the register is the chrome's shared part — search, sort said in words, paging, a count, rows that stack on a phone -->
+        <div id="register" aria-labelledby="reg-h"></div>
       </section>
     </main>
 

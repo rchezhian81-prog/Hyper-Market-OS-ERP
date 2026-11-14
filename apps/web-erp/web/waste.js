@@ -6,6 +6,22 @@
 // here records a write-off. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 let lang = 'en';
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
@@ -57,9 +73,7 @@ function rowNode(r) {
 
   const status = document.createElement('div');
   status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
-  status.append(icon, slabel);
+  fillStatus(status, r.status.tone, r.status.label);
   status.setAttribute('aria-label', r.status.announcement || r.status.label);
   li.append(status);
 
@@ -105,9 +119,7 @@ function paint() {
   const state = el('state');
   if (shown.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    paintState(state, view.screenState);
   } else {
     state.hidden = true;
   }
@@ -119,6 +131,7 @@ el('filter').addEventListener('click', () => { attentionOnly = !attentionOnly; p
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+onChrome(() => paint());
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

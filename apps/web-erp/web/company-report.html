@@ -43,9 +43,6 @@
       .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; }
       .kpi .k { font-size: var(--fs-label); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
       .kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 700; border: 1px solid var(--line); }
-      .badge.fresh { color: var(--good); } .badge.stale { color: var(--warn); } .badge.missing { color: var(--danger-text); }
-      .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
       .flag { font-size: 14px; }
       .flag.warn { color: var(--warn); } .flag.err { color: var(--danger-text); } .flag.ok { color: var(--good); }
       table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
@@ -90,7 +87,7 @@
       </section>
       <section aria-labelledby="tot-h">
         <h2 id="tot-h">Company total</h2>
-        <div><span class="badge" id="freshness">…</span></div>
+        <div><span id="freshness">…</span></div>
         <!-- UI-3: what this total covers (company, month, view) and when head office answered. -->
         <p class="lede" id="covers"></p>
         <div class="kpis" id="kpis"></div>

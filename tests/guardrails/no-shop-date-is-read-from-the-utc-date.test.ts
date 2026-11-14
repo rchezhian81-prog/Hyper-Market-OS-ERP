@@ -56,22 +56,18 @@ const ALLOWED: readonly { readonly file: string; readonly line: string; readonly
     file: 'packages/owner-control/src/scheduled-brief.ts', line: 'const today = input.now.slice(0, 10);',
     why: '`now` here is already the SHOP\'s wall clock by contract (callers pass "<shop date>T<shop hh:mm>:00Z"), so its first ten characters are the shop\'s today',
   },
-  {
-    file: 'packages/integration/src/secrets.ts', line: 'const oldValidUntil = new Date(Date.parse(input.at)',
-    why: 'a rotated credential\'s grace end for the platform\'s secret store — a technical validity in UTC, said in the rotation note and compared by nothing on the shop\'s day; not a business date',
-  },
   // R16-A (P4): the instant-named slices that are not a shop date of a moment, each with its reason.
   {
     file: 'apps/b2b-app/src/b2b-portal-session.ts', line: '? data.asAt.slice(0, 10) : shopDateIn(data.asAt, servedShopZone());',
     why: 'the slice is the branch where `asAt` does NOT parse as a moment (head office sent a plain date): its text is already the date; a moment is read in the shop\'s zone on the other branch',
   },
   {
-    file: 'packages/integration/src/secrets.ts', line: 'lastRotatedOn: input.at.slice(0, 10),',
-    why: 'the platform secret store\'s rotation stamp — a technical UTC record of when a credential was rotated, judged against no shop business day (as the grace end above)',
+    file: 'packages/integration/src/secrets.ts', line: 'const onDay = input.day ?? input.at.slice(0, 10);',
+    why: 'a fallback only: head office\'s rotation route always passes `day`, the SHOP\'s date (the Keys page counts "due in N days" against the shop\'s day — CI on #906, 12 Nov 2026); only the pure package\'s own tests call without it',
   },
   {
-    file: 'packages/integration/src/secrets.ts', line: "revokedOn: input.at.slice(0, 10) },",
-    why: 'the platform secret store\'s revocation stamp — a technical UTC record of when a credential was revoked, judged against no shop business day',
+    file: 'packages/integration/src/secrets.ts', line: "revokedOn: input.day ?? input.at.slice(0, 10) },",
+    why: 'a fallback only: head office\'s revocation route always passes `day`, the SHOP\'s date; only the pure package\'s own tests call without it',
   },
   {
     file: 'packages/platform-admin/src/support-access.ts', line: 'const cutoff = new Date(Date.parse(input.now) + warnDays',

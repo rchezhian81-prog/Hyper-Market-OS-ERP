@@ -41,6 +41,8 @@ export interface AlertGroup {
   readonly linkedTxnIds: readonly string[];
   /** Plain-English line for the brief. */
   readonly sentence: string;
+  /** U3 (OB-699): the same line in Tamil — the frame is the product's word; the kind, the money and the count are the same. */
+  readonly sentenceTa: string;
 }
 
 /** One of the three things needing attention, in priority order. */
@@ -48,6 +50,8 @@ export interface AttentionItem {
   readonly rank: 1 | 2 | 3;
   readonly source: 'exception' | 'approval';
   readonly sentence: string;
+  /** U3 (OB-699): the same line in Tamil; a person's name and a figure read the same in either. */
+  readonly sentenceTa: string;
   /** What to open when the owner taps it. */
   readonly ref: string;
 }
@@ -101,6 +105,8 @@ export interface OwnerBrief {
   readonly freshness: Freshness;
   /** Plain-sentence summary of the day, numbers beside the words. */
   readonly headline: string;
+  /** U3 (OB-699): the same summary in Tamil — the phone shows the reader's. */
+  readonly headlineTa: string;
   /** The three things needing attention (fewer if there are fewer). */
   readonly attention: readonly AttentionItem[];
   /** Grouped alerts, worst first — each drills to its transactions. */
@@ -120,6 +126,13 @@ const KIND_WORDS: Readonly<Record<SignalKind, string>> = Object.freeze({
   discount: 'discounts',
   no_sale: 'no-sale drawer opens',
   cash_variance: 'cash variances',
+});
+const KIND_WORDS_TA: Readonly<Record<SignalKind, string>> = Object.freeze({
+  void: 'ரத்தான பில்கள்',
+  refund: 'திருப்பங்கள்',
+  discount: 'தள்ளுபடிகள்',
+  no_sale: 'விற்பனையில்லா கல்லாத் திறப்புகள்',
+  cash_variance: 'பண வேறுபாடுகள்',
 });
 
 /** Group exceptions by (kind, severity) so a spike is one line, not a storm. */
@@ -158,6 +171,9 @@ function groupAlerts(exceptions: readonly LpException[]): AlertGroup[] {
         `${g.severity === 'escalate' ? 'Urgent: ' : ''}${KIND_WORDS[g.kind]} over the limit` +
         (g.totalValueMinor > 0 ? ` — ${rupees(g.totalValueMinor)} across` : ' —') +
         ` ${g.linked.length} transaction${g.linked.length === 1 ? '' : 's'}.`,
+      sentenceTa:
+        `${g.severity === 'escalate' ? 'அவசரம்: ' : ''}${KIND_WORDS_TA[g.kind]} வரம்பைத் தாண்டின — ` +
+        `${g.linked.length} பரிவர்த்தனைகளில்${g.totalValueMinor > 0 ? ` ${rupees(g.totalValueMinor)}` : ''}.`,
     }))
     // Worst first: escalations, then the larger value, then the larger count.
     .sort((a, b) => {
@@ -169,13 +185,16 @@ function groupAlerts(exceptions: readonly LpException[]): AlertGroup[] {
 
 /** Pick the three things that most need the owner, alerts outranking approvals. */
 function pickAttention(alerts: readonly AlertGroup[], approvals: readonly PendingApproval[]): AttentionItem[] {
-  const candidates: { source: 'exception' | 'approval'; sentence: string; ref: string }[] = [
-    ...alerts.map((a) => ({ source: 'exception' as const, sentence: a.sentence, ref: `${a.kind}:${a.severity}` })),
+  const candidates: { source: 'exception' | 'approval'; sentence: string; sentenceTa: string; ref: string }[] = [
+    ...alerts.map((a) => ({ source: 'exception' as const, sentence: a.sentence, sentenceTa: a.sentenceTa, ref: `${a.kind}:${a.severity}` })),
     ...approvals.map((a) => ({
       source: 'approval' as const,
       sentence:
         `Approval waiting: ${a.subjectType.replace(/_/g, ' ')} from ${a.requestedBy}` +
         (a.valueMinor !== null ? ` for ${rupees(a.valueMinor)}` : '') + '.',
+      sentenceTa:
+        `ஒப்புதல் காத்திருக்கிறது: ${a.requestedBy} கேட்ட ${a.subjectType.replace(/_/g, ' ')}` +
+        (a.valueMinor !== null ? `, ${rupees(a.valueMinor)}-க்கு` : '') + '.',
       ref: a.id,
     })),
   ];
@@ -199,6 +218,12 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
       : dataFreshness.state === 'stale'
         ? ' These numbers are NOT live — the branch has not synced recently.'
         : ' No data has synced from this branch yet.';
+  const staleNoteTa =
+    dataFreshness.state === 'fresh'
+      ? ''
+      : dataFreshness.state === 'stale'
+        ? ' இந்த எண்கள் நேரலை அல்ல — கிளை சமீபத்தில் ஒத்திசைக்கவில்லை.'
+        : ' இந்தக் கிளையிலிருந்து இன்னும் எந்தத் தரவும் ஒத்திசைக்கப்படவில்லை.';
 
   const unc = input.uncosted !== undefined && input.uncosted.bills > 0 ? input.uncosted : undefined;
   const tenderMix: Record<string, number> = { ...kpis.tenderMix };
@@ -235,6 +260,20 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
           `average basket ${rupees(takings.averageBasketMinor ?? 0)}.` +
           (unc === undefined ? '' : ` Also ${plural(unc.bills)} (${rupees(unc.takenMinor)}) whose margin is not known — products with no cost.`) +
           refundNote + staleNote;
+  // U3 (OB-699): the same summary in Tamil — the frame is the product's word; every figure is the same figure.
+  const refundNoteTa = refunds === undefined ? '' : ` இன்றைய திருப்பங்கள்: ${rupees(refunds.refundedMinor)} — திருப்பங்களுக்குப் பிறகு ${rupees(takings.takenMinor)} வசூல்.`;
+  const headlineTa =
+    takings.bills === 0
+      ? `இன்று இன்னும் விற்பனை பதிவாகவில்லை.${refundNoteTa}${staleNoteTa}`
+      : kpis.basketCount === 0
+        ? `இன்று ${takings.bills} பில்கள், ${rupees(takings.takenMinor)} வசூல் — லாபம் தெரியவில்லை: ` +
+          `${unc!.bills === 1 ? 'இந்தப் பில்லில்' : 'இந்தப் பில்களில்'} உள்ள பொருட்களுக்கு கடைக் கணினியில் வாங்கிய விலை இல்லை.${refundNoteTa}${staleNoteTa}`
+        : `இன்று ${kpis.basketCount} பில்கள், ` +
+          `${rupees(kpis.grossSalesMinor)} வசூல், ` +
+          `லாபம் ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
+          `சராசரி பில் ${rupees(takings.averageBasketMinor ?? 0)}.` +
+          (unc === undefined ? '' : ` மேலும் ${unc.bills} பில்கள் (${rupees(unc.takenMinor)}) — லாபம் தெரியாதவை, வாங்கிய விலை இல்லாத பொருட்கள்.`) +
+          refundNoteTa + staleNoteTa;
 
   return {
     asOf: input.asOf,
@@ -242,6 +281,7 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
     takings,
     freshness: dataFreshness,
     headline,
+    headlineTa,
     attention: pickAttention(alerts, approvals),
     alerts,
     approvals,

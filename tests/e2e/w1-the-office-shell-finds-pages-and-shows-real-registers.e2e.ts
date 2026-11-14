@@ -171,7 +171,7 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
       await page.fill('#customers-search', '');
       await page.selectOption('#customers-filter-segment', 'new');
       expect(await page.textContent('#customers-count')).toBe('Showing 1–10 of 10');
-      expect(new Set(await texts(page, '#customer-rows tr td:nth-child(2)'))).toEqual(new Set(['new']));
+      expect(new Set(await texts(page, '#customer-rows tr td:nth-child(3)'))).toEqual(new Set(['new'])); // U5: the Name column sits between the code and the segment
       await page.selectOption('#customers-filter-segment', '');
       // sort by code, descending — the last customer first
       await page.click('.sre-sort[data-col="customerRef"]');

@@ -32,7 +32,6 @@
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
       .row-form > label { flex: 1 1 200px; }
       .notice { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
-      .draft { font-weight: 700; color: var(--on-warn-surface, var(--ink)); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
       li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
@@ -64,7 +63,7 @@
         <h3 id="enrol-h">Enrol a customer</h3>
         <div class="notice" id="notice" aria-labelledby="notice-h">
           <strong id="notice-h">Read this to the customer first</strong>
-          <span class="draft" id="notice-draft" hidden></span>
+          <span id="notice-draft" hidden></span>
           <p id="notice-text"></p>
           <span class="facts" id="notice-version"></span>
         </div>
@@ -76,6 +75,8 @@
         <label class="tick" for="enrol-seen"><input id="enrol-seen" type="checkbox" /><span id="l-enrol-seen">I saw this number on the customer's own phone</span></label>
         <div><button id="enrol" type="button" class="sre-btn sre-btn-primary"><span id="enrol-text">Enrol</span></button></div>
         <p class="status" id="enrol-status" role="status" aria-live="polite"></p>
+        <!-- OB-702: the cashier's desk sees no programme panel; one line says whose numbers they are and who reads them. -->
+        <p class="status" id="desk-only" hidden></p>
       </section>
 
       <section aria-labelledby="find-h">
@@ -108,7 +109,7 @@
       </section>
 
       <!-- OB-295: tiers and points expiry, "not set" until the owner enters them; the CA's note beside expiry. -->
-      <section aria-labelledby="programme-h">
+      <section aria-labelledby="programme-h" id="programme-section">
         <h3 id="programme-h">The loyalty programme</h3>
         <p class="status" id="owner-only" hidden></p>
         <h3 id="tiers-h">Tiers by 12-month spend</h3>
@@ -133,7 +134,7 @@
       </section>
 
       <!-- OB-351 · M17-FR-02: the two referral rewards, "not set" until the owner enters them — nothing is given until then. -->
-      <section aria-labelledby="referral-h">
+      <section aria-labelledby="referral-h" id="referral-section">
         <h3 id="referral-h">Referral rewards</h3>
         <p class="lead" id="referral-lead"></p>
         <p class="status" id="referral-say"></p>

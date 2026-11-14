@@ -37,7 +37,7 @@ const inr = (minor) =>
 const WORDS = {
   en: {
     staleShell: 'No connection. These figures are what this phone was last given, at',
-    today: 'Today', needsAttention: 'Needs your attention', todaysNumbers: "Today's numbers",
+    appTitle: 'Today · SRE Hyper Market', today: 'Today', needsAttention: 'Needs your attention', todaysNumbers: "Today's numbers",
     waitingForYou: 'Waiting for you', alerts: 'Alerts', lookAgain: 'Look at these again',
     decidedNotSent: 'Decided, not yet sent', nothingToDecide: 'Nothing needs a decision right now.',
     noAlerts: 'No alerts today.', nothingWaiting: 'Nothing is waiting for you.',
@@ -79,10 +79,17 @@ const WORDS = {
     tenderEmpty: 'Nothing has been paid today yet, so there is nothing to draw.',
     notSent: 'The store computer did not send this figure, so it is not drawn. Nothing is assumed.',
     chartsMissing: 'The chart part of this app is not on this phone, so the trend is not drawn. The figures above are unaffected.',
+    // U6 (7 Nov 2026): the branches side by side (M29-FR-02) and the office pages this phone links to (OB-701).
+    compareTitle: 'Branches side by side', compareNote: 'Each shop\'s own figures and its own data age — one shop syncing does not make the others current.',
+    cTaken: 'Taken today', cBills: 'Bills', cMargin: 'Margin', cWaiting: 'Waiting for you', cAttention: 'Needs attention', cAge: 'Data',
+    notKnownShort: 'Not known', marginNoCost: 'no cost on the bills',
+    officeTitle: 'Also in the office', officeNote: 'These open the office\'s own pages. Nothing is copied to this phone.',
+    officeAudit: 'Audit log — who did what', officeHealth: 'Store computers — system health', officeCompare: 'Compare side by side — the full report',
+    officeNotServed: 'The office links are not on this copy of the app.',
   },
   ta: {
     staleShell: 'இணைப்பு இல்லை. இந்த எண்கள் இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்டவை:',
-    today: 'இன்று', needsAttention: 'உங்கள் கவனம் தேவை', todaysNumbers: 'இன்றைய எண்கள்',
+    appTitle: 'இன்று · SRE Hyper Market', today: 'இன்று', needsAttention: 'உங்கள் கவனம் தேவை', todaysNumbers: 'இன்றைய எண்கள்',
     waitingForYou: 'உங்களுக்காகக் காத்திருப்பவை', alerts: 'எச்சரிக்கைகள்', lookAgain: 'இவற்றை மீண்டும் பாருங்கள்',
     decidedNotSent: 'முடிவு செய்யப்பட்டது, இன்னும் அனுப்பப்படவில்லை', nothingToDecide: 'இப்போது எந்த முடிவும் தேவையில்லை.',
     noAlerts: 'இன்று எச்சரிக்கை எதுவும் இல்லை.', nothingWaiting: 'உங்களுக்காக எதுவும் காத்திருக்கவில்லை.',
@@ -123,10 +130,19 @@ const WORDS = {
     tenderEmpty: 'இன்று இன்னும் எந்தப் பணமும் வரவில்லை, எனவே வரைய எதுவும் இல்லை.',
     notSent: 'கடை கணினி இந்த எண்ணை அனுப்பவில்லை, எனவே வரையப்படவில்லை. எதுவும் ஊகிக்கப்படவில்லை.',
     chartsMissing: 'இந்த ஆப்பின் வரைபடப் பகுதி இந்த ஃபோனில் இல்லை, எனவே போக்கு வரையப்படவில்லை. மேலே உள்ள எண்கள் பாதிக்கப்படவில்லை.',
+    compareTitle: 'கிளைகள் அருகருகே', compareNote: 'ஒவ்வொரு கடையின் சொந்த எண்களும் அதன் சொந்தத் தகவல் வயதும் — ஒரு கடை ஒத்திசைந்தால் மற்றவை புதியவை ஆகாது.',
+    cTaken: 'இன்று வசூல்', cBills: 'பில்கள்', cMargin: 'லாபம்', cWaiting: 'உங்களுக்காகக் காத்திருப்பவை', cAttention: 'கவனம் தேவை', cAge: 'தகவல்',
+    notKnownShort: 'தெரியவில்லை', marginNoCost: 'பில்களுக்குச் செலவு இல்லை',
+    officeTitle: 'அலுவலகத்திலும்', officeNote: 'இவை அலுவலகத்தின் சொந்தப் பக்கங்களைத் திறக்கும். இந்த ஃபோனுக்கு எதுவும் நகலெடுக்கப்படவில்லை.',
+    officeAudit: 'தணிக்கைப் பதிவு — யார் என்ன செய்தார்', officeHealth: 'கடை கணினிகள் — அமைப்பு நிலை', officeCompare: 'அருகருகே ஒப்பிடு — முழு அறிக்கை',
+    officeNotServed: 'அலுவலக இணைப்புகள் இந்த ஆப் நகலில் இல்லை.',
   },
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+// U3 (OB-699): the brief's sentence frames are the product's own words — the model composes them in both languages; the
+// phone shows the reader's. A finding's own words inside them are not translated.
+const said = (en, ta) => (lang === 'ta' && typeof ta === 'string' && ta !== '' ? ta : en);
 
 /**
  * Words for every refusal the model can return — one entry per `OWNER_DECIDE_REFUSALS`.
@@ -407,7 +423,7 @@ function renderAttention(items, freshness) {
     rank.className = 'rank';
     rank.textContent = `#${item.rank} · ${item.source === 'approval' ? t('approval') : t('exception')}`;
     const body = document.createElement('span');
-    body.textContent = item.sentence;
+    body.textContent = said(item.sentence, item.sentenceTa);
     card.append(rank, body);
     // Tapping goes to the thing itself. The old version opened a system dialog with a raw id in
     // it, which is a dead end wearing the clothes of an action.
@@ -458,7 +474,7 @@ function renderAlerts(alerts, freshness) {
     row.type = 'button';
     row.className = 'alert';
     const line = document.createElement('span');
-    line.textContent = alert.sentence;
+    line.textContent = said(alert.sentence, alert.sentenceTa);
     const drill = document.createElement('span');
     drill.className = 'drill';
     drill.textContent = `${alert.linkedTxnIds.length} ${t('transactions')}`;
@@ -470,7 +486,7 @@ function renderAlerts(alerts, freshness) {
 
 function showAlert(alert) {
   // The transactions behind the alert, in the panel rather than a system dialog.
-  el('drill-title').textContent = alert.sentence;
+  el('drill-title').textContent = said(alert.sentence, alert.sentenceTa);
   el('drill-total-label').textContent = t('transactions');
   el('drill-total').textContent = String(alert.linkedTxnIds.length);
   el('drill-note').textContent = '';
@@ -665,6 +681,7 @@ el('drill-close').addEventListener('click', () => { el('drill').hidden = true; }
 // ── Paint ───────────────────────────────────────────────────────────────────
 
 function paintChrome() {
+  el('title').textContent = t('appTitle');
   el('attention-title').textContent = t('needsAttention');
   el('kpis-title').textContent = t('todaysNumbers');
   el('approvals-title').textContent = t('waitingForYou');
@@ -672,15 +689,81 @@ function paintChrome() {
   el('recheck-title').textContent = t('lookAgain');
   el('queued-title').textContent = t('decidedNotSent');
   el('trends-title').textContent = t('howTheDayGoes');
+  el('compare-title').textContent = t('compareTitle');
+  el('office-title').textContent = t('officeTitle');
   el('sample').textContent = t('sampleData');
   paintOffline();
 }
 
+/**
+ * U6 · M29-FR-02: the branches SIDE BY SIDE — one card per shop with the same four figures and its own data age, from the
+ * session's own comparison (nothing worked out here). Shown only for two shops or more; a shop that never reached this
+ * phone says "Not known" on every figure, never a nought (P-08). The branch in view is not changed by reading it.
+ */
+function renderCompare() {
+  const rows = typeof session.compare === 'function' ? session.compare() : [];
+  el('compare-section').hidden = rows.length < 2;
+  if (rows.length < 2) return;
+  el('compare-note').textContent = t('compareNote');
+  const figure = (value, words) => (value === null ? t('notKnownShort') : words(value));
+  el('compare').replaceChildren(...rows.map((r) => {
+    const card = document.createElement('div');
+    card.className = `cmp ${r.freshness.state}`;
+    card.dataset.branch = r.branchId;
+    const head = document.createElement('div');
+    head.className = 'cmp-name';
+    head.textContent = r.name;
+    const age = document.createElement('div');
+    age.className = `cmp-age ${r.freshness.state}`;
+    age.textContent = `${t('cAge')}: ${r.freshness.state === 'missing' ? t('neverSynced') : ageInWords(r.freshness.ageSeconds)}`;
+    const grid = document.createElement('dl');
+    grid.className = 'cmp-grid';
+    const cells = [
+      [t('cTaken'), figure(r.takenMinor, inr)],
+      [t('cBills'), figure(r.bills, String)],
+      [t('cMargin'), r.marginKnown ? inr(r.marginMinor) : r.freshness.state === 'missing' ? t('notKnownShort') : `${t('notKnownShort')} — ${t('marginNoCost')}`],
+      [t('cWaiting'), figure(r.approvalsWaiting, String)],
+      [t('cAttention'), figure(r.attentionCount, String)],
+    ];
+    for (const [label, value] of cells) {
+      const dt = document.createElement('dt'); dt.textContent = label;
+      const dd = document.createElement('dd'); dd.textContent = value;
+      if (value.startsWith(t('notKnownShort'))) dd.className = 'unknown';
+      grid.append(dt, dd);
+    }
+    card.append(head, age, grid);
+    return card;
+  }));
+}
+
+/**
+ * U6 · OB-701 (owner, 7 Nov 2026, decision 4 = B): the audit trail and system health stay OFFICE pages; this phone links to
+ * them (and to the full compare report). The links come from the store computer with the public prefix; served from a
+ * file there are none, and the section says so rather than guessing a path.
+ */
+function renderOffice() {
+  const links = window.ownerOffice;
+  el('office-note').textContent = links ? t('officeNote') : t('officeNotServed');
+  const host = el('office-links');
+  host.replaceChildren();
+  if (!links) return;
+  for (const [key, href] of [['officeAudit', links.auditLog], ['officeHealth', links.storeComputers], ['officeCompare', links.compare]]) {
+    if (typeof href !== 'string' || href === '') continue;
+    const a = document.createElement('a');
+    a.className = 'office-link';
+    a.href = href;
+    a.textContent = t(key);
+    host.append(a);
+  }
+}
+
 function render() {
   const brief = session.brief();
-  el('headline').textContent = brief.headline;
+  el('headline').textContent = said(brief.headline, brief.headlineTa);
   renderFreshness(brief.freshness);
   renderBranches();
+  renderCompare();
+  renderOffice();
   renderRecheck();
   renderKpis(brief.kpis, brief.takings, brief.freshness);
   renderAttention(brief.attention, brief.freshness);

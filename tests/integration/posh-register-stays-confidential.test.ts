@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -136,8 +137,22 @@ describe.skipIf(DATABASE_URL === undefined)('NEW-5 on real PostgreSQL: nothing o
       }
     }
     // A backup is a dump of these tables: a plain-text dump of the whole database holds none of it either.
-    const dump = execFileSync('pg_dump', ['--data-only', '--no-owner', DATABASE_URL!], { env: { ...process.env, PGOPTIONS: '-c app.tenant_id=*' }, maxBuffer: 1024 * 1024 * 1024 }).toString('utf8');
-    expect(dump).toContain(id);
-    for (const secret of SECRETS) expect(dump.includes(secret), `${secret} in the dump`).toBe(false);
+    // Read as a stream, line by line: a database a long-lived test box has filled can dump to more than one string can hold
+    // (it reached 1.3 GB on 12 Nov 2026). Every line of the whole dump is still searched; nothing is sampled or skipped.
+    const scan = await new Promise<{ sawId: boolean; found: string[] }>((resolve, reject) => {
+      const child = spawn('pg_dump', ['--data-only', '--no-owner', DATABASE_URL!], { env: { ...process.env, PGOPTIONS: '-c app.tenant_id=*' } });
+      const result = { sawId: false, found: [] as string[] };
+      const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+      lines.on('line', (line) => {
+        if (line.includes(id)) result.sawId = true;
+        for (const secret of SECRETS) if (line.includes(secret) && !result.found.includes(secret)) result.found.push(secret);
+      });
+      let failed = '';
+      child.stderr.on('data', (d: Buffer) => { failed += d.toString('utf8'); });
+      child.on('error', reject);
+      child.on('close', (code) => { if (code === 0) resolve(result); else reject(new Error(`pg_dump exited ${String(code)}: ${failed}`)); });
+    });
+    expect(scan.sawId, 'the complaint id is in the dump').toBe(true);
+    expect(scan.found, 'complaint text in the dump').toEqual([]);
   }, 180_000);
 });

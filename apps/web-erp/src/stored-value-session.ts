@@ -125,7 +125,7 @@ export const STORED_VALUE_COPY: BilingualCopy<CopyKey> = {
     postedFigureLabel: 'கணக்கில் பதிந்த கடன் (₹)', ownerRefLabel: 'வாடிக்கையாளர் குறிப்பு',
     lossHeading: 'இருமுறை கொடுக்கப்பட்டது', lossCount: 'தீர்க்க வேண்டியவை', lossExposure: 'இருமுறை செலுத்தப்பட்டது',
     lossNone: 'சேனல்கள் இடையே இரட்டைச் செலவு இல்லை — இருமுறை எதுவும் கொடுக்கப்படவில்லை.',
-    gapHeading: 'கடன் vs கணக்கு', gapNeedsPosted: 'அட்டைகளை ஒப்பிட, கணக்கில் தற்போது உள்ள கடன் தொகையை உள்ளிடவும் — எதுவும் ஊகிக்கப்படாது.',
+    gapHeading: 'கடன் எதிர் கணக்கு', gapNeedsPosted: 'அட்டைகளை ஒப்பிட, கணக்கில் தற்போது உள்ள கடன் தொகையை உள்ளிடவும் — எதுவும் ஊகிக்கப்படாது.',
     gapReconciled: 'அட்டைகளின் நிலுவை இருப்பு பதிந்த கடனுடன் சரியாகப் பொருந்துகிறது.',
     outstandingLabel: 'அட்டைகளில் நிலுவை', postedLabel: 'கணக்கில் பதிந்தது', differenceLabel: 'வித்தியாசம் (பதிந்தது − அட்டைகள்)',
     issuedLabel: 'வழங்கப்பட்டது', redeemedLabel: 'மீட்கப்பட்டது', expiredLabel: 'காலாவதி',

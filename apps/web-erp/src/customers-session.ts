@@ -9,7 +9,8 @@ import { makeCaller, newId, outcomeIn, type Outcome } from './r4-insight-call';
 
 export type Lang = 'en' | 'ta';
 
-export interface CustomerRow { readonly customerRef: string; readonly segment: string; readonly profiled: boolean; readonly orders: number; readonly lastOrderAt: string | null }
+/** U5 · G16: `name` is the name head office holds (enrolment or app login), null when it holds none — never invented. */
+export interface CustomerRow { readonly customerRef: string; readonly name?: string | null; readonly segment: string; readonly profiled: boolean; readonly orders: number; readonly lastOrderAt: string | null }
 export interface MergeRow { readonly mergeId: string; readonly survivorRef: string; readonly mergedRef: string; readonly reason: string; readonly proposedBy: string; readonly approvedBy?: string; readonly reversedBy?: string; readonly reversalReason?: string }
 export interface OverviewView {
   readonly customers: readonly CustomerRow[];
@@ -50,7 +51,7 @@ export const CUSTOMERS_COPY = {
     mergedInto: 'This record was merged into', state_open: 'open', state_waiting_on_customer: 'waiting for the customer', state_resolved: 'dealt with', state_closed: 'closed', order: 'order', answered: 'answer',
     openComplaintsK: 'open complaints',
     // W1: the register's column names and its own empty words (an empty list is "nothing yet", never "all clear" — P-08)
-    colCustomer: 'Customer code', colSegment: 'Segment', colBills: 'Bills', colLastBill: 'Last bill', registerLabel: 'Customers and their segments',
+    colCustomer: 'Customer code', colName: 'Name', colSegment: 'Segment', colBills: 'Bills', colLastBill: 'Last bill', registerLabel: 'Customers and their segments',
     emptyCustomers: 'No customer yet', emptyCustomersDetail: 'No bill in this shop has a customer code on it yet, so there is nobody to list. This is not the same as "no problems".',
     recordFromRow: 'Open the full record', segmentCount: 'customers',
     householdH: 'Household', noHousehold: 'Not linked to a household.', inHousehold: 'In household', householdMembers: 'members',
@@ -63,11 +64,11 @@ export const CUSTOMERS_COPY = {
     lang: 'English', title: 'வாடிக்கையாளர்கள்',
     lead: 'கடையின் சொந்த பில்களிலிருந்து தெரிந்த ஒவ்வொரு வாடிக்கையாளரும், அவர்களின் பிரிவு, ஒரே நபராக இருக்கக்கூடிய பதிவுகள், இரண்டாவது நபருக்காகக் காத்திருக்கும் இணைப்புகள். எதுவும் தானாக இணைவதில்லை.',
     segmentsH: 'வாடிக்கையாளர்களும் பிரிவுகளும்', duplicatesH: 'ஒரே நபராக இருக்கக்கூடிய பதிவுகள்', pendingH: 'இரண்டாவது நபருக்காகக் காத்திருக்கும் இணைப்புகள்', inForceH: 'நடைமுறையில் உள்ள இணைப்புகள்', reversedH: 'திரும்பப் பெற்ற இணைப்புகள்',
-    candidates: 'ஒப்பிட வேண்டிய பதிவுகள் — ஒரு வரிக்கு ஒன்று: வாடிக்கையாளர் குறியீடு, தொலைபேசி, சரிபார்க்கப்பட்டதா (yes/no), பெயர்',
+    candidates: 'ஒப்பிட வேண்டிய பதிவுகள் — ஒரு வரிக்கு ஒன்று: வாடிக்கையாளர் குறியீடு, தொலைபேசி, சரிபார்க்கப்பட்டதா (ஆம்/இல்லை), பெயர்',
     check: 'இரட்டைப் பதிவுகளைக் கண்டறி', refresh: 'வாடிக்கையாளர்களைக் காட்டு', reason: 'அவர்கள் ஏன் ஒரே நபர்', propose: 'இந்த இணைப்பை முன்மொழி', approve: 'இந்த இணைப்பை ஒப்புக்கொள்', undoReason: 'ஏன் திரும்பப் பெறுவது', undo: 'இந்த இணைப்பைத் திரும்பப் பெறு',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', cannotRead: 'உங்கள் பங்கு வாடிக்கையாளர்களைப் படிக்க முடியாது.', cannotPropose: 'உங்கள் பங்கு இணைப்பை முன்மொழிய முடியாது.', cannotApprove: 'இணைப்புகளை ஒப்புக்கொள்ளக்கூடிய வேறொருவர் மட்டுமே இதைச் செய்ய முடியும்.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
-    needCandidates: 'குறைந்தது இரண்டு பதிவுகளைக் கொடுங்கள்: குறியீடு, தொலைபேசி, yes/no, பெயர். எதுவும் அனுப்பப்படவில்லை.', needReason: 'முதலில் காரணத்தைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    needCandidates: 'குறைந்தது இரண்டு பதிவுகளைக் கொடுங்கள்: குறியீடு, தொலைபேசி, ஆம்/இல்லை, பெயர். எதுவும் அனுப்பப்படவில்லை.', needReason: 'முதலில் காரணத்தைச் சொல்லுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     none: 'இன்னும் எதுவும் இல்லை.', noDuplicates: 'இந்தப் பதிவுகளில் எந்த இரண்டும் ஒரே நபராகத் தெரியவில்லை.', notProfiled: 'பகுப்பாய்வு செய்யப்படவில்லை', orders: 'பில்கள்', lastOrder: 'கடைசி பில்', noOrder: 'இன்னும் பில் இல்லை',
     merge_candidate: 'ஒரே நபராக இருக்கலாம் (சரிபார்த்த தொடர்பு)', review: 'பார்க்கத் தகுந்தது (சரிபார்க்காத தொடர்பு அல்லது ஒரே பெயர்)',
     proposed: 'முன்மொழியப்பட்டது. இரண்டாவது நபர் ஒப்புக்கொள்ளும் வரை இது நடைமுறைக்கு வராது.', approved: 'ஒப்புக்கொள்ளப்பட்டது — பதிவுகள் இப்போது ஒன்றாகக் கணக்கிடப்படும்.', undone: 'திரும்பப் பெறப்பட்டது — பதிவுகள் மீண்டும் தனித்தனி; இணைப்பு பதிவில் வைக்கப்பட்டுள்ளது.',
@@ -75,7 +76,7 @@ export const CUSTOMERS_COPY = {
     complaintsH: 'புகார்கள்', otherCasesH: 'மற்ற கேள்விகளும் கோரிக்கைகளும்', noComplaints: 'இந்த வாடிக்கையாளர் எந்தப் புகாரும் எழுப்பவில்லை.', bought: 'வாங்கியது', netSpend: 'நிகரச் செலவு', lastBill: 'கடைசி பில்',
     mergedInto: 'இந்தப் பதிவு இதில் இணைக்கப்பட்டது:', state_open: 'திறந்துள்ளது', state_waiting_on_customer: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', state_resolved: 'கவனிக்கப்பட்டது', state_closed: 'மூடப்பட்டது', order: 'ஆர்டர்', answered: 'பதில்',
     openComplaintsK: 'திறந்த புகார்கள்',
-    colCustomer: 'வாடிக்கையாளர் குறியீடு', colSegment: 'பிரிவு', colBills: 'பில்கள்', colLastBill: 'கடைசி பில்', registerLabel: 'வாடிக்கையாளர்களும் அவர்களின் பிரிவுகளும்',
+    colCustomer: 'வாடிக்கையாளர் குறியீடு', colName: 'பெயர்', colSegment: 'பிரிவு', colBills: 'பில்கள்', colLastBill: 'கடைசி பில்', registerLabel: 'வாடிக்கையாளர்களும் அவர்களின் பிரிவுகளும்',
     emptyCustomers: 'இன்னும் வாடிக்கையாளர் இல்லை', emptyCustomersDetail: 'இந்தக் கடையின் எந்த பில்லிலும் இன்னும் வாடிக்கையாளர் குறியீடு இல்லை, எனவே பட்டியலிட யாரும் இல்லை. இது "பிரச்சினை இல்லை" என்பதற்குச் சமம் அல்ல.',
     recordFromRow: 'முழுப் பதிவைத் திற', segmentCount: 'வாடிக்கையாளர்கள்',
     householdH: 'குடும்பம்', noHousehold: 'எந்தக் குடும்பத்துடனும் இணைக்கப்படவில்லை.', inHousehold: 'குடும்பத்தில்', householdMembers: 'உறுப்பினர்கள்',

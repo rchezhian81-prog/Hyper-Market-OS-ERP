@@ -5,7 +5,7 @@
 //   • Licences, controls and findings page (`complianceRegistersData`) → `window.complianceRegisters` (M34-FR-03/04, OB-331);
 //   • Audit log page (`auditLogData`) → `window.legalHolds` — holds, the keeping plan, the evidence pack (M34-FR-01/02).
 
-import { createEprRecordsSession, eprRecordsWords, eprRecordsOutcomeWords, EPR_SETTING_PATHS, PLASTIC_CATEGORIES, TAKE_BACK_KINDS, gramsOfMg } from './epr-records-session';
+import { createEprRecordsSession, eprRecordsWords, eprRecordsOutcomeWords, eprSettingQuestion, takeBackRule, EPR_SETTING_PATHS, PLASTIC_CATEGORIES, TAKE_BACK_KINDS, gramsOfMg } from './epr-records-session';
 import { createComplianceRegistersSession, complianceWords, complianceOutcomeWords, OBLIGATION_KINDS, INCIDENT_SEVERITIES, FINDING_SEVERITIES, PERSON_FINDING_SOURCES } from './compliance-registers-session';
 import { createLegalHoldsSession, legalHoldsWords, legalHoldsOutcomeWords } from './legal-holds-session';
 import { shopMomentOf } from './findings-session';
@@ -17,6 +17,7 @@ export function wireW5Compliance(win: Record<string, unknown>, viewerIdentity: (
     win['eprRecords'] = {
       session: createEprRecordsSession({ viewer: viewerIdentity(win['eprData']) }), words: eprRecordsWords, outcomeWords: eprRecordsOutcomeWords,
       settings: Object.keys(EPR_SETTING_PATHS), categories: PLASTIC_CATEGORIES, kinds: TAKE_BACK_KINDS, grams: gramsOfMg,
+      settingQuestion: eprSettingQuestion, takeBackRule, // U3 · OB-699: the questions and the rule in the reader's language
     };
   }
   if (win['complianceRegistersData'] !== undefined) {

@@ -19,30 +19,52 @@ const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(na
 for (const [id, name] of [['read', 'search'], ['run', 'refresh-cw'], ['tb-read', 'calculator']]) { const i = icon(name); if (i !== null) $(id).prepend(i, ' '); }
 
 function say(where, out) { $(where).className = 'status err'; $(where).textContent = api.outcomeWords(lang, out); }
-function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
+// U5 (G13): a status line's mark is the one icon set's shape for its tone, never a ✓ / ⚠ / ○ character beside the words.
+const toneIcon = (tone, size = 18) => (window.sreIcon && typeof window.sreIcon.forTone === 'function' && typeof window.sreIcon === 'function' ? window.sreIcon(window.sreIcon.forTone(tone), size) : null);
+function status(where, tone, words) {
+  const el = $(where); el.className = `status ${tone === 'ok' ? 'good' : tone === 'error' ? 'err' : ''}`.trim();
+  const mark = toneIcon(tone); el.replaceChildren(...(mark ? [mark, ' '] : []), words);
+}
+function good(where, words) { status(where, 'ok', words); }
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, iconName, onClick, cls) {
   const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls;
   const i = icon(iconName); if (i !== null) b.append(i, ' ');
   b.append(text('span', words)); b.addEventListener('click', onClick); return b;
 }
-const MARK = { posted: '✓', queued: '⏱', dead_lettered: '⚠' };
 const TONE = { posted: 'ok', queued: 'degraded', dead_lettered: 'error' };
+/** A posting's state as the chrome's chip (the tone's shape and the word), never a glyph. */
+function stateChip(state) {
+  const o = window.sreOffice; const words = t(`s_${state}`);
+  if (o && typeof o.chip === 'function') return o.chip(TONE[state] ?? 'idle', words);
+  return text('span', words, 'sre-chip');
+}
+/** An empty list is the shared state part — what the list covers, never a bare line. */
+function emptyRow(words) {
+  const li = document.createElement('li'); li.className = 'empty';
+  const o = window.sreOffice;
+  if (o && typeof o.state === 'function') li.append(o.state(null, 'empty', { title: words, detail: '' })); else li.textContent = words;
+  return li;
+}
+/** A figure head office does not know, by name (never a zero). */
+function notKnownCell(words) { const span = text('span', words, 'sre-unknown'); const mark = typeof window.sreIcon === 'function' ? window.sreIcon('circle-help', 16) : null; if (mark) { mark.style.marginInlineEnd = '6px'; span.prepend(mark); } return span; }
 
 function row(p) {
   const li = document.createElement('li');
   const settled = p.correctedBy !== null && p.correctedBy.state === 'posted';
   li.className = `row tone-${settled ? 'ok' : TONE[p.state]}`;
   li.dataset.posting = p.postingId; li.dataset.state = p.state; li.dataset.day = p.day;
-  li.append(text('strong', `${MARK[p.state]} ${t('dayK')} ${p.day}${p.sequence > 1 ? ` (${p.sequence})` : ''} — ${t(`s_${p.state}`)}`));
+  const head = document.createElement('div'); head.className = 'head';
+  head.append(text('strong', `${t('dayK')} ${p.day}${p.sequence > 1 ? ` (${p.sequence})` : ''}`), stateChip(p.state));
+  li.append(head);
   const facts = document.createElement('div'); facts.className = 'facts';
   facts.append(text('span', `${p.journals} ${t('journalsK')} · ${t('debitK')} ${api.rupees(p.debitMinor)} · ${t('creditK')} ${api.rupees(p.creditMinor)} · ${p.attempts} ${t('attemptsK')}`));
   if (p.file !== null) for (const f of p.file.byFamily) { const s = text('span', `${api.familyWords(outbox, lang, f.family)}: ${f.journals} ${t('journalsK')} · ${api.rupees(f.debitMinor)}`); s.dataset.family = f.family; facts.append(s); }
-  if (p.lastFailure !== null) facts.append(text('span', `⚠ ${t('whyK')}: ${p.lastFailure}`, 'why'));
-  if (p.waitingFor === 'ledger_names') facts.append(text('span', `⏱ ${t('noNames')}`));
-  if (p.nextAttemptAt !== null) facts.append(text('span', `⏱ ${t('nextK')}: ${p.nextAttemptAt}`));
-  if (p.corrects !== null) facts.append(text('span', `↺ ${t('correctsK')} ${p.corrects}`));
-  if (p.correctedBy !== null) facts.append(text('span', `↺ ${t('correctedByK')} ${p.correctedBy.postingId} — ${MARK[p.correctedBy.state]} ${t(`s_${p.correctedBy.state}`)}`, 'corrected'));
+  if (p.lastFailure !== null) facts.append(text('span', `${t('whyK')}: ${p.lastFailure}`, 'why'));
+  if (p.waitingFor === 'ledger_names') facts.append(text('span', t('noNames')));
+  if (p.nextAttemptAt !== null) facts.append(text('span', `${t('nextK')}: ${p.nextAttemptAt}`));
+  if (p.corrects !== null) facts.append(text('span', `${t('correctsK')} ${p.corrects}`));
+  if (p.correctedBy !== null) { const c = text('span', `${t('correctedByK')} ${p.correctedBy.postingId} — `, 'corrected'); c.append(stateChip(p.correctedBy.state)); facts.append(c); }
   li.append(facts);
   const actions = document.createElement('div'); actions.className = 'actions';
   if (p.state === 'posted') actions.append(button(t('download'), 'file-text', () => { void download(p.postingId); }));
@@ -87,9 +109,7 @@ function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title-text', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['read-text', 'read'], ['run-text', 'run'],
     ['posted-k', 'postedK'], ['queued-k', 'queuedK'], ['dead-k', 'deadK'], ['company-k', 'companyK'], ['dead-h', 'deadH'], ['files-h', 'filesH'],
-    ['tb-h', 'tbH'], ['tb-month-l', 'monthL'], ['tb-read-text', 'tbRead'], ['tb-account-h', 'accountK'], ['tb-class-h', 'classK'],
-    ['tb-debit-h', 'debitK'], ['tb-credit-h', 'creditK'], ['tb-closing-h', 'closingK'],
-    ['dept-h', 'deptH'], ['dept-k', 'deptK'], ['dept-sales-h', 'salesK'], ['dept-cost-h', 'costK'], ['dept-margin-h', 'marginK']]) $(id).textContent = t(k);
+    ['tb-h', 'tbH'], ['tb-month-l', 'monthL'], ['tb-read-text', 'tbRead'], ['dept-h', 'deptH']]) $(id).textContent = t(k);
   $('lang').textContent = t('lang');
   $('whoami').textContent = window.tallyFilesData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
@@ -97,39 +117,51 @@ function paint() {
   whyDisabled($('read'), may.read ? '' : 'role'); whyDisabled($('tb-read'), may.read ? '' : 'role'); whyDisabled($('run'), may.configure ? '' : 'role');
   $('tiles').hidden = outbox === null; $('dead-section').hidden = outbox === null; $('files-section').hidden = outbox === null;
   if (outbox !== null) {
-    $('posted-n').textContent = `✓ ${outbox.counts.posted}`;
-    $('queued-n').textContent = `⏱ ${outbox.counts.queued}`;
-    $('dead-n').textContent = `${outbox.openDeadLetters > 0 ? '⚠' : '✓'} ${outbox.openDeadLetters}`;
-    $('company-n').textContent = outbox.ledgerNames === null ? `○ ${t('notNamed')}` : outbox.ledgerNames.companyName;
-    $('no-names').hidden = outbox.waitingFor !== 'ledger_names'; $('no-names').textContent = `⏱ ${t('noNames')}`;
-    $('dead').replaceChildren(...(outbox.deadLetters.length === 0 ? [text('li', `✓ ${t('noDead')}`, 'row tone-ok')] : outbox.deadLetters.map(row)));
-    $('files').replaceChildren(...(outbox.postings.length === 0 ? [text('li', `○ ${t('noFiles')}`, 'row')] : outbox.postings.map(row)));
+    // U5: the tiles carry the figure and a tone (the shape beside the label), never a glyph in the figure
+    const tile = (id, value, tone) => { const b = $(id); b.textContent = value; b.closest('.tile').dataset.tone = tone; };
+    tile('posted-n', String(outbox.counts.posted), 'ok');
+    tile('queued-n', String(outbox.counts.queued), outbox.counts.queued > 0 ? 'degraded' : 'idle');
+    tile('dead-n', String(outbox.openDeadLetters), outbox.openDeadLetters > 0 ? 'error' : 'ok');
+    if (outbox.ledgerNames === null) { $('company-n').replaceChildren(notKnownCell(t('notNamed'))); $('company-n').closest('.tile').dataset.tone = 'degraded'; } else tile('company-n', outbox.ledgerNames.companyName, 'ok');
+    $('no-names').hidden = outbox.waitingFor !== 'ledger_names'; if (outbox.waitingFor === 'ledger_names') status('no-names', 'degraded', t('noNames'));
+    $('dead').replaceChildren(...(outbox.deadLetters.length === 0 ? [emptyRow(t('noDead'))] : outbox.deadLetters.map(row)));
+    $('files').replaceChildren(...(outbox.postings.length === 0 ? [emptyRow(t('noFiles'))] : outbox.postings.map(row)));
   }
   $('tb-wrap').hidden = tb === null;
-  if (tb !== null) {
-    $('tb-rows').replaceChildren(...tb.rows.map((r) => {
-      const tr = document.createElement('tr'); tr.dataset.account = r.account;
-      tr.append(text('td', r.account), text('td', r.accountClass ?? `○ ${t('unclassed')}`), text('td', api.rupees(r.periodDebitMinor), 'num'), text('td', api.rupees(r.periodCreditMinor), 'num'), text('td', api.rupees(r.closingNetDebitMinor), 'num'));
-      return tr;
-    }));
+  const o = window.sreOffice;
+  if (tb !== null && o && typeof o.table === 'function') {
+    // U5 (G17): the trial balance on the chrome's register — sortable, searchable, the figures right-aligned, the rows stacking on a phone.
+    const both = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+    o.table($('tb-wrap'), {
+      id: 'tally-trial-balance', label: both('tbH'), bodyId: 'tb-rows', pageSize: 50, sortable: true, count: false,
+      rowKey: (r) => r.account, rowData: (r) => ({ account: r.account }), rows: [...tb.rows],
+      columns: [
+        { key: 'account', label: both('accountK'), sort: 'text' },
+        { key: 'accountClass', label: both('classK'), sort: 'text', filter: true, value: (r) => r.accountClass ?? t('unclassed'), render: (r) => (r.accountClass ?? notKnownCell(t('unclassed'))) },
+        { key: 'periodDebitMinor', label: both('debitK'), align: 'end', sort: 'number', render: (r) => api.rupees(r.periodDebitMinor) },
+        { key: 'periodCreditMinor', label: both('creditK'), align: 'end', sort: 'number', render: (r) => api.rupees(r.periodCreditMinor) },
+        { key: 'closingNetDebitMinor', label: both('closingK'), align: 'end', sort: 'number', render: (r) => api.rupees(r.closingNetDebitMinor) },
+      ],
+    });
   }
   // OB-340: each department's sales as the ledger holds them, its goods' cost at the average buying cost, and the margin —
   // a cost that is not known is said in words (never a zero), and the tie to the ledger's revenue is shown.
   const d = tb?.departments ?? null;
   $('dept-wrap').hidden = d === null || d.departments.length === 0;
-  if (d !== null && d.departments.length > 0) {
-    $('dept-tie').className = d.ties ? 'status good' : 'status err';
-    $('dept-tie').textContent = d.ties ? `✓ ${t('deptTies')}` : `⚠ ${t('deptNoTie')}`;
-    $('dept-rows').replaceChildren(...d.departments.map((r) => {
-      const tr = document.createElement('tr'); tr.dataset.department = r.departmentId;
-      const name = text('td', r.name ?? r.departmentId);
-      if (r.notCosted.length > 0) name.append(text('span', ` ⚠ ${t('notCostedK')}: ${r.notCosted.join(', ')}`, 'why'));
-      const pct = r.marginBps === null ? '' : ` (${(r.marginBps / 100).toFixed(1)}%)`;
-      tr.append(name, text('td', api.rupees(r.salesMinor), 'num'),
-        text('td', r.costMinor === null ? `○ ${t('notKnown')}` : api.rupees(r.costMinor), 'num'),
-        text('td', r.marginMinor === null ? `○ ${t('notKnown')}` : `${api.rupees(r.marginMinor)}${pct}`, 'num'));
-      return tr;
-    }));
+  if (d !== null && d.departments.length > 0 && o && typeof o.table === 'function') {
+    status('dept-tie', d.ties ? 'ok' : 'error', d.ties ? t('deptTies') : t('deptNoTie'));
+    const both = (k) => ({ en: api.words('en', k), ta: api.words('ta', k) });
+    const pct = (r) => (r.marginBps === null ? '' : ` (${(r.marginBps / 100).toFixed(1)}%)`);
+    o.table($('dept-table'), {
+      id: 'tally-departments', label: both('deptH'), bodyId: 'dept-rows', pageSize: 50, sortable: true, search: false, count: false,
+      rowKey: (r) => r.departmentId, rowData: (r) => ({ department: r.departmentId }), rows: [...d.departments],
+      columns: [
+        { key: 'name', label: both('deptK'), sort: 'text', value: (r) => r.name ?? r.departmentId, render: (r) => { const name = text('span', r.name ?? r.departmentId); if (r.notCosted.length > 0) name.append(text('span', ` ${t('notCostedK')}: ${r.notCosted.join(', ')}`, 'why')); return name; } },
+        { key: 'salesMinor', label: both('salesK'), align: 'end', sort: 'number', render: (r) => api.rupees(r.salesMinor) },
+        { key: 'costMinor', label: both('costK'), align: 'end', sort: 'number', render: (r) => (r.costMinor === null ? notKnownCell(t('notKnown')) : api.rupees(r.costMinor)) },
+        { key: 'marginMinor', label: both('marginK'), align: 'end', sort: 'number', render: (r) => (r.marginMinor === null ? notKnownCell(t('notKnown')) : `${api.rupees(r.marginMinor)}${pct(r)}`) },
+      ],
+    });
     $('dept-rest').textContent = `${t('notInDeptK')}: ${api.rupees(d.notInADepartmentMinor)} · ${t('ledgerK')}: ${api.rupees(d.ledgerRevenueMinor)}`;
   }
 }
@@ -145,7 +177,7 @@ async function runNow() {
   if (out.result !== 'ok') { say('page-status', out); return; }
   await show();
   const v = out.value;
-  good('page-status', v.posted + v.queued + v.deadLettered === 0 ? t('runNone') : `${t('runDone')} ✓ ${v.posted} · ⚠ ${v.deadLettered}`);
+  status('page-status', v.deadLettered > 0 ? 'degraded' : 'ok', v.posted + v.queued + v.deadLettered === 0 ? t('runNone') : `${t('runDone')} ${v.posted} ${t('postedK').toLowerCase()} · ${v.deadLettered} ${t('deadK').toLowerCase()}`);
 }
 
 async function requeue(postingId, reason) {
@@ -170,8 +202,7 @@ async function showTb() {
   const out = await session.trialBalance($('tb-month').value);
   if (out.result !== 'ok') { tb = null; say('tb-status', out); paint(); return; }
   tb = out.value;
-  $('tb-status').className = tb.balanced ? 'status good' : 'status err';
-  $('tb-status').textContent = tb.rows.length === 0 ? `○ ${tb.detail}` : tb.balanced ? `✓ ${t('balanced')}` : `⚠ ${t('outBy')} ${api.rupees(tb.outByMinor)}`;
+  if (tb.rows.length === 0) status('tb-status', 'idle', tb.detail); else status('tb-status', tb.balanced ? 'ok' : 'error', tb.balanced ? t('balanced') : `${t('outBy')} ${api.rupees(tb.outByMinor)}`);
   paint();
 }
 

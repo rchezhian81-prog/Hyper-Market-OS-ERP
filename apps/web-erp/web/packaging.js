@@ -19,32 +19,11 @@ async function confirmFirst(spec) {
 
 
 
-// ── U2 · G5: pick a thing, never type its code ──────────────────────────────
-// A "Choose…" button beside an id field opens the shared picker (sreOffice.pick, the chrome); the pick writes the id into
-// the field and names it beside, so the page still sends exactly the id it always sent. The field stays typeable: when the
-// list cannot be read (head office down, no right) typing the code is the fallback, never a dead end (P-01, P-08).
-const pickers = [];
-function pickerBeside(input, kind, titleKey, extra = {}) {
-  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sre-btn pick-btn'; btn.id = `${input.id}-pick`;
-  const name = document.createElement('small'); name.className = 'pick-name'; name.id = `${input.id}-name`;
-  const host = input.closest('label') ?? input; // beside the field, never inside its label (the label names the input, not the button)
-  host.after(btn, name);
-  btn.addEventListener('click', async () => {
-    const office = window.sreOffice;
-    if (!office || typeof office.pick !== 'function') { name.textContent = t('pickUnavailable'); return; }
-    const picked = await office.pick({ kind, title: { en: api.words('en', titleKey), ta: api.words('ta', titleKey) }, allowCode: true, ...(typeof extra === 'function' ? extra() : extra) });
-    if (!picked || picked.ok !== true) return;
-    input.value = picked.id;
-    name.textContent = picked.name && picked.name !== picked.id ? `${picked.name} (${picked.id})` : '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  input.addEventListener('input', (e) => { if (e.isTrusted) name.textContent = ''; });
-  pickers.push(btn);
-  btn.textContent = t('choose'); // named from the first paint, however early the page mounts it
-  return btn;
-}
-const paintPickers = () => { for (const b of pickers) b.textContent = t('choose'); };
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+const paintPickers = () => {}; // U5: the chrome's `pickable` keeps its own words on the toggle
 /** U2 · G5: the person's own store, from the chrome (sreOffice.me) or the store computer's directory — '' when not known. */
 function myStore() {
   const office = window.sreOffice;
@@ -57,7 +36,6 @@ function prefillBranches() {
   for (const f of ['q-branch', 'm-branch']) if ($(f).value.trim() === '') $(f).value = id;
 }
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
-function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 let position = null;
 
 function fillSelect(id, values, prefix) {
@@ -65,20 +43,23 @@ function fillSelect(id, values, prefix) {
   sel.replaceChildren(...values.map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = t(`${prefix}${v}`); return o; }));
   if (keep) sel.value = keep;
 }
-function figure(label, value, key) { const s = document.createElement('span'); s.dataset.figure = key; s.append(text('small', label), text('b', value)); return s; }
+/** The position's figures as summary cards (each carries its key for the tests and the eye); the negative warning as a chip. */
 function paintPosition() {
-  $('q-figures').replaceChildren(); $('q-negative').hidden = true;
-  if (position === null) return;
+  const o = office();
+  $('q-negative').hidden = true; $('q-negative').replaceChildren();
+  if (position === null || !o) { $('q-figures').replaceChildren(); return; }
   const p = position;
-  $('q-negative').hidden = !p.negative; $('q-negative').textContent = `⚠ ${t('negativeWarn')}`;
-  $('q-figures').append(
-    figure(`${p.name} · ${t('onHand')}`, String(p.onHand), 'onHand'),
-    figure(t('inCirculation'), String(p.inCirculation), 'inCirculation'),
-    figure(t('issued'), String(p.issuedTotal), 'issued'),
-    figure(t('returned'), String(p.returnedTotal), 'returned'),
-    figure(t('writtenOff'), String(p.writtenOff), 'writtenOff'),
-    figure(t('lossRate'), p.lossRateBps === 'not_meaningful' ? t('notMeaningful') : `${(p.lossRateBps / 100).toFixed(2)}%`, 'lossRate'),
-  );
+  if (p.negative) { $('q-negative').hidden = false; $('q-negative').append(o.chip('degraded', t('negativeWarn'))); }
+  const cards = [
+    { key: 'onHand', label: `${p.name} · ${t('onHand')}`, value: String(p.onHand), tone: p.negative ? 'degraded' : undefined },
+    { key: 'inCirculation', label: t('inCirculation'), value: String(p.inCirculation) },
+    { key: 'issued', label: t('issued'), value: String(p.issuedTotal) },
+    { key: 'returned', label: t('returned'), value: String(p.returnedTotal) },
+    { key: 'writtenOff', label: t('writtenOff'), value: String(p.writtenOff) },
+    { key: 'lossRate', label: t('lossRate'), value: p.lossRateBps === 'not_meaningful' ? null : `${(p.lossRateBps / 100).toFixed(2)}%`, note: p.lossRateBps === 'not_meaningful' ? t('notMeaningful') : undefined },
+  ];
+  const list = o.cards($('q-figures'), cards);
+  [...list.children].forEach((card, i) => { card.dataset.figure = cards[i].key; });
 }
 function paint() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
@@ -105,11 +86,11 @@ if (!may.named) $('page-status').textContent = t('nobody');
 else if (!may.read) $('page-status').textContent = t('cannotRead');
 else {
   $('position').hidden = false;
-  pickerBeside($('q-branch'), 'store', 'whichBranch');
+  whenChrome(() => { office().pickable($('q-branch'), 'store', { en: api.words('en', 'whichBranch'), ta: api.words('ta', 'whichBranch') }); });
   $('q-show').addEventListener('click', () => { void showPosition(); });
   if (may.move) {
     $('register').hidden = false; $('move').hidden = false;
-    pickerBeside($('m-branch'), 'store', 'whichBranch');
+    whenChrome(() => { office().pickable($('m-branch'), 'store', { en: api.words('en', 'whichBranch'), ta: api.words('ta', 'whichBranch') }); });
     $('i-save').addEventListener('click', async () => {
       const out = await session.register({ packagingId: $('i-item').value, name: $('i-name').value, kind: $('i-kind').value, returnable: $('i-returnable').checked, chargeRupees: $('i-charge').value, taxPercent: $('i-tax').value, depositRupees: $('i-deposit').value });
       $('i-status').textContent = api.outcomeWords(lang, out);

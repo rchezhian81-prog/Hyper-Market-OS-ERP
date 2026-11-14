@@ -5,6 +5,7 @@
 import {
   createOldSystemSession, oldSystemWords, oldSystemOutcomeWords, readSource, readEntry, readSeen, approvedTableFile, rupees,
   SOURCE_KINDS, VOLUME_BASES, MAPPING_DOMAINS, EXCLUSION_SCOPES, RESOLUTION_ACTIONS,
+  readDeltaCsv, MIGRATION_STEPS, // U6 · MG-09 the delta LOAD step and the steps ladder
 } from './old-system-session';
 import {
   createCutoverEvidenceSession, evidenceWords, evidenceOutcomeWords, templateOf, keptFile,
@@ -20,6 +21,7 @@ export function wireW3Migration(win: Record<string, unknown>, viewerIdentity: (r
       readSource, readEntry, readSeen, approvedTableFile, rupees,
       sourceKinds: SOURCE_KINDS, volumeBases: VOLUME_BASES, mappingDomains: MAPPING_DOMAINS, exclusionScopes: EXCLUSION_SCOPES,
       resolutionActions: RESOLUTION_ACTIONS, // W4 · MG-04
+      readDeltaCsv, migrationSteps: MIGRATION_STEPS, // U6 · MG-09
       // W5: the switch-over evidence sections (old-system-evidence.js) — the signed page, the owner's acceptance and limits,
       // the books side of a parallel day, and confirming / reconciling a rollback.
       evidence: {

@@ -5,6 +5,16 @@
 // record). Nothing is read on open; "Show the payment notes" is a click. No prompt/confirm/alert.
 
 const $ = (id) => document.getElementById(id);
+// OB-699: the page's words of a refusal follow the toggle; head office's own sentence stays English, marked so (WCAG 3.1.2).
+const sayOutcome = (host, wordsOf, out) => {
+  host.replaceChildren();
+  const words = wordsOf(out);
+  const ho = out && out.result === 'refused' && typeof out.whatHappened === 'string' && out.whatHappened !== '' && words.endsWith(out.whatHappened);
+  if (!ho) { host.textContent = words; return; }
+  host.append(document.createTextNode(words.slice(0, words.length - out.whatHappened.length)));
+  const sp = document.createElement('span'); sp.setAttribute('lang', 'en'); sp.textContent = out.whatHappened; host.append(sp);
+};
+
 const tn = window.b2bTransferNotes ?? null;
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 const w = (k) => tn.words(lang, k);
@@ -20,7 +30,7 @@ function field(labelKey, cls, extra = {}) {
 
 async function show() {
   const out = await tn.session.queue();
-  if (out.result !== 'ok') { $('tn-status').textContent = tn.outcomeWords(lang, out, ''); $('tn-list').replaceChildren(); return; }
+  if (out.result !== 'ok') { sayOutcome($('tn-status'), (o) => tn.outcomeWords(lang, o, ''), out); $('tn-list').replaceChildren(); return; }
   const q = out.value;
   $('tn-summary').textContent = `${q.pending} ${w('waiting')} · ${tn.rupees(q.pendingMinor)} ${w('waitingSum')}`;
   if (q.notes.length === 0) { const li = document.createElement('li'); li.textContent = w('none'); $('tn-list').replaceChildren(li); return; }

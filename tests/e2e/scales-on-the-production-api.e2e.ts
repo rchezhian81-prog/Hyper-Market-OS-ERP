@@ -68,7 +68,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Weighi
     // ── The owner: an empty register, then a scale added ──
     let s = await open(OWNER);
     try {
-      await says(s.page, 'no-scales', /Every till scale must be on it/);
+      // U5: the empty register is the chrome's state part inside the register (`#scales-table`), never a page-own line
+      await says(s.page, 'scales-table', /Every till scale must be on it/);
       expect(s.writes, 'nothing is written on open').toEqual([]);
       await s.page.click('#tab-edit');
       await fill(s.page, { 'f-asset': 'SCALE-1', 'f-store': 'br-1', 'f-lanes': 'lane-1, lane-2', 'f-approval-no': 'LM/TN/APP/0042', 'f-capacity': '30000', 'f-stamped': ddmm(day(-300)), 'f-valid': ddmm(day(20)), 'f-certificate': 'LM/VC/2025/0042' });
@@ -114,6 +115,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Weighi
       const line = await s.page.locator('#scale-rows tr[data-asset="SCALE-1"]').innerText();
       expect(line).toContain(day(365));
       expect(line).toContain('LM/VC/2026/0107');
+      // U5 · G16: a person is shown by name where the directory knows one; the harness's directory names nobody, so the ids stand
       expect(line).toContain(`${MGR} · ${OWNER}`);
       expect(s.writes).toEqual(['POST /v1/facilities/scales/SCALE-1']);
       // Tamil, on the same page.

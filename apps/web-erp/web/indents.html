@@ -37,15 +37,8 @@
       li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; } .row .headline .st { color:var(--muted); font-weight:400; font-size:14px; margin-left:6px; }
-      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .facts { font-size: var(--fs-sm); color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-      /* Seven figures a line: the table scrolls inside its own strip on a phone so the PAGE never scrolls sideways (WCAG 1.4.10). */
-      .lines-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-      table.lines { width:100%; border-collapse:collapse; font-size: var(--fs-sm); font-variant-numeric:tabular-nums; }
-      table.lines th, table.lines td { white-space:nowrap; }
-      table.lines th { text-align:left; color:var(--muted); font-weight:600; padding:2px 6px 2px 0; }
-      table.lines td { padding:2px 6px 2px 0; } table.lines td.n, table.lines th.n { text-align:right; }
+      .lines-wrap { max-width:100%; min-width:0; }
       ul.issues, ul.flags { list-style:none; margin:2px 0 0; padding:0; display:grid; gap:2px; font-size: var(--fs-sm); }
       ul.flags li::before { content:'•'; color:var(--muted); margin-right:6px; }
       section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
@@ -59,11 +52,8 @@
       ul.saved { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
       li.saved { background:var(--panel); border-radius:12px; padding:10px 14px; display:grid; gap:4px; }
       li.saved .what { font-weight:600; } li.saved .detail { font-size: var(--fs-sm); color:var(--muted); }
-      li.saved .pill { font-size: var(--fs-sm); font-weight:600; } li.saved .why { font-size: var(--fs-sm); color:var(--danger-text, var(--danger-text)); }
-      p.result, p.state { margin:0; padding:12px 16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon, p.state .icon { font-size:18px; }
-      p.result.tone-error, p.state.tone-error { color:var(--danger-text, var(--danger-text)); }
-      p.result.tone-ok { color:var(--ink); }
+      li.saved .why { font-size: var(--fs-sm); color:var(--danger-text, var(--danger-text)); }
+      #result { margin:0; }
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
@@ -94,7 +84,8 @@
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Floor indents — who needs a person"></ul>
 
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <!-- U5: an empty, refused or not-known list is the chrome's state, never a blank list -->
+      <div id="state" hidden></div>
 
       <section class="form" id="raiser" hidden aria-label="Raise an indent">
         <h3 id="raise-heading"></h3>
@@ -185,7 +176,8 @@
       <p class="note" id="saved-lead" hidden></p>
       <ul class="saved" id="saved" aria-label="Saved on this screen"></ul>
 
-      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
+      <!-- U5 · G13: the outcome as the one chip (the tone's shape and the words), never a bare character -->
+      <p id="result" hidden role="status" aria-live="polite"></p>
     </main>
 
     <!--SCREEN-DATA-->

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Payables and receivables</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Payables and receivables (U6 · M23-FR-01 · QG-07 · P-08 · finance.md SP-9). A THIN CLIENT over three head-office
+      routes: GET /v1/finance/payables (every supplier's account — the purchase register beside the ledger's control account,
+      the unposted, the exceptions, the posted vouchers), POST /v1/finance/payables/post (post what the ledger does not hold,
+      through the accountant's mapping, once — behind the shared confirm sheet, OB-698) and GET /v1/finance/receivables (every
+      credit customer's receivables beside the ledger's figure, aged from the due date). Its session is
+      apps/web-erp/src/payables-receivables-session.ts. No prompt/confirm/alert of the browser's own; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      section.sub { background: var(--bg); padding: 12px; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; } h4 { margin: 0; font-size: 15px; }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      .subs { display: grid; gap: 12px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Payables and receivables</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Payables and receivables</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <div class="actions"><button id="reload" type="button" class="sre-btn sre-btn-quiet"><span id="reload-text"></span></button></div>
+      </section>
+      <section id="ap" hidden aria-labelledby="ap-h">
+        <h3 id="ap-h"></h3>
+        <p class="meta" id="ap-lead"></p>
+        <p class="meta" id="ap-covers"></p>
+        <p class="status" id="ap-status" role="status" aria-live="polite"></p>
+        <div id="ap-cards"></div>
+        <p class="meta" id="ap-derivations"></p>
+        <div class="actions"><button id="post" type="button" class="sre-btn sre-btn-primary"><span id="post-text"></span></button></div>
+        <p class="status" id="post-status" role="status" aria-live="polite"></p>
+        <div class="subs">
+          <section class="sub" aria-labelledby="ap-suppliers-h"><h4 id="ap-suppliers-h"></h4><div id="ap-suppliers"></div></section>
+          <section class="sub" aria-labelledby="ap-exceptions-h"><h4 id="ap-exceptions-h"></h4><p class="meta" id="ap-exceptions-note"></p><div id="ap-exceptions"></div></section>
+          <section class="sub" aria-labelledby="ap-journals-h"><h4 id="ap-journals-h"></h4><div id="ap-journals"></div></section>
+        </div>
+      </section>
+      <section id="ar" hidden aria-labelledby="ar-h">
+        <h3 id="ar-h"></h3>
+        <p class="meta" id="ar-lead"></p>
+        <p class="meta" id="ar-covers"></p>
+        <p class="status" id="ar-status" role="status" aria-live="polite"></p>
+        <div id="ar-cards"></div>
+        <p class="meta" id="ar-derivations"></p>
+        <section class="sub" aria-labelledby="ar-customers-h"><h4 id="ar-customers-h"></h4><div id="ar-customers"></div></section>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./payables-receivables.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

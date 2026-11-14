@@ -22,11 +22,11 @@ const ranking = (h: ApiHarness, query: Record<string, string> = {}) =>
   h.request({ method: 'GET', path: '/v1/customer/segments/value-ranking', userId: 'u-owner', tenantId: A, query });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code ?? (res.body as { code?: string }).code;
 
-// Three recent orders → "loyal" once the tenant sets loyalAtOrders:3. "Recent" is measured from TODAY: a customer is
-// lapsing 60 days after the last order (the engine default), so the orders are dated 20, 15 and 10 days ago — never
-// fixed calendar dates, which went stale on 13 Nov 2026 (60 days after the old fixed 14 Sep order) and turned CI red.
+// Three recent orders → "loyal" once the tenant sets loyalAtOrders:3. Dated back from the real clock
+// (5, 10 and 20 days ago), never on fixed calendar days: a fixed date silently ages past the 60-day
+// "lapsing" line and the customers stop being loyal (this test went red on 13 Nov 2026 that way).
 async function threeRecentOrders(h: ApiHarness, ref: string): Promise<void> {
-  for (const [i, daysAgo] of [20, 15, 10].entries()) {
+  for (const [i, daysAgo] of [20, 10, 5].entries()) {
     const at = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
     await recordOrder(h, 'u-owner', `${ref}-${i}`, { customerRef: ref, at, netMinor: 20000, marginMinor: 6000, channel: 'store' });
   }

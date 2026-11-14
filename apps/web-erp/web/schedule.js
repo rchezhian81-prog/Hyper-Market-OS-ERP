@@ -18,29 +18,11 @@ const u2bRepaints = [];
 const repaintPickers = () => { for (const f of u2bRepaints) f(); };
 /** Mount the picker on an input the page built itself (no id needed); the id a pick gives lands in the input. */
 function pickableEl(input, kind, titleKey, extra = {}) {
-  if (!input || input.dataset.pickable === 'on') return;
+  // U5: the chrome's own adapter (`sreOffice.pickable`) draws the "Choose…" button (#<id>-pick) and the name beside (#<id>-name);
+  // this page keeps only its title words and the per-field options. The typed code stays the fallback (never a dead end).
   const office = window.sreOffice;
-  if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickableEl(input, kind, titleKey, extra), { once: true }); return; }
-  input.dataset.pickable = 'on';
-  const row = document.createElement('div'); row.className = 'pick-row';
-  input.replaceWith(row); row.append(input);
-  const btn = document.createElement('button'); btn.type = 'button'; if (input.id) btn.id = `${input.id}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
-  const name = document.createElement('span'); if (input.id) name.id = `${input.id}-name`; name.className = 'pick-name';
-  row.append(btn, name);
-  const paint = () => { btn.textContent = u2bWord('choose'); btn.setAttribute('aria-label', `${u2bWord('choose')} ${u2bWord(titleKey)}`); };
-  paint(); u2bRepaints.push(paint);
-  btn.addEventListener('click', async () => {
-    const k = typeof extra.kindOf === 'function' ? extra.kindOf() : kind;
-    const tk = typeof extra.titleOf === 'function' ? extra.titleOf() : titleKey;
-    const picked = await office.pick({ kind: k, title: { en: u2bWords.en[tk], ta: u2bWords.ta[tk] }, allowCode: true, ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
-    if (!picked || picked.ok !== true) return;
-    const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
-    if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
-    name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (typeof extra.onPick === 'function') extra.onPick(picked);
-  });
-  input.addEventListener('input', () => { name.textContent = ''; });
+  if (!office || typeof office.pickable !== 'function') return;
+  office.pickable(input, kind, { en: u2bWords.en[titleKey] ?? titleKey, ta: u2bWords.ta[titleKey] ?? titleKey }, extra);
 }
 function pickable(inputId, kind, titleKey, extra = {}) {
   const input = document.getElementById(inputId);
@@ -77,16 +59,12 @@ const shopDates = new Map();
 /** The shared fields' labels follow the language toggle like the page's own words do. */
 function repaintShopDates() { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; for (const [id, words] of shopDates) { const lab = $(id)?.closest('.sre-field')?.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l] ?? words.en; } }
 function shopDate(id, words, opts = {}) {
-  const office = window.sreOffice; const input = $(id);
-  if (!office || typeof office.dateField !== 'function' || input === null || shopDates.has(id)) return;
-  // a value already on the plain field is carried over — ISO as the page set it, or dd/mm/yyyy as a person typed it
-  const typed = input.value.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
-  const field = office.dateField({ id, label: words, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}) });
-  const ownLabel = document.querySelector(`label[for="${id}"]`);
-  if (ownLabel && !ownLabel.contains(input)) ownLabel.hidden = true; // the page's own label stays (its paint still writes it); the shared field carries the visible one
-  (input.closest('label') ?? input).replaceWith(field);
-  shopDates.set(id, words);
+  // U5: the chrome's own adapter (`sreOffice.shopDate`) swaps the box for the shared dd/mm/yyyy field under the same id; the
+  // page reads ISO back with `dateOf` and remembers which fields it swapped.
+  const office = window.sreOffice;
+  if (!office || typeof office.shopDate !== 'function') { document.addEventListener('sre:chrome', () => shopDate(id, words, opts), { once: true }); return; }
+  if (shopDates.has(id)) return;
+  if (office.shopDate(id, words, opts) !== null) shopDates.set(id, words);
 }
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : ($(id)?.value ?? ''));
 let demand = null;
@@ -95,13 +73,28 @@ let actuals = null;
 const two = (n) => String(n).padStart(2, '0');
 
 function li(text, attrs = {}) { const el = document.createElement('li'); el.className = 'row'; el.textContent = text; for (const [k, v] of Object.entries(attrs)) el.dataset[k] = v; return el; }
-function row(cells, attrs = {}) {
-  const tr = document.createElement('tr');
-  for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.append(td); }
-  for (const [k, v] of Object.entries(attrs)) tr.dataset[k] = v;
-  return tr;
-}
+const STATUS_STATE = { as_rostered: 'ok', short: 'error', absent: 'error', over: 'warning', worked_unrostered: 'warning', not_recorded: 'unknown' };
 function say(id, out, good) { $(id).className = `status ${good ? 'good' : 'err'}`; $(id).textContent = good ? out : api.outcomeWords(lang, out); }
+
+// ── U5 · G17 (UI/UX gap audit): every list on this page is the chrome's register part (`sreOffice.table`) — search, sort
+// with its direction in words, paging, a count line, rows that stack on a phone. The old `<tbody id>` is kept as the
+// register's body id so the records' data attributes read the same. Before the chrome has loaded the host waits for it.
+const registers = new Map();
+function register(hostId, opts) {
+  const host = $(hostId); const o = window.sreOffice;
+  if (host === null) return null;
+  if (!o || typeof o.table !== 'function') {
+    if (!registers.has(hostId)) { registers.set(hostId, null); document.addEventListener('sre:chrome', () => { registers.delete(hostId); register(hostId, opts); }, { once: true }); }
+    return null;
+  }
+  let c = registers.get(hostId) ?? null;
+  if (c === null || !c.connected()) { c = o.table(host, opts); registers.set(hostId, c); }
+  else if (opts.state) c.setState(opts.state, opts.stateOpts ?? {}); else c.setRows(opts.rows ?? null);
+  return c;
+}
+const recordChip = (state, label) => { const o = window.sreOffice; if (o && typeof o.recordChip === 'function') return o.recordChip(state, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.textContent = typeof label === 'string' ? label : state; return s; };
+const W = (k) => ({ en: wordsIn('en', k), ta: wordsIn('ta', k) });
+const nameOf = (kind, id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf(kind, key) || key) : key; };
 
 function paint() {
   repaintShopDates();
@@ -127,26 +120,65 @@ function paint() {
   }));
   const notSet = demand?.rolesNotForecast ?? [];
   $('not-set').hidden = notSet.length === 0; $('not-set').textContent = `${t('notSet')} ${notSet.map((r) => r.role).join(', ')}`;
-  $('demand-rows').replaceChildren(...(demand?.slots ?? []).map((s) => row([s.date, `${two(s.hour)}:00–${two(s.hour + 1)}:00`, s.role, String(s.staffNeeded)], { date: s.date, hour: String(s.hour), role: s.role })));
+  // the staff needed per hour and role, as the register (nothing is read until the person presses Show — then it says so)
+  register('demand-host', {
+    id: 'demand', label: W('demandH'), bodyId: 'demand-rows', sortable: true, pageSize: 24, search: false,
+    rowKey: (s) => `${s.date}:${s.hour}:${s.role}`, rowData: (s) => ({ date: s.date, hour: String(s.hour), role: s.role }),
+    columns: [
+      { key: 'date', label: W('colDate') },
+      { key: 'hour', label: W('colHours'), sort: 'number', value: (s) => s.hour, render: (s) => document.createTextNode(`${two(s.hour)}:00–${two(s.hour + 1)}:00`) },
+      { key: 'role', label: W('colRole'), filter: true },
+      { key: 'staffNeeded', label: W('colStaffNeeded'), sort: 'number', align: 'end', value: (s) => s.staffNeeded },
+    ],
+    rows: demand === null ? null : (demand.slots ?? []),
+    ...(demand === null ? { state: shown ? 'unknown' : 'empty', stateOpts: { title: W('notShownYet') } } : {}),
+    empty: { title: W('noDemand') },
+  });
 
   $('draft-section').hidden = draft === null;
   if (draft !== null) {
     const d = draft.draft;
     $('draft-state').textContent = draft.committedBy === null ? t('drafted') : `${t('committed')} ${draft.committedBy}`;
     const who = new Map(d.assignments.map((a) => [a.shiftId, a.employeeId]));
-    $('draft-rows').replaceChildren(...d.shifts.map((s) => row([s.date, `${two(s.startHour)}:00–${two(s.endHour)}:00`, s.role, who.get(s.shiftId) ?? '—'], { shift: s.shiftId, employee: who.get(s.shiftId) ?? '' })));
+    register('draft-host', {
+      id: 'draft', label: W('draftH'), bodyId: 'draft-rows', sortable: true, pageSize: 20,
+      rowKey: (s) => s.shiftId, rowData: (s) => ({ shift: s.shiftId, employee: who.get(s.shiftId) ?? '' }),
+      columns: [
+        { key: 'date', label: W('colDate') },
+        { key: 'startHour', label: W('colHours'), sort: 'number', value: (s) => s.startHour, render: (s) => document.createTextNode(`${two(s.startHour)}:00–${two(s.endHour)}:00`) },
+        { key: 'role', label: W('colRole'), filter: true },
+        { key: 'employee', label: W('colEmployee'), value: (s) => (who.has(s.shiftId) ? nameOf('person', who.get(s.shiftId)) : null) },
+      ],
+      rows: d.shifts, empty: { title: W('noShifts') },
+    });
     $('uncovered').replaceChildren(...(d.uncovered.length === 0 ? [li(t('noneUncovered'), { none: 'true' })] : d.uncovered.map((u) => li(u.detail, { uncovered: u.shiftId, reason: u.reason }))));
     $('breaches').replaceChildren(...(d.breaches.length === 0 ? [li(t('noneBreaches'), { none: 'true' })] : d.breaches.map((b) => li(b.detail, { breach: b.rule }))));
     $('cost').replaceChildren(...d.cost.lines.map((c) => li(`${c.name} (${c.employeeId}) — ${c.minutes} ${t('minutes')} — ${c.costMinor === null ? t('notCosted') : api.rupees(c.costMinor)}`, { employee: c.employeeId, costed: String(c.costMinor !== null) })));
   }
   $('actuals-section').hidden = actuals === null;
-  $('actual-rows').replaceChildren(...(actuals?.rows ?? []).map((r) => row([r.employeeId, r.date, `${t('rostered')} ${r.rosteredMinutes} ${t('minutes')}`, r.actualMinutes === null ? t('not_recorded') : `${t('actual')} ${r.actualMinutes} ${t('minutes')}`, t(r.status)], { employee: r.employeeId, date: r.date, status: r.status })));
+  if (actuals !== null) {
+    register('actual-host', {
+      id: 'actuals', label: W('actualsH'), bodyId: 'actual-rows', sortable: true, pageSize: 20,
+      rowKey: (r) => `${r.employeeId}:${r.date}`, rowData: (r) => ({ employee: r.employeeId, date: r.date, status: r.status }),
+      columns: [
+        { key: 'employeeId', label: W('colEmployee'), value: (r) => nameOf('person', r.employeeId) },
+        { key: 'date', label: W('colDate') },
+        { key: 'rosteredMinutes', label: W('rostered'), sort: 'number', value: (r) => r.rosteredMinutes, render: (r) => document.createTextNode(`${r.rosteredMinutes} ${t('minutes')}`) },
+        { key: 'actualMinutes', label: W('actual'), sort: 'number', value: (r) => r.actualMinutes, render: (r) => document.createTextNode(r.actualMinutes === null ? t('not_recorded') : `${r.actualMinutes} ${t('minutes')}`) },
+        // the day's outcome as the one chip: as rostered → ok, short / absent → error, over / worked unrostered → degraded, not recorded → unknown
+        { key: 'status', label: W('colStatus'), filter: true, value: (r) => t(r.status), render: (r) => recordChip(STATUS_STATE[r.status] ?? 'unknown', t(r.status)) },
+      ],
+      rows: actuals.rows ?? [], empty: { title: W('noActuals') },
+    });
+  }
 }
 
 const branch = () => $('branch').value;
 const week = () => dateOf('week');
+let shown = false; // the person has pressed Show at least once — before that the register says what to do, not "loading"
 async function show(event) {
   event?.preventDefault();
+  shown = true;
   const out = await session.demand(branch(), week());
   if (out.result === 'ok') { demand = out.value; $('page-status').className = 'status'; $('page-status').textContent = ''; } else { demand = null; say('page-status', out, false); }
   paint();

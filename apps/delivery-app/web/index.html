@@ -176,6 +176,11 @@
       /* The quieter actions at the handhelds' 56px bar, so the footer leaves room for the route. */
       .actions > button:not(.primary) { min-height: 56px; font-size: 17px; }
       .actions > button:not(.primary):not(.danger) { background: var(--panel); }
+      /* U6 · OB-700: the call request under the stops — a 56px full-width quiet button with its one-line note (14px). */
+      .ask-call { display: grid; gap: 6px; margin: 12px 0 0; }
+      .ask-call-note { margin: 0; font-size: 14px; color: var(--muted); }
+      .ask-call > button { min-height: 56px; font-size: 17px; width: 100%; background: var(--panel); border: 1px solid var(--line); }
+      .stop .flag.asked { color: var(--on-info-surface); background: var(--info-surface); }
 
       /* ── Panels ─────────────────────────────────────────────────────────── */
       .sheet {
@@ -267,6 +272,12 @@
     <main>
       <div id="stops"></div>
       <p class="empty" id="empty" hidden>—</p>
+      <!-- U6 · OB-700: the phone holds no customer number; the driver asks the STORE to call. One tap, on the stop chosen above.
+           In the main flow, not the fixed footer, so the stop rows stay reachable under the thumb. -->
+      <div class="ask-call" id="ask-call-box">
+        <p class="ask-call-note" id="ask-call-note">This phone holds no customer number. The store calls them for you.</p>
+        <button id="ask-call" type="button">Ask the store to call the customer</button>
+      </div>
       <!-- WF-16 (driver): online returns booked for collection on this route. No money changes hands at the door. -->
       <h2 class="section" id="returns-heading" hidden>—</h2>
       <p class="returns-note" id="returns-note" hidden>—</p>

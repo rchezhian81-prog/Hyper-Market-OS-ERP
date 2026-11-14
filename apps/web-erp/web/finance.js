@@ -98,6 +98,8 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+// U3 (OB-699): the state sentence is the product's own word — the model carries it in both languages; the Tamil shows on a Tamil screen.
+const inLang = (en, ta) => (lang === 'ta' && typeof ta === 'string' && ta !== '' ? ta : en);
 
 /** What is stopping a close — one entry per `CloseBlocker`, both languages. */
 const BLOCKER_WORDS = {
@@ -204,13 +206,13 @@ function renderTotals() {
   const verdict = el('verdict');
   const pack = session.evidence();
   verdict.className = `verdict ${pack.signable ? 'signable' : 'not-signable'}`;
-  verdict.textContent = pack.signable ? t('signable') : (pack.why ?? t('notSignable'));
+  verdict.textContent = pack.signable ? t('signable') : (inLang(pack.why, pack.whyTa) ?? t('notSignable'));
 
   const list = el('totals-list');
   if (view.totals === undefined) {
     // NOT an empty list. An empty list of totals reconciles vacuously, and that is exactly how a
     // month closes on nothing at all.
-    list.replaceChildren(emptyLine(view.whyNoTotals ?? t('noTotals')));
+    list.replaceChildren(emptyLine(inLang(view.whyNoTotals, view.whyNoTotalsTa) ?? t('noTotals')));
   } else {
     list.replaceChildren(...view.totals.map(totalRow));
   }
@@ -250,7 +252,7 @@ function stoppingNow(view) {
     const differing = (view.totals ?? []).filter((t2) => !t2.reconciles);
     stopping.push({
       kind: 'control_totals_do_not_reconcile',
-      detail: differing.length > 0 ? differing.map((d) => d.detail).join(' · ') : (view.whyNoTotals ?? ''),
+      detail: differing.length > 0 ? differing.map((d) => d.detail).join(' · ') : (inLang(view.whyNoTotals, view.whyNoTotalsTa) ?? ''),
     });
   }
   if (view.deadLettered.length > 0) {

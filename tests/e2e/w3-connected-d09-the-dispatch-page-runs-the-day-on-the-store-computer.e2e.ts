@@ -93,13 +93,13 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     await page.check('#ready li.row[data-order="ORD-1"] input.choose');
     await page.check('#ready li.row[data-order="ORD-2"] input.choose');
     await page.click('#build');
-    await page.locator('#waves-status', { hasText: '✓' }).waitFor({ timeout: 15_000 }).catch(async () => { throw new Error(`wave status: ${await page.textContent('#waves-status')}`); });
-    expect(await page.textContent('#waves-status')).toBe('✓ Wave given to the picker — W-1 · u-picker · 2 lines');
+    await page.locator('#waves-status', { hasText: 'Wave given' }).waitFor({ timeout: 15_000 }).catch(async () => { throw new Error(`wave status: ${await page.textContent('#waves-status')}`); });
+    expect(await page.textContent('#waves-status')).toContain('Wave given to the picker — W-1 · u-picker · 2 lines');
     expect(await page.locator('#on-wave li.row').count()).toBe(2);
     await page.click('#show-waves');
     await page.locator('#waves li.row[data-wave="W-1"]').waitFor({ timeout: 15_000 });
     expect(await page.getAttribute('#waves li.row[data-wave="W-1"]', 'data-stage')).toBe('not_started');
-    expect(await page.innerText('#waves li.row[data-wave="W-1"]')).toMatch(/⏱ W-1 · u-picker — Not started/);
+    expect(await page.innerText('#waves li.row[data-wave="W-1"]')).toMatch(/W-1 · u-picker — Not started/);
 
     // ── The day's routes from head office's own orders; the route to its driver.
     await page.fill('#drivers', 'u-driver, 10, 06:00, 23:00');
@@ -109,11 +109,11 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     await page.fill('#minutes', '5');
     await page.click('#plan');
     await page.locator('#planned li.row').first().waitFor({ timeout: 15_000 });
-    expect(await page.textContent('#plan-status')).toBe('✓ Planned — 1 routes');
+    expect(await page.textContent('#plan-status')).toContain('Planned — 1 routes');
     expect(await page.innerText('#planned li.row')).toMatch(/1\. ORD-1 · Slot .* · ~/);
     await page.locator('#planned li.row button', { hasText: 'Give this route to its driver' }).click();
     await page.locator('#plan-status', { hasText: 'Given to' }).waitFor({ timeout: 15_000 });
-    expect(await page.textContent('#plan-status')).toMatch(/^✓ Given to u-driver — /);
+    expect(await page.textContent('#plan-status')).toMatch(/Given to u-driver — /);
 
     await page.click('#show-board');
     await page.locator('#board li.row').first().waitFor({ timeout: 15_000 });
@@ -138,13 +138,29 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     const flagged = page.locator('#board li.flagged[data-order="ORD-1"]');
     await flagged.waitFor({ timeout: 15_000 });
     expect(await flagged.locator('.flag-words').getAttribute('data-flags')).toBe('delivery_code_wrong outside_geofence');
-    expect(await flagged.locator('.flag-words').innerText()).toBe(' · ⚠ Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
-    expect(await flagged.innerText()).toMatch(/Code: .* WRONG · Where: ⚠ AWAY from the address \(\d+ m\)/);
+    expect(await flagged.locator('.flag-words').innerText()).toBe(' · Needs a person to look: the code the driver typed is NOT the customer’s; handed over away from the address (farther than the radius)');
+    expect(await flagged.innerText()).toMatch(/Code: WRONG · Where: AWAY from the address \(\d+ m\)/);
+
+    // ── U7 (OB-726 · OB-700): the driver asks the store to call the customer; the board lists it, not called yet; the store
+    // calls from the order's own record and ticks it — the request's alert ticked as seen — and the board reads it called.
+    const asked = await cloud.request({ method: 'POST', path: `/v1/delivery/routes/${encodeURIComponent(route.routeId)}/stops/${encodeURIComponent(stop.stopId)}/call-request/synced`, userId: OWNER, idempotencyKey: `call-${stop.stopId}`, body: {
+      routeId: route.routeId, stopId: stop.stopId, driverId: 'u-driver', orderRef: 'ORD-1', area: 'Near the market', occurredAt: new Date().toISOString(),
+    } });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(201);
+    await page.click('#show-board');
+    const call = page.locator(`#board .call-list li[data-stop="${stop.stopId}"]`);
+    await call.waitFor({ timeout: 15_000 });
+    expect(await call.getAttribute('data-called')).toBe('no');
+    expect(await call.innerText()).toMatch(/Order ORD-1 · Near the market · .* asked at .* · not called yet/);
+    expect(await call.innerText()).not.toMatch(/c-1/);
+    await call.locator('button.mark-called').click();
+    await page.locator(`#board .call-list li[data-stop="${stop.stopId}"][data-called="yes"]`).waitFor({ timeout: 15_000 });
+    expect(await page.locator(`#board .call-list li[data-stop="${stop.stopId}"]`).innerText()).toMatch(/called by .* at /);
 
     // ── The contribution rule: not set — the rule only flags.
     await page.click('#show-held');
     await page.locator('#threshold').waitFor({ state: 'visible', timeout: 15_000 });
-    expect(await page.textContent('#threshold')).toBe('Owner’s threshold: ○ Not set — the rule only flags');
+    expect(await page.textContent('#threshold')).toBe('Owner’s threshold: Not set — the rule only flags');
 
     // ── The owner's numbers: the radius is the shop's default (OB-343, 250 m) until he enters another.
     await page.click('#show-controls');
@@ -154,7 +170,7 @@ describe.skipIf(!CONNECTED)('D09 connected: the Dispatch page runs the day on th
     expect(await radius.locator('strong').innerText()).toBe('Proof-location radius (metres): 250 (the shop’s default, OB-343)');
     await radius.locator('input.value').fill('150');
     await radius.locator('button', { hasText: 'Save' }).click();
-    await page.locator('#controls-status', { hasText: '✓ Saved.' }).waitFor({ timeout: 15_000 });
+    await page.locator('#controls-status', { hasText: 'Saved.' }).waitFor({ timeout: 15_000 });
     expect(await page.locator('#controls li.row[data-key="geofenceRadiusMetres"] strong').innerText()).toBe('Proof-location radius (metres): 150');
 
     await page.click('#lang');

@@ -41,6 +41,7 @@ const WORDS = {
     calHeading: 'Filing calendar', calNone: 'Nothing is overdue.', due: 'Due', bar: 'Barred after', daysOver: 'day(s) overdue', daysLeft: 'day(s) to the bar',
     w_filed: 'Filed', w_period_not_ended: 'Month not ended', w_not_due_yet: 'Not due yet', w_overdue: 'OVERDUE', w_near_time_bar: 'NEAR THE 3-YEAR BAR', w_time_barred: 'TIME-BARRED — can never be filed',
     notJudged: 'The owner has not set how many days before the 3-year bar to be warned, so "near the bar" is not judged yet.',
+    findingsNote: 'Head office\'s findings are in English.', m_month_not_filed: 'GSTR-1 not filed and locked', m_gstr3b_not_recorded_filed: 'GSTR-3B not recorded as filed', m_gstr1_not_filed_and_locked: 'GSTR-1 not filed and locked',
     annualHeading: 'Annual return', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'complete — all twelve months filed', incomplete: 'INCOMPLETE — months missing', openDiffs: 'difference(s) without a reason', noOpen: 'every difference has a reason',
     locked: 'Locked', amended: 'Amendment recorded — declared in', refused: 'Not done', unreachable: 'Head office could not be reached. Nothing was changed — try again.',
     cannotRead: 'This could not be read from head office. Nothing here is current.', badPeriod: 'Write the month as MMYYYY, e.g. 052026.',
@@ -66,6 +67,7 @@ const WORDS = {
     calHeading: 'தாக்கல் நாட்காட்டி', calNone: 'எதுவும் தாமதமில்லை.', due: 'கடைசி நாள்', bar: 'இதற்குப் பின் தடை', daysOver: 'நாள்(கள்) தாமதம்', daysLeft: 'நாள்(கள்) தடைக்கு',
     w_filed: 'தாக்கல் ஆனது', w_period_not_ended: 'மாதம் முடியவில்லை', w_not_due_yet: 'இன்னும் கெடு வரவில்லை', w_overdue: 'தாமதம்', w_near_time_bar: '3 ஆண்டு தடைக்கு அருகில்', w_time_barred: 'காலாவதி — இனி தாக்கல் செய்ய முடியாது',
     notJudged: '3 ஆண்டு தடைக்கு எத்தனை நாள் முன் எச்சரிக்க வேண்டும் என்று உரிமையாளர் அமைக்கவில்லை; ஆகவே "தடைக்கு அருகில்" இன்னும் கணிக்கப்படவில்லை.',
+    findingsNote: 'தலைமை அலுவலகத்தின் கண்டுபிடிப்புகள் ஆங்கிலத்தில் உள்ளன.', m_month_not_filed: 'GSTR-1 தாக்கல் செய்து பூட்டப்படவில்லை', m_gstr3b_not_recorded_filed: 'GSTR-3B தாக்கல் செய்ததாகப் பதிவாகவில்லை', m_gstr1_not_filed_and_locked: 'GSTR-1 தாக்கல் செய்து பூட்டப்படவில்லை',
     annualHeading: 'ஆண்டு வருமானம்', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'முழுமை — பன்னிரண்டு மாதமும் தாக்கல்', incomplete: 'முழுமையில்லை — மாதங்கள் விடுபட்டுள்ளன', openDiffs: 'காரணமில்லாத வேறுபாடு(கள்)', noOpen: 'ஒவ்வொரு வேறுபாட்டிற்கும் காரணம் உள்ளது',
     locked: 'பூட்டப்பட்டது', amended: 'திருத்தம் பதிவானது — அறிவிக்கப்படும் மாதம்', refused: 'செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் மாறவில்லை — மீண்டும் முயலவும்.',
     cannotRead: 'இதைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', badPeriod: 'மாதத்தை MMYYYY ஆக எழுதுங்கள், எ.கா. 052026.',
@@ -137,11 +139,13 @@ function shaped(holder, mark, words) {
 
 function fact(list, label, word, tone) {
   const li = document.createElement('li');
-  li.className = `tone-${tone}`;
-  const mark = toneIcon(tone, 18);
-  if (mark) li.append(mark);
+  li.dataset.tone = tone;
   const l = document.createElement('span'); l.textContent = `${label}:`;
-  const w = document.createElement('span'); w.className = 'word'; w.textContent = word;
+  // U5 (G13): the control's state is the chrome's chip — the tone's shape and the word together, never a word beside a
+  // coloured mark of the page's own.
+  const o = window.sreOffice;
+  const w = o && typeof o.chip === 'function' ? o.chip(tone, word) : (() => { const span = document.createElement('span'); span.className = 'word'; span.textContent = word; return span; })();
+  w.classList.add('word');
   li.append(l, w);
   list.append(li);
   return li;
@@ -176,12 +180,16 @@ function figure(dl, label, value, key, notKnown = false) {
  *  clearer shape where the tone's own would mislead); a line whose words are all in its title wears the shape there. */
 function row(list, head, word, tone, facts, data, icon) {
   const li = document.createElement('li');
-  li.className = `row tone-${tone}`;
+  li.className = 'row'; li.dataset.tone = tone;
+  // OB-699: a FINDING head office wrote (its own sentence about the return) stays English on the Tamil screen and is
+  // marked as English for a screen reader (WCAG 3.1.2); the page's own words around it follow the toggle.
+  const ho = data.ho === '1'; delete data.ho;
   for (const [k, v] of Object.entries(data)) li.dataset[k] = v;
   const h = document.createElement('div'); h.className = 'head';
   const a = document.createElement('span'); a.className = 'headline';
   const mark = icon ? lineIcon(icon, 18) : toneIcon(tone, 18);
   if (word === '') shaped(a, mark, head); else a.textContent = head;
+  if (ho) a.setAttribute('lang', 'en');
   h.append(a);
   if (word !== '') {
     const s = document.createElement('span');
@@ -193,7 +201,7 @@ function row(list, head, word, tone, facts, data, icon) {
   li.append(h);
   if (facts.length > 0) {
     const f = document.createElement('div'); f.className = 'facts';
-    for (const x of facts) { const sp = document.createElement('span'); sp.textContent = x; f.append(sp); }
+    for (const x of facts) { const sp = document.createElement('span'); sp.textContent = x; if (ho) sp.setAttribute('lang', 'en'); f.append(sp); }
     li.append(f);
   }
   list.append(li);
@@ -251,13 +259,17 @@ function paintG3b() {
   diffs.replaceChildren();
   if (g3b.reconciliation.differences.length === 0) row(diffs, t('noDiff'), '', 'ok', [], { code: 'none' });
   for (const d of g3b.reconciliation.differences) {
-    row(diffs, t(`d_${d.code}`), `${d.explained ? t('explained') : t('open')} · ${rupees(d.grossMinor)}`, d.explained ? 'ok' : 'error', [d.detail], { code: d.code, explained: String(d.explained) });
+    row(diffs, t(`d_${d.code}`), `${d.explained ? t('explained') : t('open')} · ${rupees(d.grossMinor)}`, d.explained ? 'ok' : 'error', [d.detail], { code: d.code, explained: String(d.explained), ho: '1' });
   }
   el('exc-heading').textContent = t('excHeading');
   const exc = el('exceptions');
   exc.replaceChildren();
   if (g3b.exceptions.length === 0) row(exc, t('noExc'), '', 'ok', [], { code: 'none' });
-  for (const e of g3b.exceptions) row(exc, e.detail, '', 'degraded', [], { code: e.code });
+  for (const e of g3b.exceptions) row(exc, e.detail, '', 'degraded', [], { code: e.code, ho: '1' });
+  // Said once, above the lists: head office's findings are in English.
+  let note = el('ho-findings-note');
+  if (!note) { note = document.createElement('p'); note.id = 'ho-findings-note'; note.className = 'meta'; diffs.before(note); }
+  note.textContent = g3b.reconciliation.differences.length + g3b.exceptions.length > 0 ? t('findingsNote') : '';
 }
 
 function paintCalendar() {
@@ -283,7 +295,7 @@ function paintAnnual() {
   list.replaceChildren();
   if (annual === null) return;
   row(list, t('g9'), annual.g9.complete ? t('complete') : t('incomplete'), annual.g9.complete ? 'ok' : 'degraded',
-    [`${t('due')}: ${annual.g9.dueDate}`, ...annual.g9.missing.slice(0, 6).map((m) => `${m.period}: ${m.reason.replace(/_/g, ' ')}`)], { return: 'GSTR9' });
+    [`${t('due')}: ${annual.g9.dueDate}`, ...annual.g9.missing.slice(0, 6).map((m) => `${m.period}: ${t(`m_${m.reason}`) === `m_${m.reason}` ? m.reason.replace(/_/g, ' ') : t(`m_${m.reason}`)}`)], { return: 'GSTR9' });
   row(list, t('g9c'), annual.g9c.open === 0 ? t('noOpen') : `${annual.g9c.open} ${t('openDiffs')}`, annual.g9c.open === 0 ? 'ok' : 'degraded',
     [`${t('due')}: ${annual.g9c.dueDate}`], { return: 'GSTR9C' });
 }

@@ -42,7 +42,6 @@
       .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
       .row .headline { font-weight:600; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       .row .detail { font-size:14px; color:var(--danger-text); }
       .actions { display:grid; gap:8px; }
@@ -57,11 +56,10 @@
       .actions .hint { margin:0; font-size:14px; color:var(--muted); }
       button.act:focus-visible, .lang:focus-visible, .actions input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
@@ -97,7 +95,7 @@
         <p class="lead" id="fs-asof"></p>
         <ul class="rows" id="fs-rows"></ul>
         <p class="lead" id="fs-none" hidden></p>
-        <p class="fs-result" id="fs-result" hidden role="status" aria-live="polite"><span class="icon" id="fs-result-icon" aria-hidden="true"></span><span id="fs-result-text"></span></p>
+        <p class="fs-result" id="fs-result" hidden role="status" aria-live="polite"></p>
       </section>
 
       <!-- OB-333: batches on quality hold, released here (with the line down too) by a person with the quality-release right. -->
@@ -107,7 +105,7 @@
         <p class="lead" id="qh-asof"></p>
         <ul class="rows" id="qh-rows"></ul>
         <p class="lead" id="qh-none" hidden></p>
-        <p class="fs-result" id="qh-result" hidden role="status" aria-live="polite"><span class="icon" id="qh-result-icon" aria-hidden="true"></span><span id="qh-result-text"></span></p>
+        <p class="fs-result" id="qh-result" hidden role="status" aria-live="polite"></p>
       </section>
 
       <!-- M26-FR-02 offline: a manual reading per cold room / cabinet, saved here and carried by the store computer. -->
@@ -116,7 +114,7 @@
         <p class="lead" id="eq-lead"></p>
         <p class="lead" id="eq-asof"></p>
         <ul class="rows" id="eq-rows"></ul>
-        <p class="fs-result" id="eq-result" hidden role="status" aria-live="polite"><span class="icon" id="eq-result-icon" aria-hidden="true"></span><span id="eq-result-text"></span></p>
+        <p class="fs-result" id="eq-result" hidden role="status" aria-live="polite"></p>
       </section>
 
       <!-- M26-FR-01/02/04: the asset register, cold rooms, downtime, energy and incidents — head office's read, nothing changed. -->
@@ -138,8 +136,8 @@
         </div>
       </section>
 
-      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <p class="result" id="result" hidden role="status" aria-live="polite"></p>
+      <div class="state" id="state" hidden></div>
     </main>
 
     <!--SCREEN-DATA-->

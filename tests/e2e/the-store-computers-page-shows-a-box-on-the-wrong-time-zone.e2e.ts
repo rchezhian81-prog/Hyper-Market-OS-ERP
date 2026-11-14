@@ -75,7 +75,7 @@ describe.skipIf(!existsSync(CHROMIUM))('R3 · P-08: the Store computers page sho
       await page.goto(`${base}/`, { waitUntil: 'load' });
       await page.locator('#zone-rows tr[data-store="br-1"][data-verdict="differs"]').waitFor({ timeout: 15_000 });
       await says(page, '#v-zones', '1');
-      expect(await page.getAttribute('#p-zones', 'class')).toContain('attention');
+      expect(await page.getAttribute('#p-zones', 'data-tone')).toBe('degraded'); // U7: the chrome's summary card carries the tone (shape + words), not a page class
       const rows = page.locator('#zone-rows tr');
       expect(await rows.count()).toBe(2);
       expect(await rows.first().getAttribute('data-store')).toBe('br-1');

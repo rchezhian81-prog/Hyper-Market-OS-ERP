@@ -8,6 +8,11 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+
 const DATA = window.recallTraceData ?? {};
 const PERMS = Array.isArray(DATA.permissions) ? DATA.permissions : null; // null: not told — head office decides
 
@@ -234,12 +239,13 @@ function recallRow(r) {
   li.className = r.status === 'open' ? 'tone-degraded' : '';
   li.dataset.batch = r.batchId;
   const head = document.createElement('strong');
-  head.textContent = `${r.batchId} — ${t(r.status === 'open' ? 'statusOpen' : 'statusClosed')}`;
+  const o = office();
+  head.append(document.createTextNode(`${r.batchId} — `), o ? o.recordChip(r.status === 'open' ? 'open' : 'closed', t(r.status === 'open' ? 'statusOpen' : 'statusClosed')) : document.createTextNode(t(r.status === 'open' ? 'statusOpen' : 'statusClosed')));
   const facts = document.createElement('div'); facts.className = 'facts';
   for (const text of [r.reason, `${t('startedBy')}: ${r.initiatedBy}`, `${t('since')}: ${shopWhen(r.initiatedAt)}`, ...(r.closedAt ? [`${t('closedAt')}: ${shopWhen(r.closedAt)} (${r.evidenceRef})`] : [])]) {
     const s = document.createElement('span'); s.textContent = text; facts.append(s);
   }
-  const b = document.createElement('button'); b.type = 'button'; b.className = 'quiet open-one';
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'sre-btn sre-btn-quiet open-one';
   label(b, 'search', 'open');
   b.addEventListener('click', () => { void openRecall(r.batchId); });
   li.append(head, facts, b);
@@ -262,33 +268,36 @@ async function runTrace() {
   paint();
 }
 
-function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
-function headRow(keys) { const tr = document.createElement('tr'); for (const k of keys) { const th = document.createElement('th'); th.textContent = t(k); tr.append(th); } return tr; }
-
+const bothW = (k) => ({ en: WORDS.en[k], ta: WORDS.ta[k] });
 function paintTrace() {
-  const head = el('t-head'); const rows = el('t-rows'); const gaps = el('t-gaps');
-  head.replaceChildren(); rows.replaceChildren(); gaps.replaceChildren();
+  const host = el('trace'); const gaps = el('t-gaps');
+  gaps.replaceChildren();
   el('t-summary').textContent = '';
   el('t-gaps-h').hidden = true;
-  if (traceReply === null) return;
+  host.hidden = traceReply === null;
+  const o = office();
+  if (traceReply === null || !o) return;
   const g = Array.isArray(traceReply.gaps) ? traceReply.gaps : [];
   if (traceKind === 'batch') {
-    head.append(headRow(['colHop', 'colDate', 'colFrom', 'colTo', 'colRef', 'colQty']));
-    for (const r of traceReply.rows ?? []) {
-      const tr = document.createElement('tr');
-      tr.append(cell(r.hop), cell(r.date), cell(r.from), cell(r.to), cell(r.reference), cell(String(r.quantityMinor)));
-      rows.append(tr);
-    }
+    o.table(host, {
+      id: 'trace', label: bothW('traceH'), pageSize: 20, sortable: true, bodyId: 't-rows', rows: traceReply.rows ?? [],
+      rowKey: (r) => `${r.hop}|${r.reference}`,
+      columns: [
+        { key: 'hop', label: bothW('colHop'), sort: 'number' }, { key: 'date', label: bothW('colDate') }, { key: 'from', label: bothW('colFrom') }, { key: 'to', label: bothW('colTo') },
+        { key: 'reference', label: bothW('colRef') }, { key: 'quantityMinor', label: bothW('colQty'), sort: 'number', align: 'end' },
+      ],
+    });
     el('t-summary').textContent = `${t('traceRows', { n: (traceReply.rows ?? []).length })} ${g.length === 0 ? t('traceComplete') : t('traceGaps', { n: g.length })}`;
   } else {
-    head.append(headRow(['colBatch', 'colDepth', 'colReceipts', 'colSupplier']));
-    for (const b of traceReply.batches ?? []) {
-      const tr = document.createElement('tr');
-      const receipts = (b.receipts ?? []).map((x) => x.reference).join('; ') || ((b.madeBy ?? []).map((m) => `run ${m.runId}`).join('; ') || t('notKnown'));
-      const suppliers = [...new Set((b.receipts ?? []).map((x) => x.supplierId ?? t('notKnown')))].join(', ') || t('notKnown');
-      tr.append(cell(b.batchId), cell((b.reachedFrom ?? []).join('; ')), cell(receipts), cell(suppliers));
-      rows.append(tr);
-    }
+    o.table(host, {
+      id: 'trace', label: bothW('traceH'), pageSize: 20, sortable: true, bodyId: 't-rows', rows: traceReply.batches ?? [],
+      rowKey: (b) => b.batchId,
+      columns: [
+        { key: 'batchId', label: bothW('colBatch') }, { key: 'depth', label: bothW('colDepth'), value: (b) => (b.reachedFrom ?? []).join('; ') },
+        { key: 'receipts', label: bothW('colReceipts'), value: (b) => (b.receipts ?? []).map((x) => x.reference).join('; ') || ((b.madeBy ?? []).map((m) => `run ${m.runId}`).join('; ') || null) },
+        { key: 'supplier', label: bothW('colSupplier'), value: (b) => [...new Set((b.receipts ?? []).map((x) => x.supplierId ?? t('notKnown')))].join(', ') || null },
+      ],
+    });
     el('t-summary').textContent = `${t('backSummary', { s: (traceReply.sales ?? []).length, b: (traceReply.batches ?? []).length, p: (traceReply.suppliers ?? []).length })} ${g.length === 0 ? t('traceComplete') : t('traceGaps', { n: g.length })}`;
   }
   el('t-gaps-h').hidden = g.length === 0;
@@ -324,7 +333,9 @@ function callRow(c) {
   // OB-387: the "phoned" tick — who and when, as head office keeps it. Once ticked it stays; the first tick stands.
   const phoned = document.createElement('span');
   phoned.className = 'phoned';
-  phoned.textContent = c.phoned ? `✓ ${t('phonedBy', { by: c.phoned.by, at: shopWhen(c.phoned.at) })}` : t('notPhoned');
+  const oc = office();
+  if (c.phoned) { if (oc) phoned.append(oc.chip('ok', t('phonedBy', { by: c.phoned.by, at: shopWhen(c.phoned.at) }))); else phoned.textContent = t('phonedBy', { by: c.phoned.by, at: shopWhen(c.phoned.at) }); }
+  else if (oc) phoned.append(oc.chip('pending', t('notPhoned'))); else phoned.textContent = t('notPhoned');
   li.append(phoned);
   const mayTick = PERMS === null || PERMS.includes('quality.recall.notice.phoned');
   if (!c.phoned && mayTick && callReply?.recall?.status === 'open') {
@@ -477,7 +488,9 @@ function paint() {
     el('r-box-asof').textContent = tb === null ? t('boxNotKnown') : tb.products.length === 0 ? t('boxNone') : t('boxAsOf', { v: tb.packVersion, at: shopWhen(tb.builtAt) });
     el('r-box-rows').replaceChildren(...(tb === null ? [] : tb.products).map((p) => {
       const li = document.createElement('li'); li.className = 'row'; li.dataset.product = p.productId;
-      li.textContent = `⛔ ${p.name} (${p.productId}) — ${p.batches === null ? t('boxEvery') : t('boxBatches', { list: p.batches.join(', ') })}`;
+      const ob = office();
+      if (ob) li.append(ob.recordChip('recalled'), document.createTextNode(' '));
+      li.append(document.createTextNode(`${p.name} (${p.productId}) — ${p.batches === null ? t('boxEvery') : t('boxBatches', { list: p.batches.join(', ') })}`));
       return li;
     }));
   }
@@ -522,6 +535,7 @@ el('m-off').addEventListener('click', () => { void setSwitch(false); });
 el('m-send').addEventListener('click', () => { void sendNotices(); });
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
+whenChrome(paint);
 void loadRecalls();
 
 if ('serviceWorker' in navigator) {

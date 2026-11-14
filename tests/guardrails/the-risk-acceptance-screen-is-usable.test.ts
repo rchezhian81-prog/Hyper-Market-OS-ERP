@@ -90,7 +90,8 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
 
   it('every rendered status carries a screen-reader announcement and an aria-hidden icon', () => {
     expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
-    expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
+    expect(VIEW).toMatch(/fillStatus\(|\.chip\(|recordChip\(/); // U5 · G17: the state is the chrome's chip — its shape and its words
+    expect(VIEW).not.toMatch(/icon\.textContent = /); // never a ✓/⚠ character beside the words
   });
 
   it('the shell loads the shared bundle, carries the data marker, and labels the toggle and the list', () => {

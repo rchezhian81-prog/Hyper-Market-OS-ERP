@@ -39,15 +39,10 @@
       .status { font-size: 14px; min-height: 20px; margin: 0; } .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: 14px; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; }
       .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       [hidden] { display: none !important; }
           /* U2 · G5: a store or product field with its "Choose…" button beside it; the products chosen one by one */
       .form-row label { display: grid; gap: 4px; }
-      .pick-btn { align-self: end;  min-width: var(--tap); padding-left: 14px; padding-right: 14px; }
-      .pick-name { grid-column: 1 / -1; color: var(--muted); font-size: var(--fs-sm); min-height: 1.2em; }
       .products-pick { grid-column: 1 / -1; display: grid; gap: 8px; }
       .products-pick .field-name { font-weight: 600; }
       #product-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
@@ -103,7 +98,8 @@
         </form>
         <p class="status" id="forecast-status" role="status" aria-live="polite"></p>
         <p class="muted" id="backtest"></p>
-        <div class="table-wrap"><table aria-labelledby="forecast-h"><tbody id="forecast-rows"></tbody></table></div>
+        <!-- U5 · G17: the seven days on the chrome's register (rows stack on a phone) -->
+        <div id="forecast-list" hidden></div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

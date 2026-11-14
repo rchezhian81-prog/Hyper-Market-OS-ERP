@@ -6,6 +6,29 @@
 // so the accepted risk's blocked gates drop off. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** The chrome's record state for a tone — the chip's words come from the chrome in both languages. */
+const stateOfTone = (tone) => (tone === 'ok' ? 'done' : tone === 'error' ? 'failed' : tone === 'degraded' ? 'warning' : tone === 'pending' ? 'pending' : 'unknown');
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 let lang = 'en';
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
@@ -72,9 +95,7 @@ function rowNode(r) {
 
   const status = document.createElement('span');
   status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
-  status.append(icon, slabel);
+  fillStatus(status, r.status.tone, r.status.label);
   status.setAttribute('aria-label', r.status.announcement || r.status.label);
 
   const facts = document.createElement('div'); facts.className = 'facts';
@@ -110,8 +131,7 @@ function paint() {
   // owner's naming form.
   el('reviewer-heading').textContent = t('reviewerHeading');
   el('reviewer-state').className = `status tone-${view.reviewer.status.tone}`;
-  el('reviewer-icon').textContent = view.reviewer.status.icon;
-  el('reviewer-words').textContent = view.reviewer.words;
+  sayWith(el('reviewer-state'), stateOfTone(view.reviewer.status.tone), view.reviewer.words, 'reviewer-words'); // always a chip: "Not known" when nobody is named
   // Read aloud as one status, like every other status on the page: the colour never carries the meaning alone.
   el('reviewer-state').setAttribute('aria-label', view.reviewer.status.announcement || view.reviewer.words);
   el('namer').hidden = !view.mayNameReviewer;
@@ -143,9 +163,7 @@ function paint() {
   const state = el('state');
   if (view.blocked.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    paintState(state, view.screenState);
   } else {
     state.hidden = true;
   }
@@ -156,8 +174,7 @@ function paintResult(presentation) {
   if (!result) return;
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
-  el('result-text').textContent = presentation.label;
+  sayWith(result, presentation.tone === 'idle' ? null : stateOfTone(presentation.tone), presentation.label, 'result-text');
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
@@ -186,6 +203,7 @@ el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en';
 el('sample').hidden = window.riskAcceptanceSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+onChrome(() => paint());
 
 // Read the live blocked-gates worklist (a GET — read-only). Offline or refused, the screen keeps its current
 // view and the stale strip already says the page is what the box last told it.

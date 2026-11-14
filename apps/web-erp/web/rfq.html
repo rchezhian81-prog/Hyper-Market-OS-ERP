@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Requests for quotation</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Requests for quotation (U6 of the UI/UX gap audit · §27 "Purchase — RFQ" was PARTIAL · M06-FR-02 "RFQ to suppliers" ·
+      M24-FR-01 "a supplier responds to RFQs" · §28). A THIN CLIENT over two head-office routes: send a requisition's lines to the
+      chosen, approved suppliers with the day the quotes are due (POST /v1/purchase/requisitions/:id/rfq/:rfqId), and the
+      register of every request sent — who answered, what is still open or overdue (GET /v1/purchase/rfqs). A supplier answers on
+      its portal; a buyer accepts the reply on Supplier submissions; the quote then stands on the Requisitions page's comparison.
+      Its session is apps/web-erp/src/rfq-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      /* U5/U6: the page stands on the shared office parts — the register, the summary cards, the state, the chip, the field,
+         the picker and the date field come from the chrome and the foundation; the page keeps only its own layout. */
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .form-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: end; }
+      .form-row > label { display: grid; gap: 6px; font-size: 15px; color: var(--muted); min-width: 0; }
+      .lines { font-size: 14px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+      .asked { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+      .asked > li { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 15px; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Requests for quotation</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Requests for quotation</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="send" hidden aria-labelledby="send-h">
+        <h3 id="send-h"></h3>
+        <div class="form-row">
+          <label for="s-req"><span id="s-req-l"></span><select id="s-req" class="sre-select"></select></label>
+        </div>
+        <p class="lines" id="s-lines"></p>
+        <div class="form-row">
+          <label for="s-supplier"><span id="s-supplier-l"></span><input id="s-supplier" class="sre-input" autocomplete="off" /></label>
+          <button id="s-add" type="button" class="quiet sre-btn sre-btn-quiet"><span id="s-add-text"></span></button>
+        </div>
+        <p class="meta" id="s-asked-l"></p>
+        <ul class="asked" id="s-asked" aria-labelledby="s-asked-l"></ul>
+        <div class="form-row">
+          <label for="s-due"><span id="s-due-l"></span><input id="s-due" class="sre-input" autocomplete="off" /></label>
+          <label for="s-note"><span id="s-note-l"></span><input id="s-note" class="sre-input" maxlength="300" autocomplete="off" /></label>
+        </div>
+        <div class="actions"><button id="s-send" type="button" class="sre-btn sre-btn-primary"><span id="s-send-text"></span></button></div>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="register" hidden aria-labelledby="r-h">
+        <h3 id="r-h"></h3>
+        <div class="actions"><button id="r-reload" type="button" class="quiet sre-btn sre-btn-quiet"><span id="r-reload-text"></span></button></div>
+        <p class="meta" id="r-covers"></p>
+        <div id="r-cards"></div>
+        <p class="status" id="r-status" role="status" aria-live="polite"></p>
+        <div id="r-table"></div>
+        <p class="meta" id="r-note"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./rfq.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

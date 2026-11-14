@@ -89,6 +89,35 @@ export async function standingAt(deps: Pick<LoyaltyProgrammeDeps, 'tiers' | 'spe
   return tierFor(tiers, await deps.spendBetween(tenantId, memberRef, w.from, w.to));
 }
 
+/** U7 (OB-726) · M17-FR-01: the customer's own slice of their standing — tier, the next tier, the expiry rule. */
+export interface CustomerStanding {
+  readonly tier: { readonly state: 'not_set' } | { readonly state: 'set'; readonly name: string | null; readonly nameTa?: string; readonly next?: { readonly name: string; readonly nameTa?: string; readonly moreSpendMinor: number } };
+  readonly expiry: { readonly state: 'not_set' } | { readonly state: 'set'; readonly months: number; readonly next: { readonly expiresAt: string; readonly points: number } | null };
+}
+
+/**
+ * U7 (OB-726) · M17-FR-01 "tiers, expiry": what the member reads about themselves in the app — the same standing the desk
+ * reads (`/v1/loyalty/members/:ref/standing`), without the desk's fields. Not set is said as not set (OB-295).
+ */
+export async function customerStandingOf(deps: Pick<LoyaltyProgrammeDeps, 'tiers' | 'spendBetween' | 'expiry' | 'movements'>, tenantId: string, memberRef: string, at: string): Promise<CustomerStanding> {
+  const tiers = await tiersInForce(deps, tenantId);
+  let tier: CustomerStanding['tier'] = { state: 'not_set' };
+  if (tiers.length > 0) {
+    const w = twelveMonthsBefore(at);
+    const s = tierFor(tiers, await deps.spendBetween(tenantId, memberRef, w.from, w.to));
+    tier = {
+      state: 'set', name: s.tier?.name ?? null,
+      ...(s.tier?.nameTa === undefined ? {} : { nameTa: s.tier.nameTa }),
+      ...(s.next === undefined ? {} : { next: { name: s.next.tier.name, ...(s.next.tier.nameTa === undefined ? {} : { nameTa: s.next.tier.nameTa }), moreSpendMinor: s.next.moreSpendMinor } }),
+    };
+  }
+  const months = (await deps.expiry(tenantId))?.value ?? null;
+  if (months === null) return { tier, expiry: { state: 'not_set' } };
+  const exp = pointsExpiry({ movements: await deps.movements(tenantId, memberRef), expiryMonths: months, asOf: at });
+  const next = exp.upcoming[0];
+  return { tier, expiry: { state: 'set', months, next: next === undefined ? null : { expiresAt: next.expiresAt, points: next.points } } };
+}
+
 /**
  * The tier multiplier a bill earns at (for `earnOnSale`): with no tiers set, none (the base rule, said as no tier).
  * The bill's own spend is not counted towards its own tier — the window ends at the bill.

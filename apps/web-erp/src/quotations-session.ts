@@ -118,6 +118,9 @@ export interface QuotationsSession {
    *  the owner (kind `quotation_floor_not_known`) when head office said a product's floor is not known. */
   askApproval(): Done<{ readonly requestId: string }>;
   list(state: string): Done<{ readonly quotations: readonly QuotationRow[] }>;
+  /** U5 · G16: the customers' NAMES by code from head office's directory (`GET /v1/customer/overview`, which carries the
+   *  name beside each code since U5) — for the list lines; a refused or unreachable read answers no names, never a guess. */
+  customerNames(): Promise<Readonly<Record<string, string>>>;
   followUp(): Done<{ readonly quotations: readonly { readonly quotationId: string; readonly customerRef: string; readonly valueMinor: number; readonly daysLeft: number; readonly detail: string }[] }>;
   void(quotationId: string, reason: string): Done<{ readonly quotationId: string; readonly state: string }>;
 }
@@ -244,6 +247,14 @@ export function createQuotationsSession(input: {
     followUp: async () => {
       const no = gate('read'); if (no !== undefined) return no;
       return call('GET', '/v1/pos/quotations/follow-up');
+    },
+    customerNames: async () => {
+      if (gate('read') !== undefined) return {};
+      const out = await call<{ customers?: readonly { customerRef?: unknown; name?: unknown }[] }>('GET', '/v1/customer/overview');
+      if (out.result !== 'ok' || !Array.isArray(out.value.customers)) return {};
+      const names: Record<string, string> = {};
+      for (const c of out.value.customers) if (typeof c.customerRef === 'string' && typeof c.name === 'string' && c.name !== '') names[c.customerRef] = c.name;
+      return names;
     },
     void: async (quotationId, reason) => {
       const no = gate('write'); if (no !== undefined) return no;

@@ -72,10 +72,18 @@ function shopDate(id, words, opts = {}) {
 const dateOf = (id) => (shopDates.has(id) ? (window.sreOffice.dateValue(id) ?? '') : (el(id)?.value ?? ''));
 const setShopDate = (id, iso) => { const n = el(id); if (n === null) return; if (shopDates.has(id)) n.closest('.sre-date')?.sreSetDate?.(iso); else n.value = iso; };
 
+// U5 (G13): a status mark is the one icon set's shape for the tone (the session's glyph only when the set is missing).
+const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+function toneMark(holder, tone, glyph) {
+  const mark = window.sreIcon && typeof window.sreIcon.forTone === 'function' ? lineIcon(window.sreIcon.forTone(tone), 18) : null;
+  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
+}
+/** The shared state's kind for a presentation tone: an error is refused/unreachable, degraded is a lost link, the rest is "nothing yet". */
+const stateKind = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'offline' : 'empty');
 function statusNode(status) {
   const s = document.createElement('span');
   s.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = status.icon;
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, status.tone, status.icon);
   const label = document.createElement('span'); label.textContent = status.label;
   s.append(icon, label);
   s.setAttribute('aria-label', status.announcement || status.label);
@@ -159,15 +167,22 @@ function paint() {
   el('accounts-heading').hidden = view.accounts.length === 0;
   el('accounts-heading').textContent = t('accountsHeading');
   el('accounts').hidden = view.accounts.length === 0;
-  el('th-account').textContent = t('accountsHeading');
-  el('th-debit').textContent = t('debitLabel');
-  el('th-credit').textContent = t('creditLabel');
-  el('th-balance').textContent = t('balanceLabel');
-  el('accounts-body').replaceChildren(...view.accounts.map((a) => {
-    const tr = document.createElement('tr');
-    for (const v of [a.accountCode, a.debit, a.credit, a.balance]) { const td = document.createElement('td'); td.textContent = v; tr.append(td); }
-    return tr;
-  }));
+  // U5 (G17): the accounts the day moved on the chrome's register — sortable, the figures right-aligned, the rows stacking on a phone.
+  const o = window.sreOffice;
+  if (o && typeof o.table === 'function') {
+    const both = (key) => ({ en: session.text('en', key), ta: session.text('ta', key) });
+    o.table(el('accounts'), {
+      id: 'day-book-accounts', label: both('accountsHeading'), bodyId: 'accounts-body', pageSize: 25, sortable: true, search: false, count: false,
+      rowKey: (a) => a.accountCode, rowData: (a) => ({ account: a.accountCode }),
+      rows: view.accounts,
+      columns: [
+        { key: 'accountCode', label: both('accountsHeading'), sort: 'text' },
+        { key: 'debit', label: both('debitLabel'), align: 'end', sort: 'text' },
+        { key: 'credit', label: both('creditLabel'), align: 'end', sort: 'text' },
+        { key: 'balance', label: both('balanceLabel'), align: 'end', sort: 'number', value: (a) => a.balanceMinor, render: (a) => a.balance },
+      ],
+    });
+  }
 
   el('exceptions-heading').hidden = !permitted || (view.exceptions.length === 0 && !view.posted);
   el('exceptions-heading').textContent = t('exceptionsHeading');
@@ -178,9 +193,9 @@ function paint() {
   const state = el('state');
   if (!permitted || (view.journals.length === 0 && view.exceptions.length === 0)) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    // U5: the shared state part — nothing posted / not permitted / head office unreachable, as word + icon, never a glyph line.
+    if (o && typeof o.state === 'function') o.state(state, stateKind(view.screenState.tone), { title: view.screenState.label, detail: '' });
+    else state.textContent = view.screenState.label;
   } else {
     state.hidden = true;
   }
@@ -191,7 +206,7 @@ function paintResult(presentation) {
   if (!result) return;
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
+  toneMark(el('result-icon'), presentation.tone, presentation.icon);
   el('result-text').textContent = presentation.label;
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
@@ -229,13 +244,18 @@ el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en';
 
 // ── M14-FR-04: the closed-day evidence pack for the CA — each close of the chosen day, and its download ──────────
 function evidenceStatus(status) {
-  const p = el('evidence-state');
-  p.hidden = status === null;
+  const host = el('evidence-state');
+  host.hidden = status === null;
   if (status === null) return;
-  p.className = `result tone-${status.tone}`;
-  el('evidence-state-icon').textContent = status.icon;
-  el('evidence-state-text').textContent = status.label;
-  p.setAttribute('aria-label', status.announcement || status.label);
+  const o = window.sreOffice;
+  // U5: "no close of this day yet" is the shared empty state; a download's outcome stays a result line with the one icon set.
+  if (status.tone === 'idle' && o && typeof o.state === 'function') { o.state(host, 'empty', { title: status.label, detail: '' }); host.removeAttribute('aria-label'); return; }
+  const p = document.createElement('p'); p.className = `result tone-${status.tone}`;
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.id = 'evidence-state-icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, status.tone, status.icon);
+  const text = document.createElement('span'); text.id = 'evidence-state-text'; text.textContent = status.label;
+  p.append(icon, text);
+  host.replaceChildren(p);
+  host.setAttribute('aria-label', status.announcement || status.label);
 }
 function iconButton(icon, word, id) {
   const b = document.createElement('button');

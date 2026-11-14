@@ -56,9 +56,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-676 —
       expect(s.writes, 'nothing is written on open').toEqual([]);
       await s.page.click('#staffing-show');
       await stateIs(s.page, 'not_confirmed');
-      expect(await s.page.innerText('#staffing-state')).toBe('⚠ NOT CONFIRMED by the owner — the queues run on the starting suggestion until he confirms.');
-      expect(await s.page.innerText(`${row('customer_service_desk')} .headline`)).toBe('✓ Customer service desk: Cashier (service desk), Owner, Store manager');
-      expect(await s.page.innerText(`${row('finance_recon_queue')} .headline`)).toBe('✓ Finance reconciliation: Accountant, Owner, Store manager');
+      expect(await s.page.innerText('#staffing-state')).toContain('NOT CONFIRMED by the owner — the queues run on the starting suggestion until he confirms.');
+      expect(await s.page.innerText(`${row('customer_service_desk')} .headline`)).toContain('Customer service desk: Cashier (service desk), Owner, Store manager');
+      expect(await s.page.innerText(`${row('finance_recon_queue')} .headline`)).toContain('Finance reconciliation: Accountant, Owner, Store manager');
       expect(await s.page.isChecked(`${row('customer_service_desk')} input.role[value="cashier"]`)).toBe(true);
       expect(await s.page.isChecked(`${row('customer_service_desk')} input.role[value="accountant"]`)).toBe(false);
 
@@ -67,9 +67,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-676 —
       await s.page.fill('#staffing-note', 'no service desk until the new hire starts');
       await s.page.click('#staffing-confirm');
       await stateIs(s.page, 'confirmed');
-      expect(await s.page.innerText('#staffing-state')).toMatch(/^⚠ Confirmed by the owner \(confirmed by u-owner, version 1\)\. Unowned queues: Customer service desk\.$/);
+      expect(await s.page.innerText('#staffing-state')).toMatch(/Confirmed by the owner \(confirmed by u-owner, version 1\)\. Unowned queues: Customer service desk\.$/);
       expect(await s.page.getAttribute(row('customer_service_desk'), 'data-unowned')).toBe('true');
-      expect(await s.page.innerText(`${row('customer_service_desk')} .headline`)).toBe('⚠ Customer service desk: UNOWNED — no role works this queue');
+      expect(await s.page.innerText(`${row('customer_service_desk')} .headline`)).toContain('Customer service desk: UNOWNED — no role works this queue');
       expect(await s.page.locator('#staffing-history li.row').count()).toBe(1);
       expect(await s.page.innerText('#staffing-history li.row')).toContain('no service desk until the new hire starts');
       expect(s.writes).toEqual(['POST /v1/orders/exception-queue-staffing']);

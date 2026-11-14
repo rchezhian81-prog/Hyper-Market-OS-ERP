@@ -158,7 +158,7 @@ function paintResult(presentation) {
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); el('sample').textContent = t('sampleData'); /* U3 · OB-699: the stand-in's own line follows the toggle */ });
 
 el('sample').hidden = window.dataQualityInboxSession !== undefined;
 el('sample').textContent = t('sampleData');

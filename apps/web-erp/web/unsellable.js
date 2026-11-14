@@ -8,6 +8,22 @@
 // OB-607: a moment is shown at the SHOP's clock (its zone, as the store computer told the page) — never this device's.
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 
 const real = window.unsellableSession;
 
@@ -46,9 +62,7 @@ function paint() {
 
   const state = el('state');
   state.hidden = false;
-  state.className = `state tone-${view.screenState.tone}`;
-  el('state-icon').textContent = view.screenState.icon;
-  el('state-text').textContent = view.screenState.label;
+  paintState(state, view.screenState);
   state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
 
   el('groups').replaceChildren(...view.groups.map((g) => {
@@ -58,9 +72,7 @@ function paint() {
     const head = document.createElement('div'); head.className = 'head';
     const status = document.createElement('span'); status.className = 'status';
     status.setAttribute('aria-label', g.rows[0]?.status.announcement || g.label);
-    const icon = document.createElement('span'); icon.className = 'icon'; icon.textContent = g.rows[0]?.status.icon ?? '⚠'; icon.setAttribute('aria-hidden', 'true');
-    const label = document.createElement('span'); label.textContent = g.label;
-    status.append(icon, label);
+    fillStatus(status, g.rows[0]?.status.tone ?? 'degraded', g.label);
     const n = document.createElement('span'); n.className = 'asof'; n.textContent = String(g.rows.length);
     head.append(status, n);
     const todo = document.createElement('p'); todo.className = 'todo';
@@ -98,12 +110,10 @@ function paintNotTold() {
   el('groups').replaceChildren();
   const state = el('state');
   state.hidden = false;
-  state.className = 'state tone-degraded';
-  el('state-icon').textContent = '?';
-  el('state-text').textContent = session.text(lang, 'notTold');
-  state.setAttribute('aria-label', session.text(lang, 'notTold'));
+  paintState(state, { tone: 'degraded', label: session.text(lang, 'notTold'), announcement: '' });
 }
 paint();
+onChrome(() => { paint(); paintNotTold(); });
 paintNotTold();
 
 if ('serviceWorker' in navigator) {

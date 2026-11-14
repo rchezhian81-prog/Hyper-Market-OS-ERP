@@ -30,18 +30,9 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.primary {   border: 0; }
       button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
-      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
-      .panel .k { color: var(--muted); font-size: 14px; }
-      .panel .v { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
-      .panel .v.unknown { color: var(--warn); font-size: 16px; }
       fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; margin: 0; }
       legend { font-weight: 700; font-size: 15px; padding: 0 6px; }
-      table { width: 100%; border-collapse: collapse; }
-      .table-wrap { overflow-x: auto; max-width: 100%; }
-      td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 15px; }
       tr[data-id] { cursor: pointer; }
-      td.unknown { color: var(--warn); }
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
       .rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); overflow-wrap: anywhere; font-size: 15px; }
       .status { font-size: 15px; min-height: 20px; margin: 0; }
@@ -67,10 +58,7 @@
       <section aria-labelledby="page-h">
         <h2 id="page-h">GST and cess rates</h2>
         <p class="lead" id="lead"></p>
-        <div class="panels" role="status" aria-live="polite">
-          <div class="panel"><span class="k" id="k-classes">Tax classes in use</span><span class="v" id="v-classes">—</span></div>
-          <div class="panel"><span class="k" id="k-norate">With no GST rate today</span><span class="v" id="v-norate">—</span></div>
-          <div class="panel"><span class="k" id="k-cess">With a cess today</span><span class="v" id="v-cess">—</span></div>
+        <div id="figures" role="status" aria-live="polite">
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -78,10 +66,7 @@
       <section aria-labelledby="list-h">
         <h3 id="list-h">Tax classes</h3>
         <p class="lead" id="list-lead"></p>
-        <div class="table-wrap"><table aria-labelledby="list-h">
-          <thead><tr><th id="c-hsn">HSN</th><th id="c-products">Products</th><th id="c-gst">GST today</th><th id="c-cess">Cess today</th><th id="c-next">Next change</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table></div>
+        <div id="rows-host" aria-labelledby="list-h"></div>
         <form class="row" id="pick">
           <label for="hsn"><span id="l-hsn">HSN code (4 to 8 digits)</span><input id="hsn" inputmode="numeric" autocomplete="off" list="hsn-list" /><datalist id="hsn-list"></datalist></label>
           <button id="open" type="submit" class="sre-btn">Open this class</button>

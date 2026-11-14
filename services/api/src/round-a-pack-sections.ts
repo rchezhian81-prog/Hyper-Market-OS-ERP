@@ -41,6 +41,8 @@ type Base = { readonly store: EventStore; readonly now: () => string };
 export interface CategorySection {
   readonly categoryId: string;
   readonly name: string;
+  /** U7 (OB-699 = B): the category's Tamil name, when head office holds one. */
+  readonly nameTa?: string;
   readonly parentId: string | null;
   readonly attributes?: readonly unknown[];
   readonly regulated?: readonly string[];
@@ -54,7 +56,9 @@ export interface CategorySection {
 export async function catalogueMasterSections(input: Base, tenantId: string, master: readonly ProductRecord[]): Promise<{ readonly categories: readonly CategorySection[]; readonly productMaster: readonly ProductRecord[] }> {
   const categories = (await categoryRegisterAdapter(input).categories(tenantId))
     .map((c) => ({
-      categoryId: c.categoryId, name: c.name, parentId: c.parentId,
+      categoryId: c.categoryId, name: c.name,
+      ...(c.nameTa === undefined ? {} : { nameTa: c.nameTa }),
+      parentId: c.parentId,
       ...(c.attributes === undefined ? {} : { attributes: c.attributes }),
       ...(c.regulated === undefined ? {} : { regulated: c.regulated }),
     }))

@@ -242,7 +242,7 @@ describe.skipIf(!CONNECTED)('WF-01 connected: a new product goes from a real dra
     const send = await shop.open(OWNER, '/price-lists/');
     await send.page.click('#tab-pack');
     await send.page.fill('#pk-store', STORE);
-    await send.page.fill('#pk-asof', today);
+    await send.page.fill('#pk-asof', `${today.slice(8, 10)}/${today.slice(5, 7)}/${today.slice(0, 4)}`); // U2c: the shared dd/mm field
     await send.page.click('#pk-preview');
     await says(send.page, '#pk-status', new RegExp(`^2 product\\(s\\) would go to the tills of ${STORE} as of ${today}\\.$`));
     await says(send.page, '#pk-left', /P-DRAFT-JAM — a draft, not on sale/);

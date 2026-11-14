@@ -56,6 +56,8 @@ export const ASSIGNED_WORK_ROUTES: Readonly<Record<string, Read>> = Object.freez
   'POST /v1/delivery/orders/:orderId/transition': (ctx) => ({ word: DRIVE_WORD, what: 'order', id: param('orderId')(ctx) }),
   'POST /v1/delivery/routes/:routeId/stops/:stopId/synced': (ctx) => ({ word: DRIVE_WORD, person: str(bodyOf(ctx)['driverId']), what: 'route', id: param('routeId')(ctx) }),
   'POST /v1/delivery/routes/:routeId/stops/:stopId/proof/synced': (ctx) => ({ word: DRIVE_WORD, person: str(bodyOf(ctx)['driverId']), what: 'route', id: param('routeId')(ctx) }),
+  // U6 · OB-700: the driver's request that the store call a stop's customer is driver work on the route it was assigned.
+  'POST /v1/delivery/routes/:routeId/stops/:stopId/call-request/synced': (ctx) => ({ word: DRIVE_WORD, person: str(bodyOf(ctx)['driverId']), what: 'route', id: param('routeId')(ctx) }),
   'POST /v1/delivery/routes/:routeId/settled/synced': (ctx) => ({ word: DRIVE_WORD, person: str(bodyOf(ctx)['driverId']), what: 'route', id: param('routeId')(ctx) }),
   'POST /v1/delivery/routes/:routeId/handover/synced': (ctx) => ({ word: DRIVE_WORD, person: str(bodyOf(ctx)['driverId']), what: 'route', id: param('routeId')(ctx) }),
 });

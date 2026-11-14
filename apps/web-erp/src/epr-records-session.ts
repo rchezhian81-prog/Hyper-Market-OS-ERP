@@ -73,6 +73,25 @@ export const eprRecordsWords = (lang: Lang, key: string): string =>
 export const eprRecordsOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => eprRecordsWords(lang, k), out);
 
 /** The answers' keys as the register names them, and as the route's path names them. */
+/**
+ * U3 · OB-699: the four questions a CA or EPR consultant answers, and the take-back rule, are the PRODUCT's own words — the
+ * same sentences head office keeps in English (`packages/epr/src/packaging-register.ts` EPR_SETTINGS, the take-back
+ * register's rule) — so the page says them in the reader's language; head office's English stays the fallback for a key
+ * this session does not know.
+ */
+export const EPR_SETTING_QUESTIONS: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
+  plasticRegistration: { en: 'Plastic EPR registration number on the CPCB portal', ta: 'CPCB தளத்தில் பிளாஸ்டிக் EPR பதிவு எண்' },
+  plasticExemption: { en: 'Any plastic EPR exemption (for example, as a micro or small enterprise)', ta: 'பிளாஸ்டிக் EPR விலக்கு ஏதேனும் (எடுத்துக்காட்டாக, குறு அல்லது சிறு நிறுவனமாக)' },
+  eWasteBrandOwner: { en: 'Whether the shop must register as an e-waste producer or brand owner', ta: 'கடை மின்கழிவு உற்பத்தியாளர் அல்லது பிராண்ட் உரிமையாளராகப் பதிவு செய்ய வேண்டுமா' },
+  batteryBrandOwner: { en: 'Whether the shop must register as a battery producer or brand owner', ta: 'கடை பேட்டரி உற்பத்தியாளர் அல்லது பிராண்ட் உரிமையாளராகப் பதிவு செய்ய வேண்டுமா' },
+});
+export const eprSettingQuestion = (lang: Lang, key: string, fallback: string): string => EPR_SETTING_QUESTIONS[key]?.[lang] ?? fallback;
+export const TAKE_BACK_RULE = Object.freeze({
+  en: 'Take-back stock is never saleable. It leaves only on a handover to a recycler with a recorded registration number.',
+  ta: 'திரும்பப் பெற்ற சரக்கு ஒருபோதும் விற்பனைக்கு இல்லை. பதிவு எண் பதிவான மறுசுழற்சியாளரிடம் ஒப்படைத்தால் மட்டுமே அது வெளியேறும்.',
+});
+export const takeBackRule = (lang: Lang): string => TAKE_BACK_RULE[lang];
+
 export const EPR_SETTING_PATHS = Object.freeze({
   plasticRegistration: 'plastic-registration', plasticExemption: 'plastic-exemption', eWasteBrandOwner: 'e-waste-brand-owner', batteryBrandOwner: 'battery-brand-owner',
 } as const);

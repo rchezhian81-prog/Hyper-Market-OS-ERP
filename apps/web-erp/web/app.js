@@ -54,8 +54,8 @@ const WORDS = {
     salesTodayLabel: 'Sales today', boxSilent: 'the store computer has not said',
     needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing on this list needs you right now. It covers only the figures on this page — it is not a check of the whole store.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
-    deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
-    attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
+    deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices', claimDisputesOpen: 'Disputed supplier claims open',
+    attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnClaimDisputes: 'disputed supplier claims to settle — open Supplier claims', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
     // OB-392: lane health on Today — one tap per lane.
     lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
     lanePrinter: 'Printer', laneScanner: 'Scanner', laneCard: 'Card machine', laneLastHeard: 'Till last reported', laneUnsent: 'Not yet at head office', laneLastSync: 'Last sent to head office',
@@ -69,7 +69,7 @@ const WORDS = {
     linesWord: 'lines', noOrderWord: 'no purchase order',
     read: 'Please read this', done: 'Done',
     deliveryNote: 'Delivery note number', poNumber: 'Purchase order number (leave empty if there is none)',
-    itemCode: 'Item code', howMany: 'How many', addItem: 'Add this item', noItemsYet: 'No items added yet.',
+    itemCode: 'Item (name or code)', howMany: 'How many', addItem: 'Add this item', noItemsYet: 'No items added yet.',
     tempLabel: 'Temperature on arrival, °C (chilled or frozen goods)',
     tempHint: 'Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager\'s check before they can be sold.',
     needTemp: 'The temperature must be a number of degrees, for example 3.5 or -18. Leave it empty for goods that are not chilled or frozen.',
@@ -83,7 +83,7 @@ const WORDS = {
     needItem: 'Type an item code and how many.',
     received: 'Delivery saved', unmatchedWarning: 'There is no purchase order behind this delivery, so nobody can check the invoice against it. Tell the buyer today.',
     matchedNote: 'Head office will check it against the order and the item rules when it arrives there.',
-    productCode: 'Product code', whereIsIt: 'Where (aisle or bay)',
+    productCode: 'Product (name or code)', whereIsIt: 'Where (aisle or bay)',
     enterCount: 'Enter the count', howManyOnShelf: 'How many are actually there?',
     countBlindHint: "Count what is actually on the shelf. This screen will not show you the system's figure first — that is on purpose.",
     whyDifferent: 'Why is it different?', needProduct: 'Type a product code and where it is.',
@@ -93,7 +93,7 @@ const WORDS = {
     checkOpen: 'Check what is still open', closeNow: 'Close the day now',
     closePin: 'Your till PIN — you key it yourself',
     carryLead: 'Only card or UPI payments are open. The day can close with them sent to head office by name — a second person must approve with their own PIN. Finance settles each one when the provider answers.',
-    carryApprover: 'Second person\'s staff ID', carryPin: 'Their till PIN — they key it themselves', carryReason: 'Why',
+    carryApprover: 'Second person (name or staff ID)', carryPin: 'Their till PIN — they key it themselves', carryReason: 'Why',
     carryProvider: 'The card or UPI provider is not answering', carryMachine: 'The card machine is faulty',
     carryNow: 'Close with these sent to head office', carryNeeds: 'Key your own PIN above, and the second person\'s staff ID and their own PIN.',
     // OB-205: the approvals register's captions and the day close's help lines.
@@ -141,8 +141,8 @@ const WORDS = {
     salesTodayLabel: 'இன்றைய விற்பனை', boxSilent: 'கடை கணினி சொல்லவில்லை',
     needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இந்தப் பட்டியலில் இப்போது உங்கள் கவனம் தேவைப்படுவது எதுவும் இல்லை. இது இந்தப் பக்கத்தின் எண்களை மட்டுமே பார்க்கிறது — முழுக் கடையின் சோதனை அல்ல.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
-    deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
-    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
+    deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்', claimDisputesOpen: 'திறந்த சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள்',
+    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnClaimDisputes: 'தீர்க்க வேண்டிய சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள் — விநியோகஸ்தர் உரிமைக்கோரல்கள் பக்கத்தைத் திறக்கவும்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
     lanesTitle: 'கல்லாக்கள்', laneWord: 'கல்லா', laneAllWorking: 'எல்லாச் சாதனங்களும் வேலை செய்கின்றன', laneProblems: 'சாதனச் சிக்கல்(கள்)', laneNotReported: 'கல்லா இன்னும் தன் சாதனங்களைப் பற்றிச் சொல்லவில்லை',
     lanePrinter: 'அச்சுப்பொறி', laneScanner: 'ஸ்கேனர்', laneCard: 'கார்டு இயந்திரம்', laneLastHeard: 'கல்லா கடைசியாகச் சொன்னது', laneUnsent: 'தலைமை அலுவலகத்துக்கு இன்னும் செல்லாதவை', laneLastSync: 'தலைமை அலுவலகத்துக்குக் கடைசியாக அனுப்பியது',
     devOk: 'வேலை செய்கிறது', devDegraded: 'சரியாக வேலை செய்யவில்லை', devFailed: 'செயலிழந்தது', devNotReported: 'சொல்லப்படவில்லை', laneNever: 'ஒருபோதும் இல்லை', laneBills: 'இந்தக் கல்லாவின் பில்(கள்) அல்லது திருப்பம்(கள்)',
@@ -155,7 +155,7 @@ const WORDS = {
     linesWord: 'வரிகள்', noOrderWord: 'கொள்முதல் ஆர்டர் இல்லை',
     read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     deliveryNote: 'டெலிவரி நோட்டு எண்', poNumber: 'கொள்முதல் ஆர்டர் எண் (இல்லையென்றால் காலியாக விடவும்)',
-    itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', addItem: 'இந்தப் பொருளைச் சேர்',
+    itemCode: 'பொருள் (பெயர் அல்லது குறியீடு)', howMany: 'எத்தனை', addItem: 'இந்தப் பொருளைச் சேர்',
     tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
     tempHint: 'பொருளை அளந்து அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18. இல்லையெனில் குளிர்/உறைந்த பொருட்கள் மேலாளர் சரிபார்க்கும் வரை விற்பனைக்கு வராது.',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும், உதாரணமாக 3.5 அல்லது -18. குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும்.',
@@ -169,7 +169,7 @@ const WORDS = {
     received: 'டெலிவரி சேமிக்கப்பட்டது',
     unmatchedWarning: 'இந்த டெலிவரிக்கு கொள்முதல் ஆர்டர் இல்லை. எனவே இன்வாய்ஸை யாரும் சரிபார்க்க முடியாது. இன்றே வாங்குபவரிடம் சொல்லவும்.',
     matchedNote: 'தலைமை அலுவலகம் அது அங்கு வந்தவுடன் ஆர்டருடனும் பொருள் விதிகளுடனும் சரிபார்க்கும்.',
-    productCode: 'பொருள் குறியீடு', whereIsIt: 'எங்கே (அடுக்கு அல்லது இடம்)',
+    productCode: 'பொருள் (பெயர் அல்லது குறியீடு)', whereIsIt: 'எங்கே (அடுக்கு அல்லது இடம்)',
     enterCount: 'எண்ணிக்கையைப் பதிவு செய்', howManyOnShelf: 'உண்மையில் எத்தனை உள்ளன?',
     countBlindHint: 'அடுக்கில் உள்ளதை எண்ணவும். கணினியின் எண்ணிக்கையை இந்தத் திரை முதலில் காட்டாது — அது வேண்டுமென்றே.',
     whyDifferent: 'ஏன் வித்தியாசம்?', needProduct: 'பொருள் குறியீடும் இடமும் தேவை.',
@@ -180,7 +180,7 @@ const WORDS = {
     closedNote: 'முடிக்கப்பட்ட நாள் பூட்டப்படும். பின்னர் கண்டறியப்படுவது திருத்தமே, மாற்றம் அல்ல.',
     closePin: 'உங்கள் கடை PIN — நீங்களே உள்ளிட வேண்டும்',
     carryLead: 'கார்டு அல்லது UPI கட்டணங்கள் மட்டுமே திறந்துள்ளன. அவற்றைப் பெயருடன் தலைமை அலுவலகத்துக்கு அனுப்பி நாளை முடிக்கலாம் — இரண்டாவது நபர் தன் சொந்த PIN மூலம் ஒப்புதல் தர வேண்டும். வழங்குநர் பதில் தரும்போது நிதித் துறை ஒவ்வொன்றையும் முடிக்கும்.',
-    carryApprover: 'இரண்டாவது நபரின் பணியாளர் எண்', carryPin: 'அவர்களின் கடை PIN — அவர்களே உள்ளிட வேண்டும்', carryReason: 'காரணம்',
+    carryApprover: 'இரண்டாவது நபர் (பெயர் அல்லது பணியாளர் எண்)', carryPin: 'அவர்களின் கடை PIN — அவர்களே உள்ளிட வேண்டும்', carryReason: 'காரணம்',
     carryProvider: 'கார்டு அல்லது UPI வழங்குநர் பதில் தரவில்லை', carryMachine: 'கார்டு இயந்திரம் பழுதாக உள்ளது',
     carryNow: 'இவற்றைத் தலைமை அலுவலகத்துக்கு அனுப்பி நாளை முடி', carryNeeds: 'மேலே உங்கள் சொந்த PIN, இரண்டாவது நபரின் பணியாளர் எண் மற்றும் அவரின் சொந்த PIN ஆகியவற்றை உள்ளிடவும்.',
     colRequest: 'கோரிக்கை', colValue: 'மதிப்பு', colDecision: 'முடிவு',
@@ -568,8 +568,9 @@ function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
   if (mark) { const chip = document.createElement('span'); chip.className = 'chip'; chip.setAttribute('aria-hidden', 'true'); chip.append(mark); top.append(chip); }
   const small = document.createElement('div');
   small.className = 'note';
-  // The reason it does not know, in the model's own words — it is the only place that knows.
-  small.textContent = figure.known ? (note ?? figure.note ?? '') : figure.why;
+  // The reason it does not know, in the model's own words — it is the only place that knows. U3 (OB-699): the box
+  // carries its note in both languages; the screen shows the reader's, and the English when the box sent only that.
+  small.textContent = figure.known ? (note ?? todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
   box.append(top, n, small);
   if (goTo) {
     box.tabIndex = 0;
@@ -586,6 +587,8 @@ function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
 /** Round A: what head office last answered for Today's approvals and purchase orders (null until it has). */
 let live = null;
 const todayFigures = () => (window.managerData && window.managerData.today && typeof window.managerData.today === 'object' ? window.managerData.today : null);
+/** U3 (OB-699): a Today note or why-line in the reader's language — the Tamil the box sent when the screen is Tamil, else the English. */
+const todayWords = (en, ta) => (lang === 'ta' && typeof ta === 'string' && ta !== '' ? ta : en);
 const figureOf = (key) => { const all = todayFigures(); const f = all ? all[key] : undefined; return f && typeof f === 'object' && typeof f.known === 'boolean' ? f : { known: false, why: t('boxSilent') }; };
 const amountOf = (figure) => (figure.known ? (figure.count ?? figure.value ?? 0) : null);
 const railItems = () => { const nav = window.sreNavigation; return nav && Array.isArray(nav.groups) ? nav.groups.flatMap((g) => g.items ?? []) : []; };
@@ -612,7 +615,7 @@ function renderAttention(floor, today) {
   const rows = [];
   // A row is the number first, then what it is — "3 approvals you can clear" — grammatical at one as at many.
   const add = (figure, labelKey, phraseKey, target) => {
-    if (!figure.known) { rows.push({ tone: 'unknown', n: null, text: `${t(labelKey)}: ${t('notKnown')} — ${figure.why}`, target: null }); return; }
+    if (!figure.known) { rows.push({ tone: 'unknown', n: null, text: `${t(labelKey)}: ${t('notKnown')} — ${todayWords(figure.why, figure.whyTa)}`, target: null }); return; }
     const n = amountOf(figure);
     if (n > 0) rows.push({ tone: 'attention', n, text: t(phraseKey), target });
   };
@@ -622,6 +625,8 @@ function renderAttention(floor, today) {
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
   add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
+  // U7 · OB-727 (owner: B): the disputed supplier claims still open, settled on Supplier claims.
+  add(today.claimDisputes, 'claimDisputesOpen', 'attnClaimDisputes', { rail: 'supplier-claims' });
   add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
   add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });
   add(today.counts, 'countsAwaiting', 'attnCounts', { rail: 'counts' });
@@ -661,7 +666,8 @@ function figureBox(tag, figure, label, target) {
   const n = document.createElement('b'); n.className = 'n';
   if (figure.known) n.textContent = String(amountOf(figure)); else { n.textContent = t('notKnown'); n.classList.add('unknown'); }
   const l = document.createElement('span'); l.className = 'l'; l.textContent = label;
-  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (figure.note ?? '') : figure.why;
+  // U3 (OB-699) · U7: the box's note or reason in the reader's language — the Tamil it sent, else the English.
+  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
   box.append(n, l, note);
   const go = goLink(target);
   if (go) box.append(go);
@@ -681,6 +687,7 @@ function renderOps(floor, today) {
     figureBox('div', today.checklist, t('checklistOpen'), { rail: 'checklist' }),
     figureBox('div', today.expiring, t('expiringSoon'), { rail: 'expiry' }),
     figureBox('div', today.recalls, t('recallsOpen'), { rail: 'expiry' }),
+    figureBox('div', today.claimDisputes, t('claimDisputesOpen'), { rail: 'supplier-claims' }),
     figureBox('div', floor.tasks, t('tasksLabel'), null),
   );
 }
@@ -791,7 +798,7 @@ function renderHome() {
   const today = {
     sales: figureOf('salesToday'), po: liveFigures ? liveFigures.purchaseOrdersOpen : figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
     hoApprovals: liveFigures ? liveFigures.headOffice : null,
-    counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'),
+    counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'), claimDisputes: figureOf('supplierClaimDisputes'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
   };
   el('tiles').replaceChildren(
@@ -1625,4 +1632,46 @@ if ('serviceWorker' in navigator) {
   const paintMonths = () => { const l = document.documentElement.lang === 'ta' ? 'ta' : 'en'; none.textContent = l === 'ta' ? '— மாதத்தைத் தேர்ந்தெடுங்கள் —' : '— pick the month —'; for (const o of sel.options) if (o.value !== '') o.textContent = `${names[l][Number(o.dataset.m) - 1]} ${o.dataset.y}`; };
   paintMonths(); new MutationObserver(paintMonths).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   input.replaceWith(sel);
+})();
+
+// ── U2c (UI/UX gap audit G5, 7 Nov 2026): Today's three typed ids pick by NAME through the chrome's picker ───────────
+// The delivery's item, the count's product and the carry-over's second person: a "Choose…" button (≥ 44px) beside the
+// field opens `sreOffice.pick`; the pick writes the id the screen sends (so a code typed by hand still works when the
+// list cannot be read — never a dead end), and the thing's name is shown beside the field. The same page-side adapter
+// the U2/U2b pages use; words in both languages.
+(function todayPickers() {
+  const PICK_WORDS = {
+    en: { choose: 'Choose…', item: 'the item', product: 'the product', person: 'the second person' },
+    ta: { choose: 'தேர்வு…', item: 'பொருளை', product: 'பொருளை', person: 'இரண்டாவது நபரை' },
+  };
+  const pw = (k) => (document.documentElement.lang === 'ta' ? PICK_WORDS.ta : PICK_WORDS.en)[k] ?? PICK_WORDS.en[k];
+  const repaints = [];
+  function pickable(inputId, kind, titleKey) {
+    const input = el(inputId);
+    if (!input || input.dataset.pickable === 'on') return;
+    const office = window.sreOffice;
+    if (!office || typeof office.pick !== 'function') { document.addEventListener('sre:chrome', () => pickable(inputId, kind, titleKey), { once: true }); return; }
+    input.dataset.pickable = 'on';
+    const row = document.createElement('div'); row.className = 'pick-row';
+    input.replaceWith(row); row.append(input);
+    const btn = document.createElement('button'); btn.type = 'button'; btn.id = `${inputId}-pick`; btn.className = 'sre-btn sre-btn-quiet pick';
+    const name = document.createElement('span'); name.id = `${inputId}-name`; name.className = 'pick-name';
+    row.append(btn, name);
+    const paint = () => { btn.textContent = pw('choose'); btn.setAttribute('aria-label', `${pw('choose')} ${pw(titleKey)}`); };
+    paint(); repaints.push(paint);
+    btn.addEventListener('click', async () => {
+      const picked = await office.pick({ kind, title: { en: PICK_WORDS.en[titleKey], ta: PICK_WORDS.ta[titleKey] }, allowCode: true });
+      if (!picked || picked.ok !== true) return;
+      const id = String(picked.id ?? '');
+      input.value = id;
+      name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+      input.removeAttribute('aria-invalid');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    input.addEventListener('input', () => { name.textContent = ''; });
+  }
+  pickable('grn-product', 'product', 'item');
+  pickable('count-product', 'product', 'product');
+  pickable('carry-approver', 'person', 'person');
+  new MutationObserver(() => { for (const r of repaints) r(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 })();

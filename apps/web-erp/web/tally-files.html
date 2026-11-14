@@ -26,8 +26,6 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
       button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-      .table-wrap { overflow-x: auto; }
-      table { border-collapse: collapse; width: 100%; font-size: 15px; }
       th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
       td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
       .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
@@ -100,21 +98,12 @@
           <button id="tb-read" type="button" class="sre-btn"><span id="tb-read-text">Show the trial balance</span></button>
         </div>
         <p class="status" id="tb-status" role="status" aria-live="polite"></p>
-        <div class="table-wrap" id="tb-wrap" hidden>
-          <table>
-            <thead><tr><th id="tb-account-h">Account</th><th id="tb-class-h">Class</th><th class="num" id="tb-debit-h">Debit</th><th class="num" id="tb-credit-h">Credit</th><th class="num" id="tb-closing-h">Closing</th></tr></thead>
-            <tbody id="tb-rows"></tbody>
-          </table>
-        </div>
+        <!-- U5 (G17): the trial balance on the chrome's register (window.sreOffice.table). -->
+        <div id="tb-wrap" hidden></div>
         <div id="dept-wrap" hidden>
           <h4 id="dept-h">Department sales and margin</h4>
           <p class="status" id="dept-tie" role="status" aria-live="polite"></p>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th id="dept-k">Department</th><th class="num" id="dept-sales-h">Sales</th><th class="num" id="dept-cost-h">Cost</th><th class="num" id="dept-margin-h">Margin</th></tr></thead>
-              <tbody id="dept-rows"></tbody>
-            </table>
-          </div>
+          <div id="dept-table"></div>
           <p id="dept-rest"></p>
         </div>
       </section>

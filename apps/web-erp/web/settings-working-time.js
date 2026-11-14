@@ -9,6 +9,22 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, configure: false };
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const t = (k) => (api === null ? k : api.words(lang(), k));
+/** Each limit's and leave type's name in the reader's language, by key (OB-699); head office's label is the fallback. */
+const WT_WORDS = {
+  en: {
+    weeklyHolidayMinDays: 'Weekly holiday — whole days off each person must have in every week', maxDailyWorkMinutes: 'Daily hours cap — the most a person may be rostered to work in one day', maxWeeklyWorkMinutes: 'Weekly hours cap — the most a person may be rostered to work in one week',
+    maxSpreadOverMinutes: 'Spread-over — the longest span from a person\'s first start to last finish in one day', maxContinuousWorkMinutes: 'Rest interval — the longest a person may work before a rest break', minRestIntervalMinutes: 'Rest interval — the shortest break that counts as a rest', annualLeaveDaysWorkedPerDayEarned: 'Leave accrual — days worked that earn one day of annual leave',
+    rosterWeekWords: 'A roster week always runs Monday to Sunday; rosters are published only for those weeks.',
+  },
+  ta: {
+    weeklyHolidayMinDays: 'வார விடுமுறை — ஒவ்வொரு வாரமும் ஒவ்வொருவருக்கும் இருக்க வேண்டிய முழு விடுமுறை நாட்கள்', maxDailyWorkMinutes: 'தினசரி மணி நேர வரம்பு — ஒருவர் ஒரு நாளில் பணிக்கு நியமிக்கப்படக்கூடிய அதிகபட்சம்', maxWeeklyWorkMinutes: 'வாராந்திர மணி நேர வரம்பு — ஒருவர் ஒரு வாரத்தில் பணிக்கு நியமிக்கப்படக்கூடிய அதிகபட்சம்',
+    maxSpreadOverMinutes: 'பரவல் நேரம் — ஒரு நாளில் ஒருவரின் முதல் தொடக்கத்திலிருந்து கடைசி முடிவு வரையிலான அதிகபட்ச இடைவெளி', maxContinuousWorkMinutes: 'ஓய்வு இடைவெளி — ஓய்வுக்கு முன் ஒருவர் தொடர்ந்து வேலை செய்யக்கூடிய அதிகபட்சம்', minRestIntervalMinutes: 'ஓய்வு இடைவெளி — ஓய்வாகக் கணக்கிடப்படும் குறைந்தபட்ச இடைவேளை', annualLeaveDaysWorkedPerDayEarned: 'விடுப்புச் சேர்க்கை — ஒரு நாள் ஆண்டு விடுப்பைப் பெற வேலை செய்ய வேண்டிய நாட்கள்',
+    rosterWeekWords: 'பணிமுறை வாரம் எப்போதும் திங்கள் முதல் ஞாயிறு வரை; அந்த வாரங்களுக்கு மட்டுமே பணிமுறைகள் வெளியிடப்படும்.',
+  },
+};
+const limitName = (l) => WT_WORDS[lang()]?.[l.key] ?? l.label;
+const leaveName = (l) => (api !== null && api.leaveTypes && api.leaveTypes.includes(l.key) ? t(l.key) : l.label);
+
 const icon = (name) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null);
 function el(tag, attrs = {}, ...kids) { const n = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (k === 'text') n.textContent = v; else if (k === 'cls') n.className = v; else n.setAttribute(k, v); } n.append(...kids); return n; }
 function btn(id, words, iconName) { const b = el('button', { type: 'button', id }); const i = icon(iconName); if (i !== null) b.append(i); b.append(el('span', { text: words })); return b; }
@@ -25,10 +41,10 @@ function paint() {
   root.replaceChildren(el('h2', { id: 'wt-h', text: t('wtH') }), el('p', { cls: 'meta', text: t('wtLead') }), statusLine('wt-status'));
   if (wt !== null) {
     const limits = el('ul', { cls: 'rows', id: 'wt-limits' });
-    for (const l of wt.limits ?? []) limits.append(el('li', { 'data-limit': l.key, 'data-state': l.status }, el('strong', { text: l.label }), el('span', { cls: 'meta', text: l.status === 'in_force' ? `${l.value} ${l.unit} · ${t('inForce')}` : `${t('pending')}${l.missing ? ` — ${l.missing}` : ''}` })));
-    root.append(limits, el('p', { cls: 'meta', id: 'wt-week', text: `${t('rosterWeek')}: ${wt.rosterWeek?.words ?? ''}` }));
+    for (const l of wt.limits ?? []) limits.append(el('li', { 'data-limit': l.key, 'data-state': l.status, 'data-missing': l.missing ?? '' }, el('strong', { text: limitName(l) }), el('span', { cls: 'meta', text: l.status === 'in_force' ? `${l.value} ${l.unit} · ${t('inForce')}` : `${t('pending')}${l.missing ? ` — ${t('needsLimit')}` : ''}` })));
+    root.append(limits, el('p', { cls: 'meta', id: 'wt-week', text: `${t('rosterWeek')}: ${wt.rosterWeek ? (WT_WORDS[lang()]?.rosterWeekWords ?? WT_WORDS.en.rosterWeekWords) : ''}` }));
     const leave = el('ul', { cls: 'rows', id: 'wt-leave' });
-    for (const l of wt.leaveTypes ?? []) leave.append(el('li', { 'data-leave': l.key, 'data-state': l.status }, el('strong', { text: l.label }), el('span', { cls: 'meta', text: l.status === 'in_force' ? `${l.daysPerYear} · ${t('carryOver')} ${l.carryOverMaxDays} · ${t('inForce')}` : `${t('pending')}${l.missing ? ` — ${l.missing}` : ''}` })));
+    for (const l of wt.leaveTypes ?? []) leave.append(el('li', { 'data-leave': l.key, 'data-state': l.status, 'data-missing': l.missing ?? '' }, el('strong', { text: leaveName(l) }), el('span', { cls: 'meta', text: l.status === 'in_force' ? `${l.daysPerYear} · ${t('carryOver')} ${l.carryOverMaxDays} · ${t('inForce')}` : `${t('pending')}${l.missing ? ` — ${t('needsLeave')}` : ''}` })));
     root.append(el('h3', { text: t('leaveTypesH') }), leave);
     const hol = wt.publicHolidays ?? { dates: [], status: 'pending' };
     const hl = el('ul', { cls: 'rows', id: 'wt-holidays', 'data-state': hol.status });
@@ -36,7 +52,7 @@ function paint() {
     root.append(el('h3', { text: `${t('holidaysH')} · ${hol.status === 'in_force' ? t('inForce') : t('pending')}` }), hl);
   }
   if (may.configure && wt !== null) {
-    const pick = el('select', { id: 'wt-key' }); for (const l of wt.limits ?? []) pick.append(el('option', { value: l.key, text: l.label }));
+    const pick = el('select', { id: 'wt-key' }); for (const l of wt.limits ?? []) pick.append(el('option', { value: l.key, text: limitName(l) }));
     root.append(el('h3', { text: t('limit') }), el('div', { cls: 'row-form' }, el('label', { for: 'wt-key' }, el('span', { text: t('limit') }), pick), field('wt-value', t('value'), { inputmode: 'numeric' }), field('wt-source', t('source')), field('wt-conf', t('confirmation')), btn('wt-save', t('save'), 'check')), statusLine('wt-save-status'));
     const lt = el('select', { id: 'wt-lt' }); for (const k of api.leaveTypes) lt.append(el('option', { value: k, text: t(k) }));
     root.append(el('h3', { text: t('leaveTypesH') }), el('div', { cls: 'row-form' }, el('label', { for: 'wt-lt' }, el('span', { text: t('leaveType') }), lt), field('wt-lt-days', t('daysPerYear'), { inputmode: 'numeric' }), field('wt-lt-carry', t('carryOver'), { inputmode: 'numeric' }), field('wt-lt-source', t('source')), field('wt-lt-conf', t('confirmation')), btn('wt-lt-save', t('save'), 'check')), statusLine('wt-lt-status'));

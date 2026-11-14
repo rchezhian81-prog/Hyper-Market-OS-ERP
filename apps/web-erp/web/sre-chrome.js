@@ -303,6 +303,10 @@
   const word = (pair) => (pair && typeof pair === 'object' ? (pair[lang()] ?? pair.en ?? '') : String(pair ?? ''));
   // A desk shows the rail open beside the page; a phone keeps it as a drawer behind the ☰ button (OB-13, UX-1a).
   const desk = window.matchMedia('(min-width: 1000px)');
+  // U5 (G11): a phone — the header shows the page's name ONCE with the badge and the toggle; the breadcrumb goes, and
+  // Find and Pin fold into the menu drawer so the first screenful is the page's first task.
+  const phone = window.matchMedia('(max-width: 519px)');
+  let topTools = null; // { line, pin, findWrap, count } — kept by reference: the menu's own repaint detaches them on a phone
   let drawerOpen = false;
 
   // The shell: the rail first in <body>, then the page — everything the page had in <body>, moved as one into
@@ -350,6 +354,7 @@
         if (event.key === 'Escape' && !desk.matches) { toggleMenu(false); button.focus(); }
       });
       desk.addEventListener('change', () => layout());
+      phone.addEventListener('change', () => foldTopline());
     }
     return { button, panel };
   }
@@ -360,6 +365,7 @@
     const els = menuElements();
     if (!els) return;
     const { button, panel } = els;
+    foldTopline(); // U5: the menu was just redrawn — Find and Pin go back where the width says
     if (desk.matches) {
       panel.hidden = false;
       button.hidden = true;
@@ -651,6 +657,9 @@
     'counts': 'scan-barcode',
     'count-plans': 'calendar-check',
     'transfers': 'arrow-left-right',
+    'stock-ledger': 'history',
+    'quarantine': 'shield-alert',
+    'stock-adjustments': 'sliders',
     'waste': 'trash',
     'write-off-capture': 'package-minus',
     'stock-health': 'activity',
@@ -697,6 +706,7 @@
     'packaging': 'boxes', // round 6 · M28-FR-03 — an icon already in the set
     'branch-compare': 'chart-column', // round 6 · M29-FR-02 — an icon already in the set
     'shelf-tags': 'tag', // round 7 · OB-505 — an icon already in the set
+    'esl': 'tag', // U6 · electronic shelf labels — the same shelf-label shape, an icon already in the set
     'quotations': 'file-text', // round 7 · OB-506 — an icon already in the set
     'certificates': 'badge-check', // round 8 · OB-522 — an icon already in the set
     'findings': 'clipboard-check', // OB-609 — an icon already in the set
@@ -706,6 +716,8 @@
     'do-not-contact': 'message-circle', // Round 4c — an icon already in the set
     'posting-map': 'book-open', // Round 4d — an icon already in the set
     'settlement': 'banknote', // W3 — an icon already in the set
+    'bank-reconciliation': 'banknote', // U6 — an icon already in the set
+    'payables-receivables': 'book-open', // U6 — an icon already in the set
     'facilities-setup': 'wrench', // Round 4d — an icon already in the set
     'production-recipes': 'chef-hat', // Round 4d — an icon already in the set
     'production-costs': 'banknote', // W4 — an icon already in the set
@@ -713,9 +725,13 @@
     'customer-value': 'chart-column', // W3 — an icon already in the set
     'message-queue': 'message-circle', // W3 — an icon already in the set
     'compensation-limits': 'banknote', // W3 — an icon already in the set
+    'compensation': 'banknote', // U6 — an icon already in the set
+    'satisfaction': 'clipboard-check', // U6 — an icon already in the set
+    'consent-check': 'shield-check', // U6 — an icon already in the set
     'gift-cards': 'ticket', // W3 — an icon already in the set
     'partner-webhooks': 'send', // Wave 3 — an icon already in the set
     'partners': 'key-round', // Wave 3 — an icon already in the set
+    'keys': 'key-round', // U6 · keys and credentials — an icon already in the set
     'developer-docs': 'book-open', // Wave 3 — an icon already in the set
     'floor-devices': 'tag', // Wave 3 — an icon already in the set
     'branding': 'store', // Wave 3 — an icon already in the set
@@ -788,6 +804,8 @@
     'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
     'b2b': 'building', // OB-288 commercial desks (M22) — an icon already in the set
     'supplier-submissions': 'package-check', // OB-288 commercial desks (M24) — an icon already in the set
+    'rfq': 'send', // U6 (M06-FR-02 · M24-FR-01) — an icon already in the set
+    'supplier-claims': 'package-minus', // U6 (M07-FR-03 · M24-FR-02) — an icon already in the set
     'concessions': 'store', // OB-288 commercial desks (M27) — an icon already in the set
     'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',
@@ -951,7 +969,9 @@
       pin.addEventListener('click', () => togglePin());
       line.append(crumbs, pin, findWrap, count);
       header.prepend(line);
+      topTools = { line, pin, findWrap, count };
     }
+    foldTopline(); // the elements below are looked up by id: they must be in the document first
     const place = nav ? currentPlace(nav) : null;
     const parts = [t('workspaceWord')];
     if (place) {
@@ -978,6 +998,29 @@
     find.placeholder = t('findScreen');
     find.hidden = !nav || (nav.groups ?? []).length === 0;
     byId('sre-find-wrap').hidden = find.hidden;
+    foldTopline();
+  }
+  /** On a phone, Find and Pin live at the top of the menu drawer under "This page"; on anything wider, on the top line. */
+  function foldTopline() {
+    const panel = byId('sre-menu');
+    if (!topTools || !panel) return;
+    const { line, pin, findWrap, count } = topTools;
+    if (phone.matches) {
+      let tools = panel.querySelector(':scope > .sre-rail-tools');
+      if (!tools) {
+        tools = document.createElement('div');
+        tools.className = 'sre-rail-tools';
+        const brandEl = panel.querySelector(':scope > .brand');
+        if (brandEl) brandEl.after(tools); else panel.prepend(tools);
+      }
+      let head = tools.querySelector(':scope > .sre-rail-tools-head');
+      if (!head) { head = document.createElement('p'); head.className = 'sre-rail-tools-head'; tools.prepend(head); }
+      setText(head, ow('thisPage'));
+      if (findWrap.parentElement !== tools) tools.append(findWrap, count, pin);
+    } else {
+      panel.querySelector(':scope > .sre-rail-tools')?.remove();
+      if (pin.parentElement !== line) line.append(pin, findWrap, count);
+    }
   }
 
   // ── A menu link may name a tab: /manager/?tab=approvals opens the manager on Approvals ─────────────
@@ -1094,7 +1137,23 @@
   function paintRegisters() {
     for (const table of document.querySelectorAll('main table')) table.classList.add('sre-register');
   }
-  function paintAnatomy() { paintHead(); paintTabs(); paintRegisters(); }
+  function paintAnatomy() { paintHead(); paintTabs(); paintRegisters(); paintNoChoice(); }
+  // U7 · the empty choice in a list reads a WORD, never a dash: an <option value=""> whose text is "—", "-", empty or the
+  // chrome's own word in either language says "Choose…" / "தேர்வு செய்க" in the reader's language (P2's deferred item).
+  // A page that names its empty choice itself ("All stores", "No reason") is left alone. Written only when it changes,
+  // so the page's observer settles after one pass.
+  const NO_CHOICE_FORMS = new Set(['', '—', '–', '-', 'Choose…', 'தேர்வு செய்க']);
+  function paintNoChoice() {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const word = ow('noChoice');
+    for (const o of main.querySelectorAll('option[value=""]')) {
+      const t = (o.textContent ?? '').trim();
+      if (!NO_CHOICE_FORMS.has(t) || t === word) continue;
+      o.textContent = word;
+      o.dataset.sreNoChoice = '1';
+    }
+  }
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
@@ -1109,8 +1168,18 @@
       search: 'Search this list', filterAll: 'All', columns: 'Columns', columnsShown: 'Columns to show', open: 'Open', close: 'Close',
       showing: 'Showing {from}–{to} of {n}', showingNone: 'Showing 0 of {n}', previous: 'Previous page', next: 'Next page', page: 'Page {p} of {q}',
       sortBy: 'Sort by {c}', clear: 'Clear search and filters',
+      // U5: the sort direction said in words beside the heading (never an arrow alone), the tax-class kind, the box fallback
+      sortedAsc: 'low to high', sortedDesc: 'high to low', sortedAscText: 'A to Z', sortedDescText: 'Z to A', notSorted: 'tap to sort',
+      'pick_tax-class': 'Which tax class?', 'pickHint_tax-class': 'An HSN code, or a product under it',
+      taxClassRowOne: 'HSN {code} — 1 product', taxClassRowMany: 'HSN {code} — {n} products',
+      pickFromBox: 'Head office cannot be reached — this list is from this store computer\'s copy of the catalogue (version {v}). A product published since is not in it.',
+      thisPage: 'This page', datePlaceholder: 'dd/mm/yyyy',
       loading: 'Reading the records…', loadingDetail: 'This takes a moment. Nothing is shown until it is read.',
       empty: 'Nothing here yet', emptyDetail: 'No records have been found for this list. An empty list does not mean everything is fine — it means there is nothing to show yet.',
+      'pick_role': 'Which roles?', 'pickHint_role': 'A few letters of the role', 'pick_batch': 'Which batch?', 'pickHint_batch': 'The batch code, or its use-by day',
+      'pick_case': 'Which case?', 'pickHint_case': 'The case number, or the customer', caseRow: '{id} — {kind} · {who}',
+      useThese: 'Use these ({n})', batchRow: 'Batch {id} — use by {day}', pickBatchFirst: 'Choose the product first — the batches are listed for one product at a time. Or type the batch code.',
+      noMatchServer: 'Head office found nothing matching this search. Clear the search to see the whole list.', noChoice: 'Choose…',
       noMatch: 'No rows match', noMatchDetail: 'Nothing in this list matches the search or filter. The list itself still has {n} row(s).',
       error: 'Could not read this list', errorDetail: 'Nothing was changed. Try again; if it keeps happening, tell the manager.',
       offline: 'Head office cannot be reached', offlineDetail: 'This list could not be read, so nothing here is current. Nothing was changed.',
@@ -1132,8 +1201,17 @@
       search: 'இந்தப் பட்டியலில் தேடு', filterAll: 'அனைத்தும்', columns: 'நெடுவரிசைகள்', columnsShown: 'காட்ட வேண்டிய நெடுவரிசைகள்', open: 'திற', close: 'மூடு',
       showing: '{n} இல் {from}–{to} காட்டப்படுகிறது', showingNone: '{n} இல் 0 காட்டப்படுகிறது', previous: 'முந்தைய பக்கம்', next: 'அடுத்த பக்கம்', page: 'பக்கம் {p} / {q}',
       sortBy: '{c} படி வரிசைப்படுத்து', clear: 'தேடலையும் வடிகட்டியையும் அழி',
+      sortedAsc: 'குறைவிலிருந்து அதிகம்', sortedDesc: 'அதிகத்திலிருந்து குறைவு', sortedAscText: 'அகரவரிசை', sortedDescText: 'எதிர் அகரவரிசை', notSorted: 'வரிசைப்படுத்தத் தட்டவும்',
+      'pick_tax-class': 'எந்த வரி வகுப்பு?', 'pickHint_tax-class': 'HSN குறியீடு, அல்லது அதன் கீழுள்ள ஒரு பொருள்',
+      taxClassRowOne: 'HSN {code} — 1 பொருள்', taxClassRowMany: 'HSN {code} — {n} பொருள்கள்',
+      pickFromBox: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — இந்தப் பட்டியல் இந்தக் கடை கணினியின் பட்டியல் நகலிலிருந்து (பதிப்பு {v}). அதன் பின் வெளியிடப்பட்ட பொருள் இதில் இல்லை.',
+      thisPage: 'இந்தப் பக்கம்', datePlaceholder: 'நா/மா/ஆண்டு',
       loading: 'பதிவுகளைப் படிக்கிறது…', loadingDetail: 'சிறிது நேரம் ஆகும். படிக்கும் வரை எதுவும் காட்டப்படாது.',
       empty: 'இன்னும் எதுவும் இல்லை', emptyDetail: 'இந்தப் பட்டியலுக்கு எந்தப் பதிவும் கிடைக்கவில்லை. காலியான பட்டியல் எல்லாம் சரி என்று பொருளல்ல — காட்ட இன்னும் எதுவும் இல்லை என்று பொருள்.',
+      'pick_role': 'எந்தப் பணிப் பொறுப்புகள்?', 'pickHint_role': 'பொறுப்பின் சில எழுத்துகள்', 'pick_batch': 'எந்தத் தொகுதி?', 'pickHint_batch': 'தொகுதிக் குறியீடு, அல்லது பயன்படுத்தும் கடைசி நாள்',
+      'pick_case': 'எந்த வழக்கு?', 'pickHint_case': 'வழக்கு எண், அல்லது வாடிக்கையாளர்', caseRow: '{id} — {kind} · {who}',
+      useThese: 'இவற்றைப் பயன்படுத்து ({n})', batchRow: 'தொகுதி {id} — {day} வரை பயன்படுத்தலாம்', pickBatchFirst: 'முதலில் பொருளைத் தேர்வு செய்க: தொகுதிகள் ஒரு பொருளுக்கு ஒரு முறை பட்டியலிடப்படும். அல்லது தொகுதிக் குறியீட்டைத் தட்டச்சு செய்க.',
+      noMatchServer: 'இந்தத் தேடலுக்குப் பொருந்துவது எதையும் தலைமை அலுவலகம் கண்டுபிடிக்கவில்லை. முழுப் பட்டியலைக் காண தேடலை அழிக்கவும்.', noChoice: 'தேர்வு செய்க',
       noMatch: 'பொருந்தும் வரிசை இல்லை', noMatchDetail: 'தேடலுக்கோ வடிகட்டிக்கோ இந்தப் பட்டியலில் எதுவும் பொருந்தவில்லை. பட்டியலில் இன்னும் {n} வரிசை(கள்) உள்ளன.',
       error: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை', errorDetail: 'எதுவும் மாற்றப்படவில்லை. மீண்டும் முயலவும்; தொடர்ந்தால் மேலாளரிடம் சொல்லவும்.',
       offline: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை', offlineDetail: 'இந்தப் பட்டியலைப் படிக்க முடியவில்லை, எனவே இங்கு எதுவும் தற்போதையது அல்ல. எதுவும் மாற்றப்படவில்லை.',
@@ -1191,9 +1269,71 @@
     const span = document.createElement('span'); span.className = 'sre-chip'; span.dataset.tone = tone; span.textContent = words; return span;
   }
 
+  // U5 (G13): a record's lifecycle state as the one chip — the tone's shape and the words of both languages, never a bare
+  // pill, a two-tone colour or a ⚠/✓ character. A state the table does not know is shown as it was given, in the unknown
+  // tone (said, never guessed). A page may pass its own words for the label and keep the state's tone.
+  const RECORD_STATES = Object.freeze({
+    draft: { tone: 'idle', en: 'Draft', ta: 'வரைவு' },
+    proposed: { tone: 'pending', en: 'Proposed', ta: 'முன்மொழியப்பட்டது' },
+    pending: { tone: 'pending', en: 'Waiting', ta: 'காத்திருக்கிறது' },
+    waiting: { tone: 'pending', en: 'Waiting', ta: 'காத்திருக்கிறது' },
+    submitted: { tone: 'pending', en: 'Sent for approval', ta: 'அனுமதிக்கு அனுப்பப்பட்டது' },
+    approved: { tone: 'ok', en: 'Approved', ta: 'அனுமதிக்கப்பட்டது' },
+    rejected: { tone: 'error', en: 'Rejected', ta: 'நிராகரிக்கப்பட்டது' },
+    refused: { tone: 'error', en: 'Refused', ta: 'மறுக்கப்பட்டது' },
+    open: { tone: 'pending', en: 'Open', ta: 'திறந்துள்ளது' },
+    closed: { tone: 'idle', en: 'Closed', ta: 'மூடப்பட்டது' },
+    done: { tone: 'ok', en: 'Done', ta: 'முடிந்தது' },
+    completed: { tone: 'ok', en: 'Done', ta: 'முடிந்தது' },
+    cancelled: { tone: 'idle', en: 'Cancelled', ta: 'ரத்து செய்யப்பட்டது' },
+    active: { tone: 'ok', en: 'Active', ta: 'செயலில்' },
+    inactive: { tone: 'idle', en: 'Not active', ta: 'செயலில் இல்லை' },
+    archived: { tone: 'idle', en: 'Archived', ta: 'காப்பகப்படுத்தப்பட்டது' },
+    held: { tone: 'pending', en: 'On hold', ta: 'நிறுத்தி வைக்கப்பட்டது' },
+    released: { tone: 'ok', en: 'Released', ta: 'விடுவிக்கப்பட்டது' },
+    sent: { tone: 'ok', en: 'Sent', ta: 'அனுப்பப்பட்டது' },
+    unsent: { tone: 'pending', en: 'Not sent yet', ta: 'இன்னும் அனுப்பப்படவில்லை' },
+    received: { tone: 'ok', en: 'Received', ta: 'பெறப்பட்டது' },
+    partial: { tone: 'pending', en: 'Partly done', ta: 'பகுதி முடிந்தது' },
+    failed: { tone: 'error', en: 'Failed', ta: 'தோல்வி' },
+    error: { tone: 'error', en: 'Error', ta: 'பிழை' },
+    overdue: { tone: 'error', en: 'Overdue', ta: 'தாமதம்' },
+    due: { tone: 'pending', en: 'Due', ta: 'நிலுவை' },
+    paid: { tone: 'ok', en: 'Paid', ta: 'செலுத்தப்பட்டது' },
+    unpaid: { tone: 'pending', en: 'Not paid', ta: 'செலுத்தப்படவில்லை' },
+    matched: { tone: 'ok', en: 'Matched', ta: 'பொருந்தியது' },
+    unmatched: { tone: 'pending', en: 'Not matched', ta: 'பொருந்தவில்லை' },
+    posted: { tone: 'ok', en: 'Posted', ta: 'பதிவிடப்பட்டது' },
+    locked: { tone: 'idle', en: 'Locked', ta: 'பூட்டப்பட்டது' },
+    expired: { tone: 'error', en: 'Expired', ta: 'காலாவதி' },
+    recalled: { tone: 'error', en: 'Recalled', ta: 'திரும்பப் பெறப்பட்டது' },
+    scheduled: { tone: 'pending', en: 'Scheduled', ta: 'திட்டமிடப்பட்டது' },
+    running: { tone: 'pending', en: 'Running', ta: 'இயங்குகிறது' },
+    stopped: { tone: 'idle', en: 'Stopped', ta: 'நிறுத்தப்பட்டது' },
+    ok: { tone: 'ok', en: 'OK', ta: 'சரி' },
+    warning: { tone: 'degraded', en: 'Needs attention', ta: 'கவனம் தேவை' },
+    unknown: { tone: 'unknown', en: 'Not known', ta: 'தெரியவில்லை' },
+  });
+  function officeRecordChip(state, label) {
+    const key = String(state ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+    const known = RECORD_STATES[key] ?? RECORD_STATES[key.replace(/-/g, '')] ?? null;
+    const tone = known ? known.tone : 'unknown';
+    const words = () => (label !== undefined ? said(label) : known ? said(known) : (key === '' ? ow('notKnown') : String(state)));
+    const chip = officeChip(tone, words());
+    chip.dataset.state = key;
+    // the words follow the toggle while the chip is on the page; a chip the page has since replaced is let go
+    adapterRepaints.add(() => {
+      if (!chip.isConnected) throw new Error('gone');
+      const text = [...chip.childNodes].reverse().find((n) => n.nodeType === 3 || (n.nodeType === 1 && n.tagName === 'SPAN' && !n.classList.contains('sre-icon')));
+      if (text) text.textContent = words();
+    });
+    return chip;
+  }
+
   /**
    * Summary cards: `{ label, value, note?, tone?, href?, icon? }` each. `value` null or undefined is "Not known" — never 0.
    * A number is drawn as the page gave it (a page formats money itself, from its own figures).
+   * U7: `ids: { card, label, value }` keeps a page's own element ids on the card's parts (its tests and its toggle read them).
    */
   function officeCards(host, cards) {
     const list = document.createElement('div');
@@ -1203,6 +1343,7 @@
       card.className = 'sre-summary-card';
       if (c.href) card.href = c.href;
       if (c.tone) card.dataset.tone = c.tone;
+      if (c.ids?.card) card.id = c.ids.card;
       const head = document.createElement('span');
       head.className = 'sre-summary-label';
       const mark = c.icon ? icon(c.icon, 18) : null;
@@ -1213,6 +1354,8 @@
       const known = c.value !== null && c.value !== undefined && c.value !== '';
       value.textContent = known ? String(c.value) : ow('notKnown');
       if (!known) value.classList.add('sre-unknown');
+      if (c.ids?.label) head.id = c.ids.label;
+      if (c.ids?.value) value.id = c.ids.value;
       card.append(head, value);
       if (c.note !== undefined && said(c.note) !== '') {
         const note = document.createElement('span');
@@ -1278,7 +1421,22 @@
     describedBy.push(msg.id);
     control.setAttribute('aria-describedby', describedBy.join(' '));
     wrap.append(control, msg);
+    // the field's own words follow the toggle (U3 · NFR-08): the label, "(required)", the hint
+    wrap.sreWords = { label, required, hint };
+    adapterRepaints.add(() => { if (!wrap.isConnected) throw new Error('gone'); repaintFieldWords(wrap); });
     return wrap;
+  }
+  /** Rewrite a shared field's label, "(required)" mark and hint in the reader's language (the control keeps its value). */
+  function repaintFieldWords(wrap) {
+    const w = wrap.sreWords;
+    if (!w) return;
+    const lab = wrap.querySelector(':scope > .sre-field-label');
+    if (lab && lab.firstChild && lab.firstChild.nodeType === 3) lab.firstChild.textContent = said(w.label);
+    const req = lab ? lab.querySelector('.sre-req') : null;
+    if (req) req.textContent = ` (${ow('required')})`;
+    const hint = wrap.querySelector(':scope > .sre-field-hint');
+    if (hint) hint.textContent = w.hint !== undefined ? said(w.hint) : (wrap.classList.contains('sre-date') ? ow('dateHint') : hint.textContent);
+    if (typeof wrap.sreRepaint === 'function') wrap.sreRepaint();
   }
 
   /**
@@ -1481,7 +1639,7 @@
   // where the page allows, offers "Type the code instead", so nothing is ever a dead end (P-08). The last ten picks per
   // kind are this browser's convenience only.
   const directory = () => (window.sreDirectory && typeof window.sreDirectory === 'object' ? window.sreDirectory : null);
-  const PICK_KINDS = Object.freeze(['product', 'supplier', 'person', 'place', 'store', 'customer', 'approval']);
+  const PICK_KINDS = Object.freeze(['product', 'supplier', 'person', 'place', 'store', 'customer', 'approval', 'tax-class', 'role', 'batch', 'case']);
   const listCache = new Map(); // kind → { at, rows } for a minute: the person types, the list does not re-read on every key
   const LIST_TTL_MS = 60_000;
   const pickKey = (kind) => `sre.pick.${kind}.${String(navigation()?.userId ?? directory()?.me?.userId ?? 'nobody')}`;
@@ -1529,18 +1687,59 @@
       }
       return rows.length > 0 ? { state: 'ok', rows } : got;
     }
+    // U7: the roles the shop gives (the store's signed directory first, then the menu's own role list) — several may be
+    // ticked at once (`multi`), e.g. who a procedure is for. Never a role the box does not know.
+    if (kind === 'role') {
+      const fromDir = d?.known?.roles === true && Array.isArray(d.roles) ? d.roles : null;
+      const fromNav = Array.isArray(navigation()?.roles) ? navigation().roles : null;
+      const list = fromDir ?? fromNav;
+      if (!list) return { state: 'unknown' };
+      return { state: 'ok', rows: list.filter((r) => r && typeof r.id === 'string').map((r) => asRow(r.id, lang() === 'ta' && typeof r.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : (r.name ?? r.id), r.id, r)) };
+    }
+    // U7: the batches of one product at one place, with their use-by day — head office's batch directory. With no product
+    // chosen yet the sheet says to choose it first (the typed batch code stays offered).
+    if (kind === 'batch') {
+      if (typeof scope.productId !== 'string' || scope.productId === '') return { state: 'ok', rows: [], emptyKey: 'pickBatchFirst' };
+      const q = `productId=${encodeURIComponent(scope.productId)}${typeof scope.locationId === 'string' && scope.locationId !== '' ? `&locationId=${encodeURIComponent(scope.locationId)}` : ''}`;
+      const got = await readHeadOffice(`/v1/inventory/batches?${q}`).catch(() => ({ state: 'offline' }));
+      if (got.state !== 'ok') return got;
+      return { state: 'ok', rows: (got.body.batches ?? []).map((b) => asRow(b.batchId, typeof b.expiry === 'string' && b.expiry !== '' ? fill(ow('batchRow'), { id: b.batchId, day: dateWords(b.expiry) }) : String(b.batchId), b.batchId, b)) };
+    }
     const cached = listCache.get(kind);
     if (cached && Date.now() - cached.at < LIST_TTL_MS) return { state: 'ok', rows: cached.rows };
-    const paths = { product: '/v1/catalogue/products', supplier: '/v1/purchase/suppliers', customer: '/v1/customer/overview', approval: '/v1/approvals/requests' };
+    const paths = { product: '/v1/catalogue/products', supplier: '/v1/purchase/suppliers', customer: '/v1/customer/overview', approval: '/v1/approvals/requests', 'tax-class': '/v1/catalogue/products', case: '/v1/service/cases' };
     const got = await readHeadOffice(paths[kind]).catch(() => ({ state: 'offline' }));
+    // U5 (P-01): a product can still be picked with head office down — from this store computer's own signed catalogue,
+    // and the sheet SAYS so (a product published since is not in that copy). Any other list stays honest: unreadable.
+    if (got.state !== 'ok' && kind === 'product') { const box = await productsFromBox(); if (box !== null) return box; }
     if (got.state !== 'ok') return got;
     let rows = [];
     if (kind === 'product') rows = (got.body.products ?? []).map((p) => asRow(p.productId, p.name, p.sku, p));
+    else if (kind === 'tax-class') {
+      // every HSN head office's products carry, with how many products stand under it — the same count the Tax rates page shows
+      const counts = new Map();
+      for (const p of got.body.products ?? []) { const c = typeof p.taxClass === 'string' ? p.taxClass.trim() : ''; if (c === '') continue; counts.set(c, (counts.get(c) ?? 0) + 1); }
+      rows = [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([c, n]) => asRow(c, n === 1 ? fill(ow('taxClassRowOne'), { code: c }) : fill(ow('taxClassRowMany'), { code: c, n }), c, { hsnCode: c, products: n }));
+      return { state: 'ok', rows }; // not cached: the words are in the reader's language
+    }
     else if (kind === 'supplier') rows = (got.body.suppliers ?? []).map((s) => asRow(s.supplierId, s.name ?? s.supplierId, s.status, s));
-    else if (kind === 'customer') rows = (got.body.customers ?? []).map((c) => asRow(c.customerRef, c.customerRef, c.segment, c));
+    else if (kind === 'customer') rows = (got.body.customers ?? []).map((c) => asRow(c.customerRef, typeof c.name === 'string' && c.name.trim() !== '' ? c.name : c.customerRef, c.customerRef, c));
+    // U7: a customer case by its number, what it is and whose — the service desk's own list (`service.case.read`)
+    else if (kind === 'case') rows = (got.body.cases ?? []).map((c) => asRow(c.caseId, fill(ow('caseRow'), { id: c.caseId, kind: String(c.kind ?? '').replace(/_/g, ' '), who: nameOf('customer', c.customerRef) }), c.state, c));
     else if (kind === 'approval') rows = [...(got.body.waitingForMe ?? []), ...(got.body.mine ?? [])].map((a) => asRow(a.requestId, a.summary ?? a.label ?? a.requestId, a.status, a));
     listCache.set(kind, { at: Date.now(), rows });
     return { state: 'ok', rows };
+  }
+  /** The store computer's own signed catalogue (`/directory/products`, served from the pack on this box) — null when the box has none. */
+  async function productsFromBox() {
+    try {
+      const res = await fetch(`${'/directory/products'}?limit=5000`, { credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store' });
+      if (!res.ok) return null;
+      const body = await res.json();
+      if (!body || body.known !== true || !Array.isArray(body.products)) return null;
+      const rows = body.products.map((p) => asRow(p.id, p.name, p.code, p));
+      return { state: 'ok', rows, source: 'box', version: body.version ?? null };
+    } catch { return null; }
   }
   /** A product by its barcode — head office's own lookup, when the person typed digits that look like one. */
   async function productByBarcode(code) {
@@ -1563,6 +1762,8 @@
   function officePick(spec) {
     if (pickOpen) pickOpen.finish({ ok: false });
     const kind = PICK_KINDS.includes(spec.kind) ? spec.kind : 'product';
+    const multi = spec.multi === true; // U7: several may be ticked; "Use these" finishes
+    const ticked = new Map();
     return new Promise((resolve) => {
       const opener = document.activeElement;
       const sheet = document.createElement('div');
@@ -1593,7 +1794,13 @@
       count.id = 'sre-picker-count';
       count.className = 'sre-picker-count';
       count.setAttribute('role', 'status');
-      searchWrap.append(searchLabel, search, count);
+      // U5: where the list came from when it is not head office — said once, in words, above the rows
+      const source = document.createElement('p');
+      source.id = 'sre-picker-source';
+      source.className = 'sre-picker-source';
+      source.setAttribute('role', 'status');
+      source.hidden = true;
+      searchWrap.append(searchLabel, search, count, source);
       const list = document.createElement('ul');
       list.className = 'sre-picker-list';
       list.id = 'sre-picker-list';
@@ -1616,19 +1823,32 @@
       back.className = 'sre-btn';
       back.id = 'sre-picker-back';
       actions.append(back);
+      const useThese = document.createElement('button');
+      useThese.type = 'button';
+      useThese.className = 'sre-btn sre-btn-primary';
+      useThese.id = 'sre-picker-use-these';
+      useThese.hidden = !multi;
+      if (multi) actions.append(useThese);
       inner.append(h, searchWrap, stateHost, list, codeWrap, actions);
       sheet.append(inner);
 
       let rows = null; // null until read
       let listState = 'loading';
+      let listSource = null; // 'box' when the rows are this store computer's copy
+      let emptyKey = null; // U7: a kind may say why its list is empty (the batch kind: "choose the product first")
+
       let shownRows = [];
       const MAX = 50;
       const paintWords = () => {
         h.textContent = said(spec.title ?? ow(`pick_${kind}`));
+        source.hidden = listSource !== 'box';
+        source.textContent = listSource === 'box' ? fill(ow('pickFromBox'), { v: sourceVersion ?? '?' }) : '';
         searchLabel.textContent = ow('pickSearch');
         search.placeholder = ow(`pickHint_${kind}`) ?? ow('pickHint');
         back.textContent = ow('goBack');
         useCode.textContent = ow('useThisCode');
+        useThese.textContent = fill(ow('useThese'), { n: ticked.size });
+        useThese.disabled = ticked.size === 0;
         const lab = codeField.querySelector('.sre-field-label');
         if (lab) lab.replaceChildren(document.createTextNode(ow('typeCodeInstead')));
         list.setAttribute('aria-label', said(spec.title ?? ow(`pick_${kind}`)));
@@ -1651,7 +1871,15 @@
           small.textContent = [row.code, recent ? ow('recentPick') : ''].filter((x) => x).join(' · ');
           b.append(small);
         }
-        b.addEventListener('click', () => choose(row));
+        if (multi) {
+          b.setAttribute('aria-pressed', ticked.has(row.id) ? 'true' : 'false');
+          b.addEventListener('click', () => {
+            if (ticked.has(row.id)) ticked.delete(row.id); else ticked.set(row.id, row);
+            b.setAttribute('aria-pressed', ticked.has(row.id) ? 'true' : 'false');
+            useThese.textContent = fill(ow('useThese'), { n: ticked.size });
+            useThese.disabled = ticked.size === 0;
+          });
+        } else b.addEventListener('click', () => choose(row));
         li.append(b);
         return li;
       };
@@ -1677,7 +1905,7 @@
           if (remembered.length > 0) { hits = remembered; recent = true; } else hits = pool.slice(0, MAX);
         } else hits = pool.filter((r) => matches(r, q));
         shownRows = hits.slice(0, MAX);
-        if (pool.length === 0) { stateHost.append(officeState(document.createElement('div'), 'empty', { detail: ow('pickEmptyDetail') })); count.textContent = ''; codeWrap.hidden = !spec.allowCode; return; }
+        if (pool.length === 0) { stateHost.append(officeState(document.createElement('div'), 'empty', { detail: ow(emptyKey ?? 'pickEmptyDetail') })); count.textContent = ''; codeWrap.hidden = !spec.allowCode; return; }
         if (hits.length === 0) {
           stateHost.append(officeState(document.createElement('div'), 'noMatch', { detail: fill(ow('pickNoMatchDetail'), { n: pool.length }) }));
           count.textContent = '';
@@ -1686,6 +1914,8 @@
         }
         for (const r of shownRows) list.append(rowButton(r, recent));
         count.textContent = recent ? ow('pickRecent') : hits.length > MAX ? fill(ow('pickMore'), { n: hits.length - MAX }) : fill(ow('pickCount'), { n: hits.length });
+        // the box's copy may be short of a product published since: the typed code stays offered beside it (never a dead end)
+        codeWrap.hidden = !(spec.allowCode && listSource === 'box');
       };
       const observer = new MutationObserver(paintWords);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
@@ -1699,10 +1929,17 @@
         resolve(answer);
       };
       const onLeave = () => finish({ ok: false });
+      let sourceVersion = null;
       const me = { finish };
       pickOpen = me;
       window.addEventListener('pagehide', onLeave);
       back.addEventListener('click', () => finish({ ok: false }));
+      useThese.addEventListener('click', () => {
+        if (ticked.size === 0) return;
+        const picked = [...ticked.values()];
+        for (const r of picked) rememberPick(kind, r);
+        finish({ ok: true, ids: picked.map((r) => r.id), names: picked.map((r) => r.name), id: picked.map((r) => r.id).join(','), name: picked.map((r) => r.name).join(', '), item: null });
+      });
       useCode.addEventListener('click', () => {
         const typed = String(codeField.querySelector('input').value ?? '').trim();
         const msg = codeField.querySelector('.sre-field-msg');
@@ -1745,7 +1982,10 @@
         if (pickOpen !== me) return;
         listState = got.state;
         rows = got.state === 'ok' ? got.rows : [];
-        paintList();
+        listSource = got.source ?? null;
+        sourceVersion = got.version ?? null;
+        emptyKey = got.emptyKey ?? null;
+        paintWords();
       }).catch(() => { if (pickOpen !== me) return; listState = 'error'; rows = []; paintList(); });
     });
   }
@@ -1806,6 +2046,9 @@
       hidden.dispatchEvent(new Event('change', { bubbles: true }));
     };
     wrap.sreSet = set;
+    wrap.sreWords = { label, required, hint };
+    wrap.sreRepaint = () => { shown.placeholder = ow('nothingChosen'); choose.textContent = ow('choose'); clear.textContent = ow('clearPick'); };
+    adapterRepaints.add(() => { if (!wrap.isConnected) throw new Error('gone'); repaintFieldWords(wrap); });
     const open = async () => {
       const picked = await officePick({ kind, title: { en: `${said(label)}?`, ta: `${said(label)}?` }, ...(scope === undefined ? {} : { scope }), ...(filter === undefined ? {} : { filter }), ...(allowCode === undefined ? {} : { allowCode }) });
       if (picked.ok) set(picked);
@@ -1845,8 +2088,9 @@
   function officeDateField({ id, label, required = false, min, max, hint, value }) {
     const wrap = officeField({ id, label, type: 'text', required, hint: hint ?? ow('dateHint'), inputmode: 'numeric', autocomplete: 'off' });
     wrap.classList.add('sre-date');
+    wrap.sreWords = { label, required, hint }; // the chrome's own hint is re-said in the reader's language; a page's hint is `{ en, ta }`
     const control = wrap.querySelector('input');
-    control.placeholder = 'dd/mm/yyyy';
+    control.placeholder = ow('datePlaceholder');
     control.setAttribute('pattern', '\\s*\\d{1,2}[/.\\-]\\d{1,2}[/.\\-](\\d{2}|\\d{4})\\s*');
     control.dataset.min = min ?? '';
     control.dataset.max = max ?? '';
@@ -1866,9 +2110,84 @@
     control.addEventListener('blur', check);
     if (value) { control.value = shownDate(value); check(); }
     wrap.sreSetDate = (iso) => { control.value = shownDate(iso); check(); };
+    // on the toggle: the placeholder, and a problem already shown is said again in the new language
+    wrap.sreWords = { label, required, hint };
+    wrap.sreRepaint = () => { control.placeholder = ow('datePlaceholder'); if (control.value.trim() !== '') check(); };
     return wrap;
   }
   const dateValue = (id) => { const el = byId(id); if (!el) return null; const iso = el.dataset.iso; return iso ? iso : (el.value.trim() === '' ? null : parseShopDate(el.value)); };
+  const setShopDate = (id, iso) => { const el = byId(id); const wrap = el ? el.closest('.sre-date') : null; if (wrap && typeof wrap.sreSetDate === 'function') wrap.sreSetDate(iso); else if (el) { el.value = iso ? shownDate(iso) : ''; el.dispatchEvent(new Event('input', { bubbles: true })); } };
+
+  // ── U5: the page-side adapters of U2/U2b, in the chrome ───────────────────────────────────────────────────────────
+  // Thirteen page scripts carried the same six lines to put the picker on an input the page built itself, and the same
+  // lines again to swap a typed date box for the shared field. Here once, for every page, repainted on the toggle.
+  const adapterRepaints = new Set();
+  function repaintAdapters() { for (const f of [...adapterRepaints]) { try { f(); } catch { adapterRepaints.delete(f); } } }
+  /**
+   * Put the picker on a page's own input (an element or its id): "Choose…" beside it (≥ 44px), the picked id lands in the
+   * input and the NAME is shown beside it (`#<id>-name`); what a person typed stays the fallback. `extra`: `scope()`,
+   * `filter(item)`, `kindOf()`, `titleOf()`, `idOf(picked)`, `append(input, id)`, `onPick(picked)`, `allowCode` (true).
+   */
+  function officePickable(target, kind, title, extra = {}) {
+    const input = typeof target === 'string' ? byId(target) : target;
+    if (!input || input.dataset.pickable === 'on') return null;
+    input.dataset.pickable = 'on';
+    const row = document.createElement('div');
+    row.className = 'sre-pick-row';
+    input.replaceWith(row);
+    row.append(input);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    if (input.id) btn.id = `${input.id}-pick`;
+    btn.className = 'sre-btn sre-btn-quiet sre-pick-button';
+    const name = document.createElement('span');
+    if (input.id) name.id = `${input.id}-name`;
+    name.className = 'sre-pick-name';
+    row.append(btn, name);
+    const titleOf = () => { const t = typeof extra.titleOf === 'function' ? extra.titleOf() : title; return t && typeof t === 'object' ? t : { en: ow(`pick_${kind}`), ta: ow(`pick_${kind}`) }; };
+    // U7: a kind may follow the form (a store price picks a store, a customer price a customer); `kindOf()` → null means no
+    // list exists for what the form says now, so there is no "Choose…" button — the typed code is the way in.
+    const kindNow = () => (typeof extra.kindOf === 'function' ? extra.kindOf() : kind);
+    const paint = () => { btn.hidden = kindNow() === null; btn.textContent = ow('choose'); btn.setAttribute('aria-label', `${ow('choose')} — ${said(titleOf())}`); };
+    paint();
+    adapterRepaints.add(paint);
+    row.sreRepaint = paint;
+    btn.addEventListener('click', async () => {
+      const k = kindNow();
+      if (k === null) return;
+      const picked = await officePick({ kind: k, title: titleOf(), allowCode: extra.allowCode !== false, ...(extra.multi === true ? { multi: true } : {}), ...(typeof extra.scope === 'function' ? { scope: extra.scope() } : {}), ...(typeof extra.filter === 'function' ? { filter: extra.filter } : {}) });
+      if (!picked || picked.ok !== true) return;
+      const id = typeof extra.idOf === 'function' ? extra.idOf(picked) : String(picked.id ?? '');
+      if (typeof extra.append === 'function') extra.append(input, id); else input.value = id;
+      // a page that recomputes as a person types hears the pick too (before the name is shown — `input` clears a stale one)
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      name.textContent = typeof picked.name === 'string' && picked.name !== id ? picked.name : '';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      if (typeof extra.onPick === 'function') extra.onPick(picked);
+    });
+    input.addEventListener('input', () => { name.textContent = ''; });
+    return row;
+  }
+  /**
+   * Swap a page's own date box for the shared dd/mm/yyyy field, keeping its id: a value already on it is carried over
+   * (ISO as the page set it, or dd/mm/yyyy as a person typed it); the page reads ISO back with `dateOf(id)` and sets one
+   * with `setShopDate(id, iso)`. `label` is `{ en, ta }` and follows the toggle. The page's own `<label for>` is hidden.
+   */
+  function officeShopDate(id, label, opts = {}) {
+    const input = byId(id);
+    if (!input || input.dataset.shopDate === 'on') return null;
+    const typed = String(input.value ?? '').trim();
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : parseShopDate(typed);
+    const field = officeDateField({ id, label, required: opts.required === true, ...(iso ? { value: iso } : {}), ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.min ? { min: opts.min } : {}), ...(opts.max ? { max: opts.max } : {}) });
+    const ownLabel = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+    // the page's own label is hidden and lets go of the field, so the shared field's label is the one that names it
+    if (ownLabel && !ownLabel.contains(input)) { ownLabel.hidden = true; ownLabel.removeAttribute('for'); }
+    (input.closest('label') ?? input).replaceWith(field);
+    field.querySelector('input').dataset.shopDate = 'on';
+    const paint = () => { const lab = field.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = said(label); };
+    adapterRepaints.add(paint);
+    return field;
+  }
 
   // ── A name for an id, and who is looking ─────────────────────────────────────────────────────────────────────
   const ZONE_WORDS = { 'Asia/Kolkata': { en: 'India time (Kolkata)', ta: 'இந்திய நேரம் (கொல்கத்தா)' }, 'Asia/Dubai': { en: 'Gulf time (Dubai)', ta: 'வளைகுடா நேரம் (துபாய்)' }, UTC: { en: 'UTC', ta: 'UTC' } };
@@ -1939,8 +2258,37 @@
   const liveTables = new Set();
   function officeTable(host, opts) {
     const id = opts.id;
-    const state = { rows: opts.rows === undefined ? null : opts.rows, query: '', filters: {}, sort: null, dir: 1, page: 0, kind: null, kindOpts: {} };
+    const state = { rows: opts.rows === undefined ? null : opts.rows, query: '', filters: {}, sort: null, dir: 1, page: 0, kind: null, kindOpts: {}, total: 0, seq: 0 };
     const pageSize = opts.pageSize ?? 10;
+    // U7 · server paging: a page whose list can grow past a few hundred rows hands the register a LOADER instead of the
+    // rows — `loader({ page, size, search, sort, dir })` → `{ rows, total }` (or `{ state, stateOpts }` when head office
+    // did not answer). Search, sort and paging then go to head office; the register shows exactly one page of rows and
+    // the count head office gives ("Showing 21–40 of 3,412"). Column filters are drawn from rows, so a loader-fed register
+    // offers none (a page that needs one asks head office with its own field).
+    const loader = typeof opts.loader === 'function' ? opts.loader : null;
+    let searchTimer = null;
+    async function load() {
+      if (!loader) { paintBody(); return; }
+      const seq = ++state.seq;
+      state.rows = null; state.kind = null;
+      paintBody();
+      let res;
+      try { res = await loader({ page: state.page, size: pageSize, search: state.query.trim(), sort: state.sort, dir: state.dir === 1 ? 'asc' : 'desc' }); }
+      catch { res = { state: 'error' }; }
+      if (seq !== state.seq) return; // a newer read is on its way: this answer is for a question nobody is asking now
+      if (res && Array.isArray(res.rows)) {
+        state.rows = res.rows;
+        state.total = Number.isFinite(res.total) ? res.total : res.rows.length;
+        state.kind = null;
+      } else {
+        state.kind = (res && typeof res.state === 'string') ? res.state : 'error';
+        state.kindOpts = (res && res.stateOpts) || {};
+      }
+      paintBody();
+    }
+    // U5: `sortable: true` makes every column sortable (a column may say `sort: false`); `search: false` hides the search box
+    const sortableCol = (col) => (col.sort !== undefined && col.sort !== null && col.sort !== false) || (opts.sortable === true && col.sort !== false);
+    const showSearch = opts.search !== false;
     const valueOf = (col, row) => (typeof col.value === 'function' ? col.value(row) : row[col.key]);
     const textOf = (col, row) => { const v = valueOf(col, row); return v === null || v === undefined ? '' : said(v); };
     const hiddenKey = `sre.table.${id}.hidden`;
@@ -1951,6 +2299,13 @@
     root.className = 'sre-datatable';
     root.id = `${id}-table`;
     host.replaceChildren(root);
+    // On a phone the rows stack and each cell names its column, so the head row is kept for a screen reader only — with
+    // the one visually-hidden class (`sr-only`), set from the same width the stacking uses and kept in step on a turn.
+    const stackQ = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 519px)') : null;
+    const stacked = () => stackQ !== null && stackQ.matches;
+    if (stackQ !== null && typeof stackQ.addEventListener === 'function') {
+      stackQ.addEventListener('change', () => { const th = root.querySelector('table.sre-register > thead'); if (th) th.classList.toggle('sr-only', stacked()); });
+    }
 
     function visibleRows() {
       const rows = state.rows ?? [];
@@ -1983,21 +2338,34 @@
     function toolbar() {
       const bar = document.createElement('div');
       bar.className = 'sre-datatable-tools';
-      const searchLabel = document.createElement('label');
-      searchLabel.className = 'sre-datatable-search';
-      const lens = icon('search', 18);
-      if (lens) searchLabel.append(lens);
-      const search = document.createElement('input');
-      search.type = 'search';
-      search.id = `${id}-search`;
-      search.className = 'sre-input';
-      search.value = state.query;
-      search.placeholder = ow('search');
-      search.setAttribute('aria-label', `${ow('search')} — ${said(opts.label)}`);
-      search.addEventListener('input', () => { state.query = search.value; state.page = 0; paintBody(); });
-      searchLabel.append(search);
-      bar.append(searchLabel);
-      for (const col of opts.columns.filter((c) => c.filter)) {
+      if (showSearch) {
+        const searchLabel = document.createElement('label');
+        searchLabel.className = 'sre-datatable-search';
+        const searchWord = document.createElement('span');
+        searchWord.className = 'sre-datatable-search-word';
+        searchWord.textContent = ow('search');
+        const searchBox = document.createElement('span');
+        searchBox.className = 'sre-datatable-search-box';
+        const lens = icon('search', 18);
+        if (lens) searchBox.append(lens);
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.id = `${id}-search`;
+        search.className = 'sre-input';
+        search.value = state.query;
+        search.placeholder = ow('search');
+        search.setAttribute('aria-label', `${ow('search')} — ${said(opts.label)}`);
+        search.addEventListener('input', () => {
+          state.query = search.value; state.page = 0;
+          if (!loader) { paintBody(); return; }
+          if (searchTimer !== null) clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => { searchTimer = null; void load(); }, 300);
+        });
+        searchBox.append(search);
+        searchLabel.append(searchWord, searchBox);
+        bar.append(searchLabel);
+      }
+      for (const col of loader ? [] : opts.columns.filter((c) => c.filter)) {
         const values = [...new Set((state.rows ?? []).map((r) => textOf(col, r)).filter((v) => v !== ''))].sort((a, b) => a.localeCompare(b));
         const wrap = document.createElement('label');
         wrap.className = 'sre-datatable-filter';
@@ -2017,7 +2385,7 @@
       const choose = document.createElement('details');
       choose.className = 'sre-datatable-columns';
       const sum = document.createElement('summary');
-      sum.className = 'sre-btn';
+      sum.className = 'sre-btn sre-with-icon';
       const cols = icon('layout-grid', 18);
       if (cols) sum.append(cols);
       sum.append(document.createTextNode(ow('columns')));
@@ -2049,16 +2417,22 @@
       if (!body) { body = document.createElement('div'); body.className = 'sre-datatable-body'; root.append(body); }
       if (state.kind !== null) { officeState(body, state.kind, state.kindOpts); return; }
       if (state.rows === null) { officeState(body, 'loading'); return; }
-      if (state.rows.length === 0) { officeState(body, 'empty', opts.empty ?? {}); return; }
-      const rows = visibleRows();
-      if (rows.length === 0) {
+      if (loader && state.total === 0) {
+        if (state.query.trim() === '') { officeState(body, 'empty', opts.empty ?? {}); return; }
+        officeState(body, 'noMatch', { detail: ow('noMatchServer'), action: () => { state.query = ''; state.page = 0; paint(); void load(); }, actionLabel: ow('clear') });
+        return;
+      }
+      if (!loader && state.rows.length === 0) { officeState(body, 'empty', opts.empty ?? {}); return; }
+      const rows = loader ? state.rows : visibleRows();
+      if (!loader && rows.length === 0) {
         officeState(body, 'noMatch', { values: { n: state.rows.length }, action: () => { state.query = ''; state.filters = {}; state.page = 0; paint(); }, actionLabel: ow('clear') });
         return;
       }
-      const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+      const total = loader ? state.total : rows.length;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
       state.page = Math.min(state.page, pages - 1);
       const from = state.page * pageSize;
-      const slice = rows.slice(from, from + pageSize);
+      const slice = loader ? rows : rows.slice(from, from + pageSize);
       const scroll = document.createElement('div');
       scroll.className = 'sre-scroll-x';
       const table = document.createElement('table');
@@ -2068,23 +2442,32 @@
       caption.className = 'sr-only';
       caption.textContent = said(opts.label);
       const thead = document.createElement('thead');
+      if (stacked()) thead.className = 'sr-only';
       const hr = document.createElement('tr');
       for (const col of shown()) {
         const th = document.createElement('th');
         th.scope = 'col';
         if (col.align === 'end') th.className = 'sre-end';
-        if (col.sort) {
+        if (sortableCol(col)) {
           const b = document.createElement('button');
           b.type = 'button';
           b.className = 'sre-sort';
           b.dataset.col = col.key;
           b.textContent = said(col.label);
           b.title = fill(ow('sortBy'), { c: said(col.label) });
-          th.setAttribute('aria-sort', state.sort === col.key ? (state.dir === 1 ? 'ascending' : 'descending') : 'none');
+          const sorted = state.sort === col.key;
+          th.setAttribute('aria-sort', sorted ? (state.dir === 1 ? 'ascending' : 'descending') : 'none');
+          // U5: which way the list is sorted, said in words beside the heading — the arrow alone is not a message
+          const dir = document.createElement('span');
+          dir.className = 'sre-sort-dir';
+          dir.textContent = sorted ? ow(col.sort === 'number' ? (state.dir === 1 ? 'sortedAsc' : 'sortedDesc') : (state.dir === 1 ? 'sortedAscText' : 'sortedDescText')) : '';
+          dir.hidden = !sorted;
+          b.append(dir);
           b.addEventListener('click', () => {
             if (state.sort === col.key) state.dir = -state.dir; else { state.sort = col.key; state.dir = 1; }
-            state.page = 0; paintBody();
-            root.querySelector(`.sre-sort[data-col="${col.key}"]`)?.focus();
+            state.page = 0;
+            const refocus = () => root.querySelector(`.sre-sort[data-col="${col.key}"]`)?.focus();
+            if (loader) void load().then(refocus); else { paintBody(); refocus(); }
           });
           th.append(b);
         } else th.textContent = said(col.label);
@@ -2101,6 +2484,7 @@
         for (const col of shown()) {
           const td = document.createElement('td');
           if (col.align === 'end') td.className = 'sre-end';
+          td.dataset.label = said(col.label); // U5: on a phone the rows stack and each cell says its column
           const v = typeof col.render === 'function' ? col.render(row) : valueOf(col, row);
           if (v instanceof Node) td.append(v);
           else if (v === null || v === undefined || v === '') { td.textContent = ow('notKnown'); td.classList.add('sre-unknown'); } else td.textContent = said(v);
@@ -2109,6 +2493,7 @@
         if (opts.drawer) {
           const td = document.createElement('td');
           td.className = 'sre-end';
+          td.dataset.label = ow('open');
           const b = document.createElement('button');
           b.type = 'button';
           b.className = 'sre-btn sre-row-open';
@@ -2128,16 +2513,17 @@
       count.className = 'sre-datatable-count';
       count.id = `${id}-count`;
       count.setAttribute('role', 'status');
-      count.textContent = fill(ow('showing'), { from: from + 1, to: from + slice.length, n: rows.length });
+      count.textContent = fill(ow('showing'), { from: from + 1, to: from + slice.length, n: new Intl.NumberFormat(lang() === 'ta' ? 'ta-IN' : 'en-IN').format(total) });
+      count.hidden = opts.count === false;
       const nav = document.createElement('div');
       nav.className = 'sre-pager';
       const prev = document.createElement('button');
       prev.type = 'button'; prev.className = 'sre-btn'; prev.id = `${id}-prev`; prev.textContent = ow('previous'); prev.disabled = state.page === 0;
-      prev.addEventListener('click', () => { state.page -= 1; paintBody(); byId(`${id}-prev`)?.focus(); });
+      prev.addEventListener('click', () => { state.page -= 1; if (loader) void load().then(() => byId(`${id}-prev`)?.focus()); else { paintBody(); byId(`${id}-prev`)?.focus(); } });
       const where = document.createElement('span'); where.className = 'sre-pager-where'; where.textContent = fill(ow('page'), { p: state.page + 1, q: pages });
       const next = document.createElement('button');
       next.type = 'button'; next.className = 'sre-btn'; next.id = `${id}-next`; next.textContent = ow('next'); next.disabled = state.page >= pages - 1;
-      next.addEventListener('click', () => { state.page += 1; paintBody(); byId(`${id}-next`)?.focus(); });
+      next.addEventListener('click', () => { state.page += 1; if (loader) void load().then(() => byId(`${id}-next`)?.focus()); else { paintBody(); byId(`${id}-next`)?.focus(); } });
       nav.append(prev, where, next);
       foot.append(count, nav);
       body.replaceChildren(scroll, foot);
@@ -2150,7 +2536,10 @@
       if (focused) byId(focused)?.focus();
     }
     const controller = {
-      setRows(rows) { state.rows = rows; state.kind = null; paint(); },
+      setRows(rows) { if (loader) { void load(); return; } state.rows = rows; state.kind = null; paint(); },
+      /** U7: read the current page again from head office (a loader-fed register) — after the page changed a record. */
+      reload() { if (loader) { state.page = 0; return load(); } paint(); return Promise.resolve(); },
+      total: () => (loader ? state.total : (state.rows ?? []).length),
       setState(kind, kindOpts = {}) { state.kind = kind; state.kindOpts = kindOpts; paint(); },
       rows: () => state.rows,
       shownRows: () => visibleRows(),
@@ -2159,6 +2548,7 @@
     };
     liveTables.add(controller);
     paint();
+    if (loader) void load();
     return controller;
   }
 
@@ -2175,12 +2565,14 @@
     // U2: pick a thing by its name, a date a shop person reads, a name for an id, who is looking, the three-part refusal
     pick: officePick, pickField: officePickField, pickedValue, setPicked, dateField: officeDateField, dateValue, dateWords, nameOf, me, refusalWords: officeRefusalWords, parseShopDate,
     confirm: officeConfirm,
+    // U5: the adapters every page used to carry, the record chip, and a date box's ISO by its id
+    pickable: officePickable, shopDate: officeShopDate, setShopDate, dateOf: dateValue, recordChip: officeRecordChip,
   });
 
   // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go
   function repaintTables() { for (const table of [...liveTables]) { if (table.connected()) table.repaint(); else liveTables.delete(table); } }
 
-  function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); repaintAdapters(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });

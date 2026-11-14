@@ -47,10 +47,7 @@
       .legend .sw[data-band="0"] { background: var(--heat-0); } .legend .sw[data-band="1"] { background: var(--heat-1); } .legend .sw[data-band="2"] { background: var(--heat-2); }
       .legend .sw[data-band="3"] { background: var(--heat-3); } .legend .sw[data-band="4"] { background: var(--heat-4); }
       .legend .sw[data-band="unknown"] { background: var(--heat-unknown); border: 1px dashed var(--line-strong); }
-      .table-wrap { overflow-x: auto; }
-      table { border-collapse: collapse; width: 100%; font-size: 15px; }
-      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-      td.num { font-variant-numeric: tabular-nums; }
+      #off-plan { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
       .tip { position: fixed; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: var(--fs-sm); box-shadow: var(--shadow-md); max-width: 260px; }
       [hidden] { display: none !important; }
           .sre-why { color: var(--muted); font-size: var(--fs-sm); margin-left: 8px; } .sre-why[hidden] { display: none; }
@@ -86,7 +83,8 @@
         <div class="floor" id="floor" role="group"></div>
         <div class="legend" id="legend"></div>
         <p class="meta" id="map-meta"></p>
-        <div class="table-wrap"><table id="areas"><thead><tr><th id="th-area">Area</th><th id="th-sqft">Sq ft</th><th id="th-fig">Sales per sq ft</th><th id="th-heat">Heat</th><th id="th-note">Note</th></tr></thead><tbody></tbody></table></div>
+        <!-- U5 · G17: every area as a row of the chrome's register (the figure, the heat, the notes in words) -->
+        <div id="areas"></div>
         <p id="off-plan"></p>
       </section>
     </main>

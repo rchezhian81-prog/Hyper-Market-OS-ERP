@@ -36,7 +36,24 @@ export interface DeliveryBooking {
   readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
 }
 
+/**
+ * U7 (OB-726 · OB-700 · M19): a driver's "please call the customer" request as the dispatch board shows it — references only
+ * (§31, never the customer's name or number) — and whether the store has called: the store ticks the request's operational
+ * alert as seen (the append-only acknowledgement), so the board and the Ops alerts page read one record.
+ */
+export interface BoardCallRequest {
+  readonly stopId: string;
+  readonly orderRef: string;
+  readonly driverId: string;
+  readonly area: string | null;
+  readonly at: string;
+  readonly toldUserIds: readonly string[];
+  readonly called: { readonly by: string; readonly at: string } | null;
+}
+
 export interface DispatchBoardDeps {
+  /** U7: the drivers' call requests on a route with their called state. Absent (a bare composition) → none shown. */
+  readonly callRequestsOnRoute?: (tenantId: string, routeId: string) => Promise<readonly BoardCallRequest[]>;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined>;
   readonly ordersAt: (tenantId: string, storeId: string) => Promise<readonly CandidateOrder[]>;
   readonly bookingOf: (tenantId: string, orderId: string) => Promise<DeliveryBooking | undefined>;
@@ -319,6 +336,7 @@ export function dispatchBoardRoutes(deps: DispatchBoardDeps): readonly Route[] {
             status: settled ? 'settled' : a === undefined ? 'not_assigned' : a.withdrawn !== undefined ? 'withdrawn' : 'assigned',
             ...(a?.withdrawn === undefined ? {} : { withdrawn: a.withdrawn }),
             stops, cash: { fromStops: cashFromStops(history), settlement: (await deps.settlement(ctx.tenantId, routeId)) ?? null, handover: (await deps.handover(ctx.tenantId, routeId)) ?? null },
+            callRequests: deps.callRequestsOnRoute === undefined ? [] : await deps.callRequestsOnRoute(ctx.tenantId, routeId),
             flags: [...new Set(history.flatMap((u) => u.governanceFlags))],
           });
         }

@@ -2,7 +2,7 @@
 // (browser-entry.ts) carries one import and one call. The page's tested session is attached to `window.findings` from the
 // viewer the front door injected (`window.findingsData`, identity only). Nothing is read or written here.
 
-import { createFindingsSession, findingsWords, findingsOutcomeWords, flagWords, shopMomentOf } from './findings-session';
+import { createFindingsSession, findingsWords, findingsOutcomeWords, flagWords, shopMomentOf, kindWords, knowsKind, groupFindings } from './findings-session';
 
 type Viewer = { readonly userId?: string; readonly permissions: readonly string[] };
 
@@ -18,6 +18,8 @@ export function wireFindings(win: Record<string, unknown>, viewerIdentity: (raw:
     // OB-612: on the store PC the box names its own store (`findingsData.storeId`) — the page asks head office for it.
     session: createFindingsSession({ viewer: viewerIdentity(win['findingsData']), ...storeOf(win['findingsData']) }),
     words: findingsWords, outcomeWords: findingsOutcomeWords, flagWords, moment: shopMomentOf,
+    // U5: the findings grouped and counted by kind, the kind's words in both languages.
+    kindWords, knowsKind, groupFindings,
     rupees: (minor: number): string => `₹${(minor / 100).toFixed(2)}`,
   };
 }

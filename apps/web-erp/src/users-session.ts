@@ -100,7 +100,7 @@ type Done<T> = Promise<Outcome<T, Why>>;
 export const usersOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => usersWords(lang, k), out);
 
 /** A live role from the catalogue. */
-export interface RoleRow { readonly id: string; readonly name: string; readonly permissions: readonly string[] }
+export interface RoleRow { readonly id: string; readonly name: string; /** U3 (OB-699): the role's name in Tamil, as head office carries it. */ readonly nameTa?: string; readonly permissions: readonly string[] }
 /** A role waiting for the owner's approval (OB-615), as head office lists it. */
 export interface WaitingRole extends RoleRow {
   readonly roadmap: { readonly scope: string; readonly may: string; readonly mustNot: string };
@@ -196,7 +196,7 @@ export function createUsersSession(input: {
       const out = await call<{ roles?: unknown[]; awaitingOwnerApproval?: unknown[] }>('GET', may.read ? '/v1/identity/roles' : '/v1/identity/grants');
       if (out.result !== 'ok') return out;
       const row = (r: unknown): RoleRow | undefined => (isObj(r) && isStr(r['id']) && isStr(r['name']) && Array.isArray(r['permissions'])
-        ? { id: r['id'], name: r['name'], permissions: (r['permissions'] as unknown[]).filter(isStr) } : undefined);
+        ? { id: r['id'], name: r['name'], ...(isStr(r['nameTa']) ? { nameTa: r['nameTa'] } : {}), permissions: (r['permissions'] as unknown[]).filter(isStr) } : undefined);
       const live = (out.value.roles ?? []).map(row).filter((r): r is RoleRow => r !== undefined);
       const waiting = (out.value.awaitingOwnerApproval ?? []).flatMap((r): WaitingRole[] => {
         const base = row(r);

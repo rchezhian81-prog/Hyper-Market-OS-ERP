@@ -97,7 +97,63 @@ export interface SupplierPortalData {
   readonly vmi?: SupplierVmiFeed | null;
   /** D03-FR-03 · OB-404: the rebate claims the shop has sent this supplier — absent until read. */
   readonly rebateClaims?: SupplierRebateClaimsFeed | null;
+  /** U6 · M24-FR-01: the requests for quotation the shop sent this supplier — absent until read. */
+  readonly rfqs?: SupplierRfqsFeed | null;
+  /** U6 · M24-FR-02: the claims the shop holds AGAINST this supplier — absent until read. */
+  readonly claims?: SupplierClaimsFeed | null;
   readonly asAt: string;
+}
+
+/** U6 · M24-FR-01: one line the shop asked a price for (`…/me/rfqs`); the quantity is in the unit's smallest step (OB-31). */
+export interface SupplierRfqLineView { readonly productId: string; readonly quantity: number; readonly uom?: string }
+/** U6 · M24-FR-01: one request for quotation sent to this supplier, with where its own reply stands. */
+export interface SupplierRfqView {
+  readonly rfqId: string;
+  readonly requisitionId: string;
+  readonly dueOn: string;
+  readonly note?: string;
+  readonly sentAt: string;
+  readonly currency: string;
+  readonly lines: readonly SupplierRfqLineView[];
+  /** This supplier has sent a reply (the newest one decides the rest). */
+  readonly replied: boolean;
+  readonly submissionId?: string;
+  readonly repliedAt?: string;
+  /** Replied, and a buyer has not yet decided. */
+  readonly awaitingBuyer: boolean;
+  /** A buyer accepted the reply — it stands on the shop's comparison. */
+  readonly answered: boolean;
+  readonly decision: 'accepted' | 'rejected' | null;
+  readonly reason?: string;
+}
+/** The RFQs as last read; `rfqsKnown` false = head office could not list them (never "none"). */
+export interface SupplierRfqsFeed {
+  readonly rfqsKnown: boolean;
+  readonly rfqs: readonly SupplierRfqView[];
+  /** This login holds the respond_rfq grant a quote needs (the server re-checks it). */
+  readonly mayRespond: boolean;
+}
+
+/** U6 · M24-FR-02: one claim the shop holds against this supplier (`…/me/claims`) — never one the supplier raised. */
+export interface SupplierClaimAgainstView {
+  readonly claimId: string;
+  readonly kind: 'debit_note' | 'refused_at_door' | 'return_pending' | 'door_debit_note';
+  readonly grnId: string;
+  readonly poId: string;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly uom?: string;
+  readonly valueMinor: number;
+  readonly reason: string;
+  readonly raisedAt: string;
+  /** The debit note's statutory number once issued; null before. */
+  readonly number: string | null;
+  readonly state: 'raised' | 'issued' | 'never_owed' | 'pending' | 'returned';
+}
+/** The claims as last read; `claimsKnown` false = head office could not list them (never "none"). */
+export interface SupplierClaimsFeed {
+  readonly claimsKnown: boolean;
+  readonly claims: readonly SupplierClaimAgainstView[];
 }
 
 /** D03-FR-03 · OB-404: one rebate claim the shop sent this supplier (`…/me/rebate-claims`). */
@@ -349,6 +405,60 @@ export function readAsnSubmission(input: AsnInput, feed: SupplierOrdersFeed | nu
   return { ok: true, document: { asnId, ...(order.poId === undefined ? {} : { poId: order.poId }), expectedAt, lines } };
 }
 
+/** U6 · M24-FR-01: the quote form as typed — a price per unit (rupees) and the days to deliver, for each line the shop asked for. */
+export interface RfqQuoteInput { readonly rfqId: string; readonly lines: Readonly<Record<string, { readonly unitPrice: string; readonly leadTimeDays: string }>> }
+/** The body `POST …/me/rfqs/:rfqId/quote` takes — or why it is not sent (with the product, by id). */
+export type RfqQuoteRead =
+  | { readonly ok: true; readonly rfqId: string; readonly body: { readonly lines: readonly { readonly productId: string; readonly unitCost: { readonly minor: number; readonly currency: string }; readonly leadTimeDays: number }[] } }
+  | { readonly ok: false; readonly why: 'cannotQuote' | 'rfqsUnknownSend' | 'needRfq' | 'notYourRfq' | 'needQuoteLine' | 'badQuotePrice' | 'badLead'; readonly productId?: string };
+
+/**
+ * U6 · M24-FR-01: read the quote form — refused here, before anything is sent. A line with both boxes blank is one the
+ * supplier does not quote; a line with one box filled is refused by name. At least one line must be quoted.
+ */
+export function readRfqQuote(input: RfqQuoteInput, feed: SupplierRfqsFeed | null | undefined, maySubmit: boolean): RfqQuoteRead {
+  if (!maySubmit) return { ok: false, why: 'cannotQuote' };
+  const rfqId = input.rfqId.trim();
+  if (rfqId === '') return { ok: false, why: 'needRfq' };
+  if (feed === null || feed === undefined || !feed.rfqsKnown) return { ok: false, why: 'rfqsUnknownSend' };
+  if (!feed.mayRespond) return { ok: false, why: 'cannotQuote' };
+  const rfq = feed.rfqs.find((r) => r.rfqId === rfqId);
+  if (rfq === undefined) return { ok: false, why: 'notYourRfq' };
+  const lines: { productId: string; unitCost: { minor: number; currency: string }; leadTimeDays: number }[] = [];
+  for (const line of rfq.lines) {
+    const typed = input.lines[line.productId];
+    const price = (typed?.unitPrice ?? '').trim();
+    const lead = (typed?.leadTimeDays ?? '').trim();
+    if (price === '' && lead === '') continue;
+    const minor = paiseOfTyped(price);
+    if (minor === undefined || minor <= 0) return { ok: false, why: 'badQuotePrice', productId: line.productId };
+    if (!/^\d{1,3}$/.test(lead)) return { ok: false, why: 'badLead', productId: line.productId };
+    lines.push({ productId: line.productId, unitCost: { minor, currency: rfq.currency }, leadTimeDays: Number(lead) });
+  }
+  if (lines.length === 0) return { ok: false, why: 'needQuoteLine' };
+  return { ok: true, rfqId, body: { lines } };
+}
+
+/** U6 · M24-FR-02: the claim form as typed — the delivery's order (one of this supplier's own, or none), what is claimed, why. */
+export interface ClaimInput { readonly poId: string; readonly amount: string; readonly why: string }
+/** The `claim` document the form sends — or why it is not sent. */
+export type ClaimRead =
+  | { readonly ok: true; readonly document: { readonly poId?: string; readonly claimMinor: number; readonly why: string } }
+  | { readonly ok: false; readonly why: 'cannotSubmit' | 'ordersUnknownSend' | 'notYourOrder' | 'badClaimAmount' | 'needWhy' | 'whyTooLong' };
+
+/** U6 · M24-FR-02: read the claim form — refused here, before anything is sent. A claim waits for a buyer; it moves no money. */
+export function readClaim(input: ClaimInput, feed: SupplierOrdersFeed | null | undefined, maySubmit: boolean): ClaimRead {
+  if (!maySubmit) return { ok: false, why: 'cannotSubmit' };
+  const order = orderOf(input.poId, feed);
+  if (!order.ok) return { ok: false, why: order.why === 'notYourOrder' ? 'notYourOrder' : 'ordersUnknownSend' };
+  const claimMinor = paiseOfTyped(input.amount);
+  if (claimMinor === undefined || claimMinor <= 0) return { ok: false, why: 'badClaimAmount' };
+  const why = input.why.trim();
+  if (why === '') return { ok: false, why: 'needWhy' };
+  if (why.length > 300) return { ok: false, why: 'whyTooLong' };
+  return { ok: true, document: { ...(order.poId === undefined ? {} : { poId: order.poId }), claimMinor, why } };
+}
+
 export interface SupplierPortalPorts {
   /** The feeds the portal last read. */
   portal(): SupplierPortalData;
@@ -387,7 +497,15 @@ export type CopyKey =
   | 'lineItemL' | 'lineQtyL' | 'lineUomL' | 'linePriceL' | 'lineValueL' | 'lineBatchL' | 'lineExpiryL' | 'lineMadeL' | 'uom_ea' | 'uom_kg' | 'uom_L'
   | 'addLine' | 'removeLine' | 'lineN' | 'invoiceTotalL' | 'linesAddUp' | 'sendInvoice' | 'sendAsn' | 'docSent' | 'docNotSent'
   | 'cannotSubmit' | 'ordersUnknownSend' | 'needInvoiceNo' | 'needAsnNo' | 'needLine' | 'tooManyLines' | 'needItem' | 'badUnit' | 'badLineQty'
-  | 'badPrice' | 'needTotal' | 'totalDisagrees' | 'needExpectedAt' | 'badExpiry' | 'badMade' | 'badBatch';
+  | 'badPrice' | 'needTotal' | 'totalDisagrees' | 'needExpectedAt' | 'badExpiry' | 'badMade' | 'badBatch'
+  // U6: the requests for quotation and the claims (both ways).
+  | 'rfqH' | 'rfqLead' | 'rfqNone' | 'rfqUnknown' | 'rfqFacts' | 'rfqNoteL' | 'rfqLineFacts' | 'rfqPriceL' | 'rfqLeadL' | 'sendQuote'
+  | 'quoteSent' | 'quoteNotSent' | 'cannotQuote' | 'rfqsUnknownSend' | 'needRfq' | 'notYourRfq' | 'needQuoteLine' | 'badQuotePrice' | 'badLead'
+  | 'rfq_open' | 'rfq_overdue' | 'rfq_awaiting' | 'rfq_accepted' | 'rfq_rejected' | 'rfqRepliedAt'
+  | 'claimsH' | 'claimsLead' | 'claimsNone' | 'claimsUnknown' | 'claimFacts' | 'claimNoNumber'
+  | 'claim_raised' | 'claim_issued' | 'claim_never_owed' | 'claim_pending' | 'claim_returned'
+  | 'claimKind_debit_note' | 'claimKind_refused_at_door' | 'claimKind_return_pending' | 'claimKind_door_debit_note'
+  | 'raiseH' | 'raiseLead' | 'claimOrderL' | 'claimAmountL' | 'claimWhyL' | 'sendClaim' | 'claimSent' | 'claimNotSent' | 'badClaimAmount' | 'needWhy' | 'whyTooLong';
 
 export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -444,6 +562,24 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     badPrice: 'Line {n}: give the price per unit in rupees, for example 18.50. Nothing was sent.', needTotal: 'Give the invoice total as on your paper. Nothing was sent.',
     totalDisagrees: 'The lines add up to {lines} but your total says {total}. Check the lines. Nothing was sent.', needExpectedAt: 'Give the day and time it should arrive. Nothing was sent.',
     badExpiry: 'Line {n}: best before is a date. Nothing was sent.', badMade: 'Line {n}: the month made is a month, for example 2026-10. Nothing was sent.', badBatch: 'Line {n}: the batch is too long. Nothing was sent.',
+    // U6 · M24-FR-01 · M24-FR-02
+    rfqH: 'Requests for quotation from us', rfqLead: 'What we have asked you to price. Give a price per unit and the days to deliver for each line you can supply; leave a line blank if you cannot. Your quote waits for a buyer to accept it before it counts — the shop compares every supplier\'s quote the same way.',
+    rfqNone: 'We have sent you no request for quotation.', rfqUnknown: 'Your requests for quotation could not be read just now.',
+    rfqFacts: 'Request {rfq} · answer by {due} · sent {sent}', rfqNoteL: 'Our note', rfqLineFacts: '{product} × {qty}', rfqPriceL: 'Price per unit (₹)', rfqLeadL: 'Days to deliver',
+    sendQuote: 'Send the quote', quoteSent: 'Your quote was sent. It waits for a buyer.', quoteNotSent: 'Your quote could not be sent — there is no connection. Nothing was sent; try again when you are online.',
+    cannotQuote: 'Your login cannot send quotes. Ask us to turn it on. Nothing was sent.', rfqsUnknownSend: 'Our requests could not be read, so a quote cannot be sent yet. Refresh and try again.',
+    needRfq: 'Choose the request first. Nothing was sent.', notYourRfq: 'That request was not sent to you. Nothing was sent.', needQuoteLine: 'Quote at least one line: a price and the days to deliver. Nothing was sent.',
+    badQuotePrice: '{product}: the price per unit must be rupees, e.g. 18.50, above zero. Nothing was sent.', badLead: '{product}: the days to deliver must be a whole number of days (0 to 999). Nothing was sent.',
+    rfq_open: 'Waiting for your quote', rfq_overdue: 'Past the answer-by day', rfq_awaiting: 'Quote sent — waiting on us', rfq_accepted: 'Quote accepted — thank you', rfq_rejected: 'Quote not accepted', rfqRepliedAt: 'your quote of',
+    claimsH: 'Our claims on you', claimsLead: 'Short, damaged or refused deliveries we hold against your account — each with its debit note number once issued. These are ours; a claim of yours on us is raised below.',
+    claimsNone: 'We hold no claim against you.', claimsUnknown: 'Our claims could not be read just now.',
+    claimFacts: '{kind} · order {po} · {product} × {qty} · {value} · {reason} · raised {raised} · {number}', claimNoNumber: 'no debit note number yet',
+    claim_raised: 'Raised — debit note to follow', claim_issued: 'Debit note issued', claim_never_owed: 'Refused at the door — never owed', claim_pending: 'Goods to go back to you', claim_returned: 'Goods returned to you',
+    claimKind_debit_note: 'Debit note', claimKind_refused_at_door: 'Refused at the door', claimKind_return_pending: 'Return', claimKind_door_debit_note: 'Debit note (door)',
+    raiseH: 'Raise a claim on us', raiseLead: 'Something we owe you that the statement does not show — a short payment, a price difference, goods we kept but did not pay for. A claim waits for a buyer to decide it; it moves no money on its own.',
+    claimOrderL: 'Order (if it is about one)', claimAmountL: 'Amount claimed (₹)', claimWhyL: 'Why',
+    sendClaim: 'Send the claim', claimSent: 'Your claim was sent. It waits for a buyer.', claimNotSent: 'Your claim could not be sent — there is no connection. Nothing was sent; try again when you are online.',
+    badClaimAmount: 'The amount must be rupees, e.g. 1250.00, above zero. Nothing was sent.', needWhy: 'Say why — what the claim is for. Nothing was sent.', whyTooLong: 'Keep the reason to 300 characters. Nothing was sent.',
   },
   ta: {
     title: 'SRE உடன் உங்கள் கணக்கு', langName: 'English',
@@ -499,6 +635,24 @@ export const SUPPLIER_PORTAL_COPY: BilingualCopy<CopyKey> = {
     badPrice: 'வரி {n}: ஒரு அலகின் விலையை ரூபாயில் கொடுங்கள், எ.கா. 18.50. எதுவும் அனுப்பப்படவில்லை.', needTotal: 'உங்கள் பில்லில் உள்ள மொத்தத் தொகையைக் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     totalDisagrees: 'வரிகளின் கூட்டுத்தொகை {lines}, ஆனால் உங்கள் மொத்தம் {total} என்கிறது. வரிகளைச் சரிபாருங்கள். எதுவும் அனுப்பப்படவில்லை.', needExpectedAt: 'வந்து சேர வேண்டிய நாளையும் நேரத்தையும் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
     badExpiry: 'வரி {n}: காலாவதி நாள் ஒரு தேதியாக இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.', badMade: 'வரி {n}: தயாரித்த மாதம் ஒரு மாதமாக இருக்க வேண்டும், எ.கா. 2026-10. எதுவும் அனுப்பப்படவில்லை.', badBatch: 'வரி {n}: தொகுதி மிக நீளமாக உள்ளது. எதுவும் அனுப்பப்படவில்லை.',
+    // U6 · M24-FR-01 · M24-FR-02
+    rfqH: 'எங்களிடமிருந்து விலைப்புள்ளிக் கோரிக்கைகள்', rfqLead: 'நாங்கள் விலை கேட்டவை. நீங்கள் வழங்கக்கூடிய ஒவ்வொரு வரிக்கும் அலகுக்கான விலையும் வழங்க ஆகும் நாட்களும் கொடுங்கள்; முடியாத வரியை வெறுமையாக விடுங்கள். உங்கள் விலைப்புள்ளி கணக்கில் வர ஒரு கொள்முதல் அதிகாரி ஏற்க வேண்டும் — கடை ஒவ்வொரு விநியோகஸ்தரின் விலைப்புள்ளியையும் ஒரே முறையில் ஒப்பிடுகிறது.',
+    rfqNone: 'நாங்கள் உங்களுக்கு எந்த விலைப்புள்ளிக் கோரிக்கையும் அனுப்பவில்லை.', rfqUnknown: 'உங்கள் விலைப்புள்ளிக் கோரிக்கைகளை இப்போது படிக்க முடியவில்லை.',
+    rfqFacts: 'கோரிக்கை {rfq} · {due}க்குள் பதில் · அனுப்பியது {sent}', rfqNoteL: 'எங்கள் குறிப்பு', rfqLineFacts: '{product} × {qty}', rfqPriceL: 'அலகுக்கான விலை (₹)', rfqLeadL: 'வழங்க ஆகும் நாட்கள்',
+    sendQuote: 'விலைப்புள்ளியை அனுப்பு', quoteSent: 'உங்கள் விலைப்புள்ளி அனுப்பப்பட்டது. கொள்முதல் அதிகாரிக்காகக் காத்திருக்கிறது.', quoteNotSent: 'உங்கள் விலைப்புள்ளியை அனுப்ப முடியவில்லை — இணைப்பு இல்லை. எதுவும் அனுப்பப்படவில்லை; இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    cannotQuote: 'உங்கள் உள்நுழைவால் விலைப்புள்ளி அனுப்ப முடியாது. அதை இயக்க எங்களிடம் கேளுங்கள். எதுவும் அனுப்பப்படவில்லை.', rfqsUnknownSend: 'எங்கள் கோரிக்கைகளைப் படிக்க முடியவில்லை, எனவே இப்போது விலைப்புள்ளி அனுப்ப முடியாது. புதுப்பித்து மீண்டும் முயலுங்கள்.',
+    needRfq: 'முதலில் கோரிக்கையைத் தேர்ந்தெடுங்கள். எதுவும் அனுப்பப்படவில்லை.', notYourRfq: 'அந்தக் கோரிக்கை உங்களுக்கு அனுப்பப்படவில்லை. எதுவும் அனுப்பப்படவில்லை.', needQuoteLine: 'குறைந்தது ஒரு வரிக்கு விலையும் நாட்களும் கொடுங்கள். எதுவும் அனுப்பப்படவில்லை.',
+    badQuotePrice: '{product}: அலகுக்கான விலை ரூபாயில், எ.கா. 18.50, பூச்சியத்துக்கு மேல் இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.', badLead: '{product}: வழங்க ஆகும் நாட்கள் முழு எண்ணாக (0 முதல் 999) இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.',
+    rfq_open: 'உங்கள் விலைப்புள்ளிக்காகக் காத்திருக்கிறது', rfq_overdue: 'பதில் நாள் கடந்துவிட்டது', rfq_awaiting: 'விலைப்புள்ளி அனுப்பப்பட்டது — எங்களுக்காகக் காத்திருக்கிறது', rfq_accepted: 'விலைப்புள்ளி ஏற்கப்பட்டது — நன்றி', rfq_rejected: 'விலைப்புள்ளி ஏற்கப்படவில்லை', rfqRepliedAt: 'உங்கள் விலைப்புள்ளி',
+    claimsH: 'உங்கள் மீதான எங்கள் உரிமைக்கோரல்கள்', claimsLead: 'குறைவாக, சேதமாக அல்லது மறுக்கப்பட்ட விநியோகங்களுக்காக உங்கள் கணக்கில் நாங்கள் வைத்திருப்பவை — ஒவ்வொன்றும் பற்றுச்சீட்டு வெளியிடப்பட்டதும் அதன் எண்ணுடன். இவை எங்களுடையவை; எங்கள் மீதான உங்கள் உரிமைக்கோரல் கீழே எழுப்பப்படுகிறது.',
+    claimsNone: 'உங்கள் மீது எந்த உரிமைக்கோரலும் இல்லை.', claimsUnknown: 'எங்கள் உரிமைக்கோரல்களை இப்போது படிக்க முடியவில்லை.',
+    claimFacts: '{kind} · ஆணை {po} · {product} × {qty} · {value} · {reason} · எழுப்பியது {raised} · {number}', claimNoNumber: 'பற்றுச்சீட்டு எண் இன்னும் இல்லை',
+    claim_raised: 'எழுப்பப்பட்டது — பற்றுச்சீட்டு வரும்', claim_issued: 'பற்றுச்சீட்டு வெளியிடப்பட்டது', claim_never_owed: 'வாசலில் மறுக்கப்பட்டது — பணம் தர வேண்டியதில்லை', claim_pending: 'பொருட்கள் உங்களிடம் திரும்ப வேண்டும்', claim_returned: 'பொருட்கள் உங்களிடம் திருப்பப்பட்டன',
+    claimKind_debit_note: 'பற்றுச்சீட்டு', claimKind_refused_at_door: 'வாசலில் மறுக்கப்பட்டது', claimKind_return_pending: 'திருப்பம்', claimKind_door_debit_note: 'பற்றுச்சீட்டு (வாசல்)',
+    raiseH: 'எங்கள் மீது உரிமைக்கோரல் எழுப்பு', raiseLead: 'அறிக்கையில் காட்டாத, நாங்கள் உங்களுக்குத் தர வேண்டியது — குறைவான கட்டணம், விலை வேறுபாடு, வைத்துக்கொண்டு பணம் தராத பொருட்கள். உரிமைக்கோரல் கொள்முதல் அதிகாரியின் முடிவுக்காகக் காத்திருக்கும்; அது தானாகப் பணத்தை நகர்த்தாது.',
+    claimOrderL: 'ஆணை (ஒன்றைப் பற்றியதெனில்)', claimAmountL: 'கோரும் தொகை (₹)', claimWhyL: 'ஏன்',
+    sendClaim: 'உரிமைக்கோரலை அனுப்பு', claimSent: 'உங்கள் உரிமைக்கோரல் அனுப்பப்பட்டது. கொள்முதல் அதிகாரிக்காகக் காத்திருக்கிறது.', claimNotSent: 'உங்கள் உரிமைக்கோரலை அனுப்ப முடியவில்லை — இணைப்பு இல்லை. எதுவும் அனுப்பப்படவில்லை; இணைப்பு வந்ததும் மீண்டும் முயலுங்கள்.',
+    badClaimAmount: 'தொகை ரூபாயில், எ.கா. 1250.00, பூச்சியத்துக்கு மேல் இருக்க வேண்டும். எதுவும் அனுப்பப்படவில்லை.', needWhy: 'ஏன் என்று சொல்லுங்கள் — உரிமைக்கோரல் எதற்காக. எதுவும் அனுப்பப்படவில்லை.', whyTooLong: 'காரணத்தை 300 எழுத்துகளுக்குள் வையுங்கள். எதுவும் அனுப்பப்படவில்லை.',
   },
 };
 

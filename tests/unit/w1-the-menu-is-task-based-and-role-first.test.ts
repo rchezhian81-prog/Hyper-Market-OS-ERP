@@ -98,7 +98,7 @@ describe('the layout tables name only real screens, in both languages', () => {
     const pick = (id: string) => { const i = ERP_NAVIGATION.find((x) => x.id === id)!; return [i.path, i.requires]; };
     expect(pick('dashboard')).toEqual(['/manager/', 'till.dayclose.read']);
     expect(pick('approval-requests')).toEqual(['/approvals', 'identity.self.read']);
-    expect(pick('cash-office')).toEqual(['/cash-office', 'till.shift.read']);
+    expect(pick('cash-office')).toEqual(['/cash-office', 'till.overshort.review']); // OB-702 (owner, 7 Nov 2026): the reviewer's word, so the cashier is not offered it; the path is unchanged
     expect(pick('finance-close')).toEqual(['/finance-close', 'finance.period.read']);
     expect(pick('customers')).toEqual(['/customers', 'customer.segment.read']);
     expect(pick('reporting')).toEqual(['/reporting/', 'reporting.report.read']);

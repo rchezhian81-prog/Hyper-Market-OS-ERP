@@ -255,7 +255,8 @@ describe('where each piece of work is — the five shared device states (SP-3c-i
     expect(before[0]).toMatchObject({ what: 'route-1', detail: 'counted 24000 INR · short 1000' });
     // A return collection (WF-16, driver) is its own flow: tests/unit/the-driver-collects-an-online-return.test.ts.
     // A captured proof picture (OB-294) is its own record: tests/unit/the-driver-captures-proof-at-the-door.test.ts.
-    for (const kind of SENT_WORK_KINDS.filter((k) => k !== 'collection' && k !== 'proof')) expect(before.some((w) => w.kind === kind)).toBe(true);
+    // A call request (U6 · OB-700) is its own flow: tests/unit/u6-the-driver-asks-the-store-to-call-the-customer.test.ts.
+    for (const kind of SENT_WORK_KINDS.filter((k) => k !== 'collection' && k !== 'proof' && k !== 'call')) expect(before.some((w) => w.kind === kind)).toBe(true);
     // Never a customer on the list (§31).
     expect(JSON.stringify(before)).not.toMatch(/customer|phone|address/i);
 

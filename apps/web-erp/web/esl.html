@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Electronic shelf labels</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Electronic shelf labels (U6 · UI/UX gap audit §27 "Product — label/ESL" · D14-FR-05 · D06-FR-06 · M05 · P-02 · P-03 ·
+      P-08 · hard rules #2 and #5). A THIN CLIENT over head office's label routes for the PRODUCT person's question — did the
+      shelf take the price the till charges? Every price pushed to this store's labels and which labels echoed it back; the
+      same price sent again to the ones that did not (never a new price). Its session is apps/web-erp/src/esl-session.ts.
+      The device fleet itself (register, block, retire) stays on the Shelf labels and floor devices page. No vendor is
+      connected: head office marks every answer as a stand-in and the page says so. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      /* U5/U6: the page stands on the shared office parts (cards, register, state, chip, confirm sheet); it keeps only its layout. */
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .standin { font-size: 14px; color: var(--warn-ink, var(--ink)); margin: 0; }
+      .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: start; }
+      .actions > span { display: grid; gap: 4px; }
+      .links { display: flex; gap: 12px; flex-wrap: wrap; }
+      [hidden] { display: none !important; }
+      .sre-btn[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Electronic shelf labels</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Electronic shelf labels</h2>
+        <p class="lead" id="lead"></p>
+        <p class="standin" id="standin"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="covers"></p>
+        <div id="cards"></div>
+        <p class="meta" id="labels-note"></p>
+      </section>
+      <section id="pushes" hidden aria-labelledby="pushes-h">
+        <h3 id="pushes-h"></h3>
+        <p class="meta" id="pushes-lead"></p>
+        <div class="actions">
+          <span><button id="send-all" type="button" class="sre-btn sre-btn-primary"><span id="send-all-text"></span></button></span>
+          <button id="refresh" type="button" class="quiet sre-btn sre-btn-quiet"><span id="refresh-text"></span></button>
+        </div>
+        <p class="status" id="send-status" role="status" aria-live="polite"></p>
+        <div id="pushes-table"></div>
+        <p class="meta" id="english-note"></p>
+        <div class="links">
+          <a id="to-mismatches" class="sre-btn sre-btn-quiet" href="../price-integrity/"></a>
+          <a id="to-devices" class="sre-btn sre-btn-quiet" href="../floor-devices/"></a>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./esl.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

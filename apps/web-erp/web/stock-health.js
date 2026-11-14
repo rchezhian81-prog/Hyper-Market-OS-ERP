@@ -9,6 +9,12 @@
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
 
 /** Money in exact minor units → the shop's own display. */
 function money(minor, currency) {
@@ -21,7 +27,7 @@ function money(minor, currency) {
 function formatKpi(kpi) {
   const v = kpi.value;
   if (v.kind === 'money') return money(v.minor, v.currency);
-  if (v.kind === 'not_meaningful') return '—';
+  if (v.kind === 'not_meaningful') return null;
   const n = v.bp / 10000;
   return kpi.key === 'daysOfCover' ? String(Math.round(n)) : `${n.toFixed(2)}×`;
 }
@@ -73,11 +79,11 @@ function signalNode(s) {
   headline.textContent = s.status.label;
   head.append(headline);
 
+  // U5 · G13: the state as the one chip (the tone's shape and the word), never a bare character
   const status = document.createElement('span');
   status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = s.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = s.status.label;
-  status.append(icon, slabel);
+  const o = office();
+  if (o) status.append(o.chip(s.status.tone, s.status.label)); else status.textContent = s.status.label;
   status.setAttribute('aria-label', s.status.announcement || s.status.label);
 
   li.append(head, status);
@@ -99,14 +105,16 @@ function signalNode(s) {
   return li;
 }
 
-function kpiNode(k) {
-  const li = document.createElement('li');
-  li.className = `kpi${k.attention ? ' attention' : ''}`;
-  const label = document.createElement('span'); label.className = 'k-label'; label.textContent = k.label;
-  const value = document.createElement('span'); value.className = 'k-value'; value.textContent = formatKpi(k);
-  li.append(label, value);
-  if (k.value.kind === 'not_meaningful') { const note = document.createElement('span'); note.className = 'k-note'; note.textContent = k.value.because; li.append(note); }
-  return li;
+/** The headline numbers as summary cards: a figure the engine could not compute is "Not known" with its reason beside it. */
+function paintKpis(kpis) {
+  const o = office(); const host = el('kpis');
+  if (!o) { host.replaceChildren(); return; }
+  o.cards(host, kpis.map((k) => ({
+    label: k.label,
+    value: k.value.kind === 'not_meaningful' ? null : formatKpi(k),
+    note: k.value.kind === 'not_meaningful' ? k.value.because : undefined,
+    tone: k.attention ? 'degraded' : undefined,
+  })));
 }
 
 function paint() {
@@ -124,9 +132,9 @@ function paint() {
   const state = el('state');
   if (view.signals.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    const o = office();
+    if (o) { const box = o.state(state, stateKindOf(view.screenState.tone), { title: view.screenState.label, detail: '' }); box.querySelector('strong').id = 'state-text'; }
+    else { state.textContent = view.screenState.label; }
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     el('signals-heading').hidden = true;
     el('kpis-heading').hidden = true;
@@ -142,7 +150,7 @@ function paint() {
 
   el('kpis-heading').hidden = view.kpis.length === 0;
   el('kpis-heading').textContent = t('kpisHeading');
-  el('kpis').replaceChildren(...view.kpis.map((k) => kpiNode(k)));
+  paintKpis(view.kpis);
 }
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
@@ -150,6 +158,7 @@ el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en';
 el('sample').hidden = window.stockHealthSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+whenChrome(paint);
 
 // Read the live stock-health figures (a GET — read-only). Offline or refused, the screen keeps its current view
 // and the stale strip already says the page is what the box last told it. Nothing is written.

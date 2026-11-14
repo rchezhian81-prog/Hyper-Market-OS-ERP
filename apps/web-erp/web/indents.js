@@ -13,6 +13,12 @@ const qtyText = (n, uom) => (window.sreQuantity?.label ? window.sreQuantity.labe
 const shopWhen = (value) => window.sreShopDay?.dateTimeOf(value) ?? '';
 const el = (id) => document.getElementById(id);
 let lang = 'en';
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile.
+const office = () => window.sreOffice ?? null;
+const whenChrome = (fn) => { if (window.sreOffice) fn(); else document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
 
 /**
  * The five shared device states in both languages — the same words as the manager's, the buyer's and the handhelds'
@@ -55,7 +61,7 @@ function sampleSession() {
       asOf: null,
       indents: [{
         status: { tone: 'ok', icon: '✓', label: l === 'ta' ? 'அடுக்கில் உள்ளது' : 'On the shelf', announcement: 'on the shelf', needsAttention: false },
-        indentId: 'IND-SAMPLE', state: 'received', stateLabel: l === 'ta' ? 'பெறப்பட்டது' : 'Received', requestedBy: '—', requestedAt: '', approvedBy: '—', reason: null,
+        indentId: 'IND-SAMPLE', state: 'received', stateLabel: l === 'ta' ? 'பெறப்பட்டது' : 'Received', requestedBy: '', requestedAt: '', approvedBy: '', reason: null,
         needsAttention: false, flags: [], issues: [], canApproveHere: false, ownAsk: false, receivableIssues: [], resolvableIssues: [],
         lines: [{ productId: 'RICE-5', uom: 'EA', requestedMinor: 10, allocatedMinor: 10, issuedMinor: 10, receivedMinor: 10, inTransitMinor: 0, shortfallMinor: 0, outstandingMinor: 0 }],
       }],
@@ -78,22 +84,23 @@ const t = (key) => session.text(lang, key);
 
 // ── the register ────────────────────────────────────────────────────────────
 
-function linesTable(lines) {
-  const table = document.createElement('table');
-  table.className = 'lines';
-  const head = document.createElement('tr');
-  for (const [key, n] of [['raiseProductLabel', false], ['colRequested', true], ['colAllocated', true], ['colIssued', true], ['colOnTrolley', true], ['colReceived', true], ['colShort', true], ['colOwed', true]]) {
-    const th = document.createElement('th'); if (n) th.className = 'n'; th.textContent = key === 'raiseProductLabel' ? '' : t(key); head.append(th);
-  }
-  table.append(head);
-  for (const l of lines) {
-    const tr = document.createElement('tr');
-    tr.dataset.productId = l.productId;
-    const cells = [l.productId, l.requestedMinor, l.allocatedMinor, l.issuedMinor, l.inTransitMinor, l.receivedMinor, l.shortfallMinor, l.outstandingMinor];
-    cells.forEach((v, i) => { const td = document.createElement('td'); if (i > 0) td.className = 'n'; td.textContent = String(v); tr.append(td); });
-    table.append(tr);
-  }
-  return table;
+/** The indent's lines on the chrome's register (no search or paging — a handful of lines; the rows stack on a phone). */
+function linesTable(lines, indentId) {
+  const o = office();
+  const host = document.createElement('div');
+  if (!o) return host;
+  const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+  const num = (key, label) => ({ key, label: both(label), sort: 'number', align: 'end' });
+  o.table(host, {
+    id: `lines-${indentId}`, label: both('linesWord'), pageSize: 50, sortable: false, search: false, count: false, rows: lines,
+    rowKey: (l) => l.productId, rowData: (l) => ({ productId: l.productId }),
+    columns: [
+      { key: 'productId', label: both('raiseProductLabel'), value: (l) => (o.nameOf('product', l.productId) || l.productId) },
+      num('requestedMinor', 'colRequested'), num('allocatedMinor', 'colAllocated'), num('issuedMinor', 'colIssued'), num('inTransitMinor', 'colOnTrolley'),
+      num('receivedMinor', 'colReceived'), num('shortfallMinor', 'colShort'), num('outstandingMinor', 'colOwed'),
+    ],
+  });
+  return host;
 }
 
 /** One indent row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). */
@@ -110,11 +117,11 @@ function indentNode(r) {
   headline.textContent = r.indentId;
   const st = document.createElement('span'); st.className = 'st'; st.textContent = r.stateLabel; headline.append(st);
   head.append(headline);
+  // U5 · G13: the state as the one chip (the tone's shape and the word), never a bare character
   const status = document.createElement('span');
   status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
-  status.append(icon, slabel);
+  const o = office();
+  if (o) status.append(o.chip(r.status.tone, r.status.label)); else status.textContent = r.status.label;
   status.setAttribute('aria-label', r.status.announcement || r.status.label);
   head.append(status);
   li.append(head);
@@ -130,7 +137,7 @@ function indentNode(r) {
 
   const wrap = document.createElement('div');
   wrap.className = 'lines-wrap';
-  wrap.append(linesTable(r.lines));
+  wrap.append(linesTable(r.lines, r.indentId));
   li.append(wrap);
 
   if (r.issues.length > 0) {
@@ -196,6 +203,8 @@ function paintRaiser(view) {
   el('raise-reason').placeholder = t('raiseReasonPlaceholder');
   el('raise').textContent = t('raiseBtn');
   el('products').replaceChildren(...view.products.map((p) => { const o = document.createElement('option'); o.value = p.productId; o.label = `${p.name} (${p.uom})`; return o; }));
+  const o = office();
+  if (o) o.pickable(el('raise-product'), 'product', { en: session.text('en', 'raiseProductLabel'), ta: session.text('ta', 'raiseProductLabel') });
   renderRaiseLines();
 }
 
@@ -357,8 +366,12 @@ function renderSaved() {
     li.dataset.kind = w.kind;
     const what = document.createElement('div'); what.className = 'what'; what.textContent = `${t(w.kind === 'request' ? 'savedKindRequest' : 'savedKindReceipt')} ${w.what}`;
     const detail = document.createElement('div'); detail.className = 'detail'; detail.textContent = w.detail;
-    const pill = document.createElement('div'); pill.className = `pill ${w.state}`; pill.textContent = words(STATE_WORDS, w.state);
-    li.append(what, detail, pill);
+    // U5 · G13: the saved item's state as the one chip (the device states keep their own long words)
+    const stateWord = document.createElement('div'); stateWord.className = 'saved-state';
+    const o = office();
+    const tone = w.state === 'refused' ? 'error' : w.state === 'posted' ? 'ok' : w.state === 'retrying' ? 'degraded' : 'pending';
+    if (o) stateWord.append(o.chip(tone, words(STATE_WORDS, w.state))); else stateWord.textContent = words(STATE_WORDS, w.state);
+    li.append(what, detail, stateWord);
     if (w.reason) { const why = document.createElement('div'); why.className = 'why'; why.textContent = w.reason; li.append(why); }
     return li;
   }));
@@ -368,11 +381,13 @@ function paintResult(presentation) {
   const result = el('result');
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
-  el('result-text').textContent = presentation.label;
+  const o = office();
+  const words = document.createElement('span'); words.id = 'result-text'; words.textContent = presentation.label;
+  if (o) { const chip = o.chip(presentation.tone === 'degraded' ? 'pending' : presentation.tone, presentation.label); chip.id = 'result-text'; result.replaceChildren(chip); }
+  else result.replaceChildren(words);
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
-const tell = (tone, text) => paintResult({ tone, icon: tone === 'ok' ? '✓' : tone === 'error' ? '✕' : '⚠', label: text, announcement: text });
+const tell = (tone, text) => paintResult({ tone, label: text, announcement: text });
 
 function paint() {
   const view = session.view(lang);
@@ -386,9 +401,9 @@ function paint() {
   const state = el('state');
   if (view.indents.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    const o = office();
+    if (o) { const box = o.state(state, stateKindOf(view.screenState.tone), { title: view.screenState.label, detail: '' }); box.querySelector('strong').id = 'state-text'; }
+    else state.textContent = view.screenState.label;
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     el('summary').hidden = true;
     el('list-heading').hidden = true;
@@ -477,6 +492,7 @@ el('resolve').addEventListener('click', () => {
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
+whenChrome(() => { paint(); });
 el('sample').hidden = window.indentsSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();

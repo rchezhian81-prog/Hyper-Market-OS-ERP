@@ -175,6 +175,8 @@ function paintMerges() {
 }
 
 function paint() {
+  // U3 · OB-699: the read-only line is the page's own word — it follows the language toggle like every other
+  { const st = $('page-status'); if (st && st.dataset.readOnly === 'on') st.textContent = t('readOnly'); }
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-pairs', 'kPairs'], ['k-pending', 'kPending'], ['k-merged', 'kMerged'], ['tab-dupes', 'tabDupes'], ['tab-merges', 'tabMerges'],
     ['dupes-h', 'tabDupes'], ['dupes-lead', 'dupesLead'], ['propose-h', 'proposeH'], ['l-m-keep', 'keep'], ['l-m-drop', 'drop'], ['l-m-why', 'why'], ['propose', 'propose'],
@@ -207,7 +209,7 @@ async function load() {
     pairs = d.ok && Array.isArray(d.body?.pairs) ? d.body.pairs : null;
   }
   const st = $('page-status');
-  if (!p.ok || !m.ok) say(st, p.ok ? m : p, ''); else if (!mayPropose && !mayDecide) { st.className = 'status'; st.textContent = t('readOnly'); } else st.textContent = '';
+  if (!p.ok || !m.ok) say(st, p.ok ? m : p, ''); else if (!mayPropose && !mayDecide) { st.className = 'status'; st.dataset.readOnly = 'on'; st.textContent = t('readOnly'); } else { st.dataset.readOnly = 'off'; st.textContent = ''; }
   paint();
 }
 

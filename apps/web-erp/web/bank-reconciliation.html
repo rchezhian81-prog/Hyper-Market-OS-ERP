@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Bank reconciliation</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Bank reconciliation (U6 · M23-FR-03 · QG-07 · P-08 · hard rule #10). A THIN CLIENT over head office's line-by-line
+      routes: every line of an imported bank statement matched to a provider payout or a cash deposit, or left unmatched with
+      its value; an unmatched line raised as an exception a named person owns (POST /v1/finance/bank-reconciliation/exceptions/:id)
+      and resolved with an outcome and a reason (…/resolve). Nothing here moves money; statements are imported on the Card,
+      UPI and bank page. Its session is apps/web-erp/src/bank-reconciliation-session.ts. No prompt/confirm/alert of the
+      browser's own; the shared confirm sheet (OB-698) asks before a fact is recorded; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      /* U5/U6: the page stands on the shared office parts (register, cards, state, chip, field, picker); it keeps only its layout. */
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: end; }
+      .row-form .wide { grid-column: 1 / -1; }
+      .meta { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Bank reconciliation</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section id="page-intro" aria-labelledby="page-h">
+        <h2 id="page-h">Bank reconciliation</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="choose" hidden aria-labelledby="choose-h">
+        <h3 id="choose-h"></h3>
+        <form class="row-form" id="choose-form">
+          <div id="statement-field"></div>
+          <div class="actions">
+            <button id="show" type="submit" class="sre-btn"><span id="show-text"></span></button>
+            <button id="reload" type="button" class="sre-btn sre-btn-quiet"><span id="reload-text"></span></button>
+            <a id="import-link" class="sre-btn sre-btn-quiet" href="../settlement/"><span id="import-text"></span></a>
+          </div>
+        </form>
+        <p class="meta" id="covers"></p>
+        <p class="status" id="read-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="summary" hidden aria-labelledby="summary-h">
+        <h3 id="summary-h"></h3>
+        <div id="cards"></div>
+        <p class="meta" id="adds-up"></p>
+      </section>
+      <section id="lines" hidden aria-labelledby="lines-h">
+        <h3 id="lines-h"></h3>
+        <p class="meta" id="lines-note"></p>
+        <div id="lines-table"></div>
+      </section>
+      <section id="raise" hidden aria-labelledby="raise-h">
+        <h3 id="raise-h"></h3>
+        <p class="meta" id="raise-lead"></p>
+        <form class="row-form" id="raise-form">
+          <div id="line-field"></div>
+          <label for="owner"><span id="owner-l"></span><input id="owner" type="text" autocomplete="off" class="sre-input" /></label>
+          <label class="wide" for="note"><span id="note-l"></span><input id="note" type="text" maxlength="300" class="sre-input" /></label>
+          <div class="actions wide"><button id="raise-go" type="submit" class="sre-btn sre-btn-primary"><span id="raise-text"></span></button></div>
+        </form>
+        <p class="status" id="raise-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="resolve" hidden aria-labelledby="resolve-h">
+        <h3 id="resolve-h"></h3>
+        <p class="meta" id="resolve-lead"></p>
+        <form class="row-form" id="resolve-form">
+          <div id="exception-field"></div>
+          <div id="outcome-field"></div>
+          <label class="wide" for="reason"><span id="reason-l"></span><input id="reason" type="text" maxlength="300" class="sre-input" /></label>
+          <label class="wide" for="matched-to"><span id="matched-to-l"></span><input id="matched-to" type="text" maxlength="120" class="sre-input" /></label>
+          <div class="actions wide"><button id="resolve-go" type="submit" class="sre-btn"><span id="resolve-text"></span></button></div>
+        </form>
+        <p class="status" id="resolve-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="exceptions" hidden aria-labelledby="exceptions-h">
+        <h3 id="exceptions-h"></h3>
+        <p class="meta" id="exceptions-note"></p>
+        <div id="exceptions-table"></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./bank-reconciliation.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

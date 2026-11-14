@@ -42,6 +42,11 @@ function good(where, words) { $(where).className = 'status good'; $(where).textC
 const approved = () => (templates === null ? [] : api.approved(templates));
 const chosenTemplate = () => approved().find((v) => v.templateId === $('template').value);
 
+/** The channels by name (the code is the value sent) — OB-699. */
+const CHANNEL_WORDS = {
+  en: { sms: 'SMS', whatsapp: 'WhatsApp', email: 'Email', push: 'App notification' },
+  ta: { sms: 'SMS', whatsapp: 'WhatsApp', email: 'மின்னஞ்சல்', push: 'செயலி அறிவிப்பு' },
+};
 function options(select, values, label) {
   const keep = select.value;
   select.replaceChildren(...values.map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = label(v); return o; }));
@@ -129,7 +134,7 @@ function paint() {
   $('whoami').textContent = window.campaignsData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   options($('segment'), [...(api?.segments ?? [])], (s) => t(`seg_${s}`));
-  options($('template-channel'), [...(api?.channels ?? [])], (c) => c);
+  options($('template-channel'), [...(api?.channels ?? [])], (c) => CHANNEL_WORDS[lang]?.[c] ?? CHANNEL_WORDS.en[c] ?? c);
   for (const id of ['show-words']) $(id).disabled = !may.templates;
   whyDisabled($('show-words'), may.templates ? '' : 'role');
   for (const id of ['draft', 'template-id', 'template-channel', 'template-body']) $(id).disabled = !may.words;

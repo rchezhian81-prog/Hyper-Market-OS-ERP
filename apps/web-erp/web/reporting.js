@@ -133,6 +133,12 @@ function sampleSession() {
 }
 
 const real = window.reportingSession;
+// U3 (OB-699, 7 Nov 2026): a report's name and purpose and a figure's name are the product's own words — carried in both
+// languages from the catalogue and the one figure-name table (the bundle hands the table's reader to this page); a
+// finding ("why" a report cannot run) stays as head office or the box said it.
+const reportName = (r) => (lang === 'ta' && typeof r.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : r.name);
+const reportAnswers = (r) => (lang === 'ta' && typeof r.answersTa === 'string' && r.answersTa !== '' ? r.answersTa : r.answers);
+const figureName = (name) => (typeof window.figureNameIn === 'function' ? window.figureNameIn(lang, name) : name);
 const session = real ?? sampleSession();
 
 // ── The banner ──────────────────────────────────────────────────────────────
@@ -265,10 +271,10 @@ function reportRow(entry, ready) {
   const what = document.createElement('span');
   what.className = 'what';
   const name = document.createElement('strong');
-  name.textContent = entry.report.name;
+  name.textContent = reportName(entry.report);
   const sub = document.createElement('small');
   // A blocked report says WHICH fact is missing, not "no data".
-  sub.textContent = ready ? entry.report.answers : entry.availability.why;
+  sub.textContent = ready ? reportAnswers(entry.report) : entry.availability.why;
   what.append(name, sub);
   row.append(what);
 
@@ -331,15 +337,15 @@ function renderReportChart(outcome) {
     };
   });
   window.sreCharts.draw(host, {
-    id: outcome.report.id, kind: how.kind, title: outcome.report.name,
+    id: outcome.report.id, kind: how.kind, title: reportName(outcome.report),
     covers: coversLine(),
     labelHeading: t('chartBy'), valueHeading: how.money ? t('chartTaken') : t('chartUnits'), rows,
   }, lang);
 }
 
 function renderReport(outcome) {
-  el('report-title').textContent = outcome.report.name;
-  el('report-answers').textContent = outcome.report.answers;
+  el('report-title').textContent = reportName(outcome.report);
+  el('report-answers').textContent = reportAnswers(outcome.report);
   el('report-covers').textContent = coversLine();
   renderReportChart(outcome);
   el('rows-title').textContent = t('rowsTitle');
@@ -401,7 +407,7 @@ function figureBox(f) {
 
   const name = document.createElement('span');
   name.className = 'name';
-  name.textContent = f.name;
+  name.textContent = figureName(f.name);
 
   const value = document.createElement('span');
   if (unavailable) {

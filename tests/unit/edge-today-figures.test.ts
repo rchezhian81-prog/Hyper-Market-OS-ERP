@@ -20,12 +20,13 @@ const bare = (): StorePack => emptyPack('this test pulled nothing');
 describe('a box given nothing says so for every figure — never a zero', () => {
   it('every figure but the takings is not known, each with the register it lacks', () => {
     const figures = todayFigures(input(bare()));
-    expect(figures['salesToday']).toEqual({ known: true, value: 0, unit: 'inr', note: '0 sales on this box' });
+    expect(figures['salesToday']).toEqual({ known: true, value: 0, unit: 'inr', note: '0 sales on this box', noteTa: 'இந்தக் கணினியில் 0 விற்பனை' });
     for (const [key, what] of Object.entries({
       purchaseOrdersOpen: 'the purchase orders', receiptsRecorded: 'the goods receipts', indentsOpen: 'the floor indents', countsAwaitingApproval: 'the stock counts',
       expiringSoon: 'the batch register', recallsOpen: 'the recall notices', checklistOpen: 'the day\'s checklist', deliveriesToday: 'the delivery slots',
     })) {
-      expect(figures[key], key).toEqual({ known: false, why: `the store computer has not been given ${what}` });
+      expect(figures[key], key).toMatchObject({ known: false, why: `the store computer has not been given ${what}` });
+      expect((figures[key] as { whyTa?: string }).whyTa, `${key} in Tamil`).toMatch(/^கடைக் கணினிக்கு .+ வழங்கப்படவில்லை$/);
     }
   });
 
@@ -42,7 +43,7 @@ describe('the takings are this box\'s own log for the trading day', () => {
       { id: 's1', tradingDay: DAY, total: 12_050 }, { id: 's2', tradingDay: DAY, total: 7_950 },
       { id: 's3', tradingDay: '2026-10-04', total: 99_999 }, { id: 's4', total: 500 },
     ] as unknown as ScreenInput['sales'];
-    expect(todayFigures(input(bare(), sales))['salesToday']).toEqual({ known: true, value: 20_000, unit: 'inr', note: '2 sales on this box · 1 undated, in nobody\'s figures' });
+    expect(todayFigures(input(bare(), sales))['salesToday']).toEqual({ known: true, value: 20_000, unit: 'inr', note: '2 sales on this box · 1 undated, in nobody\'s figures', noteTa: 'இந்தக் கணினியில் 2 விற்பனை · 1 தேதியில்லாதவை, யாருடைய கணக்கிலும் இல்லை' });
     expect(todayFigures(input(bare(), [{ id: 's1', tradingDay: DAY, total: 100 }] as unknown as ScreenInput['sales']))['salesToday']).toMatchObject({ value: 100, note: '1 sale on this box' });
   });
 });
@@ -56,11 +57,11 @@ describe('the purchase-to-shelf figures', () => {
   it('a purchase order is open while any line still awaits goods; receipts close it line by line', () => {
     const receipts = known([{ poId: 'po-1', lines: [{ productId: 'rice', qty: 10 }] }, { poId: 'po-2', lines: [{ productId: 'oil', qty: 6 }] }]);
     const figures = todayFigures(input({ ...bare(), purchaseOrders: orders, receipts }));
-    expect(figures['purchaseOrdersOpen']).toEqual({ known: true, value: 2, note: 'of 3 on the box, still awaiting goods' }); // po-2 (soap) and po-3
-    expect(figures['receiptsRecorded']).toEqual({ known: true, value: 2, note: 'against open orders' });
+    expect(figures['purchaseOrdersOpen']).toEqual({ known: true, value: 2, note: 'of 3 on the box, still awaiting goods', noteTa: 'கணினியில் உள்ள 3-இல், சரக்கு இன்னும் வரவில்லை' }); // po-2 (soap) and po-3
+    expect(figures['receiptsRecorded']).toEqual({ known: true, value: 2, note: 'against open orders', noteTa: 'திறந்த ஆணைகளுக்கு எதிராக' });
   });
   it('without the receipts every order counts as open — and the note says so', () => {
-    expect(todayFigures(input({ ...bare(), purchaseOrders: orders }))['purchaseOrdersOpen']).toEqual({ known: true, value: 3, note: 'receipts not given — every order counted as open' });
+    expect(todayFigures(input({ ...bare(), purchaseOrders: orders }))['purchaseOrdersOpen']).toEqual({ known: true, value: 3, note: 'receipts not given — every order counted as open', noteTa: 'வரவுகள் வழங்கப்படவில்லை — ஒவ்வொரு ஆணையும் திறந்ததாகக் கணக்கிடப்பட்டது' });
   });
   it('indents: open unless their state says finished; counts: awaiting while nobody has approved', () => {
     const pack: StorePack = {
@@ -69,8 +70,8 @@ describe('the purchase-to-shelf figures', () => {
       countsQueue: known([{ countId: 'c1', approvedBy: null, status: 'posted' }, { countId: 'c2', approvedBy: 'u-mgr', status: 'approved' }, { countId: 'c3', status: 'pending' }, 'junk']),
     };
     const figures = todayFigures(input(pack));
-    expect(figures['indentsOpen']).toEqual({ known: true, value: 2, note: 'shelf requests the back store has not finished' });
-    expect(figures['countsAwaitingApproval']).toEqual({ known: true, value: 2, note: 'of 3 counted' });
+    expect(figures['indentsOpen']).toEqual({ known: true, value: 2, note: 'shelf requests the back store has not finished', noteTa: 'பின்கடை முடிக்காத அடுக்குக் கோரிக்கைகள்' });
+    expect(figures['countsAwaitingApproval']).toEqual({ known: true, value: 2, note: 'of 3 counted', noteTa: 'எண்ணப்பட்ட 3-இல்' });
   });
 });
 
@@ -78,10 +79,10 @@ describe('food safety, the checklist and the day\'s deliveries', () => {
   it('expiring soon counts dated batches inside the policy window; undated batch records are not known, not zero', () => {
     const policy = known({ nearExpiryDays: 7 }) as StorePack['expiryPolicy'];
     const dated = known([{ batchId: 'b1', expiresOn: '2026-10-08' }, { batchId: 'b2', expiryDate: '2026-10-30' }, { batchId: 'b3', bestBefore: '2026-10-04T00:00:00Z' }, { batchId: 'b4' }]);
-    expect(todayFigures(input({ ...bare(), batches: dated, expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 2, note: 'within 7 days, of 4 batches' }); // b1 (3 days) and b3 (already past)
-    expect(todayFigures(input({ ...bare(), batches: known([{ batchId: 'x' }]), expiryPolicy: policy }))['expiringSoon']).toEqual({ known: false, why: 'the batch records carry no expiry date' });
-    expect(todayFigures(input({ ...bare(), batches: dated }))['expiringSoon']).toEqual({ known: false, why: 'the store computer has not been given the expiry policy' });
-    expect(todayFigures(input({ ...bare(), batches: known([]), expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 0, note: 'within 7 days, of 0 batches' });
+    expect(todayFigures(input({ ...bare(), batches: dated, expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 2, note: 'within 7 days, of 4 batches', noteTa: '7 நாட்களுக்குள், 4 தொகுதிகளில்' }); // b1 (3 days) and b3 (already past)
+    expect(todayFigures(input({ ...bare(), batches: known([{ batchId: 'x' }]), expiryPolicy: policy }))['expiringSoon']).toEqual({ known: false, why: 'the batch records carry no expiry date', whyTa: 'தொகுதிப் பதிவுகளில் காலாவதி தேதி இல்லை' });
+    expect(todayFigures(input({ ...bare(), batches: dated }))['expiringSoon']).toEqual({ known: false, why: 'the store computer has not been given the expiry policy', whyTa: 'கடைக் கணினிக்கு காலாவதி விதி வழங்கப்படவில்லை' });
+    expect(todayFigures(input({ ...bare(), batches: known([]), expiryPolicy: policy }))['expiringSoon']).toEqual({ known: true, value: 0, note: 'within 7 days, of 0 batches', noteTa: '7 நாட்களுக்குள், 0 தொகுதிகளில்' });
   });
   it('recalls are counted; the checklist says what still holds the day close; deliveries are today\'s slots only', () => {
     const pack: StorePack = {
@@ -98,9 +99,9 @@ describe('food safety, the checklist and the day\'s deliveries', () => {
       ]),
     };
     const figures = todayFigures(input(pack));
-    expect(figures['recallsOpen']).toEqual({ known: true, value: 1, note: 'recall notices on the box' });
-    expect(figures['checklistOpen']).toEqual({ known: true, value: 2, note: '1 must be done before the day closes' });
-    expect(figures['deliveriesToday']).toEqual({ known: true, value: 1, note: 'customer deliveries in today\'s slots' });
+    expect(figures['recallsOpen']).toEqual({ known: true, value: 1, note: 'recall notices on the box', noteTa: 'கணினியில் உள்ள திரும்பப்பெறல் அறிவிப்புகள்' });
+    expect(figures['checklistOpen']).toEqual({ known: true, value: 2, note: '1 must be done before the day closes', noteTa: 'நாள் முடியும் முன் 1 செய்ய வேண்டும்' });
+    expect(figures['deliveriesToday']).toEqual({ known: true, value: 1, note: 'customer deliveries in today\'s slots', noteTa: 'இன்றைய நேரங்களில் வாடிக்கையாளர் டெலிவரிகள்' });
     expect(todayFigures(input({ ...bare(), checklist: known([{ itemId: 'c', description: 'x', done: false, blocking: false }]) }))['checklistOpen']).toMatchObject({ value: 1, note: 'none holds the day close' });
   });
 });

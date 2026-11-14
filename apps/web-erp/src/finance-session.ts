@@ -130,6 +130,8 @@ export interface PeriodView {
    */
   readonly totals: readonly ControlTotalResult[] | undefined;
   readonly whyNoTotals?: string;
+  /** U3 (OB-699): the same reason in Tamil — the state sentence is the product's own word, carried in both languages. */
+  readonly whyNoTotalsTa?: string;
   readonly allReconcile: boolean;
   /** The queue, reported beside the totals and never inside them. */
   readonly posted: PostedSide;
@@ -147,7 +149,7 @@ export interface PeriodView {
 /** The LOCAL check of the box's figures. It closes nothing (a month is closed at head office). */
 export type CloseOutcome =
   | { readonly ok: true; readonly result: PeriodCloseResult }
-  | { readonly ok: false; readonly refusal: CloseRefusal; readonly detail: string; readonly result?: PeriodCloseResult };
+  | { readonly ok: false; readonly refusal: CloseRefusal; readonly detail: string; readonly detailTa?: string; readonly result?: PeriodCloseResult };
 
 // ── What an approval is FOR — the engine's one rule (ADR-0024 `actionDetails`) ──────────────────────────────
 //
@@ -443,7 +445,7 @@ export interface FinanceSession {
   /** The month, both sides of every figure, and what is outstanding. */
   period(): PeriodView;
   /** The pack a CA signs — or the same pack marked NOT signable, saying why. */
-  evidence(): EvidencePack | { readonly signable: false; readonly why: string };
+  evidence(): EvidencePack | { readonly signable: false; readonly why: string; readonly whyTa?: string };
   /**
    * The LOCAL check of this box's figures: would this month close? Returns every blocker at once. It closes NOTHING —
    * a month is closed on head office's Month-end page, with a second person's signature (OB-567, `month-close-session.ts`).
@@ -456,6 +458,12 @@ export interface FinanceSession {
 export function createFinanceSession(config: FinanceConfig, ports: FinancePorts): FinanceSession {
   const NO_LEDGER =
     'this store box has not told finance what the shop took in this period, so there is nothing to check the accounts against. A month cannot close on one side of a comparison.';
+  // U3 (OB-699, 7 Nov 2026): the two state sentences the Finance page prints are the product's own words — carried in
+  // both languages here, at their one source, so a Tamil screen reads them in Tamil.
+  const NO_LEDGER_TA =
+    'இந்தக் கடைக் கணினி இந்தக் காலத்தில் கடை என்ன வசூலித்தது என்று நிதிக்குச் சொல்லவில்லை, எனவே கணக்குகளைச் சரிபார்க்க ஒன்றும் இல்லை. ஒப்பீட்டின் ஒரு பக்கத்தில் மட்டும் ஒரு மாதத்தை மூட முடியாது.';
+  const NOBODY_TA =
+    'இந்தக் கடைக் கணினிக்கு இந்தத் திரையை யார் பயன்படுத்துகிறார் என்று சொல்லப்படவில்லை. மாத முடிப்பு அதை மூடியவரின் பெயரைச் சுமக்கும், அதன் பிறகு ஒரு பட்டயக் கணக்காளர் கையொப்பமிடுவார்.';
 
   /** Head office's word on the month, as the store computer last heard it (OB-567: closed only on the Month-end page). */
   const stateNow = (): { readonly closed: boolean; readonly closedBy?: string; readonly closedAt?: string; readonly signedBy?: string } => ports.periodState();
@@ -479,7 +487,7 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
     return {
       period: config.period,
       totals: validated?.results,
-      ...(built === undefined ? { whyNoTotals: NO_LEDGER } : {}),
+      ...(built === undefined ? { whyNoTotals: NO_LEDGER, whyNoTotalsTa: NO_LEDGER_TA } : {}),
       // **Not true when there are no totals.** "Everything reconciles" about nothing is the
       // sentence this whole module exists to prevent.
       allReconcile: validated?.allReconcile ?? false,
@@ -500,6 +508,7 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
         ok: false,
         refusal: CLOSE_REFUSAL_VALUES.nobody_is_named_at_this_desk,
         detail: 'this store box has not been told who is using this screen. A month close carries the name of whoever closed it, and a CA signs after them.',
+        detailTa: NOBODY_TA,
       };
     }
     const built = totalsNow();
@@ -511,6 +520,7 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
         ok: false,
         refusal: CLOSE_REFUSAL_VALUES.the_shop_has_not_told_us_what_it_took,
         detail: NO_LEDGER,
+        detailTa: NO_LEDGER_TA,
       };
     }
 
@@ -540,7 +550,7 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
 
     evidence: () => {
       const built = totalsNow();
-      if (built === undefined) return { signable: false, why: NO_LEDGER };
+      if (built === undefined) return { signable: false, why: NO_LEDGER, whyTa: NO_LEDGER_TA };
       return buildEvidencePack({
         period: config.period,
         tenantId: config.tenantId,

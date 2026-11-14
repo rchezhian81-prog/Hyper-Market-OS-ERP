@@ -84,7 +84,8 @@ export interface WorkforceInboxConfig {
 // ── the copy: ONE bilingual object for the whole screen ───────────────────────────────────────────────────
 
 export type CopyKey =
-  | 'title' | 'lead' | 'langName'
+  'scrKilled' |
+  'title' | 'lead' | 'langName'
   | 'kindEscalated' | 'kindOverdue' | 'kindDismissed'
   | 'openHeading' | 'dismissedHeading'
   | 'openCount' | 'dismissedCount' | 'allClear'
@@ -105,7 +106,7 @@ export const WORKFORCE_INBOX_COPY: BilingualCopy<CopyKey> = {
     dismissBtn: 'Set aside', reopenBtn: 'Bring back', reasonPlaceholder: 'Why is this not being acted on now?',
     dismissRecorded: 'Set aside.', dismissRefused: 'Could not save — a short reason is needed, or you do not have permission.', dismissLostLink: 'No connection — not saved. Try again.',
     scrReady: 'Showing the tasks that need attention', scrEmpty: 'Nothing late — the day’s tasks are on track.',
-    scrOff: 'The Workforce helper is switched off, so there are no tasks to show.',
+    scrOff: 'The Workforce helper is switched off, so there are no tasks to show.', scrKilled: 'The AI kill switch is on, so the Workforce helper is stopped and shows no tasks. Turn it off to see them again — nothing else in the shop is affected.',
     stateNotPermitted: 'You do not have permission to see the workforce guidance.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
@@ -120,7 +121,7 @@ export const WORKFORCE_INBOX_COPY: BilingualCopy<CopyKey> = {
     dismissBtn: 'ஒதுக்கிவை', reopenBtn: 'மீண்டும் கொண்டுவா', reasonPlaceholder: 'இது ஏன் இப்போது செயல்படுத்தப்படவில்லை?',
     dismissRecorded: 'ஒதுக்கப்பட்டது.', dismissRefused: 'சேமிக்க முடியவில்லை — ஒரு சிறு காரணம் தேவை, அல்லது உங்களுக்கு அனுமதி இல்லை.', dismissLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'கவனம் தேவைப்படும் பணிகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — இன்றைய பணிகள் சரியாக நடக்கின்றன.',
-    scrOff: 'பணியாளர் உதவியாளர் அணைக்கப்பட்டுள்ளது, எனவே காட்ட பணிகள் இல்லை.',
+    scrOff: 'பணியாளர் உதவியாளர் அணைக்கப்பட்டுள்ளது, எனவே காட்ட பணிகள் இல்லை.', scrKilled: 'AI நிறுத்து-சுவிட்ச் இயக்கத்தில் உள்ளது, எனவே பணியாளர் உதவியாளர் நிறுத்தப்பட்டு பணிகள் எதையும் காட்டவில்லை. மீண்டும் காண அதை அணைக்கவும் — கடையில் வேறு எதுவும் பாதிக்கப்படாது.',
     stateNotPermitted: 'பணியாளர் வழிகாட்டுதலைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -220,7 +221,10 @@ export function createWorkforceInboxSession(
         // Governance honoured: the agent is off or killed, so there is nothing to show — say so plainly, not an
         // empty screen a person reads as "all on track". `locked` is the deliberate, non-fault state (idle tone,
         // never the red of an error — the helper being off is a choice, not a breakage).
-        return EMPTY_VIEW(presentScreenState({ state: 'locked', label: worklist.note ?? t('scrOff') }), nobodyNamed, mayDismiss);
+        // OB-699: the state is the page's own sentence. Head office says only in English WHY the agent is inactive (its note);
+        // the kill switch is told apart by the note's words until the route carries a reason code (noted for the AI service).
+        const killed = typeof worklist.note === 'string' && /kill switch/i.test(worklist.note);
+        return EMPTY_VIEW(presentScreenState({ state: 'locked', label: t(killed ? 'scrKilled' : 'scrOff') }), nobodyNamed, mayDismiss);
       }
 
       const open = worklist.open.map((e) => present(lang, e));

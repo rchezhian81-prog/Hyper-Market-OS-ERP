@@ -13,23 +13,48 @@ function text(tag, words, cls) { const n = document.createElement(tag); n.textCo
 function button(words, iconName, cls) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; if (cls) b.className = cls; const i = icon(iconName); if (i !== null) b.append(i); b.append(text('span', words)); return b; }
 const say = (id, out) => { $(id).textContent = api.outcomeWords(lang, out); };
 let board = null; let meter = null; let watch = null; let history = null; let closure = null;
+let boardLoaded = false; // head office has answered the board once (ok or refused)
+
+// ── U5 · G17 (UI/UX gap audit): every list on this page is the chrome's register part (`sreOffice.table`) — search, sort
+// with its direction in words, paging, a count line, rows that stack on a phone. The old `<tbody id>` is kept as the
+// register's body id so the records' data attributes read the same. Before the chrome has loaded the host waits for it.
+const registers = new Map();
+function register(hostId, opts) {
+  const host = $(hostId); const o = window.sreOffice;
+  if (host === null) return null;
+  if (!o || typeof o.table !== 'function') {
+    if (!registers.has(hostId)) { registers.set(hostId, null); document.addEventListener('sre:chrome', () => { registers.delete(hostId); register(hostId, opts); }, { once: true }); }
+    return null;
+  }
+  let c = registers.get(hostId) ?? null;
+  if (c === null || !c.connected()) { c = o.table(host, opts); registers.set(hostId, c); }
+  else if (opts.state) c.setState(opts.state, opts.stateOpts ?? {}); else c.setRows(opts.rows ?? null);
+  return c;
+}
+const recordChip = (state, label) => { const o = window.sreOffice; if (o && typeof o.recordChip === 'function') return o.recordChip(state, label); const s = document.createElement('span'); s.className = 'sre-chip'; s.textContent = typeof label === 'string' ? label : state; return s; };
+const W = (k) => ({ en: api === null ? k : api.words('en', k), ta: api === null ? k : api.words('ta', k) });
 
 const placeWords = (row) => (row.laneId === null || row.laneId === undefined ? `${row.branchId} · ${t('wholeBranch')}` : `${row.branchId} · ${t('lane')} ${row.laneId}`);
 const placeOf = (row) => ({ branchId: row.branchId, ...(row.laneId === null || row.laneId === undefined ? {} : { laneId: row.laneId }) });
 
 function paintBoard() {
-  const body = $('board-rows'); body.replaceChildren();
-  if (board === null) return;
-  if (board.switches.length === 0) { const tr = document.createElement('tr'); const td = text('td', t('boardNone')); td.colSpan = 7; tr.append(td); body.append(tr); }
-  for (const r of board.switches) {
-    const tr = document.createElement('tr'); tr.dataset.key = r.key; tr.dataset.place = placeWords(r);
-    const state = text('td', r.enabled ? t('on') : t('off')); state.dataset.state = String(r.enabled);
-    tr.append(text('td', r.key), text('td', placeWords(r)), state, text('td', `v${r.version}`), text('td', r.reason), text('td', [r.changedBy, r.approvedBy, r.reviewedBy].filter((x) => typeof x === 'string' && x !== '').join(' · ')));
-    const cell = document.createElement('td');
-    const h = button(t('history'), 'history', 'quiet'); h.dataset.act = 'history';
-    h.addEventListener('click', async () => { const o = await session.history(r.key, placeOf(r)); if (o.result === 'ok') { history = { key: r.key, place: placeOf(r), versions: o.value.versions }; paintHistory(); } else say('b-status', o); });
-    cell.append(h); tr.append(cell); body.append(tr);
-  }
+  register('board-host', {
+    id: 'board', label: W('boardH'), bodyId: 'board-rows', sortable: true, pageSize: 10,
+    rowKey: (r) => `${r.key}@${placeWords(r)}`, rowData: (r) => ({ key: r.key, place: placeWords(r) }),
+    columns: [
+      { key: 'key', label: W('colSwitch') },
+      { key: 'place', label: W('colPlace'), filter: true, value: (r) => placeWords(r) },
+      // on / off as the one chip (its tone and both languages' words), the raw state kept on the cell for the tests that read it
+      { key: 'enabled', label: W('colState'), filter: true, value: (r) => (r.enabled ? t('on') : t('off')), render: (r) => { const c = recordChip(r.enabled ? 'active' : 'inactive', r.enabled ? t('on') : t('off')); c.dataset.state = String(r.enabled); return c; } },
+      { key: 'version', label: W('colVersion'), sort: 'number', value: (r) => r.version, render: (r) => document.createTextNode(`v${r.version}`) },
+      { key: 'reason', label: W('colWhy') },
+      { key: 'who', label: W('colWho'), value: (r) => [r.changedBy, r.approvedBy, r.reviewedBy].filter((x) => typeof x === 'string' && x !== '').join(' · ') },
+      { key: 'history', label: W('history'), sort: false, render: (r) => { const h = button(t('history'), 'history', 'sre-btn sre-btn-quiet'); h.dataset.act = 'history'; h.addEventListener('click', async () => { const o = await session.history(r.key, placeOf(r)); if (o.result === 'ok') { history = { key: r.key, place: placeOf(r), versions: o.value.versions }; paintHistory(); } else say('b-status', o); }); return h; } },
+    ],
+    rows: board === null ? null : board.switches,
+    ...(board === null && boardLoaded ? { state: 'unknown' } : {}),
+    empty: { title: W('boardNone') },
+  });
 }
 function paintHistory() {
   const ul = $('history-rows'); ul.replaceChildren();
@@ -81,20 +106,29 @@ function paintClosure() {
   $('closure-sealed').textContent = `🔒 ${lang === 'ta' ? closure.sealed.ta : closure.sealed.en}`;
   $('closure-sealed').dataset.sealed = String(closure.sealed.everythingSealed);
   const law = $('closure-law'); law.replaceChildren();
-  for (const r of closure.wouldRetain) law.append(text('li', `${r.what} — ${r.untilDate === 'indefinitely' || r.untilDate.startsWith('9999') ? t('indefinitely') : `${t('until')} ${r.untilDate}`}`));
-  $('closure-blockers').textContent = closure.blockers.length === 0 ? '' : `${t('closureBlockers')} ${closure.blockers.join(' · ')}`;
+  // OB-699: the records the law keeps are named in the reader's language where the page knows them; a legal hold's own
+  // reason, and head office's reasons for refusing closure, are its sentences — kept in English and marked so.
+  const KEPT = { 'books of account, tax invoices and GST records': 'keepBooks', 'audit evidence': 'keepAudit' };
+  for (const r of closure.wouldRetain) {
+    const li = document.createElement('li');
+    const what = KEPT[r.what] ? document.createTextNode(t(KEPT[r.what])) : Object.assign(document.createElement('span'), { textContent: r.what }); if (!KEPT[r.what]) what.setAttribute('lang', 'en');
+    li.append(what, document.createTextNode(` — ${r.untilDate === 'indefinitely' || r.untilDate.startsWith('9999') ? t('indefinitely') : `${t('until')} ${r.untilDate}`}`));
+    law.append(li);
+  }
+  const blockers = $('closure-blockers'); blockers.replaceChildren();
+  if (closure.blockers.length > 0) { blockers.append(document.createTextNode(`${t('closureBlockers')} `)); const sp = document.createElement('span'); sp.setAttribute('lang', 'en'); sp.textContent = closure.blockers.join(' · '); blockers.append(sp); }
   $('closure-who').textContent = t('whoCloses');
 }
 function paint() {
   $('title-text').textContent = t('title'); $('page-h').textContent = t('title'); $('lead').textContent = t('lead');
   $('lang').textContent = lang === 'en' ? 'தமிழ்' : 'English';
-  for (const [id, key] of [['board-h', 'boardH'], ['rule', 'rule'], ['c-switch', 'colSwitch'], ['c-place', 'colPlace'], ['c-state', 'colState'], ['c-version', 'colVersion'], ['c-why', 'colWhy'], ['c-who', 'colWho'],
+  for (const [id, key] of [['board-h', 'boardH'], ['rule', 'rule'],
     ['change-h', 'changeH'], ['ch-key-l', 'key'], ['ch-branch-l', 'branch'], ['ch-lane-l', 'laneOpt'], ['ch-state-l', 'state'], ['ch-on', 'on'], ['ch-off', 'off'], ['ch-reason-l', 'reason'], ['ch-approval-l', 'approvalId'],
     ['ch-preview-text', 'preview'], ['ch-ask-text', 'ask'], ['ch-save-text', 'save'], ['meter-h', 'meterH'], ['watch-h', 'watchH'], ['consent-h', 'consentH'], ['cs-download-text', 'download'], ['cs-file-l', 'importFile'], ['cs-import-text', 'bringIn'], ['closure-h', 'closureH'], ['closure-sealed-h', 'sealedH'], ['closure-law-h', 'lawKeeps'], ['export-h', 'exportH'], ['export-lead', 'exportLead'], ['ex-download-text', 'exportDownload']]) $(id).textContent = t(key);
   paintBoard(); paintHistory(); paintMeter(); paintWatch(); paintClosure();
 }
 const change = () => ({ key: $('ch-key').value, branchId: $('ch-branch').value, laneId: $('ch-lane').value, enabled: $('ch-state').value === 'on', reason: $('ch-reason').value, approvalId: $('ch-approval').value });
-async function loadBoard() { const o = await session.board(); if (o.result === 'ok') board = o.value; else say('b-status', o); paintBoard(); }
+async function loadBoard() { const o = await session.board(); boardLoaded = true; if (o.result === 'ok') board = o.value; else say('b-status', o); paintBoard(); }
 async function loadMeter() { const o = await session.meter(); if (o.result === 'ok') meter = o.value; else say('m-status', o); paintMeter(); }
 async function loadWatch() { const o = await session.watch(); if (o.result === 'ok') watch = o.value; else say('w-status', o); paintWatch(); }
 async function loadClosure() { const o = await session.closure(); if (o.result === 'ok') closure = o.value; else say('cl-status', o); paintClosure(); }

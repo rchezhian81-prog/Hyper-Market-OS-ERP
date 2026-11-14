@@ -36,7 +36,6 @@
       button.chip.chosen { border-color:var(--info); background:var(--info-surface); color:var(--on-info-surface); }
       button.chip.chosen::before { content:'✓ '; }
       .material-hint { margin:0; padding:10px 12px; border-radius:10px; background:var(--bg); font-size:14px; display:inline-flex; gap:8px; align-items:center; }
-      .material-hint .icon { font-size:16px; }
       .material-hint.tone-degraded { border-left:4px solid var(--degraded); } .material-hint.tone-idle { border-left:4px solid var(--idle); color:var(--muted); }
       .material-hint[hidden] { display:none; }
       .threshold { font-size: var(--fs-sm); color:var(--muted); }
@@ -64,16 +63,12 @@
       .loss-why { font-size:14px; color:var(--muted); }
       button.carry { min-height:var(--tap); padding:0 16px;  border-radius:10px; font-size:15px; font-weight:600; background:var(--bg); color:var(--ink); justify-self:start; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
       /* U2: a picked thing — the id the page sends, the Choose button, the name beside it */
-      .pick-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
-      .pick-row input { flex: 1 1 140px; min-width: 0; }
-      .pick-name { color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -115,7 +110,7 @@
           <label for="wo-value" id="value-label"></label>
           <input id="wo-value" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" />
           <!-- SF-05: head office's own value of the loss (quantity × its cost of the stock) — filled in, not typed. -->
-          <p class="material-hint" id="value-hint" hidden role="status" aria-live="polite"><span class="icon" id="value-hint-icon" aria-hidden="true"></span><span id="value-hint-text"></span></p>
+          <p class="material-hint" id="value-hint" hidden role="status" aria-live="polite"><span id="value-hint-text"></span></p>
           <p class="threshold" id="threshold-hint"></p>
         </div>
         <fieldset>
@@ -127,7 +122,7 @@
           <label id="reason-label"></label>
           <div class="chips" id="reasons" role="group" aria-label="Why it is lost"></div>
         </fieldset>
-        <p class="material-hint" id="material-hint" hidden role="status" aria-live="polite"><span class="icon" id="material-hint-icon" aria-hidden="true"></span><span id="material-hint-text"></span></p>
+        <p class="material-hint" id="material-hint" hidden role="status" aria-live="polite"><span id="material-hint-text"></span></p>
         <div>
           <label for="wo-evidence" id="evidence-label"></label>
           <input id="wo-evidence" type="text" autocomplete="off" />
@@ -145,8 +140,8 @@
         <button id="record" class="act primary sre-btn sre-btn-primary" type="button"></button>
       </section>
 
-      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
-      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+      <p class="result" id="result" hidden role="status" aria-live="polite"></p>
+      <div class="state" id="state" hidden></div>
 
       <section class="losses" id="your-losses" hidden aria-labelledby="your-losses-title">
         <h3 id="your-losses-title"></h3>
@@ -167,7 +162,7 @@
           <label for="woq-evidence"><span id="woq-evidence-l"></span><input id="woq-evidence" autocomplete="off" /></label>
           <button id="woq-save" class="act primary sre-btn" type="submit"><span id="woq-save-text"></span></button>
         </form>
-        <p class="result" id="woq-result" hidden role="status" aria-live="polite"><span class="icon" id="woq-result-icon" aria-hidden="true"></span><span id="woq-result-text"></span></p>
+        <p class="result" id="woq-result" hidden role="status" aria-live="polite"></p>
         <h3 id="woq-saved-h"></h3>
         <ul class="loss-requests" id="woq-saved"></ul>
       </section>

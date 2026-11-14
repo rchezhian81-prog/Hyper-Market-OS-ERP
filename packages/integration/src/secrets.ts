@@ -233,6 +233,8 @@ export function rotateSecret(input: {
   /** Days the previous version stays valid. Must be > 0 — a hard cut is `revokeSecret`. */
   readonly graceDays: number;
   readonly at: string;
+  /** The SHOP's calendar day of `at` (R1c): after 18:30 UTC the shop is already on the next date. Falls back to the UTC day. */
+  readonly day?: string;
 }): RotationResult {
   const s = input.secret;
 
@@ -251,7 +253,8 @@ export function rotateSecret(input: {
     };
   }
 
-  const oldValidUntil = new Date(Date.parse(input.at) + input.graceDays * DAY_MS).toISOString().slice(0, 10);
+  const onDay = input.day ?? input.at.slice(0, 10);
+  const oldValidUntil = new Date(Date.parse(`${onDay}T00:00:00Z`) + input.graceDays * DAY_MS).toISOString().slice(0, 10);
 
   return {
     secretId: s.secretId,
@@ -264,7 +267,7 @@ export function rotateSecret(input: {
       vaultRef: input.newVaultRef,
       version: s.version + 1,
       state: 'active',
-      lastRotatedOn: input.at.slice(0, 10),
+      lastRotatedOn: onDay,
     },
     detail: `rotated by ${input.rotatedBy} to version ${s.version + 1}; the previous version stays valid until ${oldValidUntil} so edge devices that have not synced keep working`,
   };
@@ -291,6 +294,8 @@ export function revokeSecret(input: {
   readonly revokedBy: string;
   readonly referencedBy?: readonly { readonly adapterId: string; readonly vaultRef: string }[];
   readonly at: string;
+  /** The SHOP's calendar day of `at` (R1c). Falls back to the UTC day. */
+  readonly day?: string;
 }): RevocationResult {
   const breaks = (input.referencedBy ?? [])
     .filter((r) => r.vaultRef === input.secret.vaultRef)
@@ -299,7 +304,7 @@ export function revokeSecret(input: {
 
   return {
     secretId: input.secret.secretId,
-    revoked: { ...input.secret, state: 'revoked', revokedOn: input.at.slice(0, 10) },
+    revoked: { ...input.secret, state: 'revoked', revokedOn: input.day ?? input.at.slice(0, 10) },
     breaks,
     detail:
       breaks.length === 0

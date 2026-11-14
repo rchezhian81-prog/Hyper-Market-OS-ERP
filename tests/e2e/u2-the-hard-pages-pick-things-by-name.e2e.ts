@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { auditPage } from './lib/a11y-audit';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { startOfficeShop, PEOPLE, S1, type OfficeShop } from './lib/office-shop';
 
 /**
@@ -24,7 +25,9 @@ import { startOfficeShop, PEOPLE, S1, type OfficeShop } from './lib/office-shop'
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DESK = { viewport: { width: 1280, height: 860 } };
-const iso = (plus: number): string => new Date(Date.now() + plus * 86_400_000).toISOString().slice(0, 10);
+// The SHOP's day, never the UTC one: after 18:30 UTC the shop is already on the next date, and head office refuses a
+// price that starts on the UTC day as back-dated (CI on #906, 12 Nov 2026, 19:03–20:04 UTC).
+const iso = (plus: number): string => shopDateIn(new Date(Date.now() + plus * 86_400_000).toISOString());
 const ddmm = (d: string): string => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const words = (d: string): string => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
@@ -154,15 +157,18 @@ describe.skipIf(!existsSync(CHROMIUM))('U2: the HARD pages pick things by name',
     } finally { await s.context.close(); }
   });
 
-  it('Record a write-off: the list unreachable is said and the typed code still fills the field; reachable, the product and the place are found by name', async () => {
+  it('Record a write-off: head office unreachable, the store computer\'s own copy is offered and said so, and the typed code still fills the field; reachable, the product and the place are found by name', async () => {
     const s = await open(PEOPLE.manager, '/write-off-capture/');
     try {
       await s.page.waitForSelector('#capturer:not([hidden])');
       await s.context.route('**/v1/catalogue/products**', (r) => r.abort());
       await s.page.click('#wo-product-pick');
       await s.page.waitForSelector('#sre-picker');
+      // U5 (P-01): the list is the store computer's signed copy — said above the rows; a product published since may be
+      // missing from it, so the typed code stays offered beside it (never a dead end)
+      await s.page.waitForSelector('#sre-picker-source', { state: 'visible', timeout: 15_000 });
+      expect(await s.page.textContent('#sre-picker-source'), 'the picker says whose copy the list is').toMatch(/from this store computer's copy of the catalogue/);
       await s.page.waitForSelector('#sre-picker-typed', { state: 'visible', timeout: 15_000 });
-      expect(await s.page.textContent('#sre-picker .sre-picker-state'), 'the picker says the list could not be read').toMatch(/cannot be reached|could not|Not known/i);
       await s.page.fill('#sre-picker-typed', 'p-milk');
       await s.page.click('#sre-picker-use-code');
       await s.page.waitForSelector('#sre-picker', { state: 'detached' });

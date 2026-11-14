@@ -173,8 +173,10 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
 
   it('every result carries a screen-reader announcement, and its icon is aria-hidden', () => {
     expect(VIEW).toMatch(/setAttribute\('aria-label'/);
-    expect(HTML).toMatch(/aria-hidden="true"/);
-    expect(VIEW).toMatch(/setAttribute\('aria-hidden', 'true'\)/);
+    // U5 · G17: a result is the chrome's chip and words — no icon character left for a reader to skip
+    expect(HTML).not.toMatch(/id="(result|value-hint|material-hint|woq-result)-icon"/);
+    expect(VIEW).toMatch(/sayWith\(result, /);
+    expect(VIEW).toMatch(/fillStatus\(status, row\.status\.tone, row\.status\.label\)/);
   });
 
   it('the shell loads the shared bundle, carries the data marker, labels the toggle, the loss-type group and the list, and shows focus', () => {

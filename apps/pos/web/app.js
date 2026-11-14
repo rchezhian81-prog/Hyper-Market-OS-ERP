@@ -2310,9 +2310,10 @@ async function splitPayment(payable, first) {
         // OB-295: the member's tier multiplier from the box's copy — "not set" until the owner sets tiers.
         + ' ' + tierWords(wallet.tier), STOP);
     }
-  } else if (session.loyaltyWallet && !guestOnly() && first !== 'gift_card') {
-    tell(t('read'), t('splitNoMember'), STOP);
   }
+  // U5 (UI/UX gap audit, lane 5 · the U4 count): with no loyalty member on the bill the till SAYS so on the first question
+  // — a line above the choices, not a stop the cashier must dismiss — and the split goes on with cash, card and UPI.
+  const noMember = session.loyaltyWallet && wallet === null && !guestOnly() && first !== 'gift_card' && !(session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null);
   const parts = [];
   let remaining = payable;
   let change = 0;
@@ -2339,7 +2340,7 @@ async function splitPayment(payable, first) {
       ...(pointsMax > 0 && !used.has('loyalty_points') ? [{ value: 'loyalty_points', label: `${t('points')} — ${t('upTo')} ${inr(pointsMax)}` }] : []),
       ...(creditMax > 0 && !used.has('store_credit') ? [{ value: 'store_credit', label: `${t('storeCredit')} — ${t('upTo')} ${inr(creditMax)}` }] : []),
       ...(typeof session.giftCardBalance === 'function' ? [{ value: 'gift_card', label: t('giftCard') }] : []),
-    ]);
+    ], noMember && parts.length === 0 ? { words: t('splitNoMember'), icon: 'circle-help' } : null);
     if (kind === null) return;
     if (kind === 'gift_card') {
       const part = await giftCardPart(remaining);

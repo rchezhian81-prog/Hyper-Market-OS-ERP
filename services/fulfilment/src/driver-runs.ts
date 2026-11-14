@@ -207,6 +207,38 @@ export interface SyncedDriverRunDeps {
   /** OB-294 · D09-FR-05: judge the code and the proof location against head office's own records (the issued code, the
    *  stored address, the owner's radius). Absent (a bare composition) → nothing is judged and the record says nothing. */
   readonly judgeDoorProof?: (tenantId: string, input: DoorProofInput) => Promise<{ readonly code: CodeVerdict; readonly fence: FenceVerdict }>;
+  /** U6 · OB-700: every call request recorded for a route (append-only; one per stop), oldest first. */
+  readonly callRequests?: (tenantId: string, routeId: string) => Promise<readonly DriverCallRequest[]> | readonly DriverCallRequest[];
+  readonly recordCallRequest?: (tenantId: string, request: DriverCallRequest) => Promise<void> | void;
+  /** U6 · OB-700: put the request in front of the store (an operational alert to its managers, else the owners). Answers who was told. */
+  readonly tellStoreToCall?: (tenantId: string, request: DriverCallRequest) => Promise<{ readonly toldUserIds: readonly string[] }>;
+}
+
+/**
+ * U6 · OB-700 (owner, 7 Nov 2026, decision 3 = B) · M19 · §31: a driver's request that the STORE call a stop's customer. The
+ * phone never holds the customer's number, so the request carries references only; the store calls from its own records.
+ */
+export interface DriverCallRequest {
+  readonly routeId: string;
+  readonly stopId: string;
+  readonly driverId: string;
+  readonly orderRef: string;
+  /** The coarse area label the phone shows — not an address. */
+  readonly area: string | null;
+  readonly relayedBy: string;
+  readonly at: string;
+  readonly governanceFlags: readonly DriverRunSyncFlag[];
+  /** Who at the store was told (the alert's owner and the others it went to); empty when nobody could be found. */
+  readonly toldUserIds: readonly string[];
+}
+
+/** The thin payload the phone queues for a call request — exactly what `POST …/stops/:stopId/call-request/synced` reads. */
+export function readRelayedCallRequest(body: unknown, routeId: string, stopId: string, now: string): { readonly driverId: string; readonly orderRef: string; readonly area: string | null; readonly at: string } | undefined {
+  if (!isObj(body)) return undefined;
+  if (isStr(body['routeId']) && body['routeId'] !== routeId) return undefined;
+  if (isStr(body['stopId']) && body['stopId'] !== stopId) return undefined;
+  if (!isStr(body['driverId']) || !isStr(body['orderRef'])) return undefined;
+  return { driverId: body['driverId'], orderRef: body['orderRef'], area: optStr(body['area']), at: isIso(body['occurredAt']) ? body['occurredAt'] : isIso(body['at']) ? body['at'] : now };
 }
 
 /** The latest outcome per stop, in first-seen order — the register folded to the route as it stands. */
@@ -356,12 +388,14 @@ function readRelayedHandover(body: unknown, routeId: string, now: string): Relay
 /** The route as a screen reads it: each stop's latest outcome with its history depth, the cash by the register, the settlement, the handover, every flag once. */
 export function presentRoute(
   routeId: string, history: readonly RouteStopUpdate[], settlement: RouteSettlementRecord | undefined, handover: CashHandoverRecord | undefined,
+  callRequests: readonly DriverCallRequest[] = [],
 ): Record<string, unknown> {
   const depth = new Map<string, number>();
   for (const u of history) depth.set(u.stopId, (depth.get(u.stopId) ?? 0) + 1);
   const stops = latestStops(history).map((u) => ({ ...u, outcomesRecorded: depth.get(u.stopId) ?? 1 }));
   const flags = [...new Set([...history.flatMap((u) => u.governanceFlags), ...(settlement?.governanceFlags ?? []), ...(handover?.governanceFlags ?? [])])];
-  return { routeId, stops, cash: cashFromStops(history), settlement: settlement ?? null, handover: handover ?? null, flags, stopCount: stops.length };
+  // U6 · OB-700: the stops whose customer the driver asked the store to call — so the dispatcher sees them on the route.
+  return { routeId, stops, cash: cashFromStops(history), settlement: settlement ?? null, handover: handover ?? null, flags, stopCount: stops.length, callRequests };
 }
 
 export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route[] {
@@ -577,10 +611,58 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
         if (routeId === '') {
           throw apiError(400, { code: 'not_readable_as_a_route_query', whatHappened: 'Reading a route needs its id in the path.', wasItSaved: 'not_saved', nextSafeAction: 'Send /v1/delivery/routes/:routeId. Nothing was changed.' });
         }
-        const [history, settlement, handover] = await Promise.all([
+        const [history, settlement, handover, calls] = await Promise.all([
           deps.stopUpdates(ctx.tenantId, routeId), deps.settlement(ctx.tenantId, routeId), deps.handover(ctx.tenantId, routeId),
+          deps.callRequests === undefined ? [] : deps.callRequests(ctx.tenantId, routeId),
         ]);
-        return { status: 200, body: { ...presentRoute(routeId, history, settlement, handover), asAt: deps.now() } };
+        return { status: 200, body: { ...presentRoute(routeId, history, settlement, handover, calls), asAt: deps.now() } };
+      },
+    },
+    {
+      // U6 · OB-700 (owner, 7 Nov 2026, decision 3 = B) · M19 · §31: the driver's request that the STORE call a stop's customer,
+      // relayed by the box. The phone holds no number, so this is the whole of "customer contact" on the driver's side: head
+      // office re-verifies the driver, keeps ONE request per stop (a re-sent one is the same record) and raises it to the store
+      // — its managers, else the owners — as an operational alert the Ops alerts page shows. Nothing here moves an order.
+      api: 'API-08', method: 'POST', path: '/v1/delivery/routes/:routeId/stops/:stopId/call-request/synced',
+      permission: 'delivery.stop.sync', entitlement: 'delivery', idempotent: true,
+      handler: async (ctx) => {
+        const routeId = (ctx.params['routeId'] ?? '').trim();
+        const stopId = (ctx.params['stopId'] ?? '').trim();
+        const now = deps.now();
+        const r = routeId === '' || stopId === '' ? undefined : readRelayedCallRequest(ctx.body, routeId, stopId, now);
+        if (r === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_call_request',
+            whatHappened: 'This payload could not be read as a driver\'s request that the store call a customer — it needs routeId and stopId matching the path, driverId and orderRef. It must carry no customer name or number.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — a driver at a door asked for help.',
+          });
+        }
+        if (deps.callRequests === undefined || deps.recordCallRequest === undefined) {
+          throw apiError(503, {
+            code: 'call_requests_not_kept_here',
+            whatHappened: 'This head office keeps no register of call requests, so the driver\'s request cannot be recorded.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it in the queue; the store rings the customer from the order itself meanwhile.',
+          });
+        }
+        const prior = (await deps.callRequests(ctx.tenantId, routeId)).find((c) => c.stopId === stopId);
+        if (prior !== undefined) {
+          return { status: 200, body: { routeId, stopId, recorded: true, alreadyRecorded: true, toldUserIds: prior.toldUserIds, flags: prior.governanceFlags } };
+        }
+        const flags: DriverRunSyncFlag[] = await verifyDriver(deps.permissionsOfUser, ctx.tenantId, r.driverId);
+        const draft: DriverCallRequest = { routeId, stopId, driverId: r.driverId, orderRef: r.orderRef, area: r.area, relayedBy: ctx.userId, at: r.at, governanceFlags: flags, toldUserIds: [] };
+        const told = deps.tellStoreToCall === undefined ? { toldUserIds: [] as readonly string[] } : await deps.tellStoreToCall(ctx.tenantId, draft);
+        const record: DriverCallRequest = { ...draft, toldUserIds: told.toldUserIds };
+        await deps.recordCallRequest(ctx.tenantId, record);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: r.driverId, action: 'delivery.call_request.record', objectType: 'delivery_route', objectId: routeId,
+          at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { stopId, orderRef: r.orderRef, area: r.area ?? '', told: told.toldUserIds.join(','), relayedBy: ctx.userId, flags: flags.join(',') },
+          correlationId: routeId,
+        });
+        return { status: 201, body: { routeId, stopId, recorded: true, alreadyRecorded: false, toldUserIds: told.toldUserIds, flags } };
       },
     },
   ];

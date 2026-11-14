@@ -11,6 +11,8 @@ import type { ConfigStore } from '../../config/src/config';
 export interface TenantSetting<T> {
   readonly key: string;
   readonly label: string;
+  /** U3 (OB-699, 7 Nov 2026): the same label in Tamil — a setting's label is the product's own word, carried in both languages. */
+  readonly labelTa: string;
   readonly defaultValue: T;
 }
 
@@ -19,6 +21,7 @@ export const SETTINGS = {
   TRADING_DAY_CUTOFF: {
     key: 'trading_day.cutoff',
     label: 'Trading-day cut-off (HH:MM)',
+    labelTa: 'வியாபார நாள் முடிவு நேரம் (HH:MM)',
     defaultValue: '00:00',
   } as TenantSetting<string>,
   /**
@@ -30,26 +33,31 @@ export const SETTINGS = {
   STORE_TIME_ZONE: {
     key: 'locale.time_zone',
     label: 'Store time zone (IANA name, e.g. Asia/Kolkata)',
+    labelTa: 'கடையின் நேர மண்டலம் (IANA பெயர், எ.கா. Asia/Kolkata)',
     defaultValue: 'Asia/Kolkata',
   } as TenantSetting<string>,
   BASE_CURRENCY: {
     key: 'locale.currency',
     label: 'Base currency (ISO 4217)',
+    labelTa: 'அடிப்படை நாணயம் (ISO 4217)',
     defaultValue: 'INR',
   } as TenantSetting<string>,
   LANGUAGES: {
     key: 'locale.languages',
     label: 'Languages offered',
+    labelTa: 'வழங்கப்படும் மொழிகள்',
     defaultValue: ['en', 'ta'] as readonly string[],
   } as TenantSetting<readonly string[]>,
   DEFAULT_TAX_BPS: {
     key: 'tax.default_bps',
     label: 'Default GST rate (basis points)',
+    labelTa: 'இயல்புநிலை ஜிஎஸ்டி விகிதம் (அடிப்படைப் புள்ளிகள்)',
     defaultValue: 0,
   } as TenantSetting<number>,
   DELIVERY_RADIUS_KM: {
     key: 'delivery.radius_km',
     label: 'Delivery serviceability radius (km)',
+    labelTa: 'டெலிவரி சேவை எல்லை (கி.மீ.)',
     defaultValue: 0,
   } as TenantSetting<number>,
   /**
@@ -62,6 +70,7 @@ export const SETTINGS = {
   CATALOGUE_BULK_PUBLISH_THRESHOLD: {
     key: 'catalogue.bulk_publish_threshold',
     label: 'Products changed in one publish before it counts as bulk (needs a fresh second-factor sign-in)',
+    labelTa: 'ஒரு வெளியீடு மொத்த வெளியீடாகக் கருதப்படும் முன் மாற்றப்படும் பொருட்கள் (புதிய இரண்டாம் நிலை உள்நுழைவு தேவை)',
     defaultValue: 50,
   } as TenantSetting<number>,
   /**
@@ -72,6 +81,7 @@ export const SETTINGS = {
   AGE_RESTRICTED_MINIMUM_AGE: {
     key: 'pos.age_restricted.minimum_age',
     label: 'Minimum age for age-restricted items (years)',
+    labelTa: 'வயது வரம்புள்ள பொருட்களுக்கான குறைந்தபட்ச வயது (ஆண்டுகள்)',
     defaultValue: 18,
   } as TenantSetting<number>,
   /**
@@ -82,6 +92,7 @@ export const SETTINGS = {
   LICENCE_HOURS_ENABLED: {
     key: 'pos.licence_hours.enabled',
     label: 'Restrict certain items to licensed selling hours',
+    labelTa: 'சில பொருட்களை உரிமம் பெற்ற விற்பனை நேரங்களில் மட்டும் விற்க',
     defaultValue: false,
   } as TenantSetting<boolean>,
   /**
@@ -92,6 +103,7 @@ export const SETTINGS = {
   LOYALTY_POINTS_PER_100_INR: {
     key: 'loyalty.points_per_100_inr',
     label: 'Loyalty points earned per ₹100 spent (0 = loyalty off)',
+    labelTa: '₹100 செலவுக்கு ஈட்டும் விசுவாசப் புள்ளிகள் (0 = விசுவாசத் திட்டம் இல்லை)',
     defaultValue: 0,
   } as TenantSetting<number>,
   /**
@@ -102,6 +114,7 @@ export const SETTINGS = {
   LOYALTY_POINT_VALUE_PAISE: {
     key: 'loyalty.point_value_paise',
     label: 'Value of one loyalty point when spent (paise)',
+    labelTa: 'செலவிடும்போது ஒரு விசுவாசப் புள்ளியின் மதிப்பு (பைசா)',
     defaultValue: 0,
   } as TenantSetting<number>,
   /**
@@ -115,6 +128,7 @@ export const SETTINGS = {
   LOYALTY_TILL_SPEND_CAP_PAISE: {
     key: 'loyalty.till_spend_cap_paise',
     label: 'Most a loyalty member may spend at the till per day, points plus store credit (paise; 0 = off)',
+    labelTa: 'ஒரு விசுவாச உறுப்பினர் ஒரு நாளில் கல்லாவில் செலவிடக்கூடிய அதிகபட்சம், புள்ளிகள் மற்றும் கடை கடன் சேர்த்து (பைசா; 0 = இல்லை)',
     defaultValue: 50_000,
   } as TenantSetting<number>,
   /**
@@ -126,6 +140,7 @@ export const SETTINGS = {
   GIFT_CARD_OFFLINE_CAP_PAISE: {
     key: 'loyalty.gift_card_offline_cap_paise',
     label: 'Most one till may take from one gift card while head office cannot be reached (paise; 0 = none offline)',
+    labelTa: 'தலைமை அலுவலகத்தை அடைய முடியாதபோது ஒரு கல்லா ஒரு பரிசு அட்டையிலிருந்து எடுக்கக்கூடிய அதிகபட்சம் (பைசா; 0 = ஆஃப்லைனில் இல்லை)',
     defaultValue: 50_000,
   } as TenantSetting<number>,
   /**
@@ -136,6 +151,7 @@ export const SETTINGS = {
   PRODUCTION_DEPARTMENTS: {
     key: 'production.departments',
     label: 'In-store production departments operated',
+    labelTa: 'கடையில் இயங்கும் உற்பத்தித் துறைகள்',
     defaultValue: [] as readonly string[],
   } as TenantSetting<readonly string[]>,
   /**
@@ -153,6 +169,7 @@ export const SETTINGS = {
   PICK_ZONE_ORDER: {
     key: 'picking.zone_order',
     label: 'Order a picker collects the shop’s zones in',
+    labelTa: 'பொருள் எடுப்பவர் கடையின் பகுதிகளைச் சேகரிக்கும் வரிசை',
     defaultValue: [] as readonly string[],
   } as TenantSetting<readonly string[]>,
   /**
@@ -169,6 +186,7 @@ export const SETTINGS = {
   SHELF_COUNT_STALE_AFTER_MINUTES: {
     key: 'merchandising.shelf_count_stale_after_minutes',
     label: 'How long a shelf count stays worth acting on (minutes)',
+    labelTa: 'ஒரு அடுக்கு எண்ணிக்கை எவ்வளவு நேரம் செயல்படத் தகுந்ததாக இருக்கும் (நிமிடங்கள்)',
     defaultValue: 120,
   } as TenantSetting<number>,
   /**
@@ -181,6 +199,7 @@ export const SETTINGS = {
   SHELF_REFILL_AT_BP: {
     key: 'merchandising.shelf_refill_at_bp',
     label: 'How empty a facing must be before it is worth refilling (basis points)',
+    labelTa: 'ஒரு அடுக்கு எவ்வளவு காலியாக இருந்தால் நிரப்பத் தகும் (அடிப்படைப் புள்ளிகள்)',
     defaultValue: 5_000,
   } as TenantSetting<number>,
   /**
@@ -198,6 +217,7 @@ export const SETTINGS = {
   BOX_DISK_WARN_HOURS: {
     key: 'platform.box_disk_warn_hours',
     label: 'Warn when a store computer would run out of disk within (hours of trading)',
+    labelTa: 'கடைக் கணினியின் வட்டு எத்தனை வியாபார மணி நேரத்துக்குள் நிரம்பினால் எச்சரிக்க (மணி)',
     defaultValue: 48,
   } as TenantSetting<number>,
   /**
@@ -208,6 +228,7 @@ export const SETTINGS = {
   BOX_UNSENT_WARN_HOURS: {
     key: 'platform.box_unsent_warn_hours',
     label: 'Warn when bills have waited on a store computer, unsent, for more than (hours)',
+    labelTa: 'பில்கள் கடைக் கணினியில் அனுப்பப்படாமல் எவ்வளவு நேரம் காத்திருந்தால் எச்சரிக்க (மணி)',
     defaultValue: 2,
   } as TenantSetting<number>,
   /**
@@ -218,17 +239,20 @@ export const SETTINGS = {
   BOX_CLAIM_SLACK_NUMBERS: {
     key: 'platform.box_claim_slack_numbers',
     label: 'A store computer\'s "I still hold N bills between X and Y" may span at most this many extra numbers (at least)',
+    labelTa: 'கடைக் கணினியின் "X-க்கும் Y-க்கும் இடையே N பில்கள் உள்ளன" என்ற கூற்று அதிகபட்சம் இத்தனை கூடுதல் எண்களை உள்ளடக்கலாம் (குறைந்தபட்சம்)',
     defaultValue: 5,
   } as TenantSetting<number>,
   /** OB-90: …or this percentage of N, rounded up, when that is more. Default 5; 0–50. */
   BOX_CLAIM_SLACK_PERCENT: {
     key: 'platform.box_claim_slack_percent',
     label: 'A store computer\'s "I still hold N bills between X and Y" may span this percentage of N in extra numbers, when that is more',
+    labelTa: 'கடைக் கணினியின் "X-க்கும் Y-க்கும் இடையே N பில்கள் உள்ளன" என்ற கூற்று N-இன் இத்தனை சதவீதம் கூடுதல் எண்களை உள்ளடக்கலாம்',
     defaultValue: 5,
   } as TenantSetting<number>,
   RECEIPT_PAPER_FORMAT: {
     key: 'receipt.paper_format',
     label: 'Receipt paper size',
+    labelTa: 'ரசீது காகித அளவு',
     defaultValue: 'thermal-80',
   } as TenantSetting<string>,
   /**
@@ -240,21 +264,25 @@ export const SETTINGS = {
   INVOICE_B2C_DYNAMIC_QR_ON: {
     key: 'invoice.b2c_dynamic_qr.on',
     label: 'Print the B2C dynamic QR on every bill (only required above ₹500 crore turnover)',
+    labelTa: 'ஒவ்வொரு பில்லிலும் B2C டைனமிக் QR அச்சிடு (₹500 கோடி வருவாய்க்கு மேல் மட்டுமே தேவை)',
     defaultValue: false,
   } as TenantSetting<boolean>,
   INVOICE_B2C_DYNAMIC_QR_UPI_ID: {
     key: 'invoice.b2c_dynamic_qr.upi_id',
     label: 'The shop\'s UPI ID for the B2C dynamic QR (empty = not set)',
+    labelTa: 'B2C டைனமிக் QR-க்கான கடையின் UPI ஐடி (காலி = அமைக்கப்படவில்லை)',
     defaultValue: '',
   } as TenantSetting<string>,
   INVOICE_B2C_DYNAMIC_QR_BANK_ACCOUNT: {
     key: 'invoice.b2c_dynamic_qr.bank_account',
     label: 'The bank account number that UPI ID pays into (empty = not set)',
+    labelTa: 'அந்த UPI ஐடி செலுத்தும் வங்கிக் கணக்கு எண் (காலி = அமைக்கப்படவில்லை)',
     defaultValue: '',
   } as TenantSetting<string>,
   INVOICE_B2C_DYNAMIC_QR_IFSC: {
     key: 'invoice.b2c_dynamic_qr.ifsc',
     label: 'That bank account\'s IFSC (empty = not set)',
+    labelTa: 'அந்த வங்கிக் கணக்கின் IFSC (காலி = அமைக்கப்படவில்லை)',
     defaultValue: '',
   } as TenantSetting<string>,
   // OB-354 (owner, 24 Oct 2026, in writing): there is NO business-wide "state" setting — each store's state is read from its
@@ -267,6 +295,7 @@ export const SETTINGS = {
   TILL_DELIVERY_FEE_PRODUCT: {
     key: 'delivery.till_fee_product',
     label: 'The product whose price is the till\'s delivery-fee line (empty = not set)',
+    labelTa: 'கல்லாவின் டெலிவரி கட்டண வரியாகும் பொருள் (காலி = அமைக்கப்படவில்லை)',
     defaultValue: '',
   } as TenantSetting<string>,
 };

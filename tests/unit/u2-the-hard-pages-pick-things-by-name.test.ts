@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { expectChromePickableKeepsTheRules, expectNoFallbackSwitchedOff, usesChromePickable } from '../support/picker-pins';
 
 /**
  * **U2 (UI/UX gap audit G5, G14, G16) — five of the HARD pages pick a thing by name instead of typing its code.**
@@ -28,9 +29,12 @@ describe('U2: the five HARD pages pick things by name', () => {
     for (const { file, fields } of Object.values(PICKS)) {
       const js = web(file);
       expect(js, `${file} reaches the picker`).toMatch(/window\.sreOffice/);
-      expect(js, `${file} calls the chrome's pick`).toMatch(/office\.pick\(\{ kind/);
       for (const id of fields) expect(js, `${file}: #${id} is pickable`).toMatch(new RegExp(`pickable\\('${id}'`));
-      expect(js, `${file} says the typed code stays the fallback`).toMatch(/allowCode: true/);
+      if (usesChromePickable(js)) { expectChromePickableKeepsTheRules(); expectNoFallbackSwitchedOff(js, file); }
+      else {
+        expect(js, `${file} calls the chrome's pick`).toMatch(/office\.pick\(\{ kind/);
+        expect(js, `${file} says the typed code stays the fallback`).toMatch(/allowCode: true/);
+      }
     }
   });
 

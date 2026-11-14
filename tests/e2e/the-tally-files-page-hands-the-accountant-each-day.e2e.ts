@@ -103,13 +103,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     await page.locator('#dead li.row').first().waitFor({ timeout: 15_000 });
     const dead = page.locator(`#dead li.row[data-day="${DAY_DEAD}"]`);
     expect(await dead.getAttribute('data-state')).toBe('dead_lettered');
-    expect(await dead.locator('.why').innerText()).toMatch(/⚠ Why: .*shop_expenses/);
-    expect(await page.textContent('#dead-n')).toBe('⚠ 1');
-    expect(await page.textContent('#posted-n')).toBe('✓ 1');
+    expect(await dead.locator('.why').innerText()).toMatch(/^Why: .*shop_expenses/); // U5: words, the tone's shape from the icon set
+    expect(await page.textContent('#dead-n')).toBe('1'); // U5: the figure alone; the tile's tone is its shape
+    expect(await page.textContent('#posted-n')).toBe('1');
     expect(await page.textContent('#company-n')).toBe('SRE Hyper Market (synthetic)');
     const ready = page.locator(`#files li.row[data-day="${DAY_OK}"]`);
     expect(await ready.getAttribute('data-state')).toBe('posted');
-    expect(await ready.innerText()).toMatch(/✓ Day .* — Ready to import/);
+    expect(await ready.innerText()).toMatch(/^Day \S+\s+Ready to import/); // U5: the state is the chrome's chip beside the day, never a ✓
 
     // Download the ready day: the XML Tally imports, and head office's own import check accepts it.
     const download = page.waitForEvent('download');
@@ -119,7 +119,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     const xml = readFileSync((await file.path())!, 'utf8');
     expect(xml).toContain('<TALLYMESSAGE');
     expect(validateTallyImport(xml).ok, 'Tally would import it').toBe(true);
-    expect(await page.textContent('#page-status')).toBe(`✓ Saved as sre-tally-${DAY_OK}-01.xml`);
+    expect((await page.textContent('#page-status'))?.trim()).toBe(`Saved as sre-tally-${DAY_OK}-01.xml`);
 
     // A requeue with no words is refused on the page; the ledger is named; requeued with what was fixed; made.
     await dead.locator('button', { hasText: 'Requeue this day' }).click();
@@ -128,14 +128,14 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
       body: { companyName: 'SRE Hyper Market (synthetic)', names: Object.fromEntries(accounts.map((a) => [a, `Tally ${a}`])) } }), 'all ledger names');
     await dead.locator('input.reason').fill('Named the Tally ledger for shop expenses');
     await dead.locator('button', { hasText: 'Requeue this day' }).click();
-    await page.locator('#page-status', { hasText: '✓ Requeued as' }).waitFor({ timeout: 15_000 });
-    expect(await page.textContent('#page-status')).toBe(`✓ Requeued as tally-day:${DAY_DEAD}:1:r1`);
+    await page.locator('#page-status', { hasText: 'Requeued as' }).waitFor({ timeout: 15_000 });
+    expect((await page.textContent('#page-status'))?.trim()).toBe(`Requeued as tally-day:${DAY_DEAD}:1:r1`);
     await page.click('#run');
-    await page.locator('#page-status', { hasText: '✓ Done' }).waitFor({ timeout: 15_000 });
-    expect(await page.textContent('#page-status')).toBe('✓ Done — files made: ✓ 1 · ⚠ 0');
+    await page.locator('#page-status', { hasText: 'Done' }).waitFor({ timeout: 15_000 });
+    expect((await page.textContent('#page-status'))?.trim()).toBe('Done — files made: 1 ready · 0 dead letter');
     const fixed = page.locator(`#files li.row[data-posting="tally-day:${DAY_DEAD}:1:r1"]`);
     expect(await fixed.getAttribute('data-state')).toBe('posted');
-    expect(await fixed.innerText()).toMatch(new RegExp(`↺ Requeued from tally-day:${DAY_DEAD}:1`));
+    expect(await fixed.innerText()).toMatch(new RegExp(`Requeued from tally-day:${DAY_DEAD}:1`)); // U5: words, no ↺ glyph
     // The original stays on the record, in the dead letter's history (never deleted).
     expect(await page.locator(`#files li.row[data-posting="tally-day:${DAY_DEAD}:1"]`).getAttribute('data-state')).toBe('dead_lettered');
 
@@ -146,24 +146,24 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     await page.selectOption('#tb-month', DAY_DEAD.slice(0, 7));
     await page.click('#tb-read');
     await page.locator('#tb-rows tr').first().waitFor({ timeout: 15_000 });
-    expect(await page.textContent('#tb-status')).toBe('✓ Balanced — debit and credit agree to the paisa.');
+    expect((await page.textContent('#tb-status'))?.trim()).toBe('Balanced — debit and credit agree to the paisa.');
     expect(await page.locator('#tb-rows tr[data-account="shop_expenses"] td').nth(2).innerText()).toBe('₹50.00');
     // OB-340: the dairy department's sales straight off the ledger (each ghee line's net without GST); no buying cost yet,
     // so its cost and margin are "not known" by name — never a zero; and the departments tie to the ledger's revenue.
     const dairy = page.locator('#dept-rows tr[data-department="D-dairy"] td');
     await dairy.first().waitFor({ timeout: 15_000 });
     const net = (DAY_OK.slice(0, 7) === DAY_DEAD.slice(0, 7) ? 100_000 : 0) + 50_000;
-    expect(await page.textContent('#dept-tie')).toBe('✓ The departments and the rest add up to the revenue in the ledger.');
-    expect(await dairy.nth(0).innerText()).toBe('Dairy ⚠ No buying cost yet for: P1');
+    expect((await page.textContent('#dept-tie'))?.trim()).toBe('The departments and the rest add up to the revenue in the ledger.');
+    expect(await dairy.nth(0).innerText()).toBe('Dairy No buying cost yet for: P1');
     expect(await dairy.nth(1).innerText()).toBe(rupees(net));
-    expect(await dairy.nth(2).innerText()).toBe('○ not known');
-    expect(await dairy.nth(3).innerText()).toBe('○ not known');
+    expect(await dairy.nth(2).innerText()).toBe('not known'); // U5: by name, with the "not known" shape
+    expect(await dairy.nth(3).innerText()).toBe('not known');
 
     await page.click('#lang');
     expect(await page.textContent('#page-h')).toBe('டேலி கோப்புகள்');
-    expect(await page.textContent('#tb-status')).toBe('✓ Balanced — debit and credit agree to the paisa.'); // a past answer is not re-worded
+    expect((await page.textContent('#tb-status'))?.trim()).toBe('Balanced — debit and credit agree to the paisa.'); // a past answer is not re-worded
     expect(await page.textContent('#dept-h')).toBe('துறை வாரியான விற்பனையும் லாபமும்');
-    expect(await dairy.nth(2).innerText()).toBe('○ தெரியவில்லை');
+    expect(await dairy.nth(2).innerText()).toBe('தெரியவில்லை');
     expect(await fixed.innerText()).toMatch(/இறக்குமதிக்குத் தயார்/);
     expect(errors).toEqual([]);
     await context.close();
@@ -177,8 +177,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Tally 
     await pm.click('#read');
     await pm.locator('#files li.row').first().waitFor({ timeout: 15_000 });
     // The dead-lettered day stays on the record, now named with the requeue that carried it — and nothing waits.
-    expect(await pm.locator(`#dead li.row[data-day="${DAY_DEAD}"] .corrected`).innerText()).toBe(`↺ Requeued as tally-day:${DAY_DEAD}:1:r1 — ✓ Ready to import`);
-    expect(await pm.textContent('#dead-n')).toBe('✓ 0');
+    expect((await pm.locator(`#dead li.row[data-day="${DAY_DEAD}"] .corrected`).innerText()).replace(/\s+/g, ' ').trim()).toBe(`Requeued as tally-day:${DAY_DEAD}:1:r1 — Ready to import`); // U5: the state is the chrome's chip, never a glyph
+    expect(await pm.textContent('#dead-n')).toBe('0');
     expect(await pm.locator('button', { hasText: 'Requeue this day' }).count()).toBe(0);
     await m.close();
 

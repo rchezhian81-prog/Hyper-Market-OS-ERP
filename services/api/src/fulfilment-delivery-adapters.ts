@@ -26,7 +26,7 @@ import type { SlotBooking } from '../../orders/src/delivery-service';
 import {
   STREAM, streamName, ordersAdapter, ordersForExport, catalogueAdapter, warehouseAdapter, assignmentsAdapter, fulfilmentWaveAdapter,
   driverRunAdapter, dispatchAdapter, deliveryServiceAdapter, serviceabilityAdapter, syncedGoodsReceiptAdapter, permissionsHeldBy, assignedStoresOf,
-  financeAdapter, storeSettingsAdapter, orgStructureAdapter,
+  financeAdapter, storeSettingsAdapter, orgStructureAdapter, alertLifecycleAdapter,
 } from './adapters';
 import { handoverToleranceRoutes, handoverToleranceStanding, type HandoverToleranceConfirmation, type HandoverToleranceDeps } from '../../fulfilment/src/handover-tolerance';
 import type { StoredPostingMap } from '../../finance/src/day-book';
@@ -298,6 +298,17 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     stopUpdates: async (t, r) => runs.stopUpdates(t, r),
     settlement: async (t, r) => runs.settlement(t, r),
     handover: async (t, r) => runs.handover(t, r),
+    // U7 (OB-726 · OB-700): each driver call request on the route, with "called" read from its alert's acknowledgement.
+    callRequestsOnRoute: async (t, routeId) => {
+      const asked = await runs.callRequests?.(t, routeId) ?? [];
+      if (asked.length === 0) return [];
+      const alerts = await alertLifecycleAdapter({ store, now }).alerts(t);
+      return asked.map((c) => {
+        const live = alerts.find((a) => a.alert.alertId === `delivery-call:${c.routeId}:${c.stopId}`);
+        const called = live?.acknowledgedBy !== undefined && live.acknowledgedAt !== undefined ? { by: live.acknowledgedBy, at: live.acknowledgedAt } : null;
+        return { stopId: c.stopId, orderRef: c.orderRef, driverId: c.driverId, area: c.area, at: c.at, toldUserIds: c.toldUserIds, called };
+      });
+    },
     recordOrderStop: async (t, s) => {
       const storeId = (await assignedStoresOf({ store }, t, 'route', s.routeId, []))[0];
       const record = { ...s, ...(storeId === undefined ? {} : { storeId }) };

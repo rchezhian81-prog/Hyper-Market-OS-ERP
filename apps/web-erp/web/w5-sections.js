@@ -17,6 +17,27 @@ function el(tag, cls, text) {
   return n;
 }
 
+// U7 · the shared parts (UI/UX audit G6 · G13): an answer that lists nothing, or that head office refused, is the chrome's
+// state part — never a bare "none" line; a line's tone is a chip with its word, never a stripe of colour alone.
+const office = () => (window.sreOffice && typeof window.sreOffice.state === 'function' ? window.sreOffice : null);
+// An ordinary line carries no chip (P-03 control by exception): only a line to check or a problem is marked, after its words.
+const TONE_CHIP = { warn: ['pending', { en: 'Check', ta: 'சரிபார்க்க' }], error: ['error', { en: 'Problem', ta: 'சிக்கல்' }] };
+function chipFor(tone) {
+  const o = office(); const c = TONE_CHIP[tone];
+  if (o === null || c === undefined || typeof o.chip !== 'function') return null;
+  return o.chip(c[0], c[1][lang()]);
+}
+function sayInto(node, said) {
+  const o = office();
+  const text = said.text(lang());
+  const empty = Array.isArray(said.lines) && said.lines.length === 0 && said.tone !== 'error';
+  if (o !== null && (said.tone === 'error' || empty)) {
+    o.state(node, said.tone === 'error' ? 'error' : 'empty', { title: text, detail: '' });
+    return;
+  }
+  node.textContent = text;
+}
+
 function inputFor(f, id) {
   let box;
   if (f.kind === 'select') {
@@ -49,15 +70,18 @@ function drawAction(sec, a, host) {
     return { f, label, input };
   });
   const go = el('button', 'sre-btn'); go.type = 'button'; go.id = `${base}-go`; box.append(go);
-  const status = el('p', 'status'); status.id = `${base}-said`; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); box.append(status);
+  const status = el('div', 'status'); status.id = `${base}-said`; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); box.append(status);
   const rows = el('ul', 'w5-rows'); rows.id = `${base}-rows`; rows.setAttribute('aria-labelledby', `${base}-h`); box.append(rows);
   let last = null;
   const paintSaid = () => {
-    status.textContent = last === null ? '' : last.text(lang());
+    if (last === null) status.replaceChildren(); else sayInto(status, last);
     status.dataset.tone = last === null ? '' : last.tone;
     rows.replaceChildren();
     for (const line of last?.lines ?? []) {
-      const li = el('li', `w5-line tone-${line.tone}`, line.text(lang()));
+      const li = el('li', 'w5-line');
+      const chip = chipFor(line.tone);
+      li.append(document.createTextNode(line.text(lang())));
+      if (chip !== null) li.append(document.createTextNode(' '), chip);
       li.dataset.tone = line.tone; if (line.key !== undefined) li.dataset.key = line.key;
       rows.append(li);
     }

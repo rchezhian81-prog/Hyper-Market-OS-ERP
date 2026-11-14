@@ -34,7 +34,7 @@ function paintResult() {
   if (v.signals.signals.length === 0) sig.append(row('ok', t('none'), [], ''));
   for (const s of v.signals.signals) {
     const li = row(s.confidence === 'strong' ? 'error' : s.confidence === 'probable' ? 'degraded' : 'idle', `${t(`k_${s.kind}`)} — ${s.subjectRef}`,
-      [`${t(s.confidence)}`, `${t('value')}: ${api.rupees(s.valueMinor)}`, `${t('evidence')}: ${s.evidenceRefs.join(', ')}`, s.reconciles ? `✓ ${t('reconciles')}` : `⚠ ${t('notTraced')} ${s.unmatchedEvidence.join(', ')}`], s.detail);
+      [`${t(s.confidence)}`, `${t('value')}: ${api.rupees(s.valueMinor)}`, `${t('evidence')}: ${s.evidenceRefs.join(', ')}`, s.reconciles ? t('reconciles') : `${t('notTraced')} ${s.unmatchedEvidence.join(', ')}`], s.detail);
     li.dataset.signal = s.signalId;
     sig.append(li);
   }
@@ -44,7 +44,7 @@ function paintResult() {
   const staff = $('rec-staff'); staff.replaceChildren();
   if (v.staff.bills.length === 0) staff.append(row('ok', t('staffNone'), [], ''));
   for (const b of v.staff.bills) {
-    const li = row(b.allowed ? 'ok' : 'error', `${b.allowed ? '✓' : '✕'} ${b.receiptNumber} — ${b.employeeId}`, [b.allowed ? t('allowed') : t('refused'), `${b.laneId} · ${b.cashierId}`, api.rupees(b.totalMinor), ...b.refusals.map((r) => t(`r_${r}`))], b.allowed ? '' : b.words[lang()]);
+    const li = row(b.allowed ? 'ok' : 'error', `${b.receiptNumber} — ${b.employeeId}`, [b.allowed ? t('allowed') : t('refused'), `${b.laneId} · ${b.cashierId}`, api.rupees(b.totalMinor), ...b.refusals.map((r) => t(`r_${r}`))], b.allowed ? '' : b.words[lang()]);
     li.dataset.sale = b.saleId;
     staff.append(li);
   }
@@ -53,7 +53,7 @@ function paintResult() {
   const bank = $('rec-bank'); bank.replaceChildren();
   if (v.bank.flags.length === 0) bank.append(row('ok', t('bankNone'), [], ''));
   for (const f of v.bank.flags) {
-    bank.append(row('error', `⚠ ${f.accountRef}`, f.holders.map((h) => `${h.holderType === 'employee' ? t('employeeH') : t('supplierH')}: ${h.holderId}`), t('blocked')));
+    bank.append(row('error', f.accountRef, f.holders.map((h) => `${h.holderType === 'employee' ? t('employeeH') : t('supplierH')}: ${h.holderId}`), t('blocked')));
   }
   $('rec-result').hidden = false;
 }
@@ -73,7 +73,9 @@ if (api !== null && session !== null && session.may.named) {
   $('rec').hidden = false;
   $('rec-read').addEventListener('click', async () => {
     $('rec-status').textContent = '';
-    const out = await session.read({ from: $('rec-from').value, to: $('rec-to').value });
+    // U2c: the window's days come from the chrome's shared dd/mm field when it stands on the page (ISO behind the shown text).
+    const dayOf = (id) => (typeof window.sreOffice?.dateValue === 'function' ? (window.sreOffice.dateValue(id) ?? $(id).value) : $(id).value);
+    const out = await session.read({ from: dayOf('rec-from'), to: dayOf('rec-to') });
     if (out.result !== 'ok') {
       $('rec-status').textContent = out.result === 'refused' ? `${t('refusedW')} ${out.whatHappened}` : out.result === 'invalid' ? t(out.why) : t('unreachable');
       return;

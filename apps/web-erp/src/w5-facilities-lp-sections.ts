@@ -319,7 +319,7 @@ export function noReceiptReportSection(input: SectionInput): W5Section | null {
       id: 'report', title: w('report'), go: w('reportGo'), fields: [], auto: true,
       run: async () => said(await call<Record<string, unknown>>('GET', '/v1/pos/no-receipt-returns'), (b) => {
         const rows = arr(b['returns']).filter(isObj);
-        if (rows.length === 0) return { tone: 'info', text: w('none') };
+        if (rows.length === 0) return { tone: 'info', text: w('none'), lines: [] }; // U7: an empty report is the state box, never a bare line
         const flagged = num(b['flaggedCount']) ?? 0;
         const lines: W5Line[] = [
           ...arr(b['byProcessor']).filter(isObj).map((p) => ({ key: `by-${str(p['userId'])}`, tone: 'info' as const, text: w('byWho', { who: str(p['userId']), count: str(p['count']), amount: rupees(num(p['refundedMinor']) ?? 0) }) })),

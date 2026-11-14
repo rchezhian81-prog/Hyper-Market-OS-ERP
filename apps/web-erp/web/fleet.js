@@ -235,7 +235,19 @@ function paint() {
   const known = hl === null || hl.known;
   el('tiles').hidden = !known;
   const s = view.summary;
-  el('tiles').replaceChildren(
+  // U7 (Group C2 · notes-P4): the fleet's figures are the chrome's summary cards — the same anatomy as every office page;
+  // a count that needs a person carries the card's tone beside its words. Off the box the page's own tiles stay.
+  const o = window.sreOffice;
+  const both = (k) => ({ en: session.text('en', k), ta: session.text('ta', k) });
+  if (o && typeof o.cards === 'function') {
+    o.cards(el('tiles'), [
+      { label: both('tileTotal'), value: s.total },
+      { label: both('tileTrading'), value: s.trading, ...(s.trading > 0 ? { tone: 'ok' } : {}) },
+      { label: both('tileMustUpgrade'), value: s.mustUpgrade, ...(s.mustUpgrade > 0 ? { tone: 'degraded' } : {}) },
+      { label: both('tileBlocked'), value: s.blocked, ...(s.blocked > 0 ? { tone: 'error' } : {}) },
+      { label: both('tileSilent'), value: s.silent, ...(s.silent > 0 ? { tone: 'degraded' } : {}) },
+    ]);
+  } else el('tiles').replaceChildren(
     tileNode(s.total, 'tileTotal', ''),
     tileNode(s.trading, 'tileTrading', 'good'),
     tileNode(s.mustUpgrade, 'tileMustUpgrade', 'attention'),
@@ -402,3 +414,5 @@ function whyDisabled(btn, why) {
   note.textContent = words; note.hidden = words === '';
   if (words === '') { btn.removeAttribute('title'); btn.removeAttribute('aria-describedby'); } else { btn.title = words; btn.setAttribute('aria-describedby', note.id); }
 }
+// U7: the figures become the chrome's cards as soon as the chrome is there.
+document.addEventListener('sre:chrome', () => paint(), { once: true });

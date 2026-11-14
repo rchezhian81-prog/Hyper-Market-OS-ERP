@@ -59,6 +59,8 @@ export interface AttributeDefinition {
 export interface Category {
   readonly categoryId: string;
   readonly name: string;
+  /** U7 (OB-699 = B): the category's name in Tamil — the product's own word, carried into the pack. Absent when not given. */
+  readonly nameTa?: string;
   readonly parentId: string | null;
   /** Attributes every product in this category must or may carry. */
   readonly attributes?: readonly AttributeDefinition[];

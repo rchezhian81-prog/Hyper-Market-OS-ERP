@@ -12,6 +12,35 @@
 const shopTimeOf = (value) => window.sreShopDay?.timeOf(value) ?? '';
 const shopDayOf = (value) => window.sreShopDay?.dateOf(value) ?? '';
 const el = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+const onChrome = (fn) => { if (!window.sreOffice) document.addEventListener('sre:chrome', fn, { once: true }); };
+/** The chrome's state kind for a screen state's tone: an error is an error, a doubt is "not known", the rest is "nothing yet". */
+const stateKindOf = (tone) => (tone === 'error' ? 'error' : tone === 'degraded' ? 'unknown' : 'empty');
+/** The chrome's record state for a tone — the chip's words come from the chrome in both languages. */
+const stateOfTone = (tone) => (tone === 'ok' ? 'done' : tone === 'error' ? 'failed' : tone === 'degraded' ? 'warning' : tone === 'pending' ? 'pending' : 'unknown');
+/** The chrome's record state for an old mark character a session still hands over (its words are what the screen shows). */
+const stateOfMark = (mark) => (mark === '✓' ? 'done' : mark === '⚠' ? 'warning' : mark === '✕' ? 'failed' : mark === '⏱' ? 'pending' : mark === '⏸' ? 'held' : mark === '↺' ? 'cancelled' : 'unknown');
+/** The tone of an old mark character a session still hands over. */
+const toneOfMark = (mark) => (mark === '✓' ? 'ok' : mark === '⚠' ? 'degraded' : mark === '✕' ? 'error' : mark === '?' ? 'unknown' : 'idle');
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** The chip of an old mark character; nothing until the chrome is there. */
+function chipOfMark(mark) { const o = sreO(); return o ? o.recordChip(stateOfMark(mark)) : document.createTextNode(''); }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
+/** The screen's one state box — the chrome's state part with the page's own words. */
+function paintState(host, screenState) {
+  const o = sreO(); host.dataset.tone = screenState.tone;
+  host.setAttribute('aria-label', screenState.announcement || screenState.label);
+  if (!o) { host.textContent = screenState.label; return; }
+  const box = o.state(host, stateKindOf(screenState.tone), { title: screenState.label, detail: '' });
+  const strong = box.querySelector('strong'); if (strong) strong.id = 'state-text';
+}
 let lang = 'en';
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */
@@ -112,9 +141,7 @@ function rowNode(r) {
   const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = r.title;
   const status = document.createElement('span');
   status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = r.severityWord;
-  status.append(icon, slabel);
+  fillStatus(status, r.status.tone, r.severityWord);
   status.setAttribute('aria-label', r.status.announcement || r.status.label);
   head.append(headline, status);
 
@@ -193,9 +220,7 @@ function paint() {
   const state = el('state');
   if (view.tasks.length === 0) {
     state.hidden = false;
-    state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
-    el('state-text').textContent = view.screenState.label;
+    paintState(state, view.screenState);
   } else {
     state.hidden = true;
   }
@@ -206,8 +231,7 @@ function paintResult(presentation) {
   if (!result) return;
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
-  el('result-text').textContent = presentation.label;
+  sayWith(result, presentation.tone === 'idle' ? null : stateOfTone(presentation.tone), presentation.label, 'result-text');
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
@@ -244,6 +268,7 @@ el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en';
 el('sample').hidden = window.facilitiesSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
+onChrome(() => paint());
 
 // ── OB-288 lane 2 · M10-FR-02: today's food-safety checks, saved through the store computer (works with the line down) ──
 const fsq = window.foodSafetyQueue ?? null;
@@ -261,15 +286,14 @@ function fsForm(row) {
     selects[item.itemId] = sel; parts.push(fsField(item.label, sel));
   }
   const action = document.createElement('textarea'); action.className = 'fs-action'; parts.push(fsField(ft('fsAction'), action));
-  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save sre-btn'; save.textContent = `✓ ${ft('fsSave')}`;
+  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save sre-btn'; save.textContent = ft('fsSave');
   form.append(...parts, save);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const itemResults = {}; for (const [id, sel] of Object.entries(selects)) itemResults[id] = sel.value;
     const out = fsq.record(lang, { checkId: row.checkId, slotDueAt: row.slotDueAt, readingC: reading.value, itemResults, correctiveAction: action.value });
     const box = el('fs-result'); box.hidden = false;
-    el('fs-result-icon').textContent = out.ok ? '✓' : '✕';
-    el('fs-result-text').textContent = out.ok ? ft('fsSaved') : out.words;
+    sayWith(box, out.ok ? 'done' : 'failed', out.ok ? ft('fsSaved') : out.words, 'fs-result-text');
     paintFoodSafety();
     void syncFoodSafety();
   });
@@ -288,9 +312,7 @@ function paintFoodSafety() {
     const head = document.createElement('div'); head.className = 'head';
     const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.title} — ${shopTimeOf(row.slotDueAt)}`;
     const st = document.createElement('span'); st.className = 'status';
-    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = row.icon;
-    const word = document.createElement('span'); word.textContent = row.stateWord;
-    st.append(icon, word); st.setAttribute('aria-label', row.stateWord); head.append(name, st); li.append(head);
+    fillStatus(st, toneOfMark(row.icon), row.stateWord); st.setAttribute('aria-label', row.stateWord); head.append(name, st); li.append(head);
     if (row.saved !== undefined) {
       const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);
       if (row.saved.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = row.saved.reason; li.append(ex); }
@@ -321,8 +343,7 @@ function qhButton(word, cls = 'qh-release', icon = 'shield-check') {
 // M10-FR-02 offline: say what happened to a sample recording — saved on the store computer for head office, or why not.
 function qsSay(out) {
   const box = el('qh-result'); box.hidden = false;
-  el('qh-result-icon').textContent = out.ok ? '✓' : '✕';
-  el('qh-result-text').textContent = out.ok ? qt('qsSaved') : out.words;
+  sayWith(el('qh-result'), out.ok ? 'done' : 'failed', out.ok ? qt('qsSaved') : out.words, 'qh-result-text');
   paintQualityHolds();
   void syncQualityHolds();
 }
@@ -362,8 +383,7 @@ function qhForm(row) {
     ev.preventDefault();
     const out = qhq.release(lang, { batchId: row.batchId, notes: notes.value });
     const box = el('qh-result'); box.hidden = false;
-    el('qh-result-icon').textContent = out.ok ? '✓' : '✕';
-    el('qh-result-text').textContent = out.ok ? qt('qhSaved') : out.words;
+    sayWith(el('qh-result'), out.ok ? 'done' : 'failed', out.ok ? qt('qhSaved') : out.words, 'qh-result-text');
     paintQualityHolds();
     void syncQualityHolds();
   });
@@ -382,9 +402,7 @@ function paintQualityHolds() {
     const head = document.createElement('div'); head.className = 'head';
     const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.productId} — ${row.batchId}`;
     const st = document.createElement('span'); st.className = 'status';
-    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = row.icon;
-    const word = document.createElement('span'); word.textContent = row.stateWord;
-    st.append(icon, word); st.setAttribute('aria-label', row.stateWord); head.append(name, st);
+    fillStatus(st, toneOfMark(row.icon), row.stateWord); st.setAttribute('aria-label', row.stateWord); head.append(name, st);
     const why = document.createElement('div'); why.className = 'saved'; why.textContent = `${qt('qhWhy')}: ${row.reason}`;
     li.append(head, why);
     // M10-FR-02: the samples recorded on the hold — each result in words beside its icon; "not told" is said, never blank.
@@ -393,7 +411,7 @@ function paintQualityHolds() {
       const ul = document.createElement('ul'); ul.className = 'qh-samples';
       for (const s of row.samples) {
         const item = document.createElement('li'); item.dataset.sample = s.sampleId; item.dataset.result = s.result;
-        const ic = document.createElement('span'); ic.className = 'icon'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = s.icon;
+        const ic = chipOfMark(s.icon);
         const w = document.createElement('span'); w.textContent = ` ${s.test} — ${s.resultWord} (${qt('qhTakenBy')} ${s.takenBy}, ${window.sreShopDay?.dateTimeOf(s.takenAt) ?? ''})`;
         item.append(ic, w);
         // M10-FR-02 offline: a sample recorded at the store says where it has got to; one head office refused says why.

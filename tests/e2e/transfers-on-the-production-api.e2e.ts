@@ -91,7 +91,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
     try {
       await s.page.locator('#register tbody tr[data-transfer="t-1"][data-state="proposed"]').waitFor({ timeout: 15_000 });
       expect(s.writes, 'nothing is written on open').toEqual([]);
-      expect(await s.page.locator('#n-proposed').innerText()).toBe('2');
+      expect(await s.page.locator('#panels .sre-summary-card:nth-child(1) .sre-summary-value').innerText()).toBe('2'); // the first card: proposed (a chrome summary card, U5)
       expect(await s.page.locator('#register tbody tr[data-transfer="t-3"]').count(), 'another store\'s transfer is not listed').toBe(0);
       await look(s.page, 't-1');
       expect(await s.page.locator('#d-lines').innerText()).toMatch(/P1 — 10 EA[\s\S]*head office cost ₹2\.00[\s\S]*P2 — 4 EA[\s\S]*head office cost ₹5\.00/);
@@ -132,7 +132,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       await s.page.click('#d-receive');
       await says(s.page, 'd-state', /^Received · Shortfall open/);
       expect(await s.page.locator('#d-short').innerText()).toMatch(/P1 — 2 missing · worth ₹4\.00/);
-      expect(await s.page.locator('#n-short').innerText()).toBe('1');
+      expect(await s.page.locator('#panels .sre-summary-card:nth-child(4) .sre-summary-value').innerText()).toBe('1'); // the fourth card: shortfalls open
       await s.page.locator('#d-short input.found').fill('1');
       await s.page.fill('#d-note', 'searched the van and the floor');
       await s.page.click('#d-resolve');

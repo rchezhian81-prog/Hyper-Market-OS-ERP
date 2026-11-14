@@ -162,6 +162,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('owner aler
     await m.page.locator('#t-rows li[data-kind="voided_bill"]').waitFor({ timeout: 15_000 });
     expect(await m.page.locator('#t-rows button[data-act="save"]').count()).toBe(0);
     expect(await m.page.isHidden('#d-check')).toBe(true);
+    // OB-702 · G15: the manager reads the OWNER's numbers in the third person — never "you enter it".
+    expect(await m.page.textContent('#lead')).toMatch(/^The owner's six exception alerts/);
+    expect(await m.page.textContent('#thresholds-h')).toBe('The owner\'s six alerts');
+    // the owner set one alert in the first journey; the rest still read "not set" — in the owner's name, not the reader's
+    expect(await m.page.textContent('#t-rows')).toContain('Not set — this alert does not fire until the owner enters it.');
+    expect((await m.page.textContent('main')) ?? '').not.toMatch(/until you enter it|Your six|you set/);
     expect(m.errors).toEqual([]);
     await m.close();
     const c = await open(alertsShell, CASHIER, '/owner-alerts');

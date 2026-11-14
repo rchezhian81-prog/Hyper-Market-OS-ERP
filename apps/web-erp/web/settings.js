@@ -9,6 +9,30 @@ const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, write: false };
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
+/** Each setting's name in the reader's language, by its key (OB-699); head office's English label is the fallback. */
+const SETTING_WORDS = {
+  en: {
+    tradingDayCutoff: 'Trading-day cut-off (HH:MM)', localeTimeZone: 'Store time zone (IANA name, e.g. Asia/Kolkata)', localeCurrency: 'Base currency (ISO 4217)', localeLanguages: 'Languages offered',
+    taxDefaultBps: 'Default GST rate (basis points)', deliveryRadiusKm: 'Delivery serviceability radius (km)', catalogueBulkPublishThreshold: 'Products changed in one publish before it counts as bulk (needs a fresh second-factor sign-in)',
+    posAgeRestrictedMinimumAge: 'Minimum age for age-restricted items (years)', posLicenceHoursEnabled: 'Restrict certain items to licensed selling hours', loyaltyPointsPer100Inr: 'Loyalty points earned per ₹100 spent (0 = loyalty off)',
+    loyaltyPointValuePaise: 'Value of one loyalty point when spent (paise)', loyaltyTillSpendCapPaise: 'Most a loyalty member may spend at the till per day, points plus store credit (paise; 0 = off)', loyaltyGiftCardOfflineCapPaise: 'Most one till may take from one gift card while head office cannot be reached (paise; 0 = none offline)',
+    productionDepartments: 'In-store production departments operated', pickingZoneOrder: 'Order a picker collects the shop\'s zones in', merchandisingShelfCountStaleAfterMinutes: 'How long a shelf count stays worth acting on (minutes)', merchandisingShelfRefillAtBp: 'How empty a facing must be before it is worth refilling (basis points)',
+    platformBoxDiskWarnHours: 'Warn when a store computer would run out of disk within (hours of trading)', platformBoxUnsentWarnHours: 'Warn when bills have waited on a store computer, unsent, for more than (hours)', platformBoxClaimSlackNumbers: 'A store computer\'s "I still hold N bills between X and Y" may span at most this many extra numbers (at least)', platformBoxClaimSlackPercent: 'A store computer\'s "I still hold N bills between X and Y" may span this percentage of N in extra numbers, when that is more',
+    receiptPaperFormat: 'Receipt paper size', invoiceB2cDynamicQrOn: 'Print the B2C dynamic QR on every bill (only required above ₹500 crore turnover)', invoiceB2cDynamicQrUpiId: 'The shop\'s UPI ID for the B2C dynamic QR (empty = not set)', invoiceB2cDynamicQrBankAccount: 'The bank account number that UPI ID pays into (empty = not set)', invoiceB2cDynamicQrIfsc: 'That bank account\'s IFSC (empty = not set)', deliveryTillFeeProduct: 'The product whose price is the till\'s delivery-fee line (empty = not set)',
+  },
+  ta: {
+    tradingDayCutoff: 'வணிக நாள் முடியும் நேரம் (HH:MM)', localeTimeZone: 'கடையின் நேர மண்டலம் (IANA பெயர், எ.கா. Asia/Kolkata)', localeCurrency: 'அடிப்படை நாணயம் (ISO 4217)', localeLanguages: 'வழங்கப்படும் மொழிகள்',
+    taxDefaultBps: 'இயல்பு GST விகிதம் (அடிப்படைப் புள்ளிகள்)', deliveryRadiusKm: 'விநியோகம் செய்யக்கூடிய தூரம் (கி.மீ.)', catalogueBulkPublishThreshold: 'ஒரு வெளியீட்டில் இத்தனை பொருட்கள் மாறினால் அது மொத்த மாற்றம் (புதிய இரண்டாம் படி உள்நுழைவு தேவை)',
+    posAgeRestrictedMinimumAge: 'வயது வரம்புள்ள பொருட்களுக்கான குறைந்தபட்ச வயது (ஆண்டுகள்)', posLicenceHoursEnabled: 'சில பொருட்களை உரிம நேரத்தில் மட்டும் விற்க', loyaltyPointsPer100Inr: '₹100 செலவுக்கு கிடைக்கும் விசுவாசப் புள்ளிகள் (0 = விசுவாசத் திட்டம் இல்லை)',
+    loyaltyPointValuePaise: 'ஒரு விசுவாசப் புள்ளியின் மதிப்பு செலவழிக்கும்போது (பைசா)', loyaltyTillSpendCapPaise: 'ஒரு உறுப்பினர் ஒரு நாளில் கல்லாவில் செலவழிக்கக்கூடிய அதிகபட்சம், புள்ளிகளும் கடைக் கடனும் சேர்த்து (பைசா; 0 = இல்லை)', loyaltyGiftCardOfflineCapPaise: 'தலைமை அலுவலகத்தை அடைய முடியாதபோது ஒரு கல்லா ஒரு பரிசு அட்டையிலிருந்து எடுக்கக்கூடிய அதிகபட்சம் (பைசா; 0 = ஆஃப்லைனில் இல்லை)',
+    productionDepartments: 'கடையில் இயங்கும் உற்பத்திப் பிரிவுகள்', pickingZoneOrder: 'பொருட்களை எடுப்பவர் கடையின் பகுதிகளைச் சேகரிக்கும் வரிசை', merchandisingShelfCountStaleAfterMinutes: 'ஒரு அலமாரி எண்ணிக்கை எவ்வளவு நேரம் செயல்படத் தகுந்ததாக இருக்கும் (நிமிடங்கள்)', merchandisingShelfRefillAtBp: 'ஒரு அலமாரி முகப்பு எவ்வளவு காலியானால் நிரப்பத் தகுந்தது (அடிப்படைப் புள்ளிகள்)',
+    platformBoxDiskWarnHours: 'கடைக் கணினியின் வட்டு இத்தனை வணிக மணி நேரத்தில் நிரம்பும் என்றால் எச்சரி', platformBoxUnsentWarnHours: 'பில்கள் கடைக் கணினியில் அனுப்பப்படாமல் இத்தனை மணி நேரத்திற்கு மேல் காத்திருந்தால் எச்சரி', platformBoxClaimSlackNumbers: 'கடைக் கணினியின் "X முதல் Y வரை N பில்கள் என்னிடம் உள்ளன" அறிக்கை அதிகபட்சம் இத்தனை கூடுதல் எண்களைக் கொள்ளலாம் (குறைந்தது)', platformBoxClaimSlackPercent: 'கடைக் கணினியின் "X முதல் Y வரை N பில்கள்" அறிக்கை N-இல் இத்தனை சதவீதம் கூடுதல் எண்களைக் கொள்ளலாம், அது அதிகமாக இருக்கும்போது',
+    receiptPaperFormat: 'ரசீது காகித அளவு', invoiceB2cDynamicQrOn: 'ஒவ்வொரு பில்லிலும் B2C டைனமிக் QR அச்சிடு (₹500 கோடி விற்றுமுதலுக்கு மேல் மட்டும் தேவை)', invoiceB2cDynamicQrUpiId: 'B2C டைனமிக் QR-க்கான கடையின் UPI ID (காலி = அமைக்கப்படவில்லை)', invoiceB2cDynamicQrBankAccount: 'அந்த UPI ID பணம் செலுத்தும் வங்கிக் கணக்கு எண் (காலி = அமைக்கப்படவில்லை)', invoiceB2cDynamicQrIfsc: 'அந்த வங்கிக் கணக்கின் IFSC (காலி = அமைக்கப்படவில்லை)', deliveryTillFeeProduct: 'கல்லாவின் விநியோகக் கட்டண வரியாகும் பொருள் (காலி = அமைக்கப்படவில்லை)',
+  },
+};
+const wordKey = (id) => id.replace(/[-._](\w)/g, (_, c) => c.toUpperCase()); // 'tax.default_bps' → taxDefaultBps (the table's bare keys)
+const settingName = (s) => SETTING_WORDS[lang]?.[wordKey(s.key)] ?? s.label;
+
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
 function button(words, cls, onClick) { const b = document.createElement('button'); b.classList.add('sre-btn'); b.type = 'button'; b.className = cls; b.textContent = words; b.addEventListener('click', onClick); return b; }
 
@@ -68,7 +92,9 @@ function paint() {
   for (const s of settings) {
     const li = document.createElement('li'); li.dataset.key = s.key; if (!s.isDefault) li.className = 'answered';
     const head = document.createElement('div'); head.className = 'head';
-    head.append(text('h4', s.label), text('span', `${t('inForce')}: ${api.valueWords(s.value)}${s.isDefault ? ` (${t('onDefault')})` : ` · ${t('version')} ${s.version}`}`, 'meta'));
+    // The value in force is the setting's own code or figure, shown as code; the name follows the toggle.
+    const meta = text('span', `${t('inForce')}: `, 'meta'); const val = document.createElement('code'); val.textContent = api.valueWords(s.value); meta.append(val, document.createTextNode(s.isDefault ? ` (${t('onDefault')})` : ` · ${t('version')} ${s.version}`));
+    head.append(text('h4', settingName(s)), meta);
     li.append(head);
     const versions = open.get(s.key);
     li.append(button(versions === undefined ? t('history') : t('hide'), 'quiet', async () => {

@@ -155,9 +155,15 @@ export const ROUTE_SETTLED = 'RouteSettled';
 export const DRIVER_CASH_HANDED_OVER = 'DriverCashHandedOver';
 /** R4 gap lane "driver" (WF-16): an online return collected at the door — or not, with the reason. No money moves. */
 export const RETURN_COLLECTION_RECORDED = 'ReturnCollectionRecorded';
+/**
+ * U6 · OB-700 (owner, 7 Nov 2026, decision 3 = B): the driver asks the STORE to call the customer of a stop. The phone holds
+ * no customer name or number (§31), so "customer contact" is a request the shop acts on — queued here, relayed by the store
+ * computer, recorded once at head office and put in front of the store. Thin: route, driver, stop, order reference, area.
+ */
+export const DELIVERY_CALL_REQUESTED = 'DeliveryCallRequested';
 
-/** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover, a return collection. A guardrail binds the shell's words to this. */
-export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover', 'collection', 'proof'] as const);
+/** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover, a return collection, a proof picture, a call request. A guardrail binds the shell's words to this. */
+export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover', 'collection', 'proof', 'call'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /**
@@ -247,6 +253,30 @@ export class NoSuchStopError extends Error {
     super(`No stop "${stopId}" on this route.`);
     this.name = 'NoSuchStopError';
   }
+}
+
+/** OB-700: the store was already asked to call this stop's customer — one request per stop, never a second. */
+export class CallAlreadyAskedError extends Error {
+  constructor(stopId: string) {
+    super(`The store has already been asked to call the customer of stop "${stopId}".`);
+    this.name = 'CallAlreadyAskedError';
+  }
+}
+
+/** OB-700: a stop nothing more happens at (delivered, returned, failed for good) needs no call. */
+export class StopFinishedError extends Error {
+  constructor(stopId: string) {
+    super(`Stop "${stopId}" is already finished; there is nobody to call about it.`);
+    this.name = 'StopFinishedError';
+  }
+}
+
+/** OB-700: what the phone keeps of a call request — the stop, the order reference, the area and when it was asked. */
+export interface CallRequest {
+  readonly stopId: string;
+  readonly orderRef: string;
+  readonly area: string;
+  readonly askedAt: string;
 }
 
 export class ReasonRequiredError extends Error {
@@ -376,6 +406,31 @@ export class RouteSession {
    * not named was not taken. Refused by name, before anything is queued: a line not on the return, a part item, more than
    * was booked, a line named twice, or nothing at all (that is "nothing handed over"). Once per return.
    */
+  /**
+   * OB-700 (decision 3 = B) · M19 · §31: ask the STORE to call this stop's customer. The phone cannot call — it holds no
+   * number — so one tap queues a thin request in the driver's name; the store computer relays it; head office records it
+   * once and tells the store. One request per stop (a second is refused by name); a finished stop takes none.
+   */
+  askStoreToCall(stopId: string): CallRequest {
+    this.assertMayWork(); // OB-521
+    const stop = this.stopOrThrow(stopId);
+    if (stop.state === 'delivered' || stop.state === 'partially_delivered' || stop.state === 'returned_to_origin') throw new StopFinishedError(stopId);
+    if (this.callRequested(stopId)) throw new CallAlreadyAskedError(stopId);
+    const occurredAt = this.at();
+    const key = `call:${this.routeId}:${stopId}`;
+    this.outbox.enqueue(makeEvent({
+      id: key, type: DELIVERY_CALL_REQUESTED, occurredAt, idempotencyKey: key, source: this.routeId,
+      // Thin (§31): references and the area label the phone already shows. Never the customer's name or number.
+      payload: { routeId: this.routeId, driverId: this.driverId, stopId, orderRef: stop.orderRef, area: stop.area, occurredAt },
+    }));
+    return { stopId, orderRef: stop.orderRef, area: stop.area, askedAt: occurredAt };
+  }
+
+  /** Whether the store has been asked (on this phone) to call this stop's customer — read from the durable queue, so a reload keeps it. */
+  callRequested(stopId: string): boolean {
+    return this.outbox.all().some((i) => i.event.type === DELIVERY_CALL_REQUESTED && (i.event.payload as { stopId?: unknown }).stopId === stopId);
+  }
+
   collect(returnId: string, lines: readonly { readonly productId: string; readonly collectedMinor: number }[]): Collection {
     this.assertMayWork(); // OB-521
     const c = this.collectionOrThrow(returnId);
@@ -842,6 +897,10 @@ export class RouteSession {
             ? `collected ${(p.lines ?? []).filter((l) => l.collectedMinor > 0).map((l) => `${l.collectedMinor} × ${l.productId}`).join(', ')}`
             : `not collected · ${p.reason ?? ''}`;
           return [{ kind: 'collection', id: p.returnId, what: `${area} · ${p.returnId}`, detail, ...common, ...withReason }];
+        }
+        if (item.event.type === DELIVERY_CALL_REQUESTED) {
+          const p = item.event.payload as { stopId: string; orderRef: string; area: string };
+          return [{ kind: 'call', id: p.stopId, what: `${p.area} · ${p.orderRef}`, detail: 'ask the store to call the customer', ...common, ...withReason }];
         }
         if (item.event.type === DELIVERY_PROOF_CAPTURED) {
           const p = item.event.payload as { stopId: string; orderRef: string; kind: string; contentBase64: string };

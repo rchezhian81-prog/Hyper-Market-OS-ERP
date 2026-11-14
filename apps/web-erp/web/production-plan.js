@@ -5,6 +5,13 @@
 // word has a Tamil twin; head office's own sentences stay English.
 
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** A state as the chrome's chip (the tone's shape and the words) — never a ✓/⚠ character; the words alone until the chrome is there. */
+function fillStatus(holder, tone, label) { const o = sreO(); holder.replaceChildren(o ? o.chip(tone, label) : label); }
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
 const api = window.productionPlan ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, trace: false };
@@ -16,7 +23,27 @@ function el(tag, text, cls) { const n = document.createElement(tag); if (text !=
 let plan = null; let planOut = null;
 let trace = null; // { kind: 'inputs' | 'forward', value } | { kind: 'said', out }
 
+// U3 · OB-699 (and U2b · G14): the plan's day is the chrome's shared date field — dd/mm/yyyy as the shop writes it, ISO
+// sent — and its label and hint follow the language toggle. Until the chrome is there the plain box stays (ISO typed).
+function planDayField() {
+  const office = window.sreOffice; const input = $('plan-day');
+  if (!office || typeof office.dateField !== 'function' || !input || api === null) return;
+  const words = { en: api.words('en', 'forDay'), ta: api.words('ta', 'forDay') };
+  if (input.closest('.sre-date')) {
+    const l = lang(); const wrap = input.closest('.sre-field');
+    const lab = wrap.querySelector('.sre-field-label'); if (lab && lab.firstChild) lab.firstChild.textContent = words[l];
+    const hint = wrap.querySelector('.sre-field-hint'); if (hint && typeof office.words === 'function') hint.textContent = office.words('dateHint');
+    return;
+  }
+  const typed = input.value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(typed) ? typed : (typeof office.parseShopDate === 'function' ? office.parseShopDate(typed) : null);
+  const field = office.dateField({ id: 'plan-day', label: words, required: false, ...(iso ? { value: iso } : {}) });
+  (input.closest('div') ?? input).replaceWith(field);
+}
+const dayOf = (id) => { const f = $(id); const office = window.sreOffice; return f && f.closest('.sre-date') && office && typeof office.dateValue === 'function' ? (office.dateValue(id) ?? '') : (f?.value ?? ''); };
+
 function paintWords() {
+  planDayField();
   for (const [id, key] of [['plan-h', 'planH'], ['plan-lead', 'planLead'], ['plan-location-label', 'location'], ['plan-day-label', 'forDay'], ['plan-go-text', 'showPlan'],
     ['trace-h', 'traceH'], ['trace-lead', 'traceLead'], ['trace-batch-label', 'batch'], ['trace-inputs-text', 'showInputs'], ['trace-forward-text', 'traceForward']]) if ($(id)) $(id).textContent = t(key);
 }
@@ -25,7 +52,9 @@ function planLine(l) {
   const li = el('li', undefined, `row tone-${l.state === 'proposed' ? 'ok' : l.state === 'nothing_needed' ? 'idle' : 'degraded'}`);
   li.dataset.recipe = l.recipeId; li.dataset.state = l.state;
   const head = el('div', undefined, 'head');
-  head.append(el('span', `${l.recipeId} — ${l.outputProductId}`, 'headline'), el('span', `${l.state === 'proposed' ? '✓' : l.state === 'nothing_needed' ? '•' : '⚠'} ${api.stateWords(lang(), l.state)}`, 'status'));
+  const status = el('span', '', 'status');
+  fillStatus(status, l.state === 'proposed' ? 'ok' : l.state === 'nothing_needed' ? 'idle' : 'degraded', api.stateWords(lang(), l.state));
+  head.append(el('span', `${l.recipeId} — ${l.outputProductId}`, 'headline'), status);
   li.append(head);
   const facts = el('div', undefined, 'facts');
   facts.append(
@@ -63,7 +92,7 @@ function inputsRows(v) {
   return v.runs.map((r) => {
     const li = el('li', undefined, `row tone-${r.inputsRecorded ? 'idle' : 'degraded'}`); li.dataset.run = r.runId;
     li.append(el('div', `${t('inputsOf')} ${v.outputBatchId} (${r.outputProductId})`, 'headline'));
-    if (!r.inputsRecorded) { li.append(el('p', `⚠ ${t('inputsNotRecorded')}`, 'exc')); return li; }
+    if (!r.inputsRecorded) { li.append(withChip(el('p', t('inputsNotRecorded'), 'exc'), 'warning')); return li; }
     if (r.inputBatches.length === 0) { li.append(el('p', t('noInputs'), 'note')); return li; }
     const ul = el('ul', undefined, 'inputs');
     for (const i of r.inputBatches) {
@@ -85,7 +114,7 @@ function forwardRows(v) {
     return li;
   });
   if (v.outputs.length === 0) rows.push(el('li', t('none'), 'row tone-idle'));
-  if (v.runsWithoutRecordedInputs > 0) rows.push(el('li', `⚠ ${v.runsWithoutRecordedInputs} ${t('withoutInputs')}`, 'row tone-degraded'));
+  if (v.runsWithoutRecordedInputs > 0) rows.push(withChip(el('li', `${v.runsWithoutRecordedInputs} ${t('withoutInputs')}`, 'row tone-degraded'), 'warning'));
   return rows;
 }
 function paintTrace() {
@@ -108,7 +137,7 @@ function build() {
 $('plan-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   $('plan-status').textContent = t('reading');
-  const out = await session.plan({ locationId: $('plan-location').value, forDay: $('plan-day').value });
+  const out = await session.plan({ locationId: $('plan-location').value, forDay: dayOf('plan-day') });
   if (out.result === 'ok') { plan = out.value; planOut = null; } else { plan = null; planOut = out; }
   paintPlan();
 });

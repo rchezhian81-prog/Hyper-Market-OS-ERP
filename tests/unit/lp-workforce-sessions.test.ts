@@ -176,11 +176,11 @@ describe('relabel tasks, appointment letters, related parties', () => {
 
   it('OB-358: who a relabel task is for, in words — the champion, or the store manager and why; mine marked; nobody in the role said', () => {
     expect(relabelAssigneeWords('en', { assignee: { to: 'floor_champion', departmentId: 'D-dairy', employeeId: 'u-asha' }, assignedToMe: true }))
-      .toBe('For: u-asha (floor champion of D-dairy) · ✓ yours');
+      .toBe('For: u-asha (floor champion of D-dairy) · yours'); // U5: words, never a ✓ character
     expect(relabelAssigneeWords('en', { assignee: { to: 'store_manager', departmentId: 'D-grocery', because: 'no_champion_named' }, storeManagers: ['u-mgr'] }))
       .toBe('For: the store manager (u-mgr) — no floor champion named for D-grocery');
     expect(relabelAssigneeWords('en', { assignee: { to: 'store_manager', departmentId: null, because: 'no_department_owns_it' }, storeManagers: [] }))
-      .toBe('For: the store manager — ⚠ nobody holds the store manager role here (not set) — no department owns this product here');
+      .toBe('For: the store manager — nobody holds the store manager role here (not set) — no department owns this product here');
     expect(relabelAssigneeWords('en', { assignee: null })).toBe('For: not assigned (raised before tasks were assigned)');
     expect(relabelAssigneeWords('ta', { assignee: { to: 'store_manager', departmentId: 'D-dairy', because: 'champion_left' }, storeManagers: ['u-mgr'] })).toMatch(/^யாருக்கு: கடை மேலாளர் \(u-mgr\) — தளச் சாம்பியன் விலகிவிட்டார் — D-dairy$/);
   });

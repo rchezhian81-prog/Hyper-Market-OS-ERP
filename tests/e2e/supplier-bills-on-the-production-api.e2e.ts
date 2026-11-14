@@ -243,6 +243,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       expect(refusals).toEqual([]);
       expect(await s.page.locator('#hand-section').isHidden()).toBe(true);
       expect(await s.page.locator('#register li').count()).toBe(0);
+      // OB-702 · G15 (lane 1): the register of bills handed in (a capture read) is not drawn for this role, and
+      // "Deliveries waiting for their bill" is the first section on the page — the accountant's own work leads.
+      expect(await s.page.locator('#register-h').locator('xpath=ancestor::section[1]').isHidden()).toBe(true);
+      expect(await s.page.locator('main section:not([hidden])').first().getAttribute('id')).toBe('cnk-section');
       await s.page.click('#lang');
       expect(await s.page.locator('#title').innerText()).toBe('சப்ளையர் பில்கள்');
       expect(await s.page.locator('#register-h').innerText()).toBe('கொடுக்கப்பட்ட பில்கள்');

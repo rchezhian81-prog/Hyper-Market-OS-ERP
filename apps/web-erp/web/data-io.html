@@ -32,7 +32,6 @@
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--bg); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-left:5px solid var(--line); }
       li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size: var(--fs-sm); }
-      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size: var(--fs-sm); margin-left:6px; }
       label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
       select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
@@ -116,7 +115,8 @@
         </div>
         <!-- M30 round 8: the loads already applied — each in place or undone; an undo is asked for and approved like a load. -->
         <h3 id="loads-heading" hidden></h3>
-        <ul class="rows" id="my-loads" aria-label="Loads already applied" hidden></ul>
+        <!-- U7 (OB-726): the loads already applied, one page at a time from head office, on the chrome's register. -->
+        <div id="my-loads-host" hidden></div>
       </section>
       <!-- W5: platform, access, approvals and data import (apps/web-erp/web/w5-platform.js) -->
       <section class="w5" data-w5="importChecks" aria-live="polite"></section>

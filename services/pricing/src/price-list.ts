@@ -15,6 +15,7 @@
 //   • BACK-DATING IS REFUSED — an entry effective before today would change what resolvePrice says
 //     yesterday's sales should have charged, so the receipts and the reports would stop agreeing.
 
+import { pageOrRefuse } from '../../kernel/src/paging';
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { resolvePrice, priceHistory, type PriceEntry, type PriceScope, type ResolveContext } from '../../../packages/price-list/src/price-list';
@@ -217,7 +218,12 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
         const productId = ctx.params['productId'] ?? '';
         const all = await deps.entries(ctx.tenantId, productId);
         if (all.length === 0) throw notFound(`a price list for ${productId}`);
-        return { status: 200, body: { productId, entries: priceHistory(all, productId) } };
+        const entries = priceHistory(all, productId);
+        // U7 (OB-726): with ?page= head office pages the history (search by entry, scope, store; sort by day or version).
+        const view = entries.map((e, i) => ({ i, id: e.id, scope: e.scope, scopeRef: e.scopeRef ?? '', effectiveFrom: e.effectiveFrom, version: e.version }));
+        const paged = pageOrRefuse(view, ctx.query, { search: ['id', 'scope', 'scopeRef'], sort: ['effectiveFrom', 'version'] });
+        if (paged !== undefined) return { status: 200, body: { productId, entries: paged.rows.map((v) => entries[v.i]!), paging: paged.paging } };
+        return { status: 200, body: { productId, entries } };
       },
     },
   ];

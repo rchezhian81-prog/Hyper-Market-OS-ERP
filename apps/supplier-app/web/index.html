@@ -169,6 +169,34 @@
         <ul class="rows" id="rebates-rows" aria-label="Rebate claims from us"></ul>
       </section>
 
+      <section class="delivery" id="rfqs" hidden aria-labelledby="rfqs-h">
+        <!-- U6 · M24-FR-01: the requests for quotation the shop sent this supplier, each with its own quote form. A quote is the
+             existing `rfq_response` submission; it waits for a buyer to accept it (§28). -->
+        <h3 id="rfqs-h"></h3>
+        <p class="muted" id="rfqs-lead"></p>
+        <p class="muted" id="rfqs-said" hidden></p>
+        <ul class="rows" id="rfqs-rows" aria-label="Requests for quotation from us"></ul>
+      </section>
+
+      <section class="delivery" id="claims" hidden aria-labelledby="claims-h">
+        <!-- U6 · M07-FR-03 · M24-FR-02: the claims the shop holds AGAINST this supplier — read only — and, below, the one form
+             that raises the supplier's own claim on the shop (the existing `claim` submission; a buyer decides it). -->
+        <h3 id="claims-h"></h3>
+        <p class="muted" id="claims-lead"></p>
+        <p class="muted" id="claims-said" hidden></p>
+        <ul class="rows" id="claims-rows" aria-label="Our claims on you"></ul>
+        <h4 id="raise-h"></h4>
+        <p class="muted" id="raise-lead"></p>
+        <p class="muted" id="raise-said" hidden></p>
+        <div class="du-form" id="raise-form" hidden>
+          <label for="cl-order"><span id="cl-order-l"></span><select id="cl-order"></select></label>
+          <label for="cl-amount"><span id="cl-amount-l"></span><input id="cl-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="cl-why"><span id="cl-why-l"></span><input id="cl-why" maxlength="300" autocomplete="off" /></label>
+          <button id="cl-send" type="button"><span id="cl-send-text"></span></button>
+        </div>
+        <p class="status-line" id="cl-result" role="status" aria-live="polite"></p>
+      </section>
+
       <h3 id="statement-heading"></h3>
       <div class="statement" id="statement" hidden></div>
       <p class="muted" id="statement-inaccessible" hidden></p>

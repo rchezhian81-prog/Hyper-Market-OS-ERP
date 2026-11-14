@@ -89,7 +89,7 @@ export { PLATFORM_ADMIN_ROLE_ID, isPlatformAdministrationRole } from '../../iden
 const BASE_ROLES: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
-    name: 'Owner',
+    name: 'Owner', nameTa: 'உரிமையாளர்',
     permissions: [
       'identity.self.read', 'identity.role.read', 'identity.role.request', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
       'documents.number.allocate',
@@ -496,7 +496,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: STORE_MANAGER_ROLE_ID,
-    name: 'Store manager',
+    name: 'Store manager', nameTa: 'கடை மேலாளர்',
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
     permissions: [
@@ -677,7 +677,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: INTERNAL_COMMITTEE_ROLE_ID,
-    name: 'Internal Committee member',
+    name: 'Internal Committee member', nameTa: 'உள்ளகக் குழு உறுப்பினர்',
     // R2 C20 — the POSH Act Internal Committee. The ONLY role that may record or read a complaint: not the owner, not a
     // manager, not IT. Every read and write it makes is sealed into the audit trail. It also generates the annual report
     // (counts only) the owner files with the District Officer. A member usually holds another role too (their job).
@@ -688,7 +688,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: SECURITY_REVIEWER_ROLE_ID,
-    name: 'Security reviewer',
+    name: 'Security reviewer', nameTa: 'பாதுகாப்பு ஆய்வாளர்',
     // OB-406 (option B): the narrowest staff role — exactly what the named security reviewer needs to SIGN, and nothing else.
     //   • `compliance.risk.read` — the Risk acceptance screen and its reads (the blocked gates, the acceptances, who the
     //     reviewer is), the reviewer's own signature (`POST /v1/compliance/risks/:riskId/acceptance/review`, whose authority
@@ -709,7 +709,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'cashier',
-    name: 'Cashier',
+    name: 'Cashier', nameTa: 'கல்லாவர்',
     // The narrowest role in the product, and the one most people hold (P-07).
     permissions: [
       // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
@@ -790,7 +790,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: PLATFORM_ADMIN_ROLE_ID,
-    name: 'Platform administrator',
+    name: 'Platform administrator', nameTa: 'தள நிர்வாகி',
     // §28 / M33-FR-01 / SEC-11 — the platform-administration function, held *apart* from running
     // the shop. This role runs the platform: settings and feature flags, devices/terminals and app
     // versions (including the remote kill of a broken release, A-10), time-bound support access,
@@ -833,7 +833,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'accountant',
-    name: 'Accountant',
+    name: 'Accountant', nameTa: 'கணக்காளர்',
     // Posts journals; **cannot close the period they posted into** — that refusal is in the
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
@@ -928,7 +928,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'chartered_accountant',
-    name: 'Chartered accountant',
+    name: 'Chartered accountant', nameTa: 'பட்டயக் கணக்காளர்',
     // M23 / C-01 / MG-06 — the external professional who signs the FINANCE and TAX control totals at
     // migration. Deliberately the narrowest of the sign-off roles: it may read the reconciliation and
     // the verification report, and it may sign — and **nothing else**. The rule that a store manager,
@@ -970,7 +970,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'customer',
-    name: 'Customer (storefront login)',
+    name: 'Customer (storefront login)', nameTa: 'வாடிக்கையாளர் (கடை உள்நுழைவு)',
     // M20 / §35 — the second role held by a party OUTSIDE the business: a customer signed into the storefront
     // app. As narrow as the supplier's: it may PLACE an order for itself (which reserves stock and records the
     // checkout's payment answer — the same engines the desk uses, hard rule #3 enforced at the door) and READ
@@ -992,7 +992,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'supplier',
-    name: 'Supplier (portal login)',
+    name: 'Supplier (portal login)', nameTa: 'சப்ளையர் (போர்ட்டல் உள்நுழைவு)',
     // M24-FR-01 / §35 — the ONE role held by a party OUTSIDE the business: a supplier logging into the
     // portal to see its own orders and statement. Deliberately the narrowest external role in the product,
     // narrower even than the chartered accountant: it may read ITS OWN portal data and nothing else.
@@ -1012,7 +1012,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'b2b_customer',
-    name: 'Business customer (portal login)',
+    name: 'Business customer (portal login)', nameTa: 'வணிக வாடிக்கையாளர் (போர்ட்டல் உள்நுழைவு)',
     // M22-FR-04 / §35 — the THIRD role held by a party outside the business: a business customer (a caterer, a
     // canteen) logging into the portal to see its own account, invoices, statement and documents. As narrow as
     // the supplier's: `b2b.portal.self` is a READ of the caller's own rows, scoped server-side from the stored
@@ -1025,7 +1025,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: 'concessionaire',
-    name: 'Concessionaire (counter login)',
+    name: 'Concessionaire (counter login)', nameTa: 'சலுகைக் கடைக்காரர் (கவுன்டர் உள்நுழைவு)',
     // M27-FR-02 "only the concessionaire accesses it" · OB-676 "A" (owner, 2 Nov 2026, in writing) — the FOURTH role held by
     // a party outside the business: a concessionaire trading a counter inside the store, signed in to see its OWN counter's
     // sales, stock and invoices. As narrow as the supplier's: `concession.portal.self` is a READ of the caller's own rows,
@@ -1038,7 +1038,7 @@ const BASE_ROLES: readonly Role[] = [
   },
   {
     id: PROVIDER_RELAY_ROLE_ID,
-    name: 'Message provider relay (machine)',
+    name: 'Message provider relay (machine)', nameTa: 'செய்தி வழங்குநர் ரிலே (இயந்திரம்)',
     permissions: ['notification.delivery.report'],
   },
   {
@@ -1046,14 +1046,14 @@ const BASE_ROLES: readonly Role[] = [
     // nothing else: no business data, no health raise, no alert rules. The operator provisions its sign-in (never in the
     // repo, hard rule #4: docs/runbooks/backup-and-recovery.md); the owner approves the grant (he holds the permission).
     id: BACKUP_JOB_ROLE_ID,
-    name: 'Backup job (machine)',
+    name: 'Backup job (machine)', nameTa: 'காப்புப் பணி (இயந்திரம்)',
     permissions: ['platform.backup.record'],
   },
   // ── OB-288 P6 (store floor devices and self-checkout) — begin
   {
     // R8-4 to R8-7: the floor-device gateway's OWN machine identity — carries signed device batches, and nothing else.
     id: FLOOR_DEVICE_GATEWAY_ROLE_ID,
-    name: 'Floor-device gateway (machine)',
+    name: 'Floor-device gateway (machine)', nameTa: 'தள சாதன நுழைவாயில் (இயந்திரம்)',
     permissions: ['device.event.ingest'],
   },
   // ── OB-288 P6 — end
@@ -1061,7 +1061,7 @@ const BASE_ROLES: readonly Role[] = [
   {
     // OB-331: the CI scanner's OWN machine identity — pushes a scan's findings report to the register, and nothing else.
     id: FINDINGS_PUSH_ROLE_ID,
-    name: 'CI findings push (machine)',
+    name: 'CI findings push (machine)', nameTa: 'CI கண்டுபிடிப்புகள் அனுப்பல் (இயந்திரம்)',
     permissions: ['compliance.finding.push'],
   },
   // ── OB-288 integration follow-ups — end
@@ -1070,13 +1070,13 @@ const BASE_ROLES: readonly Role[] = [
     // OB-423: the release script's OWN machine identity — adds a release's QG-10 evidence line to the gate register, and
     // nothing else (least privilege: not even a read of the register).
     id: QG10_EVIDENCE_PUSH_ROLE_ID,
-    name: 'Release QG-10 evidence (machine)',
+    name: 'Release QG-10 evidence (machine)', nameTa: 'வெளியீடு QG-10 சான்று (இயந்திரம்)',
     permissions: ['compliance.qg10.evidence.push'],
   },
   // ── OB-423 — end
   {
     id: STORE_COMPUTER_ROLE_ID,
-    name: 'Store computer',
+    name: 'Store computer', nameTa: 'கடைக் கணினி',
     permissions: [
       // what it PULLS: its own setup, the published catalogue and templates, and the feeds the store's screens serve
       'store.pack.read', 'catalogue.pack.read', 'org.template.pull', 'inventory.indent.read', 'fulfilment.assignment.read',
@@ -1206,7 +1206,7 @@ export const DELIVERY_ROLE_ID = 'delivery_driver';
 
 export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
   section28Role({
-    id: PURCHASE_USER_ROLE_ID, name: 'Purchase user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
+    id: PURCHASE_USER_ROLE_ID, name: 'Purchase user', nameTa: 'கொள்முதல் பயனர்', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
     roadmap: { scope: 'Assigned suppliers/categories', may: 'Requisition/RFQ/PO draft', mustNot: 'Cannot receive, match and pay same transaction' },
     limitedBy: ['suppliers', 'categories'],
     words: [
@@ -1229,7 +1229,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
     questions: [],
   }),
   section28Role({
-    id: PURCHASE_APPROVER_ROLE_ID, name: 'Purchase approver', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
+    id: PURCHASE_APPROVER_ROLE_ID, name: 'Purchase approver', nameTa: 'கொள்முதல் ஒப்புதல் அளிப்பவர்', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing)',
     roadmap: { scope: 'Configured limits', may: 'PO/contract/rate approval', mustNot: 'Cannot approve own supplier/bank creation' },
     limitedBy: ['money limit'],
     words: [
@@ -1251,7 +1251,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
     questions: [],
   }),
   section28Role({
-    id: RECEIVER_QC_ROLE_ID, name: 'Receiver / QC', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
+    id: RECEIVER_QC_ROLE_ID, name: 'Receiver / QC', nameTa: 'பெறுநர் / தரச் சோதனை', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
     roadmap: { scope: 'Assigned locations', may: 'Receive/count/QC/quarantine', mustNot: 'Cannot change PO price or approve supplier payment' },
     limitedBy: ['locations'],
     words: [
@@ -1280,7 +1280,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
     questions: [],
   }),
   section28Role({
-    id: WAREHOUSE_USER_ROLE_ID, name: 'Warehouse user', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
+    id: WAREHOUSE_USER_ROLE_ID, name: 'Warehouse user', nameTa: 'கிடங்கு பயனர்', liveBy: 'OB-622 (owner, 1 Nov 2026, in writing); its stock moves narrowed by OB-623',
     roadmap: { scope: 'Assigned locations', may: 'Put-away/pick/transfer/count', mustNot: 'Cannot self-approve material variances' },
     limitedBy: ['locations'],
     words: [
@@ -1297,7 +1297,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
     questions: [],
   }),
   section28Role({
-    id: PICKER_ROLE_ID, name: 'Picker', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    id: PICKER_ROLE_ID, name: 'Picker', nameTa: 'பொருள் எடுப்பவர்', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
     roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
     limitedBy: ['assigned work'],
     words: [
@@ -1314,7 +1314,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
     questions: [],
   }),
   section28Role({
-    id: DELIVERY_ROLE_ID, name: 'Delivery driver', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
+    id: DELIVERY_ROLE_ID, name: 'Delivery driver', nameTa: 'டெலிவரி ஓட்டுநர்', liveBy: 'OB-571 (owner, 31 Oct 2026, in writing — "A")',
     roadmap: { scope: 'Assigned orders', may: 'Pick/pack/deliver/proof/COD', mustNot: 'Cannot change catalogue price or reroute without policy' },
     limitedBy: ['assigned work'],
     words: [
@@ -1336,7 +1336,7 @@ export const SECTION_28_ROLES: readonly Section28Role[] = Object.freeze([
 /** The live catalogue head office enforces and every store setup carries: the roles above plus the §28 roles' words. */
 export const ROLE_CATALOGUE: readonly Role[] = Object.freeze([
   ...BASE_ROLES,
-  ...SECTION_28_ROLES.map((r): Role => Object.freeze({ id: r.id, name: r.name, permissions: r.permissions })),
+  ...SECTION_28_ROLES.map((r): Role => Object.freeze({ id: r.id, name: r.name, nameTa: r.nameTa, permissions: r.permissions })),
 ]);
 
 /**

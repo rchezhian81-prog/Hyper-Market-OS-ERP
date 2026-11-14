@@ -55,10 +55,17 @@ describe.skipIf(!HAVE_BROWSER)('the plan, the batch trace and Production costs o
     await m.page.waitForSelector('#planner:not([hidden])');
     await says(m.page, '#plan-h', /^Plan production$/);
     await m.page.fill('#plan-location', shop.store);
+    // U3 · OB-699 (and U2b · G14): the day is the shop's own dd/mm/yyyy on the shared date field, sent to head office as ISO
     await m.page.fill('#plan-day', '11/04/2026');
+    await m.page.dispatchEvent('#plan-day', 'blur');
     await m.page.click('#plan-go');
-    await says(m.page, '#plan-status', /^Type the day as YYYY-MM-DD, or leave it blank for tomorrow\.$/);
+    await says(m.page, '#plan-status', /^Plan for 2026-04-11 /);
+    // a day that is not on the calendar is refused beside the field, in words, and nothing is asked of head office
+    await m.page.fill('#plan-day', '31/02/2026');
+    await m.page.dispatchEvent('#plan-day', 'blur');
+    await says(m.page, '#plan-day-msg', /not a real date/);
     await m.page.fill('#plan-day', '');
+    await m.page.dispatchEvent('#plan-day', 'blur');
     await m.page.click('#plan-go');
     await says(m.page, '#plan-rows li[data-recipe="coffee-cake"]', /No sales to go by yet — decide yourself.*Batches: 0/);
 

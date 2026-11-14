@@ -4,6 +4,18 @@
 // one the bank has not confirmed reads "waiting", never done. Every state is an icon AND words; every word has a Tamil twin.
 
 const $ = (id) => document.getElementById(id);
+// U5 · G17: the chrome's shared parts (window.sreOffice) may load after this page — each part is drawn once it is there,
+// and the page keeps its words meanwhile. States are the chrome's chips and state boxes, never a ✓/⚠ character.
+const sreO = () => window.sreOffice ?? null;
+/** The chrome's "Not known" in the reader's language — never a dash. */
+const notKnownWord = () => { const o = sreO(); return o && typeof o.words === 'function' ? o.words('notKnown') : 'Not known'; };
+/** A line that begins with a state chip and goes on in words: "[Done] Wave given to the picker …". */
+function withChip(node, state) { const o = sreO(); if (o) node.prepend(o.recordChip(state), ' '); return node; }
+/** A status line said with a chip and words: the state's chip first, then the words (in their own span when it has an id). */
+function sayWith(holder, state, words, textId) {
+  const o = sreO(); const s = document.createElement('span'); if (textId) s.id = textId; s.textContent = words;
+  holder.replaceChildren(...(o && state !== null ? [o.recordChip(state), ' '] : []), s);
+}
 const api = window.orderRefunds ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, issue: false };
@@ -34,9 +46,10 @@ function whyDisabled(btn, why) {
 for (const [id, name] of [['show-pending', 'clock'], ['show-order', 'search'], ['ask', 'hand'], ['issue', 'indian-rupee']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 
 function text(tag, words, cls) { const n = document.createElement(tag); n.textContent = words; if (cls) n.className = cls; return n; }
-function bad(where, out) { $(where).className = 'status err'; $(where).textContent = `⚠ ${api.outcomeWords(lang, out)}`; }
-function good(where, words) { $(where).className = 'status good'; $(where).textContent = `✓ ${words}`; }
-const MARK = { issued: '✓', pending: '⏱', refused: '⚠' };
+function bad(where, out) { $(where).className = 'status err'; sayWith($(where), 'warning', api.outcomeWords(lang, out)); }
+function good(where, words) { $(where).className = 'status good'; sayWith($(where), 'done', words); }
+/** The chrome's record state of a refund's effective state. */
+const STATE_OF = { issued: 'done', pending: 'pending', refused: 'refused' };
 
 function outcomeForm(r) {
   const wrap = document.createElement('div'); wrap.className = 'row-form';
@@ -58,12 +71,12 @@ function outcomeForm(r) {
 
 function paintPending() {
   if (pending === null) { $('pending').replaceChildren(); return; }
-  if (pending.pendingPayments.length === 0 && pending.pendingRefunds.length === 0) { $('pending').replaceChildren(text('li', `✓ ${t('noneWaiting')}`, 'row tone-ok')); return; }
+  if (pending.pendingPayments.length === 0 && pending.pendingRefunds.length === 0) { $('pending').replaceChildren(withChip(text('li', t('noneWaiting'), 'row tone-ok'), 'done')); return; }
   $('pending').replaceChildren(
     ...pending.pendingRefunds.map((r) => {
       const li = document.createElement('li'); li.className = 'row tone-degraded'; li.dataset.refund = r.refundId; li.dataset.order = r.orderId;
       orderOption(r.orderId); li.addEventListener('click', () => { $('order-id').value = r.orderId; });
-      li.append(text('strong', `⏱ ${t('refundWaiting')} — ${r.orderId} · ${api.rupees(r.amountMinor)}`));
+      li.append(withChip(text('strong', `${t('refundWaiting')} — ${r.orderId} · ${api.rupees(r.amountMinor)}`), 'pending'));
       li.append(text('span', `${t(`basis_${r.basis}`)} · ${r.reason}`, 'facts'));
       li.append(outcomeForm(r));
       return li;
@@ -71,7 +84,7 @@ function paintPending() {
     ...pending.pendingPayments.map((p) => {
       const li = document.createElement('li'); li.className = 'row tone-degraded'; li.dataset.payment = p.orderId;
       orderOption(p.orderId); li.addEventListener('click', () => { $('order-id').value = p.orderId; });
-      li.append(text('strong', `⏱ ${t('paymentWaiting')} — ${p.orderId} · ${api.rupees(p.amountMinor)}`));
+      li.append(withChip(text('strong', `${t('paymentWaiting')} — ${p.orderId} · ${api.rupees(p.amountMinor)}`), 'pending'));
       if (p.reason) li.append(text('span', p.reason, 'facts'));
       return li;
     }),
@@ -86,7 +99,7 @@ function paintMoney() {
   const facts = document.createElement('div'); facts.className = 'facts';
   for (const [k, v, cls] of [['paid', p.paidMinor, 'paid'], ['refundedK', p.refundedMinor, 'refunded'], ['pendingK', p.pendingMinor, 'pending'], ['refundableK', p.refundableMinor, 'refundable']]) facts.append(text('span', `${t(k)}: ${api.rupees(v)}`, cls));
   li.append(facts);
-  for (const r of p.refunds ?? []) li.append(text('span', `${MARK[r.effectiveState] ?? '○'} ${t('issued')} ${r.refundId} · ${api.rupees(r.amountMinor)} — ${t(`state_${r.effectiveState}`)}`, `refund refund-${r.effectiveState}`));
+  for (const r of p.refunds ?? []) li.append(withChip(text('span', `${t('issued')} ${r.refundId} · ${api.rupees(r.amountMinor)} — ${t(`state_${r.effectiveState}`)}`, `refund refund-${r.effectiveState}`), STATE_OF[r.effectiveState] ?? 'unknown'));
   $('money').replaceChildren(li);
 }
 
@@ -136,28 +149,28 @@ const CONFIRM = {
 const fillIn = (text, values) => Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), text);
 function issueSheet() {
   const basisEl = $('basis');
-  const values = { amount: api.rupees(draft.amountMinor), order: draft.orderId, basis: basisEl?.selectedOptions?.[0]?.textContent ?? draft.basis, approval: $('approval-id').value.trim() || '—' };
+  const values = { amount: api.rupees(draft.amountMinor), order: draft.orderId, basis: basisEl?.selectedOptions?.[0]?.textContent ?? draft.basis, approval: $('approval-id').value.trim() || notKnownWord() };
   const pair = (k) => ({ en: fillIn(CONFIRM.en[k], values), ta: fillIn(CONFIRM.ta[k], values) });
   return { title: pair('title'), detail: pair('detail'), authority: pair('authority'), confirmLabel: pair('label'), tone: 'primary' };
 }
 async function issue() {
-  if (draft === null) { $('refund-status').className = 'status err'; $('refund-status').textContent = `⚠ ${t('needAsk')}`; return; }
+  if (draft === null) { $('refund-status').className = 'status err'; sayWith($('refund-status'), 'warning', t('needAsk')); return; }
   if (!(await (await office()).confirm(issueSheet())).ok) return;
   const out = await session.issue(draft, $('approval-id').value);
   if (out.result !== 'ok') { bad('refund-status', out); return; }
   const state = out.value.refund.effectiveState;
   $('refund-status').className = `status ${state === 'issued' ? 'good' : 'err'}`;
   $('refund-status').dataset.state = state;
-  $('refund-status').textContent = `${MARK[state] ?? '○'} ${t('issued')} ${draft.refundId} · ${api.rupees(draft.amountMinor)} — ${t(`state_${state}`)}`;
+  sayWith($('refund-status'), STATE_OF[state] ?? 'unknown', `${t('issued')} ${draft.refundId} · ${api.rupees(draft.amountMinor)} — ${t(`state_${state}`)}`);
   draft = null; $('approval-id').value = '';
   await showOrder();
 }
 async function recordOutcome(r, result, statementRef) {
   const out = await session.outcome(r.orderId, r.refundId, result, statementRef);
   if (out.result !== 'ok') { bad('pending-status', out); return; }
-  good('pending-status', `${t('outcomeSaved')} ${r.refundId} — ${t(result)}`);
   await showPending();
-  $('pending-status').className = 'status good'; $('pending-status').textContent = `✓ ${t('outcomeSaved')} ${r.refundId} — ${t(result)}`;
+  // said after the list is re-read: showing the list resets this status line
+  good('pending-status', `${t('outcomeSaved')} ${r.refundId} — ${t(result)}`);
 }
 
 $('show-pending').addEventListener('click', () => { void showPending(); });
@@ -166,7 +179,7 @@ $('ask').addEventListener('click', () => { void ask(); });
 $('issue').addEventListener('click', () => { void issue(); });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 paint();
-if (may.named && !may.read) { $('page-status').className = 'status err'; $('page-status').textContent = `⚠ ${t('cannotRead')}`; }
+if (may.named && !may.read) { $('page-status').className = 'status err'; sayWith($('page-status'), 'warning', t('cannotRead')); }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
