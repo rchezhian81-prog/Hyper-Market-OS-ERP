@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CR-01 step 4 (14 November 2026): decided and planned, not yet built — users & roles and the import & export centre on the store PC (OI-06 · OI-07 · OB-722)
+- **Found:** on the store PC "head office" is the PC's own office program (127.0.0.1:8081). People are added only by typed commands (OB-257); no store PC screen adds a person; the Users & roles and Import & export pages are served but cannot reach the office program from the store PC; the old-system import runs as its own page (:8095); roles are product code (OB-615).
+- **Decided by the owner (14 Nov 2026):** OB-730 "A" (reach limits only; roles stay fixed) · OB-731 "A" (the store manager administers people below their own role; the owner everything) · OB-732 "A" (the accountant approves a privilege change the owner raises) · OB-733 "A" (the update records go to the office program's audit trail now).
+- **Plan, one part at a time, each tested before the next:** 4a — the store PC's Office pages reach the office program with the signed-in person's own PIN sign-in (OB-267), so Users & roles and Import & export work there; 4b — Users & roles on screen: add a person, give or remove a role, set reach, every change waiting for the second person (OB-732, §28) and audited; 4c — the import & export centre in the Office menu (OI-07); 4d — the update records sent to the audit trail (OB-733).
+- **Still to ask the owner when 4c starts:** whether the separate import page (:8095) and its desktop shortcut stay or are replaced by the Office menu entry.
+- **Next:** start 4a in a new conversation ("Start CR-01 step 4a"). **Blocked:** nothing. **Owner decisions needed:** none now.
+
 ## CR-01 step 3e follow-up (14 November 2026): the Windows drill writes the QG-08 evidence (QG-08 · G9)
 - **Why:** two sessions built step 3e at once; #908 was merged and this session's duplicate #910 was closed unmerged (owner, 14 Nov 2026, "A"). The one thing #910 had that #908 lacked was the QG-08 evidence file; the owner asked for it.
 - **What changed:** when every step of the Windows-services drill worked, it also writes `<data>\records\qg08-rollback-<time>.json` — the body of `POST /v1/platform/dr-drills` for the rollback rehearsal (data loss 0, the rollback's own time) — named in the drill record and by `drill-result`. A slow drill still gets one (head office scores it a miss); a failed one gets none and says to record the miss.
