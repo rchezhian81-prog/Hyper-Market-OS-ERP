@@ -36,6 +36,7 @@ import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } fro
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
+import { billMismatchDrafts, tillVarianceDrafts } from './ai-explainers'; // CR-01 OI-13 (OB-763 B): A12 and A14
 import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
@@ -782,6 +783,10 @@ export function buildSurface(deps: {
       // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
       // that a human sees. A05 flags only; a service agent replies (hard rule #5).
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+      // CR-01 OI-13 (OB-763 B): A12 reads the recorded three-way-match verdicts and the bills (M07); A14 the till closes, the
+      // over/short sign-offs and the till's own sales and refunds (M14). Both read-only, both ₹0, both draft-only.
+      billMismatches: (t) => billMismatchDrafts(store, t, now()),
+      tillVariances: (t) => tillVarianceDrafts(store, t, now()),
   });
   // The identity routes' deps — shared by the person's own routes and the store PC's privilege relay (CR-01 step 4a).
   const identityDeps: IdentityDeps = {

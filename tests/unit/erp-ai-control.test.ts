@@ -141,6 +141,10 @@ describe('O-2: a draft\'s "to act" is said in plain words, never as a raw route'
       ['POST /v1/catalogue/products/:productId/publish', 'publish_mrp'],
       ['the CUSTOMER confirms any change to their cart in the app — A04 only drafts the shortlist', 'customer_confirms'],
       ['nothing — A01 is read-only; a person decides what, if anything, to do', 'nothing'],
+      // CR-01 OI-13 (OB-763 B): A12's and A14's routes.
+      ['POST /v1/purchase/suppliers/sup-1/debit-notes/:debitNoteRef/issue by the accounts person, or POST /v1/purchase/invoices/INV-1/match once the supplier corrects the bill', 'supplier_bill'],
+      ['POST /v1/purchase/invoices/INV-1/match by the accounts person, once the bill or the order is put right', 'supplier_bill'],
+      ['POST /v1/shifts/sh-1/over-short/review by the manager (never the person who counted the drawer)', 'over_short'],
       ['POST /v1/something/new', 'general'],
     ];
     for (const [route, key] of named) {

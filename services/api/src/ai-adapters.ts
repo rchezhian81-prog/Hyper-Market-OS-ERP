@@ -364,6 +364,10 @@ export function aiAdapter(input: {
   readonly purchaseSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
   /** Round 8 — A03's transfer-suggestion leg: out at a selling place, held elsewhere (ai-insights.ts `transferSuggestions`). */
   readonly transferSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  /** CR-01 OI-13-A12 (OB-763 B): the supplier bills whose latest match was not clean, explained (ai-explainers.ts). */
+  readonly billMismatches?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  /** CR-01 OI-13-A14 (OB-763 B): the till closes over or short and not yet signed off, explained (ai-explainers.ts). */
+  readonly tillVariances?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
 }): AiDeps {
   return {
     now: input.now,
@@ -565,6 +569,12 @@ export function aiAdapter(input: {
             || a.serviceCase.caseId.localeCompare(b.serviceCase.caseId));
         return serviceGuidanceProposals(views, now);
       }
+      // CR-01 OI-13-A12 Supplier-bill match explainer — why a bill does not match its order and the goods received, with the
+      // supplier query drafted. The accounts person decides; a debit note is never auto-approved (no `act` is ever set).
+      if (agent === 'A12') return input.billMismatches === undefined ? [] : input.billMismatches(tenantId);
+      // CR-01 OI-13-A14 Cash-office variance explainer — the likely causes of a till's over/short, from the records, not
+      // people. The manager signs off; a write-off is never auto-approved and no cash balance changes (no `act` is ever set).
+      if (agent === 'A14') return input.tillVariances === undefined ? [] : input.tillVariances(tenantId);
       return [];
     },
 

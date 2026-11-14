@@ -5,3 +5,4 @@
 
 export * from './cash';
 export * from './assess-cash';
+export * from './variance-explainer'; // CR-01 OI-13-A14 (OB-763 B): the likely causes of a till's over/short, from the records

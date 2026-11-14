@@ -21,7 +21,7 @@ const PRICING: Readonly<Record<ModelTier, TierPricing>> = {
 function gateway(transport: ModelTransport): ModelGatewayDeps {
   const audits: ModelCallAudit[] = [];
   return {
-    killSwitchOn: () => false, enabledAgents: () => ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10'],
+    killSwitchOn: () => false, enabledAgents: () => Object.keys(AGENTS) as (keyof typeof AGENTS)[], // every agent, A12 and A14 included (OB-763 B)
     budget: () => ({ capMinor: 1_500_000, spentMinor: 0, periodEnds: '2099-01-01T00:00:00.000Z' }), openReservedMinor: () => 0,
     reserve: () => {}, settle: () => {}, audits: () => audits, appendAudit: (_t, a) => { audits.push(a); },
     pricing: () => PRICING, transport, now: () => '2026-10-23T10:00:00.000Z',

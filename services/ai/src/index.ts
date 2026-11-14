@@ -157,10 +157,27 @@ export interface Proposal {
    */
   readonly act?: DraftAct;
   /**
+   * CR-01 OI-13 (A12, A14): the explanation as coded reasons, each with the figures and the record it came from, so a screen
+   * says each one in the reader's language (English or Tamil). `summary` stays the English sentence for the record.
+   */
+  readonly reasons?: readonly ProposalReason[];
+  /** CR-01 OI-13-A12: words drafted for a person to check and send (the supplier query) — never sent from here. */
+  readonly draftText?: string;
+  /**
    * Typed as the literal `false`. A proposal has committed nothing and can commit nothing —
    * hard rule #5 in the type system rather than in a comment.
    */
   readonly committed: false;
+}
+
+/** One coded reason in an explanation (CR-01 OI-13): what a screen renders in English or Tamil from `code` and `values`. */
+export interface ProposalReason {
+  readonly code: string;
+  readonly values: Readonly<Record<string, string | number>>;
+  /** The English sentence, for the record. */
+  readonly sentence: string;
+  /** The record the reason came from (a bill, a refund, a product), when there is one. */
+  readonly recordRef?: string;
 }
 
 export type RunRefusal =
@@ -739,7 +756,7 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         if (!isList(body?.agents) || !isList(body?.expected)) {
           throw apiError(400, {
             code: 'not_readable_as_an_agent_list',
-            whatHappened: 'Enabling agents needs the new list and the list you read, as agent ids from the authority catalogue (A01…A10).',
+            whatHappened: 'Enabling agents needs the new list and the list you read, as agent ids from the authority catalogue (A01…A10, A12, A14).',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { "expected": [the switched-on list you read], "agents": ["A08", …] }. Nothing was changed — read GET /v1/ai/control for the current list.',
           });

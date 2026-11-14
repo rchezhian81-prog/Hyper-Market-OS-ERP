@@ -7,7 +7,8 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#192f27" />
     <!--
-      The assistant's drafts (A09 Marketing · A07 Security/Fraud · roadmap §7 · P-05 · hard rule 5). A THIN CLIENT over
+      The assistant's drafts (A09 Marketing · A07 Security/Fraud · A12 Supplier bills · A14 Tills · roadmap §7 · CR-01 OI-13 ·
+      P-05 · hard rule 5). A THIN CLIENT over
       head office: the campaign words A09 drafted wait here as DRAFT template versions until a DIFFERENT person approves
       them through the existing two-person template approval; the anomaly summaries A07 wrote are here for the security
       officer to read. The assistant sends nothing, sanctions nobody and opens or closes no case; every act is re-checked
@@ -30,7 +31,8 @@
       button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; padding: 0 16px; }
       button[disabled] { opacity: .5; cursor: not-allowed; }
       .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
-      .card blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); }
+      .card blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); white-space: pre-line; }
+      .card ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
       .status { font-size: 14px; min-height: 20px; }
       .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
       .off-r8 { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
@@ -74,6 +76,26 @@
         <button id="ask-summary" type="button" class="sre-btn">Ask the assistant for a summary</button>
         <p class="status" id="anom-status" role="status" aria-live="polite"></p>
         <div id="anom-list" class="stack"></div>
+      </section>
+
+      <!-- CR-01 OI-13-A12 (OB-763 B): why a supplier bill does not match — explained from the records, with the supplier query
+           drafted. The accounts person decides; nothing is paid and no debit note is issued from here. -->
+      <section aria-labelledby="bills-h" data-agent="A12">
+        <h2 id="bills-h">Supplier bills that do not match</h2>
+        <p class="lede" id="bills-lede">Why a supplier bill does not match its order and the goods received, in plain words, with a query to the supplier drafted. It works on fixed rules (no live AI, ₹0 a month). It pays nothing and issues no debit note — the accounts person decides.</p>
+        <button id="ask-bills" type="button" class="sre-btn">Explain the bills now</button>
+        <p class="status" id="bills-status" role="status" aria-live="polite"></p>
+        <div id="bills-list" class="stack"></div>
+      </section>
+
+      <!-- CR-01 OI-13-A14 (OB-763 B): the likely causes of a till's over/short, from the records — records, not people. The
+           manager decides through the over/short sign-off; nothing is written off and no cash balance changes from here. -->
+      <section aria-labelledby="tills-h" data-agent="A14">
+        <h2 id="tills-h">Tills over or short</h2>
+        <p class="lede" id="tills-lede">The likely reasons a till was over or short at day close, from the till's own records — records, not people. It works on fixed rules (no live AI, ₹0 a month). It writes nothing off and changes no cash — the manager decides.</p>
+        <button id="ask-tills" type="button" class="sre-btn">Explain the tills now</button>
+        <p class="status" id="tills-status" role="status" aria-live="polite"></p>
+        <div id="tills-list" class="stack"></div>
       </section>
     </main>
     <script src="./web-erp.bundle.js" type="module"></script>

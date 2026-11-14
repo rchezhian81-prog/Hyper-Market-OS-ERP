@@ -27,12 +27,14 @@ const agentsRoute = (): Route => {
 };
 
 describe('GET /v1/ai/agents serves the tested authority engine', () => {
-  it('returns all ten agents with their authority — read-only and approver from the engine', async () => {
+  it('returns all twelve agents (A01–A10 and the owner\'s A12, A14) with their authority — read-only and approver from the engine', async () => {
     const res = await agentsRoute().handler(ctx());
     expect(res.status).toBe(200);
     const body = res.body as AgentCatalogue;
 
-    expect(body.agents).toHaveLength(10);
+    expect(body.agents).toHaveLength(12); // CR-01 OI-13 (OB-763 B): A12 and A14 join A01–A10
+    expect(body.agents.find((a) => a.agentId === 'A12')?.approver).toBe('accountant');
+    expect(body.agents.find((a) => a.agentId === 'A14')?.approver).toBe('manager');
     const a01 = body.agents.find((a) => a.agentId === 'A01');
     expect(a01?.readOnly).toBe(true);       // Owner Intelligence — least power, read-only
     expect(a01?.approver).toBe('none');

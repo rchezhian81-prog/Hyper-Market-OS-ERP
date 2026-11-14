@@ -14,10 +14,11 @@ import type { ToolProposal } from '../../packages/ai/src/gateway';
 // AI-NFR-12 (absolute): no autonomous payment, refund, purchase commitment, price change,
 // stock adjustment or user-privilege change. The model never writes to a business database.
 
-const ALL: readonly AgentId[] = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10'];
+// CR-01 OI-13 (OB-763 B): A12 and A14 join the ten roadmap agents; A11 and A13 come after go-live.
+const ALL: readonly AgentId[] = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'A12', 'A14'];
 
 describe('AI-NFR-12 is enforced structurally, not by discipline', () => {
-  it('defines all ten roadmap agents', () => {
+  it('defines the ten roadmap agents and the two the owner chose (A12, A14)', () => {
     expect(Object.keys(AGENTS).sort()).toEqual([...ALL]);
   });
 
@@ -197,7 +198,7 @@ describe('every agent matches its roadmap authority', () => {
     const expected: Readonly<Record<AgentId, string>> = {
       A01: 'none', A02: 'buyer', A03: 'manager', A04: 'customer', A05: 'agent_supervisor',
       A06: 'operator', A07: 'security_officer', A08: 'data_steward', A09: 'marketing_approver',
-      A10: 'manager',
+      A10: 'manager', A12: 'accountant', A14: 'manager',
     };
     for (const id of ALL) expect(AGENTS[id].approver).toBe(expected[id]);
   });
@@ -214,5 +215,30 @@ describe('every agent matches its roadmap authority', () => {
   it('gives A10 no HR authority', () => {
     expect(AGENTS.A10.purpose).toContain('NO HR decisions');
     expect(AGENTS.A10.allowedTools).not.toContain('grant_privilege');
+  });
+
+  // CR-01 OI-13-A12 / OI-13-A14 (OB-763 B): only read, explain and draft tools — never a payment, a write-off, a debit note
+  // issued or a cash balance changed. Neither is ever an auto-approve kind.
+  it('gives A12 and A14 only read / explain / draft tools, and neither may commit money', () => {
+    for (const id of ['A12', 'A14'] as const) {
+      const tools = AGENTS[id].allowedTools;
+      expect(tools.every((t) => t.startsWith('read_') || t.startsWith('explain_') || t.startsWith('draft_')), `${id}: ${tools.join(', ')}`).toBe(true);
+      expect(tools.filter((t) => FORBIDDEN_TOOLS.includes(t))).toEqual([]);
+      expect(AGENTS[id].readOnly).toBe(false);
+      expect(AGENTS[id].customerFacing).toBe(false);
+      expect(AGENTS[id].requiresEvidence).toBe(true);
+    }
+    expect(AGENTS.A12.purpose).toContain('NEVER auto-approved');
+    expect(AGENTS.A14.purpose).toContain('NEVER auto-approved');
+    expect(AGENTS.A14.purpose).toContain('records, not people');
+  });
+
+  it('refuses A12 a payment or a debit note commit, and A14 a write-off, even when a model asks', () => {
+    for (const [id, tool] of [['A12', 'commit_payment'], ['A12', 'issue_debit_note'], ['A14', 'commit_stock_adjustment'], ['A14', 'write_off_cash']] as const) {
+      const grant = grantTools({ agentId: id, tenantEnabled: true, agentEnabled: true });
+      const [review] = reviewProposals({ agentId: id, proposals: [{ tool, arguments: {}, rationale: 'the model asked' }], grantedTools: grant.tools, verifiedCitations: ['ev-1'] });
+      expect(review?.accepted, `${id} ${tool}`).toBe(false);
+      expect(review?.securityEvent).toBe(true);
+    }
   });
 });
