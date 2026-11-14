@@ -288,7 +288,26 @@ function finish(deps, ctx, to, W, record) {
   if (forward !== undefined && !forward.ok) say(`  THIS PC MAY NOT BE ON ${record.currentRelease.version} NOW. A PERSON IS NEEDED: restart the PC; if the till does not come back, run SRE-Setup.exe of ${record.currentRelease.version} again, and send me a photo of this screen.`);
   fs.mkdirSync(ctx.L.records, { recursive: true });
   const recFile = freshName(deps, ctx.L.records, `g9-drill-${stampOf(new Date(record.at))}`, '.json');
+  // W4 · QG-08: the drill's ROLLBACK rehearsal as head office's gate register reads it — the body of
+  // POST /v1/platform/dr-drills (packages/ops/src/recovery-gate.ts scores it against its FIXED 30 minutes, so a slow
+  // drill is recorded as a miss there, never quietly a pass). Only when EVERY step worked: a failed or unstarted step
+  // has no rollback time to score, and the gate stays HOLD until a person records the miss. Data loss is 0: the drill
+  // never touches the shop's database (only the program is swapped). Named qg08-rollback-…, never g9-drill-…, so it is
+  // never mistaken for a drill record. A new file every time, never overwritten (hard rule #6).
+  const rollback = record.steps.find((s) => s.key === 'rollback');
+  const scorable = rollback !== undefined && record.steps.some((s) => s.key === 'rollForward') && record.steps.every((s) => s.ok);
+  const evidenceFile = scorable ? freshName(deps, ctx.L.records, `qg08-rollback-${stampOf(new Date(record.at))}`, '.json') : undefined;
+  if (evidenceFile !== undefined) record.qg08Evidence = p.basename(evidenceFile);
   writeRecord(deps, recFile, record, false);
+  if (evidenceFile !== undefined) {
+    const body = { drillId: p.basename(recFile, '.json'), rehearsal: 'rollback', dataLossSeconds: 0, recoverySeconds: Math.ceil(rollback.ms / 1000) };
+    try {
+      writeRecord(deps, evidenceFile, body, false);
+      say(`QG-08 evidence written: ${evidenceFile}  (the body of POST /v1/platform/dr-drills — the custodian records it on head office's register, in his own sign-in)`);
+    } catch { say('  The QG-08 evidence file could not be written. The drill record above has every time in it; record the rollback by hand.'); }
+  } else {
+    say('  QG-08: no evidence file — not every step worked, so there is no rollback time to score. Record the miss; QG-08 stays HOLD.');
+  }
   try { fs.writeFileSync(p.join(W, 'record-path.txt'), `${recFile}\n`, 'utf8'); } catch { /* the record itself is written */ }
   say(`Record written: ${recFile}  (no secret is in it — keep it with the workbook)`);
   try {
@@ -314,5 +333,6 @@ export function drillResult(deps, L) {
   if (newest === undefined) { say('No rollback drill has been run on this PC yet.'); return 2; }
   say(`${newest.overall} — the drill of ${newest.at}, by ${newest.by}: back to ${newest.previousRelease?.version ?? newest.previousRelease?.releaseId}, then forward to ${newest.currentRelease?.version ?? newest.currentRelease?.releaseId}.`);
   for (const s of newest.steps ?? []) say(`  ${s.ok ? (s.withinTarget ? 'done' : 'SLOW') : 'FAILED'}  ${s.title} — ${mins(s.ms)} (target ${mins(s.targetMs)})${s.detail === undefined ? '' : ` — ${s.detail}`}`);
+  if (typeof newest.qg08Evidence === 'string') say(`  QG-08 evidence for head office's register: ${p.join(L.records, newest.qg08Evidence)}`);
   return newest.overall === 'G9 PASSED' ? 0 : 1;
 }
