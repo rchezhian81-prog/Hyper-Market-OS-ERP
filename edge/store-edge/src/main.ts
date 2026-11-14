@@ -113,7 +113,7 @@ import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { openOfficeGate } from './office-sign-in';
 import { createHeadOfficeLink, headOfficeLinkSettingsFrom } from './head-office-link'; // OB-388 · ADR-0029
-import { tillPinKey } from '../../../packages/identity/src/till-pin';
+import { issueTillCredential, tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
 import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
@@ -151,6 +151,7 @@ import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (O
 import { UPDATE_LOG, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE, readUpdateCheck, readUpdateProgress } from './update-page'; // CR-01 step 3c/3d (OI-05)
 import { PRIVILEGE_LOG, privilegeSealKey, type PrivilegeDeps, type RelayAnswer } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
 import { randomUUID as newPrivilegeRequestId } from 'node:crypto';
+import { appendTillCredential } from './till-pin-command'; // CR-01 step 4b-2 (OB-734)
 import { rename, writeFile } from 'node:fs/promises';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
@@ -2367,6 +2368,14 @@ export async function startEdge(
     record: async (entry: Record<string, unknown>) => { await privilegeLog.append(JSON.stringify(entry)); },
     now: () => new Date().toISOString(),
     newRequestId: () => newPrivilegeRequestId(),
+    // CR-01 step 4b-2 (OB-734): a PIN set or cancelled on the office screens goes into the SAME till-credentials file the
+    // tills and the office sign-in read — appended, never edited; only the PIN's fingerprint, made with the pack key.
+    writeTillPin: async (userId: string, pin: string | null, by: string) => {
+      const issuedAt = new Date().toISOString();
+      appendTillCredential(credentialsFile, pin === null
+        ? { userId, revoked: true, issuedAt, issuedBy: by }
+        : issueTillCredential({ userId, pin, key: tillPinKey(settings['PACK_SIGNING_KEY']!), issuedAt, issuedBy: by }));
+    },
   };
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(privilegeDeps === undefined ? {} : { privilege: privilegeDeps }),

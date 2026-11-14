@@ -13,9 +13,15 @@
 
 import { DECIDER_STAMP_FIELD, checkDeciderStamp, sealDecision, type DeciderStamp } from './till-seal';
 
-/** CR-01 step 4b-1: `role_grant_rejection` — a second person turns a pending request down, by PIN (OB-735 · ADR-0033 amended). */
-export type PrivilegeKind = 'person_provision' | 'role_request' | 'role_grant_approval' | 'role_grant_rejection';
-export const PRIVILEGE_KINDS: readonly PrivilegeKind[] = Object.freeze(['person_provision', 'role_request', 'role_grant_approval', 'role_grant_rejection']);
+/**
+ * CR-01 step 4b-1: `role_grant_rejection` — a second person turns a pending request down, by PIN (OB-735 · ADR-0033 amended).
+ * CR-01 step 4b-2: `access_change_request` (ask to take a role back, or record a leaver), `access_change_decision` (the second
+ * person approves — the change is then applied — or rejects it), `till_pin_change` (a till PIN set, changed or cancelled on
+ * screen; the PIN itself never in the record) — OB-734, OB-735, OB-737, ADR-0033 amendment 2.
+ */
+export type PrivilegeKind = 'person_provision' | 'role_request' | 'role_grant_approval' | 'role_grant_rejection'
+  | 'access_change_request' | 'access_change_decision' | 'till_pin_change';
+export const PRIVILEGE_KINDS: readonly PrivilegeKind[] = Object.freeze(['person_provision', 'role_request', 'role_grant_approval', 'role_grant_rejection', 'access_change_request', 'access_change_decision', 'till_pin_change']);
 /** How the acting person proved it was them: their own till PIN, typed again on the office screen (OB-731 "A"). */
 export const PRIVILEGE_VIA = 'office_pin';
 /** The "lane" a privilege seal names: the office screens' own (edge/store-edge/src/office-sign-in.ts `OFFICE_LANE`). */

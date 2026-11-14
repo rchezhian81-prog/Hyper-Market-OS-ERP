@@ -103,7 +103,7 @@ describe('the lists through the box: for the person at the screen, never empty b
 });
 
 describe('the Users & roles page on the store PC (4b-1)', () => {
-  const DOORS = { grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view' };
+  const DOORS = { grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view', accessChanges: '/office/privilege/access-changes', decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: '/office/privilege/till-pins' };
   const owner = { userId: 'u-owner', permissions: ['identity.role.request', 'identity.role.grant', 'identity.role.read'] };
   const VIEW = {
     ok: true, mayAsk: true, mayRead: true,
@@ -175,11 +175,9 @@ describe('the Users & roles page on the store PC (4b-1)', () => {
     expect(await createUsersSession({ viewer: owner, fetch: f }).addPerson({ userId: 'x.y', displayName: 'X Y' })).toEqual({ result: 'invalid', why: 'notOnStorePc' });
   });
 
-  it('take back, leaver, limits and "my changes" are not offered on the store PC yet — said, and nothing is sent', async () => {
+  it('limits and "my changes" are not offered on the store PC — said, and nothing is sent (take-backs: 4b-2, own tests)', async () => {
     const { f, calls } = fake();
     const s = createUsersSession({ viewer: owner, fetch: f, office: officePrivilegeFrom(DOORS, async () => PIN)! });
-    const holder = { userId: 'u-cash', grants: [{ userId: 'u-cash', roleId: 'cashier', branchScope: 'all' as const }] };
-    expect(await s.askTakeBack(holder, 'leaver', 'left')).toEqual({ result: 'invalid', why: 'notOnStorePc' });
     expect(await s.askLimit({ userId: 'u-cash', roleId: 'cashier', dimension: 'departments', values: 'all', reason: 'x' })).toEqual({ result: 'invalid', why: 'notOnStorePc' });
     expect(await s.mine()).toEqual({ result: 'invalid', why: 'notOnStorePc' });
     expect(calls).toEqual([]);
@@ -187,7 +185,7 @@ describe('the Users & roles page on the store PC (4b-1)', () => {
     expect(usersWords('ta', 'storePcOnly')).not.toBe(usersWords('en', 'storePcOnly'));
   });
 
-  it('the page offers "Add a person" on the store PC only, and hides take-back, limits and my changes there', () => {
+  it('the page offers "Add a person" on the store PC only, and hides limits and my changes there', () => {
     const html = readFileSync('apps/web-erp/web/users.html', 'utf8');
     const js = readFileSync('apps/web-erp/web/users.js', 'utf8');
     expect(html).toContain('id="add-form"');
@@ -195,7 +193,6 @@ describe('the Users & roles page on the store PC (4b-1)', () => {
     expect(js).toContain("$('add').hidden = !onStorePc");
     expect(js).toContain("$('limit').hidden = onStorePc");
     expect(js).toContain("$('mine').hidden = onStorePc");
-    expect(js).toContain('may.ask && !onStorePc && h.userId !== session.userId');
   });
 });
 

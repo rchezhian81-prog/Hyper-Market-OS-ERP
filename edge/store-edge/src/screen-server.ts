@@ -997,7 +997,7 @@ export function startScreenServer(input: {
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
           // CR-01 step 4a (ADR-0033): on the store PC with the head-office link off, the office pages make a privilege change
           // through the box's own doors, the PIN typed again for each act.
-          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: PRIVILEGE_PATHS.people, view: PRIVILEGE_PATHS.view } }),
+          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: PRIVILEGE_PATHS.people, view: PRIVILEGE_PATHS.view, accessChanges: PRIVILEGE_PATHS.accessChanges, decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: PRIVILEGE_PATHS.tillPins } }),
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           // Round 4c: behind the authenticating front (the hosted copy) the box draws no Sign out bar — the front signed the

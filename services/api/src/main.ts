@@ -196,7 +196,7 @@ import { sessionChannelsOf } from './session-channels';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
-import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
+import { accessLifecycleRoutes, type AccessLifecycleDeps } from '../../identity/src/access-lifecycle';
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { billingRoutes } from '../../platform/src/billing-routes';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
@@ -793,13 +793,32 @@ export function buildSurface(deps: {
     // OB-615: the four roadmap §28 roles, shown to the owner and given to nobody until he approves them.
     rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL,
   };
+  // Joiner/mover/leaver deps — shared by the person's own route and the store PC's take-back relay (CR-01 step 4b-2).
+  const lifecycleDepsWith = (recordAudit: IdentityDeps['recordAudit']): AccessLifecycleDeps => (store === undefined
+    ? { now, roles: empty([]), currentGrants: empty([]), permissionsOf: empty([]), recordChange: () => {} }
+    : {
+      ...accessLifecycleAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE }),
+      ...(recordAudit === undefined ? {} : { recordAudit }),
+      approvals: approvalRequestsAdapter({ store, now }),
+      rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL, // OB-615
+      ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
+      // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
+      ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
+    });
   const surface: Route[] = [
     ...identityRoutes(identityDeps),
     // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the store PC's office screens, sealed there with the
     // dedicated privilege-seal key and relayed under the box's store token — the SAME person routes run as that person.
     ...boxPrivilegeRoutes({
       // With no ledger (the documented surface only) nothing is a store computer, so every relay is refused.
-      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : { ...boxPrivilegeAdapter({ store, now }), people: peopleAdapter({ store, now }) /* CR-01 step 4b-1 · OB-733 */ }),
+      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : {
+        ...boxPrivilegeAdapter({ store, now }), people: peopleAdapter({ store, now }), // CR-01 step 4b-1 · OB-733
+        // CR-01 step 4b-2 · OB-735: taking a role back from the store PC — the person's own approval and lifecycle routes.
+        takeBack: {
+          routes: (recordAudit) => [...approvalRequestRoutes(approvalRequestsAdapter({ store, now })), ...accessLifecycleRoutes(lifecycleDepsWith(recordAudit))],
+          allRequests: (t: string) => approvalRequestsAdapter({ store, now }).allRequests(t),
+        },
+      }),
       identity: identityDeps,
       ...(privilegeKey === undefined ? {} : { privilegeSealKey: privilegeKey }),
     }),
@@ -825,17 +844,7 @@ export function buildSurface(deps: {
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
-    ...accessLifecycleRoutes(store === undefined
-      ? { now, roles: empty([]), currentGrants: empty([]), permissionsOf: empty([]), recordChange: () => {} }
-      : {
-        ...accessLifecycleAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE }),
-        recordAudit: auditTrail?.recordAudit,
-        approvals: approvalRequestsAdapter({ store, now }),
-        rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL, // OB-615
-        ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
-        // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
-        ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
-      }),
+    ...accessLifecycleRoutes(lifecycleDepsWith(auditTrail?.recordAudit)),
     // People's sign-ins (OB-15-c · M02-FR-01): the platform administrator gives a named person — never a shared account,
     // never somebody already holding authority — a sign-in at the identity server; the one-time password is shown once.
     ...peopleRoutes(store === undefined

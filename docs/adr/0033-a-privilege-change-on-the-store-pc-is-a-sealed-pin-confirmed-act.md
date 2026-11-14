@@ -1,6 +1,6 @@
 # ADR 0033 — A privilege change on the store PC is a sealed, PIN-confirmed act relayed by the box, never a token the box mints
 
-- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B"); amended for step 4b-1 (OB-733 "A", OB-735 "A", OB-736 "A")
+- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B"); amended for step 4b-1 (OB-733 "A", OB-735 "A", OB-736 "A") and step 4b-2 (OB-734 "A", OB-735 "A", OB-737 "A")
 - **Date:** 14 November 2026
 - **Context:** CR-01 OI-06 asks for people and roles to be managed on the store PC's screens. OB-731 "A" decided how a
   person proves who they are there: staff ID + own till PIN, the PIN typed again to confirm each privilege change, on
@@ -82,6 +82,32 @@
 4. **Not yet on the store PC (OB-736 "A", step 4b-2):** taking a role back and "they have left" (two people, OB-735 "A"),
    and setting or cancelling a till PIN on screens (OB-734 "A"). The page says so in both languages and does not offer them;
    limiting a role still needs the head-office link.
+
+## Amendment 2 — CR-01 step 4b-2 (14 November 2026: OB-734 "A", OB-735 "A", OB-737 "A")
+
+1. **Taking a role back, and "they have left", by two people** (OB-735 "A" — "the same as giving one"). The maker asks by
+   PIN (`access_change_request`, `identity.role.request`): head office runs the person's own approval route (kind
+   `access_change`, exactly the lifecycle change). The checker approves or rejects by PIN (`access_change_decision`,
+   `identity.role.grant`, a reason): head office runs the person's own decide route (§28: never the maker), and, approved,
+   applies **the very change the maker asked for** at once through the lifecycle route **as the maker** — the maker's PIN
+   sealed the ask, the checker's PIN the approval: two people, two PINs, as for a grant (on the office pages the maker
+   still presses "Apply now"). A leaver loses every role, their store-PC record is ended, and the box cancels their till
+   PIN once head office answers. The owner is alerted when it is asked and when it is done.
+2. **Till PINs on screens** (OB-734 "A"): `till_pin_change` is sealed as `{ userId, action }` **only** — the new PIN never
+   leaves the box. The owner or store manager sets or cancels somebody else's (their own PIN, `identity.role.request`;
+   the person then types the new PIN twice, hidden); anyone changes their own with their **current** PIN
+   (`identity.self.read`). Head office records it first (`till_pin.set` / `till_pin.cancel` / `till_pin.change_own`, via
+   `office_pin`; the owner alerted when it is somebody else's PIN); the box then appends the PIN's fingerprint, or a
+   cancellation, to the same till-credentials file the tills and the office sign-in read (append-only, hard rule #2). A
+   box that cannot write it says so; it never says done.
+3. **No reaching above yourself** (OB-737 "A"): setting or cancelling somebody else's PIN is refused when they hold any
+   permission the acting person does not — a store manager for cashiers and warehouse staff, never the owner; a forgotten
+   owner PIN is reset at the store PC's keyboard with the existing `till-pin` command. **Relay permissions are not
+   authority:** a `*.sync` hop (the box passing on what a person did, each "granting no authority of its own") and the
+   till's read of the published templates are left out of the comparison — otherwise every cashier would "hold more" than
+   the store manager.
+4. A cashier does not sign in to the office screens (not an office role), so a cashier's PIN is set or changed by the
+   manager; office roles change their own.
 
 ## Reconsider-when
 

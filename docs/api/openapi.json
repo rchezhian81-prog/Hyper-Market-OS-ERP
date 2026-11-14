@@ -49687,6 +49687,173 @@
         }
       }
     },
+    "/v1/identity/box/access-changes": {
+      "post": {
+        "operationId": "postIdentityBoxAccessChanges",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxAccessChangesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/box/access-changes/{approvalId}/decide": {
+      "post": {
+        "operationId": "postIdentityBoxAccessChangesByApprovalIdDecide",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "approvalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideReply200"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideReply2XX"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/identity/box/grants": {
       "post": {
         "operationId": "postIdentityBoxGrants",
@@ -49972,6 +50139,79 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostIdentityBoxPeopleReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.people.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/box/till-pins": {
+      "post": {
+        "operationId": "postIdentityBoxTillPins",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.people.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxTillPinsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxTillPinsReply"
                 }
               }
             }
@@ -204930,6 +205170,277 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
       },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideReply200": {
+        "type": "object",
+        "required": [
+          "approvalId",
+          "decided",
+          "applied",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "decided": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideReply2XX": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId",
+              "approvalId",
+              "decided",
+              "applied",
+              "event",
+              "userId",
+              "result"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              },
+              "tillPinToCancel": {
+                "type": "string"
+              },
+              "personEnded": {
+                "type": "boolean"
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "decided": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "boolean"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "leaver",
+                  "mover"
+                ]
+              },
+              "userId": {
+                "type": "string"
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesReply": {
+        "type": "object",
+        "required": [
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
       "PostIdentityBoxGrantsByGrantIdApproveReply": {
         "type": "object",
         "required": [
@@ -204995,10 +205506,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -205084,10 +205598,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -205173,10 +205690,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -205278,10 +205798,122 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxTillPinsReply": {
+        "type": "object",
+        "required": [
+          "userId",
+          "action",
+          "recorded",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "own",
+              "set"
+            ]
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxTillPinsRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {

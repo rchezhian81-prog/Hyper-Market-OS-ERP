@@ -62,6 +62,12 @@
         <p class="status" id="pending-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="pending-rows"></ul>
       </section>
+      <section id="takebacks" hidden aria-labelledby="takebacks-h">
+        <h3 id="takebacks-h"></h3>
+        <p class="meta" id="takebacks-lead"></p>
+        <p class="status" id="takebacks-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="takeback-rows"></ul>
+      </section>
       <section id="holders" hidden aria-labelledby="holders-h">
         <h3 id="holders-h"></h3>
         <p class="meta" id="holders-lead"></p>
@@ -77,6 +83,17 @@
           <button id="a-add" type="submit" class="sre-btn sre-btn-primary"><span id="a-add-text"></span></button>
         </form>
         <p class="status" id="add-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="pins" hidden aria-labelledby="pins-h">
+        <h3 id="pins-h"></h3>
+        <p class="meta" id="pins-lead"></p>
+        <form class="row-form" id="pin-form">
+          <label for="p-staff"><span id="p-staff-l"></span><input id="p-staff" autocomplete="off" maxlength="64" /></label>
+          <button id="p-set" type="submit" class="sre-btn sre-btn-quiet quiet"><span id="p-set-text"></span></button>
+          <button id="p-cancel" type="button" class="sre-btn sre-btn-quiet quiet"><span id="p-cancel-text"></span></button>
+        </form>
+        <button id="p-own" type="button" class="sre-btn sre-btn-quiet quiet"><span id="p-own-text"></span></button>
+        <p class="status" id="pins-status" role="status" aria-live="polite"></p>
       </section>
       <section id="give" hidden aria-labelledby="give-h">
         <h3 id="give-h"></h3>

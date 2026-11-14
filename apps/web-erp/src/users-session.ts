@@ -60,7 +60,16 @@ export const USERS_COPY = {
     addH: 'Add a person on this store PC', addLead: 'A new member of staff, for this store PC and its tills only (no office or phone login). Adding the name gives them nothing: then ask for a role for them (a second person approves) and set their till PIN.',
     addName: 'Their full name', addStaffId: 'Their staff id (a–z, 0–9, . _ -)', addBtn: 'Add this person', added: 'Added — for this store PC only. Now ask for a role for them.',
     needName: 'Type the person\'s full name.', needStaffId: 'Type their staff id: 3 to 64 of a–z, 0–9, . _ -',
-    storePcOnly: 'On this store PC: adding a person, asking for a role, approving and rejecting work here, each with your PIN. Taking a role back and "They have left" come in the next part (4b-2); limiting a role needs the head-office link.',
+    storePcOnly: 'On this store PC, each with your own PIN: add a person, ask for a role, approve or reject, take a role back or record a leaver (a second person approves), and set, change or cancel a till PIN. Limiting a role needs the head-office link.',
+    takeBacksH: 'Take-backs waiting for a second person', takeBacksLead: 'A role taken back, or a person who left. When a second person approves with their PIN, it is done at once; a leaver\'s till PIN stops working.',
+    nothingTakeBack: 'No take-back is waiting.', yourTakeBack: 'You asked for this, so someone else decides it.',
+    takeBackAsked: 'Asked. A second person approves it here with their PIN; then it is done at once.', takeBackDone: 'Approved and done.', takeBackRejected: 'Rejected — nobody\'s access changed.',
+    pinsH: 'Till PINs', pinsLead: 'Set a new PIN for a member of staff (they type it themselves, twice, hidden), cancel a PIN, or change your own. You can do this only for people who hold no more authority than you.',
+    pinStaff: 'Staff id', pinSetBtn: 'Set a new PIN', pinCancelBtn: 'Cancel their PIN', pinOwnBtn: 'Change my own PIN',
+    pinSetDone: 'The new PIN is set. It works now; the old one has stopped.', pinCancelDone: 'The PIN is cancelled. They cannot sign in until a new one is set.', pinOwnDone: 'Your PIN is changed. Use the new one from now on.',
+    pinAskTakeBack: 'Type your own PIN again to ask for this.', pinAskSet: 'Type YOUR own PIN to allow a new PIN for this person.', pinAskCancel: 'Type your own PIN again to cancel their PIN.',
+    pinAskCurrent: 'Type your CURRENT PIN.', pinAskNew: 'Hand over the keyboard. The person types their NEW 6-digit PIN.', pinAskNewAgain: 'Type the same new PIN again.',
+    newPinMismatch: 'The new PIN must be 6 digits, the same twice. Nothing was changed.', needStaffIdPin: 'Type the staff id.',
     notOnStorePc: 'Not on this store PC yet. Nothing was changed.',
     pinOk: 'Confirm', pinCancel: 'Cancel',
   },
@@ -102,7 +111,16 @@ export const USERS_COPY = {
     addH: 'இந்தக் கடைக் கணினியில் ஒரு நபரைச் சேர்', addLead: 'புதிய பணியாளர், இந்தக் கடைக் கணினிக்கும் அதன் கவுண்டர்களுக்கும் மட்டும் (அலுவலக அல்லது கைபேசி உள்நுழைவு இல்லை). பெயரைச் சேர்ப்பது அவருக்கு எதையும் தராது: பிறகு அவருக்குப் பங்கு கேளுங்கள் (இரண்டாவது நபர் அனுமதிப்பார்), அவரது PIN-ஐ அமையுங்கள்.',
     addName: 'அவரது முழுப் பெயர்', addStaffId: 'அவரது பணியாளர் எண் (a–z, 0–9, . _ -)', addBtn: 'இந்த நபரைச் சேர்', added: 'சேர்க்கப்பட்டார் — இந்தக் கடைக் கணினிக்கு மட்டும். இப்போது அவருக்குப் பங்கு கேளுங்கள்.',
     needName: 'நபரின் முழுப் பெயரைத் தட்டச்சு செய்யுங்கள்.', needStaffId: 'அவரது பணியாளர் எண்ணைத் தட்டச்சு செய்யுங்கள்: a–z, 0–9, . _ - இல் 3 முதல் 64',
-    storePcOnly: 'இந்தக் கடைக் கணினியில்: நபரைச் சேர்த்தல், பங்கு கேட்டல், அனுமதித்தல், மறுத்தல் ஆகியவை இங்கே, ஒவ்வொன்றும் உங்கள் PIN-உடன். பங்கைத் திரும்பப் பெறுதலும் "அவர் வெளியேறிவிட்டார்" என்பதும் அடுத்த பகுதியில் (4b-2) வரும்; பங்கை வரம்பிட தலைமை அலுவலக இணைப்பு தேவை.',
+    storePcOnly: 'இந்தக் கடைக் கணினியில், ஒவ்வொன்றும் உங்கள் PIN-உடன்: நபரைச் சேர்த்தல், பங்கு கேட்டல், அனுமதித்தல் அல்லது மறுத்தல், பங்கைத் திரும்பப் பெறுதல் அல்லது வெளியேறியவரைப் பதிதல் (இரண்டாவது நபர் அனுமதிப்பார்), PIN அமைத்தல், மாற்றுதல், ரத்து செய்தல். பங்கை வரம்பிட தலைமை அலுவலக இணைப்பு தேவை.',
+    takeBacksH: 'இரண்டாவது நபருக்காகக் காத்திருக்கும் திரும்பப் பெறுதல்கள்', takeBacksLead: 'திரும்பப் பெறப்படும் பங்கு, அல்லது வெளியேறிய நபர். இரண்டாவது நபர் தன் PIN-உடன் அனுமதித்ததும் உடனே நடக்கும்; வெளியேறியவரின் PIN வேலை செய்யாது.',
+    nothingTakeBack: 'எந்தத் திரும்பப் பெறுதலும் காத்திருக்கவில்லை.', yourTakeBack: 'இதை நீங்கள் கேட்டீர்கள், எனவே வேறொருவர் முடிவு செய்வார்.',
+    takeBackAsked: 'கேட்கப்பட்டது. இரண்டாவது நபர் இங்கே தன் PIN-உடன் அனுமதிப்பார்; பிறகு உடனே நடக்கும்.', takeBackDone: 'அனுமதிக்கப்பட்டு முடிந்தது.', takeBackRejected: 'மறுக்கப்பட்டது — யாருடைய அணுகலும் மாறவில்லை.',
+    pinsH: 'PIN-கள்', pinsLead: 'ஒரு பணியாளருக்குப் புதிய PIN அமையுங்கள் (அவரே இருமுறை, மறைவாகத் தட்டச்சு செய்வார்), ஒரு PIN-ஐ ரத்து செய்யுங்கள், அல்லது உங்களுடையதை மாற்றுங்கள். உங்களைவிட அதிக அதிகாரம் இல்லாதவர்களுக்கு மட்டுமே இதைச் செய்யலாம்.',
+    pinStaff: 'பணியாளர் எண்', pinSetBtn: 'புதிய PIN அமை', pinCancelBtn: 'அவரது PIN-ஐ ரத்து செய்', pinOwnBtn: 'என் PIN-ஐ மாற்று',
+    pinSetDone: 'புதிய PIN அமைக்கப்பட்டது. இது இப்போது வேலை செய்யும்; பழையது நின்றுவிட்டது.', pinCancelDone: 'PIN ரத்து செய்யப்பட்டது. புதியது அமைக்கப்படும் வரை அவர் உள்நுழைய முடியாது.', pinOwnDone: 'உங்கள் PIN மாற்றப்பட்டது. இனி புதியதைப் பயன்படுத்துங்கள்.',
+    pinAskTakeBack: 'இதைக் கேட்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskSet: 'இந்த நபருக்குப் புதிய PIN அனுமதிக்க உங்கள் சொந்த PIN-ஐ உள்ளிடுங்கள்.', pinAskCancel: 'அவரது PIN-ஐ ரத்து செய்ய உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
+    pinAskCurrent: 'உங்கள் தற்போதைய PIN-ஐ உள்ளிடுங்கள்.', pinAskNew: 'விசைப்பலகையைக் கொடுங்கள். அந்த நபர் தன் புதிய 6 இலக்க PIN-ஐத் தட்டச்சு செய்வார்.', pinAskNewAgain: 'அதே புதிய PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
+    newPinMismatch: 'புதிய PIN 6 இலக்கங்களாக, இருமுறை ஒரே மாதிரி இருக்க வேண்டும். எதுவும் மாற்றப்படவில்லை.', needStaffIdPin: 'பணியாளர் எண்ணைத் தட்டச்சு செய்யுங்கள்.',
     notOnStorePc: 'இந்தக் கடைக் கணினியில் இன்னும் இல்லை. எதுவும் மாற்றப்படவில்லை.',
     pinOk: 'உறுதிசெய்', pinCancel: 'ரத்து',
   },
@@ -113,7 +131,8 @@ export const usersWords = (lang: Lang, key: string): string =>
   (USERS_COPY[lang] as Record<string, string>)[key] ?? (USERS_COPY.en as Record<string, string>)[key] ?? key;
 
 type Why = 'nobody' | 'cannotRead' | 'cannotAsk' | 'cannotDecide' | 'needPerson' | 'needRole' | 'needStores' | 'needReason'
-  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady' | 'pinNeeded' | 'needName' | 'needStaffId' | 'notOnStorePc';
+  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady' | 'pinNeeded' | 'needName' | 'needStaffId' | 'notOnStorePc'
+  | 'newPinMismatch' | 'needStaffIdPin';
 type Done<T> = Promise<Outcome<T, Why>>;
 export const usersOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => usersWords(lang, k), out);
 
@@ -156,6 +175,18 @@ export interface UsersSession {
   readonly onStorePc: boolean;
   /** CR-01 step 4b-1 (OB-733 "A"): add a store-PC person — their name and staff id, by the asker's PIN. Store PC only. */
   addPerson(input: { readonly userId: string; readonly displayName: string }): Done<{ readonly userId: string }>;
+  /** CR-01 step 4b-2 (OB-735): the take-backs waiting for a second person, and the viewer's own. Store PC only. */
+  takeBacks(): Done<readonly TakeBackRow[]>;
+  /** CR-01 step 4b-2 (OB-735): approve (done at once) or reject a take-back, by PIN, with a reason. Store PC only. */
+  decideTakeBack(approvalId: string, decision: 'approve' | 'reject', reason: string): Done<{ readonly decided: 'approved' | 'rejected'; readonly words: string }>;
+  /** CR-01 step 4b-2 (OB-734 · OB-737): set or cancel somebody's till PIN, or change your own. Store PC only. */
+  tillPin(action: 'set' | 'cancel' | 'own', staffId: string): Done<{ readonly done: 'set' | 'cancel' | 'own' }>;
+}
+
+/** A take-back on the store PC, as head office lists it for the person at the screen. */
+export interface TakeBackRow {
+  readonly approvalId: string; readonly userId: string; readonly event: 'mover' | 'leaver'; readonly summary: string; readonly reason: string;
+  readonly requestedBy: string; readonly requestedAt: string; readonly status: RequestStatus; readonly mine: boolean;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
@@ -204,16 +235,23 @@ export interface OfficePrivilege {
   readonly reject: string;
   readonly people: string;
   readonly view: string;
-  readonly askPin: (what: 'give' | 'approve' | 'reject' | 'add') => Promise<string | null>;
+  /** CR-01 step 4b-2: asking for a take-back, deciding one (`{approvalId}` in it), and till PINs. */
+  readonly accessChanges: string;
+  readonly decide: string;
+  readonly tillPins: string;
+  readonly askPin: (what: PinAsk) => Promise<string | null>;
 }
+/** What the PIN box asks for. `newPin` / `newPinAgain` are the person's NEW till PIN, typed by them, twice. */
+export type PinAsk = 'give' | 'approve' | 'reject' | 'add' | 'takeBack' | 'pinSet' | 'pinCancel' | 'pinCurrent' | 'newPin' | 'newPinAgain';
 
 /** The store PC's doors from the page's injected global (`window.sreOfficePrivilege`), or undefined. */
 export function officePrivilegeFrom(raw: unknown, askPin: OfficePrivilege['askPin']): OfficePrivilege | undefined {
   if (!isObj(raw)) return undefined;
-  const doors = ['grants', 'approve', 'reject', 'people', 'view'] as const;
+  const doors = ['grants', 'approve', 'reject', 'people', 'view', 'accessChanges', 'decide', 'tillPins'] as const;
   if (!doors.every((d) => isStr(raw[d]) && (raw[d] as string).startsWith('/office/'))) return undefined;
-  if (!(raw['approve'] as string).includes('{grantId}') || !(raw['reject'] as string).includes('{grantId}')) return undefined;
-  return { grants: raw['grants'] as string, approve: raw['approve'] as string, reject: raw['reject'] as string, people: raw['people'] as string, view: raw['view'] as string, askPin };
+  if (!(raw['approve'] as string).includes('{grantId}') || !(raw['reject'] as string).includes('{grantId}') || !(raw['decide'] as string).includes('{approvalId}')) return undefined;
+  const d = (k: (typeof doors)[number]): string => raw[k] as string;
+  return { grants: d('grants'), approve: d('approve'), reject: d('reject'), people: d('people'), view: d('view'), accessChanges: d('accessChanges'), decide: d('decide'), tillPins: d('tillPins'), askPin };
 }
 
 export function createUsersSession(input: {
@@ -266,6 +304,49 @@ export function createUsersSession(input: {
 
   return {
     may, userId, onStorePc,
+    takeBacks: async () => {
+      const g = !named ? no('nobody') : !may.ask && !may.decide ? no('cannotAsk') : undefined; if (g) return g;
+      if (!onStorePc) return no('notOnStorePc');
+      const out = await officeView();
+      if (out.result !== 'ok') return out;
+      const rows = (Array.isArray(out.value['accessChanges']) ? out.value['accessChanges'] : []).flatMap((r): TakeBackRow[] => {
+        if (!isObj(r) || !isStr(r['approvalId']) || !isStr(r['userId']) || (r['event'] !== 'mover' && r['event'] !== 'leaver')) return [];
+        const status = (['waiting', 'approved', 'rejected', 'expired', 'used'] as const).find((x) => x === r['status']) ?? 'waiting';
+        return [{ approvalId: r['approvalId'], userId: r['userId'], event: r['event'], summary: isStr(r['summary']) ? r['summary'] : '', reason: isStr(r['reason']) ? r['reason'] : '',
+          requestedBy: isStr(r['requestedBy']) ? r['requestedBy'] : '', requestedAt: isStr(r['requestedAt']) ? r['requestedAt'] : '', status, mine: r['requestedBy'] === userId }];
+      });
+      return { result: 'ok', value: rows };
+    },
+    decideTakeBack: async (approvalId, decision, reason) => {
+      const g = gate('decide'); if (g) return g;
+      if (input.office === undefined) return no('notOnStorePc');
+      if (reason.trim() === '') return no('needReason');
+      const pin = await input.office.askPin(decision);
+      if (pin === null || pin.trim() === '') return no('pinNeeded');
+      const out = await viaStorePc(input.office.decide.replace('{approvalId}', encodeURIComponent(approvalId)), { pin, request: { decision: decision === 'approve' ? 'approved' : 'rejected', reason: reason.trim() } });
+      return out.result === 'ok' ? { result: 'ok', value: { decided: decision === 'approve' ? 'approved' : 'rejected', words: isStr(out.value['en']) ? out.value['en'] : '' } } : out;
+    },
+    tillPin: async (action, staffId) => {
+      if (!named) return no('nobody');
+      if (input.office === undefined) return no('notOnStorePc');
+      const who = action === 'own' ? userId! : staffId.trim().toLowerCase();
+      if (action !== 'own') {
+        if (!may.ask) return no('cannotAsk');
+        if (who === '') return no('needStaffIdPin');
+        if (who === userId) return no('yourself');
+      }
+      const pin = await input.office.askPin(action === 'own' ? 'pinCurrent' : action === 'set' ? 'pinSet' : 'pinCancel');
+      if (pin === null || pin.trim() === '') return no('pinNeeded');
+      let newPin: string | undefined; let newPinAgain: string | undefined;
+      if (action !== 'cancel') {
+        newPin = (await input.office.askPin('newPin')) ?? '';
+        if (!/^[0-9]{6}$/.test(newPin)) return no('newPinMismatch');
+        newPinAgain = (await input.office.askPin('newPinAgain')) ?? '';
+        if (newPinAgain !== newPin) return no('newPinMismatch');
+      }
+      const out = await viaStorePc(input.office.tillPins, { pin, request: { action, ...(action === 'own' ? {} : { userId: who }), ...(newPin === undefined ? {} : { newPin, newPinAgain }) } });
+      return out.result === 'ok' ? { result: 'ok', value: { done: action } } : out;
+    },
     addPerson: async (p) => {
       const g = gate('ask'); if (g) return g;
       if (input.office === undefined) return no('notOnStorePc');
@@ -372,10 +453,19 @@ export function createUsersSession(input: {
     },
     askTakeBack: async (holder, grant, reason) => {
       const g = gate('ask'); if (g) return g;
-      if (onStorePc) return no('notOnStorePc'); // CR-01 step 4b-2 (OB-735)
       if (holder.userId === userId) return no('yourself');
       if (reason.trim() === '') return no('needReason');
       const requestId = id('access');
+      if (input.office !== undefined) {
+        // CR-01 step 4b-2 (OB-735 "A"): through the store PC, by PIN — a second person approves it on this page.
+        const rest = grant === 'leaver' ? [] : holder.grants.filter((x) => !sameGrant(x, grant));
+        if (grant !== 'leaver' && rest.length === 0) return no('onlyRole');
+        const pin = await input.office.askPin('takeBack');
+        if (pin === null || pin.trim() === '') return no('pinNeeded');
+        const request = { requestId, event: grant === 'leaver' ? 'leaver' : 'mover', userId: holder.userId, reason: reason.trim(), grants: rest.map((x) => ({ userId: x.userId, roleId: x.roleId, branchScope: x.branchScope })) };
+        const out = await viaStorePc(input.office.accessChanges, { pin, request });
+        return out.result === 'ok' ? { result: 'ok', value: { requestId } } : out;
+      }
       if (grant === 'leaver') {
         const body = { event: 'leaver', userId: holder.userId, reason: reason.trim(), grants: [], ownedOpenItems: [] };
         return askApproval('access_change', requestId, { ...body, requestId }, `${holder.userId} has left: take back every role`, reason.trim());

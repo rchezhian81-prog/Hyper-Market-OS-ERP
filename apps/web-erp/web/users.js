@@ -8,8 +8,8 @@ const api = window.users ?? null;
 const session = api?.session ?? null;
 const may = session?.may ?? { named: false, read: false, ask: false, decide: false };
 const signIns = api?.signIns ?? null;
-// CR-01 step 4b-1: on the store PC with the head-office link off, only what works there is offered (add a person, give,
-// approve, reject — each by PIN); take-backs come in 4b-2 and limits need the head-office link.
+// CR-01 step 4b-1/4b-2: on the store PC with the head-office link off, only what works there is offered — add a person,
+// give, approve, reject, take back, a leaver, till PINs — each by PIN; limits and "my changes" need the head-office link.
 const onStorePc = session?.onStorePc === true;
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
@@ -23,7 +23,7 @@ function field(labelWords, id) {
 const scopeWords = (s) => (s === 'all' ? t('all') : s.join(', '));
 const say = (id, out) => { $(id).textContent = out.result === 'ok' ? '' : api.outcomeWords(lang, out); };
 
-let roles = { live: [], waiting: [] }; let holders = null; let pending = null; let mine = null;
+let roles = { live: [], waiting: [] }; let holders = null; let pending = null; let mine = null; let takeBacks = null;
 // U3 (OB-699): a role's name is the product's own word — head office carries it in both languages; the Tamil is shown on a Tamil screen.
 const roleWord = (r) => (lang === 'ta' && typeof r?.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : r?.name);
 const roleName = (id) => roleWord(roles.live.find((r) => r.id === id) ?? roles.waiting.find((r) => r.id === id)) ?? id;
@@ -63,17 +63,41 @@ function paintHolders() {
     for (const g of h.grants) {
       const row = document.createElement('div'); row.className = 'head'; row.dataset.role = g.roleId;
       row.append(text('span', `${roleName(g.roleId)} · ${t('where')}: ${scopeWords(g.branchScope)}`));
-      if (may.ask && !onStorePc && h.userId !== session.userId) {
-        row.append(button(t('takeBack'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, g, why.input.value); status.textContent = out.result === 'ok' ? t('asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void loadMine(); }));
+      if (may.ask && h.userId !== session.userId) {
+        row.append(button(t('takeBack'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, g, why.input.value); status.textContent = out.result === 'ok' ? t(onStorePc ? 'takeBackAsked' : 'asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void (onStorePc ? loadTakeBacks() : loadMine()); }));
       }
       li.append(row);
     }
-    if (may.ask && !onStorePc && h.userId !== session.userId) {
+    if (may.ask && h.userId !== session.userId) {
       const acts = document.createElement('div'); acts.className = 'acts';
-      acts.append(why.label, button(t('leaver'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, 'leaver', why.input.value); status.textContent = out.result === 'ok' ? t('asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void loadMine(); }));
+      acts.append(why.label, button(t('leaver'), 'quiet', async () => { status.textContent = t('reading'); const out = await session.askTakeBack(h, 'leaver', why.input.value); status.textContent = out.result === 'ok' ? t(onStorePc ? 'takeBackAsked' : 'asked') : api.outcomeWords(lang, out); if (out.result === 'ok') void (onStorePc ? loadTakeBacks() : loadMine()); }));
       li.append(acts);
     }
     li.append(status);
+    ul.append(li);
+  }
+}
+
+// CR-01 step 4b-2: take-backs on the store PC — a second person approves (done at once) or rejects, by PIN.
+function paintTakeBacks() {
+  const ul = $('takeback-rows'); ul.replaceChildren();
+  if (takeBacks === null) return;
+  if (takeBacks.length === 0) { ul.append(text('li', t('nothingTakeBack'), 'meta')); return; }
+  for (const c of takeBacks) {
+    const li = document.createElement('li'); li.dataset.request = c.approvalId; li.dataset.status = c.status;
+    li.className = c.status === 'waiting' ? 'tone-degraded' : c.status === 'used' ? 'tone-ok' : '';
+    const head = document.createElement('div'); head.className = 'head';
+    head.append(text('h4', c.summary || c.userId), text('span', `${t('askedBy')} ${c.requestedBy}`, 'meta'));
+    li.append(head, text('p', c.reason, 'meta'));
+    if (c.mine) li.append(text('p', c.status === 'waiting' ? t('yourTakeBack') : t({ waiting: 'statusWaiting', approved: 'statusApproved', rejected: 'statusRejected', expired: 'statusExpired', used: 'statusUsed' }[c.status]), 'meta'));
+    else if (may.decide && c.status === 'waiting') {
+      const why = field(t('reason'), `tbwhy-${c.approvalId}`);
+      const acts = document.createElement('div'); acts.className = 'acts';
+      const status = text('p', '', 'status'); status.setAttribute('role', 'status');
+      const decide = (d) => async () => { status.textContent = t('reading'); const out = await session.decideTakeBack(c.approvalId, d, why.input.value); status.textContent = out.result === 'ok' ? (out.value.words || t(d === 'approve' ? 'takeBackDone' : 'takeBackRejected')) : api.outcomeWords(lang, out); if (out.result === 'ok') void loadAll(); };
+      acts.append(why.label, button(t('approve'), '', decide('approve')), button(t('reject'), 'quiet', decide('reject')));
+      li.append(acts, status);
+    }
     ul.append(li);
   }
 }
@@ -149,8 +173,8 @@ function paint() {
   for (const [id, key] of [['reload-text', 'reload'], ['pending-h', 'pendingH'], ['pending-lead', 'pendingLead'], ['holders-h', 'holdersH'], ['holders-lead', 'holdersLead'],
     ['give-h', 'giveH'], ['give-lead', 'giveLead'], ['g-person-l', 'person'], ['g-role-l', 'role'], ['g-stores-l', 'stores'], ['g-reason-l', 'reason'], ['g-ask-text', 'give'],
     ['limit-h', 'limitH'], ['limit-lead', 'limitLead'], ['l-person-l', 'person'], ['l-role-l', 'role'], ['l-dimension-l', 'dimension'], ['l-values-l', 'values'], ['l-reason-l', 'reason'], ['l-ask-text', 'limit'],
-    ['mine-h', 'mineH'], ['mine-lead', 'mineLead'], ['add-h', 'addH'], ['add-lead', 'addLead'], ['a-name-l', 'addName'], ['a-staff-l', 'addStaffId'], ['a-add-text', 'addBtn'], ['store-pc-note', 'storePcOnly'], ['waiting-h', 'waitingH'], ['waiting-lead', 'waitingLead'], ['signins-h', 'signInsH'], ['signins-lead', 'signInsLead']]) $(id).textContent = t(key);
-  paintRoleChoices(); paintPending(); paintHolders(); paintMine(); paintWaiting(); paintSignIns();
+    ['mine-h', 'mineH'], ['mine-lead', 'mineLead'], ['add-h', 'addH'], ['add-lead', 'addLead'], ['a-name-l', 'addName'], ['a-staff-l', 'addStaffId'], ['a-add-text', 'addBtn'], ['store-pc-note', 'storePcOnly'], ['takebacks-h', 'takeBacksH'], ['takebacks-lead', 'takeBacksLead'], ['pins-h', 'pinsH'], ['pins-lead', 'pinsLead'], ['p-staff-l', 'pinStaff'], ['p-set-text', 'pinSetBtn'], ['p-cancel-text', 'pinCancelBtn'], ['p-own-text', 'pinOwnBtn'], ['waiting-h', 'waitingH'], ['waiting-lead', 'waitingLead'], ['signins-h', 'signInsH'], ['signins-lead', 'signInsLead']]) $(id).textContent = t(key);
+  paintRoleChoices(); paintPending(); paintHolders(); paintMine(); paintTakeBacks(); paintWaiting(); paintSignIns();
 }
 
 async function loadRoles() {
@@ -160,7 +184,8 @@ async function loadRoles() {
 async function loadHolders() { $('holders-status').textContent = t('reading'); const out = await session.holders(); holders = out.result === 'ok' ? out.value : null; say('holders-status', out); paintHolders(); }
 async function loadPending() { $('pending-status').textContent = t('reading'); const out = await session.pending(); pending = out.result === 'ok' ? out.value : null; say('pending-status', out); paintPending(); }
 async function loadMine() { if (!may.ask || onStorePc) return; $('mine-status').textContent = t('reading'); const out = await session.mine(); mine = out.result === 'ok' ? out.value : null; say('mine-status', out); paintMine(); }
-async function loadAll() { await loadRoles(); paint(); await Promise.all([may.ask ? loadHolders() : Promise.resolve(), may.read ? loadPending() : Promise.resolve(), loadMine()]); }
+async function loadTakeBacks() { if (!onStorePc || (!may.ask && !may.decide)) return; $('takebacks-status').textContent = t('reading'); const out = await session.takeBacks(); takeBacks = out.result === 'ok' ? out.value : null; say('takebacks-status', out); paintTakeBacks(); }
+async function loadAll() { await loadRoles(); paint(); await Promise.all([may.ask ? loadHolders() : Promise.resolve(), may.read ? loadPending() : Promise.resolve(), loadMine(), loadTakeBacks()]); }
 
 for (const [id, name] of [['reload', 'refresh-cw'], ['g-ask', 'user-round']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
@@ -178,6 +203,16 @@ $('add-form').addEventListener('submit', async (e) => {
   $('add-status').textContent = out.result === 'ok' ? t('added') : api.outcomeWords(lang, out);
   if (out.result === 'ok') { $('g-person').value = out.value.userId; $('a-staff').value = ''; $('a-name').value = ''; void loadHolders(); }
 });
+// CR-01 step 4b-2 (OB-734 · OB-737): till PINs — the asker's PIN, then the person types their new PIN twice (hidden).
+const pinAct = async (action) => {
+  $('pins-status').textContent = t('reading');
+  const out = await session.tillPin(action, $('p-staff').value);
+  $('pins-status').textContent = out.result === 'ok' ? t(action === 'set' ? 'pinSetDone' : action === 'cancel' ? 'pinCancelDone' : 'pinOwnDone') : api.outcomeWords(lang, out);
+  if (out.result === 'ok' && action !== 'own') $('p-staff').value = '';
+};
+$('pin-form').addEventListener('submit', (e) => { e.preventDefault(); void pinAct('set'); });
+$('p-cancel').addEventListener('click', () => { void pinAct('cancel'); });
+$('p-own').addEventListener('click', () => { void pinAct('own'); });
 $('limit-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('limit-status').textContent = t('reading');
@@ -204,6 +239,12 @@ else {
   if (may.read) $('pending').hidden = false;
   if (may.ask) { $('holders').hidden = false; $('give').hidden = false; $('limit').hidden = onStorePc; $('mine').hidden = onStorePc; $('add').hidden = !onStorePc; }
   $('store-pc-note').hidden = !onStorePc;
+  // CR-01 step 4b-2: on the store PC — take-backs for whoever asks or decides; till PINs for everyone signed in (their own),
+  // and setting or cancelling somebody else's for whoever asks for roles.
+  $('takebacks').hidden = !onStorePc || (!may.ask && !may.decide);
+  $('pins').hidden = !onStorePc;
+  $('pin-form').hidden = !may.ask;
+  if (onStorePc && !may.ask && !may.read && may.decide) void loadAll();
   if (may.read || may.ask) { $('reload').hidden = false; $('reload').addEventListener('click', () => { void loadAll(); }); void loadAll(); }
   if (signIns !== null) { $('signins').hidden = false; void signIns.refresh().then(paintSignIns); }
 }
