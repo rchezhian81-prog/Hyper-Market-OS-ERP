@@ -9,7 +9,7 @@ import {
 import { PASSPHRASE, world, type World } from '../support/store-computer-world';
 
 /**
- * OB-733 (owner, 14 Nov 2026: the backup passphrase is lost — "3"). The passphrase is kept nowhere, so it cannot be
+ * OB-737 (owner, 14 Nov 2026: the backup passphrase is lost — "3"). The passphrase is kept nowhere, so it cannot be
  * recovered; the honest step is a NEW key under a NEW passphrase. Nothing is deleted (hard rule #6): the old key file is
  * renamed and kept, every old backup still has its own key copy on the drive, and the change is appended to a log that
  * never holds a passphrase. Only a person at the keyboard, who names themselves and types REPLACE, can do it.
@@ -29,7 +29,7 @@ async function backedUp(): Promise<{ w: World; dir: string; oldKey: string; oldM
   return { w, dir, oldKey: keyIdOf(w), oldManifest: manifestIn(dir)[0]! };
 }
 
-describe('OB-733 — a new backup passphrase when the old one is lost', () => {
+describe('OB-737 — a new backup passphrase when the old one is lost', () => {
   it('refuses without a name, and on a computer that has no backup key yet', () => {
     expect(replacePassphraseRefusals({ by: undefined, current: { present: true, key: {} } }).join(' ')).toMatch(/--by/);
     expect(replacePassphraseRefusals({ by: 'Owner', current: { present: false } }).join(' ')).toMatch(/no backup key yet/);

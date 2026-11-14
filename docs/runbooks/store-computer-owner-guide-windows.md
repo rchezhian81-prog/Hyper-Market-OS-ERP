@@ -260,7 +260,7 @@ copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
      **If it is forgotten, nobody can open the backups — not even me.** The PC keeps only a sealed key that the
      passphrase opens, never the passphrase. It then says `BACKUP PASSPHRASE SET — backup key …`.
      **If the paper is ever lost:** a new passphrase can be set without losing anything — see *A new backup passphrase,
-     when the old one is lost* in `store-computer-windows-services.md` (OB-733).
+     when the old one is lost* in `store-computer-windows-services.md` (OB-737).
    - **When it worked:** it says `BACKUP DONE —` with the backup's name, its size and how long it took, then a line
      `Manifest: E:\sre-real\…manifest.json`. **Write that manifest's file name in the workbook.**
    - It refuses, on purpose, every disk inside this PC — `C:`, `F:` and any other — and a network folder: a backup on

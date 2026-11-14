@@ -171,7 +171,7 @@ none, and the drill says so).
 If it says **THIS PC MAY NOT BE ON <version> NOW**, restart the PC; if the till does not come back, run that version's
 SRE-Setup.exe again, and send a photo. The database is never rolled back by the drill: only the program is put back.
 
-## A new backup passphrase, when the old one is lost (OB-733)
+## A new backup passphrase, when the old one is lost (OB-737)
 
 **Why:** every backup is locked; the passphrase is the key, and it is kept nowhere — not on the PC, not with us. If the
 paper is lost, nobody can recover it. This step makes a **new** key with a **new** passphrase, so the backups from now on

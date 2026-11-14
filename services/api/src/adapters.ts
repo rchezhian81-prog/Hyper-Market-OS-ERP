@@ -504,7 +504,7 @@ export async function liveEmergencyRoles(store: EventStore, tenantId: string, us
   return [...emergency.values()].filter((g) => g.userId === userId && (g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(at)).map((g) => g.roleId);
 }
 
-const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn']);
+const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn', 'PersonRecordedForStorePc' /* CR-01 step 4b-1 · OB-733 */]);
 
 /**
  * People's sign-ins at the identity server (OB-15-c): the attempt, the outcome and the end, on the identity ledger —
