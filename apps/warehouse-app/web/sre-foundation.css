@@ -9,6 +9,10 @@
   tokens, icons and motion of OB-201, §4 components; QG-02; NFR-07/08; P-07):
     • one palette with ONE meaning per colour everywhere — green ok · amber degraded/pending · red error/destructive ·
       grey idle — and colour is never the only signal (a word and an icon ride with it);
+    • EMERALD AND GOLD, ROUNDED AND MATTE (decision OB-728, owner, 2 Nov 2026): an ivory canvas, an emerald rail and
+      primary action, a gold SRE mark and current-screen marker (gold is decoration only, never a status), pill buttons,
+      6 / 12 / 16 / 20px corners, two self-hosted faces (Plus Jakarta Sans, Anek Tamil) and no gradient, shine, glass or
+      glow anywhere. Token NAMES did not change, so no screen changed; the meanings of the colours did not change either;
     • TWO token sets for that one palette. The LIGHT set is the default from UX-1a on: the owner's professional
       reference (decision OB-13, 4 Oct 2026) — a dark-forest rail, white work surfaces on a cool neutral canvas, one
       emerald primary action, fine stripes on tiles, status as words with amber and red kept for exceptions. The DARK
@@ -18,7 +22,7 @@
     • the scales OB-201 ("premium, crisp, polished, smooth", 18 Oct 2026) added to that palette WITHOUT changing a
       colour of it: a 4px spacing scale, a type scale, one radius scale, hairline borders, a soft layered elevation,
       motion durations and easing, and the focus ring — each a token below, each used by the components here;
-    • one type stack that renders Tamil and Latin cleanly, from the system, with the line-height Tamil glyphs need;
+    • one type stack that renders Tamil and Latin cleanly, from the app's own font files (OB-728), with the line-height Tamil glyphs need;
     • touch targets of at least 48px (a screen may raise `--tap` in its own :root — gloves, glare, a doorstep);
     • the fixtures every screen carries: the sync badge, the language toggle, the sample / cached / nobody strips;
     • the back office's shell — the rail the ERP's one chrome draws from the real menu (UX-1a) — and the namespaced
@@ -41,24 +45,39 @@
   gets none (the reduced-motion block below zeroes every duration token and every animation).
 */
 
+/* ── The two faces (OB-728) — self-hosted, never fetched from the internet (P-01) ─────────────────────────────────
+   Plus Jakarta Sans (Latin, 400–800) and Anek Tamil (Tamil and the rupee sign, 400–700), each under the SIL Open Font
+   License beside the files in fonts/. Every app carries its own copy (scripts/sync-ui-foundation.mjs) and every service
+   worker precaches them, so a till opens in the right face with the internet down. `swap`: the words show at once in the
+   system's face and change face when the file is read — nothing waits on a font. */
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("./fonts/plus-jakarta-sans-400.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("./fonts/plus-jakarta-sans-500.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("./fonts/plus-jakarta-sans-600.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url("./fonts/plus-jakarta-sans-700.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 800; font-display: swap; src: url("./fonts/plus-jakarta-sans-800.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Anek Tamil"; font-style: normal; font-weight: 400; font-display: swap; src: url("./fonts/anek-tamil-400.woff2") format("woff2"); unicode-range: U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC; }
+@font-face { font-family: "Anek Tamil"; font-style: normal; font-weight: 500; font-display: swap; src: url("./fonts/anek-tamil-500.woff2") format("woff2"); unicode-range: U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC; }
+@font-face { font-family: "Anek Tamil"; font-style: normal; font-weight: 600; font-display: swap; src: url("./fonts/anek-tamil-600.woff2") format("woff2"); unicode-range: U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC; }
+@font-face { font-family: "Anek Tamil"; font-style: normal; font-weight: 700; font-display: swap; src: url("./fonts/anek-tamil-700.woff2") format("woff2"); unicode-range: U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC; }
+
 :root {
-  /* ── The light set — the owner's look (design system §3.2) ─────────────────────────────────────── */
+  /* ── The light set — the owner's look: emerald and gold, rounded and matte (OB-728; design system §3.2) ─────────────────────────────────────── */
   /* Surfaces */
-  --bg: #f3f5f4;            /* the canvas */
+  --bg: #fbf8f1;            /* the canvas */
   --panel: #ffffff;         /* panels, tiles, tables, the header */
-  --panel-2: #eef2ef;       /* chips, bars, tags, a secondary surface */
+  --panel-2: #f5f0e4;       /* chips, bars, tags, a secondary surface */
   --field: #ffffff;         /* an input */
-  --hover: #f6f8f7;         /* a register row or a quiet button under the pointer (ink 12:1, muted 6.0:1 on it) */
-  --mint: #ebf3ee;          /* a selected row, a pale badge (accent on it 6.5:1) */
-  --line: #dce3de;          /* borders, dividers, plain buttons */
-  --line-soft: #e7ece9;     /* the hairline inside a panel: between register rows, under a heading */
-  --line-strong: #aebbb3;   /* a tile's resting stripe, a stronger border */
-  --field-line: #7f8d86;    /* an input's edge: 3.5:1 on white, 3.2:1 on the canvas — the box itself is seen (WCAG 1.4.11) */
+  --hover: #f9f5ec;         /* a register row or a quiet button under the pointer (ink 12.5:1, muted 6.7:1 on it) */
+  --mint: #e8f2ec;          /* a selected row, a pale badge (accent on it 6.1:1) */
+  --line: #ece4d2;          /* borders, dividers, plain buttons */
+  --line-soft: #f3eee2;     /* the hairline inside a panel: between register rows, under a heading */
+  --line-strong: #d8cbae;   /* a tile's resting stripe, a stronger border */
+  --field-line: #8a806d;    /* an input's edge: 3.9:1 on white, 3.7:1 on the canvas — the box itself is seen (WCAG 1.4.11) */
 
   /* Text */
-  --ink: #25362e;
-  --ink-2: #34443b;         /* body copy one step quieter than a heading (10.3:1) */
-  --muted: #53625a;         /* 6.4:1 on white, 5.9:1 on the canvas, 5.7:1 on --panel-2, 4.9:1 on --line — never under 14px */
+  --ink: #173328;
+  --ink-2: #2f4339;         /* body copy one step quieter than a heading (10.6:1) */
+  --muted: #5c5646;         /* 7.3:1 on white, 6.9:1 on the canvas, 6.4:1 on --panel-2, 5.8:1 on --line — never under 14px */
   --on-accent: #ffffff;
   --on-warn: #ffffff;       /* words on the amber strip (--degraded as a surface) */
   --on-danger: #ffffff;
@@ -66,51 +85,63 @@
   --on-idle: #ffffff;
 
   /* Tones — one meaning everywhere; both dialects */
-  --ok: #16614d;            /* the emerald: the one primary action, links, the live dot, green words (7.4:1) */
+  --ok: #17654f;            /* the emerald: the one primary action, links, the live dot, green words (7.0:1) */
   --good: var(--ok);
   --accent: var(--ok);
   --accent-ink: var(--on-accent);
-  --accent-hover: #12523f;  /* the primary action under the pointer (white on it 9.1:1) */
-  --accent-press: #0f4636;  /* …and pressed (10.8:1) */
-  --degraded: #8a5e1b;      /* amber: pending · degraded · NOT KNOWN (5.7:1) */
+  --accent-hover: #11533f;  /* the primary action under the pointer (white on it 9.0:1) */
+  --accent-press: #0e3b2e;  /* …and pressed (12.5:1) */
+  --degraded: #9c4f17;      /* amber: pending · degraded · NOT KNOWN — burnt amber, darker and redder than the gold so it never reads as gold (5.9:1) */
   --warn: var(--degraded);
   --error: #e04e48;         /* the signal red: 3.9:1 on white — a dot or an edge, never words */
   --danger: var(--error);
   --danger-text: #a03e36;   /* red words: 6.5:1 on white */
   --danger-surface: #a03e36;/* a red button or banner under white words: 6.5:1 */
   --danger-hover: #8a332c;  /* …under the pointer */
-  --idle: #6b7a72;
+  --idle: #6e746a;
   --info: #1d5fa6;
   --info-surface: #dce9f7;
   --on-info-surface: #0f3c6e;
-  --warn-surface: #f6e7c8;
-  --on-warn-surface: #5a3e0c;
+  --warn-surface: #fbe7d6;
+  --on-warn-surface: #66310e;
   --nobody-surface: var(--warn-surface);
   --on-nobody-surface: var(--on-warn-surface);
-  --ok-surface: #e3f1ea;
-  --on-ok-surface: #0f4c3a;
-  --error-surface: #fbe9e7; /* a red-tinted panel; its words are --danger-text (5.5:1) */
+  --ok-surface: #e3f1e8;
+  --on-ok-surface: #0e4a35;
+  --error-surface: #fbeae6; /* a red-tinted panel; its words are --danger-text (5.5:1) */
   --demo-surface: #7c2d12;  /* the practice-data banner's stripes, the same in both sets */
   --demo-surface-2: #9a3412;
   --on-demo: #ffffff;
-  --scrim: rgba(20, 32, 27, .55);
-  --focus: #0f4c3a;
-  --focus-halo: rgba(22, 97, 77, .22); /* the soft glow round a focused field, inside its 3px ring */
+  --scrim: rgba(14, 59, 46, .55);
+  --focus: #0e3b2e;
+  --focus-halo: rgba(23, 101, 79, .22); /* the soft glow round a focused field, inside its 3px ring */
 
   /* The rail (the back office's shell, UX-1a) */
-  --rail: #192f27;
-  --on-rail: #f3f5f4;       /* 13:1 */
-  --on-rail-muted: #a9b8ae; /* 6.9:1 */
-  --rail-accent: #7fd1ae;   /* the current screen's mark and the focus ring inside the rail: 7.9:1 non-text */
-  --on-rail-warn: #ffd166; /* a figure that needs looking at, on the rail's dark surface (UX-2b) */
+  --rail: #0e3b2e;
+  --on-rail: #f7f2e6;       /* 11.2:1 */
+  --on-rail-muted: #afc6bb; /* 6.9:1 */
+  --rail-accent: #d4a23a;   /* GOLD (OB-728): the SRE mark and the current screen's marker in the rail: 5.4:1 non-text */
+  --on-rail-warn: #f5b06a; /* a figure that needs looking at — "Not known" — on the rail's dark surface (UX-2b); burnt amber since OB-728, never the pale yellow that read as gold (5.4:1 on --rail-2) */
   --on-rail-danger: #ff9e94; /* a figure the box does not know, on the rail's dark surface */
-  --rail-2: #24403a;        /* the current screen and a hovered one: an opaque step up from the rail, 11:1 under --on-rail */
-  --rail-line: #2a423a;
+  --rail-2: #17493a;        /* the current screen and a hovered one: an opaque step up from the rail, 9.2:1 under --on-rail */
+  --rail-line: #215443;
   --rail-width: 248px;
+  /* Gold (OB-728, 2 Nov 2026): DECORATION ONLY — the SRE mark, the current screen's marker in the rail, one highlight on a
+     featured card. Never a status, never words on white, never more than one gold element on a card. The amber of
+     "pending / not known" (--degraded) was moved darker and redder so it never reads as gold. */
+  --gold: #d4a23a;
+  --on-gold: #0e3b2e;
+  --gold-soft: #f6ebcf;
+  --on-gold-soft: #6a4b0f;
 
-  /* Type — system faces only (nothing to download on a shop line); the Tamil-capable faces are named so a Tamil
-     screen never falls back to boxes on Windows or Android. */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Tamil", "Nirmala UI", "Latha", sans-serif;
+  /* Type (OB-728) — Plus Jakarta Sans for Latin and Anek Tamil for Tamil, BOTH served from the app's own fonts/ folder
+     (the @font-face rules at the top; precached by every service worker), so nothing is fetched from the internet at
+     run time (P-01). The system's Tamil-capable faces follow, so a screen never shows boxes while a font loads. */
+  --font: "Plus Jakarta Sans", "Anek Tamil", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Tamil", "Nirmala UI", "Latha", sans-serif;
+  /* The phone's own faces, for a shell that must stay light (OB-728 · OB-729: the customer app, held to its 150 KB
+     first load on a weak link). Such a shell sets `class="sre-system-type"` on <html>; its words then never ask for a
+     font file, so none is downloaded. */
+  --font-system: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Tamil", "Nirmala UI", "Latha", sans-serif;
   --mono: ui-monospace, Menlo, Consolas, monospace;
   --text: 16px;
   --leading: 1.5;
@@ -132,7 +163,7 @@
   --weight-bold: 700;
   --numbers: tabular-nums lining-nums; /* money and quantities: every digit the same width, so columns line up */
 
-  /* Size and shape — compact corners (the owner's reference); a soft, layered elevation since OB-201 */
+  /* Size and shape — rounded, matte corners (OB-728: 6 / 12 / 16 / 20px); a soft, layered elevation since OB-201 */
   --tap: 48px;
   --space-1: 4px;
   --space-2: 8px;
@@ -144,18 +175,19 @@
   --space-10: 40px;
   --gap: 12px;              /* = --space-3 */
   --pad: 16px;              /* = --space-4 */
-  --radius-sm: 4px;
-  --radius: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
   --hairline: 1px;
-  /* Elevation: two low-opacity layers tinted with the rail's forest, never a grey smudge. xs lifts a control off its
-     panel; sm is a resting card; md a card under the pointer or a popover; lg the drawer, a sheet, a toast. */
-  --shadow-xs: 0 1px 1px rgba(25, 47, 39, .05);
-  --shadow-sm: 0 1px 2px rgba(25, 47, 39, .06), 0 1px 3px rgba(25, 47, 39, .04);
-  --shadow-md: 0 2px 4px rgba(25, 47, 39, .05), 0 6px 16px rgba(25, 47, 39, .08);
-  --shadow-lg: 0 4px 8px rgba(25, 47, 39, .06), 0 16px 40px rgba(25, 47, 39, .16);
+  /* Elevation: low-opacity layers tinted with the emerald (OB-728), never a grey smudge — and MATTE: no gradient, shine,
+     glass or glow anywhere. xs lifts a control off its panel; sm is a resting card; md a card under the pointer or a
+     popover; lg the drawer, a sheet, a toast. */
+  --shadow-xs: 0 1px 2px rgba(14, 59, 46, .06);
+  --shadow-sm: 0 1px 2px rgba(14, 59, 46, .05), 0 2px 8px rgba(14, 59, 46, .05);
+  --shadow-md: 0 2px 4px rgba(14, 59, 46, .05), 0 8px 20px rgba(14, 59, 46, .08);
+  --shadow-lg: 0 4px 8px rgba(14, 59, 46, .06), 0 18px 44px rgba(14, 59, 46, .14);
 
   /* Motion (OB-201): short, ease-out, opacity and transform only. Zeroed for a person who asked for less motion. */
   --dur-fast: 120ms;
@@ -170,68 +202,74 @@
   --heat-unknown: #e9ece9; --on-heat-unknown: #3b4741;
 }
 
-/* ── The dark set — every screen's look before OB-13, kept for the shells UX-1b has not brought over yet ── */
+/* ── The dark set — the same emerald-and-gold palette on a deep green-black (OB-728; it was slate blue before) ── */
 :root[data-theme="dark"] {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --panel-2: #0b1220;
-  --field: #0b1220;
-  --hover: #172036;
-  --mint: #12301f;
-  --line: #334155;
-  --line-soft: #273449;
-  --line-strong: #475569;
-  --field-line: #64748b;
-  --ink: #f8fafc;
-  --ink-2: #e2e8f0;
-  --muted: #94a3b8;
-  --on-accent: #052e16;
-  --on-warn: #451a03;
+  --bg: #0d1714;
+  --panel: #15231e;
+  --panel-2: #0f1b17;
+  --field: #0f1b17;
+  --hover: #1a2b25;
+  --mint: #163a2d;
+  --line: #2a3c35;
+  --line-soft: #213129;
+  --line-strong: #3d5248;
+  --field-line: #71877d;
+  --ink: #f4efe3;
+  --ink-2: #e2dccd;
+  --muted: #a9b5ae;
+  --on-accent: #062018;
+  --on-warn: #2b1405;
   --on-danger: #ffffff;
   --on-info: #0f172a;
-  --on-idle: #f8fafc;
-  --ok: #22c55e;
-  --accent-hover: #4ade80;
-  --accent-press: #86efac;
-  --degraded: #f59e0b;
+  --on-idle: #0d1714;       /* dark words on the grey (5.2:1). The brief's #f4efe3 reads 3.1:1 on --idle, under the 4.5:1 floor (OB-728 note) */
+  --ok: #4cbf8e;
+  --accent-hover: #6fd0a5;
+  --accent-press: #93ddba;
+  --degraded: #f0a050;
   --error: #ef4444;
   --danger-text: #fca5a5;
   --danger-surface: #b91c1c;
   --danger-hover: #991b1b;
-  --idle: #64748b;
+  --idle: #7d8c85;
   --info: #38bdf8;
   --info-surface: #1e3a5f;
   --on-info-surface: #dbeafe;
-  --warn-surface: #3f2d12;
-  --on-warn-surface: #fde68a;
-  --ok-surface: #052e16;
-  --on-ok-surface: #bbf7d0;
-  --error-surface: #450a0a;
+  --warn-surface: #3d2610;
+  --on-warn-surface: #fcd9b0;
+  --ok-surface: #0f3326;
+  --on-ok-surface: #bdebd3;
+  --error-surface: #45120f;
   --demo-surface: #7c2d12;
   --demo-surface-2: #9a3412;
   --on-demo: #ffffff;
-  --scrim: rgba(2, 6, 23, .82);
-  --focus: #93c5fd;
-  --focus-halo: rgba(147, 197, 253, .25);
-  --rail: #0b1220;
-  --on-rail: #f8fafc;
-  --on-rail-muted: #94a3b8;
-  --rail-accent: #22c55e;
-  --on-rail-warn: #ffd166; /* a figure that needs looking at, on the rail's dark surface (UX-2b) */
+  --scrim: rgba(3, 10, 8, .8);
+  --focus: #e0b456;
+  --focus-halo: rgba(224, 180, 86, .25);
+  --rail: #091210;
+  --on-rail: #f4efe3;
+  --on-rail-muted: #9fb2a9;
+  --rail-accent: #e0b456;
+  --on-rail-warn: #f5b06a; /* a figure that needs looking at — "Not known" — on the rail's dark surface (UX-2b); burnt amber since OB-728, never the pale yellow that read as gold (5.4:1 on --rail-2) */
   --on-rail-danger: #ff9e94; /* a figure the box does not know, on the rail's dark surface */
-  --rail-2: #1e293b;
-  --rail-line: #1e293b;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, .25);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .2);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .3);
-  --shadow-lg: 0 4px 8px rgba(0, 0, 0, .35), 0 16px 40px rgba(0, 0, 0, .45);
+  --rail-2: #15231e;
+  --rail-line: #1e2e28;
+  --gold: #e0b456;
+  --on-gold: #1a1405;
+  --gold-soft: #3a2e12;
+  --on-gold-soft: #f3dda6;
+  /* One radius scale for both sets since OB-728 (the dark set's own 12/16px override is gone). Shadows in black. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .25);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, .3), 0 8px 20px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, .35), 0 18px 44px rgba(0, 0, 0, .5);
   /* The heat-map scale on the dark surface: near nothing recedes into the dark, the most is the lightest. */
   --heat-0: #184f95; --heat-1: #256abf; --heat-2: #3987e5; --heat-3: #6da7ec; --heat-4: #9ec5f4;
   --on-heat-0: #ffffff; --on-heat-1: #ffffff; --on-heat-2: #ffffff; --on-heat-3: #0d1b2a; --on-heat-4: #0d1b2a;
   --heat-unknown: #2b3646; --on-heat-unknown: #d6dde6;
 }
+
+/* OB-729: the customer app keeps the phone's own faces — the two files are never asked for there. */
+html.sre-system-type { --font: var(--font-system); }
 
 /* ── Base ─────────────────────────────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
@@ -255,9 +293,9 @@ button:disabled { cursor: not-allowed; }
 .skip:focus { left: 0; }
 
 /* ── The one icon set (OB-201 "Icons A", design system §3.4) ──────────────────────────────────────────
-   Drawn by packages/ui/web/sre-icons.js: thin line icons, 1.5px stroke on a 24px grid, round caps and joins, inline
+   Drawn by packages/ui/web/sre-icons.js: line icons drawn at 1.5px and thickened here to 1.75 (OB-728) on a 24px grid, round caps and joins, inline
    SVG with no network. An icon takes the colour of the words beside it and never stands alone. */
-.sre-icon { display: inline-block; vertical-align: middle; flex: none; width: 1.25em; height: 1.25em; stroke-width: 1.5; }
+.sre-icon { display: inline-block; vertical-align: middle; flex: none; width: 1.25em; height: 1.25em; stroke-width: 1.75; }
 .sre-with-icon { display: inline-flex; align-items: center; gap: var(--space-2); }
 
 /* ── The fixtures every screen carries (design system §1 rules 4 and 6, §7) ───────────────────────── */
@@ -284,7 +322,7 @@ span.dot[data-sre-status].error, span.dot[data-sre-status].missing { color: var(
 span.dot[data-sre-status].idle { color: var(--idle); }
 span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width: 2.25; }
 /* The per-user English / Tamil toggle — a real target (design system §1: ≥ 44px; this codebase's bar is --tap, 48px). */
-.lang { background:var(--line); color:var(--ink); min-height:var(--tap); padding:0 14px; font-size:15px; border:0; border-radius:var(--radius); }
+.lang { background:var(--line); color:var(--ink); min-height:var(--tap); padding:0 16px; font-size:15px; border:0; border-radius:var(--radius-pill); }
 /* The strips: sample data · served from cache (and WHEN) · nobody signed in. None fades; none is colour alone. */
 .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
 .sample { background:var(--degraded); color:var(--on-warn); }
@@ -304,9 +342,9 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-update { animation: sre-rise var(--dur-slow) var(--ease-out) both; }
 
 /* ── Namespaced components — screens adopt these slice by slice (G2–G5); nothing here targets a bare tag ── */
-/* Buttons (OB-201): primary · secondary (the default) · quiet · danger. One height, one radius, a hairline edge and
+/* Buttons (OB-201; pills since OB-728): primary · secondary (the default) · quiet · danger. One height, one pill shape, a hairline edge and
    a soft lift; hover darkens, a press settles 1px — transform only, so nothing around it moves. */
-.sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
+.sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 20px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
 .sre-btn:hover { background: var(--hover); border-color: var(--line-strong); }
 .sre-btn:active { transform: translateY(1px); }
 .sre-btn-secondary { background: var(--panel); border-color: var(--line); color: var(--ink); }
@@ -353,14 +391,14 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 /* The seven universal screen states as a chip: word + icon + tone (packages/ui states.ts, packages/a11y signals).
    OB-201: a soft pill tinted by its tone, the icon from the one set (`sreIcon.chip`) or the state's own glyph. The
    tint is a PAIR — surface + words — so the chip passes AA on its own, wherever it sits. */
-.sre-chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; line-height: 1.3; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--idle); max-width: 100%; }
+.sre-chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; line-height: 1.3; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); max-width: 100%; }
 .sre-chip .icon { font-size: 18px; width: 1.4em; text-align: center; }
 .sre-chip > .sre-icon { width: 16px; height: 16px; }
-.sre-chip[data-tone="ok"] { border-left-color: var(--ok); background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); border-left-color: var(--ok); }
-.sre-chip[data-tone="degraded"], .sre-chip[data-tone="pending"] { border-left-color: var(--degraded); background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
-.sre-chip[data-tone="error"] { border-left-color: var(--error); color: var(--danger-text); background: var(--error-surface); border-color: var(--error-surface); border-left-color: var(--error); }
-.sre-chip[data-tone="idle"] { border-left-color: var(--idle); color: var(--muted); }
-.sre-chip[data-tone="unknown"] { border-left-color: var(--degraded); color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
+.sre-chip[data-tone="ok"] { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+.sre-chip[data-tone="degraded"], .sre-chip[data-tone="pending"] { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+.sre-chip[data-tone="error"] { color: var(--danger-text); background: var(--error-surface); border-color: var(--error-surface); }
+.sre-chip[data-tone="idle"] { color: var(--muted); }
+.sre-chip[data-tone="unknown"] { color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); }
 
 /* Fields: one height, a 3:1 edge you can see, the focus halo above; a tick box takes the accent. */
 .sre-field { display: grid; gap: 6px; }
@@ -505,8 +543,8 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
   .sre-skeleton { animation: none !important; }
 }
 @media (prefers-contrast: more) {
-  :root { --line: #8e9c94; --line-strong: #56655d; --muted: #34443b; --line-soft: #aebbb3; }
-  :root[data-theme="dark"] { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
+  :root { --line: #9a8f78; --line-strong: #5f5847; --muted: #2f4339; --line-soft: #bdb29a; }
+  :root[data-theme="dark"] { --line: #5c7268; --line-strong: #8fa59b; --muted: #d6dcd8; }
   :focus-visible { outline-width: 4px; }
 }
 
@@ -559,7 +597,8 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
 .sre-menu .branch .mark .sre-icon { width: 20px; height: 20px; }
 .sre-menu .branch b { display: block; font-size: 15px; }
 .sre-menu .branch small { display: block; color: var(--on-rail-muted); font-size: 14px; }
-.sre-menu .branch .dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--rail-accent); }
+/* OB-728: a quiet neutral dot, never gold — gold is the mark and the current screen only, and a gold dot reads as a warning light */
+.sre-menu .branch .dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--on-rail-muted); }
 .sre-menu .group-section[hidden], .sre-menu li[hidden] { display: none; }
 .sre-menu .person { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px 8px 4px; border-top: 1px solid var(--rail-line); color: var(--on-rail); }
 .sre-menu .person .avatar { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--rail-2); color: var(--on-rail); font-weight: 700; font-size: 14px; box-shadow: inset 0 0 0 1px var(--rail-line); }

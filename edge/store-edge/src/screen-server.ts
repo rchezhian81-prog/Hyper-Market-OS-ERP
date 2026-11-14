@@ -200,6 +200,8 @@ const TYPES: Readonly<Record<string, string>> = Object.freeze({
   // The one shared stylesheet every screen links (Stage G slice 1). A browser in standards mode refuses a
   // stylesheet served as anything but text/css, so the type is named here rather than sniffed.
   '.css': 'text/css; charset=utf-8',
+  // OB-728: the self-hosted faces every screen carries (fonts/*.woff2), named so no browser second-guesses them.
+  '.woff2': 'font/woff2',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',

@@ -13,7 +13,7 @@ import { auditPage } from './lib/a11y-audit';
  * The static guardrail (tests/guardrails/every-shell-outside-the-back-office-wears-the-look.test.ts) proves the files;
  * this proves what a cashier and a picker SEE in real Chromium, at the till's and a cheap phone's size:
  *
- *   • the page is on the light canvas (`--bg`, rgb(243, 245, 244)) with no theme pin, and its words are the dark ink;
+ *   • the page is on the light canvas (`--bg`, rgb(251, 248, 241) — the ivory of OB-728) with no theme pin, and its words are the dark ink;
  *   • nothing on the page fails WCAG AA at the shell's own target bar — the palette moved, the targets did not;
  *   • the "new version" strip is NOT shown on the first controller (a first install is not news), IS shown on the
  *     next, says it in English and then in Tamil when the language flips, carries a button at the shell's target
@@ -26,8 +26,8 @@ import { auditPage } from './lib/a11y-audit';
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const HAVE_BROWSER = existsSync(CHROMIUM);
-const LIGHT_CANVAS = 'rgb(243, 245, 244)';
-const INK = 'rgb(37, 54, 46)';
+const LIGHT_CANVAS = 'rgb(251, 248, 241)'; // OB-728 ivory #fbf8f1
+const INK = 'rgb(23, 51, 40)'; // OB-728 ink #173328
 
 interface Shell { readonly app: string; readonly viewport: { width: number; height: number }; readonly target: number; readonly inject?: string }
 

@@ -63,6 +63,13 @@ const text = (S: Record<string, string>): PalettePair[] => [
   { name: 'a screen on the rail', foreground: S['--on-rail']!, background: S['--rail']! },
   { name: 'the current screen on the rail', foreground: S['--on-rail']!, background: S['--rail-2']! },
   { name: 'a workspace heading on the rail', foreground: S['--on-rail-muted']!, background: S['--rail']! },
+  // gold (OB-728): decoration only, but where a word sits on it, the word is readable
+  { name: 'words on gold (the SRE mark)', foreground: S['--on-gold']!, background: S['--gold']! },
+  { name: 'words on a soft-gold highlight (a featured card)', foreground: S['--on-gold-soft']!, background: S['--gold-soft']! },
+  { name: 'words on an idle surface', foreground: S['--on-idle']!, background: S['--idle']! },
+  // "Not known" on the Today band (the rail's surfaces): burnt amber, readable, never the gold (OB-728)
+  { name: 'a not-known figure on the Today band', foreground: S['--on-rail-warn']!, background: S['--rail-2']! },
+  { name: 'a not-known figure on the rail', foreground: S['--on-rail-warn']!, background: S['--rail']! },
 ];
 
 const nonText = (S: Record<string, string>): PalettePair[] => [
@@ -85,6 +92,7 @@ const nonText = (S: Record<string, string>): PalettePair[] => [
   { name: 'the focus ring on the page', foreground: S['--focus']!, background: S['--bg']! },
   { name: 'a screen\'s icon on the rail', foreground: S['--on-rail-muted']!, background: S['--rail']! },
   { name: 'the current screen\'s icon and mark on the rail', foreground: S['--rail-accent']!, background: S['--rail-2']! },
+  { name: 'the gold marker on the rail (OB-728)', foreground: S['--rail-accent']!, background: S['--rail']! },
   { name: 'a secondary icon (search, globe) on a panel', foreground: S['--muted']!, background: S['--panel']! },
 ];
 

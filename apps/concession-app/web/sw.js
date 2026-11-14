@@ -7,10 +7,10 @@
 // change only on a deploy, so those stay cache-first and load instantly. A missing script is never answered with
 // a page (that would boot the sample stand-in for a reason nobody can see).
 
-const CACHE = 'sre-concession-shell-359b54d9defd';
+const CACHE = 'sre-concession-shell-e0dce66a956a';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './fonts/plus-jakarta-sans-400.woff2', './fonts/plus-jakarta-sans-500.woff2', './fonts/plus-jakarta-sans-600.woff2', './fonts/plus-jakarta-sans-700.woff2', './fonts/plus-jakarta-sans-800.woff2', './fonts/anek-tamil-400.woff2', './fonts/anek-tamil-500.woff2', './fonts/anek-tamil-600.woff2', './fonts/anek-tamil-700.woff2', './sre-faces.js', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not stop the rest of
  *  the shell being cached. Without the bundle the portal opens into its SAMPLE stand-in — which says so. */

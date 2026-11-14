@@ -17,6 +17,7 @@
       Framework-free and static, so it opens with no signal between two streets.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-faces.js" defer></script>
     <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
@@ -157,7 +158,7 @@
       }
       .summary { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); font-size: 15px; color: var(--muted); }
       #held { color: var(--ink); font-size: 22px; font-weight: 700; font-variant-numeric: var(--numbers); white-space: nowrap; }
-      .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } /* OB-728: columns may shrink, so a long Tamil word wraps instead of widening the page */
       button {
         min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600;
         background: var(--panel-2); color: var(--ink); padding: 0 var(--space-3); line-height: 1.25;
@@ -212,7 +213,7 @@
       .choices button { justify-content: flex-start; text-align: left; padding: 0 var(--space-4); font-size: 17px; background: var(--panel); }
       /* A panel's parts that are not in use stay out of the way: the classes above would otherwise outrank [hidden]. */
       .entry[hidden], .keypad[hidden], .choices[hidden] { display: none; }
-      .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .sheet-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
       .sheet-actions .primary, .keypad .primary { background: var(--accent); color: var(--on-accent); }
 
       /* Counting the bag: one row per note, a big count in the middle. */
@@ -249,7 +250,7 @@
       .capture-open:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
       #photo-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       #sign-pad { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--radius-lg); border: 2px dashed var(--line-strong); background: var(--panel); touch-action: none; }
-      .sign-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+      .sign-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
       .sign-actions button { min-height: var(--tap); font-size: 18px; }
     </style>
   </head>
