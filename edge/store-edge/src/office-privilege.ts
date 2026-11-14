@@ -15,8 +15,11 @@
 //   • every act and every refusal is written, before the answer, to this box's own append-only log (who, which act, the
 //     request id, the outcome — never a PIN); head office's answer is said in plain words, in English and Tamil.
 //
-// Adding a person from here (`person_provision`) needs a people register the store PC can write without an identity
-// server: CR-01 step 4b. Until then it is refused in words and nothing is asked or relayed.
+// CR-01 step 4b-1 (OB-733 "A" · OB-735 · ADR-0033 amended): adding a STORE-PC PERSON (`person_provision` — a name and staff
+// id, no sign-in anywhere; one person, the maker's authority `identity.role.request`, by PIN) and turning a pending request
+// down (`role_grant_rejection`, `identity.role.grant`, a reason) go the same way. The page's lists — the roles, who holds
+// what at this store, what waits — are READ through the box too (`officeUsersView`): head office judges the signed-in
+// person's own authority and answers for this store only. A read asks for no PIN and changes nothing.
 
 import { privilegeSealKey } from '../../../packages/identity/src/till-seal';
 import { PRIVILEGE_VIA, sealPrivilegeRecord, type PrivilegeKind, type PrivilegeRecord } from '../../../packages/identity/src/privilege-seal';
@@ -24,9 +27,13 @@ import { PRIVILEGE_VIA, sealPrivilegeRecord, type PrivilegeKind, type PrivilegeR
 export { privilegeSealKey };
 
 /** The office screens' privilege doors (this PC's loopback only, behind the office PIN sign-in). */
-export const PRIVILEGE_PATHS = Object.freeze({ people: '/office/privilege/people', grants: '/office/privilege/grants' });
+export const PRIVILEGE_PATHS = Object.freeze({ people: '/office/privilege/people', grants: '/office/privilege/grants', view: '/office/privilege/users-view' });
 /** Approve a pending request: /office/privilege/grants/<grantId>/approve. */
 export const PRIVILEGE_APPROVE_PATH = /^\/office\/privilege\/grants\/([A-Za-z0-9._:-]{1,128})\/approve$/;
+/** Turn a pending request down: /office/privilege/grants/<grantId>/reject (CR-01 step 4b-1). */
+export const PRIVILEGE_REJECT_PATH = /^\/office\/privilege\/grants\/([A-Za-z0-9._:-]{1,128})\/reject$/;
+/** The longest reason a rejection carries. */
+export const REJECT_REASON_MAX = 300;
 /** The box's own append-only record of every privilege act and refusal made on its office screens. */
 export const PRIVILEGE_LOG = 'office-privilege.log';
 /** Largest request a page may send for one privilege act. */
@@ -34,41 +41,50 @@ export const PRIVILEGE_BODY_MAX_BYTES = 8 * 1024;
 
 /** The permission the person's own route requires — the authority their PIN is checked holding (ADR-0033 §2). */
 export const PRIVILEGE_AUTHORITY: Readonly<Record<PrivilegeKind, string>> = Object.freeze({
-  person_provision: 'platform.person.provision',
+  // OB-733 "A": the maker's word adds a store-PC person (the owner, the store manager) — the name alone gives no authority.
+  person_provision: 'identity.role.request',
   role_request: 'identity.role.request',
   role_grant_approval: 'identity.role.grant',
+  role_grant_rejection: 'identity.role.grant',
 });
 
 /** Head office's box-relay route for each act (services/identity/src/box-privilege.ts). */
 export function privilegeApiPath(kind: PrivilegeKind, grantId?: string): string {
   if (kind === 'person_provision') return '/v1/identity/box/people';
   if (kind === 'role_request') return '/v1/identity/box/grants';
+  if (kind === 'role_grant_rejection') return `/v1/identity/box/grants/${encodeURIComponent(grantId ?? '')}/reject`;
   return `/v1/identity/box/grants/${encodeURIComponent(grantId ?? '')}/approve`;
 }
+
+/** Head office's read for the Users & roles page, for the person signed in on the office screens. */
+export const usersViewApiPath = (userId: string): string => `/v1/identity/box/users-view?for=${encodeURIComponent(userId)}`;
 
 /** Is this path one of the privilege doors? Which act, and (approve) which request. */
 export function privilegeDoorOf(path: string): { readonly kind: PrivilegeKind; readonly grantId?: string } | undefined {
   if (path === PRIVILEGE_PATHS.people) return { kind: 'person_provision' };
   if (path === PRIVILEGE_PATHS.grants) return { kind: 'role_request' };
   const m = PRIVILEGE_APPROVE_PATH.exec(path);
-  return m === null ? undefined : { kind: 'role_grant_approval', grantId: m[1]! };
+  if (m !== null) return { kind: 'role_grant_approval', grantId: m[1]! };
+  const r = PRIVILEGE_REJECT_PATH.exec(path);
+  return r === null ? undefined : { kind: 'role_grant_rejection', grantId: r[1]! };
 }
 
-export type PrivilegeRefusal = 'not_signed_in' | 'not_readable' | 'pin_not_confirmed' | 'not_set_up' | 'comes_in_step_4b'
+export type PrivilegeRefusal = 'not_signed_in' | 'not_readable' | 'pin_not_confirmed' | 'not_set_up'
   | 'head_office_refused' | 'head_office_unreachable' | 'not_recorded';
 
 /** What the person reads, in both languages. "Nothing changed" is said wherever it is true. */
-export const PRIVILEGE_WORDS: Readonly<Record<PrivilegeRefusal | 'role_requested' | 'role_granted', { readonly en: string; readonly ta: string }>> = Object.freeze({
+export const PRIVILEGE_WORDS: Readonly<Record<PrivilegeRefusal | 'role_requested' | 'role_granted' | 'person_added' | 'role_rejected', { readonly en: string; readonly ta: string }>> = Object.freeze({
   not_signed_in: { en: 'Your office sign-in has ended. Sign in again with your own PIN. Nothing changed.', ta: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. உங்கள் PIN-உடன் மீண்டும் உள்நுழையுங்கள். எதுவும் மாற்றப்படவில்லை.' },
-  not_readable: { en: 'Type your PIN, and fill in who, which role and where. Nothing changed.', ta: 'உங்கள் PIN-ஐயும், யார், எந்தப் பணி, எங்கே என்பதையும் நிரப்புங்கள். எதுவும் மாற்றப்படவில்லை.' },
+  not_readable: { en: 'Type your PIN, and fill in every box (who, which role, where — or the name and staff id, or the reason). Nothing changed.', ta: 'உங்கள் PIN-ஐ உள்ளிட்டு, எல்லாப் பெட்டிகளையும் நிரப்புங்கள் (யார், எந்தப் பணி, எங்கே — அல்லது பெயர், பணியாளர் எண், அல்லது காரணம்). எதுவும் மாற்றப்படவில்லை.' },
   pin_not_confirmed: { en: 'Your PIN was not confirmed, or your role does not include this. Nothing changed.', ta: 'உங்கள் PIN உறுதிசெய்யப்படவில்லை, அல்லது உங்கள் பணிக்கு இது இல்லை. எதுவும் மாற்றப்படவில்லை.' },
   not_set_up: { en: 'This store PC cannot make a privilege change yet: its privilege-seal key or its link to the office service is not set up. Run the store computer setup again. Nothing changed.', ta: 'இந்தக் கடைக் கணினியால் இன்னும் அனுமதி மாற்றம் செய்ய முடியாது: அதன் முத்திரை விசை அல்லது அலுவலகச் சேவை இணைப்பு அமைக்கப்படவில்லை. கடைக் கணினி அமைப்பை மீண்டும் இயக்குங்கள். எதுவும் மாற்றப்படவில்லை.' },
-  comes_in_step_4b: { en: 'Adding a person on the store PC comes in the next step (4b). Nobody was added.', ta: 'கடைக் கணினியில் புதிய நபரைச் சேர்ப்பது அடுத்த படியில் (4b) வரும். யாரும் சேர்க்கப்படவில்லை.' },
   head_office_refused: { en: 'The office service refused this. Nothing changed.', ta: 'அலுவலகச் சேவை இதை மறுத்தது. எதுவும் மாற்றப்படவில்லை.' },
   head_office_unreachable: { en: 'The office service on this PC did not answer. Nothing changed. Try again in a minute.', ta: 'இந்தக் கணினியில் உள்ள அலுவலகச் சேவை பதில் அளிக்கவில்லை. எதுவும் மாற்றப்படவில்லை. ஒரு நிமிடம் கழித்து மீண்டும் முயலுங்கள்.' },
   not_recorded: { en: 'This could not be written down on this PC, so it was not done. Nothing changed.', ta: 'இதை இந்தக் கணினியில் பதிவு செய்ய முடியவில்லை, அதனால் செய்யப்படவில்லை. எதுவும் மாற்றப்படவில்லை.' },
   role_requested: { en: 'The role was asked for. A second person must approve it before it counts. The owner is told.', ta: 'பணி கேட்கப்பட்டது. அது செல்லுபடியாக இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும். உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
   role_granted: { en: 'Approved: the role is given. The owner is told.', ta: 'ஒப்புதல் அளிக்கப்பட்டது: பணி வழங்கப்பட்டது. உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
+  person_added: { en: 'The person is added, for this store PC only. They can do nothing yet: ask for a role for them (a second person approves), then set their till PIN. The owner is told.', ta: 'நபர் சேர்க்கப்பட்டார், இந்தக் கடைக் கணினிக்கு மட்டும். அவரால் இன்னும் எதுவும் செய்ய முடியாது: அவருக்குப் பணி கேளுங்கள் (இரண்டாவது நபர் ஒப்புதல் தருவார்), பிறகு அவரது PIN-ஐ அமையுங்கள். உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
+  role_rejected: { en: 'Rejected: the role is not given. The request stays on record.', ta: 'மறுக்கப்பட்டது: பணி வழங்கப்படவில்லை. கோரிக்கை பதிவில் இருக்கும்.' },
 });
 
 /** Head office's answer to one relay, or no answer at all. */
@@ -80,6 +96,8 @@ export interface PrivilegeDeps {
   readonly sealKey: Buffer | undefined;
   /** POST to head office under the box's store token. Absent: no office service named (not set up). */
   readonly relay: ((path: string, body: unknown, idempotencyKey: string) => Promise<RelayAnswer>) | undefined;
+  /** GET from head office under the box's store token (CR-01 step 4b-1, the page's lists). Absent: the lists are not read. */
+  readonly read?: ((path: string) => Promise<RelayAnswer>) | undefined;
   /** The person's own till PIN, by the till's PIN register (same guess limits), holding `authority`. */
   readonly verifyPin: (userId: string, pin: string, authority: string) => Promise<{ readonly ok: true } | { readonly ok: false; readonly laneMessage: string }>;
   /** Append one record to the box's privilege log, durably. Throws when it cannot. Never handed a PIN. */
@@ -112,12 +130,18 @@ export async function privilegeAct(
     return { status, answer: { ok: false as const, refusedBecause: why, ...PRIVILEGE_WORDS[why], ...(extra.code === undefined ? {} : { code: extra.code }), ...(extra.detail === undefined ? {} : { detail: extra.detail }) } };
   };
   if (person === null) return refused(401, 'not_signed_in');
-  if (kind === 'person_provision') return refused(501, 'comes_in_step_4b');
   if (deps.sealKey === undefined || deps.relay === undefined) return refused(503, 'not_set_up');
   const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
+  const grantId = input.grantId === undefined || input.grantId === '' ? undefined : input.grantId;
+  const reason = isObj(input.request) && typeof input.request['reason'] === 'string' ? input.request['reason'].trim() : '';
   const body: Record<string, unknown> | undefined = kind === 'role_grant_approval'
-    ? (input.grantId === undefined || input.grantId === '' ? undefined : { grantId: input.grantId })
-    : isObj(input.request) ? { ...input.request } : undefined;
+    ? (grantId === undefined ? undefined : { grantId })
+    : kind === 'role_grant_rejection'
+      ? (grantId === undefined || reason === '' || reason.length > REJECT_REASON_MAX ? undefined : { grantId, reason })
+      : kind === 'person_provision'
+        ? (isObj(input.request) && typeof input.request['userId'] === 'string' && typeof input.request['displayName'] === 'string'
+          ? { userId: input.request['userId'].trim().toLowerCase(), displayName: input.request['displayName'].trim() } : undefined)
+        : isObj(input.request) ? { ...input.request } : undefined;
   if (pin === '' || body === undefined) return refused(400, 'not_readable');
 
   // The PIN again, by the till's register, holding THIS act's own permission (ADR-0033 §2). Never kept.
@@ -129,7 +153,10 @@ export async function privilegeAct(
   };
   // Written down BEFORE it is sent: who, which act, the request id (never the PIN). If it cannot be written, it is not sent.
   try {
-    await deps.record({ kind: 'privilege_act', act: kind, at, userId: person.userId, outcome: 'sealed', requestId: record.requestId, ...(kind === 'role_grant_approval' ? { grantId: body['grantId'] } : { grantId: body['grantId'], roleId: body['roleId'], forUserId: body['userId'] }) });
+    await deps.record({ kind: 'privilege_act', act: kind, at, userId: person.userId, outcome: 'sealed', requestId: record.requestId,
+      ...(kind === 'role_grant_approval' || kind === 'role_grant_rejection' ? { grantId: body['grantId'] }
+        : kind === 'person_provision' ? { forUserId: body['userId'], displayName: body['displayName'] }
+          : { grantId: body['grantId'], roleId: body['roleId'], forUserId: body['userId'] }) });
   } catch {
     return { status: 503, answer: { ok: false, refusedBecause: 'not_recorded', ...PRIVILEGE_WORDS.not_recorded } };
   }
@@ -147,6 +174,24 @@ export async function privilegeAct(
   try {
     await deps.record({ kind: 'privilege_act', act: kind, at: deps.now(), userId: person.userId, outcome: 'accepted', requestId: record.requestId, status: answer.status });
   } catch { /* head office has it; the box's own line is best effort after the fact */ }
-  const words = kind === 'role_request' ? PRIVILEGE_WORDS.role_requested : PRIVILEGE_WORDS.role_granted;
+  const words = kind === 'role_request' ? PRIVILEGE_WORDS.role_requested : kind === 'person_provision' ? PRIVILEGE_WORDS.person_added
+    : kind === 'role_grant_rejection' ? PRIVILEGE_WORDS.role_rejected : PRIVILEGE_WORDS.role_granted;
   return { status: 200, answer: { ok: true, kind, requestId: record.requestId, ...words, result: answer.body } };
+}
+
+/**
+ * CR-01 step 4b-1: the Users & roles page's lists for the person signed in on the office screens (`person`; null: nobody),
+ * read from head office under the box's store token. Head office answers with what THAT person may see, at this store only.
+ * Asks for no PIN, seals nothing, changes nothing; head office's refusal or silence is said, never shown as an empty list.
+ */
+export async function officeUsersView(deps: Pick<PrivilegeDeps, 'read'>, person: { readonly userId: string } | null): Promise<{ readonly status: number; readonly answer: Record<string, unknown> }> {
+  if (person === null) return { status: 401, answer: { ok: false, refusedBecause: 'not_signed_in', ...PRIVILEGE_WORDS.not_signed_in } };
+  if (deps.read === undefined) return { status: 503, answer: { ok: false, refusedBecause: 'not_set_up', ...PRIVILEGE_WORDS.not_set_up } };
+  const answer = await deps.read(usersViewApiPath(person.userId));
+  if (answer === 'unreachable') return { status: 503, answer: { ok: false, refusedBecause: 'head_office_unreachable', ...PRIVILEGE_WORDS.head_office_unreachable } };
+  if (answer.status >= 400 || !isObj(answer.body)) {
+    const err = isObj(answer.body) && isObj(answer.body['error']) ? answer.body['error'] : {};
+    return { status: answer.status === 401 ? 502 : answer.status >= 400 ? answer.status : 502, answer: { ok: false, refusedBecause: 'head_office_refused', ...PRIVILEGE_WORDS.head_office_refused, ...(typeof err['code'] === 'string' ? { code: err['code'] } : {}) } };
+  }
+  return { status: 200, answer: { ok: true, ...answer.body } };
 }

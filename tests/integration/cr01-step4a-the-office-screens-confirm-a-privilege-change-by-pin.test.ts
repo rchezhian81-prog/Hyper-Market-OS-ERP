@@ -170,16 +170,16 @@ describe('the office screens on the store PC make a privilege change by PIN (CR-
     expect(ho.seen).toEqual([]);
   });
 
-  it('a box with no privilege-seal key refuses in words, never relaying; adding a person says step 4b', async () => {
+  it('a box with no privilege-seal key refuses in words, never relaying — adding a person too', async () => {
     const ho = await headOffice();
     const { url } = await box(ho.url, { privilegeKey: null });
     const mgr = await signIn(url, 'u-mgr');
     const r = await post(url, '/office/privilege/grants', mgr, { pin: pinOf('u-mgr'), request: ask });
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ refusedBecause: 'not_set_up' });
-    const p = await post(url, '/office/privilege/people', mgr, { pin: pinOf('u-mgr'), request: { signInName: 'priya.k', displayName: 'Priya K' } });
-    expect(p.status).toBe(501);
-    expect(await p.json()).toMatchObject({ refusedBecause: 'comes_in_step_4b' });
+    const p = await post(url, '/office/privilege/people', mgr, { pin: pinOf('u-mgr'), request: { userId: 'priya.k', displayName: 'Priya K' } });
+    expect(p.status).toBe(503);
+    expect(await p.json()).toMatchObject({ refusedBecause: 'not_set_up' });
     expect(ho.seen).toEqual([]);
   });
 

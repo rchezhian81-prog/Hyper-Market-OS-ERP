@@ -169,7 +169,9 @@ export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist
    */
   | 'person_provision'
   | 'role_request'
-  | 'role_grant_approval';
+  | 'role_grant_approval'
+  /** CR-01 step 4b-1: a second person turned a pending request down, by PIN (ADR-0033 amended, OB-735). */
+  | 'role_grant_rejection';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {
