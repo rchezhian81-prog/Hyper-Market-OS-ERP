@@ -54,7 +54,7 @@ import { createHash } from 'node:crypto';
 import { loadSettings, pathFor, resolveLayout, stampOf } from './store-computer.mjs';
 import { folderRefusal, migrationProblems, migrationsOf, readBackupKey, ready, recordBackupOutcome, takeStoreBackup, tillFolders } from './store-computer-recovery.mjs';
 import { readSchedule } from './store-computer-status.mjs';
-import { refusedOnServer } from './store-computer-windows.mjs';
+import { hostedTestMachine, refusedOnServer } from './store-computer-windows.mjs';
 import { dockerCopyState } from './store-computer-adopt.mjs';
 import { SERVICES, SERVICE_ORDER, serviceState } from './store-computer-services.mjs';
 import { RELEASE_MARKER, releaseInfo } from './store-computer-setup.mjs';
@@ -96,6 +96,17 @@ const xmlEscape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const readJson = (fs, f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
 const ran = (r) => r !== undefined && r.error === undefined && r.status === 0;
 const firstLine = (r) => String(`${r?.stderr ?? ''}\n${r?.stdout ?? ''}`).split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '') ?? (r?.error?.code ?? `it ended ${r?.status}`);
+
+/**
+ * Where releases are asked for: GitHub's API — except on GitHub's own throw-away Windows test machine, where the
+ * clean-Windows update job (CR-01 step 3f) names a stand-in on this machine (SRE_UPDATE_API_BASE, http://127.0.0.1 only).
+ * The signature check is the same either way: a stand-in can serve nothing that is not signed with the PC's own key.
+ */
+export function updateApiBase(deps) {
+  const given = String(deps.env?.SRE_UPDATE_API_BASE ?? '').trim();
+  if (given !== '' && hostedTestMachine(deps) && /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(given)) return given;
+  return 'https://api.github.com';
+}
 
 // ── Where things are ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -384,7 +395,7 @@ async function takeAndPrepare(deps, L, P, requestFile) {
   const tag = releaseTag(req.version);
   let release;
   try {
-    const r = await deps.web(`https://api.github.com/repos/${UPDATE_REPO}/releases/tags/${tag}`, head('application/vnd.github+json'));
+    const r = await deps.web(`${updateApiBase(deps)}/repos/${UPDATE_REPO}/releases/tags/${tag}`, head('application/vnd.github+json'));
     if (r.status !== 200) return refuse(`GitHub did not give the release ${tag} (it answered ${r.status})`);
     release = JSON.parse(await r.text());
   } catch { return refuse(`GitHub did not answer for the release ${tag} (no internet?)`); }
