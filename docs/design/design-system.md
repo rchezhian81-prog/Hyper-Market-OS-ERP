@@ -256,7 +256,10 @@ glass or glow anywhere in the foundation (a guardrail checks).
 **Type:** `"Plus Jakarta Sans", "Anek Tamil"`, then the system's Tamil-capable faces. Both are **self-hosted** woff2 files
 (Plus Jakarta Sans 400–800, Anek Tamil 400–700, ~130 KB in all) under `packages/ui/web/fonts/` with their SIL Open Font
 Licences, copied into each app by `scripts/sync-ui-foundation.mjs` and precached by each service worker, declared with
-`font-display: swap` so nothing waits on a font. Anek Tamil also draws the rupee sign. Google Fonts is never linked at run
+`font-display: swap` so nothing waits on a font. `packages/ui/web/sre-faces.js` (copied and precached the same way,
+linked by every store page before its own scripts) asks for all nine faces as a screen opens: a browser otherwise reads a
+face the first time a word needs it — the first ₹ on a till line read Anek Tamil from the cache in the middle of a scan,
+which the browser suite caught (a scan must make no request at all). Anek Tamil also draws the rupee sign. Google Fonts is never linked at run
 time. **Exception — OB-729 (owner, 14 Nov 2026):** the customer app keeps the phone's own faces (`<html
 class="sre-system-type">`), carries no font file and precaches none, so its first load stays within the 150 KB
 low-bandwidth budget (M20 · D08).

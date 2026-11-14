@@ -193,7 +193,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
       const cs = (globalThis as unknown as { getComputedStyle(e: unknown): { backgroundColor: string; color: string } }).getComputedStyle(c);
       return [cs.backgroundColor, cs.color];
     });
-    expect(tone).toEqual(['rgb(246, 231, 200)', 'rgb(90, 62, 12)']); // --warn-surface / --on-warn-surface: the amber of "not known"
+    expect(tone).toEqual(['rgb(251, 231, 214)', 'rgb(102, 49, 14)']); // --warn-surface / --on-warn-surface (OB-728 burnt amber #fbe7d6 / #66310e): the amber of "not known"
     await shot(page, 'gap-till-unsent-not-known');
     await page.click('#unsent');
     await page.waitForSelector('#refusal:not([hidden])');

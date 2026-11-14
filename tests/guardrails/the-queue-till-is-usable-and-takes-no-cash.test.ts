@@ -60,7 +60,7 @@ describe('the queue till keeps the handhelds\' spine', () => {
 
   it('opens with no signal: the worker precaches the shell and the built bundle', () => {
     // the look, its two self-hosted faces (OB-728), the icons, the strip, the app and its manifest
-    expect(SW).toMatch(/const SHELL = \['\.\/sre-foundation\.css', ('\.\/fonts\/[a-z-]+-\d00\.woff2', ){9}'\.\/sre-icons\.js', '\.\/sre-update\.js', '\.\/app\.js', '\.\/manifest\.webmanifest'\];/);
+    expect(SW).toMatch(/const SHELL = \['\.\/sre-foundation\.css', ('\.\/fonts\/[a-z-]+-\d00\.woff2', ){9}'\.\/sre-faces\.js', '\.\/sre-icons\.js', '\.\/sre-update\.js', '\.\/app\.js', '\.\/manifest\.webmanifest'\];/);
     expect(SW).toMatch(/const BUILT = \['\.\/queue-pos\.bundle\.js'\];/);
     expect(APP).toMatch(/navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
   });

@@ -26,6 +26,7 @@ const pagesOf = (app: string): string[] => readdirSync(`apps/${app}/web`).filter
 const read = (p: string): string => readFileSync(p, 'utf8');
 /** The faces every screen carries (OB-728): nine woff2 files and their two licences, in the sync script's order. */
 const FACES = (app: string): string[] => app === 'customer-app' ? [] : [
+  'sre-faces.js',
   ...[400, 500, 600, 700, 800].map((w) => `fonts/plus-jakarta-sans-${w}.woff2`),
   ...[400, 500, 600, 700].map((w) => `fonts/anek-tamil-${w}.woff2`),
   'fonts/OFL-plus-jakarta-sans.txt', 'fonts/OFL-anek-tamil.txt',

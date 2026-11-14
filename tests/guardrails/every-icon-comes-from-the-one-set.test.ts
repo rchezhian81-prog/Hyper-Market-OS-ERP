@@ -222,7 +222,8 @@ describe('every screen carries the set, offline', () => {
       expect(html.split(TAG).length - 1, `${p} links the icon set`).toBe(1);
       const at = html.indexOf(TAG);
       expect(at, `${p}: the icons come after the look`).toBeGreaterThan(html.indexOf('href="./sre-foundation.css"'));
-      for (const m of html.matchAll(/<script [^>]*src="\.\/(?!sre-icons\.js)[^"]+"[^>]*><\/script>/g)) {
+      // (sre-faces.js, OB-728, asks for the two faces first; it has no words and draws nothing)
+      for (const m of html.matchAll(/<script [^>]*src="\.\/(?!sre-icons\.js|sre-faces\.js)[^"]+"[^>]*><\/script>/g)) {
         expect(m.index!, `${p}: ${m[0]} loads before the icon set`).toBeGreaterThan(at);
       }
     }

@@ -37,6 +37,8 @@ export const UPDATE_SOURCE = 'packages/ui/web/sre-update.js';
 export const UPDATE_FILE = 'sre-update.js';
 export const ICONS_SOURCE = 'packages/ui/web/sre-icons.js';
 export const ICONS_FILE = 'sre-icons.js';
+export const FACES_SOURCE = 'packages/ui/web/sre-faces.js';
+export const FACES_FILE = 'sre-faces.js';
 export const BACK_OFFICE = 'web-erp';
 export const NOT_A_SCREEN = new Set(['site']);
 export const WORKER_FILE = 'sw.js';
@@ -61,6 +63,8 @@ export const SHARED_FILES = [
   { source: ICONS_SOURCE, file: ICONS_FILE, takes: () => true },
   { source: UPDATE_SOURCE, file: UPDATE_FILE, takes: (app) => app !== BACK_OFFICE },
   // The faces and their licences (OB-728): every screen, the back office included — the customer app excepted (OB-729).
+  // sre-faces.js asks for every face as a screen opens, so a scan never reads a font file mid-sale.
+  { source: FACES_SOURCE, file: FACES_FILE, takes: (app) => !SYSTEM_TYPE_APPS.has(app) },
   ...[...FONT_FILES, ...FONT_LICENCES].map((file) => ({ source: `packages/ui/web/${file}`, file, takes: (app) => !SYSTEM_TYPE_APPS.has(app) })),
 ];
 

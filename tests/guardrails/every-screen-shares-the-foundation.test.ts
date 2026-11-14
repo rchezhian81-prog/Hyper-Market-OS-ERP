@@ -134,6 +134,24 @@ describe('a lane opens with the right look and no network', () => {
     }
   });
 
+  it('every store page asks for the faces as it opens (sre-faces.js, once, before the icon set), so a scan never reads a font file mid-sale', () => {
+    const source = readFileSync('packages/ui/web/sre-faces.js');
+    for (const app of fontApps) {
+      expect(readFileSync(`apps/${app}/web/sre-faces.js`).equals(source), `apps/${app}/web/sre-faces.js`).toBe(true);
+      expect(read(`apps/${app}/web/sw.js`), `apps/${app}/web/sw.js`).toContain("'./sre-faces.js'");
+    }
+    for (const p of pages) {
+      const html = read(p);
+      const tag = '<script src="./sre-faces.js" defer></script>';
+      if (SYSTEM_TYPE.some((a) => p.startsWith(`apps/${a}/`))) { expect(html, p).not.toContain('sre-faces.js'); continue; }
+      expect(html.split(tag).length - 1, `${p} asks for the faces once`).toBe(1);
+      expect(html.indexOf(tag), `${p}: the faces before the icon set`).toBeLessThan(html.indexOf('<script src="./sre-icons.js"'));
+    }
+    const code = source.toString('utf8');
+    expect(code).toMatch(/sre-system-type/);
+    expect(code).not.toMatch(/\bfetch\(|XMLHttpRequest|https?:\/\//);
+  });
+
   it('every service worker precaches every font file, so a till opens in its face with no network', () => {
     for (const app of fontApps) {
       const shell = /const SHELL = \[([^\]]*)\]/.exec(read(`apps/${app}/web/sw.js`))?.[1] ?? '';
