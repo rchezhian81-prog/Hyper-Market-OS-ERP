@@ -550,7 +550,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           # The updater's install half runs as Windows itself (SYSTEM), which does not see this job's settings: the names
           # that say "GitHub's throw-away test machine" are given to the whole machine (never on a shop's PC).
-          foreach ($n in @{ GITHUB_ACTIONS = 'true'; RUNNER_ENVIRONMENT = 'github-hosted'; SRE_TEST_ON_HOSTED_RUNNER = '1' }.GetEnumerator()) { [Environment]::SetEnvironmentVariable($n.Key, $n.Value, 'Machine') }
+          foreach ($n in @{ GITHUB_ACTIONS = 'true'; RUNNER_ENVIRONMENT = 'github-hosted'; SRE_TEST_ON_HOSTED_RUNNER = '1'; SRE_UPDATE_API_BASE = $env:SRE_UPDATE_API_BASE }.GetEnumerator()) { [Environment]::SetEnvironmentVariable($n.Key, $n.Value, 'Machine') }
           $vhd = Join-Path $env:RUNNER_TEMP 'backup.vhdx'
           $script = Join-Path $env:RUNNER_TEMP 'vhd.txt'
           @("create vdisk file=`"$vhd`" maximum=4096 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'create partition primary', 'format fs=ntfs quick label=SREBACKUP', 'assign letter=V') | Set-Content -Encoding ascii $script
@@ -569,17 +569,19 @@ jobs:
           if ($xml -notmatch 'S-1-5-18' -or $xml -notmatch 'PT5M' -or $xml -notmatch 'apply-update') { throw "the updater task is not as setup should make it:`n$xml" }
           if (-not (Test-Path 'D:\SRE-data\status\updater.json')) { throw 'the page is not told the updater is set up' }
           # This job asks for each update itself (with the stand-in for GitHub); the 5-minute task is paused so it cannot race.
+          # (A new version's setup makes the task again; the whole machine knows the stand-in, so a run of it changes nothing.)
           schtasks /Change /TN 'SRE\Software update' /DISABLE | Out-Null
           node tests/windows/update.drive.mjs prepare $app 'V:\sre-backup'
           if ($LASTEXITCODE -ne 0) { throw 'the backup key and drive were not set up' }
-          Start-Process -FilePath node -ArgumentList 'tests/windows/update.drive.mjs','serve','8765',$env:RELEASES -WindowStyle Hidden -RedirectStandardOutput "$env:RUNNER_TEMP\fake-github.log"
-          Start-Sleep -Seconds 3
 
       - name: Update 1.0.1 → 1.0.2 — must say UPDATED, every check passed
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $app = 'C:\Program Files\SRE Retail OS'
+          # The stand-in for GitHub runs inside this step: on Windows a step's programs end with the step.
+          $gh = Start-Process -FilePath node -ArgumentList 'tests/windows/update.drive.mjs','serve','8765',$env:RELEASES -WindowStyle Hidden -RedirectStandardOutput "$env:RUNNER_TEMP\fake-github-$([guid]::NewGuid().ToString('N').Substring(0,6)).log" -PassThru
+          for ($i = 0; $i -lt 30; $i++) { try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8765/assets/none/none" -ErrorAction Stop | Out-Null } catch { if ($_.Exception.Response) { break } }; Start-Sleep -Milliseconds 500 }
           node tests/windows/update.drive.mjs ask $app "$env:RELEASES\store-pc-v1.0.2\update.json"
           & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" apply-update
           if ($LASTEXITCODE -ne 0) { throw "the updater's first half ended $LASTEXITCODE" }
@@ -594,6 +596,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $app = 'C:\Program Files\SRE Retail OS'
+          # The stand-in for GitHub runs inside this step: on Windows a step's programs end with the step.
+          $gh = Start-Process -FilePath node -ArgumentList 'tests/windows/update.drive.mjs','serve','8765',$env:RELEASES -WindowStyle Hidden -RedirectStandardOutput "$env:RUNNER_TEMP\fake-github-$([guid]::NewGuid().ToString('N').Substring(0,6)).log" -PassThru
+          for ($i = 0; $i -lt 30; $i++) { try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8765/assets/none/none" -ErrorAction Stop | Out-Null } catch { if ($_.Exception.Response) { break } }; Start-Sleep -Milliseconds 500 }
           node tests/windows/update.drive.mjs ask $app "$env:RELEASES\store-pc-v1.0.3\update.json"
           & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" apply-update
           if ($LASTEXITCODE -ne 0) { throw "the updater's first half ended $LASTEXITCODE" }
@@ -621,7 +626,8 @@ jobs:
           # The upload takes files under one folder; the records live on D: and C:, so they are copied together first.
           $proof = Join-Path $env:RUNNER_TEMP 'update-proof'
           New-Item -ItemType Directory -Force $proof | Out-Null
-          foreach ($f in @('D:\SRE-data\updates\update-outcomes.log', 'D:\SRE-data\status\update-progress.json', 'C:\ProgramData\SRE\setup.log', "$env:RUNNER_TEMP\fake-github.log")) { if (Test-Path $f) { Copy-Item $f $proof } }
+          foreach ($f in @('D:\SRE-data\updates\update-outcomes.log', 'D:\SRE-data\status\update-progress.json', 'C:\ProgramData\SRE\setup.log')) { if (Test-Path $f) { Copy-Item $f $proof } }
+          Get-ChildItem $env:RUNNER_TEMP -Filter 'fake-github-*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $proof
           Get-ChildItem D:\SRE-data\records -Filter 'g9-drill-*.json' -ErrorAction SilentlyContinue | Copy-Item -Destination $proof
           Get-ChildItem D:\SRE-data\updates -Recurse -Filter 'setup-program.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName (Join-Path $proof "$($_.Directory.Name)-setup-program.log") }
 
