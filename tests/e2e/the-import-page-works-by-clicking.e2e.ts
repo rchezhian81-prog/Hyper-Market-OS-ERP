@@ -60,7 +60,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.fill('#pin', '111111');
     await page.click('#signin-form button[type=submit]');
     await page.waitForSelector('#start:not([hidden])');
-    expect(await page.textContent('#who')).toBe('Signed in: owner-01');
+    expect(await page.textContent('#who')).toBe('Signed in: owner-01 · உள்நுழைந்தவர்'); // CR-01 step 4 (OI-09): with its Tamil twin
 
     // OB-706: every file in ONE choice, any order; the page tells them apart. The backup day is asked the first time only.
     expect(await page.isVisible('#backup-label')).toBe(true);
