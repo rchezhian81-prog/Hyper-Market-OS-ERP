@@ -3,7 +3,7 @@ import { PosSession, taxRateFromPercent, createPosView } from '../../apps/pos/sr
 import { CatalogueCache, type CatalogueProduct } from '../../packages/catalogue/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
-import { PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS } from '../../db/seed/pilot/dataset';
+import { PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_CHILLED_OPENING, PILOT_DEMO_RECEIVING_CHECK } from '../../db/seed/pilot/dataset';
 
 // Screen gap audit 31 Oct 2026 (Round B, OB-614 "wrong numbers first"): the demo seed's opening stock for goods counted
 // by the piece was 1000 times too big (100,000 soaps), and two of the five demo products could not be sold at the till:
@@ -35,6 +35,49 @@ describe('the demo seed: opening stock is counted in pieces', () => {
         expect(line.quantityMinor, line.productId).toBeLessThanOrEqual(receipt.lines.find((l) => l.productId === line.productId)!.countedMinor);
       }
     }
+  });
+});
+
+describe('UAT-06: the demo\'s chilled product (Demo Curd 400g) — its own opening stock, counted in pieces, probed and checked', () => {
+  const chilled = PILOT_TRADING_PARTNERS.goodsReceipts.find((g) => g.grnId === PILOT_DEMO_CHILLED_OPENING)!;
+  const curd = products.find((p) => p.productId === 'prod-curd')!;
+
+  it('the curd is a chilled, cold-chain product of 2–8 °C sold by the piece in the food category', () => {
+    expect(curd).toMatchObject({ sku: 'DEMO-CURD-400', name: 'Demo Curd 400g (demo)', baseUom: 'ea', primaryCategoryId: 'cat-food', lifecycle: 'active', handling: 'chilled', coldChain: { minTenthsC: 20, maxTenthsC: 80 } });
+    expect(curd.price.priceMinor).toBeLessThanOrEqual(curd.price.mrpMinor);
+    expect(curd.price.costMinor).toBeLessThan(curd.price.priceMinor);
+  });
+
+  it('its opening stock is 24 cups on its OWN opening receipt (the first one already landed on the demo box), with a batch, an expiry and an arrival temperature inside its limits', () => {
+    expect(chilled.lines.map((l) => [l.productId, l.countedMinor, l.uom])).toEqual([['prod-curd', 24, 'ea']]);
+    const line = chilled.lines[0]!;
+    expect(line.batchId).toBeDefined();
+    expect(line.expiry).toBeDefined();
+    expect(line.temperatureC! * 10).toBeGreaterThanOrEqual(curd.coldChain!.minTenthsC!);
+    expect(line.temperatureC! * 10).toBeLessThanOrEqual(curd.coldChain!.maxTenthsC!);
+    expect(receipt.lines.some((l) => l.productId === 'prod-curd')).toBe(false);
+    // The receiving checklist is done first, every item ticked, by a person who may record it — never the seed's operator.
+    const check = PILOT_TRADING_PARTNERS.receivingChecks.find((c) => c.checkId === PILOT_DEMO_RECEIVING_CHECK)!;
+    expect(chilled.receivingChecklist?.checkId).toBe(check.checkId);
+    expect(Object.keys(chilled.receivingChecklist!.itemResults).sort()).toEqual(check.items.map((i) => i.itemId).sort());
+    expect(chilled.receivingChecklist!.performedBy).not.toBe('pilot-owner');
+  });
+});
+
+describe('the demo seed: every demo barcode is a real EAN-13 shape — its last digit is the check digit', () => {
+  const checkDigit = (first12: string): number => {
+    const sum = [...first12].reduce((s, d, i) => s + Number(d) * (i % 2 === 0 ? 1 : 3), 0);
+    return (10 - (sum % 10)) % 10;
+  };
+  for (const p of pieces) {
+    it(`${p.name}: ${p.barcode!.code}`, () => {
+      expect(p.barcode!.code).toMatch(/^\d{13}$/);
+      expect(Number(p.barcode!.code[12])).toBe(checkDigit(p.barcode!.code.slice(0, 12)));
+    });
+  }
+  it('the curd\'s barcode is 8900000000159 (check digit 9)', () => {
+    expect(products.find((p) => p.productId === 'prod-curd')?.barcode?.code).toBe('8900000000159');
+    expect(new Set(pieces.map((p) => p.barcode!.code)).size).toBe(pieces.length);
   });
 });
 

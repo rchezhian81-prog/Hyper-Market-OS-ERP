@@ -51,7 +51,10 @@ export type SeedRoleId =
   | 'chartered_accountant'
   | 'platform_admin'
   // OB-36 "A": the store computer's own role (a machine, never a person's login).
-  | 'store_computer';
+  | 'store_computer'
+  // OB-622: the plain §28 warehouse role (services/api/src/roles.ts WAREHOUSE_USER_ROLE_ID) — put away, count, transfer and
+  // raise an adjustment; never approve one (UAT-06 sheet C's practice login).
+  | 'warehouse_user';
 
 export interface SeedUser {
   /** Stable, obviously-demo user id (the pilot uses the local/test IdP; no real identity). */
@@ -145,6 +148,10 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     // the raiser). Transfers need three different people (proposer, sender who approves, and a settler who neither sent nor
     // counted); with only one manager the demo could not complete one. Synthetic, like every login here.
     { userId: 'pilot-warehouse-supervisor', displayName: 'Pilot Warehouse Supervisor (demo)', role: 'store_manager' },
+    // UAT-06 (staff session, sheet C): a practice login of the PLAIN warehouse role (`warehouse_user`, OB-622), so the
+    // warehouse person on the handheld can do exactly what a warehouse worker can — receive, put away, count, raise an
+    // adjustment — and no more. Their adjustment (C7) is approved by the store manager on their own login (SP-3b, §28).
+    { userId: 'pilot-warehouse', displayName: 'Pilot Warehouse Staff (demo)', role: 'warehouse_user' },
     // The STORE EDGE's own machine identity, so the box can sync its queued sales (`pos.sale.sync`) for the
     // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
     // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
@@ -249,10 +256,11 @@ export const PILOT_DEMO_SCALE = Object.freeze({
 /**
  * The demo people who need a till PIN on the demo box (each types their own; nothing is kept here but who): the cashier
  * (sells), the store manager (closes the day; approves a refund at the till), the owner and the accountant (approve a
- * reopen or a carried-forward payment with their own PIN). The hosted front signs a seller in from their password; the PIN
- * is what the close, the approvals and the handhelds on the shop wifi ask for.
+ * reopen or a carried-forward payment with their own PIN), and the warehouse staff (UAT-06 sheet C: the warehouse handheld
+ * signs in with staff ID + till PIN). The hosted front signs a seller in from their password; the PIN is what the close,
+ * the approvals and the handhelds on the shop wifi ask for.
  */
-export const PILOT_DEMO_TILL_PIN_HOLDERS: readonly string[] = Object.freeze(['pilot-cashier', 'pilot-manager', 'pilot-owner', 'pilot-accountant']);
+export const PILOT_DEMO_TILL_PIN_HOLDERS: readonly string[] = Object.freeze(['pilot-cashier', 'pilot-manager', 'pilot-owner', 'pilot-accountant', 'pilot-warehouse']);
 
 // ── Slice 4b: catalogue + tax/HSN + prices ────────────────────────────────────
 // A small, realistic mini-catalogue: a non-regulated household category and a
@@ -306,6 +314,9 @@ export interface SeedPrice {
   readonly marginFloorBps: number;
 }
 
+/** The product master's handling classes (packages/product HANDLING_CLASSES) — how a product travels (M19-FR-02). */
+export type SeedHandlingClass = 'ambient' | 'chilled' | 'frozen' | 'raw_meat' | 'ready_to_eat' | 'fragile' | 'hazardous';
+
 export interface SeedProduct {
   readonly productId: string;
   readonly sku: string;
@@ -320,6 +331,10 @@ export interface SeedProduct {
   readonly barcode?: SeedBarcode;
   readonly pack?: { readonly baseUom: string; readonly levels: readonly SeedPackLevel[] };
   readonly price: SeedPrice;
+  /** The handling class (M19-FR-02); a cold class (chilled, frozen, raw meat) makes the product cold-chain at receiving. */
+  readonly handling?: SeedHandlingClass;
+  /** HA-3: the product's own cold-chain limits, whole tenths of °C (40 = 4.0 °C); only on a cold handling class. */
+  readonly coldChain?: { readonly minTenthsC?: number; readonly maxTenthsC?: number };
 }
 
 /**
@@ -356,6 +371,7 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     { hsnCode: '10063020', effectiveFrom: TAX_FROM, rateBps: 500 },  // rice 5%
     { hsnCode: '19053100', effectiveFrom: TAX_FROM, rateBps: 1800 }, // biscuits 18%
     { hsnCode: '15079010', effectiveFrom: TAX_FROM, rateBps: 500 },  // edible oil 5%
+    { hsnCode: '04039010', effectiveFrom: TAX_FROM, rateBps: 500 },  // curd 5% (demo rate — a real shop's rate is its accountant's)
   ],
   categories: [
     { categoryId: 'cat-household', name: 'Household (demo)', parentId: null },
@@ -404,6 +420,18 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store away from direct sunlight', netQuantity: '1 L' },
       barcode: { code: '8900000000142', kind: 'ean' },
       price: { priceMinor: 12000, mrpMinor: 13500, costMinor: 9000, currency: INR, marginFloorBps: 0 },
+    },
+    {
+      productId: 'prod-curd', sku: 'DEMO-CURD-400', name: 'Demo Curd 400g (demo)',
+      // UAT-06 (sheet C, C3): the demo's one CHILLED product, so the warehouse handheld's "Arrival temperature" step and the
+      // cold-chain receiving checklist (OB-164) can be tried. A packed 400 g cup sold by the piece (`ea`); handling `chilled`
+      // with its own limits 2–8 °C (HA-3: 20..80 tenths), so head office's receiving treats every delivery of it as cold-chain.
+      baseUom: 'ea', primaryCategoryId: 'cat-food', taxClass: '04039010', lifecycle: 'active',
+      brand: 'DemoBrand',
+      safety: { allergens: ['milk'], countryOfOrigin: 'India', storageConditions: 'Keep refrigerated at 2–8 °C', netQuantity: '400 g' },
+      barcode: { code: '8900000000159', kind: 'ean' },
+      price: { priceMinor: 4500, mrpMinor: 5000, costMinor: 3200, currency: INR, marginFloorBps: 0 },
+      handling: 'chilled', coldChain: { minTenthsC: 20, maxTenthsC: 80 },
     },
     {
       productId: 'prod-rice-loose', sku: '100201', name: 'Demo Loose Ponni Rice (demo)',
@@ -460,6 +488,20 @@ export interface SeedReceiptLine {
   readonly condition: 'good' | 'damaged' | 'temperature_breach';
   readonly batchId?: string;
   readonly expiry?: string;
+  /** Wave 3 · SF-07: the arrival temperature probed at the door, °C — a cold-chain line with none is received but HELD. */
+  readonly temperatureC?: number;
+}
+
+/**
+ * OB-164 (D-6): the receiving checklist done at the door for a delivery carrying chilled or frozen goods — recorded BEFORE
+ * the receipt is booked (head office refuses a cold-chain receipt with none on file), by the named person under their OWN
+ * sign-in. Its record id is `rc-<grnId>` (the same id a carried checklist takes, OB-172).
+ */
+export interface SeedReceiptChecklist {
+  readonly checkId: string;
+  readonly performedBy: string;
+  readonly readingTenthsC: number;
+  readonly itemResults: Readonly<Record<string, 'pass' | 'fail'>>;
 }
 
 export interface SeedGoodsReceipt {
@@ -468,6 +510,41 @@ export interface SeedGoodsReceipt {
   readonly receivedOnDate: string;
   readonly currency: string;
   readonly lines: readonly SeedReceiptLine[];
+  readonly receivingChecklist?: SeedReceiptChecklist;
+}
+
+/**
+ * OB-164 (D-6 · API-11): a receiving checklist head office holds for a store — done per delivery of chilled or frozen goods
+ * (never on a clock). Defined through `POST /v1/facilities/food-safety/checks/:checkId` by a person with
+ * `facilities.schedule.manage`; the store pack carries it to the warehouse handheld (OB-172).
+ */
+export interface SeedReceivingCheck {
+  readonly checkId: string;
+  readonly branchId: string;
+  readonly title: string;
+  readonly graceMinutes: number;
+  readonly items: readonly { readonly itemId: string; readonly label: string }[];
+  readonly assignedRole: string;
+  readonly escalatesTo: string;
+  readonly minTenthsC?: number;
+  readonly maxTenthsC?: number;
+}
+
+/**
+ * UAT-06 (sheet B task B4, sheet C task C2): an OPEN purchase order the warehouse can receive against — proposed by a buyer
+ * and ISSUED by a DIFFERENT person who holds the approval (§28, M06-FR-04), each under their own sign-in through head
+ * office's own routes (`POST /v1/purchase/orders/:poId`, then `/approval`). History once laid down: fixed keys.
+ */
+export interface SeedPurchaseOrder {
+  readonly poId: string;
+  readonly supplierId: string;
+  readonly deliverToLocationId: string;
+  /** Holds `purchase.order.propose` (the store manager). */
+  readonly proposedBy: string;
+  /** Holds `purchase.order.approve`, is not the proposer, and the order is within their limit (the owner). */
+  readonly issuedBy: string;
+  readonly reason: string;
+  readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly uom: string; readonly unitCostMinor: number }[];
 }
 
 /** The tenant's receiving tolerances — set once by the owner; every receipt is measured against them (F03). */
@@ -501,9 +578,20 @@ export interface PilotTradingPartners {
   readonly supplierMaster: SeedSupplierMaster;
   readonly bins: readonly SeedBin[];
   readonly receiptPolicy: SeedReceiptPolicy;
+  /** Who defines the receiving checklists (holds `facilities.schedule.manage`). */
+  readonly receivingChecksDefinedBy: string;
+  readonly receivingChecks: readonly SeedReceivingCheck[];
   readonly goodsReceipts: readonly SeedGoodsReceipt[];
+  readonly purchaseOrders: readonly SeedPurchaseOrder[];
   readonly customers: readonly SeedCustomer[];
 }
+
+/** UAT-06: the demo's chilled receiving checklist (OB-164) — the one the warehouse handheld's dock asks for. */
+export const PILOT_DEMO_RECEIVING_CHECK = 'rc-demo-chilled';
+/** UAT-06 (B4 / C2): the open purchase order from Demo Foods Distributors the warehouse receives against. */
+export const PILOT_DEMO_OPEN_PO = 'po-uat06-demo-foods';
+/** UAT-06 (C3): the demo's chilled opening stock — its own opening receipt, booked with its receiving checklist on file. */
+export const PILOT_DEMO_CHILLED_OPENING = 'opening-demo-chilled-001';
 
 export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
   tenantId: PILOT_DEMO_TENANT,
@@ -526,6 +614,20 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
   ],
   // 5% either way, 30 days near-expiry — the owner's tolerances, set through the real policy route (never on a receipt).
   receiptPolicy: { excessToleranceBp: 500, shortageToleranceBp: 500, nearExpiryDays: 30 },
+  // UAT-06 (C3/C4) · OB-164 "Chilled and frozen only": the demo store's receiving checklist for a delivery carrying chilled
+  // goods, set by the owner. Synthetic wording; a real store writes its own. Its probe limits match the curd's (2–8 °C).
+  receivingChecksDefinedBy: 'pilot-owner',
+  receivingChecks: [
+    {
+      checkId: PILOT_DEMO_RECEIVING_CHECK, branchId: BRANCH_ID, title: 'Chilled delivery check at the door (demo)', graceMinutes: 0,
+      items: [
+        { itemId: 'probe', label: 'Probe one pack — the reading is between 2 and 8 °C (demo)' },
+        { itemId: 'packs', label: 'Packs sealed — none swollen, leaking or torn (demo)' },
+        { itemId: 'dates', label: 'Use-by dates read — none short-dated (demo)' },
+      ],
+      assignedRole: 'store_manager', escalatesTo: 'owner', minTenthsC: 20, maxTenthsC: 80,
+    },
+  ],
   goodsReceipts: [
     {
       // What is batch-tracked is the product master's word (rice, biscuit and oil are; soap and brush are not) — the
@@ -541,6 +643,34 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
         { lineId: 'l3', productId: 'prod-rice', orderedMinor: 200, countedMinor: 200, uom: 'ea', unitCostMinor: 5000, condition: 'good', batchId: 'BATCH-RICE-2609', expiry: DEMO_EXPIRY },
         { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80, countedMinor: 80, uom: 'ea', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
         { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120, countedMinor: 120, uom: 'ea', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
+      ],
+    },
+    {
+      // UAT-06 (C3): the demo's CHILLED opening stock, as its own opening receipt — the first one landed long ago on the demo
+      // box under its fixed key, so a line added to it would never land there (history is never re-done). A cold-chain
+      // delivery is booked only with its receiving checklist on file (OB-164) and its arrival temperature (SF-07): both are
+      // here, the checklist recorded first by the warehouse supervisor under their own sign-in.
+      grnId: PILOT_DEMO_CHILLED_OPENING, warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
+      lines: [
+        { lineId: 'c1', productId: 'prod-curd', orderedMinor: 24, countedMinor: 24, uom: 'ea', unitCostMinor: 3200, condition: 'good', batchId: 'BATCH-CURD-2609', expiry: DEMO_EXPIRY, temperatureC: 4 },
+      ],
+      receivingChecklist: {
+        checkId: PILOT_DEMO_RECEIVING_CHECK, performedBy: 'pilot-warehouse-supervisor', readingTenthsC: 40,
+        itemResults: { probe: 'pass', packs: 'pass', dates: 'pass' },
+      },
+    },
+  ],
+  // UAT-06 (B4 / C2): an ISSUED order from Demo Foods Distributors for the warehouse to receive — the store manager proposes
+  // it, the owner issues it (§28: never one's own order). Unit costs as in the opening stock.
+  purchaseOrders: [
+    {
+      poId: PILOT_DEMO_OPEN_PO, supplierId: 'sup-demo-foods', deliverToLocationId: WAREHOUSE_ID,
+      proposedBy: 'pilot-manager', issuedBy: 'pilot-owner', reason: 'the demo\'s weekly top-up for the staff session (synthetic demo order)',
+      lines: [
+        { productId: 'prod-rice', orderedQty: 10, uom: 'ea', unitCostMinor: 5000 },
+        { productId: 'prod-biscuit', orderedQty: 12, uom: 'ea', unitCostMinor: 1800 },
+        { productId: 'prod-oil', orderedQty: 6, uom: 'ea', unitCostMinor: 9000 },
+        { productId: 'prod-curd', orderedQty: 12, uom: 'ea', unitCostMinor: 3200 },
       ],
     },
   ],
@@ -683,9 +813,26 @@ export interface SeedFulfilment {
   readonly routes: readonly SeedRouteAssignment[];
 }
 
+/**
+ * UAT-06 (sheet B task B2): an approval left WAITING in the approvals inbox (`/v1/approvals/requests`) for the store manager
+ * to decide in the session — asked by another practice person who may do the action, under their OWN sign-in, and never
+ * decided by the seed. `details` are exactly the action's own fields (what the action route will later match it against).
+ */
+export interface SeedPendingApproval {
+  readonly kind: string;
+  readonly subjectRef: string;
+  /** Holds the kind's maker permission; never the person meant to decide it. */
+  readonly raisedBy: string;
+  readonly details: Readonly<Record<string, unknown>>;
+  readonly valueMinor: number | null;
+  readonly summary: string;
+  readonly reason: string;
+}
+
 export interface PilotTransactions {
   readonly tenantId: string;
   readonly fulfilment: SeedFulfilment;
+  readonly pendingApprovals: readonly SeedPendingApproval[];
   readonly tillFloats: readonly SeedTillFloat[];
   readonly shiftCloses: readonly SeedShiftClose[];
   readonly serviceability: readonly SeedServiceability[];
@@ -709,6 +856,8 @@ export const PILOT_DEMO_ONLINE_ORDER = 'order-demo-online-1';
  */
 export const PILOT_DEMO_PICKER = 'pilot-manager';
 export const PILOT_DEMO_DRIVER = 'pilot-manager';
+/** UAT-06 (B2): the write-off waiting for the store manager's decision (its id is the write-off it would approve). */
+export const PILOT_DEMO_PENDING_WRITE_OFF = 'wo-uat06-demo-oil-leak';
 
 export const PILOT_TRANSACTIONS: PilotTransactions = {
   tenantId: PILOT_DEMO_TENANT,
@@ -726,6 +875,22 @@ export const PILOT_TRANSACTIONS: PilotTransactions = {
       stops: [{ stopId: 'stop-demo-1', orderRef: PILOT_DEMO_ONLINE_ORDER, area: 'Demo Nagar (demo)', codMinor: 9500, orderValueMinor: 9500 }],
     }],
   },
+  // UAT-06 (B2): a material write-off (M28-FR-01: "Manager/Owner" approve; kind `stock_write_off`) the warehouse supervisor
+  // asks for — six leaking oil pouches in the back store, ₹540 at head office's own cost (6 × ₹90), above the demo's ₹500
+  // material line and within the store manager's ₹2,000 stock-adjustment limit. Left UNDECIDED for the manager to decide in
+  // the session. Approving it writes nothing off by itself: the supervisor then records the write-off naming the approval.
+  pendingApprovals: [
+    {
+      kind: 'stock_write_off', subjectRef: PILOT_DEMO_PENDING_WRITE_OFF, raisedBy: 'pilot-warehouse-supervisor',
+      details: {
+        productId: 'prod-oil', locationId: WAREHOUSE_ID, qty: 6, uom: 'ea', lossType: 'damage', reasonCode: 'damage',
+        evidenceRef: 'photo-demo-oil-leak-1 (demo)', writeOffId: PILOT_DEMO_PENDING_WRITE_OFF,
+      },
+      valueMinor: 54_000,
+      summary: 'Write off 6 pouches of Demo Sunflower Oil 1L — leaking in the back store (demo)',
+      reason: 'Found leaking on the racking during the morning walk; photo taken (synthetic demo request)',
+    },
+  ],
   tillFloats: [
     { tillId: 'till-demo-1', movementId: 'cash-demo-open-1', amountMinor: 500_000, custodianId: 'pilot-cashier', tradingDay: RECEIVED_ON },
   ],
