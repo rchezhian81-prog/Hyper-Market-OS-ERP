@@ -595,8 +595,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
   { id: 'ai', label: 'AI control', labelTa: 'AI கட்டுப்பாடு', path: '/ai/', requires: 'ai.budget.read', group: 'Administration' },
-  // CR-01 OI-12 (OB-712): the owner's auto-approve limits — two people set a limit, one person stops it all.
-  { id: 'auto-approve', label: 'Auto-approve limits', labelTa: 'தானியங்கு ஒப்புதல் வரம்புகள்', path: '/auto-approve', requires: 'ai.autoapprove.read', group: 'Administration' },
+  // CR-01 OI-12 (OB-712): the owner's auto-approve limits — two people set a limit, one person stops it all. Beside the
+  // assistants' drafts under "Today & approvals" (Administration already holds its 16).
+  { id: 'auto-approve', label: 'Auto-approve limits', labelTa: 'தானியங்கு ஒப்புதல் வரம்புகள்', path: '/auto-approve', requires: 'ai.autoapprove.read', group: 'Today' },
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.
