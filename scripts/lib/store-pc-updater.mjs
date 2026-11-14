@@ -238,13 +238,13 @@ export function registerUpdater(deps, L) {
 // ── Small Windows helpers ────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Copy a folder exactly (robocopy /MIR): the target ends up holding exactly the source's files. 0–7 is success. */
-function mirror(deps, from, to) {
+export function mirror(deps, from, to) {
   const r = deps.spawn('robocopy.exe', [from, to, '/MIR', '/R:2', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP'], {});
   return r.error === undefined && typeof r.status === 'number' && r.status < 8 ? { ok: true } : { ok: false, said: firstLine(r) };
 }
 
 /** The size of every file under a folder, in bytes. */
-function folderBytes(fs, p, dir) {
+export function folderBytes(fs, p, dir) {
   let n = 0;
   const walk = (d) => {
     for (const e of fs.readdirSync(d).map(String)) {
@@ -259,7 +259,7 @@ function folderBytes(fs, p, dir) {
 
 const sha256File = (fs, f) => createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 
-async function stopServices(deps) {
+export async function stopServices(deps) {
   for (const name of [...SERVICE_ORDER].reverse()) {
     if (serviceState(deps, name) === 'missing') continue;
     deps.spawn('sc.exe', ['stop', name], {});
@@ -268,7 +268,7 @@ async function stopServices(deps) {
 }
 
 /** Every till whose shift is open, by the till's own answer — or { unknown } when the till does not say. */
-async function openShifts(deps, L) {
+export async function openShifts(deps, L) {
   const till = tillFolders(deps, L);
   const port = Number(till.env?.EDGE_SCREEN_PORT || 8091);
   try {
@@ -531,8 +531,8 @@ async function installUpdate(deps, W) {
   return 1;
 }
 
-/** The PC's checks after an install, by the installed program itself. Undefined when all pass, else what failed. */
-async function theChecks(deps, L, P, version) {
+/** The PC's checks after an install, by the installed program itself (P.app). Undefined when all pass, else what failed. Also the rollback drill's (step 3e). */
+export async function theChecks(deps, L, P, version) {
   const { fs } = deps;
   const p = pathFor(deps.platform);
   const rel = readJson(fs, p.join(P.app, RELEASE_MARKER));

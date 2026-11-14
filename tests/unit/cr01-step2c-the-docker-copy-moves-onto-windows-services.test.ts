@@ -332,7 +332,7 @@ describe('after the move, the tool asks the database service — not Docker', ()
     expect(said(w)).toMatch(/not running: the till/);
   });
 
-  it('autostart: nothing to do (Windows starts the services); the drill and update say their Windows versions come in step 3', async () => {
+  it('autostart: nothing to do (Windows starts the services); the drill is the Windows one (step 3e); update points to the page (3d)', async () => {
     const { w, d } = await ownersPc();
     expect(await main(['setup'], d)).toBe(0);
     w.said.length = 0;
@@ -340,7 +340,9 @@ describe('after the move, the tool asks the database service — not Docker', ()
     expect(said(w)).toMatch(/^NOTHING TO DO — this copy runs as Windows services/m);
     w.said.length = 0;
     expect(await main(['drill', '--by', 'Owner', '--to', 'G:\\sre-real', '--previous', 'C:\\SRE-old', '--run'], d)).toBe(2);
-    expect(said(w)).toMatch(/NOT YET — this copy runs as Windows services .*CR-01 step 3/);
+    // CR-01 step 3e: the Windows-services drill answers (here: this pretend PC's folder is not an installed release).
+    expect(said(w)).toMatch(/^REFUSED — C:\\SRE is not an installed release/m);
+    expect(said(w)).not.toMatch(/NOT YET/);
     w.said.length = 0;
     expect(await main(['update', '--from', 'C:\\SRE-new'], d)).toBe(2);
     // CR-01 step 3d: a Windows-services copy is updated from the Software update page, never from a folder.
