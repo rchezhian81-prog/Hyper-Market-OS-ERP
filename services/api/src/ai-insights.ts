@@ -12,6 +12,7 @@
 //     No reorder policy is stored at head office, so NO quantity is invented — the buyer decides how many, and raises the
 //     order through the normal two-person purchase-order route.
 
+import { withAct, type ExactActs } from './ai-auto-approve-acts';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Proposal } from '../../ai/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
@@ -115,7 +116,7 @@ async function productTakings(store: EventStore, tenantId: string, now: string, 
 }
 
 /** A02 — stock-outs with recent demand: a DRAFT for a buyer, never a quantity it cannot justify, never an order. */
-export async function purchaseSuggestions(store: EventStore, tenantId: string, now: string): Promise<Draft[]> {
+export async function purchaseSuggestions(store: EventStore, tenantId: string, now: string, acts?: ExactActs): Promise<Draft[]> {
   const from = new Date(Date.parse(now) - 7 * 86_400_000).toISOString();
   const recent = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
   const soldUnits = new Map<string, number>();
@@ -132,7 +133,8 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
   for (const r of rows) {
     const sold = soldUnits.get(`${r.productId}@${r.locationId}`) ?? 0;
     if (r.onHandMinor > 0 || sold === 0) continue;
-    out.push({
+    // CR-01 step 6b (OB-761 A): exactly what to order, when the shop's reorder settings and a last price say so.
+    out.push(withAct({
       proposalId: `a02-stockout-${r.productId}-${r.locationId}-${shopDateIn(now)}`, agent: 'A02', createdAt: now,
       summary: `${r.productId} is out of stock at ${r.locationId} (on hand ${r.onHandMinor}) and sold ${sold} in the last 7 days — consider reordering. No reorder level is stored, so how many is the buyer's decision`,
       wouldRequire: 'POST /v1/purchase/orders/:poId by a buyer, approved by a second person (§28)',
@@ -140,7 +142,7 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
         { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${r.productId}`, summary: `${r.productId} at ${r.locationId}: on hand ${r.onHandMinor}` },
         { source: 'sales ledger', reference: `SaleCommitted ${from}..${now}`, summary: `${sold} sold at ${r.locationId} in the last 7 days` },
       ],
-    });
+    }, acts === undefined ? { why: 'not asked' } : await acts.reorder(r.productId, r.locationId)));
   }
   return out;
 }
@@ -154,7 +156,7 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
  * source holds and what the destination sold, and the manager decides how many and raises the transfer through the
  * ordinary route, where held, recalled or expired stock is refused (M09-FR-03). Read-only: nothing is appended here.
  */
-export async function transferSuggestions(store: EventStore, tenantId: string, now: string): Promise<Draft[]> {
+export async function transferSuggestions(store: EventStore, tenantId: string, now: string, acts?: ExactActs): Promise<Draft[]> {
   const from = new Date(Date.parse(now) - 7 * 86_400_000).toISOString();
   const recent = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
   const sold = new Map<string, number>();
@@ -191,7 +193,7 @@ export async function transferSuggestions(store: EventStore, tenantId: string, n
     if (best === undefined) continue; // nowhere holds it — that is A02's reorder, not a transfer
     const [source, held] = best;
     const where = rank(source) === 0 ? 'its own back store' : rank(source) === 1 ? 'head office\'s warehouse' : 'another store';
-    out.push({
+    out.push(withAct({
       proposalId: `a03-transfer-${productId}-${source}-${destination}-${shopDateIn(now)}`, agent: 'A03', createdAt: now,
       summary: `${productId} is out at ${destination} (on hand ${here}) and sold ${units} there in the last 7 days; ${source} (${where}) holds ${held}. Consider a transfer — how many is the manager's decision (no transfer level is stored)`,
       wouldRequire: 'POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)',
@@ -199,7 +201,7 @@ export async function transferSuggestions(store: EventStore, tenantId: string, n
         { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${productId}`, summary: sources.map(([l, q]) => `${l}: ${q}`).concat(`${destination}: ${here}`).join('; ') },
         { source: 'sales ledger', reference: `SaleCommitted ${from}..${now}`, summary: `${units} sold at ${destination} in the last 7 days` },
       ],
-    });
+    }, acts === undefined ? { why: 'not asked' } : await acts.transfer(productId, source, destination)));
   }
   return out;
 }

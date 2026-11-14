@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1730 | 994 | 994 | 196 | 447 |
+| 13 | 1735 | 998 | 998 | 196 | 451 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1780,6 +1780,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/ai/agents/:agent/model-calls` | `ai.agent.run` | core | yes |
 | POST | `/v1/ai/agents/:agent/runs` | `ai.agent.run` | core | yes |
 | PUT | `/v1/ai/agents/enabled` | `ai.agent.enable` | core | yes |
+| GET | `/v1/ai/auto-approve` | `ai.autoapprove.read` | core | — |
+| POST | `/v1/ai/auto-approve/requests` | `ai.autoapprove.propose` | core | yes |
+| POST | `/v1/ai/auto-approve/requests/:requestId/decision` | `ai.autoapprove.confirm` | core | yes |
+| POST | `/v1/ai/auto-approve/stop` | `ai.autoapprove.stop` | core | yes |
+| POST | `/v1/ai/auto-approve/sweep` | `ai.agent.run` | core | yes |
 | GET | `/v1/ai/budget` | `ai.budget.read` | core | — |
 | PUT | `/v1/ai/budget` | `ai.budget.set` | core | yes |
 | GET | `/v1/ai/control` | `ai.proposal.read` | core | — |
