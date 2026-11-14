@@ -118,3 +118,13 @@ unchanged — nothing is downloaded on the shop's PC. Portability, cost: none (M
   only for the updater; no secret in any task, file or log. **Portability, cost:** Windows' own Task Scheduler and
   robocopy; nothing bought.
 
+## Implementation note — the rollback drill on Windows services (CR-01 step 3e, 13 November 2026)
+
+- The G9 drill keeps its order and §32 targets. "Put the previous release back" is the updater's own way back (step 3d):
+  the previous release's program mirrored over the program folder from its kept copy, its own `setup` run, and its own
+  checks; then this release the same way. The database is never rolled back (the previous release's steps must be the
+  first steps of this one's, and must be unchanged by it).
+- Steps 3–4 run as a one-off SYSTEM task from the kept copy of this release (a program cannot replace the folder it runs
+  from); the backup and restore check stay at the keyboard because the passphrase opens the backup. `drill-result` reads
+  the outcome. Refused while any till shift is open, as the update is (OB-718's reason: the services restart).
+
