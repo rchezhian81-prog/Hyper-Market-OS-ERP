@@ -62,7 +62,9 @@ describe('the loss-prevention day with no calendar wired is the shop default\'s,
     expect(await lp.tradingDayOf!('t-1', EVENING)).toBe('2026-10-30');
     await store.append('t-1', 'returns', makeEvent({ id: 'ret-1', type: 'ReturnRecorded', occurredAt: EVENING, idempotencyKey: 'ret-1', source: 'test', payload: { returnId: 'ret-1', processedBy: 'u-cash', processedAt: EVENING, refundMinor: 5_00 } }));
     expect((await lp.refundsOn!('t-1', '2026-10-30')).map((r) => r.txnId)).toEqual(['ret-1']);
-  });
+    // The first import of services/api/src/adapters loads most of head office (~5 s on a busy machine) — the test's own
+    // work is milliseconds; the default 5 s limit timed out on the import alone (14 Nov 2026).
+  }, 30_000);
 });
 
 describe('the till\'s bundle-less stand-in dates by the shop\'s zone, never the UTC date', () => {
