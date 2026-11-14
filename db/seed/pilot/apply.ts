@@ -296,10 +296,14 @@ export async function applyPilotCatalogue(
           primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle,
           ...(product.brand === undefined ? {} : { brand: product.brand }),
           ...(product.safety === undefined ? {} : { safety: product.safety }),
+          // UAT-06: the handling class and the product's own cold-chain limits (HA-3) — judged by the product master's engine.
+          ...(product.handling === undefined ? {} : { handling: product.handling }),
+          ...(product.coldChain === undefined ? {} : { coldChain: product.coldChain }),
         },
         categories: catalogue.categories,
       },
-      `seed-product-${product.productId}-${digestOf({ sku: product.sku, name: product.name, baseUom: product.baseUom, primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle, brand: product.brand, safety: product.safety })}`,
+      // An absent handling / cold chain leaves the digest (and so every earlier product's key) exactly as it was.
+      `seed-product-${product.productId}-${digestOf({ sku: product.sku, name: product.name, baseUom: product.baseUom, primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle, brand: product.brand, safety: product.safety, handling: product.handling, coldChain: product.coldChain })}`,
     );
   }
 
@@ -439,9 +443,33 @@ export async function applyPilotTradingPartners(
   // 3. The tenant's receiving tolerances — the owner's call, read by every receipt (F03, SP-4 (ii)).
   await post('receiving tolerance policy', '/v1/inventory/receipt-policy', { ...data.receiptPolicy }, 'seed-receipt-policy');
 
+  // 3b. UAT-06 · OB-164 (D-6): the store's receiving checklists for chilled and frozen deliveries, defined by the person who
+  //     sets the store's checks. The same definition again is "unchanged" (no new version); a changed one is its next version.
+  for (const check of data.receivingChecks) {
+    const { checkId, ...definition } = check;
+    await post(
+      `receiving checklist ${checkId} for ${check.branchId}`,
+      `/v1/facilities/food-safety/checks/${encodeURIComponent(checkId)}`,
+      { ...definition, kind: 'receiving' },
+      `seed-receiving-check-${checkId}-${digestOf(definition)}`, data.receivingChecksDefinedBy,
+    );
+  }
+
   // 4. Goods receipts — the real receiving gate turns each delivery into sellable stock. The body carries the counted
   //    lines only: what is batch-tracked comes from the product master, the tolerances from the policy just set.
+  //    UAT-06: a receipt carrying chilled goods has its receiving checklist recorded FIRST (OB-164 refuses it otherwise),
+  //    by the named person under their own sign-in; a re-run finds it already recorded and records nothing new.
   for (const grn of data.goodsReceipts) {
+    const rc = grn.receivingChecklist;
+    if (rc !== undefined) {
+      const recordId = `rc-${grn.grnId}`;
+      await post(
+        `receiving checklist for ${grn.grnId} — done by ${rc.performedBy}`,
+        `/v1/facilities/food-safety/checks/${encodeURIComponent(rc.checkId)}/records/${encodeURIComponent(recordId)}`,
+        { subjectRef: grn.grnId, readingTenthsC: rc.readingTenthsC, itemResults: rc.itemResults },
+        `seed-receiving-record-${recordId}`, rc.performedBy,
+      );
+    }
     await post(
       `goods receipt ${grn.grnId}`,
       `/v1/inventory/goods-receipt/${encodeURIComponent(grn.grnId)}`,
@@ -454,9 +482,32 @@ export async function applyPilotTradingPartners(
           uom: l.uom, unitCost: { minor: l.unitCostMinor, currency: grn.currency }, condition: l.condition,
           ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
           ...(l.expiry === undefined ? {} : { expiry: l.expiry }),
+          ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
         })),
       },
       `seed-grn-${grn.grnId}`,
+    );
+  }
+
+  // 4b. UAT-06 (B4 / C2): open purchase orders the warehouse receives against — proposed by the buyer, then ISSUED by a
+  //     different person with the approval (§28), each in their own session. A re-sent proposal answers "already proposed"
+  //     and a re-sent issue "already issued": a re-run orders nothing twice.
+  for (const po of data.purchaseOrders) {
+    const proposed = await post(
+      `purchase order ${po.poId} — proposed by ${po.proposedBy}`,
+      `/v1/purchase/orders/${encodeURIComponent(po.poId)}`,
+      {
+        supplierId: po.supplierId, deliverToLocationId: po.deliverToLocationId,
+        lines: po.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, uom: l.uom, unitCost: { minor: l.unitCostMinor, currency: 'INR' } })),
+      },
+      `seed-po-${po.poId}`, po.proposedBy,
+    );
+    if (!OK_STATUS.has(proposed.status) && proposed.status !== 409) continue;
+    await post(
+      `purchase order ${po.poId} — issued by ${po.issuedBy}`,
+      `/v1/purchase/orders/${encodeURIComponent(po.poId)}/approval`,
+      { reason: po.reason },
+      `seed-po-issue-${po.poId}`, po.issuedBy,
     );
   }
 
@@ -615,6 +666,16 @@ export async function applyPilotTransactions(
   for (const r of f.routes) {
     await post(`route ${r.routeId} → driver ${r.driverId}`, `/v1/delivery/routes/${encodeURIComponent(r.routeId)}/assignment`,
       { storeId: PILOT_DEMO_BRANCH, driverId: r.driverId, stops: r.stops }, `seed-route-${r.routeId}-${digestOf(r)}`, f.assignedBy);
+  }
+
+  // 6c. UAT-06 (B2): approvals left WAITING for a person to decide in the session — asked by the named person in their own
+  //     session; the seed never decides them. The same key replays the first answer: a re-run asks nothing twice.
+  for (const a of data.pendingApprovals) {
+    await post(
+      `approval waiting: ${a.kind} ${a.subjectRef} — asked by ${a.raisedBy}`, '/v1/approvals/requests',
+      { kind: a.kind, subjectRef: a.subjectRef, details: a.details, valueMinor: a.valueMinor, summary: a.summary, reason: a.reason },
+      `seed-pending-approval-${a.kind}-${a.subjectRef}`, a.raisedBy,
+    );
   }
 
   // 7. Payroll — a demo-marked DRAFT pay run (no approval; clearly non-real). Drafted by the person who prepares it,
