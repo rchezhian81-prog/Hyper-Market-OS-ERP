@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2363,
+  "testFiles": 2364,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -6081,7 +6081,7 @@
       "id": "QG-08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 8,
         "realDb": 5,
         "browser": 1,
@@ -6093,6 +6093,7 @@
         "unit": [
           "tests/unit/compliance-gate-decisions.test.ts",
           "tests/unit/compliance-risk.test.ts",
+          "tests/unit/cr01-step3e-the-rollback-drill-on-windows-services.test.ts",
           "tests/unit/ops-recovery-gate.test.ts"
         ],
         "integration": [
