@@ -1135,6 +1135,355 @@
         }
       }
     },
+    "/v1/ai/auto-approve": {
+      "get": {
+        "operationId": "getAiAutoApprove",
+        "tags": [
+          "API-13 AI"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "ai.autoapprove.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAiAutoApproveReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"ai.autoapprove.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/ai/auto-approve/requests": {
+      "post": {
+        "operationId": "postAiAutoApproveRequests",
+        "tags": [
+          "API-13 AI"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "ai.autoapprove.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAiAutoApproveRequestsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostAiAutoApproveRequestsReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"ai.autoapprove.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/ai/auto-approve/requests/{requestId}/decision": {
+      "post": {
+        "operationId": "postAiAutoApproveRequestsByRequestIdDecision",
+        "tags": [
+          "API-13 AI"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "ai.autoapprove.confirm",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAiAutoApproveRequestsByRequestIdDecisionRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostAiAutoApproveRequestsByRequestIdDecisionReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"ai.autoapprove.confirm\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/ai/auto-approve/stop": {
+      "post": {
+        "operationId": "postAiAutoApproveStop",
+        "tags": [
+          "API-13 AI"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "ai.autoapprove.stop",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAiAutoApproveStopRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostAiAutoApproveStopReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"ai.autoapprove.stop\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/ai/auto-approve/sweep": {
+      "post": {
+        "operationId": "postAiAutoApproveSweep",
+        "tags": [
+          "API-13 AI"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "ai.agent.run",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "x-request-body": "none",
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostAiAutoApproveSweepReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"ai.agent.run\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/ai/budget": {
       "get": {
         "operationId": "getAiBudget",
@@ -119842,6 +120191,129 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/ai/src/index.ts"
       },
+      "GetAiAutoApproveReply": {
+        "type": "object",
+        "required": [
+          "kinds",
+          "neverAutoApproved",
+          "shortDatedDays",
+          "decisions",
+          "said",
+          "asAt",
+          "rules",
+          "pending",
+          "history",
+          "stops",
+          "running",
+          "switchVersion",
+          "versionOf"
+        ],
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveKindDefinition"
+            }
+          },
+          "neverAutoApproved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shortDatedDays": {
+            "type": "number"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveDecision"
+            }
+          },
+          "said": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveRule"
+            }
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveRequest"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettledChange"
+            }
+          },
+          "stops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveStop"
+            }
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "switchVersion": {
+            "type": "number"
+          },
+          "stoppedBy": {
+            "$ref": "#/components/schemas/AutoApproveStop"
+          },
+          "startedBy": {
+            "type": "object",
+            "required": [
+              "askedBy",
+              "confirmedBy",
+              "at"
+            ],
+            "properties": {
+              "askedBy": {
+                "type": "string"
+              },
+              "confirmedBy": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "versionOf": {
+            "type": "object",
+            "required": [
+              "reorder_from_approved_supplier",
+              "markdown_short_dated",
+              "stock_transfer"
+            ],
+            "properties": {
+              "reorder_from_approved_supplier": {
+                "type": "number"
+              },
+              "markdown_short_dated": {
+                "type": "number"
+              },
+              "stock_transfer": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
       "GetAiBudgetReply": {
         "type": "object",
         "required": [
@@ -120248,6 +120720,117 @@
                     },
                     "createdAt": {
                       "type": "string"
+                    },
+                    "act": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "productId",
+                            "batchId",
+                            "percentOffBps",
+                            "daysToExpiry"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "markdown_short_dated"
+                            },
+                            "productId": {
+                              "type": "string"
+                            },
+                            "batchId": {
+                              "type": "string"
+                            },
+                            "percentOffBps": {
+                              "type": "number"
+                            },
+                            "daysToExpiry": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "productId",
+                            "fromLocationId",
+                            "toLocationId",
+                            "qty",
+                            "valueMinor"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "stock_transfer"
+                            },
+                            "productId": {
+                              "type": "string"
+                            },
+                            "fromLocationId": {
+                              "type": "string"
+                            },
+                            "toLocationId": {
+                              "type": "string"
+                            },
+                            "qty": {
+                              "type": "number"
+                            },
+                            "valueMinor": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "supplierId",
+                            "supplierApproved",
+                            "valueMinor",
+                            "lines"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "reorder_from_approved_supplier"
+                            },
+                            "supplierId": {
+                              "type": "string"
+                            },
+                            "supplierApproved": {
+                              "type": "boolean"
+                            },
+                            "valueMinor": {
+                              "type": "number"
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "productId",
+                                  "qty"
+                                ],
+                                "properties": {
+                                  "productId": {
+                                    "type": "string"
+                                  },
+                                  "qty": {
+                                    "type": "number"
+                                  }
+                                },
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
                     },
                     "committed": {
                       "type": "boolean",
@@ -121557,6 +122140,117 @@
                 },
                 "createdAt": {
                   "type": "string"
+                },
+                "act": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "productId",
+                        "batchId",
+                        "percentOffBps",
+                        "daysToExpiry"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "markdown_short_dated"
+                        },
+                        "productId": {
+                          "type": "string"
+                        },
+                        "batchId": {
+                          "type": "string"
+                        },
+                        "percentOffBps": {
+                          "type": "number"
+                        },
+                        "daysToExpiry": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "productId",
+                        "fromLocationId",
+                        "toLocationId",
+                        "qty",
+                        "valueMinor"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "stock_transfer"
+                        },
+                        "productId": {
+                          "type": "string"
+                        },
+                        "fromLocationId": {
+                          "type": "string"
+                        },
+                        "toLocationId": {
+                          "type": "string"
+                        },
+                        "qty": {
+                          "type": "number"
+                        },
+                        "valueMinor": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "supplierId",
+                        "supplierApproved",
+                        "valueMinor",
+                        "lines"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "reorder_from_approved_supplier"
+                        },
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "supplierApproved": {
+                          "type": "boolean"
+                        },
+                        "valueMinor": {
+                          "type": "number"
+                        },
+                        "lines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "productId",
+                              "qty"
+                            ],
+                            "properties": {
+                              "productId": {
+                                "type": "string"
+                              },
+                              "qty": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
                 },
                 "committed": {
                   "type": "boolean",
@@ -172239,6 +172933,7 @@
           "runId",
           "proposals",
           "refused",
+          "ruleDecisions",
           "costMinor",
           "calledAModel"
         ],
@@ -172285,6 +172980,25 @@
               "additionalProperties": true
             }
           },
+          "ruleDecisions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "proposalId",
+                "outcome"
+              ],
+              "properties": {
+                "proposalId": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "costMinor": {
             "type": "number"
           },
@@ -172307,6 +173021,192 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/ai/src/index.ts"
+      },
+      "PostAiAutoApproveRequestsByRequestIdDecisionReply": {
+        "type": "object",
+        "required": [
+          "decision",
+          "rules",
+          "running"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/AutoApproveConfirmation"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveRule"
+            }
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveRequestsByRequestIdDecisionRequest": {
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "refused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveRequestsReply": {
+        "type": "object",
+        "required": [
+          "request",
+          "changedAnything",
+          "nextStep"
+        ],
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/AutoApproveRequest"
+          },
+          "changedAnything": {
+            "type": "boolean"
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveRequestsRequest": {
+        "type": "object",
+        "required": [
+          "action",
+          "basedOnVersion",
+          "reason"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "remove_limit",
+              "resume",
+              "set_limit"
+            ]
+          },
+          "basedOnVersion": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveStopReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "running",
+              "stop",
+              "said"
+            ],
+            "properties": {
+              "running": {
+                "type": "boolean"
+              },
+              "stop": {
+                "$ref": "#/components/schemas/AutoApproveStop"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "running",
+              "unchanged",
+              "said"
+            ],
+            "properties": {
+              "running": {
+                "type": "boolean"
+              },
+              "unchanged": {
+                "type": "boolean"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveStopRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
+      },
+      "PostAiAutoApproveSweepReply": {
+        "type": "object",
+        "required": [
+          "decisions",
+          "autoApproved",
+          "waiting"
+        ],
+        "properties": {
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutoApproveDecision"
+            }
+          },
+          "autoApproved": {
+            "type": "number"
+          },
+          "waiting": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/ai/src/auto-approve.ts"
       },
       "PostAiDataQualityDismissalsReply": {
         "type": "object",
@@ -267801,6 +268701,395 @@
         },
         "additionalProperties": true
       },
+      "AutoApproveConfirmation": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "decision",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "refused"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AutoApproveDecision": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "outcome",
+              "proposalId",
+              "because",
+              "draftedBy",
+              "at",
+              "detail"
+            ],
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "const": "waits_for_a_person"
+              },
+              "proposalId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "because": {
+                "type": "string",
+                "enum": [
+                  "ai_stopped",
+                  "auto_approval_stopped",
+                  "never_auto_approvable",
+                  "no_evidence",
+                  "no_exact_act",
+                  "no_rule_for_this_kind",
+                  "not_an_auto_approvable_kind",
+                  "not_this_assistants_kind",
+                  "over_the_limit",
+                  "stale_draft",
+                  "unusual"
+                ]
+              },
+              "draftedBy": {
+                "type": "string",
+                "enum": [
+                  "A01",
+                  "A02",
+                  "A03",
+                  "A04",
+                  "A05",
+                  "A06",
+                  "A07",
+                  "A08",
+                  "A09",
+                  "A10"
+                ]
+              },
+              "at": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "outcome",
+              "proposalId",
+              "kind",
+              "approvedBy",
+              "ruleId",
+              "ruleVersion",
+              "ruleSetBy",
+              "limit",
+              "measured",
+              "measure",
+              "draftedBy",
+              "ordinaryRoute",
+              "at",
+              "detail"
+            ],
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "const": "auto_approved"
+              },
+              "proposalId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "markdown_short_dated",
+                  "reorder_from_approved_supplier",
+                  "stock_transfer"
+                ]
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "ruleId": {
+                "type": "string"
+              },
+              "ruleVersion": {
+                "type": "number"
+              },
+              "ruleSetBy": {
+                "type": "object",
+                "required": [
+                  "askedBy",
+                  "confirmedBy"
+                ],
+                "properties": {
+                  "askedBy": {
+                    "type": "string"
+                  },
+                  "confirmedBy": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "limit": {
+                "type": "number"
+              },
+              "measured": {
+                "type": "number"
+              },
+              "measure": {
+                "type": "string",
+                "enum": [
+                  "percent_bps",
+                  "value_minor"
+                ]
+              },
+              "draftedBy": {
+                "type": "string",
+                "enum": [
+                  "A01",
+                  "A02",
+                  "A03",
+                  "A04",
+                  "A05",
+                  "A06",
+                  "A07",
+                  "A08",
+                  "A09",
+                  "A10"
+                ]
+              },
+              "ordinaryRoute": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "AutoApproveKindDefinition": {
+        "type": "object",
+        "required": [
+          "kind",
+          "agent",
+          "tool",
+          "measure",
+          "nameEn",
+          "nameTa",
+          "usualEn",
+          "usualTa",
+          "ordinaryRoute"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "markdown_short_dated",
+              "reorder_from_approved_supplier",
+              "stock_transfer"
+            ]
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "A01",
+              "A02",
+              "A03",
+              "A04",
+              "A05",
+              "A06",
+              "A07",
+              "A08",
+              "A09",
+              "A10"
+            ]
+          },
+          "tool": {
+            "type": "string"
+          },
+          "measure": {
+            "type": "string",
+            "enum": [
+              "percent_bps",
+              "value_minor"
+            ]
+          },
+          "nameEn": {
+            "type": "string"
+          },
+          "nameTa": {
+            "type": "string"
+          },
+          "usualEn": {
+            "type": "string"
+          },
+          "usualTa": {
+            "type": "string"
+          },
+          "ordinaryRoute": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AutoApproveRequest": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "action",
+          "basedOnVersion",
+          "reason",
+          "requestedBy",
+          "requestedAt"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "remove_limit",
+              "resume",
+              "set_limit"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "markdown_short_dated",
+              "reorder_from_approved_supplier",
+              "stock_transfer"
+            ]
+          },
+          "limit": {
+            "type": "number"
+          },
+          "basedOnVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AutoApproveRule": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "kind",
+          "limit",
+          "measure",
+          "version",
+          "askedBy",
+          "confirmedBy",
+          "askedAt",
+          "confirmedAt",
+          "reason"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "markdown_short_dated",
+              "reorder_from_approved_supplier",
+              "stock_transfer"
+            ]
+          },
+          "limit": {
+            "type": "number"
+          },
+          "measure": {
+            "type": "string",
+            "enum": [
+              "percent_bps",
+              "value_minor"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "askedBy": {
+            "type": "string"
+          },
+          "confirmedBy": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "string"
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AutoApproveStop": {
+        "type": "object",
+        "required": [
+          "stopId",
+          "by",
+          "at",
+          "reason"
+        ],
+        "properties": {
+          "stopId": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Availability.inventory.index": {
         "type": "object",
         "required": [
@@ -306276,6 +307565,117 @@
           "confidence": {
             "$ref": "#/components/schemas/Confidence"
           },
+          "act": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "productId",
+                  "batchId",
+                  "percentOffBps",
+                  "daysToExpiry"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "markdown_short_dated"
+                  },
+                  "productId": {
+                    "type": "string"
+                  },
+                  "batchId": {
+                    "type": "string"
+                  },
+                  "percentOffBps": {
+                    "type": "number"
+                  },
+                  "daysToExpiry": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "productId",
+                  "fromLocationId",
+                  "toLocationId",
+                  "qty",
+                  "valueMinor"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "stock_transfer"
+                  },
+                  "productId": {
+                    "type": "string"
+                  },
+                  "fromLocationId": {
+                    "type": "string"
+                  },
+                  "toLocationId": {
+                    "type": "string"
+                  },
+                  "qty": {
+                    "type": "number"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "supplierId",
+                  "supplierApproved",
+                  "valueMinor",
+                  "lines"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "reorder_from_approved_supplier"
+                  },
+                  "supplierId": {
+                    "type": "string"
+                  },
+                  "supplierApproved": {
+                    "type": "boolean"
+                  },
+                  "valueMinor": {
+                    "type": "number"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "qty"
+                      ],
+                      "properties": {
+                        "productId": {
+                          "type": "string"
+                        },
+                        "qty": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
           "committed": {
             "type": "boolean",
             "const": false
@@ -315860,6 +317260,72 @@
             "type": "number"
           },
           "freeDeliveryAboveMinor": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SettledChange": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "action",
+          "decision",
+          "askedBy",
+          "askedAt",
+          "decidedBy",
+          "decidedAt",
+          "reason"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "remove_limit",
+              "resume",
+              "set_limit"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "markdown_short_dated",
+              "reorder_from_approved_supplier",
+              "stock_transfer"
+            ]
+          },
+          "limit": {
+            "type": "number"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "refused"
+            ]
+          },
+          "askedBy": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "version": {
             "type": "number"
           }
         },

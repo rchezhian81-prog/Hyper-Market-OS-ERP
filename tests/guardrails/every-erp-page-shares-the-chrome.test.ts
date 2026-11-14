@@ -325,6 +325,7 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'customer-value.js': 'apps/web-erp/src/customer-value-session.ts',
     'message-queue.js': 'apps/web-erp/src/message-queue-session.ts',
     'compensation-limits.js': 'apps/web-erp/src/compensation-limits-session.ts',
+    'auto-approve.js': 'apps/web-erp/src/auto-approve-session.ts',
     'gift-cards.js': 'apps/web-erp/src/gift-cards-session.ts',
     // W5 (route audit bundle 8): the sections on twelve customer, privacy, service and online-order pages.
     'customer-desk-sections.js': 'apps/web-erp/src/customer-desk-sections-session.ts',

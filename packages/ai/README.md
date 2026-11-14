@@ -119,6 +119,14 @@ one" provider check inside an agent and there is nobody left who remembers why n
     simulator, recorded explicitly so nobody blurs it. Everything *not* on that list is decided
     now.
 
+- **`src/auto-approve.ts`** — **CR-01 OI-12 (OB-712): owner-set auto-approve limits.** P-05 lets a *deterministic rule*
+  commit what an assistant drafted; this is that rule and nothing else. Two people set a limit per kind of act (one asks, a
+  different one confirms; an assistant is neither); a draft inside it is approved **by the rule** (`rule:<kind>-v<n>`),
+  never by the assistant; anything above, unusual, stale, uncited or outside its rule waits for a person. One switch stops
+  all of it and it starts stopped. `NEVER_AUTO_APPROVE` — a permission change, a refund, a payment to a new payee — is a
+  frozen closed list with no override, guarded by `tests/guardrails/auto-approve-never-for-refunds-permissions-or-new-payees.test.ts`.
+  It decides; it executes nothing and calls no model.
+
 > Pure and deterministic: the transport, the clock and the pricing are all injected; no I/O and
 > no secret material at any point. Tested in `tests/unit/ai-gateway.test.ts` (16),
 > `ai-authority.test.ts` (25), `ai-budget.test.ts` (22), `ai-safety.test.ts` (19) and

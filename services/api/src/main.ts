@@ -313,7 +313,9 @@ import { substitutionProposalAdapter, bareProposalDeps } from './substitution-pr
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
-import { aiRoutes } from '../../ai/src/index';
+import { aiRoutes, type Proposal } from '../../ai/src/index';
+import { sweepDrafts } from '../../ai/src/auto-approve';
+import { autoApproveDeps } from './ai-auto-approve-store';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
@@ -2306,7 +2308,11 @@ export function buildSurface(deps: {
       dataQualityWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
       operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
       workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
-    } : governedAiDeps!), modelProviderConfigured: () => deps.modelTransport !== undefined }),
+    } : {
+      ...governedAiDeps!,
+      // CR-01 OI-12: the owner-set rule decides each new draft right after the run (approved by rule, or waits for a person).
+      afterRun: (t: string, proposals: readonly Proposal[]) => sweepDrafts(autoApproveDeps({ store, now, openProposals: governedAiDeps!.openProposals, aiStopped: (tt, agent) => governedAiDeps!.killSwitchOn(tt, agent) }), t, proposals),
+    }), modelProviderConfigured: () => deps.modelTransport !== undefined }),
     // Round 8 (roadmap §7 · P-05 · hard rule #5): the A05 case-reply, A09 campaign-message and A07 anomaly-summary DRAFTING
     // legs — each through the governed call above (admission, metering, hash-chained audit), each over evidence read here
     // from the domain's own records; the drafts land on the registers a PERSON decides on (case drafts, the two-person
