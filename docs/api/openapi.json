@@ -50193,6 +50193,90 @@
         }
       }
     },
+    "/v1/identity/box/grants/{grantId}/reject": {
+      "post": {
+        "operationId": "postIdentityBoxGrantsByGrantIdReject",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxGrantsByGrantIdRejectRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxGrantsByGrantIdRejectReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/identity/box/people": {
       "post": {
         "operationId": "postIdentityBoxPeople",
@@ -50220,21 +50304,27 @@
           }
         ],
         "requestBody": {
-          "required": false,
-          "description": "This route reads no body; anything sent is ignored.",
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/PostIdentityBoxPeopleRequest"
               }
             }
           }
         },
-        "x-request-body": "none",
         "x-body-schema": "derived",
-        "x-never-succeeds": true,
-        "description": "Retired or refusal-only: every call is refused, by name, with one of the error replies below.",
         "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxPeopleReply"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/Unreadable"
           },
@@ -50253,6 +50343,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/box/users-view": {
+      "get": {
+        "operationId": "getIdentityBoxUsersView",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIdentityBoxUsersViewReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -142582,7 +142716,8 @@
                     "ended",
                     "issued",
                     "none",
-                    "requested"
+                    "requested",
+                    "store_pc"
                   ]
                 },
                 "secondFactor": {
@@ -142834,6 +142969,14 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/access-review.ts"
+      },
+      "GetIdentityBoxUsersViewReply": {
+        "type": "object",
+        "additionalProperties": {
+          "x-untyped": "unknown"
+        },
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
       },
       "GetIdentityDepartmentScopesReply": {
         "type": "object",
@@ -152980,8 +153123,8 @@
             "items": {
               "type": "object",
               "required": [
-                "sha256",
                 "storeId",
+                "sha256",
                 "photoId",
                 "aisle",
                 "rack",
@@ -152994,10 +153137,10 @@
                 "takenAt"
               ],
               "properties": {
-                "sha256": {
+                "storeId": {
                   "type": "string"
                 },
-                "storeId": {
+                "sha256": {
                   "type": "string"
                 },
                 "photoId": {
@@ -205832,6 +205975,96 @@
             "enum": [
               "person_provision",
               "role_grant_approval",
+              "role_grant_rejection",
+              "role_request"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxGrantsByGrantIdRejectReply": {
+        "type": "object",
+        "required": [
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxGrantsByGrantIdRejectRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
               "role_request"
             ]
           },
@@ -205920,6 +206153,112 @@
             "enum": [
               "person_provision",
               "role_grant_approval",
+              "role_grant_rejection",
+              "role_request"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxPeopleReply": {
+        "type": "object",
+        "required": [
+          "userId",
+          "displayName",
+          "state",
+          "signIn",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "signIn": {
+            "type": "string"
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxPeopleRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
               "role_request"
             ]
           },
@@ -225396,8 +225735,8 @@
           "photo": {
             "type": "object",
             "required": [
-              "sha256",
               "storeId",
+              "sha256",
               "photoId",
               "aisle",
               "rack",
@@ -225410,10 +225749,10 @@
               "takenAt"
             ],
             "properties": {
-              "sha256": {
+              "storeId": {
                 "type": "string"
               },
-              "storeId": {
+              "sha256": {
                 "type": "string"
               },
               "photoId": {
@@ -225473,8 +225812,8 @@
           "photo": {
             "type": "object",
             "required": [
-              "sha256",
               "storeId",
+              "sha256",
               "photoId",
               "aisle",
               "rack",
@@ -225487,10 +225826,10 @@
               "takenAt"
             ],
             "properties": {
-              "sha256": {
+              "storeId": {
                 "type": "string"
               },
-              "storeId": {
+              "sha256": {
                 "type": "string"
               },
               "photoId": {
@@ -296351,8 +296690,8 @@
             "type": "object",
             "required": [
               "approvedBy",
-              "kind",
               "storeId",
+              "kind",
               "tradingDay",
               "attemptId",
               "laneId",
@@ -296368,15 +296707,15 @@
               "approvedBy": {
                 "type": "string"
               },
+              "storeId": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
                   "card",
                   "upi"
                 ]
-              },
-              "storeId": {
-                "type": "string"
               },
               "tradingDay": {
                 "type": "string"
@@ -296419,8 +296758,8 @@
             "type": "object",
             "required": [
               "approvedBy",
-              "kind",
               "storeId",
+              "kind",
               "tradingDay",
               "attemptId",
               "laneId",
@@ -296436,15 +296775,15 @@
               "approvedBy": {
                 "type": "string"
               },
+              "storeId": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
                   "card",
                   "upi"
                 ]
-              },
-              "storeId": {
-                "type": "string"
               },
               "tradingDay": {
                 "type": "string"
@@ -305344,7 +305683,8 @@
             "enum": [
               "ended",
               "issued",
-              "requested"
+              "requested",
+              "store_pc"
             ]
           },
           "secondFactor": {

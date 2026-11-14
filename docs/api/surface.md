@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1733 | 997 | 997 | 196 | 451 |
+| 13 | 1735 | 998 | 998 | 196 | 451 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -50,7 +50,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/identity/access-review` | `identity.access.review` | core | — |
 | POST | `/v1/identity/box/grants` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/grants/:grantId/approve` | `identity.grants.sync` | core | yes |
+| POST | `/v1/identity/box/grants/:grantId/reject` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/people` | `identity.people.sync` | core | yes |
+| GET | `/v1/identity/box/users-view` | `identity.grants.sync` | core | — |
 | POST | `/v1/identity/chartered-accountant/grants/:changeId` | `identity.ca.grant.request` | core | yes |
 | GET | `/v1/identity/department-scopes` | `identity.role.read` | core | — |
 | POST | `/v1/identity/department-scopes/:userId/:roleId` | `identity.role.request` | core | yes |
