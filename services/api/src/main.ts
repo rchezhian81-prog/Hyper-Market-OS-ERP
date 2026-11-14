@@ -318,6 +318,8 @@ import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
 import { aiRoutes, type Proposal } from '../../ai/src/index';
 import { sweepDrafts } from '../../ai/src/auto-approve';
 import { autoApproveDeps } from './ai-auto-approve-store';
+import { autoApprovePlacer, ruleAwareAuthority } from './ai-auto-approve-executor';
+import { exactActsFor } from './ai-auto-approve-acts';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
@@ -749,9 +751,10 @@ export function buildSurface(deps: {
       store, now,
       // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
       ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t)), { store }), // + the ledgers its "likely because" lines read (round 6)
-      purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
+      purchaseSuggestions: (t, acts) => purchaseSuggestions(store, t, now(), acts),
+      exactActs: exactActsFor({ store, now }), // CR-01 step 6b (OB-761 A · OB-762 A)
       // Round 8: A03's transfer leg reads the same stock ledger, sales ledger and org hierarchy (M09-FR-03).
-      transferSuggestions: (t) => transferSuggestions(store, t, now()),
+      transferSuggestions: (t, acts) => transferSuggestions(store, t, now(), acts),
       shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
@@ -1003,7 +1006,9 @@ export function buildSurface(deps: {
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
     } : { ...purchaseOrdersAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-      openToBuy: { ...openToBuyAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */ }),
+      openToBuy: { ...openToBuyAdapter({ store, now }), calendar: shopCalendar, recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */,
+      // CR-01 step 6b: while the auto-approve rule places a reorder (and only then), its authority is the limit two people set.
+      authorityOf: ruleAwareAuthority(poAuthorityHooks({ store, now, settings }).authorityOf) }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
       budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
@@ -2333,7 +2338,8 @@ export function buildSurface(deps: {
     } : {
       ...governedAiDeps!,
       // CR-01 OI-12: the owner-set rule decides each new draft right after the run (approved by rule, or waits for a person).
-      afterRun: (t: string, proposals: readonly Proposal[]) => sweepDrafts(autoApproveDeps({ store, now, openProposals: governedAiDeps!.openProposals, aiStopped: (tt, agent) => governedAiDeps!.killSwitchOn(tt, agent) }), t, proposals),
+      // Step 6b (OB-760 A): a rule's approval places the act through its ordinary route on THIS surface, as the rule.
+      afterRun: (t: string, proposals: readonly Proposal[]) => sweepDrafts(autoApproveDeps({ store, now, openProposals: governedAiDeps!.openProposals, aiStopped: (tt, agent) => governedAiDeps!.killSwitchOn(tt, agent), place: autoApprovePlacer({ store, now, routes: () => surface }) }), t, proposals),
     }), modelProviderConfigured: () => deps.modelTransport !== undefined }),
     // Round 8 (roadmap §7 · P-05 · hard rule #5): the A05 case-reply, A09 campaign-message and A07 anomaly-summary DRAFTING
     // legs — each through the governed call above (admission, metering, hash-chained audit), each over evidence read here

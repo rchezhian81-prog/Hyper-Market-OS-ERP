@@ -113,7 +113,13 @@ function paintRest() {
   if (view.decisions.length === 0) d.append(el('li', { class: 'empty' }, t('noDecisions')));
   for (const x of view.decisions) {
     const li = el('li', { 'data-outcome': x.outcome, 'data-proposal': x.proposalId });
-    li.append(el('h4', {}, `${x.outcome === 'auto_approved' ? t('approvedByRule') : t('waits')} · ${x.proposalId}`));
+    // CR-01 step 6b (P-08): what the rule PLACED and where, or which ordinary route refused it — said, never just "approved".
+    const head = x.placed !== undefined ? t('placedByRule') : x.because === 'refused_by_route' ? t('refusedByRoute') : x.outcome === 'auto_approved' ? t('approvedByRule') : t('waits');
+    if (x.placed !== undefined) li.dataset.placed = x.placed.reference;
+    if (x.refusedBy !== undefined) li.dataset.refused = x.refusedBy.code;
+    li.append(el('h4', {}, `${head} · ${x.proposalId}`));
+    if (x.placed !== undefined) li.append(el('p', { class: 'placed' }, `${t('placedAs')}: ${x.placed.reference} (${x.placed.route})`));
+    if (x.refusedBy !== undefined) li.append(el('p', { class: 'refused' }, `${t('refusedAt')}: ${x.refusedBy.route} (${x.refusedBy.code})`));
     li.append(el('p', { class: 'meta' }, `${shopWhen(x.at)} — ${x.detail}`));
     d.append(li);
   }

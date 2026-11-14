@@ -108,17 +108,17 @@ describe('CR-01 OI-12: auto-approve limits are set by two people and applied by 
     await send('POST', `/v1/ai/auto-approve/requests/${(start.body as { request: { requestId: string } }).request.requestId}/decision`, ACCOUNTANT, { decision: 'confirmed' });
     expect((await state()).running).toBe(true);
 
-    // ₹4,200 from an approved supplier: approved BY THE RULE.
+    // ₹4,200 from an approved supplier is inside the limit — but since step 6b (OB-760 A) a rule's approval stands only once the
+    // ORDINARY route has placed the act, and this synthetic draft does not say where to deliver: nothing can be placed exactly,
+    // so it waits for a person with the reason, and the rule never tries it again. (A real placed order: cr01-oi12-step6b-*.)
     sweep = await send('POST', '/v1/ai/auto-approve/sweep', OWNER, {});
-    expect((sweep.body as { autoApproved: number }).autoApproved).toBe(1);
-    const proposals = (await send('GET', '/v1/ai/proposals', OWNER)).body as { proposals: { proposalId: string; outcome: { decision: string; by: string } | null }[] };
-    const decided = proposals.proposals.find((p) => p.proposalId === 'a02-synth-1')!;
-    expect(decided.outcome).toMatchObject({ decision: 'approved', by: 'rule:reorder_from_approved_supplier-v1' });
-    // A person cannot decide it a second time.
-    const twice = await send('POST', '/v1/ai/proposals/a02-synth-1/outcome', OWNER, { decision: 'rejected', reason: 'no' });
-    expect(twice.status).toBe(409);
-    // A second sweep does not decide it again.
-    expect(((await send('POST', '/v1/ai/auto-approve/sweep', OWNER, {})).body as { autoApproved: number }).autoApproved).toBe(0);
+    expect((sweep.body as { autoApproved: number; decisions: { proposalId: string; because?: string; refusedBy?: { code: string } }[] }).autoApproved).toBe(0);
+    expect((sweep.body as { decisions: { proposalId: string; because?: string; refusedBy?: { code: string } }[] }).decisions.find((d) => d.proposalId === 'a02-synth-1'))
+      .toMatchObject({ because: 'refused_by_route', refusedBy: { code: 'act_not_exact', ruleId: 'reorder_from_approved_supplier-v1' } });
+    // A second sweep does not try it again.
+    expect(((await send('POST', '/v1/ai/auto-approve/sweep', OWNER, {})).body as { decisions: { proposalId: string }[] }).decisions.some((d) => d.proposalId === 'a02-synth-1')).toBe(false);
+    // A person still decides it (nothing was decided for them).
+    expect((await send('POST', '/v1/ai/proposals/a02-synth-1/outcome', OWNER, { decision: 'rejected', reason: 'not needed' })).status).toBeLessThan(300);
 
     // Over the limit, and an unapproved supplier: both wait, the reasons kept.
     await raise('a02-synth-2', 'A02', reorder(900_000));
@@ -127,7 +127,7 @@ describe('CR-01 OI-12: auto-approve limits are set by two people and applied by 
     s = await state();
     expect(s.decisions.find((d) => d.proposalId === 'a02-synth-2')).toMatchObject({ outcome: 'waits_for_a_person', because: 'over_the_limit' });
     expect(s.decisions.find((d) => d.proposalId === 'a02-synth-3')).toMatchObject({ outcome: 'waits_for_a_person', because: 'unusual' });
-    expect(s.decisions.find((d) => d.proposalId === 'a02-synth-1')).toMatchObject({ outcome: 'auto_approved', approvedBy: 'rule:reorder_from_approved_supplier-v1' });
+    expect(s.decisions.find((d) => d.proposalId === 'a02-synth-1')).toMatchObject({ outcome: 'waits_for_a_person', because: 'refused_by_route' });
 
     // The manager stops ALL auto-approval at once (a reason is needed); the next draft waits.
     expect((await send('POST', '/v1/ai/auto-approve/stop', MANAGER, {})).status).toBe(400);

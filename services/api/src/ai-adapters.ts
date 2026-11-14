@@ -37,6 +37,8 @@ import { aiGovernanceRoutes } from '../../ai/src/governance';
 import { aiIncidentRoutes } from '../../ai/src/ai-incidents';
 import { modelRegistryRoutes } from '../../ai/src/model-registry';
 import { autoApproveRoutes } from '../../ai/src/auto-approve';
+import { autoApprovePlacer } from './ai-auto-approve-executor';
+import { withAct, type ExactActs } from './ai-auto-approve-acts';
 import { autoApproveDeps } from './ai-auto-approve-store';
 import { evaluationRoutes } from '../../ai/src/evaluations';
 import { aiControlRoutes } from '../../ai/src/control';
@@ -361,9 +363,11 @@ export function aiAdapter(input: {
   readonly nearExpiry?: NearExpiryDeps['nearExpiry'];
   /** EA-08 — A01's read-only insights and A02's stock-out reorder drafts, from the governed readers (ai-insights.ts). */
   readonly ownerInsights?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
-  readonly purchaseSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  readonly purchaseSuggestions?: (tenantId: string, acts?: ExactActs) => Promise<Omit<Proposal, 'committed'>[]>;
+  /** CR-01 step 6b (OB-761 A · OB-762 A): the exact act each A02/A03 draft would be, from records people set (ai-auto-approve-acts.ts). */
+  readonly exactActs?: (tenantId: string) => ExactActs;
   /** Round 8 — A03's transfer-suggestion leg: out at a selling place, held elsewhere (ai-insights.ts `transferSuggestions`). */
-  readonly transferSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  readonly transferSuggestions?: (tenantId: string, acts?: ExactActs) => Promise<Omit<Proposal, 'committed'>[]>;
 }): AiDeps {
   return {
     now: input.now,
@@ -487,7 +491,8 @@ export function aiAdapter(input: {
       // OB-288 lane 4 · P1: and the D-1 forecast leg (likely to run out within seven days) and the quotation comparison.
       if (agent === 'A02') {
         if (input.purchaseSuggestions === undefined) return [];
-        return [...await input.purchaseSuggestions(tenantId), ...await forecastReorders(input.store, tenantId, now), ...await quotationComparisons(input.store, tenantId, now)];
+        const acts = input.exactActs?.(tenantId);
+        return [...await input.purchaseSuggestions(tenantId, acts), ...await forecastReorders(input.store, tenantId, now, acts), ...await quotationComparisons(input.store, tenantId, now)];
       }
       // A04 Customer Shopping — in-stock alternatives for what has run out, as DRAFTS the customer confirms (EA-08).
       if (agent === 'A04') return input.shoppingAlternatives === undefined ? [] : input.shoppingAlternatives(tenantId);
@@ -526,11 +531,15 @@ export function aiAdapter(input: {
       // Round 8: and the transfer leg — out at a selling place while another place of the company holds it (a manager decides).
       if (agent === 'A03') {
         const items = input.nearExpiry === undefined ? [] : await input.nearExpiry(tenantId, { asOf: shopDateIn(now), nearExpiryDays: 7 }); // R1c: the shop's today
-        const transfers = input.transferSuggestions === undefined ? [] : await input.transferSuggestions(tenantId);
+        const acts = input.exactActs?.(tenantId);
+        const transfers = input.transferSuggestions === undefined ? [] : await input.transferSuggestions(tenantId, acts);
         // OB-288 lane 4 · P1: the prediction legs — a forecast stock-out with stock to spare elsewhere, overstock, and a
         // batch that will not sell before its expiry at the rate it sells.
-        const predicted = input.transferSuggestions === undefined ? [] : await inventoryPredictions(input.store, tenantId, now, input.nearExpiry);
-        return [...inventoryProposals(items, now), ...transfers, ...predicted];
+        const predicted = input.transferSuggestions === undefined ? [] : await inventoryPredictions(input.store, tenantId, now, input.nearExpiry, acts);
+        // CR-01 step 6b (OB-762 A): a markdown draft carries the D-4 ladder's exact cut, when a surplus will not sell in time.
+        const drafted = await Promise.all(inventoryProposals(items, now).map(async (p, i) => (acts === undefined || items[i]!.action !== 'markdown' ? p
+          : withAct(p, await acts.markdown({ productId: items[i]!.productId, batchId: items[i]!.batchId, qty: items[i]!.qty, daysToExpiry: items[i]!.daysToExpiry })))));
+        return [...drafted, ...transfers, ...predicted];
       }
       // A10 Workforce/SOP guidance — the day's tasks that need attention (escalated + overdue), role-aware.
       // NO HR decision (its authority forbids it): it flags, a manager assigns/completes. The SAME tested
@@ -799,7 +808,8 @@ export function aiGovernanceSurface(surface: Route[], input: {
     ...aiIncidentRoutes({ incidents, now }),
     ...modelRegistryRoutes({ registry, evaluationRuns: evaluations.runs, now }),
     // CR-01 OI-12: owner-set auto-approve limits — two people set a limit, one stops it all, the rule decides drafts.
-    ...autoApproveRoutes(autoApproveDeps({ store, now, openProposals: ai.openProposals, aiStopped: (t, agent) => ai.killSwitchOn(t, agent) })),
+    // Step 6b (OB-760 A): a rule's approval places the act through its ordinary route, found on THIS surface when it places.
+    ...autoApproveRoutes(autoApproveDeps({ store, now, openProposals: ai.openProposals, aiStopped: (t, agent) => ai.killSwitchOn(t, agent), place: autoApprovePlacer({ store, now, routes: () => surface }) })),
     ...evaluationRoutes({ gateway, evaluations, now }),
     ...aiControlRoutes({
       masterOn, enabledAgents: ai.enabledAgents, budget: ai.budget, governance, incidents, registry, evaluations,

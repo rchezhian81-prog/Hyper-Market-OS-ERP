@@ -70,7 +70,7 @@ export const AUTO_APPROVE_KINDS: Readonly<Record<AutoApproveKind, AutoApproveKin
     nameEn: 'A stock transfer between our own places', nameTa: 'நமது சொந்த இடங்களுக்கு இடையே சரக்கு மாற்றம்',
     usualEn: 'From one of our places to a different one of our places, a quantity and a value above nothing.',
     usualTa: 'நமது ஒரு இடத்திலிருந்து வேறொரு இடத்திற்கு; அளவும் மதிப்பும் பூஜ்ஜியத்திற்கு மேல்.',
-    ordinaryRoute: 'POST /v1/inventory/transfers',
+    ordinaryRoute: 'POST /v1/warehouse/transfers/:transferId',
   },
 });
 
@@ -82,9 +82,25 @@ export const NEVER_AUTO_APPROVE: readonly string[] = Object.freeze(['permission_
 
 /** Exactly what the assistant proposes to do — the only thing a rule can measure. A draft without one waits. */
 export type DraftAct =
-  | { readonly kind: 'reorder_from_approved_supplier'; readonly supplierId: string; readonly supplierApproved: boolean; readonly valueMinor: number; readonly lines: readonly { readonly productId: string; readonly qty: number }[] }
-  | { readonly kind: 'markdown_short_dated'; readonly productId: string; readonly batchId: string; readonly percentOffBps: number; readonly daysToExpiry: number }
-  | { readonly kind: 'stock_transfer'; readonly productId: string; readonly fromLocationId: string; readonly toLocationId: string; readonly qty: number; readonly valueMinor: number };
+  | {
+    readonly kind: 'reorder_from_approved_supplier'; readonly supplierId: string; readonly supplierApproved: boolean; readonly valueMinor: number;
+    /** Each line in the product's own smallest step (grams for kg), at the supplier's last price per whole unit (OB-761). */
+    readonly lines: readonly { readonly productId: string; readonly qty: number; readonly unitCostMinor?: number; readonly uom?: string }[];
+    /** CR-01 step 6b: where the order is delivered (the store the reorder settings are for) — needed to place it. */
+    readonly deliverToLocationId?: string;
+    /** In plain words, how the quantity and price were worked out (settings version, max level, pack, last price). */
+    readonly basis?: string;
+  }
+  | {
+    readonly kind: 'markdown_short_dated'; readonly productId: string; readonly batchId: string; readonly percentOffBps: number; readonly daysToExpiry: number;
+    /** CR-01 step 6b (OB-762): the price change the ladder gives, as `POST /v1/prices/changes` takes it. */
+    readonly storeId?: string; readonly currentPriceMinor?: number; readonly newPriceMinor?: number;
+    readonly mrpMinor?: number; readonly costMinor?: number; readonly surplusQty?: number; readonly basis?: string;
+  }
+  | {
+    readonly kind: 'stock_transfer'; readonly productId: string; readonly fromLocationId: string; readonly toLocationId: string; readonly qty: number; readonly valueMinor: number;
+    readonly uom?: string; readonly basis?: string;
+  };
 
 export type ChangeAction = 'set_limit' | 'remove_limit' | 'resume';
 
@@ -317,7 +333,9 @@ export type WaitReason =
   | 'no_evidence'
   | 'stale_draft'
   | 'unusual'
-  | 'over_the_limit';
+  | 'over_the_limit'
+  /** CR-01 step 6b (OB-760): inside the limit, but the ordinary route refused it — a person decides, with the route's reason. */
+  | 'refused_by_route';
 
 export interface DraftForDecision {
   readonly proposalId: string;
@@ -344,6 +362,8 @@ export type AutoApproveDecision =
     readonly ordinaryRoute: string;
     readonly at: string;
     readonly detail: string;
+    /** CR-01 step 6b (OB-760): what the ordinary route placed — present once the act is placed. */
+    readonly placed?: { readonly route: string; readonly reference: string; readonly by: string };
   }
   | {
     readonly outcome: 'waits_for_a_person';
@@ -353,6 +373,8 @@ export type AutoApproveDecision =
     readonly draftedBy: AgentId;
     readonly at: string;
     readonly detail: string;
+    /** CR-01 step 6b: for `refused_by_route` — which route refused, its code, and the rule that had approved the draft. */
+    readonly refusedBy?: { readonly route: string; readonly code: string; readonly ruleId: string; readonly reference?: string };
   };
 
 export function rupeesOf(minor: number): string {

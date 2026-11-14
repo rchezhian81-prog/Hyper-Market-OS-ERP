@@ -69,6 +69,8 @@ export function autoApproveDeps(input: {
   readonly now: () => string;
   readonly openProposals: (tenantId: string) => Promise<readonly OpenDraft[]> | readonly OpenDraft[];
   readonly aiStopped: (tenantId: string, agent: AgentId) => Promise<boolean> | boolean;
+  /** CR-01 step 6b (OB-760 A): the placer (services/api/src/ai-auto-approve-executor.ts). Absent → the approval is only recorded. */
+  readonly place?: AutoApproveDeps['place'];
 }): AutoApproveDeps {
   const store = autoApproveStore({ store: input.store });
   return {
@@ -76,10 +78,13 @@ export function autoApproveDeps(input: {
     openProposals: input.openProposals,
     decidedProposalIds: async (t) => {
       const people = await aiGovernanceStore({ store: input.store, now: input.now }).proposalOutcomes(t);
-      const rules = (await store.decisions(t)).filter((d) => d.outcome === 'auto_approved');
+      // A draft the rule approved — and one whose route REFUSED the rule's placing (step 6b): that one now waits for a person
+      // and the rule never tries it again (never retried silently).
+      const rules = (await store.decisions(t)).filter((d) => d.outcome === 'auto_approved' || d.because === 'refused_by_route');
       return new Set([...people.map((o) => o.proposalId), ...rules.map((d) => d.proposalId)]);
     },
     aiStopped: input.aiStopped,
+    ...(input.place === undefined ? {} : { place: input.place }),
     now: input.now,
     newId: () => randomUUID(),
   };

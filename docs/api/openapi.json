@@ -120972,6 +120972,27 @@
                             },
                             "daysToExpiry": {
                               "type": "number"
+                            },
+                            "storeId": {
+                              "type": "string"
+                            },
+                            "currentPriceMinor": {
+                              "type": "number"
+                            },
+                            "newPriceMinor": {
+                              "type": "number"
+                            },
+                            "mrpMinor": {
+                              "type": "number"
+                            },
+                            "costMinor": {
+                              "type": "number"
+                            },
+                            "surplusQty": {
+                              "type": "number"
+                            },
+                            "basis": {
+                              "type": "string"
                             }
                           },
                           "additionalProperties": true
@@ -121005,6 +121026,12 @@
                             },
                             "valueMinor": {
                               "type": "number"
+                            },
+                            "uom": {
+                              "type": "string"
+                            },
+                            "basis": {
+                              "type": "string"
                             }
                           },
                           "additionalProperties": true
@@ -121046,10 +121073,22 @@
                                   },
                                   "qty": {
                                     "type": "number"
+                                  },
+                                  "unitCostMinor": {
+                                    "type": "number"
+                                  },
+                                  "uom": {
+                                    "type": "string"
                                   }
                                 },
                                 "additionalProperties": true
                               }
+                            },
+                            "deliverToLocationId": {
+                              "type": "string"
+                            },
+                            "basis": {
+                              "type": "string"
                             }
                           },
                           "additionalProperties": true
@@ -122392,6 +122431,27 @@
                         },
                         "daysToExpiry": {
                           "type": "number"
+                        },
+                        "storeId": {
+                          "type": "string"
+                        },
+                        "currentPriceMinor": {
+                          "type": "number"
+                        },
+                        "newPriceMinor": {
+                          "type": "number"
+                        },
+                        "mrpMinor": {
+                          "type": "number"
+                        },
+                        "costMinor": {
+                          "type": "number"
+                        },
+                        "surplusQty": {
+                          "type": "number"
+                        },
+                        "basis": {
+                          "type": "string"
                         }
                       },
                       "additionalProperties": true
@@ -122425,6 +122485,12 @@
                         },
                         "valueMinor": {
                           "type": "number"
+                        },
+                        "uom": {
+                          "type": "string"
+                        },
+                        "basis": {
+                          "type": "string"
                         }
                       },
                       "additionalProperties": true
@@ -122466,10 +122532,22 @@
                               },
                               "qty": {
                                 "type": "number"
+                              },
+                              "unitCostMinor": {
+                                "type": "number"
+                              },
+                              "uom": {
+                                "type": "string"
                               }
                             },
                             "additionalProperties": true
                           }
+                        },
+                        "deliverToLocationId": {
+                          "type": "string"
+                        },
+                        "basis": {
+                          "type": "string"
                         }
                       },
                       "additionalProperties": true
@@ -269167,6 +269245,7 @@
                   "not_an_auto_approvable_kind",
                   "not_this_assistants_kind",
                   "over_the_limit",
+                  "refused_by_route",
                   "stale_draft",
                   "unusual"
                 ]
@@ -269191,6 +269270,29 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "refusedBy": {
+                "type": "object",
+                "required": [
+                  "route",
+                  "code",
+                  "ruleId"
+                ],
+                "properties": {
+                  "route": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true
@@ -269290,6 +269392,26 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "placed": {
+                "type": "object",
+                "required": [
+                  "route",
+                  "reference",
+                  "by"
+                ],
+                "properties": {
+                  "route": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "by": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true
@@ -307992,6 +308114,27 @@
                   },
                   "daysToExpiry": {
                     "type": "number"
+                  },
+                  "storeId": {
+                    "type": "string"
+                  },
+                  "currentPriceMinor": {
+                    "type": "number"
+                  },
+                  "newPriceMinor": {
+                    "type": "number"
+                  },
+                  "mrpMinor": {
+                    "type": "number"
+                  },
+                  "costMinor": {
+                    "type": "number"
+                  },
+                  "surplusQty": {
+                    "type": "number"
+                  },
+                  "basis": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": true
@@ -308025,6 +308168,12 @@
                   },
                   "valueMinor": {
                     "type": "number"
+                  },
+                  "uom": {
+                    "type": "string"
+                  },
+                  "basis": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": true
@@ -308066,10 +308215,22 @@
                         },
                         "qty": {
                           "type": "number"
+                        },
+                        "unitCostMinor": {
+                          "type": "number"
+                        },
+                        "uom": {
+                          "type": "string"
                         }
                       },
                       "additionalProperties": true
                     }
+                  },
+                  "deliverToLocationId": {
+                    "type": "string"
+                  },
+                  "basis": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": true

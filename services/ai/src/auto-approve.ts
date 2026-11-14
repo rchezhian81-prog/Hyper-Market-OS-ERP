@@ -12,8 +12,10 @@
 //   POST /v1/ai/auto-approve/sweep                            the rule decides every open draft not yet decided
 //
 // What a rule's approval DOES is recorded here as `AIDraftAutoApproved` on the proposal-decision register — the rule is the
-// approver, named with its version and the two people who set it; the assistant is only the drafter. The act itself goes
-// through the ordinary route the kind names, with that route's own checks (OI-12 step 6b, after the owner's decisions).
+// approver, named with its version and the two people who set it; the assistant is only the drafter. Step 6b (OB-760 A): the
+// act itself is placed through the ordinary route the kind names, with that route's own checks, by an injected placer that
+// lives in the composition layer (services/api) — the approval is recorded only once the route placed it; a refusal makes the
+// draft wait for a person with the route's reason.
 // Nothing here calls a model, and nothing here imports a domain service (tests/guardrails/an-ai-agent-only-drafts.test.ts).
 
 import type { Route } from '../../kernel/src/index';
@@ -48,8 +50,24 @@ export interface OpenDraft {
   readonly createdAt: string;
 }
 
+/**
+ * CR-01 step 6b (OB-760 A): what placing an approved act through its ORDINARY route came to. The placer is injected from the
+ * composition layer (services/api) — this service never imports a domain service and never writes to one itself.
+ */
+export type PlaceResult =
+  | { readonly placed: true; readonly route: string; readonly reference: string; readonly by: string; readonly detail: string }
+  | { readonly placed: false; readonly route: string; readonly code: string; readonly reason: string; readonly reference?: string };
+
+export type AutoApprovedDecision = Extract<AutoApproveDecision, { readonly outcome: 'auto_approved' }>;
+
 export interface AutoApproveDeps {
   readonly store: AutoApproveStore;
+  /**
+   * CR-01 step 6b (OB-760 A): place a rule-approved act through its ordinary route, at most once per draft. Absent → the
+   * approval is only recorded (step 6a). Present → the approval is recorded only once the route has placed the act; a refusal
+   * makes the draft wait for a person with the route's reason, and it is never tried again by the rule.
+   */
+  readonly place?: (tenantId: string, decision: AutoApprovedDecision, act: DraftAct) => Promise<PlaceResult>;
   readonly openProposals: (tenantId: string) => Promise<readonly OpenDraft[]> | readonly OpenDraft[];
   /** The proposals a person (or a rule) already decided — never decided again. */
   readonly decidedProposalIds: (tenantId: string) => Promise<ReadonlySet<string>>;
@@ -88,14 +106,37 @@ export async function sweepDrafts(deps: AutoApproveDeps, tenantId: string, draft
       draft: { proposalId: p.proposalId, agent: p.agent, ...(p.act === undefined ? {} : { act: p.act }), evidenceCount: p.evidence.length, createdAt: p.createdAt },
       state, aiStopped: await deps.aiStopped(tenantId, p.agent), now,
     });
-    out.push(d);
-    const key = `${d.proposalId}|${d.outcome}|${d.outcome === 'waits_for_a_person' ? d.because : ''}`;
-    if (d.outcome === 'auto_approved' || (p.act !== undefined && !recorded.has(key))) {
-      await deps.store.recordDecision(tenantId, d);
+    const final = d.outcome === 'auto_approved' && deps.place !== undefined && p.act !== undefined ? await placeOnce(deps, tenantId, p, d) : d;
+    out.push(final);
+    const key = `${final.proposalId}|${final.outcome}|${final.outcome === 'waits_for_a_person' ? final.because : ''}`;
+    if (final.outcome === 'auto_approved' || (p.act !== undefined && !recorded.has(key))) {
+      await deps.store.recordDecision(tenantId, final);
       recorded.add(key);
     }
   }
   return out;
+}
+
+/**
+ * CR-01 step 6b: just before placing, the switch, the AI kill switch and the rule are read AGAIN — a stop pulled while the
+ * sweep ran stops this draft too. Then the act goes through its ordinary route (the injected placer); the rule's approval is
+ * the outcome only if the route placed it. A refusal is a wait for a person with the route's own reason (never retried).
+ */
+async function placeOnce(deps: AutoApproveDeps, tenantId: string, p: OpenDraft, first: AutoApprovedDecision): Promise<AutoApproveDecision> {
+  const fresh = decideDraft({
+    draft: { proposalId: p.proposalId, agent: p.agent, act: p.act!, evidenceCount: p.evidence.length, createdAt: p.createdAt },
+    state: await autoApproveState(deps.store, tenantId), aiStopped: await deps.aiStopped(tenantId, p.agent), now: first.at,
+  });
+  if (fresh.outcome !== 'auto_approved') return fresh;
+  const r = await deps.place!(tenantId, fresh, p.act!);
+  if (r.placed) {
+    return { ...fresh, placed: { route: r.route, reference: r.reference, by: r.by }, detail: `${fresh.detail} Placed through ${r.route}: ${r.detail}` };
+  }
+  return {
+    outcome: 'waits_for_a_person', proposalId: fresh.proposalId, kind: fresh.kind, because: 'refused_by_route', draftedBy: fresh.draftedBy, at: fresh.at,
+    refusedBy: { route: r.route, code: r.code, ruleId: fresh.ruleId, ...(r.reference === undefined ? {} : { reference: r.reference }) },
+    detail: `Inside the limit of rule ${fresh.ruleId}, but ${r.route} refused it (${r.code}): ${r.reason} Nothing was placed by the rule. A person decides.`,
+  };
 }
 
 const ACTIONS: readonly ChangeAction[] = ['set_limit', 'remove_limit', 'resume'];

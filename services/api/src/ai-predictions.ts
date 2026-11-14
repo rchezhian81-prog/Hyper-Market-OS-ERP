@@ -4,9 +4,11 @@
 // forecast is the tested D-1 engine (`forecastDemand`, baseline × day of week) fitted on the same 56-day window the
 // suggested-order route fits on; the look-ahead is the same seven days the stock-out legs already use; "overstock" is
 // stock that would still be on the shelf past the start of the oldest ageing bucket (`DEFAULT_AGEING_BUCKETS`, 91 days —
-// the money-asleep line M08-FR-04 already draws). NO quantity is ever drafted: how many to order, move or mark down is
-// the buyer's or the manager's decision, and the evidence says what the records say.
+// the money-asleep line M08-FR-04 already draws). No quantity is ever INVENTED: CR-01 step 6b (OB-761 A) gives a reorder or a
+// transfer draft an exact act only from the shop's own stored reorder settings and last price (ai-auto-approve-acts.ts);
+// without them how many is the buyer's or the manager's decision, and the evidence says what the records say.
 
+import { withAct, type ExactActs } from './ai-auto-approve-acts';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { FACT_CONFIDENCE, type Confidence, type Proposal } from '../../ai/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
@@ -63,7 +65,7 @@ function forecastOf(point: DemandPoint, from: string, to: string): { readonly pe
 }
 
 /** A02 — forecast stock-outs: on the shelf now, but the forecast for the next seven days is more than is on hand. */
-export async function forecastReorders(store: EventStore, tenantId: string, now: string): Promise<Draft[]> {
+export async function forecastReorders(store: EventStore, tenantId: string, now: string, acts?: ExactActs): Promise<Draft[]> {
   const { from, to, series } = await demandSeries(store, tenantId, now);
   const rows = await inventoryAdapter({ store, now: () => now }).availability(tenantId);
   const out: Draft[] = [];
@@ -72,7 +74,8 @@ export async function forecastReorders(store: EventStore, tenantId: string, now:
     if (point === undefined || r.onHandMinor <= 0) continue; // out already is the stock-out leg's
     const f = forecastOf(point, from, to);
     if (f.next <= r.onHandMinor) continue;
-    out.push({
+    // CR-01 step 6b (OB-761 A): exactly what to order, when the shop's reorder settings and a last price say so.
+    out.push(withAct({
       proposalId: `a02-forecast-${r.productId}-${r.locationId}-${to}`, agent: 'A02', createdAt: now,
       summary: `${r.productId} at ${r.locationId} is forecast to sell about ${f.next} in the next ${LOOKAHEAD_DAYS} days against ${r.onHandMinor} on hand — it is likely to run out. How many to order is the buyer's decision`,
       wouldRequire: 'POST /v1/purchase/orders/:poId by a buyer, approved by a second person (§28)',
@@ -81,7 +84,7 @@ export async function forecastReorders(store: EventStore, tenantId: string, now:
         { source: 'demand forecast (D-1)', reference: `sales ${from}..${to}`, summary: `about ${f.perDay.toFixed(1)} a day over ${FIT_DAYS} days; ${f.next} forecast for the next ${LOOKAHEAD_DAYS}` },
       ],
       confidence: forecastConfidence(FIT_DAYS),
-    });
+    }, acts === undefined ? { why: 'not asked' } : await acts.reorder(r.productId, r.locationId)));
   }
   return out;
 }
@@ -120,7 +123,7 @@ export async function quotationComparisons(store: EventStore, tenantId: string, 
  * expiry at the rate the product sells (expiry prediction). Each a draft for the manager; nothing moved, marked down or
  * written off here.
  */
-export async function inventoryPredictions(store: EventStore, tenantId: string, now: string, nearExpiry?: NearExpiryDeps['nearExpiry']): Promise<Draft[]> {
+export async function inventoryPredictions(store: EventStore, tenantId: string, now: string, nearExpiry?: NearExpiryDeps['nearExpiry'], acts?: ExactActs): Promise<Draft[]> {
   const { from, to, series } = await demandSeries(store, tenantId, now);
   const rows = await inventoryAdapter({ store, now: () => now }).availability(tenantId);
   const onHand = new Map<string, number>();
@@ -140,7 +143,7 @@ export async function inventoryPredictions(store: EventStore, tenantId: string, 
         .filter((s) => s.held > s.need)
         .sort((a, b) => (b.held - b.need) - (a.held - a.need) || a.loc.localeCompare(b.loc))[0];
       if (spare !== undefined) {
-        out.push({
+        out.push(withAct({
           proposalId: `a03-predicted-out-${productId}-${spare.loc}-${locationId}-${to}`, agent: 'A03', createdAt: now,
           summary: `${productId} at ${locationId} is forecast to sell about ${f.next} in the next ${LOOKAHEAD_DAYS} days with ${here} on hand; ${spare.loc} holds ${spare.held} against its own forecast of ${spare.need}. Consider a transfer before it runs out — how many is the manager's decision`,
           wouldRequire: 'POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)',
@@ -149,7 +152,7 @@ export async function inventoryPredictions(store: EventStore, tenantId: string, 
             { source: 'demand forecast (D-1)', reference: `sales ${from}..${to}`, summary: `${locationId} about ${f.next} next ${LOOKAHEAD_DAYS} days; ${spare.loc} about ${spare.need}` },
           ],
           confidence: forecastConfidence(FIT_DAYS),
-        });
+        }, acts === undefined ? { why: 'not asked' } : await acts.transfer(productId, spare.loc, locationId, spare.need)));
       }
     }
     // Overstock: at the rate it sells here, what is on hand outlasts the oldest ageing bucket. A product with no sale in

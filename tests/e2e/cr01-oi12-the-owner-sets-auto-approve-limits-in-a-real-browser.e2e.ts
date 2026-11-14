@@ -4,6 +4,7 @@ import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM } from '../../services/api/src/adapters';
 import type { Page } from 'playwright-core';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 
 /**
  * **CR-01 OI-12 · OB-712: the Auto-approve limits page, served by the store computer, over head office's own routes, in a
@@ -12,7 +13,8 @@ import type { Page } from 'playwright-core';
  *     listed; a limit that is not money is refused before anything is sent;
  *   • the owner ASKS for a ₹5,000 reorder limit — the page says a different person must confirm; he has no confirm button;
  *   • the accountant CONFIRMS it through the confirm sheet — the limit shows, naming both people; then the same for starting;
- *   • a synthetic ₹4,200 reorder draft is approved BY THE RULE and the page lists it so;
+ *   • a synthetic ₹4,200 reorder draft is approved BY THE RULE — and, since step 6b, PLACED by it through the ordinary
+ *     purchase-order routes — and the page lists it so;
  *   • the store manager sees no way to ask or confirm, and STOPS all auto-approval with a reason;
  *   • the page follows the language toggle into Tamil.
  */
@@ -40,6 +42,8 @@ describe.skipIf(!HAVE_BROWSER)('CR-01 OI-12: the owner sets auto-approve limits,
         await ho.seedOwner(T, OWNER);
         await ho.provisionRole(T, ACCOUNTANT, 'accountant');
         await ho.provisionRole(T, MGR, 'store_manager');
+        await deliveryPlaces(ho, T, 'S1'); // step 6b: the order is really placed, so it needs a store and an approved supplier
+        await approvedSuppliers(ho, T, 'sup-synthetic-01');
       },
     });
   }, 240_000);
@@ -100,14 +104,14 @@ describe.skipIf(!HAVE_BROWSER)('CR-01 OI-12: the owner sets auto-approve limits,
     expect((await shop.call('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'browser trial' })).status).toBe(200);
     const at = new Date().toISOString();
     const p = { proposalId: 'a02-synth-browser', agent: 'A02', summary: 'synthetic reorder', wouldRequire: 'POST /v1/purchase/orders/:poId', evidence: [{ source: 'synthetic', reference: 'r', summary: 's' }], createdAt: at, committed: false,
-      act: { kind: 'reorder_from_approved_supplier', supplierId: 'sup-synthetic-01', supplierApproved: true, valueMinor: 420_000, lines: [{ productId: 'p-synthetic', qty: 10 }] } };
+      act: { kind: 'reorder_from_approved_supplier', supplierId: 'sup-synthetic-01', supplierApproved: true, valueMinor: 420_000, lines: [{ productId: 'p-synthetic', qty: 10, unitCostMinor: 42_000, uom: 'ea' }], deliverToLocationId: 'S1' } };
     await store.append(shop.tenantId, STREAM.ai, makeEvent({ id: 'ai-proposal-a02-synth-browser', type: 'AiProposalRaised', occurredAt: at, idempotencyKey: `ai-proposal-${shop.tenantId}-a02-synth-browser`, source: 'test/synthetic', payload: p }));
     expect(((await shop.call('POST', '/v1/ai/auto-approve/sweep', OWNER, {})).body as { autoApproved: number }).autoApproved).toBe(1);
 
     // ── The manager: sees the rule's approval; cannot ask or confirm; stops it all with a reason.
     const m = await shop.open(MGR, '/auto-approve/');
     await m.page.waitForFunction("document.body.dataset.autoApprove === 'ok'", undefined, { timeout: 15_000 });
-    await says(m.page, '#decision-list li[data-proposal="a02-synth-browser"]', /Approved by rule/);
+    await says(m.page, '#decision-list li[data-proposal="a02-synth-browser"]', /Placed by the rule/);
     await says(m.page, '#decision-list li[data-proposal="a02-synth-browser"]', /set by u-owner and confirmed by u-accountant/);
     await says(m.page, '#page-status', /Only the owner asks for a change/);
     expect(await m.page.locator('form.ask').count()).toBe(0);
