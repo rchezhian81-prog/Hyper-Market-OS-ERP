@@ -361,7 +361,8 @@ async function takeAndPrepare(deps, L, P, requestFile) {
     say(`NOT DONE — the owner's request could not be taken and written down (${e instanceof Error ? e.message : String(e)}). Nothing was changed.`);
     return 1;
   }
-  const refuse = (why, extra = {}) => {
+  const refuse = (given, extra = {}) => {
+    const why = String(given).replace(/[.\s]+$/, '');
     try { j.step('checks', `refused: ${why}`, extra); } catch { /* said below */ }
     j.progress('refused', `The update to ${version} was not started: ${why}. Nothing was changed.`);
     say(`NOT STARTED — ${why}. Nothing was changed.`);

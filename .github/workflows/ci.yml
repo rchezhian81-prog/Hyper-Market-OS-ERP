@@ -614,18 +614,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'G9 did not pass' }
           if ((Get-Content "$app\release.json" | ConvertFrom-Json).version -ne '1.0.2') { throw 'the drill did not end on 1.0.2' }
 
+      - name: Gather the update and drill records into one folder
+        if: always()
+        shell: pwsh
+        run: |
+          # The upload takes files under one folder; the records live on D: and C:, so they are copied together first.
+          $proof = Join-Path $env:RUNNER_TEMP 'update-proof'
+          New-Item -ItemType Directory -Force $proof | Out-Null
+          foreach ($f in @('D:\SRE-data\updates\update-outcomes.log', 'D:\SRE-data\status\update-progress.json', 'C:\ProgramData\SRE\setup.log', "$env:RUNNER_TEMP\fake-github.log")) { if (Test-Path $f) { Copy-Item $f $proof } }
+          Get-ChildItem D:\SRE-data\records -Filter 'g9-drill-*.json' -ErrorAction SilentlyContinue | Copy-Item -Destination $proof
+          Get-ChildItem D:\SRE-data\updates -Recurse -Filter 'setup-program.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName (Join-Path $proof "$($_.Directory.Name)-setup-program.log") }
+
       - name: Keep the update and drill records
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: store-pc-update
-          path: |
-            D:\SRE-data\updates\update-outcomes.log
-            D:\SRE-data\updates\**\setup-program.log
-            D:\SRE-data\records\g9-drill-*.json
-            D:\SRE-data\status\update-progress.json
-            C:\ProgramData\SRE\setup.log
-            ${{ runner.temp }}/fake-github.log
+          path: ${{ runner.temp }}/update-proof
           retention-days: 14
           if-no-files-found: warn
 
