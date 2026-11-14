@@ -46,6 +46,18 @@ export function tillSealKey(packSigningKey: string): Buffer {
   return createHmac('sha256', packSigningKey).update(LABEL, 'utf8').digest();
 }
 
+const PRIVILEGE_LABEL = 'sre-privilege-seal-v1';
+
+/**
+ * CR-01 step 4a · ADR-0033 · OB-732 "B": the key a privilege change made on the store PC is sealed with — derived from the
+ * DEDICATED privilege-seal secret (`BOX_PRIVILEGE_SEAL_KEY`, made at setup), never from the pack signing key, under its own
+ * label, so it can never be mistaken for a till seal, a pack signature or a PIN verifier. Replaceable on its own.
+ */
+export function privilegeSealKey(raw: string): Buffer {
+  if (raw.length < 32) throw new RangeError('the privilege seal key needs the full privilege-seal secret');
+  return createHmac('sha256', raw).update(PRIVILEGE_LABEL, 'utf8').digest();
+}
+
 /** One canonical text per subject: field order fixed, every field present, so both sides sign the same bytes. */
 function canonical(s: TillSealSubject): string {
   return JSON.stringify([LABEL, s.fact, s.tenantId, s.recordId, s.laneId, s.userId, s.via, s.amountMinor, s.approvalId ?? '']);
@@ -150,7 +162,14 @@ export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist
   | 'receiving_completion'
   /** MG-10: a parallel-run day entered on the migration screen (both systems' totals and the reasons), and its signature. */
   | 'migration_parallel_day'
-  | 'migration_parallel_day_signature';
+  | 'migration_parallel_day_signature'
+  /**
+   * CR-01 step 4a · ADR-0033 · OB-731 "A" · OB-732 "B": a privilege change made on the store PC's office screens, the acting
+   * person's PIN typed again — sealed ONLY with the dedicated privilege-seal key (`privilegeSealKey`), never the till seal key.
+   */
+  | 'person_provision'
+  | 'role_request'
+  | 'role_grant_approval';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {

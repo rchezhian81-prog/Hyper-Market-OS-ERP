@@ -67,7 +67,7 @@ export const API_READY_WAIT_MS = 5 * 60_000;
 export const PG_PROGRAMS = Object.freeze(['initdb.exe', 'pg_ctl.exe', 'postgres.exe', 'psql.exe', 'pg_isready.exe']);
 /** The settings the API service is handed — the same list compose hands the API container, and nothing else. */
 export const API_KEYS = Object.freeze([
-  'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE',
+  'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'BOX_PRIVILEGE_SEAL_KEY', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE',
   'IDP_OIDC_ISSUER', 'IDP_OIDC_JWKS_URL', 'IDP_OIDC_TENANT_ID', 'IDP_OIDC_SHOP_REALMS', 'IDP_OIDC_CUSTOMER_REALMS',
   'IDP_PROVISIONER_SECRET', 'MIGRATION_TARGET_KIND', 'PAYMENT_DATA_REGION', 'PAYMENT_BACKUP_REGION',
 ]);

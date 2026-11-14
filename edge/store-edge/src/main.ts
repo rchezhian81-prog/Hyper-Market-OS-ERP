@@ -149,6 +149,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 import { UPDATE_LOG, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE, readUpdateCheck, readUpdateProgress } from './update-page'; // CR-01 step 3c/3d (OI-05)
+import { PRIVILEGE_LOG, privilegeSealKey, type PrivilegeDeps, type RelayAnswer } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
+import { randomUUID as newPrivilegeRequestId } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
@@ -2330,7 +2332,34 @@ export async function startEdge(
     },
     now: () => new Date().toISOString(),
   };
+  // CR-01 step 4a (OI-06 · ADR-0033 · OB-731 "A" · OB-732 "B"): on this PC, with the office PIN on and NO head-office link, a
+  // person signed in to the office screens may ask for a role or approve one — their PIN typed again, checked by the till's
+  // register holding the act's own permission; the box seals the act with the DEDICATED privilege-seal key (never the pack
+  // key, never a token) and relays it under its store token. Every act and refusal is on its own append-only log (no PIN).
+  const privilegeLog = screenPort === undefined || officeGate === null || headOfficeLinkSetting.on ? null
+    : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: PRIVILEGE_LOG });
+  const privilegeApi = settings['CLOUD_API_URL'];
+  const privilegeToken = settings['CLOUD_API_TOKEN'];
+  const privilegeDeps: PrivilegeDeps | undefined = privilegeLog === null || updateDeps === undefined ? undefined : {
+    tenantId,
+    sealKey: settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined ? undefined : privilegeSealKey(settings['BOX_PRIVILEGE_SEAL_KEY']),
+    relay: privilegeApi === undefined || privilegeToken === undefined ? undefined : async (path: string, body: unknown, idempotencyKey: string): Promise<RelayAnswer> => {
+      try {
+        const r = await fetch(`${privilegeApi.replace(/\/+$/, '')}${path}`, {
+          method: 'POST', signal: AbortSignal.timeout(15_000),
+          headers: { authorization: `Bearer ${privilegeToken}`, 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
+          body: JSON.stringify(body),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      } catch { return 'unreachable'; }
+    },
+    verifyPin: updateDeps.verifyPin,
+    record: async (entry: Record<string, unknown>) => { await privilegeLog.append(JSON.stringify(entry)); },
+    now: () => new Date().toISOString(),
+    newRequestId: () => newPrivilegeRequestId(),
+  };
   const screens = screenPort === undefined ? null : await startScreenServer({
+    ...(privilegeDeps === undefined ? {} : { privilege: privilegeDeps }),
     about: () => aboutFacts,
     // CR-01 step 3d: the updater (a Windows task, SYSTEM) acts on the request; it leaves its mark and its latest word in the
     // status folder this service may read. No mark: the page says the updater is not set up on this PC.

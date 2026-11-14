@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import path, { dirname, join, resolve, isAbsolute } from 'node:path';
 import { parseEnv, PLACEHOLDER } from './standup-check.mjs';
 import { buildStoreToken } from './issue-store-token.mjs';
+import { withSettingAppended } from './lib/settings-append.mjs';
 
 /**
  * The store computer's DATA FOLDER (audit row 9 · C-12): when the settings file named with --settings sits in a folder
@@ -174,6 +175,13 @@ export function planTillSettings(input) {
     problems.push('no pack signing key: point at the cloud settings file (--from-compose-env infra/compose/.env, filled in), or pass --generate-key for an offline-only till');
   }
   if (signingKey !== undefined && signingKey.length < 32) problems.push('the pack signing key is shorter than 32 characters — the edge refuses to start on it');
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the privilege-seal key the office screens seal a PIN-confirmed privilege change
+  // with — the store computer's own (its settings file is the one the office service reads), copied here; else kept as it is.
+  const privilegeKey = realValue(composeEnv?.BOX_PRIVILEGE_SEAL_KEY) ? composeEnv.BOX_PRIVILEGE_SEAL_KEY
+    : realValue(existing?.BOX_PRIVILEGE_SEAL_KEY) ? existing.BOX_PRIVILEGE_SEAL_KEY : undefined;
+  if (privilegeKey !== undefined && privilegeKey.length < 32) problems.push('the privilege-seal key is shorter than 32 characters — the edge refuses to start on it');
+  if (privilegeKey !== undefined && privilegeKey === signingKey) problems.push('the privilege-seal key is the same as the pack signing key — it must be its own secret (OB-732); run the store computer setup again');
+  if (privilegeKey !== undefined && realValue(composeEnv?.BOX_PRIVILEGE_SEAL_KEY)) notes.push('copied the privilege-seal key from the store computer\'s settings (never shown), so a privilege change confirmed by PIN on the office screens can be checked');
 
   if (!isPort(flags.lanePort)) problems.push(`--lane-port must be a port number (got "${flags.lanePort}")`);
   if (!isPort(flags.screenPort)) problems.push(`--screen-port must be a port number (got "${flags.screenPort}")`);
@@ -239,6 +247,8 @@ export function planTillSettings(input) {
     // Never copied from anywhere: kept from an earlier install, or (W-5, the store computer's own copy) made here for this
     // store from the copy's own signing key. A cloud settings file's token never travels (hard rule #4).
     CLOUD_API_TOKEN: token,
+    // CR-01 step 4a · ADR-0033: the dedicated privilege-seal key, when the store computer's settings hold one.
+    ...(privilegeKey === undefined ? {} : { BOX_PRIVILEGE_SEAL_KEY: privilegeKey }),
     // Audit row 6: on the store computer, the file its own check writes — the office screens show its red banner.
     ...(statusFile !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: statusFile } : existing?.EDGE_STORE_COMPUTER_STATUS_FILE !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: existing.EDGE_STORE_COMPUTER_STATUS_FILE } : {}),
     // W-5: the store, and "take this store's setup from head office", whenever a store is named.
@@ -314,6 +324,10 @@ export function renderTillEnv(settings) {
     `CLOUD_API_URL=${settings.CLOUD_API_URL}`,
     '# Issue with `pnpm run token:store` and paste here by hand. Never share it; never commit this file.',
     `CLOUD_API_TOKEN=${settings.CLOUD_API_TOKEN}`,
+    ...(settings.BOX_PRIVILEGE_SEAL_KEY === undefined ? [] : [
+      '# CR-01 step 4a (ADR-0033): seals a privilege change confirmed by PIN on the office screens. Never share it.',
+      `BOX_PRIVILEGE_SEAL_KEY=${settings.BOX_PRIVILEGE_SEAL_KEY}`,
+    ]),
     ...(settings.EDGE_STORE_COMPUTER_STATUS_FILE === undefined ? [] : [
       "# The store computer's own check (store-computer status) writes this file; the office screens show its red banner.",
       `EDGE_STORE_COMPUTER_STATUS_FILE=${settings.EDGE_STORE_COMPUTER_STATUS_FILE}`,
@@ -351,13 +365,15 @@ export const STORE_TOKEN_HOURS = 720;
 export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN', 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER']);
 /** OB-422: what a re-run may add to an existing till.env for the handheld door — only when named on the command line. */
 export const DEVICE_KEYS = Object.freeze(['EDGE_DEVICE_PORT', 'EDGE_DEVICE_HOST']);
+/** CR-01 step 4a: the privilege-seal key — added to an existing till.env (or brought in line with the store computer's). */
+export const PRIVILEGE_KEYS = Object.freeze(['BOX_PRIVILEGE_SEAL_KEY']);
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the
  * signing key, the lane, the folders, the comments). Returns the new text and the NAMES that changed — never their values.
  */
 export function updateTillEnv(text, settings) {
-  const want = Object.fromEntries([...CONNECT_KEYS, ...DEVICE_KEYS].filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
+  const want = Object.fromEntries([...CONNECT_KEYS, ...DEVICE_KEYS, ...PRIVILEGE_KEYS].filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
   const changed = [];
   const done = new Set();
   const out = String(text).split(/\r?\n/).map((raw) => {
@@ -383,8 +399,10 @@ export function updateTillEnv(text, settings) {
 export function tillEnvChangesFor({ settings, existing, flags }) {
   // OB-422: the handheld door's port and address, only when this run names them.
   const door = Object.fromEntries([['EDGE_DEVICE_PORT', flags.devicePort], ['EDGE_DEVICE_HOST', flags.deviceHost]].filter(([k, v]) => v !== undefined && settings[k] !== undefined).map(([k]) => [k, settings[k]]));
-  if (flags.store !== undefined) return { ...Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), ...door };
-  return { ...Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]])), ...door };
+  // CR-01 step 4a: the privilege-seal key, whenever the store computer's differs from (or is missing in) this till's.
+  const sealKey = settings.BOX_PRIVILEGE_SEAL_KEY !== undefined && existing?.BOX_PRIVILEGE_SEAL_KEY !== settings.BOX_PRIVILEGE_SEAL_KEY ? { BOX_PRIVILEGE_SEAL_KEY: settings.BOX_PRIVILEGE_SEAL_KEY } : {};
+  if (flags.store !== undefined) return { ...Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), ...door, ...sealKey };
+  return { ...Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]])), ...door, ...sealKey };
 }
 
 /**
@@ -512,6 +530,23 @@ export function renderNextSteps(input) {
   return lines.join('\n');
 }
 
+/**
+ * CR-01 step 4a: append a NEW privilege-seal key to the store computer's settings file — never equal to another of its
+ * secrets — keeping every other byte. The file is rewritten through a temporary file in the same folder, then renamed.
+ */
+export async function addPrivilegeSealKey(file, settings, random = randomBytes) {
+  // Every key, password and database address the file holds — the new key equals none of them.
+  const others = Object.entries(settings).filter(([k]) => /(_KEY|PASSWORD|DATABASE_URL)$/.test(k)).map(([, v]) => v);
+  let key;
+  do key = random(48).toString('base64url'); while (others.includes(key));
+  let text;
+  try { text = await readFile(file, 'utf8'); } catch { return { problem: `the store computer's settings file could not be read (${file})` }; }
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, withSettingAppended(text, 'BOX_PRIVILEGE_SEAL_KEY', key, 'CR-01 step 4a (ADR-0033): the privilege-seal key, added once. Never shown, never copied off this PC.'), { mode: 0o600 });
+  await rename(tmp, file);
+  return { added: true };
+}
+
 // ── The runner ───────────────────────────────────────────────────────────────
 
 async function readEnvFile(path) {
@@ -538,7 +573,15 @@ async function main() {
   const scriptsDir = flags.dir !== undefined ? installDir : join(REPO, 'till');
   const appsDir = join(REPO, 'apps');
   const composePath = flags.composeEnv !== undefined ? resolve(flags.composeEnv) : join(REPO, 'infra', 'compose', '.env');
-  const composeEnv = await readEnvFile(composePath);
+  let composeEnv = await readEnvFile(composePath);
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the store computer's own copy set up before the privilege-seal key existed gets
+  // it ONCE — made here, appended to its settings file (every other byte kept), then copied into till.env below. Never shown.
+  if (!flags.dryRun && flags.settingsNamed === true && isRealCopySettings(composePath) && composeEnv !== undefined && !realValue(composeEnv.BOX_PRIVILEGE_SEAL_KEY)) {
+    const added = await addPrivilegeSealKey(composePath, composeEnv);
+    if (added.problem !== undefined) { process.stderr.write(`\nThe till cannot be installed yet — 1 problem(s):\n  ✕ ${added.problem}\n\n`); process.exitCode = 78; return; }
+    process.stdout.write('• added BOX_PRIVILEGE_SEAL_KEY to the store computer\'s settings (a new secret, made on this computer, never shown); every other setting kept exactly as it was\n');
+    composeEnv = await readEnvFile(composePath);
+  }
   const envPath = join(installDir, 'till.env');
   const existing = await readEnvFile(envPath);
   if (dataFolder !== undefined) process.stdout.write(`• the store computer's data folder: the till's settings and data go in ${installDir}, outside this release\n`);
