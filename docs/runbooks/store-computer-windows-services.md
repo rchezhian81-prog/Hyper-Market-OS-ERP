@@ -171,3 +171,28 @@ none, and the drill says so).
 If it says **THIS PC MAY NOT BE ON <version> NOW**, restart the PC; if the till does not come back, run that version's
 SRE-Setup.exe again, and send a photo. The database is never rolled back by the drill: only the program is put back.
 
+## A new backup passphrase, when the old one is lost (OB-737)
+
+**Why:** every backup is locked; the passphrase is the key, and it is kept nowhere — not on the PC, not with us. If the
+paper is lost, nobody can recover it. This step makes a **new** key with a **new** passphrase, so the backups from now on
+can be opened again. **Nothing is deleted:** the old key is kept on the PC under a "retired" name, and every old backup
+keeps its own key copy on the backup drive — so if the old paper is ever found, the old backups still open with it.
+
+**Who:** the owner, at the store PC's own keyboard (never by remote, never in a chat). **Needs:** the backup drive plugged
+in, a pen and a sheet of paper.
+
+1. Open PowerShell **as administrator** and type: `store-computer new-backup-passphrase --by "Your Name"`
+2. It explains what will happen, then asks you to type **REPLACE** (nothing shows as you type) and press Enter.
+3. Choose the new passphrase — a short sentence you will remember, at least the length it says — and type it twice.
+   Nothing shows as you type.
+4. It says **DONE — new backup key …** and the name the old key is kept under. **Now write the new passphrase on paper
+   and lock it away with the BitLocker key.** Never photograph it, never type it into a message.
+5. Make one backup and prove it opens with the new passphrase:
+   `store-computer backup --to E:\sre-real`, then `store-computer restore-check --from E:\sre-real\<the new manifest>`
+   (type the NEW passphrase). It must say `restored_and_reconciled`.
+6. **Send:** a photo of the window after step 5 (it never shows a passphrase).
+
+If you mistype the new passphrase three times, it stops and **puts the old key back exactly as it was** — nothing
+changed. Every change is written to `<data>\backup\backup-key-changes.log` (who, when, old key, new key — never a
+passphrase). The automatic hourly backup picks up the new key by itself.
+
