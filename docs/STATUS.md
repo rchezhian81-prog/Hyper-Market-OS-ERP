@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## CR-01 step 3e follow-up (14 November 2026): the Windows drill writes the QG-08 evidence (QG-08 · G9)
+- **Why:** two sessions built step 3e at once; #908 was merged and this session's duplicate #910 was closed unmerged (owner, 14 Nov 2026, "A"). The one thing #910 had that #908 lacked was the QG-08 evidence file; the owner asked for it.
+- **What changed:** when every step of the Windows-services drill worked, it also writes `<data>\records\qg08-rollback-<time>.json` — the body of `POST /v1/platform/dr-drills` for the rollback rehearsal (data loss 0, the rollback's own time) — named in the drill record and by `drill-result`. A slow drill still gets one (head office scores it a miss); a failed one gets none and says to record the miss.
+- **Proof:** the step 3e tests, 11 passing (one new, two extended).
+- **Next:** the other session's step 3f, #912 (open). This change does not touch the files #912 changes except STATUS, traceability and the evidence ledger. **Still: do not press Update on the real store PC until #912 is merged.** **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## CR-01 step 3e (13 November 2026): the rollback drill (G9) on the Windows services (OI-05 · OB-246 · OB-718)
 - **What changed:** `store-computer drill` now works on the store PC's Windows services, in the same order and against the same targets as before (the database back within 4 hours, the service back within 30 minutes): (1) an encrypted backup onto the backup drive; (2) restored into a new scratch database and reconciled; (3) the PREVIOUS version's program put back and its own setup run, then checked; (4) this version put back and checked again; (5) a new dated record (records folder, and a read-only copy on the backup drive). Steps 1–2 run at the keyboard (the backup passphrase); steps 3–4 run by themselves as the task "SRE\Rollback drill" from the kept copy of this version, and `store-computer drill-result` says G9 PASSED or NOT PASSED in plain words. The previous version is the newest copy the updater kept at an update (or one named with --previous). It refuses while a till shift is open. The database is never rolled back. `scripts/lib/store-pc-drill.mjs`.
 - **When it can run on the real store PC:** only after the first update from the Software update page (that is what keeps a previous version on the PC) — so after step 3f. Until then the drill says plainly that there is no previous release.
