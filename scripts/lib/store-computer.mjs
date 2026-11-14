@@ -39,6 +39,7 @@
 
 import { heldFetch } from './held-fetch.mjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { withSettingAppended } from './settings-append.mjs';
 import * as nodeFs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection, createServer } from 'node:net';
@@ -75,9 +76,9 @@ export const SETTINGS_NAME = '.env.real';
 export const OTHER_SETTINGS_NAMES = Object.freeze(['.env', '.env.pilot']);
 
 /** The secrets this copy holds. None of them is ever shown. */
-export const SECRET_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY', 'CLOUD_API_TOKEN']);
+export const SECRET_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'BOX_PRIVILEGE_SEAL_KEY', 'IDP_SIGNING_KEY', 'CLOUD_API_TOKEN']);
 /** The values that make this copy itself: none may equal any value in another copy's settings file on this computer. */
-export const OWN_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_TENANT_ID', 'POSTGRES_DB']);
+export const OWN_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'BOX_PRIVILEGE_SEAL_KEY', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_TENANT_ID', 'POSTGRES_DB']);
 /** Settings that would seed a person at the API's boot. Seeding is `tenant:bootstrap` with the OB-243 names, never this tool. */
 export const SEEDING_KEYS = Object.freeze(['BOOTSTRAP_OWNER_TENANT_ID', 'BOOTSTRAP_OWNER_USER_ID']);
 
@@ -376,6 +377,8 @@ export function planSettings(example, { random, uuid }) {
   const packKey = make(48, 'base64url');
   const sealKey = make(48, 'base64url');
   const idpKey = make(48, 'base64url');
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the dedicated privilege-seal key — its own secret, never equal to another.
+  const privilegeKey = make(48, 'base64url');
   const dbName = 'sre_real';
   const planned = {
     POSTGRES_DB: dbName,
@@ -383,6 +386,7 @@ export function planSettings(example, { random, uuid }) {
     DATABASE_URL: ['postgres', '://', appUser, ':', dbPassword, '@db:5432/', dbName].join(''),
     PACK_SIGNING_KEY: packKey,
     BOX_HISTORY_SEAL_KEY: sealKey,
+    BOX_PRIVILEGE_SEAL_KEY: privilegeKey,
     IDP_SIGNING_KEY: idpKey,
     IDP_ISSUER: `sre-real-store-computer-${tenantId}`,
     IDP_AUDIENCE: 'sre-real-api',
@@ -394,7 +398,57 @@ export function planSettings(example, { random, uuid }) {
     SRE_STAFF_ROUTE: 'staff-not-public',
     DEMO_TENANT_IDS: DEMO_TENANT,
   };
-  return { planned, secretNames: ['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY'] };
+  return { planned, secretNames: ['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'BOX_PRIVILEGE_SEAL_KEY', 'IDP_SIGNING_KEY'] };
+}
+
+// ── CR-01 step 4a · ADR-0033 · OB-732 "B": the privilege-seal key on a copy set up before it existed ───────────────────
+
+export const PRIVILEGE_SEAL_KEY = 'BOX_PRIVILEGE_SEAL_KEY';
+/** The other secrets the privilege-seal key must never equal (the API refuses to start otherwise). */
+const NOT_EQUAL_TO = ['PACK_SIGNING_KEY', 'IDP_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'POSTGRES_PASSWORD', 'DATABASE_URL'];
+
+/**
+ * `setup` on a copy whose settings were made before the privilege-seal key existed: ADD it once — a new secret, made here,
+ * appended to this copy's settings file (every other byte kept), and the same value appended to the till's till.env when
+ * the till is there and holds none (or holds a different one, which could never check). Never shown; names only are said.
+ * Returns what it did: { settings: 'added'|'kept', till: 'added'|'replaced'|'kept'|'no-till' }.
+ */
+export function ensurePrivilegeSealKey(deps, L) {
+  const { fs, say } = deps;
+  const text = fs.readFileSync(L.settings, 'utf8');
+  const settings = parseEnvText(text);
+  let key = settings[PRIVILEGE_SEAL_KEY];
+  let settingsDid = 'kept';
+  if (!real(key) || NOT_EQUAL_TO.some((k) => settings[k] === key)) {
+    if (real(key)) { say(`REFUSED — this copy's ${PRIVILEGE_SEAL_KEY} is the same as another of its secrets. Nothing was changed. Send me a photo of this screen.`); return { settings: 'refused', till: 'kept' }; }
+    for (;;) {
+      key = deps.random(48).toString('base64url');
+      if (!NOT_EQUAL_TO.some((k) => settings[k] === key)) break;
+    }
+    const tmp = `${L.settings}.tmp`;
+    fs.writeFileSync(tmp, withSettingAppended(text, PRIVILEGE_SEAL_KEY, key, 'CR-01 step 4a (ADR-0033): the privilege-seal key, added once by setup. Never shown, never copied off this PC.'), { encoding: 'utf8', flag: 'w', mode: 0o600 });
+    fs.renameSync(tmp, L.settings);
+    settingsDid = 'added';
+    say(`Added ${PRIVILEGE_SEAL_KEY} to this copy's settings (a new secret, made on this computer; never shown). Every other setting is kept exactly as it was.`);
+  }
+  if (L.tillEnv === undefined || !fs.existsSync(L.tillEnv)) return { settings: settingsDid, till: 'no-till' };
+  const tillText = fs.readFileSync(L.tillEnv, 'utf8');
+  const till = parseEnvText(tillText);
+  if (till[PRIVILEGE_SEAL_KEY] === key) return { settings: settingsDid, till: 'kept' };
+  let next;
+  let tillDid;
+  if (till[PRIVILEGE_SEAL_KEY] === undefined) {
+    next = withSettingAppended(tillText, PRIVILEGE_SEAL_KEY, key, 'CR-01 step 4a (ADR-0033): seals a privilege change confirmed by PIN on the office screens. Never share it.');
+    tillDid = 'added';
+  } else {
+    next = tillText.split(/(\r?\n)/).map((part) => (part.trim().startsWith(`${PRIVILEGE_SEAL_KEY}=`) ? `${PRIVILEGE_SEAL_KEY}=${key}` : part)).join('');
+    tillDid = 'replaced';
+  }
+  const tmpTill = `${L.tillEnv}.tmp`;
+  fs.writeFileSync(tmpTill, next, { encoding: 'utf8', flag: 'w', mode: 0o600 });
+  fs.renameSync(tmpTill, L.tillEnv);
+  say(`${tillDid === 'added' ? 'Added' : 'Updated'} ${PRIVILEGE_SEAL_KEY} in the till's settings (the same value as this copy's; never shown). Every other till setting is kept exactly as it was. Restart the till and the office service to use it.`);
+  return { settings: settingsDid, till: tillDid };
 }
 
 /** The example file with each planned setting filled in place; settings the example lacks are added at the end. */

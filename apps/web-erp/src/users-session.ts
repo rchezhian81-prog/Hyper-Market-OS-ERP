@@ -54,6 +54,10 @@ export const USERS_COPY = {
     needValues: 'Name the ids, or type "all" to lift the limit.', notReady: 'That change is not approved yet.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or sent.', reading: 'Reading from head office…',
     signInsH: 'Sign-ins', signInsLead: 'Give a new person their own sign-in (one person, one sign-in). What they may do is asked for above and approved by the owner.',
+    pinNeeded: 'Type your own PIN again to confirm. Nothing was changed.',
+    rejectNotHere: 'On the store PC a request is approved here; to turn one down, the owner rejects it at head office. Nothing was changed.',
+    pinAskGive: 'Type your own PIN again to ask for this role.', pinAskApprove: 'Type your own PIN again to approve this role.',
+    pinOk: 'Confirm', pinCancel: 'Cancel',
   },
   ta: {
     title: 'பயனர்களும் பங்குகளும்',
@@ -87,6 +91,10 @@ export const USERS_COPY = {
     needValues: 'அடையாளங்களைக் குறிப்பிடுங்கள், அல்லது வரம்பை நீக்க "all" எனத் தட்டச்சு செய்யுங்கள்.', notReady: 'அந்த மாற்றம் இன்னும் அனுமதிக்கப்படவில்லை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கப்படவில்லை, அனுப்பப்படவில்லை.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
     signInsH: 'உள்நுழைவுகள்', signInsLead: 'புதிய நபருக்கு அவருக்கே உரிய உள்நுழைவைக் கொடுங்கள் (ஒருவருக்கு ஒன்று). அவர் என்ன செய்யலாம் என்பது மேலே கேட்கப்பட்டு உரிமையாளரால் அனுமதிக்கப்படுகிறது.',
+    pinNeeded: 'உறுதிசெய்ய உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள். எதுவும் மாற்றப்படவில்லை.',
+    rejectNotHere: 'கடைக் கணினியில் கோரிக்கை இங்கே அனுமதிக்கப்படுகிறது; மறுக்க, உரிமையாளர் தலைமை அலுவலகத்தில் மறுப்பார். எதுவும் மாற்றப்படவில்லை.',
+    pinAskGive: 'இந்தப் பங்கைக் கேட்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskApprove: 'இந்தப் பங்கை அனுமதிக்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
+    pinOk: 'உறுதிசெய்', pinCancel: 'ரத்து',
   },
 } as const;
 
@@ -95,7 +103,7 @@ export const usersWords = (lang: Lang, key: string): string =>
   (USERS_COPY[lang] as Record<string, string>)[key] ?? (USERS_COPY.en as Record<string, string>)[key] ?? key;
 
 type Why = 'nobody' | 'cannotRead' | 'cannotAsk' | 'cannotDecide' | 'needPerson' | 'needRole' | 'needStores' | 'needReason'
-  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady';
+  | 'yourself' | 'waitingRole' | 'onlyRole' | 'needValues' | 'notReady' | 'pinNeeded' | 'rejectNotHere';
 type Done<T> = Promise<Outcome<T, Why>>;
 export const usersOutcomeWords = (lang: Lang, out: Outcome<unknown>): string => outcomeIn((k) => usersWords(lang, k), out);
 
@@ -168,10 +176,32 @@ export function applyCall(change: MyChange): { readonly path: string; readonly b
   return undefined;
 }
 
+/**
+ * CR-01 step 4a (OI-06 · ADR-0033 · OB-731 "A"): the page served by the store PC with the head-office link OFF. Asking for a
+ * role and approving one go to the store PC's own privilege doors, the person's PIN asked again for each act (`askPin`;
+ * null = they cancelled). The PIN goes to the store PC in that one request and is kept nowhere on the page.
+ */
+export interface OfficePrivilege {
+  /** The store PC's door for asking for a role (`/office/privilege/grants`). */
+  readonly grants: string;
+  /** The door for approving one, with `{grantId}` in it (`/office/privilege/grants/{grantId}/approve`). */
+  readonly approve: string;
+  readonly askPin: (what: 'give' | 'approve') => Promise<string | null>;
+}
+
+/** The store PC's doors from the page's injected global (`window.sreOfficePrivilege`), or undefined. */
+export function officePrivilegeFrom(raw: unknown, askPin: OfficePrivilege['askPin']): OfficePrivilege | undefined {
+  if (!isObj(raw) || !isStr(raw['grants']) || !isStr(raw['approve'])) return undefined;
+  if (!raw['grants'].startsWith('/office/') || !raw['approve'].startsWith('/office/') || !raw['approve'].includes('{grantId}')) return undefined;
+  return { grants: raw['grants'], approve: raw['approve'], askPin };
+}
+
 export function createUsersSession(input: {
   readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
   readonly fetch?: typeof globalThis.fetch;
   readonly newId?: (prefix: string) => string;
+  /** CR-01 step 4a: present on the store PC with the head-office link off — give and approve go through its doors, by PIN. */
+  readonly office?: OfficePrivilege;
 }): UsersSession {
   const userId = input.viewer?.userId ?? null;
   const named = userId !== null;
@@ -179,6 +209,19 @@ export function createUsersSession(input: {
   const may = { named, read: named && held.has('identity.role.read'), ask: named && held.has('identity.role.request'), decide: named && held.has('identity.role.grant') };
   const call = makeCaller({ keyPrefix: 'users', ...(input.fetch === undefined ? {} : { fetch: input.fetch }) });
   const id = input.newId ?? newId;
+  const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
+  /** One privilege act through the store PC's door: its answer in its own words (English; head office's sentence kept). */
+  const viaStorePc = async (path: string, body: unknown): Promise<Outcome<Record<string, unknown>, never>> => {
+    try {
+      const res = await http(path, { method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || json['ok'] !== true) {
+        const code = isStr(json['code']) ? json['code'] : isStr(json['refusedBecause']) ? json['refusedBecause'] : String(res.status);
+        return { result: 'refused', status: res.status, code, whatHappened: isStr(json['en']) ? json['en'] : `status ${res.status}` };
+      }
+      return { result: 'ok', value: json };
+    } catch { return { result: 'lost_link' }; }
+  };
   const no = (why: Why): { result: 'invalid'; why: Why } => ({ result: 'invalid', why });
   const gate = (need: 'read' | 'ask' | 'decide'): { result: 'invalid'; why: Why } | undefined =>
     !named ? no('nobody') : !may[need] ? no(need === 'read' ? 'cannotRead' : need === 'ask' ? 'cannotAsk' : 'cannotDecide') : undefined;
@@ -256,12 +299,26 @@ export function createUsersSession(input: {
       if (stores === undefined) return no('needStores');
       if (g0.reason.trim() === '') return no('needReason');
       const grantId = id('grant');
-      const out = await call<{ grantId?: unknown }>('POST', '/v1/identity/grants', { grantId, userId: person, roleId: g0.roleId.trim(), branchScope: stores, reason: g0.reason.trim() });
+      const request = { grantId, userId: person, roleId: g0.roleId.trim(), branchScope: stores, reason: g0.reason.trim() };
+      if (input.office !== undefined) {
+        const pin = await input.office.askPin('give');
+        if (pin === null || pin.trim() === '') return no('pinNeeded');
+        const out = await viaStorePc(input.office.grants, { pin, request });
+        return out.result === 'ok' ? { result: 'ok', value: { grantId } } : out;
+      }
+      const out = await call<{ grantId?: unknown }>('POST', '/v1/identity/grants', request);
       return out.result === 'ok' ? { result: 'ok', value: { grantId } } : out;
     },
     decide: async (grantId, decision, reason) => {
       const g = gate('decide'); if (g) return g;
       if (decision === 'reject' && reason.trim() === '') return no('needReason');
+      if (input.office !== undefined) {
+        if (decision === 'reject') return no('rejectNotHere');
+        const pin = await input.office.askPin('approve');
+        if (pin === null || pin.trim() === '') return no('pinNeeded');
+        const out = await viaStorePc(input.office.approve.replace('{grantId}', encodeURIComponent(grantId)), { pin });
+        return out.result === 'ok' ? { result: 'ok', value: { decided: 'approved' } } : out;
+      }
       const out = await call('POST', `/v1/identity/grants/${encodeURIComponent(grantId)}/${decision}`, decision === 'reject' ? { reason: reason.trim() } : {});
       return out.result === 'ok' ? { result: 'ok', value: { decided: decision === 'approve' ? 'approved' : 'rejected' } } : out;
     },

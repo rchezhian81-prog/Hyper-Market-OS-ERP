@@ -782,6 +782,7 @@ jobs:
           # owner's key, never in the repository), with this job's own random passphrase; the test build carries its PUBLIC half.
           $lk = Join-Path $env:RUNNER_TEMP 'sre-test-licence-key'
           $env:LICENCE_TEST_PASSPHRASE = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+          Write-Output "::add-mask::$($env:LICENCE_TEST_PASSPHRASE)"
           "LICENCE_TEST_PASSPHRASE=$($env:LICENCE_TEST_PASSPHRASE)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           node tests/windows/licence-test-key.mjs $lk
           if ($LASTEXITCODE -ne 0) { throw 'the throwaway seller key was not made' }

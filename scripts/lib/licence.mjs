@@ -24,7 +24,7 @@
 //   reduced       — grace (or the setup period) over: REDUCED MODE.
 // Whatever the standing: the till ALWAYS sells (a sale never asks the licence — hard rule 1, P-01), and the shop can
 // ALWAYS view and export its own data (P-06). Reduced mode starts at the start of a shop day, never in the middle of one,
-// and what it limits is LICENCE_POLICY.reduced (owner decision OB-751): as proposed, NO NEW SOFTWARE VERSIONS (the
+// and what it limits is LICENCE_POLICY.reduced (owner decision OB-751 = A): NO NEW SOFTWARE VERSIONS (the
 // Software update page refuses) and a red notice on every office page — nothing else stops. Renewal is a NEW licence file
 // loaded on the Licence screen — no code, no reinstall; the next moment the standing is read, the limit is gone.
 //
@@ -45,8 +45,8 @@ export const MIN_PASSPHRASE = 12;
 
 /**
  * How long the warnings, the grace and the setup period are, and what reduced mode limits.
- * PROPOSED — waiting for the owner's decisions OB-750 (warning and grace), OB-751 (what reduced mode limits) and OB-752
- * (a new shop's setup period) — options A/B/C in docs/registers/decisions.md. Changing a number here
+ * DECIDED by the owner, 14 Nov 2026 ("1A 2A 3A"): OB-750 A (30 days' warning, 30 days' grace), OB-751 A (what reduced
+ * mode limits) and OB-752 A (a new shop's 30-day setup period) — docs/registers/decisions.md. Changing a number here
  * is the only change a different choice needs; the tests read these values, never their own copies.
  */
 export const LICENCE_POLICY = Object.freeze({
@@ -55,7 +55,7 @@ export const LICENCE_POLICY = Object.freeze({
   graceDays: 30,
   setupDays: 30,
   /**
-   * Reduced mode (proposed option A): no new software versions until a licence is loaded; the till sells, every record can
+   * Reduced mode (OB-751 = A): no new software versions until a licence is loaded; the till sells, every record can
    * be viewed and exported, and the office keeps working. (Option B would also refuse office changes; C would also stop new
    * till shifts from the next shop day — neither is built unless the owner chooses it.)
    */

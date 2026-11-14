@@ -1,7 +1,7 @@
 # Licensing — selling SRE Retail OS to other shops (CR-01 step 5 · OI-10 · M33-FR-04 · OB-710)
 
 _For the owner (the seller). Plain words. Decisions OB-710 (licensing, decided), OB-714 (code-signing certificate before
-the first sale, decided), OB-750 – OB-752 (warning and grace, reduced mode, a new shop's setup period — **open**)._
+the first sale, decided), OB-750 – OB-752 (warning and grace, reduced mode, a new shop's setup period — all **A**, decided 14 Nov 2026)._
 
 ## How it works, in one paragraph
 
@@ -63,7 +63,7 @@ type your PIN → Load the licence**. The screen turns green: *Owner's licence �
 Issue a new licence for the same tenant id with a later end date; the shop loads it on the Licence screen. The old one is
 kept in the shop's licence history; an older licence can never replace a newer one.
 
-## What the shop sees as the end date comes near (proposed — OB-750 – OB-752, waiting for your choice)
+## What the shop sees as the end date comes near (OB-750 – OB-752 = A, decided 14 Nov 2026)
 
 | When | What happens | Till sells? | View and export? |
 |---|---|---|---|
