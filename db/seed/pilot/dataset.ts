@@ -371,7 +371,7 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     { hsnCode: '10063020', effectiveFrom: TAX_FROM, rateBps: 500 },  // rice 5%
     { hsnCode: '19053100', effectiveFrom: TAX_FROM, rateBps: 1800 }, // biscuits 18%
     { hsnCode: '15079010', effectiveFrom: TAX_FROM, rateBps: 500 },  // edible oil 5%
-    { hsnCode: '04039010', effectiveFrom: TAX_FROM, rateBps: 500 },  // curd 5% (demo rate — a real shop's rate is its accountant's)
+    { hsnCode: '04039010', effectiveFrom: TAX_FROM, rateBps: 500 },  // curd 5% (demo rate, confirmed by the owner 14 Nov 2026 — a real shop's rate is its accountant's)
   ],
   categories: [
     { categoryId: 'cat-household', name: 'Household (demo)', parentId: null },
