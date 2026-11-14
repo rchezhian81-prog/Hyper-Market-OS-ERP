@@ -31,6 +31,7 @@
 //     an unacknowledged item stays pending in the outbox, which is what the outbox is for. So this
 //     drains briefly and then goes, rather than holding a shop's PC open at closing time.
 
+import { randomUUID } from 'node:crypto';
 import { loadConfig, STORE_EDGE_CONFIG } from '../../../services/kernel/src/index';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { SyncAgent } from '../../../edge/sync-agent/src/agent';
@@ -73,7 +74,13 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { openOldErpBills } from './old-erp-bills';
 import { openEveningCheckBox } from './evening-check-box';
-import { OFFICE_LANE } from './office-sign-in';
+import { OFFICE_LANE, OFFICE_SESSION_MINUTES, officeTokenOf } from './office-sign-in';
+import { thisPcApiSettingsFrom, personFetch, callAs } from './this-pc-api'; // CR-01 step 4 (OI-06 · OI-07 · ADR-0033)
+import { createOfficeCentre, OFFICE_CENTRE_LOG, type OfficeCentre } from './office-centre'; // CR-01 step 4
+import { runTillPinCommand } from './till-pin-command'; // CR-01 step 4: a new person's own first PIN, from the Users & roles page
+import { createImportApp } from '../../../scripts/lib/import-app'; // CR-01 step 4 (OI-07): the old-system import in the Office app
+import { pinVerifier } from '../../../scripts/lib/owner-setup-pins';
+import { demoTenantIds } from '../../../scripts/lib/operator-env';
 import { returnIdOf } from './cloud-return';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { overrideReductionMinor } from '../../../packages/price-guard/src/till-override';
@@ -2330,8 +2337,57 @@ export async function startEdge(
     },
     now: () => new Date().toISOString(),
   };
+  // CR-01 step 4 (OI-06 · OI-07 · ADR-0033): on the store PC the Office centre — Users & roles and Import & export — talks
+  // to THIS PC's own API as the person signed in with their own PIN, asking that PIN again for every act. Off unless the
+  // till's settings say so (EDGE_OFFICE_HEAD_OFFICE=this-pc, written by the setup on the store PC) with the office PIN on.
+  const thisPc = thisPcApiSettingsFrom(settings);
+  if (thisPc.on) say('office centre: Users & roles and Import & export work on this PC\'s own system, each act confirmed with the person\'s own PIN (CR-01 step 4).');
+  else if (thisPc.why !== null) say(`office centre: NOT on — ${thisPc.why}.`);
+  const packRefreshRelay: { current: (() => Promise<unknown>) | null } = { current: null };
+  let officeCentre: OfficeCentre | undefined;
+  if (thisPc.on && officeGate !== null && screenPort !== undefined) {
+    const gate = officeGate;
+    const api = thisPc.settings;
+    const centreLog = await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: OFFICE_CENTRE_LOG });
+    const storeIdHere = (settings['EDGE_STORE_ID'] ?? '').trim();
+    const importsDir = (settings['EDGE_IMPORTS_DIR'] ?? '').trim();
+    const importPageFile = join(dirname(resolve(settings['EDGE_APPS_DIR'] ?? 'apps')), 'scripts', 'import-page', 'index.html');
+    const importApp = importsDir === '' || storeIdHere === '' || !existsSync(importPageFile) ? undefined : createImportApp({
+      client: {
+        request: async ({ method, path, userId, body, idempotencyKey, signedInAt }) =>
+          callAs(personFetch(api, { userId, pinCheckedAt: signedInAt }, { fetch: globalThis.fetch, now: () => Date.now() }), method, path, body, idempotencyKey)
+            .then((r) => (r.status === 0 ? { status: 503, body: { error: { whatHappened: 'This PC\'s own system did not answer.', nextSafeAction: 'Wait a minute and try again.' } } } : r)),
+      },
+      verifyPin: pinVerifier({ tillEnv: settings as Readonly<Record<string, string>>, settings: settings as Readonly<Record<string, string>>, readFile: (f) => { try { return readFileSync(f, 'utf8'); } catch { return undefined; } } }),
+      tenantId: api.tenantId, storeId: storeIdHere, targetKind: settings['MIGRATION_TARGET_KIND'],
+      demoTenantIds: demoTenantIds(settings as Readonly<Record<string, string>>, undefined),
+      dataDir: importsDir, pageHtml: readFileSync(importPageFile, 'utf8'), now: () => new Date(),
+      officeSession: async (req) => {
+        const s = await gate.check(officeTokenOf(req.headers['cookie']));
+        return s.ok ? { userId: s.userId, signedInAt: new Date(Date.parse(s.expiresAt) - OFFICE_SESSION_MINUTES * 60_000).toISOString() } : null;
+      },
+    });
+    if (importApp === undefined) say('office centre: the old-system import is not on this PC (EDGE_IMPORTS_DIR or the store is not set, or the page is not in this release).');
+    officeCentre = createOfficeCentre({
+      api, fetch: globalThis.fetch, now: () => Date.now(), storeId: storeIdHere,
+      // The till's own PIN register, with its own guess limits (OB-257) — the one place a PIN is checked.
+      verifyPin: async (userId, pin) => {
+        if (staffSignIn === null) return 'cannot_check';
+        const who = await staffSignIn.verifyPerson({ staffId: userId, pin, laneId: OFFICE_LANE, authority: 'identity.self.read' });
+        return who.ok ? 'ok' : who.refusedBecause === 'locked' || who.refusedBecause === 'lane_locked' ? 'locked' : 'wrong';
+      },
+      pinHolders: async () => new Set([...(await loadTillCredentials(credentialsFile))].filter(([, c]) => c.revoked !== true).map(([u]) => u)),
+      setPin: async (userId, pin, by) => runTillPinCommand(['--user', userId, '--by', by], settings, { readSecret: async () => pin }),
+      permissionsOf: (userId) => permissionsOf(userId, pack) ?? [],
+      refreshPack: async () => packRefreshRelay.current?.(),
+      append: async (entry) => { await centreLog.append(JSON.stringify(entry)); },
+      newId: (prefix) => `${prefix}-${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      ...(importApp === undefined ? {} : { importApp: async (req, res) => importApp(req, res) }),
+    });
+  }
   const screens = screenPort === undefined ? null : await startScreenServer({
     about: () => aboutFacts,
+    ...(officeCentre === undefined ? {} : { officeCentre }),
     // CR-01 step 3d: the updater (a Windows task, SYSTEM) acts on the request; it leaves its mark and its latest word in the
     // status folder this service may read. No mark: the page says the updater is not set up on this PC.
     ...(updateDeps === undefined ? {} : {
@@ -3107,6 +3163,8 @@ export async function startEdge(
     }
     return outcome;
   };
+  // CR-01 step 4: a role approved on the Users & roles page reaches this till at once, not at the next pass.
+  packRefreshRelay.current = refreshStorePack;
   // OB-87 "A": a box that found its data restored asks head office for its latest setup at once, not on the first sync pass
   // (never in the way of a sale — it sells under its fresh prefix meanwhile).
   if (refreshStorePack !== null && receiptNumbers !== null && receiptNumbers.restoreState().held) {

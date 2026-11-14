@@ -99,6 +99,8 @@ export function servicePaths({ platform, repoRoot, dataRoot, pgBin, serviceHost,
     dataRoot,
     settings: p.join(dataRoot, '.env.real'),
     tillDir: p.join(dataRoot, 'till'),
+    // CR-01 step 4 (OI-07): the old-system imports, kept here and never deleted; the Office app (the till's service) writes them.
+    importsDir: p.join(dataRoot, 'imports'),
     tillEnv: p.join(dataRoot, 'till', 'till.env'),
     statusDir: p.join(dataRoot, 'status'),
     scratchDir: p.join(dataRoot, 'scratch'),
@@ -218,6 +220,7 @@ export function grantsFor(P, exists) {
   add(pathFor(P.platform).dirname(P.pgBin), SERVICES.database, '(OI)(CI)RX');
   add(P.settings, SERVICES.api, 'R');
   add(P.tillDir, SERVICES.till, '(OI)(CI)M');
+  if (P.importsDir !== undefined) add(P.importsDir, SERVICES.till, '(OI)(CI)M');
   if (exists(P.statusDir)) add(P.statusDir, SERVICES.till, '(OI)(CI)RX');
   for (const n of SERVICE_ORDER) add(P.logDirOf(n), n, '(OI)(CI)M');
   for (const n of [SERVICES.api, SERVICES.till]) {
@@ -379,7 +382,7 @@ export async function installServices(deps, opts) {
     const b = deps.spawn(deps.nodePath, [P.buildScript, what, '--quiet'], { cwd: deps.repoRoot, env: deps.env });
     if (!ran(b)) { say(`NOT INSTALLED — this release's ${what === 'api' ? 'office API' : 'till'} program could not be built. ${said(b)}`); return 1; }
   }
-  for (const dir of [P.servicesDir, P.logsDir, P.scratchDir, P.statusDir, ...SERVICE_ORDER.map((n) => P.logDirOf(n))]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [P.servicesDir, P.logsDir, P.scratchDir, P.statusDir, P.importsDir, ...SERVICE_ORDER.map((n) => P.logDirOf(n))]) fs.mkdirSync(dir, { recursive: true });
 
   // 1 — The database. From here on the tool reaches it as a Windows service (store-computer-db.mjs).
   const dbDone = await installDatabase(deps, P, db);

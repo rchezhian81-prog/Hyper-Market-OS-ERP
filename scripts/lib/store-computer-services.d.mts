@@ -20,7 +20,7 @@ export declare function serviceSid(name: string): string;
 export declare function accountOf(name: string): string;
 
 export interface ServicePaths {
-  readonly platform: string; readonly repoRoot: string; readonly dataRoot: string; readonly settings: string; readonly tillDir: string;
+  readonly platform: string; readonly repoRoot: string; readonly dataRoot: string; readonly settings: string; readonly tillDir: string; readonly importsDir?: string;
   readonly tillEnv: string; readonly statusDir: string; readonly scratchDir: string; readonly databaseDir: string; readonly dbConf: string;
   readonly logsDir: string; logDirOf(name: string): string; readonly servicesDir: string; hostExeOf(name: string): string;
   hostXmlOf(name: string): string; readonly launcher: string; readonly apiBundle: string; readonly edgeBundle: string;

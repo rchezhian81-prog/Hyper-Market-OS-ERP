@@ -42,6 +42,12 @@ export interface ImportAppDeps {
   readonly dataDir: string;
   readonly pageHtml: string;
   readonly now: () => Date;
+  /**
+   * CR-01 step 4 (OI-07): inside the store PC's Office app, the person is the one signed in to the office screens with their
+   * own PIN (OB-259) — this page asks for no sign-in of its own, and every load step still asks their PIN again. Absent:
+   * the page's own staff ID + PIN sign-in, as before.
+   */
+  readonly officeSession?: (req: IncomingMessage) => Promise<{ readonly userId: string; readonly signedInAt: string } | null>;
 }
 
 const SESSION_MS = 20 * 60_000;
@@ -104,7 +110,12 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
     wrong.delete(userId);
   };
 
-  const sessionOf = (req: IncomingMessage): Session => {
+  const sessionOf = async (req: IncomingMessage): Promise<Session> => {
+    if (deps.officeSession !== undefined) {
+      const o = await deps.officeSession(req);
+      if (o === null) throw new Said(401, 'Your office sign-in has ended. Open the office screens and enter your PIN again.');
+      return { userId: o.userId, signedInAt: o.signedInAt, lastSeen: Date.now() };
+    }
     const id = /(?:^|;\s*)sre_import=([A-Za-z0-9_-]+)/.exec(req.headers.cookie ?? '')?.[1];
     const s = id === undefined ? undefined : sessions.get(id);
     if (s === undefined || Date.now() - s.lastSeen > SESSION_MS) { if (id !== undefined) sessions.delete(id); throw new Said(401, 'Sign in with your staff ID and your till PIN.'); }
@@ -160,6 +171,11 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
     const p = url.pathname;
     const b = isObj(body) ? body : {};
 
+    if (deps.officeSession !== undefined && (p === '/session' || p === '/session/end')) {
+      // Inside the Office app the office screens' own sign-in and sign-out are the only ones (OB-259).
+      if (p === '/session/end') return { json: { signedOut: false, office: true } };
+      throw new Said(409, 'You are signed in through the office screens. Sign out there.');
+    }
     if (m === 'POST' && p === '/session') {
       const userId = typeof b['staffId'] === 'string' ? b['staffId'].trim() : '';
       if (!ID.test(userId)) throw new Said(400, 'Type your staff ID (for example cashier-01).');
@@ -174,9 +190,9 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       return { json: { signedOut: true }, cookie: 'sre_import=; Max-Age=0; Path=/' };
     }
 
-    const s = sessionOf(req);
+    const s = await sessionOf(req);
     const call = as(s);
-    if (m === 'GET' && p === '/api/me') return { json: { userId: s.userId } };
+    if (m === 'GET' && p === '/api/me') return { json: { userId: s.userId, office: deps.officeSession !== undefined } };
 
     if (m === 'GET' && p === '/api/imports') {
       const r = await call('GET', '/v1/migration/old-system-imports');

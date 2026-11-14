@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2366,
+  "testFiles": 2369,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2759,7 +2759,7 @@
       "id": "M30",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 14,
         "realDb": 7,
         "browser": 6,
@@ -2769,6 +2769,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/cr01-step4-the-office-centre-on-the-store-pc.test.ts",
           "tests/unit/data-export-routes.test.ts",
           "tests/unit/data-io-export-hands-a-file.test.ts",
           "tests/unit/data-io-period-export.test.ts",

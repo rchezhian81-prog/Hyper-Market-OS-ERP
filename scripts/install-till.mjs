@@ -254,6 +254,19 @@ export function planTillSettings(input) {
     // OB-388: the office pages head office answers send each person through their OWN head-office sign-in on this PC.
     ...(realValue(headOfficeSignIn) ? { EDGE_HEAD_OFFICE_SIGN_IN_ISSUER: headOfficeSignIn } : {}),
   };
+  // CR-01 step 4 (OI-06 · OI-07 · ADR-0033): on the store PC's own copy, the office centre (Users & roles, Import & export)
+  // talks to THIS PC's API as the person signed in with their own PIN — so the till holds this copy's sign-in key (the one
+  // the import page and the owner setup commands already use, OB-257) and knows where the shop's imports are kept.
+  const thisPc = realCopy && ['IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE'].every((k) => realValue(composeEnv?.[k]));
+  if (thisPc) {
+    Object.assign(settings, {
+      EDGE_OFFICE_HEAD_OFFICE: 'this-pc',
+      IDP_SIGNING_KEY: composeEnv.IDP_SIGNING_KEY, IDP_ISSUER: composeEnv.IDP_ISSUER, IDP_AUDIENCE: composeEnv.IDP_AUDIENCE,
+      EDGE_IMPORTS_DIR: join(dirname(installDir), 'imports'),
+      MIGRATION_TARGET_KIND: realValue(composeEnv?.MIGRATION_TARGET_KIND) ? composeEnv.MIGRATION_TARGET_KIND : 'rehearsal',
+    });
+    notes.push('office centre on: Users & roles and Import & export work on this PC\'s own system, each act confirmed with the person\'s own PIN (CR-01 step 4)');
+  } else if (realCopy) notes.push('office centre NOT on: this copy\'s settings have no sign-in key (IDP_SIGNING_KEY, IDP_ISSUER, IDP_AUDIENCE)');
   if (!realValue(headOfficeSignIn)) notes.push('no head-office sign-in named — the office pages that need head office say it cannot be reached; name it later with --head-office-sign-in (OB-388)');
   if (realCopy) notes.push('guest sales only (OB-252): the till takes no customer mobile number and no loyalty');
   if (realCopy) notes.push('mirror pilot (OB-248 · OB-256): every sale and refund is "Paid on old system", with the old bill number (OB-264); no money in this drawer');
@@ -336,6 +349,17 @@ export function renderTillEnv(settings) {
       "# OB-259: the office screens ask for the person's own till PIN; a cashier opens only the till.",
       `EDGE_OFFICE_SIGN_IN=${settings.EDGE_OFFICE_SIGN_IN}`,
     ]),
+    ...(settings.EDGE_OFFICE_HEAD_OFFICE === undefined ? [] : [
+      "# CR-01 step 4 (ADR-0033): the office centre (Users & roles, Import & export) talks to THIS PC's own API as the person",
+      "# signed in with their own PIN, asking it again for every act. The sign-in key below is this copy's own: never share it.",
+      `EDGE_OFFICE_HEAD_OFFICE=${settings.EDGE_OFFICE_HEAD_OFFICE}`,
+      `IDP_SIGNING_KEY=${settings.IDP_SIGNING_KEY}`,
+      `IDP_ISSUER=${settings.IDP_ISSUER}`,
+      `IDP_AUDIENCE=${settings.IDP_AUDIENCE}`,
+      '# Where the old-system imports are kept on this PC (never deleted), and what kind of copy this is.',
+      `EDGE_IMPORTS_DIR=${settings.EDGE_IMPORTS_DIR}`,
+      `MIGRATION_TARGET_KIND=${settings.MIGRATION_TARGET_KIND}`,
+    ]),
     ...(settings.EDGE_HEAD_OFFICE_SIGN_IN_ISSUER === undefined ? [] : [
       "# OB-388: head office's sign-in. Each person opening an office page signs in with their OWN head-office login and",
       '# second step; this PC carries their own session to head office (CLOUD_API_URL) — never the store token, never a PIN.',
@@ -351,13 +375,15 @@ export const STORE_TOKEN_HOURS = 720;
 export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN', 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER']);
 /** OB-422: what a re-run may add to an existing till.env for the handheld door — only when named on the command line. */
 export const DEVICE_KEYS = Object.freeze(['EDGE_DEVICE_PORT', 'EDGE_DEVICE_HOST']);
+/** CR-01 step 4: what the store PC's office centre needs — added to an existing till.env only where it has none (never rotated). */
+export const THIS_PC_KEYS = Object.freeze(['EDGE_OFFICE_HEAD_OFFICE', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_IMPORTS_DIR', 'MIGRATION_TARGET_KIND']);
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the
  * signing key, the lane, the folders, the comments). Returns the new text and the NAMES that changed — never their values.
  */
 export function updateTillEnv(text, settings) {
-  const want = Object.fromEntries([...CONNECT_KEYS, ...DEVICE_KEYS].filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
+  const want = Object.fromEntries([...CONNECT_KEYS, ...DEVICE_KEYS, ...THIS_PC_KEYS].filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
   const changed = [];
   const done = new Set();
   const out = String(text).split(/\r?\n/).map((raw) => {
@@ -383,8 +409,10 @@ export function updateTillEnv(text, settings) {
 export function tillEnvChangesFor({ settings, existing, flags }) {
   // OB-422: the handheld door's port and address, only when this run names them.
   const door = Object.fromEntries([['EDGE_DEVICE_PORT', flags.devicePort], ['EDGE_DEVICE_HOST', flags.deviceHost]].filter(([k, v]) => v !== undefined && settings[k] !== undefined).map(([k]) => [k, settings[k]]));
-  if (flags.store !== undefined) return { ...Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), ...door };
-  return { ...Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]])), ...door };
+  // CR-01 step 4: the office centre's settings, only where the file has none yet (a re-run never rotates the key).
+  const thisPc = Object.fromEntries(THIS_PC_KEYS.filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]]));
+  if (flags.store !== undefined) return { ...Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), ...door, ...thisPc };
+  return { ...Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]])), ...door, ...thisPc };
 }
 
 /**

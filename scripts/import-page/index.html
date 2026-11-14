@@ -56,34 +56,34 @@
 </head>
 <body>
 <header>
-  <h1>Import from the old system</h1>
-  <div class="who"><span id="who"></span><button id="signout" class="small" hidden>Sign out</button></div>
+  <h1>Import from the old system <span lang="ta">· பழைய அமைப்பிலிருந்து இறக்குமதி</span></h1>
+  <div class="who"><span id="who"></span><button id="signout" class="small" hidden>Sign out · வெளியேறு</button></div>
 </header>
 <main>
   <div id="msg" class="msg" hidden role="status" aria-live="polite"></div>
 
   <!-- 1. Sign in -->
   <section id="signin">
-    <h2>Sign in</h2>
-    <p class="muted">Use your own staff ID and your own six-digit till PIN. Every fix is saved in your name.</p>
+    <h2>Sign in <span lang="ta">· உள்நுழை</span></h2>
+    <p class="muted">Use your own staff ID and your own six-digit till PIN. Every fix is saved in your name. <span lang="ta">உங்கள் சொந்தப் பணியாளர் எண்ணையும் PIN-ஐயும் பயன்படுத்துங்கள். ஒவ்வொரு திருத்தமும் உங்கள் பெயரில் சேமிக்கப்படும்.</span></p>
     <form id="signin-form" class="row" autocomplete="off">
-      <label>Staff ID <input id="staff" placeholder="for example owner-01" required /></label>
-      <label>Till PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required /></label>
-      <button class="primary" type="submit">Sign in</button>
+      <label>Staff ID <span lang="ta">· பணியாளர் எண்</span> <input id="staff" placeholder="for example owner-01" required /></label>
+      <label>Till PIN <span lang="ta">· PIN</span> <input id="pin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required /></label>
+      <button class="primary" type="submit">Sign in · உள்நுழை</button>
     </form>
   </section>
 
   <!-- 2. Imports -->
   <section id="start" hidden>
-    <h2>Read the old system's reports</h2>
-    <p class="muted">Export the reports from the old system to Excel (.xlsx): the barcode report (EANCODE), the HSN report and the Product wise Detail Report (all its 3-month files for the last 12 months). Then choose <b>all of them together</b> below — hold Ctrl and click each. The page works out which file is which by itself. They are read on this computer and kept here; nothing is sent to the internet.</p>
+    <h2>Read the old system's reports <span lang="ta">· பழைய அமைப்பின் அறிக்கைகளைப் படி</span></h2>
+    <p class="muted">Export the reports from the old system to Excel (.xlsx): the barcode report (EANCODE), the HSN report and the Product wise Detail Report (all its 3-month files for the last 12 months). Then choose <b>all of them together</b> below — hold Ctrl and click each. The page works out which file is which by itself. They are read on this computer and kept here; nothing is sent to the internet. <span lang="ta">பழைய அமைப்பின் Excel அறிக்கைகள் அனைத்தையும் ஒன்றாகத் தேர்ந்தெடுங்கள்; எந்தக் கோப்பு எது என்று பக்கமே கண்டுபிடிக்கும். அவை இந்தக் கணினியிலேயே படிக்கப்பட்டு வைக்கப்படும்; இணையத்திற்கு எதுவும் அனுப்பப்படாது.</span></p>
     <form id="read-form" class="row">
-      <label>The old system's Excel files — all of them, together <input id="f-all" type="file" accept=".xlsx,.xls" multiple required /></label>
+      <label>The old system's Excel files — all of them, together <span lang="ta">· பழைய அமைப்பின் Excel கோப்புகள் — அனைத்தும், ஒன்றாக</span> <input id="f-all" type="file" accept=".xlsx,.xls" multiple required /></label>
       <p class="muted" id="backup-known" hidden></p>
-      <label id="backup-label" hidden>First time only: the day the old system's backup was restored on another PC and checked <input id="backup-on" type="date" /></label>
-      <button class="primary" type="submit">Read the files</button>
+      <label id="backup-label" hidden>First time only: the day the old system's backup was restored on another PC and checked <span lang="ta">· முதல் முறை மட்டும்: பழைய அமைப்பின் காப்புப் பிரதி வேறொரு கணினியில் மீட்டுச் சரிபார்க்கப்பட்ட நாள்</span> <input id="backup-on" type="date" /></label>
+      <button class="primary" type="submit">Read the files · கோப்புகளைப் படி</button>
     </form>
-    <h3>Imports already read</h3>
+    <h3>Imports already read <span lang="ta">· ஏற்கனவே படித்த இறக்குமதிகள்</span></h3>
     <div id="imports" class="items"></div>
   </section>
 
@@ -91,26 +91,26 @@
   <section id="work" hidden>
     <div class="row" style="grid-template-columns: 1fr auto;">
       <div><h2 id="work-title"></h2><p class="muted" id="work-sub"></p></div>
-      <button id="back" class="small">All imports</button>
+      <button id="back" class="small">All imports · எல்லா இறக்குமதிகளும்</button>
     </div>
     <div class="tiles" id="tiles"></div>
     <div class="row" style="grid-template-columns: 2fr 1fr 1fr;">
-      <label>Find an item (name, item code or barcode) <input id="find" /></label>
-      <button id="dl-items" class="small" type="button">Download all items (Excel)</button>
-      <button id="dl-gaps" class="small" type="button">Download the gaps (Excel)</button>
+      <label>Find an item (name, item code or barcode) <span lang="ta">· பொருளைத் தேடு (பெயர், குறியீடு அல்லது பார்கோடு)</span> <input id="find" /></label>
+      <button id="dl-items" class="small" type="button">Download all items (Excel) · எல்லாப் பொருட்களும்</button>
+      <button id="dl-gaps" class="small" type="button">Download the gaps (Excel) · குறைகள்</button>
     </div>
     <p class="muted" id="list-note"></p>
     <div id="items" class="items"></div>
-    <div class="pager"><button id="prev" class="small">Previous</button><span id="page"></span><button id="next" class="small">Next</button></div>
+    <div class="pager"><button id="prev" class="small">Previous · முந்தைய</button><span id="page"></span><button id="next" class="small">Next · அடுத்த</button></div>
   </section>
 
   <!-- 4. Loads -->
   <section id="loads" hidden>
-    <h2>Load the ready items</h2>
-    <p class="muted">Three steps by two people: the person running the load prepares it (the files are sealed and checked), a second person (the store manager or the owner) reads the list and accepts it, then the first person loads it. Each step asks the person's own PIN again.</p>
+    <h2>Load the ready items <span lang="ta">· தயாரான பொருட்களை ஏற்று</span></h2>
+    <p class="muted">Three steps by two people: the person running the load prepares it (the files are sealed and checked), a second person (the store manager or the owner) reads the list and accepts it, then the first person loads it. Each step asks the person's own PIN again. <span lang="ta">இருவரால் மூன்று படிகள்: ஏற்றுபவர் தயார் செய்கிறார், இரண்டாவது நபர் (கடை மேலாளர் அல்லது உரிமையாளர்) படித்து ஏற்கிறார், பின் முதல் நபர் ஏற்றுகிறார். ஒவ்வொரு படியிலும் PIN மீண்டும் கேட்கப்படும்.</span></p>
     <form id="prepare-form" class="row">
-      <label>Your till PIN <input id="prep-pin" type="password" inputmode="numeric" maxlength="6" required /></label>
-      <button class="primary" type="submit" id="prepare-btn">Prepare a load</button>
+      <label>Your till PIN <span lang="ta">· உங்கள் PIN</span> <input id="prep-pin" type="password" inputmode="numeric" maxlength="6" required /></label>
+      <button class="primary" type="submit" id="prepare-btn">Prepare a load · ஏற்றத்தைத் தயார் செய்</button>
     </form>
     <div id="load-list" class="items"></div>
     <div id="lines" class="lines" hidden></div>
@@ -121,6 +121,8 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 const PAGE = 40;
+// CR-01 step 4 (OI-07): inside the store PC's Office app this page lives at /import/ and the office sign-in is the only one.
+const BASE = location.pathname.startsWith('/import/') ? '/import' : '';
 const LABELS = { allergens: 'Allergens (write "none" when the pack declares none)', country_of_origin: 'Country of origin', net_quantity: 'Net quantity (e.g. 500 g)', packer: 'Packer / manufacturer / importer, and town', consumer_care: 'Consumer care phone or email' };
 const GAP_NAMES = { barcode: 'Barcode', tax: 'GST rate (Finance)', price: 'Price', label: 'Label facts' };
 const SLABS = [0, 0.25, 3, 5, 12, 18, 28, 40];
@@ -133,7 +135,7 @@ const rupees = (p) => (p / 100).toFixed(2);
 
 async function api(method, path, body) {
   let res;
-  try { res = await fetch(path, { method, headers: { 'x-sre-import': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
+  try { res = await fetch(BASE + path, { method, headers: { 'x-sre-import': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
   catch { throw Object.assign(new Error('The import page on this computer did not answer. Is its window still open? Start it again from the desktop icon "SRE Import".'), { lines: [] }); }
   const j = await res.json().catch(() => ({}));
   if (!res.ok) { if (res.status === 401 && path !== '/session') signedOut(); throw Object.assign(new Error(j.error || `Refused (${res.status}).`), { lines: j.lines || [] }); }
@@ -141,14 +143,14 @@ async function api(method, path, body) {
 }
 const run = (fn) => async (e) => { if (e) e.preventDefault(); quiet(); try { await fn(e); } catch (err) { say(err.message, 'bad'); if (err.lines && err.lines.length) showLines(err.lines); } };
 
-function signedOut() { me = null; current = null; $('who').textContent = ''; $('signout').hidden = true; for (const id of ['start', 'work', 'loads']) $(id).hidden = true; $('signin').hidden = false; }
-function signedIn(userId) { me = userId; $('who').textContent = `Signed in: ${userId}`; $('signout').hidden = false; $('signin').hidden = true; }
+function signedOut() { if (BASE !== '') { say('Your office sign-in has ended. Open the Office menu and enter your PIN again. · உங்கள் அலுவலக உள்நுழைவு முடிந்தது; மீண்டும் PIN உள்ளிடுங்கள்.', 'bad'); } me = null; current = null; $('who').textContent = ''; $('signout').hidden = true; for (const id of ['start', 'work', 'loads']) $(id).hidden = true; $('signin').hidden = false; }
+function signedIn(userId) { me = userId; $('who').textContent = `Signed in: ${userId} · உள்நுழைந்தவர்`; if (BASE !== '') $('signout').textContent = 'Office menu · அலுவலகப் பட்டியல்'; $('signout').hidden = false; $('signin').hidden = true; }
 
 $('signin-form').addEventListener('submit', run(async () => {
   const r = await api('POST', '/session', { staffId: $('staff').value.trim(), pin: $('pin').value });
   $('pin').value = ''; signedIn(r.userId); await showImports();
 }));
-$('signout').addEventListener('click', run(async () => { await api('POST', '/session/end', {}); signedOut(); say('Signed out.', 'good'); }));
+$('signout').addEventListener('click', run(async () => { if (BASE !== '') { location.href = '/manager/'; return; } await api('POST', '/session/end', {}); signedOut(); say('Signed out.', 'good'); }));
 
 async function showImports() {
   $('work').hidden = true; $('loads').hidden = true; $('start').hidden = false; current = null;
@@ -336,8 +338,8 @@ $('prepare-form').addEventListener('submit', run(async () => {
   $('prep-pin').value = ''; showLines(r.lines);
   say(`Prepared ${r.loadId} with ${r.items} item(s). Now a second person signs in on this page and accepts it.`, 'good'); await refresh();
 }));
-$('dl-items').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/items.csv`; });
-$('dl-gaps').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/gaps.csv`; });
+$('dl-items').addEventListener('click', () => { location.href = `${BASE}/api/imports/${encodeURIComponent(current.importId)}/export/items.csv`; });
+$('dl-gaps').addEventListener('click', () => { location.href = `${BASE}/api/imports/${encodeURIComponent(current.importId)}/export/gaps.csv`; });
 
 (async () => { try { const r = await api('GET', '/api/me'); signedIn(r.userId); await showImports(); } catch { signedOut(); } })();
 </script>

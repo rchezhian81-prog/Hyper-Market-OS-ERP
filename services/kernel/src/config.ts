@@ -275,6 +275,18 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * THEIR session to head office. Absent: the box never answers a page's head-office call (a lost link, said on the page).
    */
   { key: 'EDGE_HEAD_OFFICE_SIGN_IN_ISSUER', optional: true },
+  /**
+   * CR-01 step 4 (OI-06 · OI-07 · ADR-0033): on the store PC, `this-pc` — the Office centre (Users & roles, Import & export)
+   * talks to THIS PC's own API (CLOUD_API_URL, loopback only) as the person signed in with their own PIN, with a five-minute
+   * token made after that PIN was typed again for the act. The three IDP settings are this copy's own sign-in key and names.
+   */
+  { key: 'EDGE_OFFICE_HEAD_OFFICE', optional: true, oneOf: ['this-pc'] },
+  { key: 'IDP_SIGNING_KEY', secret: true, minLength: 32, optional: true },
+  { key: 'IDP_ISSUER', optional: true },
+  { key: 'IDP_AUDIENCE', optional: true },
+  /** CR-01 step 4 (OI-07): where the old-system imports are kept on the store PC (never deleted), and what kind of copy. */
+  { key: 'EDGE_IMPORTS_DIR', optional: true },
+  { key: 'MIGRATION_TARGET_KIND', optional: true },
   /** OB-388: this product's public client at the identity server (default `sre-web`); PKCE binds each sign-in, no secret. */
   { key: 'EDGE_HEAD_OFFICE_SIGN_IN_CLIENT_ID', optional: true },
   /** OB-388: head office's API name in the tokens (default `sre-retail-os-api`). */

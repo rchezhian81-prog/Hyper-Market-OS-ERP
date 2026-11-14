@@ -45,7 +45,9 @@ import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
 import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './head-office-pages'; // OB-380
 import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
-import { rolesAtThisStore } from './office-sign-in';
+import { rolesAtThisStore, OFFICE_SESSION_MINUTES } from './office-sign-in';
+import { OFFICE_CENTRE_PATHS, OFFICE_CENTRE_REDIRECTS, type OfficeCentre, type OfficePerson } from './office-centre'; // CR-01 step 4 (OI-06 · OI-07)
+import { importExportPage, peoplePage } from './office-centre-pages'; // CR-01 step 4
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
@@ -513,6 +515,12 @@ export function startScreenServer(input: {
     readonly progress?: () => UpdateProgressView | undefined;
     readonly waitingSince?: () => string | undefined;
   };
+  /**
+   * CR-01 step 4 (OI-06 · OI-07): the store PC's Office centre — Users & roles (/people/) and Import & export
+   * (/import-export/, the old-system import at /import/), each act made AS the PIN-signed person on this PC's own API.
+   * Served only with the office PIN sign-in on, never behind the hosted front. Absent: those paths are not served.
+   */
+  readonly officeCentre?: OfficeCentre;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -681,6 +689,51 @@ export function startScreenServer(input: {
   };
 
   /**
+   * CR-01 step 4: the Office centre's doors. The person is the one signed in to the office screens with their own PIN;
+   * each page then checks what that person may open, and every act asks their PIN again (office-centre.ts).
+   */
+  const centreDoor = async (req: IncomingMessage, res: ServerResponse, path: string, centre: OfficeCentre): Promise<void> => {
+    const gate = office!;
+    const session = await gate.check(officeTokenOf(req.headers['cookie']));
+    const isPage = path === OFFICE_CENTRE_PATHS.people || path === '/people' || path === OFFICE_CENTRE_PATHS.io || path === '/import-export' || path === '/import' || path === OFFICE_CENTRE_PATHS.importPrefix;
+    if (!session.ok) {
+      req.resume();
+      if (isPage && req.method === 'GET') { page(res, 401, signInPage({ next: path.endsWith('/') ? path : `${path}/`, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
+      json(res, 401, { ok: false, en: 'Your office sign-in has ended. Enter your PIN again.', ta: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. மீண்டும் உங்கள் PIN-ஐ உள்ளிடுங்கள்.' });
+      return;
+    }
+    const person: OfficePerson = { userId: session.userId, signedInAt: new Date(Date.parse(session.expiresAt) - OFFICE_SESSION_MINUTES * 60_000).toISOString() };
+    const may = centre.may(person.userId);
+    const refusePage = (): void => { page(res, 403, notAllowedPage({ displayName: displayNameIn(input.snapshot().pack, person.userId), links: [] })); };
+    if (path === '/import' || path.startsWith(OFFICE_CENTRE_PATHS.importPrefix)) {
+      if (!may.import || centre.deps.importApp === undefined) { req.resume(); refusePage(); return; }
+      if (req.method !== 'GET' && !sameOrigin(req)) { req.resume(); json(res, 403, { error: 'Refused: not from a page this store computer served. Nothing was done.' }); return; }
+      req.url = (req.url ?? '/import/').replace(/^\/import/, '') || '/';
+      await centre.deps.importApp(req, res, req.url, person);
+      return;
+    }
+    const isWrite = path === OFFICE_CENTRE_PATHS.peopleAct || path === OFFICE_CENTRE_PATHS.ioExport;
+    if (isWrite) {
+      if (req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, en: 'Send with POST.', ta: '' }); return; }
+      if (!sameOrigin(req)) { req.resume(); json(res, 403, { ok: false, en: 'Refused: not from a page this store computer served. Nothing was done.', ta: 'மறுக்கப்பட்டது: இந்தக் கணினி வழங்கிய பக்கத்திலிருந்து அல்ல.' }); return; }
+      if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { req.resume(); json(res, 415, { ok: false, en: 'Send JSON.', ta: '' }); return; }
+      const raw = await readBody(req, 16 * 1024);
+      let body: unknown;
+      try { body = raw === null ? undefined : JSON.parse(raw) as unknown; } catch { body = undefined; }
+      const out = path === OFFICE_CENTRE_PATHS.peopleAct ? await centre.peopleAct(person, body) : await centre.ioExport(person, body);
+      json(res, out.status, out.json);
+      return;
+    }
+    req.resume();
+    if (req.method !== 'GET') { json(res, 405, { ok: false, en: 'This is only read.', ta: '' }); return; }
+    if (path === OFFICE_CENTRE_PATHS.peopleState) { const out = await centre.peopleState(person); json(res, out.status, out.json); return; }
+    if (path === OFFICE_CENTRE_PATHS.ioState) { const out = await centre.ioState(person); json(res, out.status, out.json); return; }
+    if (path === OFFICE_CENTRE_PATHS.people || path === '/people') { if (!may.people) { refusePage(); return; } page(res, 200, peoplePage()); return; }
+    if (!may.exports && !may.import) { refusePage(); return; }
+    page(res, 200, importExportPage());
+  };
+
+  /**
    * OB-424: the seal panel and its `authority.crt`. Read-only. With the office PIN on, for a person signed in to the office
    * screens (anyone who sets up a handheld is); the material itself is public. Nothing to show → the panel says why in
    * words, and the download answers 404 in words: never a made-up seal.
@@ -766,6 +819,12 @@ export function startScreenServer(input: {
         req.resume();
         await link.signInDoor(req, res);
         return;
+      }
+      // CR-01 step 4: the store PC's Office centre, and the menu's Users & roles / Import & export addresses opening it.
+      if (input.officeCentre !== undefined && office !== undefined && input.trustForwardedUser !== true && doorPath !== undefined) {
+        const to = OFFICE_CENTRE_REDIRECTS[doorPath];
+        if (to !== undefined && req.method === 'GET') { req.resume(); res.writeHead(303, { location: to, 'cache-control': 'no-store' }); res.end(); return; }
+        if (input.officeCentre.owns(doorPath)) { await centreDoor(req, res, doorPath, input.officeCentre); return; }
       }
       if (isHeadOfficeCall(doorPath)) {
         if (link === undefined) {
