@@ -8,6 +8,9 @@ import { importExportPage, peoplePage } from '../../edge/store-edge/src/office-c
 // @ts-expect-error — plain .mjs script module, imported for its pure helpers (no types file needed).
 import { THIS_PC_KEYS, planTillSettings, renderTillEnv, tillEnvChangesFor } from '../../scripts/install-till.mjs';
 import { grantsFor, servicePaths, SERVICES } from '../../scripts/lib/store-computer-services.mjs';
+import { main as storeComputer, parseEnvText as parseEnv } from '../../scripts/lib/store-computer.mjs';
+import { world as world2 } from '../support/store-computer-world';
+import { settingsIn, storePc } from '../support/store-pc-windows';
 
 /**
  * **CR-01 step 4 — the Office centre on the store PC: Users & roles (OI-06) and Import & export (OI-07), Tamil (OI-09).**
@@ -327,5 +330,35 @@ describe('the store PC is set up for it (ADR-0033)', () => {
     expect(g).toHaveLength(1);
     expect(g[0]).toMatchObject({ name: SERVICES.till });
     expect(g[0]!.args[2]).toMatch(/:\(OI\)\(CI\)M$/);
+  });
+});
+
+describe('the owner\'s PC, set up before step 4: setup (run by every update) adds the Office centre\'s settings it lacks', () => {
+  it('added once from this copy\'s own settings, names said never values; a second run changes nothing; nothing it has is replaced', async () => {
+    const w = world2();
+    const { d } = storePc(w);
+    const fs = d.fs;
+    for (const dir of ['C:\\SRE\\runtime\\pgsql\\bin', 'C:\\SRE\\runtime\\winsw', 'C:\\SRE\\scripts', 'C:\\SRE\\services\\api\\dist', 'C:\\SRE\\edge\\store-edge\\dist']) fs.mkdirSync(dir, { recursive: true });
+    for (const exe of ['initdb.exe', 'pg_ctl.exe', 'postgres.exe', 'psql.exe', 'pg_isready.exe']) fs.writeFileSync(`C:\\SRE\\runtime\\pgsql\\bin\\${exe}`, 'pretend');
+    fs.writeFileSync('C:\\SRE\\runtime\\winsw\\WinSW-x64.exe', 'pretend');
+    for (const f of ['C:\\SRE\\scripts\\store-computer-service.mjs', 'C:\\SRE\\services\\api\\dist\\start.js', 'C:\\SRE\\edge\\store-edge\\dist\\start.js']) fs.writeFileSync(f, '//');
+    fs.writeFileSync('C:\\SRE\\release.json', JSON.stringify({ kind: 'sre-store-pc-release', version: '1.0.0', commit: 'abcdef1234567890' }));
+    expect(await storeComputer(['setup', '--data-drive', 'F:'], d)).toBe(0);
+    const tillEnv = 'F:\\SRE-data\\till\\till.env';
+    // The pretend till install wrote a till.env as it stood before step 4; make it hold its own (old) key to prove it is kept.
+    fs.writeFileSync(tillEnv, `${fs.readFileSync(tillEnv, 'utf8')}IDP_ISSUER=kept-issuer\n`);
+    w.said.length = 0;
+    expect(await storeComputer(['setup'], d)).toBe(0);
+    const real = settingsIn(fs, 'F:\\SRE-data');
+    const till = parseEnv(fs.readFileSync(tillEnv, 'utf8'));
+    expect(till).toMatchObject({ EDGE_OFFICE_HEAD_OFFICE: 'this-pc', IDP_SIGNING_KEY: real['IDP_SIGNING_KEY'], IDP_AUDIENCE: real['IDP_AUDIENCE'], IDP_ISSUER: 'kept-issuer', EDGE_IMPORTS_DIR: 'F:\\SRE-data\\imports' });
+    const out = w.said.join('\n');
+    expect(out).toContain('The till\'s settings gained the Office centre\'s settings (Users & roles, Import & export): EDGE_OFFICE_HEAD_OFFICE, IDP_SIGNING_KEY, IDP_AUDIENCE, EDGE_IMPORTS_DIR, MIGRATION_TARGET_KIND.');
+    expect(out).not.toContain(String(real['IDP_SIGNING_KEY']));
+    const after = fs.readFileSync(tillEnv, 'utf8');
+    w.said.length = 0;
+    expect(await storeComputer(['setup'], d)).toBe(0);
+    expect(fs.readFileSync(tillEnv, 'utf8')).toBe(after);
+    expect(w.said.join('\n')).not.toContain('gained the Office centre');
   });
 });

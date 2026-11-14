@@ -257,14 +257,9 @@ export function planTillSettings(input) {
   // CR-01 step 4 (OI-06 · OI-07 · ADR-0033): on the store PC's own copy, the office centre (Users & roles, Import & export)
   // talks to THIS PC's API as the person signed in with their own PIN — so the till holds this copy's sign-in key (the one
   // the import page and the owner setup commands already use, OB-257) and knows where the shop's imports are kept.
-  const thisPc = realCopy && ['IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE'].every((k) => realValue(composeEnv?.[k]));
-  if (thisPc) {
-    Object.assign(settings, {
-      EDGE_OFFICE_HEAD_OFFICE: 'this-pc',
-      IDP_SIGNING_KEY: composeEnv.IDP_SIGNING_KEY, IDP_ISSUER: composeEnv.IDP_ISSUER, IDP_AUDIENCE: composeEnv.IDP_AUDIENCE,
-      EDGE_IMPORTS_DIR: join(dirname(installDir), 'imports'),
-      MIGRATION_TARGET_KIND: realValue(composeEnv?.MIGRATION_TARGET_KIND) ? composeEnv.MIGRATION_TARGET_KIND : 'rehearsal',
-    });
+  const thisPc = realCopy ? officeCentreSettings({ composeEnv, importsDir: join(dirname(installDir), 'imports') }) : undefined;
+  if (thisPc !== undefined) {
+    Object.assign(settings, thisPc);
     notes.push('office centre on: Users & roles and Import & export work on this PC\'s own system, each act confirmed with the person\'s own PIN (CR-01 step 4)');
   } else if (realCopy) notes.push('office centre NOT on: this copy\'s settings have no sign-in key (IDP_SIGNING_KEY, IDP_ISSUER, IDP_AUDIENCE)');
   if (!realValue(headOfficeSignIn)) notes.push('no head-office sign-in named — the office pages that need head office say it cannot be reached; name it later with --head-office-sign-in (OB-388)');
@@ -377,6 +372,30 @@ export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', '
 export const DEVICE_KEYS = Object.freeze(['EDGE_DEVICE_PORT', 'EDGE_DEVICE_HOST']);
 /** CR-01 step 4: what the store PC's office centre needs — added to an existing till.env only where it has none (never rotated). */
 export const THIS_PC_KEYS = Object.freeze(['EDGE_OFFICE_HEAD_OFFICE', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_IMPORTS_DIR', 'MIGRATION_TARGET_KIND']);
+
+/**
+ * CR-01 step 4 (ADR-0033): the office centre's settings from the shop's own copy's settings (`.env.real`), or undefined when
+ * that copy has no sign-in key. `importsDir` is <data folder>\imports.
+ */
+export function officeCentreSettings({ composeEnv, importsDir }) {
+  if (!['IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE'].every((k) => realValue(composeEnv?.[k]))) return undefined;
+  return {
+    EDGE_OFFICE_HEAD_OFFICE: 'this-pc',
+    IDP_SIGNING_KEY: composeEnv.IDP_SIGNING_KEY, IDP_ISSUER: composeEnv.IDP_ISSUER, IDP_AUDIENCE: composeEnv.IDP_AUDIENCE,
+    EDGE_IMPORTS_DIR: importsDir,
+    MIGRATION_TARGET_KIND: realValue(composeEnv?.MIGRATION_TARGET_KIND) ? composeEnv.MIGRATION_TARGET_KIND : 'rehearsal',
+  };
+}
+
+/**
+ * CR-01 step 4: for a till.env that is ALREADY there (the owner's PC, set up before this step — `setup` keeps it), the
+ * office centre's settings it does not have yet. Never one it has (never rotated, never changed).
+ */
+export function officeCentreAdditions({ composeEnv, existing, importsDir }) {
+  const want = officeCentreSettings({ composeEnv, importsDir });
+  if (want === undefined) return {};
+  return Object.fromEntries(THIS_PC_KEYS.filter((k) => want[k] !== undefined && !realValue(existing?.[k])).map((k) => [k, want[k]]));
+}
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the

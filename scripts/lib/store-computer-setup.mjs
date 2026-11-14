@@ -14,6 +14,7 @@
 // runtime\pgsql\bin and runtime\winsw — nothing is downloaded on the shop's PC (ADR-0032).
 
 import { installServices } from './store-computer-services.mjs';
+import { officeCentreAdditions, updateTillEnv } from '../install-till.mjs';
 import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove, writeMadeAsServices } from './store-computer-adopt.mjs';
 import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
@@ -133,6 +134,16 @@ export async function firstRun(given, opts = {}) {
     say(`The till is installed in ${L.tillDir}.`);
   } else {
     say(`The till's settings in ${L.tillEnv} are KEPT.`);
+    // CR-01 step 4 (ADR-0033): a till set up before step 4 gains the Office centre's settings it lacks — only those, from
+    // this copy's own settings; nothing it has is changed. Names are said, never a value.
+    try {
+      const tillText = deps.fs.readFileSync(L.tillEnv, 'utf8');
+      const add = officeCentreAdditions({ composeEnv: parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')), existing: parseEnvText(tillText), importsDir: pathFor(deps.platform).join(L.dataRoot, 'imports') });
+      if (Object.keys(add).length > 0) {
+        deps.fs.writeFileSync(L.tillEnv, updateTillEnv(tillText, add).text, 'utf8');
+        say(`The till's settings gained the Office centre's settings (Users & roles, Import & export): ${Object.keys(add).join(', ')}.`);
+      }
+    } catch { say('The till\'s settings could not be given the Office centre\'s settings; Users & roles and Import & export stay off on this PC until setup runs again.'); }
   }
 
   // 3 — The three Windows services. A shop set up with Docker (the owner's own PC) is MOVED onto them, everything kept
