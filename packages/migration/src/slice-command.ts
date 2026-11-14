@@ -179,6 +179,8 @@ export async function runSliceCommand(input: SliceCommandInput): Promise<SliceCo
     if (c.rows > 0 || input.files[f] !== undefined) say(`  ${f}: ${c.rows} row(s) read, ${c.staged} staged, ${c.quarantined} quarantined.`);
   }
   say(`Staged: ${staged.bundle.products.length} product(s), ${staged.bundle.taxRates.length} tax rate(s), ${staged.bundle.products.reduce((n, p) => n + p.barcodes.length, 0)} barcode(s). Quarantined: ${staged.exceptions.length} row(s). Digest ${staged.digest}.`);
+  // OB-733: said every time, never silent — these load and sell at the till only, and stay listed until filled.
+  if (staged.factsToRead.length > 0) say(`Label facts still to read (OB-733): ${staged.factsToRead.length} staged item(s) load and sell at the till only, listed until their facts are read off the pack — not sold online meanwhile.`);
   for (const e of staged.exceptions.slice(0, 50)) say(`  ✗ ${e.file} line ${e.line}${e.sourceKey === '' ? '' : ` (${e.sourceKey})`}: ${e.reason}`);
   if (staged.exceptions.length > 50) say(`  … and ${staged.exceptions.length - 50} more — every one is in the exception list file.`);
 

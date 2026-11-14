@@ -9211,6 +9211,50 @@
         }
       }
     },
+    "/v1/catalogue/label-facts-outstanding": {
+      "get": {
+        "operationId": "getCatalogueLabelFactsOutstanding",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCatalogueLabelFactsOutstandingReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/label-height": {
       "get": {
         "operationId": "getCatalogueLabelHeight",
@@ -10504,6 +10548,90 @@
           },
           "403": {
             "description": "Not \"catalogue.pack.publish\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/catalogue/products/{productId}/label-facts": {
+      "post": {
+        "operationId": "postCatalogueProductsByProductIdLabelFacts",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "migration.load.record",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueProductsByProductIdLabelFactsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueProductsByProductIdLabelFactsReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"migration.load.record\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -125250,6 +125378,85 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/master-data.ts"
       },
+      "GetCatalogueLabelFactsOutstandingReply": {
+        "type": "object",
+        "required": [
+          "items",
+          "count",
+          "decision",
+          "detail"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "name",
+                "lifecycle",
+                "facts",
+                "loadId",
+                "loadedBy",
+                "loadedAt"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "lifecycle": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "clearance",
+                    "discontinued",
+                    "draft",
+                    "new"
+                  ]
+                },
+                "facts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "allergens",
+                      "consumer_care",
+                      "country_of_origin",
+                      "net_quantity",
+                      "packer"
+                    ]
+                  }
+                },
+                "loadId": {
+                  "type": "string"
+                },
+                "loadedBy": {
+                  "type": "string"
+                },
+                "loadedAt": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "count": {
+            "type": "number"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-master.ts"
+      },
       "GetCatalogueLabelHeightReply": {
         "$ref": "#/components/schemas/LabelHeightCheck",
         "x-body-schema": "derived",
@@ -125868,15 +126075,15 @@
           "counts": {
             "type": "object",
             "required": [
-              "tax",
               "allergens",
+              "tax",
               "barcode"
             ],
             "properties": {
-              "tax": {
+              "allergens": {
                 "type": "number"
               },
-              "allergens": {
+              "tax": {
                 "type": "number"
               },
               "barcode": {
@@ -154082,6 +154289,7 @@
                     "delivery fee",
                     "grievance officer contact",
                     "grievance officer name",
+                    "label facts read off the pack",
                     "return and refund terms",
                     "selling price with tax",
                     "shop GSTIN",
@@ -154194,6 +154402,7 @@
                       "delivery fee",
                       "grievance officer contact",
                       "grievance officer name",
+                      "label facts read off the pack",
                       "return and refund terms",
                       "selling price with tax",
                       "shop GSTIN",
@@ -168437,6 +168646,7 @@
                     "delivery fee",
                     "grievance officer contact",
                     "grievance officer name",
+                    "label facts read off the pack",
                     "return and refund terms",
                     "selling price with tax",
                     "shop GSTIN",
@@ -178316,6 +178526,196 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/product-content-images.ts"
       },
+      "PostCatalogueProductsByProductIdLabelFactsReply": {
+        "type": "object",
+        "required": [
+          "version",
+          "reason",
+          "product"
+        ],
+        "properties": {
+          "version": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "activation": {
+            "type": "object",
+            "required": [
+              "refused",
+              "because",
+              "standing",
+              "detail",
+              "nextSafeAction"
+            ],
+            "properties": {
+              "refused": {
+                "type": "boolean"
+              },
+              "because": {
+                "type": "string"
+              },
+              "standing": {
+                "type": "string",
+                "enum": [
+                  "confirmation_expired",
+                  "never_confirmed",
+                  "no_picture_notified"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "nextSafeAction": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "regulatedApproval": {
+            "type": "object",
+            "required": [
+              "regulated",
+              "approvedBy",
+              "approvalId"
+            ],
+            "properties": {
+              "regulated": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "approvalId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "labelFactsOutstanding": {
+            "type": "object",
+            "required": [
+              "facts",
+              "onSaleAtTheTill",
+              "soldOnline",
+              "detail"
+            ],
+            "properties": {
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "allergens",
+                    "consumer_care",
+                    "country_of_origin",
+                    "net_quantity",
+                    "packer"
+                  ]
+                }
+              },
+              "onSaleAtTheTill": {
+                "type": "boolean"
+              },
+              "soldOnline": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "mrpReplacement": {
+            "$ref": "#/components/schemas/MrpReplacement"
+          },
+          "taxClassChange": {
+            "type": "object",
+            "required": [
+              "from",
+              "to",
+              "approvedBy"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "approvedBy": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "draft": {
+            "type": "object",
+            "required": [
+              "keptAsDraft",
+              "onSale",
+              "stillNeeded",
+              "detail"
+            ],
+            "properties": {
+              "keptAsDraft": {
+                "type": "boolean"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "stillNeeded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "categoriesDefined": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductRecord"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-master.ts"
+      },
+      "PostCatalogueProductsByProductIdLabelFactsRequest": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "approvedBy": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          },
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/product-master.ts"
+      },
       "PostCatalogueProductsByProductIdPackReply": {
         "type": "object",
         "required": [
@@ -178424,6 +178824,40 @@
                 "type": "string"
               },
               "approvalId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "labelFactsOutstanding": {
+            "type": "object",
+            "required": [
+              "facts",
+              "onSaleAtTheTill",
+              "soldOnline",
+              "detail"
+            ],
+            "properties": {
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "allergens",
+                    "consumer_care",
+                    "country_of_origin",
+                    "net_quantity",
+                    "packer"
+                  ]
+                }
+              },
+              "onSaleAtTheTill": {
+                "type": "boolean"
+              },
+              "soldOnline": {
+                "type": "boolean"
+              },
+              "detail": {
                 "type": "string"
               }
             },
@@ -178916,6 +179350,40 @@
             },
             "additionalProperties": true
           },
+          "labelFactsOutstanding": {
+            "type": "object",
+            "required": [
+              "facts",
+              "onSaleAtTheTill",
+              "soldOnline",
+              "detail"
+            ],
+            "properties": {
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "allergens",
+                    "consumer_care",
+                    "country_of_origin",
+                    "net_quantity",
+                    "packer"
+                  ]
+                }
+              },
+              "onSaleAtTheTill": {
+                "type": "boolean"
+              },
+              "soldOnline": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
           "mrpReplacement": {
             "$ref": "#/components/schemas/MrpReplacement"
           },
@@ -178996,136 +179464,6 @@
           },
           "reason": {
             "type": "string"
-          },
-          "safety": {
-            "type": "object",
-            "properties": {
-              "allergens": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "bannedSingleUsePlastic": {
-                "type": "boolean"
-              },
-              "bisControlled": {
-                "type": "boolean"
-              },
-              "bisLicenceNo": {
-                "type": "string"
-              },
-              "bisLicenceValidUntil": {
-                "type": "string"
-              },
-              "carryBag": {
-                "type": "boolean"
-              },
-              "consumerCareContact": {
-                "type": "string"
-              },
-              "countryOfOrigin": {
-                "type": "string"
-              },
-              "gold": {
-                "type": "boolean"
-              },
-              "huid": {
-                "type": "string"
-              },
-              "ingredients": {
-                "type": "string"
-              },
-              "liquor": {
-                "type": "boolean"
-              },
-              "medicine": {
-                "type": "boolean"
-              },
-              "minimumAge": {
-                "type": "number"
-              },
-              "netQuantity": {
-                "type": "string"
-              },
-              "nutrition": {
-                "type": "object",
-                "properties": {
-                  "basis": {
-                    "type": "string",
-                    "enum": [
-                      "per_100g",
-                      "per_100ml"
-                    ]
-                  },
-                  "energyKcal": {
-                    "type": "number"
-                  },
-                  "proteinG": {
-                    "type": "number"
-                  },
-                  "carbohydrateG": {
-                    "type": "number"
-                  },
-                  "totalSugarsG": {
-                    "type": "number"
-                  },
-                  "addedSugarsG": {
-                    "type": "number"
-                  },
-                  "totalFatG": {
-                    "type": "number"
-                  },
-                  "saturatedFatG": {
-                    "type": "number"
-                  },
-                  "transFatG": {
-                    "type": "number"
-                  },
-                  "cholesterolMg": {
-                    "type": "number"
-                  },
-                  "sodiumMg": {
-                    "type": "number"
-                  },
-                  "servingSize": {
-                    "type": "number"
-                  }
-                },
-                "additionalProperties": true
-              },
-              "packMinimumMinor": {
-                "type": "number"
-              },
-              "packedBySre": {
-                "type": "boolean"
-              },
-              "packerDetails": {
-                "type": "string"
-              },
-              "perishable": {
-                "type": "boolean"
-              },
-              "plasticMaterial": {
-                "type": "string",
-                "enum": [
-                  "cloth",
-                  "compostable",
-                  "paper",
-                  "plastic"
-                ]
-              },
-              "plasticThicknessMicrons": {
-                "type": "number"
-              },
-              "storageConditions": {
-                "type": "string"
-              },
-              "tobacco": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": true
           }
         },
         "additionalProperties": true,
@@ -231046,6 +231384,7 @@
                     "delivery fee",
                     "grievance officer contact",
                     "grievance officer name",
+                    "label facts read off the pack",
                     "return and refund terms",
                     "selling price with tax",
                     "shop GSTIN",
@@ -294648,6 +294987,31 @@
         },
         "additionalProperties": true
       },
+      "LabelFactsFollow": {
+        "type": "object",
+        "required": [
+          "decision",
+          "loadId",
+          "markedBy",
+          "markedAt"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "const": "OB-733"
+          },
+          "loadId": {
+            "type": "string"
+          },
+          "markedBy": {
+            "type": "string"
+          },
+          "markedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "LabelHeightCheck": {
         "type": "object",
         "required": [
@@ -296737,6 +297101,7 @@
               "delivery fee",
               "grievance officer contact",
               "grievance officer name",
+              "label facts read off the pack",
               "return and refund terms",
               "selling price with tax",
               "shop GSTIN",
@@ -306030,6 +306395,9 @@
           },
           "tobaccoWarning": {
             "$ref": "#/components/schemas/TobaccoWarningRecord"
+          },
+          "labelFactsFollow": {
+            "$ref": "#/components/schemas/LabelFactsFollow"
           }
         },
         "additionalProperties": true

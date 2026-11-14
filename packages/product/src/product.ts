@@ -260,6 +260,63 @@ export interface ProductRecord {
    * they were stamped. Authored on its own route (`/tobacco-warning-confirmation`), carried forward on every publish.
    */
   readonly tobaccoWarning?: TobaccoWarningRecord;
+  /**
+   * OB-733 (owner, 14 Nov 2026, "1A", first recorded as OB-730 on its branch; option A of 14 Nov: "sell at the till only"):
+   * an item of the pilot department loaded from the old ERP before staff have read its five label facts off the pack. Its
+   * missing facts do not stop it publishing or selling AT THE TILL (the customer holds the printed pack); they stay
+   * REQUIRED TO BE KEPT (M03-FR-03) and are listed until filled (P-03 · P-08). It is never listed online or taken by
+   * scan-and-go while any is missing. Set by head office only — on a first publish, by a person who runs the old-system
+   * load — carried forward on every save, and dropped once all five facts are recorded (the full rule applies from then).
+   */
+  readonly labelFactsFollow?: LabelFactsFollow;
+}
+
+/** OB-733: who let an item's label facts follow its load, when, and from which load. Never from a request body. */
+export interface LabelFactsFollow {
+  readonly decision: 'OB-733';
+  readonly loadId: string;
+  readonly markedBy: string;
+  readonly markedAt: string;
+}
+
+/**
+ * OB-733: the ONE department whose loaded items may have their label facts follow — packaged groceries (OB-276 · OB-694),
+ * the pilot department's category id (`PILOT_CATEGORY_ID` in packages/migration/src/bpal-slice.ts, pinned equal by a test).
+ * Every other department, and every product authored on a screen, keeps the full rule.
+ */
+export const LABEL_FACTS_MAY_FOLLOW_IN = 'packaged-groceries';
+
+/** The five label facts a packed food carries (M03-FR-03 · Legal Metrology · FSSAI), as the import names them. */
+export const LABEL_FACT_KEYS = ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care'] as const;
+export type LabelFactKey = typeof LABEL_FACT_KEYS[number];
+/** Each label fact's field on the product's safety content. */
+export const LABEL_FACT_FIELD: Readonly<Record<LabelFactKey, keyof SafetyContent>> = Object.freeze({
+  allergens: 'allergens', country_of_origin: 'countryOfOrigin', net_quantity: 'netQuantity', packer: 'packerDetails', consumer_care: 'consumerCareContact',
+});
+
+/** Whether one label fact is recorded. Allergens: a list (empty = the positive declaration "none"); undefined is NOT none. */
+export function labelFactRecorded(safety: SafetyContent | undefined, fact: LabelFactKey): boolean {
+  const v: unknown = safety?.[LABEL_FACT_FIELD[fact]];
+  if (fact === 'allergens') return Array.isArray(v);
+  return typeof v === 'string' && v.trim() !== '';
+}
+
+/** The label facts not yet recorded on the product — the whole five, judged whatever its marker says. */
+export function missingLabelFacts(product: Pick<ProductRecord, 'safety'>): readonly LabelFactKey[] {
+  return LABEL_FACT_KEYS.filter((k) => !labelFactRecorded(product.safety, k));
+}
+
+/**
+ * OB-733: the label facts still to read for an item whose facts were let follow its load — empty when it carries no such
+ * mark (then the full publish rule judges it) or when all five are recorded.
+ */
+export function outstandingLabelFacts(product: Pick<ProductRecord, 'safety' | 'labelFactsFollow'>): readonly LabelFactKey[] {
+  return product.labelFactsFollow === undefined ? [] : missingLabelFacts(product);
+}
+
+/** OB-733: whether this product's missing label facts may follow (marked, and in the one department the decision names). */
+export function labelFactsMayFollow(product: Pick<ProductRecord, 'labelFactsFollow' | 'primaryCategoryId'>): boolean {
+  return product.labelFactsFollow?.decision === 'OB-733' && product.primaryCategoryId === LABEL_FACTS_MAY_FOLLOW_IN;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';
@@ -608,6 +665,20 @@ export function validateProduct(
       issues.push({ field: 'coldChain', severity: 'blocks_publish', message: `the cold-chain minimum (${cc.minTenthsC}) is above the maximum (${cc.maxTenthsC})` });
     } else if (product.handling === undefined || !(COLD_HANDLING_CLASSES as readonly string[]).includes(product.handling)) {
       issues.push({ field: 'coldChain', severity: 'blocks_publish', message: `a cold-chain limit on a product whose handling is ${product.handling ?? 'not set'} — set handling to chilled, frozen or raw_meat first, or remove the limit` });
+    }
+  }
+
+  // OB-733 (option A, 14 Nov 2026): an item marked "label facts follow" in the one department the decision names publishes
+  // and sells at the till with a label fact NOT YET READ — the issue stays, as advisory, in words that say it is outstanding.
+  // Only a fact not given at all is let follow: a fact given but unreadable (a consumer-care line with no phone or email)
+  // is still refused. Allergens left blank are "not yet read", never "none".
+  if (labelFactsMayFollow(product)) {
+    const followFields = new Map<string, LabelFactKey>(LABEL_FACT_KEYS.map((k) => [`safety.${LABEL_FACT_FIELD[k]}`, k]));
+    for (let i = 0; i < issues.length; i += 1) {
+      const issue = issues[i]!;
+      const fact = followFields.get(issue.field);
+      if (issue.severity !== 'blocks_publish' || fact === undefined || labelFactRecorded(safety, fact)) continue;
+      issues[i] = { field: issue.field, severity: 'advisory', message: `label fact not yet read off the pack (OB-733: sold at the till, listed until filled) — ${issue.message}` };
     }
   }
 

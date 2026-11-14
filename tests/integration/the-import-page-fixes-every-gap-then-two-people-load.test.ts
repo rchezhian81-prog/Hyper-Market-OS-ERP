@@ -25,6 +25,9 @@ import { xlsx } from '../support/xlsx';
  *   load         the owner prepares (sealed + staged) — and cannot accept his own load; the manager accepts — and cannot
  *                load it; the owner loads it: the products are in the catalogue at the fixed price, with the fixed barcode
  *   carried?     an item with a gap left is NOT in the load, and the loaded ones are not prepared again
+ *   OB-733       a label fact is NOT a gap (owner, 14 Nov 2026, replacing OB-696; option A "sell at the till only"): an
+ *                item with facts still to read loads with them blank (never "none") and is on head office's list; the
+ *                facts saved later on this page for a loaded item reach the item on sale, and it leaves the list
  */
 
 const backings = r3OpsBackings();
@@ -119,13 +122,16 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect(existsSync(join(dataDir, id, 'read.json'))).toBe(true);
       expect(existsSync(join(dataDir, id, 'files'))).toBe(true);
 
-      type Item = { itemId: string; gaps: { kind: string }[]; loaded: boolean; excluded: boolean };
-      const view = async (cookie = owner) => (await call(cookie, 'GET', `/api/imports/${id}`)).body as { summary: { ready: number; loaded: number; gaps: Record<string, number> }; items: Item[]; loads: { loadId: string }[]; finance: boolean };
+      type Item = { itemId: string; gaps: { kind: string }[]; factsToRead: string[]; loaded: boolean; excluded: boolean };
+      const view = async (cookie = owner) => (await call(cookie, 'GET', `/api/imports/${id}`)).body as { summary: { ready: number; loaded: number; gaps: Record<string, number>; factsToRead: number }; items: Item[]; loads: { loadId: string }[]; finance: boolean; factsFrom: string };
       const gapsOf = (v: Awaited<ReturnType<typeof view>>, itemId: string) => v.items.find((i) => i.itemId === itemId)!.gaps.map((g) => g.kind).sort();
+      const factsOf = (v: Awaited<ReturnType<typeof view>>, itemId: string) => v.items.find((i) => i.itemId === itemId)!.factsToRead;
       let v = await view();
-      expect(gapsOf(v, '12')).toEqual(['barcode', 'label', 'price']);
-      expect(gapsOf(v, '13')).toEqual(['label', 'tax']);
-      expect(v.summary.ready).toBe(0);
+      expect(gapsOf(v, '12')).toEqual(['barcode', 'price']);
+      expect(gapsOf(v, '13')).toEqual(['tax']);
+      // OB-733: no label fact is a gap — the clean items are ready with all five facts still to read.
+      expect(v.summary.ready).toBe(2);
+      expect(v.summary).toMatchObject({ factsToRead: 4, gaps: { barcode: 1, tax: 1, price: 1 } });
 
       // ── fix: by the right person, refused to the wrong one, each by name ──────────────────────────────────────
       const fixAs = (cookie: string, itemId: string, kind: string, value: unknown, reason = 'read off the pack') => call(cookie, 'POST', `/api/imports/${id}/fix`, { itemId, kind, value, reason });
@@ -141,19 +147,26 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect(String(badBarcode.body['error'])).toContain('not a pack barcode');
       expect((await fixAs(manager, '12', 'barcode', { barcodes: ['8901234567913'] }, 'scanned from the pack')).status).toBe(201);
       expect((await fixAs(manager, '12', 'price', { mrp: '65', sell: '60', cost: '50' }, 'from the supplier bill')).status).toBe(201);
-      for (const item of ['11', '12', '13']) expect((await fixAs(manager, item, 'label', LABEL)).status).toBe(201);
-      // Item 14 keeps a gap (no label facts): it must NOT be carried into the load.
+      for (const item of ['11', '12']) expect((await fixAs(manager, item, 'label', LABEL)).status).toBe(201);
+      // OB-733: some facts read now, the rest later; item 14 has none read at all — neither is held back.
+      expect((await fixAs(manager, '13', 'label', { country_of_origin: 'India', net_quantity: '250 g' })).status).toBe(201);
       v = await view();
-      expect(v.items.filter((i) => i.gaps.length === 0).map((i) => i.itemId).sort()).toEqual(['11', '12', '13']);
-      expect(gapsOf(v, '14')).toEqual(['label']);
+      expect(v.items.filter((i) => i.gaps.length === 0).map((i) => i.itemId).sort()).toEqual(['11', '12', '13', '14']);
+      expect(factsOf(v, '13')).toEqual(['allergens', 'packer', 'consumer_care']);
+      expect(factsOf(v, '14')).toHaveLength(5);
+      expect(v.summary.factsToRead).toBe(2);
+      const factsCsv = await fetch(`${base}/api/imports/${id}/export/facts-to-read.csv`, { headers: { cookie: owner } });
+      expect((await factsCsv.text()).split('\r\n').slice(1, 3).map((l) => l.split(',').slice(0, 4).join(','))).toEqual(['13,TEST TEA 250G,209,not loaded yet', '14,TEST OIL 1L,100,not loaded yet']);
 
       // ── load: prepared by the owner, accepted by the manager, loaded by the owner ──────────────────────────────
       const prepared = await call(owner, 'POST', `/api/imports/${id}/prepare`, { pin: PINS[OWNER] });
       expect(prepared.status, JSON.stringify(prepared.body)).toBe(201);
       const loadId = prepared.body['loadId'] as string;
-      expect(prepared.body['items']).toBe(3);
-      expect((prepared.body['lines'] as string[]).join('\n')).toMatch(/SEALED — products\.csv: 3 row\(s\)/);
-      expect(readFileSync(join(dataDir, id, loadId, 'products.csv'), 'utf8')).not.toContain('TEST OIL');
+      expect(prepared.body['items']).toBe(4);
+      expect((prepared.body['lines'] as string[]).join('\n')).toMatch(/SEALED — products\.csv: 4 row\(s\)/);
+      expect((prepared.body['lines'] as string[]).join('\n')).toContain('Label facts still to read (OB-733): 2 staged item(s)');
+      // Blank is written blank — never "none", never a guess.
+      expect(readFileSync(join(dataDir, id, loadId, 'products.csv'), 'utf8')).toContain('14,TEST OIL 1L,pcs,packaged-groceries,15079010,active,,,,,');
 
       const ownAccept = await call(owner, 'POST', `/api/imports/${id}/loads/${loadId}/accept`, { statement: 'Read the three items and nothing set aside; all as on the packs.', pin: PINS[OWNER] });
       expect(ownAccept.status).toBe(403);
@@ -169,13 +182,38 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect(applied.status, JSON.stringify(applied.body)).toBe(200);
 
       const products = ((await req('GET', '/v1/catalogue/products', undefined, OWNER)).body as { products: { productId: string }[] }).products.map((p) => p.productId).sort();
-      expect(products).toEqual(['11', '12', '13']);
+      expect(products).toEqual(['11', '12', '13', '14']);
+      // OB-733: on sale at the till, and on head office's list of facts still to read, until filled.
+      const outstanding = async () => ((await req('GET', '/v1/catalogue/label-facts-outstanding', undefined, OWNER)).body as { items: { productId: string; facts: string[]; loadId: string; loadedBy: string }[] }).items;
+      expect((await outstanding()).map((x) => [x.productId, x.facts, x.loadId, x.loadedBy])).toEqual([
+        ['13', ['allergens', 'packer', 'consumer_care'], loadId, OWNER], ['14', ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care'], loadId, OWNER]]);
+      const oil = ((await req('GET', '/v1/catalogue/products/14', undefined, OWNER)).body as { product: { lifecycle: string; safety?: { allergens?: string[] } } }).product;
+      expect(oil.lifecycle).toBe('active');
+      expect(oil.safety?.allergens).toBeUndefined(); // not read yet — never "none"
       v = await view();
-      expect(v.summary.loaded).toBe(3);
+      expect(v.summary.loaded).toBe(4);
+      expect(v.factsFrom).toBe('head office');
+      expect(factsOf(v, '13')).toEqual(['allergens', 'packer', 'consumer_care']);
       expect(v.summary.ready).toBe(0); // loaded items are not prepared again
       const again = await call(owner, 'POST', `/api/imports/${id}/prepare`, { pin: PINS[OWNER] });
       expect(again.status).toBe(422);
       expect(String(again.body['error'])).toContain('No item is ready');
+
+      // ── facts later (OB-733): saved on this page for a LOADED item, they reach the item on sale ─────────────────
+      const later = await fixAs(manager, '14', 'label', { allergens: 'none', country_of_origin: 'India', net_quantity: '1 L', packer: 'Test Oils, Erode', consumer_care: 'care@testoils.example' });
+      expect(later.status, JSON.stringify(later.body)).toBe(201);
+      expect(later.body['onSale']).toEqual({ updated: true, factsStillToRead: [] });
+      const partly = await fixAs(manager, '13', 'label', { allergens: 'milk' });
+      expect(partly.body['onSale']).toEqual({ updated: true, factsStillToRead: ['packer', 'consumer_care'] });
+      expect((await outstanding()).map((x) => [x.productId, x.facts])).toEqual([['13', ['packer', 'consumer_care']]]);
+      const oilNow = ((await req('GET', '/v1/catalogue/products/14', undefined, OWNER)).body as { product: { safety: Record<string, unknown>; labelFactsFollow?: unknown } }).product;
+      expect(oilNow.safety).toMatchObject({ allergens: [], countryOfOrigin: 'India', netQuantity: '1 L', packerDetails: 'Test Oils, Erode', consumerCareContact: 'care@testoils.example' });
+      expect(oilNow.labelFactsFollow).toBeUndefined(); // complete: it stands on the full rule from now on
+      const tea = ((await req('GET', '/v1/catalogue/products/13', undefined, OWNER)).body as { product: { safety: Record<string, unknown> } }).product;
+      expect(tea.safety).toMatchObject({ allergens: ['milk'], countryOfOrigin: 'India', netQuantity: '250 g' });
+      v = await view();
+      expect(factsOf(v, '14')).toEqual([]);
+      expect(v.summary.factsToRead).toBe(1);
 
       // Every fix is at head office in its fixer's own name.
       const fixes = ((await req('GET', `/v1/migration/old-system-imports/${id}`, undefined, OWNER)).body as { fixes: { kind: string; by: string; itemId: string }[] }).fixes;

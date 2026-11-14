@@ -692,14 +692,25 @@ When the GO is written:
      - **GST rate (Finance)** — only the accountant or you: the HSN and the GST slab (OB-697 still asks for Bpal to be
        corrected too, so today's bills are right).
      - **Price** — MRP, selling price and cost (a selling price above MRP is refused).
-     - **Label facts** — allergens (or `none`), country of origin, net quantity, packer, consumer care, read off the pack
-       (M03-FR-03). The pilot starts once the top 200 are done (OB-696).
      - **Leave it out of this department** — for an item that is not packaged groceries (for example loose goods).
+   - **Label facts are NOT a gap any more (OB-733, your decision of 14 Nov 2026, "sell at the till only").** An item
+     can be loaded before staff have read its five label facts off the pack: allergens (or `none`), country of origin,
+     net quantity, packer, consumer care (M03-FR-03). The tile **Facts still to read (not a blocker)** counts them; it
+     opens the list, best sellers first. Open an item and type the facts you have read; you may give some now and the
+     rest later. Leave a fact blank when it is not read yet. **Blank never means "none"**: write `none` for allergens only
+     when the pack says so.
+     - Until all five are read, the item **sells at the till** (the customer holds the printed pack) but is **not sold
+       online and cannot go in a phone scan-and-go basket**. Head office keeps it on its list of facts still to read.
+     - For an item **already loaded**, type its facts on this same page: they go to the item on sale straight away (a
+       new version, in your name, with the reason). When the fifth fact is in, the item leaves the list.
+     - This is allowed only for packaged groceries loaded from the old system. Every other department, and any product
+       made on the Products page, still needs all five facts before it can be sold.
    - **Load**, by two people: you press **Prepare a load** (your PIN; the files are sealed and every row checked); the
      store manager signs in on the same page, reads it and presses **Accept** (his PIN — you cannot accept your own);
-     you press **Load** (your PIN). Only items with no gap left are loaded; the rest wait. Then publish the price list
+     you press **Load** (your PIN). Items with no barcode, GST or price gap are loaded, with their facts or without; the
+     rest wait. The prepare step says how many are loaded with facts still to read. Then publish the price list
      (Part 24).
-   - **Download** any time: all items, or the gaps, as Excel files.
+   - **Download** any time: all items, the gaps, or the facts still to read, as Excel files.
 
    (Without the page, the same rules run as a command: `pnpm run migration:from-bpal`, docs\runbooks\real-data-load.md.)
 

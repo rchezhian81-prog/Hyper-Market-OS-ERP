@@ -100,12 +100,12 @@ const c = result.counts;
 out(`Read the old ERP's reports into ${outDir} (the old ERP itself was not touched).`);
 out(`  Purchase report: ${purchases.rows} row(s), ${purchases.datedRows} with a date, from ${purchases.oldest ?? '?'} to ${purchases.newest ?? '?'}; prices are taken from the 12 months to ${today}.`);
 out(`  In the pilot department (packaged groceries, OB-694): ${c.inDepartment} item(s).`);
-out(`  Ready to load (barcode, HSN, price and all five label facts): ${c.ready} item(s), ${c.barcodes} barcode(s), ${c.taxClasses} tax class(es).`);
-out(`  Waiting for their label facts: ${c.waitingForLabelFacts} item(s) — label-facts.csv, best sellers first.`);
+out(`  Ready to load (barcode, HSN and price): ${c.ready} item(s), ${c.barcodes} barcode(s), ${c.taxClasses} tax class(es).`);
+out(`  Of those, label facts still to read off the pack: ${c.factsStillToRead} item(s) — they load and sell at the till only, and stay listed until filled (OB-733); label-facts.csv, best sellers first.`);
 if (c.alreadyLoaded > 0) out(`  Already loaded by an earlier slice (not written again): ${c.alreadyLoaded} item(s).`);
 out(`  Set aside, each with its reason: ${c.setAside} item(s) — bpal-set-aside.csv. Nothing was guessed.`);
 out('  HSN codes the old ERP taxes at more than one rate, for the accountant: hsn-to-check.csv.');
 out(manifestExists ? '  slice.json was already there and was kept as it is.' : '  slice.json written: the pilot department, packaged groceries.');
 out(c.ready === 0
-  ? 'Next: staff fill label-facts.csv from the packs (allergens or "none", country of origin, net quantity, packer, consumer care), save it, and run this again with --label-facts.'
-  : 'Next: check the four files, then seal them (Part 22, step 2).');
+  ? 'Next: nothing is ready to load — read bpal-set-aside.csv for why each item was set aside.'
+  : `Next: check the four files, then seal them (Part 22, step 2).${c.factsStillToRead > 0 ? ' Meanwhile staff keep filling label-facts.csv from the packs (allergens or "none", country of origin, net quantity, packer, consumer care), best sellers first.' : ''}`);

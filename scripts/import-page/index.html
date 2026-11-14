@@ -48,6 +48,9 @@
   .item .body { padding: 0 12px 12px; display: grid; gap: 12px; }
   .gap { border-left: 4px solid var(--bad); background: #fffafa; padding: 8px 10px; border-radius: 6px; display: grid; gap: 8px; }
   .gap .why { font-size: 14px; }
+  .gap.later { border-left-color: var(--warn); background: var(--warn-bg); }
+  .chip.later { background: var(--warn-bg); color: var(--warn); }
+  .tile.later .v { color: var(--warn); }
   .facts { font-size: 14px; color: var(--muted); }
   .pager { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .lines { font: 13px/1.45 Consolas, monospace; background: #f7f8f7; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 260px; overflow: auto; white-space: pre-wrap; }
@@ -94,10 +97,11 @@
       <button id="back" class="small">All imports</button>
     </div>
     <div class="tiles" id="tiles"></div>
-    <div class="row" style="grid-template-columns: 2fr 1fr 1fr;">
+    <div class="row">
       <label>Find an item (name, item code or barcode) <input id="find" /></label>
       <button id="dl-items" class="small" type="button">Download all items (Excel)</button>
       <button id="dl-gaps" class="small" type="button">Download the gaps (Excel)</button>
+      <button id="dl-facts" class="small" type="button">Download the facts still to read (Excel)</button>
     </div>
     <p class="muted" id="list-note"></p>
     <div id="items" class="items"></div>
@@ -122,7 +126,9 @@
 const $ = (id) => document.getElementById(id);
 const PAGE = 40;
 const LABELS = { allergens: 'Allergens (write "none" when the pack declares none)', country_of_origin: 'Country of origin', net_quantity: 'Net quantity (e.g. 500 g)', packer: 'Packer / manufacturer / importer, and town', consumer_care: 'Consumer care phone or email' };
-const GAP_NAMES = { barcode: 'Barcode', tax: 'GST rate (Finance)', price: 'Price', label: 'Label facts' };
+const GAP_NAMES = { barcode: 'Barcode', tax: 'GST rate (Finance)', price: 'Price' };
+// OB-733: label facts never hold an item back. They are read off the pack later, best sellers first, and listed until done.
+const FACTS_NOTE = 'Not a blocker: the item loads and sells at the till. It is not sold online or by scan-and-go until all five facts are read off the pack. Allergens: write "none" only when the pack says so — blank means not read yet, never "none".';
 const SLABS = [0, 0.25, 3, 5, 12, 18, 28, 40];
 let me = null; let current = null; let view = 'gap:any'; let page = 0;
 
@@ -200,8 +206,9 @@ function drawTiles() {
   const s = current.summary; const t = $('tiles'); t.replaceChildren();
   const tile = (key, label, n, tone) => { const b = document.createElement('button'); b.type = 'button'; b.className = `tile ${tone || ''} ${view === key ? 'on' : ''}`; b.innerHTML = '<span class="k"></span><span class="v"></span>'; b.firstChild.textContent = label; b.lastChild.textContent = n; b.addEventListener('click', () => { view = key; page = 0; drawTiles(); drawItems(); }); t.append(b); };
   tile('gap:any', 'Need a fix', s.items - s.ready - s.loaded - s.excluded, 'bad');
-  for (const k of ['barcode', 'tax', 'price', 'label']) tile(`gap:${k}`, GAP_NAMES[k], s.gaps[k], s.gaps[k] > 0 ? 'bad' : 'good');
+  for (const k of ['barcode', 'tax', 'price']) tile(`gap:${k}`, GAP_NAMES[k], s.gaps[k], s.gaps[k] > 0 ? 'bad' : 'good');
   tile('ready', 'Ready to load', s.ready, 'good');
+  tile('facts', 'Facts still to read (not a blocker)', s.factsToRead, s.factsToRead > 0 ? 'later' : 'good');
   tile('loaded', 'Loaded', s.loaded, 'good');
   tile('excluded', 'Not in this department', s.excluded);
 }
@@ -211,6 +218,7 @@ function listFor() {
   return current.items.filter((it) => {
     if (q !== '' && !(it.name.toLowerCase().includes(q) || it.itemId.includes(q) || it.barcodes.some((c) => c.includes(q)))) return false;
     if (view === 'ready') return !it.excluded && !it.loaded && it.gaps.length === 0;
+    if (view === 'facts') return !it.excluded && it.factsToRead.length > 0;
     if (view === 'loaded') return it.loaded;
     if (view === 'excluded') return it.excluded;
     if (it.excluded || it.loaded || it.gaps.length === 0) return false;
@@ -223,7 +231,7 @@ $('next').addEventListener('click', () => { page += 1; drawItems(); });
 
 function drawItems() {
   const all = listFor(); const pages = Math.max(1, Math.ceil(all.length / PAGE)); if (page >= pages) page = pages - 1;
-  $('list-note').textContent = `${all.length} item(s), best sellers first.`;
+  $('list-note').textContent = `${all.length} item(s), best sellers first.${view === 'facts' ? ` ${FACTS_NOTE}${current.factsFrom === 'head office' ? '' : ' (For loaded items this shows what this import recorded — head office could not be asked just now.)'}` : ''}`;
   $('page').textContent = `Page ${page + 1} of ${pages}`; $('prev').disabled = page === 0; $('next').disabled = page >= pages - 1;
   const box = $('items'); box.replaceChildren();
   for (const it of all.slice(page * PAGE, page * PAGE + PAGE)) box.append(itemCard(it));
@@ -239,6 +247,7 @@ function itemCard(it) {
   const chips = document.createElement('div'); chips.className = 'chips';
   const chip = (text, cls = '') => { const c = document.createElement('span'); c.className = `chip ${cls}`; c.textContent = text; chips.append(c); };
   if (it.loaded) chip('Loaded', 'ok'); else if (it.excluded) chip('Not in this department', 'grey'); else if (it.gaps.length === 0) chip('Ready', 'ok'); else for (const k of new Set(it.gaps.map((g) => g.kind))) chip(GAP_NAMES[k]);
+  if (!it.excluded && it.factsToRead.length > 0) chip('Facts still to read', 'later');
   s.append(left, chips); d.append(s);
   const body = document.createElement('div'); body.className = 'body';
   const facts = document.createElement('p'); facts.className = 'facts';
@@ -248,8 +257,9 @@ function itemCard(it) {
   if (!it.loaded) {
     for (const g of it.gaps) body.append(gapForm(it, g));
     if (it.gaps.length === 0 && !it.excluded) body.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Nothing left to fix: this item goes into the next load.' }));
-    if (!current.finance) body.append(excludeForm(it));
   }
+  if (!it.excluded && it.factsToRead.length > 0 && !current.finance) body.append(factsForm(it));
+  if (!it.loaded && !current.finance) body.append(excludeForm(it));
   d.append(body);
   return d;
 }
@@ -258,8 +268,9 @@ function saveButton(it, kind, read) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'primary small'; b.textContent = 'Save this fix';
   b.addEventListener('click', run(async () => {
     const { value, reason } = read();
-    await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/fix`, { itemId: it.itemId, kind, value, reason });
-    say(`Saved for ${it.name}.`, 'good'); await refresh();
+    const r = await api('POST', `/api/imports/${encodeURIComponent(current.importId)}/fix`, { itemId: it.itemId, kind, value, reason });
+    const left = r && r.onSale ? r.onSale.factsStillToRead : undefined;
+    say(left === undefined ? `Saved for ${it.name}.` : left.length === 0 ? `Saved for ${it.name}, and the item on sale now has all five label facts.` : `Saved for ${it.name}, and on the item on sale. Still to read: ${left.map((k) => k.replace(/_/g, ' ')).join(', ')}.`, 'good'); await refresh();
   }));
   return b;
 }
@@ -286,12 +297,21 @@ function gapForm(it, g) {
     const [cl, c] = field('Cost (₹, what the shop pays)', it.price ? rupees(it.price.cost) : '', { inputMode: 'decimal' });
     const [rl, r] = field('Why', 'checked against the pack and the supplier bill'); row.append(ml, sl, cl, rl);
     row.append(saveButton(it, 'price', () => ({ value: { mrp: m.value.trim(), sell: s.value.trim(), cost: c.value.trim() }, reason: r.value })));
-  } else if (g.kind === 'label') {
-    const inputs = {};
-    for (const k of Object.keys(LABELS)) { const [l, i] = field(LABELS[k], it.facts[k] || ''); inputs[k] = i; row.append(l); }
-    const [rl, r] = field('Why', 'read off the pack'); row.append(rl);
-    row.append(saveButton(it, 'label', () => ({ value: Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()])), reason: r.value })));
   }
+  box.append(row);
+  return box;
+}
+
+// OB-733: the label facts still to read — the ones already read are shown, the rest can be filled now or later.
+function factsForm(it) {
+  const box = document.createElement('div'); box.className = 'gap later';
+  box.append(Object.assign(document.createElement('p'), { className: 'why', textContent: `Facts still to read off the pack: ${it.factsToRead.map((k) => k.replace(/_/g, ' ')).join(', ')}${it.loaded ? ' (this item is on sale at the till)' : ''}.` }));
+  box.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: FACTS_NOTE }));
+  const row = document.createElement('div'); row.className = 'row';
+  const inputs = {};
+  for (const k of Object.keys(LABELS)) { const [l, i] = field(LABELS[k], it.facts[k] || ''); inputs[k] = i; row.append(l); }
+  const [rl, r] = field('Why', 'read off the pack'); row.append(rl);
+  row.append(saveButton(it, 'label', () => ({ value: Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()]).filter(([, v]) => v !== '')), reason: r.value })));
   box.append(row);
   return box;
 }
@@ -338,6 +358,7 @@ $('prepare-form').addEventListener('submit', run(async () => {
 }));
 $('dl-items').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/items.csv`; });
 $('dl-gaps').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/gaps.csv`; });
+$('dl-facts').addEventListener('click', () => { location.href = `/api/imports/${encodeURIComponent(current.importId)}/export/facts-to-read.csv`; });
 
 (async () => { try { const r = await api('GET', '/api/me'); signedIn(r.userId); await showImports(); } catch { signedOut(); } })();
 </script>

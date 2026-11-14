@@ -21,7 +21,7 @@ import { currentImage, type ProductImageStore, type ProductImageType, type Produ
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
 import type { ServiceCase } from '../../../packages/service-desk/src/index';
 import type { Movement } from '../../inventory/src/index';
-import type { AppContent, ProductRecord } from '../../../packages/product/src/product';
+import { outstandingLabelFacts, type AppContent, type ProductRecord } from '../../../packages/product/src/product';
 import type { PackResult } from '../../../packages/fulfilment/src/packing';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { onlineStoreRoutes, onlineSaleOf, type OnlineListingRecord, type OnlineStorePublication, type OnlineStoreDeps, type OnlineSaleVerdict } from '../../orders/src/storefront-online-store';
@@ -140,6 +140,8 @@ function onlineStoreDepsOf(input: { readonly store: EventStore; readonly now: ()
       sellingPriceMinor: p.unitPriceMinor, taxRateBps: p.taxBps,
       carriesDate, ...(dated[0] === undefined ? {} : { bestBefore: dated[0] }),
       ...(m?.safety?.countryOfOrigin === undefined ? {} : { countryOfOrigin: m.safety.countryOfOrigin }),
+      // OB-733: an item on sale at the till with label facts still to read is never listed or sold online.
+      ...(m === undefined || outstandingLabelFacts(m).length === 0 ? {} : { labelFactsOutstanding: outstandingLabelFacts(m) }),
       seller: other === undefined ? { own: true } : { own: false, sellerId: other.ownerId ?? other.ownership! },
     };
   };

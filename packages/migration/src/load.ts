@@ -73,6 +73,12 @@ export interface ExtractProduct {
   readonly costMinor: number;
   /** 0–9999; the price route refuses a price below cost + floor without an approver. */
   readonly marginFloorBps: number;
+  /**
+   * OB-733 (option A: sold at the till only): a packaged-groceries item loaded before its five label facts are read off the
+   * pack. The publish asks head office to let the missing facts follow (`labelFactsFollow: { loadId }`); head office lists
+   * them until filled and keeps the item off the online store and scan-and-go. Absent: the full rule.
+   */
+  readonly labelFactsFollow?: true;
 }
 
 export interface ExtractSupplier {
@@ -236,12 +242,15 @@ function engineCategoriesOf(bundle: ExtractBundle): readonly Category[] {
 }
 
 /** The product as the publish route will read it — one shape, used for the pre-check AND the step body. */
-function productRecordOf(p: ExtractProduct, tenantId: string): ProductRecord {
+function productRecordOf(p: ExtractProduct, tenantId: string, judged = false): ProductRecord {
   return {
     productId: p.productId, tenantId, sku: p.sku, name: p.name, baseUom: p.baseUom,
     primaryCategoryId: p.primaryCategoryId, taxClass: p.taxClass, lifecycle: p.lifecycle,
     ...(p.brand === undefined ? {} : { brand: p.brand }),
     ...(p.safety === undefined ? {} : { safety: p.safety }),
+    // OB-733: judged here as head office will judge it once the load asks for the facts to follow. Never sent in the
+    // product body — head office sets the mark itself, from the load's request (planLoad).
+    ...(judged && p.labelFactsFollow === true ? { labelFactsFollow: { decision: 'OB-733' as const, loadId: tenantId, markedBy: tenantId, markedAt: '' } } : {}),
   };
 }
 
@@ -297,7 +306,7 @@ export function validateBundle(bundle: ExtractBundle): readonly string[] {
     // problem in the plan, not a 422 half-way through the load.
     if (categories.has(p.primaryCategoryId)) {
       try {
-        const verdict = validateProduct(productRecordOf(p, 'plan'), engineCategories);
+        const verdict = validateProduct(productRecordOf(p, 'plan', true), engineCategories);
         for (const issue of verdict.issues) {
           if (issue.severity === 'blocks_publish') problems.push(`product "${p.productId}": ${issue.message}`);
         }
@@ -495,7 +504,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     steps.push({
       group: 'product', what: `product ${p.productId}`,
       path: `/v1/catalogue/products/${encodeURIComponent(p.productId)}/publish`,
-      body: { product: publishBodyOf(productRecordOf(p, req.tenantId)), categories },
+      body: { product: publishBodyOf(productRecordOf(p, req.tenantId)), categories, ...(p.labelFactsFollow === true ? { labelFactsFollow: { loadId: req.loadId } } : {}) },
       idempotencyKey: key(`product-${p.productId}`),
     });
   }

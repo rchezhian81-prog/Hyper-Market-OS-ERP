@@ -14,9 +14,10 @@ import { xlsx } from '../support/xlsx';
 
 /**
  * OB-704 (owner, 7 Nov 2026: "screens, not commands") — the import page, driven in a real browser the way the owner and
- * his staff use it: sign in with a staff ID and PIN, choose the three Excel reports, read them, open an item that waits
- * for its label facts, type them in and save — and it moves to "Ready to load", with the Prepare button counting it.
- * No command is typed anywhere. Made-up data.
+ * his staff use it: sign in with a staff ID and PIN, choose the three Excel reports, read them. OB-733 (owner, 14 Nov 2026,
+ * replacing OB-696; "sell at the till only"): an item with no label facts is ready to load all the same — the facts are
+ * on their own "Facts still to read" tile, best sellers first; typed in (some now, the rest later) and saved, the item
+ * leaves that list. No command is typed anywhere. Made-up data.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -47,7 +48,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
   }, 90_000);
   afterAll(async () => { await browser?.close(); await new Promise<void>((r) => server.close(() => r())); });
 
-  it('sign in → choose the three reports → read → type an item\'s label facts → it is ready to load', { timeout: 60_000 }, async () => {
+  it('sign in → choose the three reports → read → ready with its facts still to read → type them, some now, the rest later → off the list', { timeout: 60_000 }, async () => {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -69,16 +70,32 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.click('#read-form button[type=submit]');
     await page.waitForSelector('#work:not([hidden])');
     expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
-    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (0 ready item(s))');
-
-    // The rice waits only for its label facts: open it, type them, save.
+    // OB-733: the rice has no label facts yet and is ready to load all the same; both items are on the facts tile.
+    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
+    const factsTile = page.locator('#tiles .tile', { hasText: 'Facts still to read (not a blocker)' });
+    expect(await factsTile.locator('.v').textContent()).toBe('2');
+    await factsTile.click();
+    expect(await page.textContent('#list-note')).toContain('blank means not read yet, never "none"');
     const rice = page.locator('details.item', { hasText: 'TEST RICE 1KG' });
+    expect(await rice.locator('.chip.later').textContent()).toBe('Facts still to read');
     await rice.locator('summary').click();
-    const facts = { 'Allergens (write "none" when the pack declares none)': 'none', 'Country of origin': 'India', 'Net quantity (e.g. 500 g)': '1 kg', 'Packer / manufacturer / importer, and town': 'Test Foods, Chennai', 'Consumer care phone or email': '1800 000 000' };
-    for (const [label, value] of Object.entries(facts)) await rice.getByLabel(label).fill(value);
+    // Two facts read now; the rest later.
+    await rice.getByLabel('Allergens (write "none" when the pack declares none)').fill('none');
+    await rice.getByLabel('Country of origin').fill('India');
     await rice.getByRole('button', { name: 'Save this fix' }).click();
-    await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('prepare-btn')?.textContent === 'Prepare a load (1 ready item(s))');
-    expect(await page.textContent('#msg')).toContain('Saved for TEST RICE 1KG');
+    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('msg')?.textContent ?? '').includes('Saved for TEST RICE 1KG'));
+    const riceNow = page.locator('details.item', { hasText: 'TEST RICE 1KG' });
+    await riceNow.locator('summary').click();
+    expect(await riceNow.locator('.gap.later .why').textContent()).toBe('Facts still to read off the pack: net quantity, packer, consumer care.');
+    expect(await riceNow.getByLabel('Country of origin').inputValue()).toBe('India'); // what was read stays shown
+    for (const [label, value] of Object.entries({ 'Net quantity (e.g. 500 g)': '1 kg', 'Packer / manufacturer / importer, and town': 'Test Foods, Chennai', 'Consumer care phone or email': '1800 000 000' })) await riceNow.getByLabel(label).fill(value);
+    await riceNow.getByRole('button', { name: 'Save this fix' }).click();
+    await page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(q: string): { textContent: string | null } | null } }).document.querySelector('#tiles .tile:nth-child(6) .v')?.textContent === '1');
+    expect(await page.locator('details.item', { hasText: 'TEST RICE 1KG' }).count()).toBe(0); // off the facts list
+    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
+
+    // Back to the items needing a fix.
+    await page.locator('#tiles .tile', { hasText: 'Need a fix' }).click();
 
     // The dal still has a wrong barcode: a wrong one typed in is refused, in words.
     const dal = page.locator('details.item', { hasText: 'TEST DAL 500G' });

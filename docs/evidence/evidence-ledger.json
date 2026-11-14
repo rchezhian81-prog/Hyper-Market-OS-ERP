@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2371,
+  "testFiles": 2372,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -299,6 +299,7 @@
           "tests/unit/erp-scale-label-rules-session.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/import.test.ts",
+          "tests/unit/ob733-label-facts-follow-a-loaded-item.test.ts",
           "tests/unit/p2-product-master-rules.test.ts",
           "tests/unit/product-data-quality.test.ts",
           "tests/unit/product-duplicates.test.ts",
@@ -308,7 +309,6 @@
           "tests/unit/screen-router.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts",
-          "tests/unit/the-old-erps-reports-become-the-pilot-slice.test.ts",
           "tests/unit/two-scale-label-rule-changes-at-once-never-both-land.test.ts"
         ],
         "integration": [

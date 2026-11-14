@@ -7,7 +7,8 @@
 // new fact, never an overwrite; the latest fix of a kind for an item is the one that applies).
 //
 //   analyseOldSystem   the reports → the department's items as the old ERP reads them (no fix applied yet)
-//   resolveImport      items + fixes → each item as it would load, with its remaining GAPS (empty: ready)
+//   resolveImport      items + fixes → each item as it would load, with its remaining GAPS (empty: ready) and the
+//                      label FACTS STILL TO READ (OB-733: not a gap — the item loads, sells at the till only, listed)
 //   validateFix        what a fix may say (a barcode must be a real GTIN, a price must not exceed MRP …)
 //   sliceFilesFor      the ready items → the four published slice files (then sealed, staged, accepted, applied
 //                      exactly as `migration:slice` does — MG-02 · MG-05 · MG-06)
@@ -15,6 +16,11 @@
 // Who may fix what is the API's (services/migration/src/old-system-imports.ts): a GST rate only Finance (the accountant
 // or the owner, `catalogue.tax.approve`); a barcode, a price, a label fact or "not in this department" whoever runs the
 // load (`migration.load.record`). Nothing here is guessed: an item with any gap left is not written.
+//
+// OB-733 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a missing label fact is NOT a
+// gap. The item loads with the fact blank (never "none", never a guess) and head office lists it until it is read off the
+// pack; meanwhile it is sold at the till only — never online or by scan-and-go. A label fix may give some of the five
+// facts; each fact keeps the latest value given, and a fact once read is corrected, never blanked.
 
 import {
   cellOf, csv, inPilotDepartment, isGtin, LABEL_FACTS, minusOneYear, paiseText, PILOT_CATEGORY_ID, PURCHASE_COLUMNS,
@@ -52,7 +58,8 @@ export interface ImportFix {
   readonly at: string;
 }
 
-export type GapKind = 'barcode' | 'tax' | 'price' | 'label';
+/** What stops an item loading. A label fact never does (OB-733) — see `ResolvedItem.factsToRead`. */
+export type GapKind = 'barcode' | 'tax' | 'price';
 export interface Gap { readonly kind: GapKind; readonly why: string }
 
 export interface ResolvedItem {
@@ -66,6 +73,8 @@ export interface ResolvedItem {
   readonly gstBps?: number;
   readonly price?: { readonly mrp: number; readonly sell: number; readonly cost: number };
   readonly facts: Readonly<Partial<Record<LabelFact, string>>>;
+  /** OB-733: the label facts not read off the pack yet — not a blocker; listed, best sellers first, until filled. */
+  readonly factsToRead: readonly LabelFact[];
   readonly gaps: readonly Gap[];
   /** The fixes that apply now, by kind — so a screen can say who fixed what. */
   readonly fixedBy: Readonly<Partial<Record<FixKind, { readonly by: string; readonly at: string }>>>;
@@ -172,7 +181,9 @@ export function validateFix(kind: FixKind, value: Readonly<Record<string, unknow
       break;
     }
     case 'label': {
-      for (const k of LABEL_FACTS) if (str(value[k]) === '') problems.push(`${k.replace(/_/g, ' ')} is blank — read it off the pack${k === 'allergens' ? ' (write "none" when the pack declares none)' : ''}`);
+      // OB-733: any of the five may be given now and the rest later; a blank one stays "still to read" (never "none").
+      if (LABEL_FACTS.every((k) => str(value[k]) === '')) problems.push('give at least one label fact as the pack prints it (allergens: write "none" only when the pack declares none)');
+      for (const k of Object.keys(value)) if (!(LABEL_FACTS as readonly string[]).includes(k)) problems.push(`"${k}" is not one of the five label facts`);
       break;
     }
     case 'exclude':
@@ -188,6 +199,9 @@ export function resolveImport(items: readonly OldItem[], fixes: readonly ImportF
   const latest = new Map<string, ImportFix>();
   for (const f of [...fixes].sort((a, b) => a.at.localeCompare(b.at))) latest.set(`${f.itemId}|${f.kind}`, f);
   const fixOf = (id: string, kind: FixKind): ImportFix | undefined => latest.get(`${id}|${kind}`);
+  const labelFixes = new Map<string, ImportFix[]>();
+  for (const f of [...fixes].sort((a, b) => a.at.localeCompare(b.at))) if (f.kind === 'label') labelFixes.set(f.itemId, [...(labelFixes.get(f.itemId) ?? []), f]);
+  const labelFixesOf = (id: string): readonly ImportFix[] => labelFixes.get(id) ?? [];
 
   const draft = items.map((it) => {
     const gaps: Gap[] = [];
@@ -217,13 +231,14 @@ export function resolveImport(items: readonly OldItem[], fixes: readonly ImportF
     else if (it.price.sell > it.price.mrp) gaps.push({ kind: 'price', why: `the old ERP's selling price ${paiseText(it.price.sell)} is above its MRP ${paiseText(it.price.mrp)} (${it.price.day}) — type the right figures` });
     else price = { mrp: it.price.mrp, sell: it.price.sell, cost: it.price.cost };
 
+    // OB-733: each fact keeps the latest value any label fix gave it (a blank in a later fix never unreads it). A fact not
+    // read yet is listed, not a gap.
     const lf = fixOf(it.itemId, 'label'); mark(lf);
     const facts: Partial<Record<LabelFact, string>> = {};
-    if (lf !== undefined) for (const k of LABEL_FACTS) facts[k] = String(lf.value[k] ?? '').trim();
-    const missing = LABEL_FACTS.filter((k) => (facts[k] ?? '') === '');
-    if (missing.length > 0) gaps.push({ kind: 'label', why: `read off the pack: ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')}` });
+    for (const f of labelFixesOf(it.itemId)) for (const k of LABEL_FACTS) { const v = str(f.value[k]); if (v !== '') facts[k] = v; }
+    const factsToRead = LABEL_FACTS.filter((k) => (facts[k] ?? '') === '');
 
-    return { it, excluded, barcodes, hsn, gstBps, price, facts, gaps, fixedBy };
+    return { it, excluded, barcodes, hsn, gstBps, price, facts, factsToRead, gaps, fixedBy };
   });
 
   // Across items: a barcode names one item, and an HSN carries one rate (the tax class is the HSN).
@@ -246,12 +261,12 @@ export function resolveImport(items: readonly OldItem[], fixes: readonly ImportF
     return {
       itemId: d.it.itemId, name: d.it.name, sold: d.it.sold, excluded: d.excluded, loaded: loaded.has(d.it.itemId),
       barcodes: d.barcodes, ...(d.hsn === undefined ? {} : { hsn: d.hsn }), ...(d.gstBps === undefined ? {} : { gstBps: d.gstBps }),
-      ...(d.price === undefined ? {} : { price: d.price }), facts: d.facts, gaps: d.excluded ? [] : gaps, fixedBy: d.fixedBy,
+      ...(d.price === undefined ? {} : { price: d.price }), facts: d.facts, factsToRead: d.excluded ? [] : d.factsToRead, gaps: d.excluded ? [] : gaps, fixedBy: d.fixedBy,
     };
   });
 }
 
-/** Ready: in the department, not loaded yet, no gap left. */
+/** Ready: in the department, not loaded yet, no gap left. Label facts still to read do not hold it back (OB-733). */
 export const isReady = (r: ResolvedItem): boolean => !r.excluded && !r.loaded && r.gaps.length === 0;
 
 // ── the ready items → the four published slice files ────────────────────────────────────────────────
@@ -262,15 +277,22 @@ export function sliceFilesFor(ready: readonly ResolvedItem[], ratesFrom: string)
   return {
     'tax-classes.csv': csv(['hsn_code', 'effective_from', 'rate_percent'], [...rates].sort(([a], [b]) => a.localeCompare(b)).map(([h, b]) => [h, ratesFrom, String(b / 100)])),
     'products.csv': csv(['item_code', 'description', 'uom', 'category', 'hsn_code', 'status', ...LABEL_FACTS],
-      ready.map((r) => [r.itemId, r.name, 'pcs', PILOT_CATEGORY_ID, r.hsn!, 'active', ...LABEL_FACTS.map((k) => r.facts[k]!)])),
+      // OB-733: a fact not read yet is written BLANK — the loader lets it follow and head office lists it; never "none".
+      ready.map((r) => [r.itemId, r.name, 'pcs', PILOT_CATEGORY_ID, r.hsn!, 'active', ...LABEL_FACTS.map((k) => r.facts[k] ?? '')])),
     'prices.csv': csv(['item_code', 'mrp', 'selling_price', 'cost_price'], ready.map((r) => [r.itemId, paiseText(r.price!.mrp), paiseText(r.price!.sell), paiseText(r.price!.cost)])),
     'barcodes.csv': csv(['item_code', 'barcode'], ready.flatMap((r) => r.barcodes.map((c) => [r.itemId, c]))),
   };
 }
 
-/** The gap counts a screen shows at the top: how many items wait on each kind of fix, and how many are ready. */
-export function importSummary(resolved: readonly ResolvedItem[]): { readonly items: number; readonly ready: number; readonly loaded: number; readonly excluded: number; readonly gaps: Readonly<Record<GapKind, number>> } {
-  const gaps: Record<GapKind, number> = { barcode: 0, tax: 0, price: 0, label: 0 };
+/**
+ * The counts a screen shows at the top: how many items wait on each kind of fix, how many are ready, and — not a blocker
+ * (OB-733) — how many in the department, loaded or not, still have label facts to read off the pack.
+ */
+export function importSummary(resolved: readonly ResolvedItem[]): { readonly items: number; readonly ready: number; readonly loaded: number; readonly excluded: number; readonly gaps: Readonly<Record<GapKind, number>>; readonly factsToRead: number } {
+  const gaps: Record<GapKind, number> = { barcode: 0, tax: 0, price: 0 };
   for (const r of resolved) if (!r.excluded && !r.loaded) for (const k of new Set(r.gaps.map((g) => g.kind))) gaps[k] += 1;
-  return { items: resolved.length, ready: resolved.filter(isReady).length, loaded: resolved.filter((r) => r.loaded).length, excluded: resolved.filter((r) => r.excluded).length, gaps };
+  return {
+    items: resolved.length, ready: resolved.filter(isReady).length, loaded: resolved.filter((r) => r.loaded).length, excluded: resolved.filter((r) => r.excluded).length, gaps,
+    factsToRead: resolved.filter((r) => !r.excluded && r.factsToRead.length > 0).length,
+  };
 }

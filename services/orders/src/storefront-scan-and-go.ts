@@ -56,6 +56,11 @@ export interface PhoneBasketRecall {
 
 export interface ScanAndGoDeps {
   readonly pack: (tenantId: string) => Promise<ScanAndGoPack | undefined>;
+  /**
+   * OB-733 (option A: sold at the till only): the label facts still to read off the pack for a product loaded before they
+   * were read — empty when none. Such a product is scanned by the cashier, never put in a phone basket. Absent: none known.
+   */
+  readonly labelFactsOutstanding?: (tenantId: string, productId: string) => Promise<readonly string[]>;
   readonly basket: (tenantId: string, code: string) => Promise<PhoneBasket | undefined>;
   readonly recalls: (tenantId: string, code: string) => Promise<readonly PhoneBasketRecall[]>;
   readonly basketsOf: (tenantId: string, customerRef: string) => Promise<readonly PhoneBasket[]>;
@@ -124,19 +129,20 @@ export function scanAndGoRoutes(deps: ScanAndGoDeps): readonly Route[] {
         const qty = new Map<string, number>();
         for (const l of lines as { productId: string; quantityMinor: number }[]) qty.set(l.productId, (qty.get(l.productId) ?? 0) + l.quantityMinor);
         const kept: PhoneBasketLine[] = [];
-        const refused: { productId: string; why: 'not_in_the_pack' | 'weighed_at_the_till' | 'no_barcode' }[] = [];
+        const refused: { productId: string; why: 'not_in_the_pack' | 'weighed_at_the_till' | 'no_barcode' | 'label_facts_not_yet_read' }[] = [];
         for (const [productId, quantityMinor] of qty) {
           const p = pack.products.find((x) => x.productId === productId);
           if (p === undefined) { refused.push({ productId, why: 'not_in_the_pack' }); continue; }
           if (!PIECE_UNITS.has(p.baseUom.toLowerCase())) { refused.push({ productId, why: 'weighed_at_the_till' }); continue; }
           const code = pack.barcodes.find((c) => c.productId === productId && (c.kind === 'standard' || c.kind === 'alternate'))?.code;
           if (code === undefined) { refused.push({ productId, why: 'no_barcode' }); continue; }
+          if (((await deps.labelFactsOutstanding?.(ctx.tenantId, productId)) ?? []).length > 0) { refused.push({ productId, why: 'label_facts_not_yet_read' }); continue; }
           kept.push({ productId, name: p.name, quantityMinor: Math.min(quantityMinor, MAX_QTY), barcode: code });
         }
         if (refused.length > 0) {
           throw apiError(422, {
             code: 'not_for_scan_and_go',
-            whatHappened: `These cannot go through scan-and-go: ${refused.map((r) => `${r.productId} (${r.why === 'weighed_at_the_till' ? 'weighed at the till' : r.why === 'no_barcode' ? 'no barcode the till can scan' : 'not on sale in the shop\'s price pack'})`).join(', ')}.`,
+            whatHappened: `These cannot go through scan-and-go: ${refused.map((r) => `${r.productId} (${r.why === 'weighed_at_the_till' ? 'weighed at the till' : r.why === 'no_barcode' ? 'no barcode the till can scan' : r.why === 'label_facts_not_yet_read' ? 'its label facts are still being read off the pack, so it is sold at the till only' : 'not on sale in the shop\'s price pack'})`).join(', ')}.`,
             wasItSaved: 'not_saved', nextSafeAction: 'Take them out of the phone basket and have them weighed or scanned at the till. Nothing was kept.',
             refused,
           } as Parameters<typeof apiError>[1]);
