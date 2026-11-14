@@ -1,6 +1,6 @@
 # ADR 0033 — A privilege change on the store PC is a sealed, PIN-confirmed act relayed by the box, never a token the box mints
 
-- **Status:** Proposed (CR-01 step 4a; awaiting the owner's choice on the residual risk, OB-732)
+- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B")
 - **Date:** 14 November 2026
 - **Context:** CR-01 OI-06 asks for people and roles to be managed on the store PC's screens. OB-731 "A" decided how a
   person proves who they are there: staff ID + own till PIN, the PIN typed again to confirm each privilege change, on
@@ -26,7 +26,9 @@
    `DecisionKind`s `person_provision`, `role_request`, `role_grant_approval` (and `role_permission_change` for OI-06's
    role adjustments, OB-730, step 4c). Before sealing, the box checks the acting person's PIN **again** with
    `verifyPerson` (the till's PIN register and guess limits), holding **the route's own permission** as the authority
-   — never only "signed in". The sealed record carries the exact request body, a fresh request id and `confirmedAt`;
+   — never only "signed in". The seal is made with a **dedicated privilege-seal key** (OB-732 "B"): made at setup,
+   held only in `till.env` and the office API's settings, never equal to `PACK_SIGNING_KEY`, `IDP_SIGNING_KEY` or
+   `BOX_HISTORY_SEAL_KEY` (the API refuses to start otherwise), replaceable on its own. The sealed record carries the exact request body, a fresh request id and `confirmedAt`;
    the existing whole-record digest covers them.
 3. **The box relays it** to new box-relay identity routes under its store token (`identity.*.sync` permissions, the
    `storeComputerBinding` check), as it relays approval decisions today. These routes **refuse** — never merely flag —
@@ -47,12 +49,11 @@
   server, with the PIN typed again for each act and two people for each privilege change.
 - The till still cannot sign in as anyone; it can only vouch, by seal, for a person it has just verified by PIN, for
   one named act, within 300 s, once.
-- **Residual risk (stated, not hidden):** the seal key is derived from `PACK_SIGNING_KEY`, which `till.env` holds
-  (ADR-0023 "Limit"). Whoever can read the till's settings file — an administrator of the store PC, or malware running
+- **Residual risk (stated, not hidden):** the privilege-seal key is in `till.env`. A leak of the pack key alone no
+  longer lets anyone forge a privilege change (OB-732 "B"), but whoever can read the till's settings file — an administrator of the store PC, or malware running
   as one — could forge seals for any person, including both people of a two-person approval. Mitigations: `till.env`
   is readable only by the till's own account and administrators (OB-284 lock); every such change is audited and raises
-  an owner alert; it works only on the store PC. Owner decision OB-732 chooses whether to accept this as is, or to give
-  privilege seals their own dedicated key.
+  an owner alert; it works only on the store PC. The owner accepted this with a dedicated key (OB-732 "B").
 - Tests: the box seals only after a fresh PIN check with the route's permission; the API refuses a missing seal, a
   wrong seal, a stale `confirmedAt`, a reused request id, a requester approving their own request, an approver lacking
   what is granted; the audit event and the owner alert are written.
