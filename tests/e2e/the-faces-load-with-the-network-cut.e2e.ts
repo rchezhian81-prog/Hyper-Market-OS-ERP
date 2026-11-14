@@ -84,7 +84,10 @@ describe.skipIf(!HAVE_BROWSER)('the two faces load from the app\'s own files wit
       await w.document.fonts.ready;
     });
     expect(asked.filter((u) => /\.woff2$/.test(u))).toEqual([]);
-    expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^system-ui/);
+    expect(await page.evaluate(() => {
+      const w = globalThis as unknown as { getComputedStyle(el: unknown): { fontFamily: string }; document: { body: unknown } };
+      return w.getComputedStyle(w.document.body).fontFamily;
+    })).toMatch(/^system-ui/);
     await context.close();
   }, 60_000);
 });
