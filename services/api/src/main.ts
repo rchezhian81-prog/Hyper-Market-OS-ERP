@@ -39,7 +39,9 @@ import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-in
 import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
-import { tillSealKey } from '../../../packages/identity/src/till-seal';
+import { privilegeSealKey, tillSealKey } from '../../../packages/identity/src/till-seal';
+import { boxPrivilegeRoutes } from '../../identity/src/box-privilege';
+import { boxPrivilegeAdapter } from './box-privilege-adapters';
 import { loyaltyMemberKey } from '../../../packages/loyalty/src/earn-rule';
 import { loyaltyMemberRoutes } from '../../customer/src/loyalty-members';
 import { loyaltyWalletRoutes, spendOnSale } from '../../customer/src/loyalty-wallets';
@@ -181,7 +183,7 @@ import { connectorRoutes } from '../../platform/src/connectors';
 import { connectorDeliveryRoutes } from '../../platform/src/connector-delivery';
 import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
-import { identityRoutes } from '../../identity/src/index';
+import { identityRoutes, type IdentityDeps } from '../../identity/src/index';
 import { jwksKeyring } from '../../identity/src/jwks';
 import { directoryLocationOf, keycloakDirectory, type IdentityDirectory } from '../../identity/src/identity-directory';
 import { peopleRoutes } from '../../identity/src/people';
@@ -483,6 +485,11 @@ export function buildSurface(deps: {
    * is trusted and nothing is saved, and the health read says so (`box_history_seal`, then the owner's built-in alert).
    */
   readonly boxHistorySealSecret?: string;
+  /**
+   * CR-01 step 4a · ADR-0033 · OB-732 "B": BOX_PRIVILEGE_SEAL_KEY — the dedicated secret a privilege change confirmed by PIN
+   * on the store PC is sealed with (made at setup, held by the till and this API only). Absent: such relays are refused.
+   */
+  readonly privilegeSealSecret?: string;
   readonly migrationTargetKind: TargetKind;
   /**
    * The notification delivery transport (PA-08). NEVER set by `startApi`: no real provider is certified yet (the SMS
@@ -565,6 +572,11 @@ export function buildSurface(deps: {
   // pack signing key every store computer holds — a secret equal to it is not used at all (no key: trust nothing, said).
   const boxHistoryKey = deps.boxHistorySealSecret === undefined || deps.boxHistorySealSecret === deps.signingKey
     ? undefined : boxHistorySealKey(deps.boxHistorySealSecret);
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the key a privilege change sealed on the store PC is checked with — from the
+  // DEDICATED secret, never the pack key. Absent, or equal to another secret: no key, and every such relay is refused (503).
+  const privilegeKey = deps.privilegeSealSecret === undefined || deps.privilegeSealSecret.length < 32
+    || [deps.signingKey, deps.boxHistorySealSecret].includes(deps.privilegeSealSecret)
+    ? undefined : privilegeSealKey(deps.privilegeSealSecret);
   const empty = <T>(v: T) => () => v;
   // Round 9 (Batch 3): the finance-close routes run on the ledger; with none (the documented surface only) reads are
   // empty and every write refuses — never a silent no-op that looks recorded.
@@ -769,17 +781,27 @@ export function buildSurface(deps: {
       // that a human sees. A05 flags only; a service agent replies (hard rule #5).
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
   });
+  // The identity routes' deps — shared by the person's own routes and the store PC's privilege relay (CR-01 step 4a).
+  const identityDeps: IdentityDeps = {
+    ...(store === undefined ? {
+      roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
+      grantRequests: empty([]), recordGrantRequest: () => {}, recordGrantRejection: () => {},
+      branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
+    } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, registeredStores: (t: string) => registeredStores({ store, now }, t), currentGrants: (t: string) => effectiveGrants(store, t) /* Round 4c: Users & roles */ }),
+    // Token revocation (GAP-SEC-05): the routes record into the SAME list the authenticator reads.
+    ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
+    // OB-615: the four roadmap §28 roles, shown to the owner and given to nobody until he approves them.
+    rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL,
+  };
   const surface: Route[] = [
-    ...identityRoutes({
-      ...(store === undefined ? {
-        roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
-        grantRequests: empty([]), recordGrantRequest: () => {}, recordGrantRejection: () => {},
-        branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
-      } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, registeredStores: (t: string) => registeredStores({ store, now }, t), currentGrants: (t: string) => effectiveGrants(store, t) /* Round 4c: Users & roles */ }),
-      // Token revocation (GAP-SEC-05): the routes record into the SAME list the authenticator reads.
-      ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
-      // OB-615: the four roadmap §28 roles, shown to the owner and given to nobody until he approves them.
-      rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL,
+    ...identityRoutes(identityDeps),
+    // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the store PC's office screens, sealed there with the
+    // dedicated privilege-seal key and relayed under the box's store token — the SAME person routes run as that person.
+    ...boxPrivilegeRoutes({
+      // With no ledger (the documented surface only) nothing is a store computer, so every relay is refused.
+      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : boxPrivilegeAdapter({ store, now })),
+      identity: identityDeps,
+      ...(privilegeKey === undefined ? {} : { privilegeSealKey: privilegeKey }),
     }),
     // Approval delegation (M02-FR-03) — the honest alternative to the shared login: lend authority
     // time-boxed, capped, unchained, and never used to approve the granter's own request.
@@ -2436,6 +2458,16 @@ export async function startApi(
       + 'Generate a new one (openssl rand -base64 48) and set it for the API only, never on a store computer (owner decision OB-116).\n\n');
     return undefined;
   }
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the privilege-seal key is its OWN secret — refused at start, by name (never the
+  // value), if it is the same as the pack key (every till holds it), the sign-in key or the saved-history seal key.
+  const privilegeClash = settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined ? []
+    : (['PACK_SIGNING_KEY', 'IDP_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY'] as const).filter((k) => settings[k] !== undefined && settings[k] === settings['BOX_PRIVILEGE_SEAL_KEY']);
+  if (privilegeClash.length > 0) {
+    err(`\nthis service will not start: BOX_PRIVILEGE_SEAL_KEY is the same as ${privilegeClash.join(' and ')}. It must be its own secret — `
+      + 'a privilege change confirmed by PIN on the store PC is sealed with it alone (owner decision OB-732). '
+      + 'Run the store computer setup again to make a new one, or generate one (openssl rand -base64 48).\n\n');
+    return undefined;
+  }
 
   // The self-hosted identity server's public keys (OB-15 · ADR-0019): both settings or neither — half a configuration is
   // refused rather than half-believed. Fetched once now; a server not yet up leaves its tokens refused until a key is held
@@ -2621,6 +2653,8 @@ export async function startApi(
     signingKey: settings['PACK_SIGNING_KEY']!,
     // Round 32 · OB-116: head office's own seal secret for the store computers' saved history (required at start).
     boxHistorySealSecret: settings['BOX_HISTORY_SEAL_KEY']!,
+    // CR-01 step 4a · ADR-0033: the dedicated privilege-seal secret (optional; absent, the store PC's relays are refused).
+    ...(settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined ? {} : { privilegeSealSecret: settings['BOX_PRIVILEGE_SEAL_KEY'] }),
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
     personalDataKeys,

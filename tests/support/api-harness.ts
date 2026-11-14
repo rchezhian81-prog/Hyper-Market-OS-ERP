@@ -147,6 +147,8 @@ export function apiHarness(opts: {
   settings?: DurableTenantSettings;
   /** Round 32 · OB-116: the seal secret this head office runs with (default: the run-time TEST_BOX_HISTORY_SEAL_SECRET). */
   boxHistorySealSecret?: string;
+  /** CR-01 step 4a · ADR-0033: the privilege-seal secret (BOX_PRIVILEGE_SEAL_KEY) this head office checks store-PC seals with. */
+  privilegeSealSecret?: string;
   /** R3 OB-196: the gap-free number series (a SqlNumberSeriesStore on PostgreSQL, or one shared in-memory store) — so a restart continues it. */
   numberSeries?: NumberSeriesStore;
   /** W3 · D13-FR-06: the sign-in lockout (main.ts runs the in-memory backoff) — omitted, nothing is locked here. */
@@ -172,6 +174,7 @@ export function apiHarness(opts: {
     ...(opts.identityDirectory === undefined ? {} : { identityDirectory: opts.identityDirectory }),
     ...(opts.settings === undefined ? {} : { settings: opts.settings }),
     ...(opts.numberSeries === undefined ? {} : { numberSeries: opts.numberSeries }),
+    ...(opts.privilegeSealSecret === undefined ? {} : { privilegeSealSecret: opts.privilegeSealSecret }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 

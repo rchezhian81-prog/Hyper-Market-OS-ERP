@@ -15,7 +15,7 @@
 
 import { installServices } from './store-computer-services.mjs';
 import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove, writeMadeAsServices } from './store-computer-adopt.mjs';
-import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
+import { ensurePrivilegeSealKey, loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
 import { registerUpdater } from './store-pc-updater.mjs';
@@ -134,6 +134,11 @@ export async function firstRun(given, opts = {}) {
   } else {
     say(`The till's settings in ${L.tillEnv} are KEPT.`);
   }
+
+  // 2b — CR-01 step 4a (ADR-0033 · OB-732 "B"): the privilege-seal key. A copy set up before it existed gets it ONCE — made
+  // here, appended to its settings and to the till's, every other setting kept exactly as it was. Never shown.
+  const sealed = ensurePrivilegeSealKey(here, L);
+  if (sealed.settings === 'refused') return 2;
 
   // 3 — The three Windows services. A shop set up with Docker (the owner's own PC) is MOVED onto them, everything kept
   // (CR-01 step 2c, OI-08 — store-computer-adopt.mjs).

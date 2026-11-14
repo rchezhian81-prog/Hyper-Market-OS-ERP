@@ -49687,6 +49687,230 @@
         }
       }
     },
+    "/v1/identity/box/grants": {
+      "post": {
+        "operationId": "postIdentityBoxGrants",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxGrantsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxGrantsReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/box/grants/{grantId}/approve": {
+      "post": {
+        "operationId": "postIdentityBoxGrantsByGrantIdApprove",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxGrantsByGrantIdApproveRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxGrantsByGrantIdApproveReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/box/people": {
+      "post": {
+        "operationId": "postIdentityBoxPeople",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.people.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "This route reads no body; anything sent is ignored.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "x-request-body": "none",
+        "x-body-schema": "derived",
+        "x-never-succeeds": true,
+        "description": "Retired or refusal-only: every call is refused, by name, with one of the error replies below.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.people.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/identity/chartered-accountant/grants/{changeId}": {
       "post": {
         "operationId": "postIdentityCharteredAccountantGrantsByChangeId",
@@ -204562,6 +204786,182 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
+      },
+      "PostIdentityBoxGrantsByGrantIdApproveReply": {
+        "type": "object",
+        "required": [
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxGrantsByGrantIdApproveRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person_provision",
+              "role_grant_approval",
+              "role_request"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxGrantsReply": {
+        "type": "object",
+        "required": [
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxGrantsRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person_provision",
+              "role_grant_approval",
+              "role_request"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
       },
       "PostIdentityCharteredAccountantGrantsByChangeIdReply200": {
         "type": "object",
