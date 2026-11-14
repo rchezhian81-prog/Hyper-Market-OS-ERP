@@ -1,9 +1,11 @@
-# The real-staff usability session (UAT-06, QG-02) — session pack, 7 November 2026
+# The real-staff usability session (UAT-06, QG-02) — session pack, updated 14 November 2026
 
-_Owner decision OB-703 (7 Nov 2026, decision 6 of the UI/UX gap audit): the session runs **next**, on the merged
-screens, before rounds U5 and U6; its findings set the order of U3, U5 and U6. This pack turns the Stage 3 script
-(`usability-test-script.md`) into the sheets for that evening: one for the cashier, one for the manager, one verdict
-sheet, and the owner's set-up list. Print pages 2–4; keep page 1 for yourself._
+_First prepared 7 Nov 2026 (OB-703). Since then the owner moved the session to AFTER every UI/UX round (OB-723, OB-726)
+and after the new look (OB-728 emerald and gold, OB-729), so it now tests the finished screens as staff will get them —
+merged in #906 and #911 and live on the demo box since 14 Nov 2026. This pack turns the Stage 3 script
+(`usability-test-script.md`) into the sheets for that evening: the owner's set-up (page 1), the cashier (page 2), the
+manager (page 3), the warehouse handheld (page 4), the owner's own checks — the cheap-phone speed, the look and the
+Tamil words (page 5) — and the verdict (page 6). Print pages 2–6; keep page 1 for yourself._
 
 **The one rule:** stand behind the person, start the stopwatch, and say nothing. No hints, no "try the other button".
 If they stop and ask, write the question down and say "do what you would do". A pause is a finding. Silence is data.
@@ -12,16 +14,17 @@ If they stop and ask, write the question down and say "do what you would do". A 
 
 | # | Do | Tick |
 |---|---|---|
-| 1 | **The demo box is running the merged release.** Open the repository's Actions page; the top row, "Merge pull request #867", must have a green tick, and the job named *Deploy the merged release to the demo box* must say **success**, not *skipped*. If it says skipped, the box still has the old screens: ask the administrator to deploy (`docs/runbooks/automatic-deployment.md`) and move the session to the next evening. | ☐ |
+| 1 | **The demo box is running the new look.** Open the demo box's office page: the menu on the left must be **dark emerald with a gold "SRE" badge** and the page background ivory. If it is still the old pale-green look, the browser kept the old copy: close every tab of it and open it again (it updates itself on the next visit). If it still looks old, the box did not get #911 (deployed 14 Nov 2026, main run 43562212425): ask the administrator (`docs/runbooks/automatic-deployment.md`) and move the session to the next evening. | ☐ |
 | 2 | **Synthetic data only.** The session runs on the demo box's practice data. Never on the store's live system (hard rule 7). | ☐ |
-| 3 | **Two people who have NOT used the new screens:** one cashier, one floor or store manager. Not the person who helped build or test it. | ☐ |
+| 3 | **Three people who have NOT used the new screens:** one cashier, one floor or store manager, one back-store / warehouse person. Not the person who helped build or test it. If you can only find two, run the cashier and the manager, and the warehouse sheet on another evening. | ☐ |
 | 4 | **Each person signs in as themselves** (their own login, UAT-05). No shared login, no owner login lent for the evening. If a person has no login yet, make it before 7pm. | ☐ |
-| 5 | **Devices:** the demo till on a lane PC with its scanner, printer and the drawer; **the cheapest Android phone your staff actually own** for the manager's pages (not your phone); a network cable you can pull from the lane PC and put back. | ☐ |
+| 5 | **Devices:** the demo till on a lane PC with its scanner, printer and the drawer; **the cheapest Android phone your staff actually own** for the manager's pages and the speed check on page 5 (not your phone); the warehouse handheld (or a second cheap phone) for page 4; a network cable you can pull from the lane PC and put back. | ☐ |
 | 6 | **Props:** ten real products with barcodes in a basket (two of them the same item), one weighed item (vegetables or fruit), one item with no barcode you know by name, a ₹200 note and a few coins, a receipt from a sale made earlier the same evening (for the refund). | ☐ |
-| 7 | **A stopwatch** (any phone's clock app). **A pen.** These three sheets printed, one set per person. | ☐ |
-| 8 | **Time:** start at 7pm, when the shop is busy and the light is as it really is. About 60 minutes: 5 to brief, 25 at the till, 20 on the manager's pages, 10 for the verdict. | ☐ |
+| 7 | **A stopwatch** (any phone's clock app). **A pen.** Pages 2–6 printed: one sheet per person for pages 2–4, one copy of pages 5 and 6 for you. | ☐ |
+| 8 | **Time:** start at 7pm, when the shop is busy and the light is as it really is. About 90 minutes: 5 to brief, 25 at the till, 20 on the manager's pages, 15 on the warehouse handheld, 15 for your own checks on page 5, 10 for the verdict. The three people can go one after another; you do page 5 while the next person gets ready. | ☐ |
 | 9 | **Say to each person, word for word:** "Do what you would normally do. I will not help. There are no wrong answers — we are testing the screen, not you. Think out loud if you like." | ☐ |
 | 10 | **Afterwards:** photograph every sheet (both sides) and send the photos to the build session, or type the numbers in. Nothing is changed until the findings are written down (QG-02: silence is not approval). | ☐ |
+| 11 | **Warehouse props:** a delivery to receive — six cartons or packs with barcodes, one chilled item (milk or curd), a bin label to count, and one damaged pack. A second person who may approve a stock adjustment (a manager — the person who records it can never approve it). | ☐ |
 
 **What to write in the "Notes" column, for every task** — use the four marks:
 ✋ hesitated (where?) · ❓ asked how (what did they ask?) · 🖊 reached for paper or a calculator (why?) · ❌ wrong path or error (what happened?)
@@ -65,7 +68,7 @@ Ask at the end (write the answer in their words): "Which step would annoy you on
 
 Person: ______________________ Role: ______________ · Phone make/model: ______________ · Language: ☐ English ☐ Tamil
 
-Tasks B1–B4 on **the phone**. Tasks B5–B8 on **the store computer**. These five pages have never been timed with a real person; this sheet is the first measurement.
+Tasks B1–B4 on **the phone**. Tasks B5–B10 on **the store computer**. None of these pages has been timed with a real person; this sheet is the first measurement.
 
 | # | Task (say only the words in **bold**) | What good looks like | Time | Taps | Notes ✋❓🖊❌ |
 |---|---|---|---|---|---|
@@ -77,6 +80,8 @@ Tasks B1–B4 on **the phone**. Tasks B5–B8 on **the store computer**. These f
 | B6 | **"Plan a stock count of the cold room for tomorrow morning."** (page: *Count plans*, under Inventory) | Picks the place from the store's own list; the date typed as day/month/year; adds two products by name; saves. | | | |
 | B7 | **"Try to approve a purchase of ₹5 lakh."** (or any action above their authority) | **Refused in words**: what happened · nothing was changed · what to do next. Copy the words: ______________________________ | | | |
 | B8 | Switch the office to Tamil. **"Read me this page's heading and the first button."** | Reads them; the heading matches the menu word. Write any word they stumble on. | | | |
+| B9 | Back in English, on **Today**. **"How many supplier claims are in dispute, and are any overdue?"** | Reads the figure *Disputed supplier claims open* on the Today band without searching; if it says "Not known", reads the reason under it (never a zero). Taps it and lands on *Supplier claims*. | | | |
+| B10 | **"Find the oldest requisition and the one before it."** (page: *Requisitions*) | Uses **Next / Previous** at the foot of the list; says which page they are on. | | | |
 
 Ask at the end: "Which of these would you do on the phone at home, and which only at the desk?" ______________________________
 
@@ -84,22 +89,84 @@ Ask at the end: "Which of these would you do on the phone at home, and which onl
 
 ---
 
-## Page 4 — Sheet C: the verdict (10 minutes, both people gone)
+## Page 4 — Sheet C: the warehouse handheld (15 minutes)
+
+Person: ______________________ Role: back store / warehouse · Device: ______________ · Language: ☐ English ☐ Tamil
+
+Before the first task, tell them only: "A delivery has come in. Do what you would do with it."
+
+| # | Task (say only the words in **bold**) | What good looks like | Time | Taps | Notes ✋❓🖊❌ |
+|---|---|---|---|---|---|
+| C1 | **"Sign in on this handheld."** | Own login; the screen names them. | | | |
+| C2 | **"Receive this delivery."** (the six packs) | *Receive a delivery*; each scan lands as a line; a repeated item becomes a quantity. | | | |
+| C3 | **"This one is chilled — record its temperature."** (the milk) | Finds *Arrival temperature*; keys it; a reading that is too warm is said in words. | | | |
+| C4 | **"The delivery is complete — send the receipt."** | *Delivery complete — send the receipt*; the checklist; the confirm sheet says what is being sent. | | | |
+| C5 | **"Put the rice away in its bin."** | *Put away*; scans or picks the bin; confirm. | | | |
+| C6 | **"Count what is in this bin."** (the bin label) | *Count a bin*; the screen never shows how many there should be (a blind count); keys the count. | | | |
+| C7 | **"This pack is damaged — take it off the stock."** | *Adjust stock → Missing / damaged (−)*; a reason; it waits for a second person — the same person can never approve it. Ask the manager to approve it on their screen; note whether both understood. | | | |
+| C8 | **NOW TURN THE HANDHELD'S WI-FI OFF.** **"Count this bin again."** | The count is saved on the handheld and says it will be sent; turn Wi-Fi back on — it goes to the store computer within a minute. | | | |
+| C9 | Switch to Tamil. **"Read me the two biggest buttons."** | Reads them without guessing. Write any word they stumble on. | | | |
+
+Ask at the end: "Is there a step you would skip when the shop is busy?" ____________________________________________
+
+---
+
+## Page 5 — Sheet D: the owner's own checks — the phone's speed, the look, the Tamil words (15 minutes)
+
+**D1 — the cheap phone's speed (the OB-728 brief: "a low-spec Android phone opens the till and a handheld no slower
+than before").** There is no "before" figure on a real phone — the old screens were replaced — so this evening's numbers
+become the baseline every later change is measured against. Use the cheapest staff phone, on the shop's Wi-Fi.
+
+| Screen | First open after the phone is switched on (seconds to the first usable button) | Second open (seconds) | Felt slow? |
+|---|---|---|---|
+| The till (on the phone's browser) | | | ☐ No ☐ Yes |
+| The picker handheld | | | ☐ No ☐ Yes |
+| The warehouse handheld | | | ☐ No ☐ Yes |
+| The office's Today page | | | ☐ No ☐ Yes |
+
+Then **turn the phone's Wi-Fi off and open the till again**: ☐ it opens · the words are in the new font ☐ · Tamil shows no boxes ☐.
+
+**D2 — the look (OB-728).** At the till and on the Today page, under the shop lights at 7pm:
+
+| Check | Tick |
+|---|---|
+| Ivory background, emerald menu, a gold "SRE" badge, rounded pill-shaped buttons — as on the design system page | ☐ |
+| From arm's length (about one metre), the total, the prices and any warning are clear; nothing shines or glares | ☐ |
+| A "Not known" figure is **burnt orange** with its word and icon — it does not look like the gold badge | ☐ |
+| Green still means OK, orange pending or not known, red a problem, grey idle — nowhere is gold used for a status | ☐ |
+
+**D3 — the Tamil words.** The Tamil on these screens was written by the build team, not yet read by your staff. Ask
+each of the three people, after their sheet: **"Switch to Tamil. Read this screen aloud. Stop at any word that sounds
+wrong, too formal, or that you would say differently."** Write each word and what they would say instead.
+
+| Screen | Word on the screen | What staff would say instead | Who |
+|---|---|---|---|
+| | | | |
+| | | | |
+| | | | |
+| | | | |
+
+---
+
+## Page 6 — Sheet E: the verdict (10 minutes, everyone gone)
 
 | Question | Answer |
 |---|---|
 | Did the cashier bill the basket (A3) and the offline sale (A8) **unsupervised**? | ☐ Yes ☐ No — where they needed help: |
 | Did the receipt print with the cable out, and did "1 unsent" appear and then clear? | ☐ Yes ☐ No |
 | Did the manager finish every page task without asking how? | ☐ Yes ☐ No — which pages: |
+| Did the warehouse person receive, count and adjust without asking how? Did the count with Wi-Fi off reach the store computer? | ☐ Yes ☐ No — where: |
+| Cheap phone (page 5): did any screen feel slow, or take more than about 5 seconds to a usable button? | ☐ No ☐ Yes — which: |
+| The look (page 5): every tick in D2? | ☐ Yes ☐ No — which: |
 | Any task over its counted number of taps? (A1 3 · A2 8 · A4–A6 3 · A7 11 · A10 3 · A11 2 to reach · A13 3+notes · B2 3) | List: |
 | Any figure that said "Not known"? Any button that did nothing? | List: |
 | Every refusal said what happened, that nothing was changed, and the next step? | ☐ Yes ☐ No — copy the one that did not: |
 | Tamil: any word either person could not read or misread? | List: |
 | Top three confusions, in order of how much they would cost on a busy day | 1 ____________________ 2 ____________________ 3 ____________________ |
-| Would each person be comfortable on a busy Saturday? | Cashier ☐ Yes ☐ No · Manager ☐ Yes ☐ No — why: |
+| Would each person be comfortable on a busy Saturday? | Cashier ☐ Yes ☐ No · Manager ☐ Yes ☐ No · Warehouse ☐ Yes ☐ No — why: |
 
 **What happens with this sheet.** The build session turns every line into a finding against the screen specs in
-`docs/design/screens/`, records the first real tap counts in the frequent-actions register, and proposes the order of
-rounds U3 (Tamil for the product's words, OB-699), U5 (the shared parts on every page, the cashier's menu per OB-702) and
-U6 (the missing screens) from what hurt most. The owner approves that order in writing. UAT-06 in
-`docs/registers/uat-calendar.md` moves to Done only when this sheet is filled and filed.
+`docs/design/screens/`, records the first real tap counts in the frequent-actions register and the cheap phone's
+speeds as the baseline, turns the Tamil words into corrections for the owner to approve, and proposes ONE fix round (U8)
+ordered by what hurt most. The owner approves that order in writing before anything is built. UAT-06 in
+`docs/registers/uat-calendar.md` moves to Done only when these sheets are filled and filed.

@@ -5,6 +5,11 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UAT-06 staff session pack updated for the finished screens and the new look (14 November 2026)
+- **What changed:** `docs/design/usability-session-UAT-06.md` (and a printable `usability-session-UAT-06.pdf`, A4 landscape) now tests the screens as staff get them after #906 and #911: the set-up checks the demo box shows the emerald-and-gold look; three people (cashier, manager, warehouse — the UAT calendar names all three; the 7 Nov pack had two); the manager reads the disputed-claims figure on Today and pages Requisitions; a new warehouse sheet (receive, chilled temperature, put away, blind count, a damaged pack needing a second person, a count with Wi-Fi off); the owner's own checks — the cheap phone's opening times as the first baseline (the OB-728 brief's low-spec Android point), the look under the shop lights, and the staff's Tamil words.
+- **Next:** the owner sets the evening and the three people; the filled sheets come back as photos; the findings become one fix round, U8, which the owner orders in writing.
+- **Blocked:** nothing. **Owner decisions needed:** the UAT-06 date and the three people.
+
 ## #911 merged and the new look is live on the demo box (14 November 2026)
 - **What happened:** #911 (OB-728 emerald and gold, OB-729) merged as a2c882f on the owner's instruction ("merge when green"). On the way: main moved twice (CR-01 steps 3e and 3f), so the branch took main twice (only STATUS clashed, both kept); the type check caught a browser test using DOM names (fixed); the browser suite caught 5 real effects of the new fonts — a scan read the Tamil face (₹) mid-sale, now every face is asked for as a screen opens (`sre-faces.js`); Tamil words widened the driver's phone past 360px, now its button rows shrink; one test pinned the old amber.
 - **Main after the merge:** every job green, the store PC release published, the canary stage passed, and **the merged release is deployed to the demo box**.
