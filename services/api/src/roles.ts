@@ -119,6 +119,10 @@ const BASE_ROLES: readonly Role[] = [
       'concession.tag.sync',
       // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
       'approvals.decision.sync',
+      // CR-01 step 4a · ADR-0033: the store PC's relay of a PIN-confirmed privilege change. The owner holds them so he can
+      // approve the store computer role (§28: an approver holds what is granted); the routes refuse any caller that is not a
+      // store computer, so they give a person nothing.
+      'identity.grants.sync', 'identity.people.sync',
       // SP-2b: a delivery booked in and a blind count captured on the manager's screen reach head office through the
       // box; the owner sets the count-approval threshold policy the cloud reconciles against (never the body, F07).
       'inventory.receipt.sync', 'inventory.count.sync', 'inventory.count.policy.set', 'inventory.count.policy.read',
@@ -1099,6 +1103,10 @@ const BASE_ROLES: readonly Role[] = [
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
       'inventory.adjustment.sync', 'inventory.count.sync', 'inventory.indent.sync', 'purchase.invoice.sync', 'shelf.count.sync',
       'migration.decision.sync', 'lp.activity.sync',
+      // CR-01 step 4a · ADR-0033: a privilege change confirmed by the person's own PIN on the store PC's office screens,
+      // sealed there with the dedicated privilege-seal key. Head office checks the seal and re-runs the PERSON's own route
+      // as that person (their authority, §28 two people) — these grant nothing themselves.
+      'identity.grants.sync', 'identity.people.sync',
       // R3 Lane 4 · D-11: a direct delivery checked in on the warehouse handheld (head office re-verifies the receiver).
       'inventory.dsd.sync',
       // ── R4 gap lane "driver" (WF-16) — begin

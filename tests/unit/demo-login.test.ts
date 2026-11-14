@@ -329,6 +329,13 @@ describe('demo sign-in — credentials', () => {
     // The store box's machine identity can never become a person's login.
     expect(() => addLogin(FILE, { ...base, login: 'someone', userId: 'pilot-store-edge' })).toThrow(/machine identity/);
   });
+
+  it('UAT-06: the practice warehouse staff login (pilot-warehouse, the plain warehouse role) can be given its own sign-in', () => {
+    const base = { password: 'x', createdBy: 't', now: new Date(NOW) };
+    const withWarehouse = addLogin(FILE, { ...base, login: 'stores.staff', userId: 'pilot-warehouse' });
+    expect(loginFileProblems(withWarehouse)).toEqual([]);
+    expect(withWarehouse.logins.find((l) => l.login === 'stores.staff')?.userId).toBe('pilot-warehouse');
+  });
 });
 
 describe('demo sign-in — refuses to start anywhere but the demo', () => {

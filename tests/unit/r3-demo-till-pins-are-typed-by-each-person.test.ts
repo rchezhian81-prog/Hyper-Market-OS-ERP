@@ -15,6 +15,9 @@ describe('the demo till PINs', () => {
     if (!plan.ok) return;
     expect(plan.commands.map((c) => c[c.indexOf('--user') + 1])).toEqual([...PILOT_DEMO_TILL_PIN_HOLDERS]);
     expect(PILOT_DEMO_TILL_PIN_HOLDERS).toEqual(expect.arrayContaining(['pilot-manager', 'pilot-cashier']));
+    // UAT-06: the warehouse handheld signs in with staff ID + till PIN, so the practice warehouse staff gets one too.
+    expect([...PILOT_DEMO_TILL_PIN_HOLDERS]).toEqual(['pilot-cashier', 'pilot-manager', 'pilot-owner', 'pilot-accountant', 'pilot-warehouse']);
+    expect(demoTillPinPlan({ ...BASE, user: 'pilot-warehouse' })).toMatchObject({ ok: true });
     for (const c of plan.commands) {
       expect(c.slice(-6, -3)).toEqual(['edge/store-edge/dist/start.js', 'till-pin', '--user']);
       expect(c).toEqual(expect.arrayContaining(['exec', 'edge', '--by', 'Mr Demo Operator']));

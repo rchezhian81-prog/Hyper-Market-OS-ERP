@@ -110,6 +110,9 @@ services:
       # ONLY — never to the edge (a store computer) below. Required: the API does not start without it, or with one equal to
       # PACK_SIGNING_KEY. Generate with:  openssl rand -base64 48
       BOX_HISTORY_SEAL_KEY: ${BOX_HISTORY_SEAL_KEY}
+      # CR-01 step 4a · ADR-0033 · OB-732 "B": the DEDICATED secret a privilege change confirmed by PIN on the store PC is
+      # sealed with (made by store-computer prepare/setup). Empty = such changes are refused. Never equal to another key.
+      BOX_PRIVILEGE_SEAL_KEY: ${BOX_PRIVILEGE_SEAL_KEY:-}
       # Whose tokens to believe. The API verifies; it never issues and never
       # stores a credential (hard rule #4). Missing any of these three and it
       # does not start.
@@ -189,6 +192,8 @@ services:
       # Optional, and read by the sync loop only. Absent means "sell, queue, sync later".
       CLOUD_API_URL: ${CLOUD_API_URL:-}
       CLOUD_API_TOKEN: ${CLOUD_API_TOKEN:-}
+      # CR-01 step 4a · ADR-0033: the privilege-seal secret the office screens seal a PIN-confirmed privilege change with.
+      BOX_PRIVILEGE_SEAL_KEY: ${BOX_PRIVILEGE_SEAL_KEY:-}
       # The screens, for the public proxy (ADR-0018). Served on the container's PRIVATE compose address — not
       # loopback, which is why the edge's boot log says so out loud — and never published to the host: only
       # the `proxy` service reaches them, and it forwards ONE screen (`/customer/*`). The staff screens stay off

@@ -50,6 +50,7 @@ import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 import { OWNER_ROLE, UPDATE_PATHS, openShiftsAnswer, requestUpdate, updatePage, type UpdateDeps, type UpdateProgressView } from './update-page'; // CR-01 step 3c/3d (OI-05)
+import { PRIVILEGE_BODY_MAX_BYTES, PRIVILEGE_PATHS, privilegeAct, privilegeDoorOf, type PrivilegeDeps } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -513,6 +514,12 @@ export function startScreenServer(input: {
     readonly progress?: () => UpdateProgressView | undefined;
     readonly waitingSince?: () => string | undefined;
   };
+  /**
+   * CR-01 step 4a (OI-06 · ADR-0033 · OB-731 "A"): the office screens' privilege acts — ask for a role, approve one — each
+   * confirmed by the person's PIN typed again, sealed with the privilege-seal key and relayed under the store token. Served
+   * only with the office PIN sign-in on and NO head-office link (with the link on, the person's own session is used).
+   */
+  readonly privilege?: PrivilegeDeps;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -654,6 +661,27 @@ export function startScreenServer(input: {
     json(res, status, answer);
   };
   /**
+   * CR-01 step 4a (ADR-0033): a privilege act from an office page — POST, JSON, from a page this box served, by the person
+   * signed in to the office screens, their PIN typed again in the body. The PIN is handed to the till's register and
+   * nowhere else. Only on this PC (never behind a forwarding front), only with the office PIN on and the head-office link off.
+   */
+  const privilegeDoor = async (req: IncomingMessage, res: ServerResponse, door: NonNullable<ReturnType<typeof privilegeDoorOf>>, privilege: PrivilegeDeps): Promise<void> => {
+    const no = (status: number, refusedBecause: string, en: string, ta: string): void => { req.resume(); json(res, status, { ok: false, refusedBecause, en, ta }); };
+    if (office === undefined || input.trustForwardedUser === true || input.headOffice !== undefined) { no(404, 'not_on_this_computer', 'A privilege change is made here only on the store PC itself, with the office PIN sign-in on. Nothing changed.', 'அனுமதி மாற்றம் கடைக் கணினியில் மட்டுமே, அலுவலக PIN உள்நுழைவுடன் செய்யப்படும். எதுவும் மாற்றப்படவில்லை.'); return; }
+    if (req.method !== 'POST') { no(405, 'wrong_method', 'Send with POST. Nothing changed.', 'POST மூலம் அனுப்புங்கள். எதுவும் மாற்றப்படவில்லை.'); return; }
+    if (!sameOrigin(req)) { no(403, 'not_from_this_screen', 'Refused: not from a page this store computer served. Nothing changed.', 'மறுக்கப்பட்டது: இந்தக் கணினி வழங்கிய பக்கத்திலிருந்து வரவில்லை. எதுவும் மாற்றப்படவில்லை.'); return; }
+    if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { no(415, 'not_json', 'Send JSON. Nothing changed.', 'JSON அனுப்புங்கள். எதுவும் மாற்றப்படவில்லை.'); return; }
+    const session = await office.check(officeTokenOf(req.headers['cookie']));
+    const raw = await readBody(req, PRIVILEGE_BODY_MAX_BYTES);
+    if (raw === null) { json(res, 413, { ok: false, refusedBecause: 'too_large', en: 'That is too large to be one privilege change. Nothing changed.', ta: 'இது ஒரு அனுமதி மாற்றத்திற்கு மிகப் பெரியது. எதுவும் மாற்றப்படவில்லை.' }); return; }
+    let parsed: { pin?: unknown; request?: unknown } = {};
+    try { const v = JSON.parse(raw) as unknown; if (v !== null && typeof v === 'object' && !Array.isArray(v)) parsed = v as typeof parsed; } catch { parsed = {}; }
+    const out = await privilegeAct(privilege, door.kind, session.ok ? { userId: session.userId } : null, {
+      pin: parsed.pin, request: parsed.request, ...(door.grantId === undefined ? {} : { grantId: door.grantId }),
+    });
+    json(res, out.status, out.answer);
+  };
+  /**
    * OB-388 · ADR-0029: a page's `/v1` call, carried to head office with the person's OWN head-office session — never the
    * box's machine credential, never a PIN. Refused here, in head office's own error shape, when there is no head-office
    * session (401), when the office PIN sign-in (if on) has ended (401) or is another person (403), when the person holds no
@@ -779,6 +807,12 @@ export function startScreenServer(input: {
       // OB-424 · ADR-0030: the handheld seal — public material only, on this loopback socket only.
       if (input.handheldSeal !== undefined && (doorPath === HANDHELD_SEAL_PATHS.page || doorPath === HANDHELD_SEAL_PATHS.page.slice(0, -1) || doorPath === HANDHELD_SEAL_PATHS.certificate)) {
         await sealDoor(req, res, doorPath, input.handheldSeal);
+        return;
+      }
+      // CR-01 step 4a (OI-06 · ADR-0033): a privilege act confirmed by PIN — routed before the read-only rule.
+      const privilegeDoorHere = input.privilege === undefined ? undefined : privilegeDoorOf(doorPath ?? '');
+      if (privilegeDoorHere !== undefined) {
+        await privilegeDoor(req, res, privilegeDoorHere, input.privilege!);
         return;
       }
       // CR-01 step 3c (OI-05): the Software update page and the owner's request — routed before the read-only rule.
@@ -944,6 +978,9 @@ export function startScreenServer(input: {
         {
           // OB-259: who is signed in to the office screens, and until when — the box draws the Sign out bar from it.
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
+          // CR-01 step 4a (ADR-0033): on the store PC with the head-office link off, the office pages make a privilege change
+          // through the box's own doors, the PIN typed again for each act.
+          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve' } }),
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           // Round 4c: behind the authenticating front (the hosted copy) the box draws no Sign out bar — the front signed the

@@ -201,6 +201,11 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // worked out from a store computer's settings). Required, like PACK_SIGNING_KEY: the API does not start without it, and
   // refuses one equal to PACK_SIGNING_KEY, PII_KEY_ENCRYPTION_KEY or IDP_SIGNING_KEY (services/api/src/main.ts).
   { key: 'BOX_HISTORY_SEAL_KEY', secret: true, minLength: 32 },
+  // CR-01 step 4a · ADR-0033 · OB-732 "B" (owner, 14 Nov 2026): the DEDICATED secret a privilege change confirmed by PIN on
+  // the store PC's office screens is sealed with — made at setup, held by the till (till.env) and this API only. Optional:
+  // absent, the store PC's privilege relays are refused (503). The API refuses to start with one equal to PACK_SIGNING_KEY,
+  // IDP_SIGNING_KEY or BOX_HISTORY_SEAL_KEY (services/api/src/main.ts).
+  { key: 'BOX_PRIVILEGE_SEAL_KEY', secret: true, optional: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
   // ADR-0032 (CR-01 step 1): on the store computer the API is a Windows service and listens on that PC only. Loopback is
   // the only value accepted — the setting can keep the API on the PC, never open it wider. Unset in a container.
@@ -357,6 +362,9 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
   // Optional, and read by the sync agent only. Absent means "sell, queue, sync later".
   { key: 'CLOUD_API_URL', optional: true },
   { key: 'CLOUD_API_TOKEN', secret: true, minLength: 20, optional: true },
+  // CR-01 step 4a · ADR-0033 · OB-732 "B": the dedicated privilege-seal secret (till.env, copied from the store computer's
+  // settings at setup). Optional: absent, the office screens refuse a privilege change made here, in words.
+  { key: 'BOX_PRIVILEGE_SEAL_KEY', secret: true, minLength: 32, optional: true },
 ];
 
 export type ProbeState = 'live' | 'not_live' | 'ready' | 'not_ready';

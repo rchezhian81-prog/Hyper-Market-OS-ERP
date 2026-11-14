@@ -289,7 +289,7 @@ the screens in a browser — those are SP-10 (§7).
 | Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, set on the store PC with the administrator's command (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b) — the cashier types it themselves, hidden; the store PC checks it (ADR-0020) |
 | ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person who signed in at the front door (OB-16). Opened directly on the store PC with no front door, a screen names nobody and saves nothing — use the hosted demo's screens for the ERP part of the practice, see §4.3 |
 | Handhelds | `https://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
-| Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-warehouse-supervisor`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
+| Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-warehouse-supervisor`, `pilot-warehouse` (plain warehouse role, UAT-06), `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
 | Queue till, B2B portal (hosted demo) | `https://<the box>/queue-pos/`, `/b2b/` | behind the demo sign-in (Round 3). The queue till is the store box's handheld door: enrol the browser once with a code issued on the Tills & devices page (§4.4), then sign in with staff ID and till PIN; it opens only while the owner has queue-busting switched on. The B2B portal shows a business customer's own account to a `b2b_customer` login |
 
 Role restrictions are enforced by head office on every write: a cashier cannot set a price, a buyer cannot approve
@@ -332,6 +332,23 @@ box starts empty (the bill-number witness is not touched, so no bill number repe
 the stack up (the migrations run first). Then, each its own act: `pnpm run seed:pilot`, `pnpm run demo:publish-pack`, and
 `pnpm run demo:till-pins` (the old disk held the old PINs). The demo sign-in's logins live outside the database and stay.
 
+
+### 6.4 Before the staff session UAT-06 (14 November 2026)
+
+The seed now also lays down what the session's sheets use (`docs/design/usability-session-UAT-06.md`): a plain
+warehouse worker `pilot-warehouse` (records, never approves); a chilled practice product **Demo Curd 400g**
+(`8900000000159`, 2–8 °C) with 24 in stock and the store's chilled receiving checklist; an **issued** order from Demo Foods
+Distributors (`po-uat06-demo-foods`: rice 10, biscuits 12, oil 6, curd 12) for the warehouse to receive; and **one
+approval waiting for the manager** (a write-off of six leaking oil pouches, ₹540, raised by the warehouse supervisor).
+Everything is new under new keys, so re-running the seed adds exactly these and changes nothing that landed before.
+Once, any day before the session, on the demo box in your own SSH session (never through a chat tool):
+
+    pnpm run seed:pilot -- --operator "<your name>"
+    pnpm run demo:till-pins -- --by "<your name>" --user pilot-warehouse     # the warehouse person types their own PIN
+    pnpm run demo-login:add -- --login <their login> --user pilot-warehouse --by "<your name>"   # only if they also use the office pages
+
+Then check on the manager's *Approvals* page that the oil write-off is waiting. The approval escalates to the owner after
+48 hours; it can still be decided, but run the seed within two days of the session for a clean row.
 ---
 
 ## 7. Practice script, role by role (PREPARED)

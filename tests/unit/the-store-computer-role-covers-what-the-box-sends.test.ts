@@ -59,6 +59,10 @@ const PULLS: readonly [Method, string][] = [
   // OB-288 LP/workforce package: the monitored rooms (facilities page readings) and the help library (help page).
   ['GET', '/v1/facilities/equipment-feed'],
   ['GET', '/v1/hr/workforce/help-library'],
+  // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the office screens (edge/store-edge/src/office-privilege.ts).
+  ['POST', '/v1/identity/box/grants'],
+  ['POST', '/v1/identity/box/grants/x1/approve'],
+  ['POST', '/v1/identity/box/people'],
 ];
 
 describe('the store computer role (OB-36 "A")', () => {
