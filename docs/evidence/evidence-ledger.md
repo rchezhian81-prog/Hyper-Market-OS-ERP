@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 2366. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 2372. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 100 · Integration (in-process) 104 · Real PostgreSQL 104 · Browser (stub cloud) 104 · Browser (connected) 102 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 101 · INTEGRATION_TESTED 3.
 - Labels that do NOT hold: none.
@@ -27,8 +27,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 | ID | Label | Unit | Integration (in-process) | Real PostgreSQL | Browser (stub cloud) | Browser (connected) | Device | Staff UAT | Label holds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| M01 | E2E_VERIFIED | 35 | 31 | 12 | 14 | 7 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M02 | E2E_VERIFIED | 33 | 29 | 13 | 11 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M01 | E2E_VERIFIED | 37 | 31 | 12 | 14 | 7 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M02 | E2E_VERIFIED | 35 | 29 | 13 | 11 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M03 | E2E_VERIFIED | 22 | 23 | 6 | 9 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M04 | E2E_VERIFIED | 9 | 11 | 4 | 8 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M05 | E2E_VERIFIED | 20 | 23 | 8 | 10 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -59,7 +59,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M30 | E2E_VERIFIED | 13 | 14 | 7 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M31 | E2E_VERIFIED | 8 | 14 | 7 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M32 | E2E_VERIFIED | 15 | 21 | 10 | 6 | 4 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M33 | E2E_VERIFIED | 25 | 20 | 4 | 7 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M33 | E2E_VERIFIED | 26 | 20 | 4 | 7 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M34 | E2E_VERIFIED | 11 | 18 | 7 | 6 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M35 | E2E_VERIFIED | 19 | 39 | 31 | 8 | 6 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M36 | E2E_VERIFIED | 18 | 32 | 8 | 8 | 5 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |

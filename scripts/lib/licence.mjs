@@ -206,7 +206,7 @@ export function checkLicenceFor(text, publicKeys, shop) {
 }
 
 const STANDING_WORDS = {
-  not_in_force: (s) => ({ en: 'Licensing is not switched on in this program version: nothing is limited.', ta: 'இந்தப் பதிப்பில் உரிமச் சரிபார்ப்பு இயக்கப்படவில்லை: எதுவும் கட்டுப்படுத்தப்படவில்லை.' }),
+  not_in_force: () => ({ en: 'Licensing is not switched on in this program version: nothing is limited.', ta: 'இந்தப் பதிப்பில் உரிமச் சரிபார்ப்பு இயக்கப்படவில்லை: எதுவும் கட்டுப்படுத்தப்படவில்லை.' }),
   owner: (s) => ({ en: `Owner's licence for ${s.licence.shopName}: no end date.`, ta: `${s.licence.shopName}-க்கான உரிமையாளர் உரிமம்: முடிவுத் தேதி இல்லை.` }),
   valid: (s) => ({ en: `Licensed to ${s.licence.shopName} until ${s.licence.expiresOn} (${s.daysLeft} days left).`, ta: `${s.licence.shopName}-க்கு ${s.licence.expiresOn} வரை உரிமம் உள்ளது (${s.daysLeft} நாட்கள் மீதம்).` }),
   expiring: (s) => ({ en: `The licence ends on ${s.licence.expiresOn} — ${s.daysLeft} day(s) left. Ask the seller for a renewal file and load it on the Licence screen.`, ta: `உரிமம் ${s.licence.expiresOn} அன்று முடிகிறது — ${s.daysLeft} நாள் மீதம். புதுப்பித்தல் கோப்பைப் பெற்று உரிமத் திரையில் ஏற்றவும்.` }),
