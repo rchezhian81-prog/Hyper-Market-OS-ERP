@@ -173,7 +173,7 @@ describe('the Users & roles page on the store PC: give and approve through the b
   it('give: the PIN is asked, then sent once with the request to the box\'s door — never to /v1', async () => {
     const { f, calls } = fakeFetch({ status: 200, body: { ok: true } });
     const asked: string[] = [];
-    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view' }, async (w) => { asked.push(w); return PIN; })!;
+    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view', accessChanges: '/office/privilege/access-changes', decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: '/office/privilege/till-pins' }, async (w) => { asked.push(w); return PIN; })!;
     const s = createUsersSession({ viewer, fetch: f, newId: () => 'grant-1', office });
     expect(await s.give({ userId: 'u-new', roleId: 'cashier', stores: 'all', reason: 'morning shift' }, [])).toEqual({ result: 'ok', value: { grantId: 'grant-1' } });
     expect(asked).toEqual(['give']);
@@ -183,7 +183,7 @@ describe('the Users & roles page on the store PC: give and approve through the b
   it('approve asks the PIN; a cancelled PIN sends nothing (reject through the box: 4b-1, its own test)', async () => {
     const { f, calls } = fakeFetch({ status: 200, body: { ok: true } });
     let pin: string | null = PIN;
-    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view' }, async () => pin)!;
+    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view', accessChanges: '/office/privilege/access-changes', decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: '/office/privilege/till-pins' }, async () => pin)!;
     const s = createUsersSession({ viewer, fetch: f, office });
     expect(await s.decide('g 1', 'approve', '')).toEqual({ result: 'ok', value: { decided: 'approved' } });
     expect(calls[0]).toEqual({ url: '/office/privilege/grants/g%201/approve', body: { pin: PIN } });
@@ -195,13 +195,13 @@ describe('the Users & roles page on the store PC: give and approve through the b
 
   it('the box\'s refusal is shown in its own words', async () => {
     const { f } = fakeFetch({ status: 403, body: { ok: false, refusedBecause: 'pin_not_confirmed', en: PRIVILEGE_WORDS.pin_not_confirmed.en } });
-    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view' }, async () => '000000')!;
+    const office = officePrivilegeFrom({ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view', accessChanges: '/office/privilege/access-changes', decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: '/office/privilege/till-pins' }, async () => '000000')!;
     const out = await createUsersSession({ viewer, fetch: f, office }).decide('g-1', 'approve', '');
     expect(out).toEqual({ result: 'refused', status: 403, code: 'pin_not_confirmed', whatHappened: PRIVILEGE_WORDS.pin_not_confirmed.en });
   });
 
   it('only the box\'s own /office/ doors are believed from the page\'s global', () => {
-    expect(officePrivilegeFrom({ ...{ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view' }, grants: 'https://elsewhere/x' }, async () => PIN)).toBeUndefined();
+    expect(officePrivilegeFrom({ ...{ grants: '/office/privilege/grants', approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: '/office/privilege/people', view: '/office/privilege/users-view', accessChanges: '/office/privilege/access-changes', decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: '/office/privilege/till-pins' }, grants: 'https://elsewhere/x' }, async () => PIN)).toBeUndefined();
     expect(officePrivilegeFrom(undefined, async () => PIN)).toBeUndefined();
   });
 

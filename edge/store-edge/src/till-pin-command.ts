@@ -80,14 +80,7 @@ export async function runTillPinCommand(
     entry = issueTillCredential({ userId, pin: chosen.pin, key: tillPinKey(key), issuedAt: now, issuedBy: by });
   }
   // Read the file only now: the person may have taken a minute at the keyboard.
-  const existing = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { version?: number; credentials?: unknown[] }) : { version: 1, credentials: [] };
-  const credentials = Array.isArray(existing.credentials) ? existing.credentials : [];
-  // Append, never edit (hard rule #2): the latest entry per person wins when the box reads the file.
-  const next = { version: 1, credentials: [...credentials, entry] };
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
-  try { chmodSync(file, 0o600); } catch { /* not the owner: leave the mode as it is */ }
+  appendTillCredential(file, entry);
 
   if (revoke) return { ok: true, lines: [`Till PIN for ${userId} revoked by ${by}. They cannot sign in at a till until a new PIN is set.`] };
   if (generate) {
@@ -109,6 +102,24 @@ export async function runTillPinCommand(
       'Their old PIN, if they had one, has stopped working. Doing this again replaces it; --revoke ends it. Five wrong PINs lock their staff ID for fifteen minutes.',
     ],
   };
+}
+
+/** A revocation entry: the person's latest PIN stops working (the file is append-only; the latest entry per person wins). */
+export interface TillCredentialRevocation { readonly userId: string; readonly revoked: true; readonly issuedAt: string; readonly issuedBy: string }
+
+/**
+ * Append one entry to the box's till-credentials file — a new PIN's verifier, or a revocation — never editing what is there
+ * (hard rule #2: the latest entry per person wins when the box reads the file). Written to a side file and renamed into
+ * place, owner-only. Shared by this command and the office screens' PIN acts (CR-01 step 4b-2). Throws when it cannot.
+ */
+export function appendTillCredential(file: string, entry: TillCredential | TillCredentialRevocation): void {
+  const existing = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { version?: number; credentials?: unknown[] }) : { version: 1, credentials: [] };
+  const credentials = Array.isArray(existing.credentials) ? existing.credentials : [];
+  const next = { version: 1, credentials: [...credentials, entry] };
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, file);
+  try { chmodSync(file, 0o600); } catch { /* not the owner: leave the mode as it is */ }
 }
 
 /** Ask the person for their new PIN twice, hidden, within `OWN_PIN_TRIES` tries. Never says what was typed. */
