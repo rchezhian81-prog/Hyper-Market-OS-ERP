@@ -2,6 +2,9 @@
 import type { Deps, Layout } from './store-computer.mjs';
 
 export declare const ADOPTED_MARKER: 'adopted-from-docker.json';
+export declare const MADE_AS_SERVICES_MARKER: 'made-as-services.json';
+export declare function madeAsServicesPath(platform: string, dataRoot: string): string;
+export declare function writeMadeAsServices(deps: import('./store-computer.mjs').Deps, dataRoot: string): void;
 export declare function adoptedMarkerPath(platform: string, dataRoot: string): string;
 export declare function dockerCopyToMove(deps: Deps, L: Partial<Layout> | undefined): boolean;
 export declare function dockerCopyMadeFrom(deps: Deps): { dir: string; files: string[]; problem?: undefined } | { problem: string; dir?: undefined; files?: undefined };
