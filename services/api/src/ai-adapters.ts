@@ -36,6 +36,8 @@ import type { Route } from '../../kernel/src/index';
 import { aiGovernanceRoutes } from '../../ai/src/governance';
 import { aiIncidentRoutes } from '../../ai/src/ai-incidents';
 import { modelRegistryRoutes } from '../../ai/src/model-registry';
+import { autoApproveRoutes } from '../../ai/src/auto-approve';
+import { autoApproveDeps } from './ai-auto-approve-store';
 import { evaluationRoutes } from '../../ai/src/evaluations';
 import { aiControlRoutes } from '../../ai/src/control';
 import { evaluationStore } from './ai-governance-stores';
@@ -796,6 +798,8 @@ export function aiGovernanceSurface(surface: Route[], input: {
     ...aiGovernanceRoutes({ governance, masterOn, budget: ai.budget, openProposals: ai.openProposals, now }),
     ...aiIncidentRoutes({ incidents, now }),
     ...modelRegistryRoutes({ registry, evaluationRuns: evaluations.runs, now }),
+    // CR-01 OI-12: owner-set auto-approve limits — two people set a limit, one stops it all, the rule decides drafts.
+    ...autoApproveRoutes(autoApproveDeps({ store, now, openProposals: ai.openProposals, aiStopped: (t, agent) => ai.killSwitchOn(t, agent) })),
     ...evaluationRoutes({ gateway, evaluations, now }),
     ...aiControlRoutes({
       masterOn, enabledAgents: ai.enabledAgents, budget: ai.budget, governance, incidents, registry, evaluations,

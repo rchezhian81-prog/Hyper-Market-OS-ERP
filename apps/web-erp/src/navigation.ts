@@ -193,6 +193,7 @@ export const NAV_SEARCH_WORDS: Readonly<Record<string, { readonly en: string; re
   'data-requests': { en: 'privacy data request access export copy erasure erase forget delete dpdp consent', ta: 'தனியுரிமை தரவு கோரிக்கை நகல் அழி' },
   'customer-value': { en: 'customer value lifetime margin ranking segment rules groups loyal lapsing clv', ta: 'வாடிக்கையாளர் மதிப்பு தரவரிசை குழு விதிகள்' },
   'message-queue': { en: 'message queue sms whatsapp email notification budget dead letter withheld stuck', ta: 'செய்தி வரிசை அறிவிப்பு செலவு வரம்பு' },
+  'auto-approve': { en: 'auto approve automatic approval limit rule assistant ai draft reorder markdown transfer stop switch', ta: 'தானியங்கு ஒப்புதல் வரம்பு விதி உதவியாளர்' },
   'compensation-limits': { en: 'compensation goodwill limit authority ceiling service desk refund credit', ta: 'இழப்பீடு வரம்பு சேவை மேசை' },
   'gift-cards': { en: 'gift card voucher balance issue redeem stored value', ta: 'பரிசு அட்டை இருப்பு வழங்கு' },
   compensation: { en: 'compensation goodwill credit refund points replacement approve approval second person case', ta: 'இழப்பீடு நல்லெண்ணம் ஒப்புதல் வழக்கு' },
@@ -594,6 +595,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
   { id: 'ai', label: 'AI control', labelTa: 'AI கட்டுப்பாடு', path: '/ai/', requires: 'ai.budget.read', group: 'Administration' },
+  // CR-01 OI-12 (OB-712): the owner's auto-approve limits — two people set a limit, one person stops it all. Beside the
+  // assistants' drafts under "Today & approvals" (Administration already holds its 16).
+  { id: 'auto-approve', label: 'Auto-approve limits', labelTa: 'தானியங்கு ஒப்புதல் வரம்புகள்', path: '/auto-approve', requires: 'ai.autoapprove.read', group: 'Today' },
   // Migration — where the cutover stands, the figures, the data, the parallel run, the old system (MG-01–MG-12).
   // Gated on the exceptions read the desk route checks (`migration.cleaning.read`); a decision needs
   // `migration.exception.resolve` / `migration.controltotal.sign`, which the routes enforce.

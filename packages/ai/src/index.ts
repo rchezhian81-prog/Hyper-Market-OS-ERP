@@ -30,3 +30,4 @@ export * from './authority';
 export * from './budget';
 export * from './safety';
 export * from './evaluation';
+export * from './auto-approve';
