@@ -53,11 +53,19 @@ describe('the tokens the stylesheet declares', () => {
     expect(T['--nobody-surface']).toBe(T['--warn-surface']);
   });
 
-  it('names a Tamil-capable face in the one font stack, and never a download', () => {
+  it('names its two faces first and a Tamil-capable system face after them — and never a download from the internet (OB-728)', () => {
+    expect(T['--font']).toMatch(/^"Plus Jakarta Sans", "Anek Tamil", system-ui/);
     expect(T['--font']).toMatch(/Noto Sans Tamil/);
     expect(T['--font']).toMatch(/Nirmala UI/);
-    expect(T['--font']).toMatch(/^system-ui/);
-    expect(CSS).not.toMatch(/@import|@font-face|url\(/);
+    expect(CSS).not.toMatch(/@import/);
+    // every url() is one of the app's own font files, beside the stylesheet — nothing with a scheme or a host
+    const urls = [...CSS.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1]!.replace(/["']/g, ''));
+    expect(urls.length).toBe(9);
+    for (const u of urls) expect(u).toMatch(/^\.\/fonts\/(plus-jakarta-sans-(400|500|600|700|800)|anek-tamil-(400|500|600|700))\.woff2$/);
+    // nothing waits on a font: the words show at once in the system face
+    const faces = [...CSS.matchAll(/@font-face \{([^}]*)\}/g)].map((m) => m[1]!);
+    expect(faces.length).toBe(9);
+    for (const f of faces) expect(f).toMatch(/font-display: swap/);
   });
 
   it('declares the 48px minimum touch target the usability guardrails read — and the fixtures honour it', () => {
@@ -117,17 +125,17 @@ describe('every text pair a screen renders meets WCAG 2.2 AA — in BOTH sets', 
     expect(checkContrast({ foreground: S['--on-danger']!, background: S['--danger-surface']! }).passes).toBe(true);
   });
 
-  it('the dark set is the look every screen had before OB-13, kept for the shells UX-1b has not brought over', () => {
-    expect(DARK['--bg']).toBe('#0f172a');
-    expect(DARK['--panel']).toBe('#1e293b');
-    expect(DARK['--ink']).toBe('#f8fafc');
-    expect(DARK['--ok']).toBe('#22c55e');
+  it('the dark set is the same emerald-and-gold palette on a deep green-black (OB-728), no longer slate blue', () => {
+    expect(DARK['--bg']).toBe('#0d1714');
+    expect(DARK['--panel']).toBe('#15231e');
+    expect(DARK['--ink']).toBe('#f4efe3');
+    expect(DARK['--ok']).toBe('#4cbf8e');
     expect(DARK['--danger-text']).toBe('#fca5a5');
     expect(DARK['--tap']).toBe('48px');
-    // and the light set is the owner's reference (design system §3.2)
-    expect(T['--rail']).toBe('#192f27');
-    expect(T['--accent']).toBe('#16614d');
-    expect(T['--bg']).toBe('#f3f5f4');
+    // and the light set is the owner's emerald and gold (design system §3.2, OB-728)
+    expect(T['--rail']).toBe('#0e3b2e');
+    expect(T['--accent']).toBe('#17654f');
+    expect(T['--bg']).toBe('#fbf8f1');
     expect(T['--panel']).toBe('#ffffff');
     // a screen's look is a product decision, never the operating system's
     expect(CSS).not.toMatch(/prefers-color-scheme/);

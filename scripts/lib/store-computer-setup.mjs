@@ -14,7 +14,7 @@
 // runtime\pgsql\bin and runtime\winsw — nothing is downloaded on the shop's PC (ADR-0032).
 
 import { installServices } from './store-computer-services.mjs';
-import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove } from './store-computer-adopt.mjs';
+import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove, writeMadeAsServices } from './store-computer-adopt.mjs';
 import { loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
 import { dataDriveProblem, refusedOnServer } from './store-computer-windows.mjs';
@@ -115,6 +115,8 @@ export async function firstRun(given, opts = {}) {
     here = found.deps;
     now = loadSettings(here);
     if (now.settings === undefined) { say('NOT DONE — the settings were made but cannot be read back. Send me a photo of this screen.'); return 1; }
+    // CR-01 step 3f: made here, so this shop never lived in Docker — said once, for every later setup and update.
+    try { writeMadeAsServices(here, resolveLayout(here).dataRoot); } catch { /* already there: made before */ }
   }
   const L = resolveLayout(here);
 

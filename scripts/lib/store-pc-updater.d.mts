@@ -27,4 +27,5 @@ export declare function updaterPaths(deps: Deps, L: Layout): {
 export declare function systemTaskXml(t: { description: string; everyMinutes?: number; start?: string; command: string; args: string; workingDir: string; timeLimit: string }): string;
 export declare function registerUpdater(deps: Deps, L: Layout & Record<string, unknown>): boolean;
 export declare function checkRequest(r: unknown, runningVersion: string | null | undefined, now: Date): { request: Record<string, string> } | { refuse: string };
+export declare function updateApiBase(deps: Pick<Deps, 'env'>): string;
 export declare function applyUpdate(deps: Deps, opts?: { install?: string }): Promise<number>;

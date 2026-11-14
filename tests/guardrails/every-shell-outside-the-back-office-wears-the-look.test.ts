@@ -24,6 +24,13 @@ const apps = screenAppDirs();
 const outside = apps.filter((a) => a !== BACK_OFFICE);
 const pagesOf = (app: string): string[] => readdirSync(`apps/${app}/web`).filter((f) => f.endsWith('.html')).sort().map((f) => `apps/${app}/web/${f}`);
 const read = (p: string): string => readFileSync(p, 'utf8');
+/** The faces every screen carries (OB-728): nine woff2 files and their two licences, in the sync script's order. */
+const FACES = (app: string): string[] => app === 'customer-app' ? [] : [
+  'sre-faces.js',
+  ...[400, 500, 600, 700, 800].map((w) => `fonts/plus-jakarta-sans-${w}.woff2`),
+  ...[400, 500, 600, 700].map((w) => `fonts/anek-tamil-${w}.woff2`),
+  'fonts/OFL-plus-jakarta-sans.txt', 'fonts/OFL-anek-tamil.txt',
+].map((f) => `apps/${app}/web/${f}`);
 const styleOf = (html: string): string => (/<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
 const SCRIPT_TAG = '<script src="./sre-update.js" defer></script>';
 
@@ -57,7 +64,8 @@ describe('the shells outside the back office', () => {
     expect(existsSync(`apps/${BACK_OFFICE}/web/${UPDATE_FILE}`)).toBe(false);
     expect(read(`apps/${BACK_OFFICE}/web/sre-chrome.js`)).toMatch(/controllerchange/);
     // the back office takes the look and the one icon set (OB-201), never the strip script
-    expect(copiesOf(BACK_OFFICE)).toEqual([`apps/${BACK_OFFICE}/web/sre-foundation.css`, `apps/${BACK_OFFICE}/web/sre-icons.js`]);
+    // …and the two self-hosted faces with their licences (OB-728)
+    expect(copiesOf(BACK_OFFICE)).toEqual([`apps/${BACK_OFFICE}/web/sre-foundation.css`, `apps/${BACK_OFFICE}/web/sre-icons.js`, ...FACES(BACK_OFFICE)]);
   });
 
   it('every copy of the script is the source byte for byte, and the sync script names the same copies', () => {
@@ -66,7 +74,7 @@ describe('the shells outside the back office', () => {
       const copy = `apps/${app}/web/${UPDATE_FILE}`;
       expect(existsSync(copy), `${copy} exists`).toBe(true);
       expect(readFileSync(copy).equals(source), `${copy} is the source`).toBe(true);
-      expect(copiesOf(app)).toEqual([`apps/${app}/web/sre-foundation.css`, `apps/${app}/web/sre-icons.js`, copy]);
+      expect(copiesOf(app)).toEqual([`apps/${app}/web/sre-foundation.css`, `apps/${app}/web/sre-icons.js`, copy, ...FACES(app)]);
     }
   });
 

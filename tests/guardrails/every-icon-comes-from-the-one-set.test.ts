@@ -103,7 +103,8 @@ describe('the one set — its shapes are the owner\'s pack, drawn thin', () => {
     expect(svg.children.length).toBe(SET['wallet']!.length);
     expect(window.sreIcon('no-such-icon')).toBeNull();
     // the foundation agrees: the icon class carries the same stroke
-    expect(readFileSync('packages/ui/web/sre-foundation.css', 'utf8')).toMatch(/\.sre-icon \{[^}]*stroke-width: 1\.5;/);
+    // OB-728: the SVG keeps its 1.5 attribute; the stylesheet thickens every icon to 1.75 for the emerald-and-gold look.
+    expect(readFileSync('packages/ui/web/sre-foundation.css', 'utf8')).toMatch(/\.sre-icon \{[^}]*stroke-width: 1\.75;/);
   });
 
   it('is vendored honestly — the licence, the attribution, and the notices in every copy', () => {
@@ -221,7 +222,8 @@ describe('every screen carries the set, offline', () => {
       expect(html.split(TAG).length - 1, `${p} links the icon set`).toBe(1);
       const at = html.indexOf(TAG);
       expect(at, `${p}: the icons come after the look`).toBeGreaterThan(html.indexOf('href="./sre-foundation.css"'));
-      for (const m of html.matchAll(/<script [^>]*src="\.\/(?!sre-icons\.js)[^"]+"[^>]*><\/script>/g)) {
+      // (sre-faces.js, OB-728, asks for the two faces first; it has no words and draws nothing)
+      for (const m of html.matchAll(/<script [^>]*src="\.\/(?!sre-icons\.js|sre-faces\.js)[^"]+"[^>]*><\/script>/g)) {
         expect(m.index!, `${p}: ${m[0]} loads before the icon set`).toBeGreaterThan(at);
       }
     }

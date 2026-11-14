@@ -163,6 +163,9 @@ export function backupDriveProblem(deps, dir) {
   if (letter === undefined) return `${dir} is a network folder. A backup goes only to one of your USB backup drives (OB-281) — never to another computer, and never to the shop's server (OB-282)`;
   const k = driveKind(deps, letter);
   if (k.kind === 'removable' || k.kind === 'usb') return undefined;
+  // CR-01 step 3f: GitHub's throw-away Windows test machine has no USB drive; its update job mounts a virtual disk as the
+  // backup drive. Accepted there ONLY (hostedTestMachine) — on a shop's PC a virtual disk is inside the PC and refused.
+  if (k.kind === 'internal' && k.bus === 'File Backed Virtual' && hostedTestMachine(deps)) return undefined;
   if (k.kind === 'internal') return `${dir} is on ${letter}:, a disk inside this computer${k.bus ? ` (${k.bus})` : ''}. A disk inside this PC is never a backup: a theft, a fire or a dead power supply takes it together with the data (OB-281, OB-283)`;
   if (k.kind === 'network') return `${dir} is on ${letter}:, a network drive. A backup goes only to one of your USB backup drives (OB-281) — never to another computer, and never to the shop's server (OB-282)`;
   if (k.kind === 'optical' || k.kind === 'ram') return `${dir} is on ${letter}:, which is ${k.kind === 'optical' ? 'a CD/DVD drive' : 'a RAM disk'}, not a backup drive`;

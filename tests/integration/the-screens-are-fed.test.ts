@@ -474,6 +474,20 @@ describe('every screen is served, and served its own data', () => {
     }
   });
 
+  it('serves the two self-hosted faces from the screen\'s own folder as font/woff2 — nothing from the internet (OB-728)', async () => {
+    const base = await serve(snapshotOf());
+    // the customer app keeps the phone's own faces (OB-729) and has no font file to serve
+    expect((await fetch(`${base}/customer/fonts/anek-tamil-400.woff2`)).status).toBe(404);
+    for (const screen of ['pos', 'manager', 'picker', 'driver', 'warehouse']) {
+      for (const file of ['fonts/plus-jakarta-sans-600.woff2', 'fonts/anek-tamil-400.woff2']) {
+        const response = await fetch(`${base}/${screen}/${file}`);
+        expect(response.status, `${screen}/${file}`).toBe(200);
+        expect(response.headers.get('content-type')).toBe('font/woff2');
+        expect(Buffer.from(await response.arrayBuffer()).subarray(0, 4).toString('latin1')).toBe('wOF2');
+      }
+    }
+  });
+
   it('refuses anything that is not a screen, and anything that climbs out', async () => {
     const base = await serve(snapshotOf());
     expect((await fetch(`${base}/no-such-screen`)).status).toBe(404);

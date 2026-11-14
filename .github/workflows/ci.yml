@@ -447,6 +447,211 @@ jobs:
           foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
           Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
 
+  store-pc-update:
+    name: The one-click update and its rollback on a clean Windows — an update, a broken update put back, the G9 drill (CR-01 3f)
+    # CR-01 step 3f · OI-05: on a clean Windows machine, THREE builds of this commit are made — 1.0.1, 1.0.2, and 1.0.3
+    # broken on purpose (its office program stops at once) — each carrying a throwaway test public key made in this job
+    # and signed with its private half (never the shop's key). 1.0.1 is installed with SRE-Setup.exe. Then, as the owner's
+    # press of Update leaves it, the updater (scripts/lib/store-pc-updater.mjs) is run for real: 1.0.1 → 1.0.2 must say
+    # UPDATED; 1.0.2 → 1.0.3 must say PUT BACK with 1.0.2 running again; then the G9 drill (store-pc-drill.mjs) goes back to
+    # 1.0.1 and forward to 1.0.2 and must say G9 PASSED. GitHub is stood in for on 127.0.0.1 (tests/windows/update.drive.mjs)
+    # and the backup drive is a mounted virtual disk — both accepted ONLY on GitHub's own test machine (hostedTestMachine).
+    runs-on: windows-2022
+    timeout-minutes: 150
+    env:
+      SRE_TEST_ON_HOSTED_RUNNER: '1'
+      SRE_UPDATE_API_BASE: http://127.0.0.1:8765
+      PG_VERSION: 16.4-1
+      PG_ZIP_SHA256: 3508d8f085bc3980f38211a82e3f31e5fcae9952105d3dc2f8be67b64a822baa
+      WINSW_VERSION: v2.12.0
+      WINSW_SHA256: 05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Keep the two downloads between runs (PostgreSQL 16 and the service host, pinned by SHA-256)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sre-downloads
+          key: sre-downloads-${{ env.PG_ZIP_SHA256 }}-${{ env.WINSW_SHA256 }}
+
+      - name: Fetch PostgreSQL 16, the service host and the Visual C++ runtime, and check them
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'sre-tools'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $cache = Join-Path $env:RUNNER_TEMP 'sre-downloads'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          $pgZip = Join-Path $cache 'postgresql.zip'
+          $winsw = Join-Path $dir 'WinSW-x64.exe'
+          $winswDl = Join-Path $cache 'WinSW-x64.exe'
+          if (-not (Test-Path $pgZip)) { Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-$($env:PG_VERSION)-windows-x64-binaries.zip" -OutFile $pgZip -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          if (-not (Test-Path $winswDl)) { Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/$($env:WINSW_VERSION)/WinSW-x64.exe" -OutFile $winswDl -MaximumRetryCount 4 -RetryIntervalSec 15 }
+          Copy-Item $winswDl $winsw -Force
+          foreach ($f in @(@{ path = $pgZip; want = $env:PG_ZIP_SHA256; what = "PostgreSQL $($env:PG_VERSION)" }, @{ path = $winsw; want = $env:WINSW_SHA256; what = "WinSW $($env:WINSW_VERSION)" })) {
+            $got = (Get-FileHash -Algorithm SHA256 $f.path).Hash.ToLowerInvariant()
+            if ($f.want.ToLowerInvariant() -ne $got) { throw "$($f.what) is not the file pinned in ci.yml (got $got)" }
+          }
+          tar -xf $pgZip -C $dir
+          $vc = Join-Path $env:RUNNER_TEMP 'vc_redist.x64.exe'
+          Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vc -MaximumRetryCount 4 -RetryIntervalSec 15
+          $sig = Get-AuthenticodeSignature $vc
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "vc_redist.x64.exe is not validly signed by Microsoft ($($sig.Status))" }
+          "PGSQL=$dir\pgsql" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "WINSW=$winsw" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "VCREDIST=$vc" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build three releases (1.0.1, 1.0.2, and 1.0.3 broken on purpose), signed with a throwaway test key
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $key = Join-Path $env:RUNNER_TEMP 'test-key'
+          New-Item -ItemType Directory -Force $key | Out-Null
+          # A key pair made here and thrown away with this machine: never the shop's release signing key.
+          node -e "const c=require('crypto'),f=require('fs');const k=c.generateKeyPairSync('ed25519');f.writeFileSync(process.argv[1]+'/priv.pem',k.privateKey.export({type:'pkcs8',format:'pem'}));f.writeFileSync(process.argv[1]+'/release-signing.pub',k.publicKey.export({type:'spki',format:'pem'}))" $key
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $rel = Join-Path $env:RUNNER_TEMP 'releases'
+          foreach ($v in '1.0.1','1.0.2','1.0.3') {
+            $stage = Join-Path $env:RUNNER_TEMP "stage-$v"
+            $out = Join-Path $rel "store-pc-v$v"
+            node scripts/build-store-pc-release.mjs --out $stage --pgsql $env:PGSQL --winsw $env:WINSW --vcredist $env:VCREDIST --version $v --commit $env:GITHUB_SHA --public-key "$key\release-signing.pub"
+            if ($LASTEXITCODE -ne 0) { throw "release $v was not built" }
+            if ($v -eq '1.0.3') {
+              # Broken on purpose: the office program stops the moment it starts, so it never says READY.
+              Set-Content -Encoding utf8 (Join-Path $stage 'services\api\dist\start.js') "console.error('CR-01 3f: this release is broken on purpose'); process.exit(3);"
+            }
+            & $iscc /Q "/DStageDir=$stage" "/DAppVersion=$v" "/DOutDir=$out" infra\windows\sre-setup.iss
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup did not build release $v" }
+            # Signed with the throwaway test key, by the same signing code the published releases use (store-pc-update.mjs).
+            node tests/windows/update.drive.mjs sign "$out\SRE-Setup.exe" $v $env:GITHUB_SHA "$key\priv.pem" "$out\update.json"
+            if ($LASTEXITCODE -ne 0) { throw "the update record of $v was not signed" }
+            Write-Output ("{0}: SRE-Setup.exe {1:N0} MB, signed" -f $v, ((Get-Item "$out\SRE-Setup.exe").Length / 1MB))
+          }
+          "RELEASES=$rel" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Make this machine a test store PC — a virtual backup drive (V:), and the test-machine names for Windows' own tasks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The updater's install half runs as Windows itself (SYSTEM), which does not see this job's settings: the names
+          # that say "GitHub's throw-away test machine" are given to the whole machine (never on a shop's PC).
+          foreach ($n in @{ GITHUB_ACTIONS = 'true'; RUNNER_ENVIRONMENT = 'github-hosted'; SRE_TEST_ON_HOSTED_RUNNER = '1'; SRE_UPDATE_API_BASE = $env:SRE_UPDATE_API_BASE }.GetEnumerator()) { [Environment]::SetEnvironmentVariable($n.Key, $n.Value, 'Machine') }
+          $vhd = Join-Path $env:RUNNER_TEMP 'backup.vhdx'
+          $script = Join-Path $env:RUNNER_TEMP 'vhd.txt'
+          @("create vdisk file=`"$vhd`" maximum=4096 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'create partition primary', 'format fs=ntfs quick label=SREBACKUP', 'assign letter=V') | Set-Content -Encoding ascii $script
+          diskpart /s $script
+          if (-not (Test-Path 'V:\')) { throw 'the virtual backup drive V: was not made' }
+
+      - name: Install 1.0.1 with its SRE-Setup.exe; the updater task is there, as Windows itself, every 5 minutes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Start-Process -FilePath "$env:RELEASES\store-pc-v1.0.1\SRE-Setup.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DATADRIVE=D:' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content C:\ProgramData\SRE\setup.log -Tail 40; throw "SRE-Setup.exe 1.0.1 exit $($p.ExitCode)" }
+          $app = 'C:\Program Files\SRE Retail OS'
+          if ((Get-Content "$app\release.json" | ConvertFrom-Json).version -ne '1.0.1') { throw 'not on 1.0.1' }
+          $xml = schtasks /Query /TN 'SRE\Software update' /XML | Out-String
+          if ($xml -notmatch 'S-1-5-18' -or $xml -notmatch 'PT5M' -or $xml -notmatch 'apply-update') { throw "the updater task is not as setup should make it:`n$xml" }
+          if (-not (Test-Path 'D:\SRE-data\status\updater.json')) { throw 'the page is not told the updater is set up' }
+          # This job asks for each update itself (with the stand-in for GitHub); the 5-minute task is paused so it cannot race.
+          # (A new version's setup makes the task again; the whole machine knows the stand-in, so a run of it changes nothing.)
+          schtasks /Change /TN 'SRE\Software update' /DISABLE | Out-Null
+          node tests/windows/update.drive.mjs prepare $app 'V:\sre-backup'
+          if ($LASTEXITCODE -ne 0) { throw 'the backup key and drive were not set up' }
+
+      - name: Update 1.0.1 → 1.0.2 — must say UPDATED, every check passed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = 'C:\Program Files\SRE Retail OS'
+          # The stand-in for GitHub runs inside this step: on Windows a step's programs end with the step.
+          $gh = Start-Process -FilePath node -ArgumentList 'tests/windows/update.drive.mjs','serve','8765',$env:RELEASES -WindowStyle Hidden -RedirectStandardOutput "$env:RUNNER_TEMP\fake-github-$([guid]::NewGuid().ToString('N').Substring(0,6)).log" -PassThru
+          for ($i = 0; $i -lt 30; $i++) { try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8765/assets/none/none" -ErrorAction Stop | Out-Null } catch { if ($_.Exception.Response) { break } }; Start-Sleep -Milliseconds 500 }
+          node tests/windows/update.drive.mjs ask $app "$env:RELEASES\store-pc-v1.0.2\update.json"
+          & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" apply-update
+          if ($LASTEXITCODE -ne 0) { throw "the updater's first half ended $LASTEXITCODE" }
+          node tests/windows/update.drive.mjs wait-update updated 30
+          if ($LASTEXITCODE -ne 0) { throw 'not updated' }
+          if ((Get-Content "$app\release.json" | ConvertFrom-Json).version -ne '1.0.2') { throw 'the program folder is not 1.0.2' }
+          & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" services-status
+          if ($LASTEXITCODE -ne 0) { throw 'the services are not all well on 1.0.2' }
+
+      - name: Update 1.0.2 → 1.0.3 (broken on purpose) — must say PUT BACK, with 1.0.2 running again
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = 'C:\Program Files\SRE Retail OS'
+          # The stand-in for GitHub runs inside this step: on Windows a step's programs end with the step.
+          $gh = Start-Process -FilePath node -ArgumentList 'tests/windows/update.drive.mjs','serve','8765',$env:RELEASES -WindowStyle Hidden -RedirectStandardOutput "$env:RUNNER_TEMP\fake-github-$([guid]::NewGuid().ToString('N').Substring(0,6)).log" -PassThru
+          for ($i = 0; $i -lt 30; $i++) { try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8765/assets/none/none" -ErrorAction Stop | Out-Null } catch { if ($_.Exception.Response) { break } }; Start-Sleep -Milliseconds 500 }
+          node tests/windows/update.drive.mjs ask $app "$env:RELEASES\store-pc-v1.0.3\update.json"
+          & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" apply-update
+          if ($LASTEXITCODE -ne 0) { throw "the updater's first half ended $LASTEXITCODE" }
+          node tests/windows/update.drive.mjs wait-update rolled-back 45
+          if ($LASTEXITCODE -ne 0) { throw 'the old version was not put back' }
+          if ((Get-Content "$app\release.json" | ConvertFrom-Json).version -ne '1.0.2') { throw 'the program folder is not back on 1.0.2' }
+          & "$app\runtime\node\node.exe" "$app\scripts\store-computer.mjs" services-status
+          if ($LASTEXITCODE -ne 0) { throw 'the services are not all well after the put-back' }
+
+      - name: The rollback drill (G9) on the Windows services — back to 1.0.1, forward to 1.0.2 — must say G9 PASSED
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = 'C:\Program Files\SRE Retail OS'
+          node tests/windows/update.drive.mjs drill $app 'V:\sre-drill'
+          if ($LASTEXITCODE -ne 0) { throw "the drill's first half did not hand over" }
+          node tests/windows/update.drive.mjs wait-drill 45
+          if ($LASTEXITCODE -ne 0) { throw 'G9 did not pass' }
+          if ((Get-Content "$app\release.json" | ConvertFrom-Json).version -ne '1.0.2') { throw 'the drill did not end on 1.0.2' }
+
+      - name: Gather the update and drill records into one folder
+        if: always()
+        shell: pwsh
+        run: |
+          # The upload takes files under one folder; the records live on D: and C:, so they are copied together first.
+          $proof = Join-Path $env:RUNNER_TEMP 'update-proof'
+          New-Item -ItemType Directory -Force $proof | Out-Null
+          foreach ($f in @('D:\SRE-data\updates\update-outcomes.log', 'D:\SRE-data\status\update-progress.json', 'C:\ProgramData\SRE\setup.log')) { if (Test-Path $f) { Copy-Item $f $proof } }
+          Get-ChildItem $env:RUNNER_TEMP -Filter 'fake-github-*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $proof
+          Get-ChildItem D:\SRE-data\records -Filter 'g9-drill-*.json' -ErrorAction SilentlyContinue | Copy-Item -Destination $proof
+          Get-ChildItem D:\SRE-data\updates -Recurse -Filter 'setup-program.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName (Join-Path $proof "$($_.Directory.Name)-setup-program.log") }
+
+      - name: Keep the update and drill records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-pc-update
+          path: ${{ runner.temp }}/update-proof
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: On failure — the updater's own words and the services' last words
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content D:\SRE-data\updates\update-outcomes.log -ErrorAction SilentlyContinue
+          Get-Content D:\SRE-data\status\update-progress.json -ErrorAction SilentlyContinue
+          Get-Content C:\ProgramData\SRE\setup.log -Tail 60 -ErrorAction SilentlyContinue
+          schtasks /Query /TN 'SRE\Software update - install' /V /FO LIST 2>$null
+          schtasks /Query /TN 'SRE\Rollback drill' /V /FO LIST 2>$null
+          foreach ($n in 'SRE-Database','SRE-API','SRE-Till') { sc.exe query $n }
+          Get-ChildItem D:\SRE-data\logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.FullName)"; Get-Content $_.FullName -Tail 30 }
+
   store-pc-publish:
     name: Publish the store PC release — SRE-Setup.exe and its signed update record (CR-01 step 3a, OB-717)
     # CR-01 step 3a · OI-05 · OB-717 "A": on a merge to main, once every suite above is green on THIS commit, the exact
@@ -455,7 +660,7 @@ jobs:
     # (RELEASE_SIGNING_KEY, OB-342). With no key the record says signature null and the step says NOT SIGNED: the release
     # is still published, and a store PC refuses to update to it (scripts/lib/store-pc-update.mjs). This job alone may
     # write to the repository's releases; it can change no code (main is protected, hard rule #8).
-    needs: [verify, integration, store-pc-windows, store-pc-setup, store-pc-first-run, security-scans, browser, performance, identity]
+    needs: [verify, integration, store-pc-windows, store-pc-setup, store-pc-update, store-pc-first-run, security-scans, browser, performance, identity]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
