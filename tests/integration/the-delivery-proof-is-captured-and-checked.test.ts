@@ -108,7 +108,9 @@ describe.each(backings)('delivery proof is captured and checked (M19-FR-03 · OB
     const proof2 = await shop.ok('GET', '/v1/delivery/orders/ORD-2/proof', DISPATCHER);
     expect(proof2['images']).toEqual([expect.objectContaining({ kind: 'photo', sha256: SHA, bytes: JPEG.length, driverId: DRIVER, governanceFlags: [] })]);
     expect(proof2['door']).toMatchObject({ state: 'delivered', proofKind: 'photo', flags: ['outside_geofence'] });
-    expect(JSON.stringify(proof2)).not.toMatch(/11\.05|76\.99|contentBase64/); // no coordinates; no bytes in the list
+    // no coordinates; no bytes in the list. The times are taken out first: a time such as 05:56:11.052Z holds "11.05" and
+    // is not a coordinate (that chance match turned this test red on 14 Nov 2026).
+    expect(JSON.stringify(proof2).replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g, '<time>')).not.toMatch(/11\.05|76\.99|contentBase64/);
     const imageId = (proof2['images'] as { imageId: string }[])[0]!.imageId;
     expect((await shop.ok('GET', `/v1/delivery/proof-images/${imageId}`, DISPATCHER))['contentBase64']).toBe(JPEG.toString('base64'));
 

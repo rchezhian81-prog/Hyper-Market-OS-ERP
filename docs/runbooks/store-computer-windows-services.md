@@ -162,6 +162,11 @@ none, and the drill says so).
 4. After 10–15 minutes: `store-computer drill-result`. It says **G9 PASSED** or **G9 NOT PASSED**, each step with its time
    against its target (database back within 4 hours, service back within 30 minutes).
 5. Keep the record with the workbook: `<data>\records\g9-drill-<time>.json` (a read-only copy is on the backup drive).
+6. **QG-08 evidence.** When every step worked, the drill also writes `<data>\records\qg08-rollback-<time>.json`, and
+   `drill-result` names it: the body of `POST /v1/platform/dr-drills` for the **rollback** rehearsal (data loss 0, the
+   rollback's own time). The custodian records it on head office's register in his own sign-in; head office scores it
+   against the fixed 30 minutes, so a slow drill is recorded as a miss, never a pass. A drill where a step failed writes
+   no such file: record the miss in words, and QG-08 stays HOLD.
 
 If it says **THIS PC MAY NOT BE ON <version> NOW**, restart the PC; if the till does not come back, run that version's
 SRE-Setup.exe again, and send a photo. The database is never rolled back by the drill: only the program is put back.

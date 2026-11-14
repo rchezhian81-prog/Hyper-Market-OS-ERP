@@ -139,6 +139,14 @@ describe('the drill on Windows services: G9 PASSED', () => {
     pc.w.said.length = 0;
     expect(await main(['drill-result'], pc.d)).toBe(0);
     expect(said(pc)).toMatch(/^G9 PASSED — the drill of .* by The Owner: back to 1\.0\.2005, then forward to 1\.0\.2012\.$/m);
+    // QG-08: the rollback rehearsal as head office's register reads it — data loss 0, the rollback leg's own time.
+    const evidence = pc.d.fs.readdirSync('C:\\SRE-data\\records').map(String).filter((f) => f.startsWith('qg08-rollback-'));
+    expect(evidence).toHaveLength(1);
+    expect(rec['qg08Evidence']).toBe(evidence[0]);
+    const recName = records(pc, 'C:\\SRE-data\\records')[0]!.replace(/\.json$/, '');
+    const rollbackMs = (rec['steps'] as { key: string; ms: number }[]).find((s) => s.key === 'rollback')!.ms;
+    expect(JSON.parse(pc.d.fs.readFileSync(`C:\\SRE-data\\records\\${evidence[0]}`, 'utf8'))).toEqual({ drillId: recName, rehearsal: 'rollback', dataLossSeconds: 0, recoverySeconds: Math.ceil(rollbackMs / 1000) });
+    expect(said(pc)).toMatch(new RegExp(`^ {2}QG-08 evidence for head office's register: .*${evidence[0]!.replace(/\./g, '\\.')}$`, 'm'));
   });
 
   it('while steps 3–4 still run, drill-result says so', async () => {
@@ -162,6 +170,35 @@ describe('the drill on Windows services: G9 NOT PASSED, said plainly — and the
     expect(out).toMatch(/^G9 NOT PASSED — 1 step\(s\) did not work/m);
     expect(version(pc)).toBe(NEW);
     expect(newestRecord(pc)).toMatchObject({ overall: 'G9 NOT PASSED' });
+    // QG-08: a failed step has no rollback time to score — no evidence file, and the miss is said.
+    expect(newestRecord(pc)['qg08Evidence']).toBeUndefined();
+    expect(pc.d.fs.readdirSync('C:\\SRE-data\\records').map(String).some((f) => f.startsWith('qg08-rollback-'))).toBe(false);
+    expect(out).toMatch(/QG-08: no evidence file — not every step worked/);
+  });
+
+  it('every step worked but the rollback took 31 minutes: NOT PASSED here, yet the QG-08 evidence is written — head office scores it a miss', async () => {
+    const pc = await updatedPc();
+    expect(await main([...DRILL, '--run'], pc.d)).toBe(0);
+    const args = /<Arguments>(.*)<\/Arguments>/.exec(pc.w.tasks.registered.get(DRILL_TASK)!)![1]!;
+    const W = /drill --continue '([^']+)'/.exec(args)![1]!;
+    // The previous release's own setup "takes" 31 minutes on this slow PC.
+    let late = 0;
+    const slow = {
+      ...pc.d, repoRoot: KEPT_NEW,
+      now: () => new Date(pc.d.now().getTime() + late),
+      spawn: ((cmd: string, a: readonly string[], o: Record<string, unknown>) => {
+        const r = pc.d.spawn(cmd, a, o);
+        if (a[1] === 'setup' && version(pc) === OLD) late += 31 * 60_000;
+        return r;
+      }) as typeof pc.d.spawn,
+    };
+    expect(await main(['drill', '--continue', W], slow)).toBe(1);
+    expect(said(pc)).toMatch(/^ {2}SLOW {2}put the previous release back and check it — 31\.\d min \(target 30\.0 min\)/m);
+    expect(said(pc)).toMatch(/^G9 NOT PASSED — 1 step\(s\) took longer than the target/m);
+    const ev = pc.d.fs.readdirSync('C:\\SRE-data\\records').map(String).filter((f) => f.startsWith('qg08-rollback-'));
+    expect(ev).toHaveLength(1);
+    expect(JSON.parse(pc.d.fs.readFileSync(`C:\\SRE-data\\records\\${ev[0]}`, 'utf8'))).toMatchObject({ rehearsal: 'rollback', dataLossSeconds: 0, recoverySeconds: expect.any(Number) });
+    expect((JSON.parse(pc.d.fs.readFileSync(`C:\\SRE-data\\records\\${ev[0]}`, 'utf8')) as { recoverySeconds: number }).recoverySeconds).toBeGreaterThan(30 * 60);
   });
 
   it('this release does not come back: a person is needed, said plainly', async () => {
