@@ -2,19 +2,22 @@
 //
 // The shop's old ERP has no item-master export with groups, prices and label facts in one place. Its three Excel
 // reports carry the shop's own facts between them, and this turns them into the four published slice templates
-// (packages/migration/src/slice-import.ts), for the ONE pilot department — packaged groceries. Nothing of the old ERP's
-// design comes across: only each item's code, name, barcodes, HSN, GST rate and prices (owner, 6 Nov 2026).
+// (packages/migration/src/slice-import.ts), for the WHOLE store — every department (OB-800, owner, 15 Nov 2026: no pilot
+// department; the store is loaded whole and runs in parallel with Bpal). Nothing of the old ERP's design comes across: only each item's code, name, barcodes, HSN, GST rate and prices (owner, 6 Nov 2026).
 //
 //   EANCODE report         Item Id · Item Name · EanCode                      one row per barcode
 //   HSN report             Item Id · Item Name · Hsn Code · Item Quantity · Gst % · … · Cess Amt
 //   Product wise Detail    Purc Date · Purc No · Item Id · Item Name · … · NetCost · Selling · MRP · …   (12 months)
 //
 // The rules, each the owner's written decision:
-//   • OB-694 — an item is in the department when its HSN is in chapters 07 08 09 10 11 12 15 17 18 19 20 21 (not 2105,
-//     ice cream) or 22, or heading 0402 (milk powder) / 0409 (honey). Sold per piece (`pcs`): barcode only.
+//   • OB-800 — every item of the old ERP is taken; its department comes from its HSN (the table below). OB-694's HSN rule
+//     still names the packaged-groceries department. This converter writes items sold by barcode (`pcs`); an item with no
+//     pack barcode (loose goods, sold by weight or by count) is set aside with that reason — it is marked loose and loaded
+//     from the Import page (packages/migration/src/old-system-import.ts).
 //   • OB-695 — its MRP, selling price and cost are those of its NEWEST purchase row in the last 12 months.
 //   • OB-738 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a label fact a packed food
-//     must carry (M03-FR-03) is never invented, and its absence no longer holds an item back. Every item is written into
+//     must carry (M03-FR-03) is never invented, and in the packaged-groceries department its absence no longer holds an
+//     item back (every other department keeps the full rule: set aside until the facts are read). Every item is written into
 //     products.csv with the facts staff have read into label-facts.csv (best sellers first) and the rest BLANK — never
 //     "none". The loader lets the blank ones follow; head office lists them until read, and the item sells at the till
 //     only (never online or by scan-and-go) meanwhile. label-facts.csv stays the staff's working sheet.
@@ -35,12 +38,100 @@ const PILOT_CHAPTERS = new Set(['07', '08', '09', '10', '11', '12', '15', '17', 
 const PILOT_HEADINGS_IN = new Set(['0402', '0409']);
 const PILOT_HEADINGS_OUT = new Set(['2105']);
 
+/** A 4-, 6- or 8-digit HSN code. */
+export const isHsn = (hsn: string): boolean => /^\d{4}(\d{2}){0,2}$/.test(hsn.trim());
+
+/** OB-694: packaged food and beverages by HSN — the packaged-groceries department's HSN rule. */
 export function inPilotDepartment(hsn: string): boolean {
   const h = hsn.trim();
-  if (!/^\d{4}(\d{2}){0,2}$/.test(h)) return false;
+  if (!isHsn(h)) return false;
   if (PILOT_HEADINGS_OUT.has(h.slice(0, 4))) return false;
   return PILOT_CHAPTERS.has(h.slice(0, 2)) || PILOT_HEADINGS_IN.has(h.slice(0, 4));
 }
+
+// ── OB-800 (owner, 15 Nov 2026): no pilot department — the WHOLE store is loaded, every department ─────────────────
+//
+// The old ERP (Bpal) has no item group in its exports (OB-694), so an item's department is worked out from its HSN code
+// and from how it is sold — by this one published table, never by a guess per item:
+//
+//   packaged-groceries     OB-694's HSN rule, sold as a pack with a barcode               food · packed  (OB-738 applies)
+//   other-packaged-foods   other food HSNs (dairy, eggs, meat, fish 02–04; meat/fish      food · packed
+//                          preparations 16; ice cream 2105; salt 2501), sold as a pack
+//   personal-care          chapter 33, soap 3401, toothbrushes 960321, sanitary goods 9619 packed
+//   household-general      every other HSN, sold as a pack                                packed
+//   loose-foods            a food HSN (either food row above) sold LOOSE — by weight      food
+//                          (kg) or by count, with no pack barcode
+//   loose-general          any other HSN sold loose                                       —
+//
+// "Sold loose" is never read off a figure: a person marks it on the Import page (a part quantity sold, or a short code in
+// the barcode column, is shown as a HINT only). Three kinds of goods carry facts the old ERP does not hold and the Import
+// page does not take (tobacco 24: minimum age and pack size; medicines 30; gold, silver and jewellery 71: HUID / BIS):
+// they are never loaded from the old ERP — each stays on the list, with that reason, to be set up on the Products page.
+//
+// The OB-738 allowance (load with label facts blank, sell at the till only) is the packaged-groceries department's ONLY:
+// every other department keeps the full rule — an item missing a label fact its department needs waits, listed, until
+// the fact is read off the pack. Whether the allowance reaches other packed goods is the owner's decision, not ours.
+
+export type SoldAs = 'pack' | 'loose_kg' | 'loose_count';
+
+export interface StoreDepartment {
+  readonly categoryId: string;
+  readonly name: string;
+  /** The product engine's safety kinds for the department's items (M03-FR-03). */
+  readonly regulated: readonly ('food' | 'packed')[];
+}
+
+export const STORE_DEPARTMENTS: readonly StoreDepartment[] = Object.freeze([
+  { categoryId: PILOT_CATEGORY_ID, name: PILOT_CATEGORY_NAME, regulated: ['food', 'packed'] },
+  { categoryId: 'other-packaged-foods', name: 'Dairy, chilled, frozen and other packed foods', regulated: ['food', 'packed'] },
+  { categoryId: 'personal-care', name: 'Personal care', regulated: ['packed'] },
+  { categoryId: 'household-general', name: 'Household and general goods', regulated: ['packed'] },
+  { categoryId: 'loose-foods', name: 'Loose foods (by weight or by count)', regulated: ['food'] },
+  { categoryId: 'loose-general', name: 'Loose non-food goods', regulated: [] },
+] satisfies StoreDepartment[]);
+
+const departmentById = new Map(STORE_DEPARTMENTS.map((d) => [d.categoryId, d] as const));
+export const storeDepartment = (categoryId: string): StoreDepartment | undefined => departmentById.get(categoryId);
+
+/** Food HSNs outside OB-694's packaged-groceries rule: dairy, eggs, meat, fish (02–04), meat/fish preparations (16), ice cream (2105), salt (2501). */
+const OTHER_FOOD_CHAPTERS = new Set(['02', '03', '04', '16']);
+const OTHER_FOOD_HEADINGS = new Set(['2105', '2501']);
+const PERSONAL_CARE_HEADINGS = new Set(['3401', '9619']);
+
+export function isFoodHsn(hsn: string): boolean {
+  const h = hsn.trim();
+  return isHsn(h) && (inPilotDepartment(h) || OTHER_FOOD_CHAPTERS.has(h.slice(0, 2)) || OTHER_FOOD_HEADINGS.has(h.slice(0, 4)));
+}
+
+/** The department an item belongs to, from its HSN and how it is sold. Undefined when the HSN is not a 4/6/8-digit code. */
+export function departmentOf(hsn: string, soldAs: SoldAs = 'pack'): StoreDepartment | undefined {
+  const h = hsn.trim();
+  if (!isHsn(h)) return undefined;
+  const id = soldAs !== 'pack' ? (isFoodHsn(h) ? 'loose-foods' : 'loose-general')
+    : inPilotDepartment(h) ? PILOT_CATEGORY_ID
+      : isFoodHsn(h) ? 'other-packaged-foods'
+        : h.startsWith('33') || h.startsWith('960321') || PERSONAL_CARE_HEADINGS.has(h.slice(0, 4)) ? 'personal-care'
+          : 'household-general';
+  return departmentById.get(id)!;
+}
+
+/** Goods whose legal facts the old ERP does not hold: never loaded from it — set up on the Products page. Undefined: loadable. */
+export function setUpElsewhere(hsn: string): string | undefined {
+  const ch = hsn.trim().slice(0, 2);
+  if (ch === '24') return 'tobacco is age-restricted and sold in whole packs only: its minimum age and pack size are not in the old ERP — set it up on the Products page';
+  if (ch === '30') return 'medicines carry rules the old ERP does not hold — set it up on the Products page';
+  if (ch === '71') return 'gold, silver and jewellery need the hallmark (HUID) or BIS details, which the old ERP does not hold — set it up on the Products page';
+  return undefined;
+}
+
+/** OB-738: the one department whose items load with label facts still to read (sell at the till only, listed until filled). */
+export const labelFactsMayFollowIn = (dept: StoreDepartment): boolean => dept.categoryId === PILOT_CATEGORY_ID;
+
+/** The departments the given category ids name, in the table's order — what a load's slice.json lists. */
+export const departmentsNamed = (categoryIds: Iterable<string>): StoreDepartment[] => {
+  const want = new Set(categoryIds);
+  return STORE_DEPARTMENTS.filter((d) => want.has(d.categoryId));
+};
 
 /** A GTIN (EAN-8, UPC-A, EAN-13, GTIN-14) whose check digit is right. Anything else is not a pack barcode. */
 export function isGtin(code: string): boolean {
@@ -54,6 +145,17 @@ export function isGtin(code: string): boolean {
 /** The five label facts a packed food must carry before it may be sold (M03-FR-03; Legal Metrology · FSSAI). */
 export const LABEL_FACTS = ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care'] as const;
 export type LabelFact = typeof LABEL_FACTS[number];
+
+/**
+ * The label facts an item of this department must carry before it loads — the product engine's own rule (M03-FR-03,
+ * `validateProduct`): a food needs its allergens and country of origin; a packed item its net quantity, packer, consumer
+ * care and country of origin. Packaged groceries need all five too, but OB-738 lets theirs follow (`labelFactsMayFollowIn`).
+ */
+export function labelFactsNeeded(dept: StoreDepartment): readonly LabelFact[] {
+  const food = dept.regulated.includes('food');
+  const packed = dept.regulated.includes('packed');
+  return LABEL_FACTS.filter((k) => (k === 'allergens' ? food : k === 'country_of_origin' ? food || packed : packed));
+}
 
 export interface SetAside { readonly itemId: string; readonly name: string; readonly reason: string }
 
@@ -80,10 +182,15 @@ export interface BpalSliceOutput {
   readonly hsnToCheckCsv: string;
   readonly setAside: readonly SetAside[];
   readonly counts: {
-    /** `ready`: every item written into the four files. `factsStillToRead`: those of them with a label fact blank (OB-738). */
-    readonly inDepartment: number; readonly ready: number; readonly factsStillToRead: number;
+    /** `items`: every item the reports name (OB-800: every department). `ready`: every item written into the four files.
+     *  `factsStillToRead`: those of them with a label fact blank (OB-738 — packaged groceries only). */
+    readonly items: number; readonly ready: number; readonly factsStillToRead: number;
     readonly setAside: number; readonly alreadyLoaded: number; readonly barcodes: number; readonly taxClasses: number;
+    /** The ready items per department (category id → count); a department with none is left out. */
+    readonly byDepartment: Readonly<Record<string, number>>;
   };
+  /** The departments the ready items are in — what slice.json lists (OB-800). */
+  readonly departments: readonly StoreDepartment[];
 }
 
 /** A cell by any of its header names (case and spaces aside); '' when blank or absent. */
@@ -203,18 +310,28 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     hsnOf.set(id, e);
   }
 
-  // ── the department (OB-694) ────────────────────────────────────────────────────────────────────
-  const dept = new Map<string, { name: string; hsn: string; gstBps: number; sold: number }>();
+  // OB-800: every item the old ERP names is accounted for — one the barcode or purchase report names but the HSN report does
+  // not has no HSN to load at; it is set aside with that reason, never dropped.
+  const namedElsewhere = new Map<string, string>();
+  for (const r of [...input.eanRows, ...input.purchaseRows]) {
+    const id = text(r, 'Item Id');
+    if (id !== '' && !hsnOf.has(id) && !namedElsewhere.has(id)) namedElsewhere.set(id, text(r, 'Item Name'));
+  }
+  for (const [id, name] of namedElsewhere) putAside(id, name, 'not in the HSN report, so the old ERP gives it no HSN or GST rate — Finance sets them on the Import page');
+
+  // ── every department (OB-800); the department from the HSN (the table above) ─────────────────────────────
+  const dept = new Map<string, { name: string; hsn: string; gstBps: number; sold: number; department: StoreDepartment }>();
   for (const [id, e] of hsnOf) {
-    const hsns = [...e.readings].map((x) => x.split('|')[0]!);
-    if (!hsns.some(inPilotDepartment)) continue;
     const name = e.name;
     if (e.readings.size > 1) { putAside(id, name, `the old ERP gives this item two HSN / GST readings (${[...e.readings].map((x) => x.replace('|', ' at ') + '%').join(' and ')}) — which is right is a decision, not a default`); continue; }
-    if (!inPilotDepartment(e.hsn)) continue;
+    const department = departmentOf(e.hsn);
+    if (department === undefined) { putAside(id, name, `the HSN "${e.hsn}" is not a 4, 6 or 8-digit code — Finance sets it on the Import page`); continue; }
+    const elsewhere = setUpElsewhere(e.hsn);
+    if (elsewhere !== undefined) { putAside(id, name, elsewhere); continue; }
     const gstBps = Math.round(Number(e.gst) * 100);
     if (e.gst === '' || !Number.isFinite(gstBps) || gstBps < 0) { putAside(id, name, `the GST rate "${e.gst}" is not a percent`); continue; }
     if (e.cess) { putAside(id, name, 'the old ERP charged cess on this item, and its cess rate is not in the export — a cess rate is never guessed'); continue; }
-    dept.set(id, { name, hsn: e.hsn, gstBps, sold: e.sold });
+    dept.set(id, { name, hsn: e.hsn, gstBps, sold: e.sold, department });
   }
 
   // One HSN, one rate: an HSN whose items carry two rates is set aside whole (which rate is right is a decision).
@@ -245,13 +362,14 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
   }
   const codeOwners = new Map<string, string[]>();
   for (const [id, codes] of codesOf) for (const c of codes) codeOwners.set(c, [...(codeOwners.get(c) ?? []), id]);
+  const LOOSE = 'if it is sold loose (by weight or by count), mark it so on the Import page, which loads it in kg or by the piece';
   for (const [id, d] of [...dept]) {
     const codes = codesOf.get(id) ?? [];
     const shared = codes.filter((c) => (codeOwners.get(c) ?? []).length > 1);
     if (shared.length > 0) { putAside(id, d.name, `barcode ${shared.join(', ')} also names another item in the old ERP — one barcode, one item`); dept.delete(id); continue; }
     if (codes.length === 0) {
       const bad = badCodes.get(id) ?? [];
-      putAside(id, d.name, bad.length > 0 ? `no barcode with a right check digit (read: ${bad.join(', ')}) — the pilot sells by barcode only` : 'no barcode in the old ERP — the pilot sells by barcode only');
+      putAside(id, d.name, bad.length > 0 ? `no barcode with a right check digit (read: ${bad.join(', ')}) — scan the pack, or ${LOOSE}` : `no barcode in the old ERP — scan the pack, or ${LOOSE}`);
       dept.delete(id);
     }
   }
@@ -283,19 +401,27 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     priced.set(id, { mrp: p.mrp, sell: p.sell, cost: p.cost });
   }
 
-  // ── label facts (M03-FR-03 · OB-738): every item is ready; a fact not read yet is written blank and listed ─────────
+  // ── label facts (M03-FR-03): packaged groceries load with facts still to read (OB-738); every other department waits ──
   const already = input.alreadyLoaded ?? new Set<string>();
   const facts: ReadonlyMap<string, Readonly<Partial<Record<LabelFact, string>>>> = input.labelFacts ?? new Map();
-  const ready: string[] = [];
-  let alreadyLoaded = 0;
-  for (const id of dept.keys()) {
-    if (already.has(id)) { alreadyLoaded += 1; continue; }
-    ready.push(id);
-  }
-  const bySales = (a: string, b: string): number => (dept.get(b)!.sold - dept.get(a)!.sold) || a.localeCompare(b, 'en', { numeric: true });
-  ready.sort(bySales);
   const factOf = (id: string, k: LabelFact): string => (facts.get(id)?.[k] ?? '').trim();
   const allRead = (id: string): boolean => LABEL_FACTS.every((k) => factOf(id, k) !== '');
+  const bySales = (a: string, b: string): number => (dept.get(b)!.sold - dept.get(a)!.sold) || a.localeCompare(b, 'en', { numeric: true });
+  /** Every item not loaded yet that passed every other check — the staff's label-facts sheet lists all of them. */
+  const waiting: string[] = [];
+  const ready: string[] = [];
+  let alreadyLoaded = 0;
+  for (const id of [...dept.keys()].sort(bySales)) {
+    if (already.has(id)) { alreadyLoaded += 1; continue; }
+    waiting.push(id);
+    const d = dept.get(id)!.department;
+    const missing = labelFactsNeeded(d).filter((k) => factOf(id, k) === '');
+    if (missing.length > 0 && !labelFactsMayFollowIn(d)) {
+      putAside(id, dept.get(id)!.name, `${d.name}: the label facts ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')} are not read off the pack yet — only packaged groceries may load before them (OB-738); fill label-facts.csv`);
+      continue;
+    }
+    ready.push(id);
+  }
 
   const hsnUsed = new Map<string, number>();
   for (const id of ready) hsnUsed.set(dept.get(id)!.hsn, dept.get(id)!.gstBps);
@@ -303,7 +429,7 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     'tax-classes.csv': csv(['hsn_code', 'effective_from', 'rate_percent'],
       [...hsnUsed].sort(([a], [b]) => a.localeCompare(b)).map(([h, bps]) => [h, input.ratesFrom, String(bps / 100)])),
     'products.csv': csv(['item_code', 'description', 'uom', 'category', 'hsn_code', 'status', ...LABEL_FACTS],
-      ready.map((id) => { const d = dept.get(id)!; return [id, d.name, 'pcs', PILOT_CATEGORY_ID, d.hsn, 'active', ...LABEL_FACTS.map((k) => factOf(id, k))]; })),
+      ready.map((id) => { const d = dept.get(id)!; return [id, d.name, 'pcs', d.department.categoryId, d.hsn, 'active', ...LABEL_FACTS.map((k) => factOf(id, k))]; })),
     'prices.csv': csv(['item_code', 'mrp', 'selling_price', 'cost_price'],
       ready.map((id) => { const p = priced.get(id)!; return [id, paiseText(p.mrp), paiseText(p.sell), paiseText(p.cost)]; })),
     'barcodes.csv': csv(['item_code', 'barcode'], ready.flatMap((id) => codesOf.get(id)!.map((c) => [id, c]))),
@@ -311,20 +437,23 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
 
   // The staff's working sheet: every item not yet loaded, best sellers first, the facts already filled kept in it — so
   // the same file is filled, saved and given back with --label-facts as often as needed, and nothing typed is lost.
-  const labelFactsSheet = forExcel(csv(['item_code', 'description', 'barcode', 'sold_qty', ...LABEL_FACTS, 'all_facts_read'],
-    ready.map((id) => {
+  const labelFactsSheet = forExcel(csv(['item_code', 'description', 'department', 'barcode', 'sold_qty', ...LABEL_FACTS, 'all_facts_read'],
+    waiting.map((id) => {
       const d = dept.get(id)!;
-      return [id, d.name, codesOf.get(id)![0]!, String(d.sold), ...LABEL_FACTS.map((k) => factOf(id, k)), allRead(id) ? 'yes' : 'no'];
+      return [id, d.name, d.department.name, codesOf.get(id)![0]!, String(d.sold), ...LABEL_FACTS.map((k) => factOf(id, k)), allRead(id) ? 'yes' : 'no'];
     })));
   setAside.sort((a, b) => a.itemId.localeCompare(b.itemId, 'en', { numeric: true }));
   const setAsideCsv = forExcel(csv(['item_code', 'description', 'reason'], setAside.map((s) => [s.itemId, s.name, s.reason])));
+  const readyFollow = ready.filter((id) => !allRead(id));
 
   return {
     files, labelFactsSheet, setAsideCsv, setAside,
     hsnToCheckCsv: forExcel(csv(['hsn_code', 'rate_percent', 'items', 'for_example'], hsnCheck)),
+    departments: departmentsNamed(ready.map((id) => dept.get(id)!.department.categoryId)),
     counts: {
-      inDepartment: dept.size + [...asideIds].length, ready: ready.length, factsStillToRead: ready.filter((id) => !allRead(id)).length,
+      items: hsnOf.size + namedElsewhere.size, ready: ready.length, factsStillToRead: readyFollow.length,
       setAside: setAside.length, alreadyLoaded, barcodes: ready.reduce((n, id) => n + codesOf.get(id)!.length, 0), taxClasses: hsnUsed.size,
+      byDepartment: Object.fromEntries(STORE_DEPARTMENTS.map((d) => [d.categoryId, ready.filter((id) => dept.get(id)!.department.categoryId === d.categoryId).length] as const).filter(([, n]) => n > 0)),
     },
   };
 }

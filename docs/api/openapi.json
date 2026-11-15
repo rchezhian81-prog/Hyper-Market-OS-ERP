@@ -230736,6 +230736,9 @@
                   }
                 ]
               },
+              "plu": {
+                "type": "string"
+              },
               "sell": {
                 "anyOf": [
                   {
@@ -230745,6 +230748,9 @@
                     "type": "string"
                   }
                 ]
+              },
+              "soldBy": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -230920,6 +230926,9 @@
                   }
                 ]
               },
+              "plu": {
+                "type": "string"
+              },
               "sell": {
                 "anyOf": [
                   {
@@ -230929,6 +230938,9 @@
                     "type": "string"
                   }
                 ]
+              },
+              "soldBy": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -296542,6 +296554,7 @@
               "barcode",
               "exclude",
               "label",
+              "loose",
               "price",
               "tax"
             ]
