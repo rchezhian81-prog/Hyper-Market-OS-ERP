@@ -956,7 +956,7 @@ export function startScreenServer(input: {
         : headOfficeUser !== null ? headOfficeUser
         : input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
       const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
-      const addressed = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
+      const addressed = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn, snap.pack) : asSignedInPerson(built, signedIn, snap.pack);
       // OB-569: the Products page carries a product's costs and commercial fields only to a viewer who holds the right to
       // see them — trimmed HERE, before the page data leaves this box, never in the browser. The viewer is the person
       // signed in, else whoever the pack named for the screen; one whose rights this box does not know gets the trimmed copy.

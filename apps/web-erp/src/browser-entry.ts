@@ -266,7 +266,7 @@ import {
   type AdapterHealthView, type AdapterHealthState,
 } from './integration-health-session';
 import {
-  createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
+  createGoodsReceiptSession, receiptQuantitiesByUom, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView, type GrnDiscrepancyOwnerView,
   type GrnBillMatchPort,
@@ -3410,6 +3410,7 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       sellableMinor: num(g['availableMinor']),
       quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
+      quantitiesByUom: receiptQuantitiesByUom(g), // OB-740 (B-2): pieces stay pieces, kilos stay kilos — never added together
       discrepancies,
       returnLines: returnLinesOf(g, lines),
       ...(costNotKnown.length === 0 ? {} : { costNotKnown }),

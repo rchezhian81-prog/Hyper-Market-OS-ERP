@@ -12,8 +12,11 @@ import type { PurchaseActors, SegregationConflict } from '../../../packages/purc
 export interface SegregationPort {
   /** Who did each of the four acts on one purchase order. An order head office does not hold has nobody on record. */
   readonly actorsOf: (tenantId: string, poId: string) => Promise<PurchaseActors>;
-  /** The actors of every order a NEW payment to this supplier would pay (every bill still open, oldest first). */
-  readonly ordersPaidBy: (tenantId: string, supplierId: string) => Promise<readonly PurchaseActors[]>;
+  /**
+   * The actors of every order a NEW payment to this supplier would pay: the orders of the bills it settles when it names
+   * them (OB-740), plus every bill still open when it names none or pays more than the bills it names (`ordersOfAPayment`).
+   */
+  readonly ordersPaidBy: (tenantId: string, supplierId: string, paying?: { readonly settles: readonly string[]; readonly amountMinor: number }) => Promise<readonly PurchaseActors[]>;
 }
 
 /** The one refusal: 409, named, nothing saved, and what to do instead. */

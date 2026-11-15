@@ -3,6 +3,7 @@ import {
   GOODS_RECEIPT_COPY, COPY_KEYS, createGoodsReceiptSession,
   type GoodsReceiptPorts, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
   type GrnLineReturnPort, type GrnReturnLineView, type LineReturnPostResult, type LineReturnOutcome, quantityForPerson,
+  receiptQuantitiesByUom, receiptQuantityForPerson,
 } from '../../apps/web-erp/src/goods-receipt-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
@@ -219,5 +220,37 @@ describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone bac
     expect(o).toEqual({ outcome: 'refused', reason: 'Line l2 has no disposition yet' });
     expect(s.presentReturnOutcome('en', o).label).toContain('Line l2 has no disposition yet');
     expect([quantityForPerson(12, 'EA'), quantityForPerson(250, 'kg'), quantityForPerson(1_500, 'L')]).toEqual(['12 ea', '0.25 kg', '1.5 L']);
+  });
+
+  // OB-740 (pilot audit B-2): the review showed "0.1 units" for 10 pieces — it divided head office's quantities by 100,
+  // but an `ea` quantity IS a count (OB-31) and a kg quantity is grams. Pieces stay pieces, weights stay weights.
+  it('OB-740 · a receipt\'s quantities are said per unit: 10 pieces is "10 units", 2.5 kg is "2.5 kg", never added together', () => {
+    const raw = {
+      availableMinor: 2_510,
+      captured: { lines: [
+        { lineId: 'l1', uom: 'ea', sellableMinor: 10, quarantinedMinor: 6, rejectedMinor: 0 },
+        { lineId: 'l2', uom: 'KG', sellableMinor: 2_500, quarantinedMinor: 0, rejectedMinor: 750 },
+      ] },
+    };
+    const q = receiptQuantitiesByUom(raw);
+    expect(q).toEqual({ sellable: { ea: 10, kg: 2_500 }, quarantined: { ea: 6, kg: 0 }, rejected: { ea: 0, kg: 750 } });
+    expect(receiptQuantityForPerson(q.sellable, 'units')).toBe('10 units · 2.5 kg');
+    expect(receiptQuantityForPerson(q.quarantined, 'units')).toBe('6 units');
+    expect(receiptQuantityForPerson({}, 'அலகுகள்')).toBe('0 அலகுகள்');
+    // One unit: head office's own "became sellable" (it includes held stock released later) is used as it is.
+    expect(receiptQuantitiesByUom({ availableMinor: 12, captured: { lines: [{ lineId: 'l1', uom: 'ea', sellableMinor: 10, heldMinor: 2 }] } }).sellable).toEqual({ ea: 12 });
+    // Mixed units: what head office released (an approved excess; a held line accepted) is added to its own line's unit.
+    expect(receiptQuantitiesByUom({
+      availableMinor: 9_999, excessDecision: { decision: 'approved' }, dispositions: [{ lineId: 'l2', disposition: 'accept' }],
+      captured: { lines: [{ lineId: 'l1', uom: 'ea', sellableMinor: 10, heldMinor: 2 }, { lineId: 'l2', uom: 'kg', sellableMinor: 1_000, quarantinedMinor: 500 }] },
+    }).sellable).toEqual({ ea: 12, kg: 1_500 });
+    // A line with no unit is a count of pieces (OB-31).
+    expect(receiptQuantitiesByUom({ captured: { lines: [{ lineId: 'l1', sellableMinor: 3 }] } }).sellable).toEqual({ ea: 3 });
+
+    // The session says them; a snapshot without per-unit figures reads its totals as counts of pieces — never ÷100.
+    const withUnits = session({ receipts: [grn({ sellableMinor: 2_510, quarantinedMinor: 6, rejectedMinor: 750, quantitiesByUom: q })] }).view('en').receipts[0]!;
+    expect([withUnits.sellableQuantity, withUnits.quarantinedQuantity, withUnits.rejectedQuantity]).toEqual(['10 units · 2.5 kg', '6 units', '0.75 kg']);
+    const counts = session({ receipts: [grn({ sellableMinor: 10, quarantinedMinor: 0, rejectedMinor: 0 })] }).view('ta').receipts[0]!;
+    expect(counts.sellableQuantity).toBe('10 அலகுகள்');
   });
 });
