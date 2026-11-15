@@ -115,11 +115,13 @@ describe.skipIf(!CONNECTED)('M03-FR-03 connected: GST, cess and a product\'s saf
     const cess = (await shop.call('GET', `/v1/catalogue/tax-classes/${HSN}/cess`, OWNER)).body as { schedule: { effectiveFrom: string; advaloremBps: number }[] };
     expect(cess.schedule.map((p) => [p.effectiveFrom, p.advaloremBps])).toEqual([['2017-07-01', 6_100], ['2026-12-01', 0]]);
 
-    // A manager reads it with every control off; head office refuses his rate all the same.
+    // A manager (OB-773 3 B) may only PROPOSE a GST rate for the owner's approval: his GST button says so, the cess stays
+    // off, nothing is written by reading; and head office refuses a rate he sends straight to the record all the same.
     const m = await shop.open(MGR, '/tax-rates/');
     await m.page.locator('#rows tr[data-id="10063020"]').click();
     await says(m.page, '#record-h', /^HSN 10063020$/);
-    expect(await m.page.isDisabled('#g-save')).toBe(true);
+    await says(m.page, '#g-save', /^Send for the owner\u2019s approval$/);
+    expect(await m.page.isDisabled('#c-save')).toBe(true);
     expect(m.writes).toEqual([]);
     await m.close();
     expect((await shop.call('POST', '/v1/catalogue/tax-classes/10063020/rates/2027-01-01', MGR, { rateBps: 1_200 })).status).toBe(403);

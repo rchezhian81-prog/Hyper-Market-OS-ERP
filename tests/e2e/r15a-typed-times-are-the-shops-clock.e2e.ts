@@ -35,7 +35,10 @@ const DEVICE_ZONE = 'America/New_York';
 const OWNER = 'u-owner';
 const OWNER_PERMISSIONS = ROLE_CATALOGUE.find((r) => r.id === OWNER_ROLE_ID)!.permissions;
 
-const { at: AT } = theEvening();
+// This suite drives screens only (no store computer, no database), so it may pin the shop's 01:00 exactly: from 18:30 to
+// 19:30 UTC the evening clock gives the real moment (the shop's 00:xx, when 00:45 is still ahead), so take the previous
+// 19:30 UTC then (it failed at 18:55 UTC, 15 Nov 2026).
+const AT = ((at: string): string => (at.endsWith('T19:30:00.000Z') ? at : new Date(Date.parse(`${at.slice(0, 10)}T19:30:00.000Z`) - 86_400_000).toISOString()))(theEvening().at);
 const DAY = shopDay(SHOP_ZONE, () => AT);
 /** What the person types: 00:45 and 00:50 on the shop's today (the pinned moment is the shop's 01:00). */
 const TYPED_FROM = `${DAY.today()}T00:45`;
