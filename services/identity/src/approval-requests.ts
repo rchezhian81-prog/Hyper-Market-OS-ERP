@@ -374,6 +374,15 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'regulated_product_publish', label: 'Put an age-restricted or regulated product on sale',
     makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
   },
+  // OB-773 (owner, 15 Nov 2026, choice 3 B · audit C-8): "The store manager may make changes, and you (the owner) approve
+  // them." The store manager proposes a change to an item (its details, HSN/tax class, MRP, label facts), a new barcode or a
+  // GST rate (`catalogue.change.propose`, through POST /v1/catalogue/changes only); a person who may make the change directly
+  // (`catalogue.pack.publish` — the owner today) approves it — never the proposer — and head office then makes exactly that
+  // change through the ordinary catalogue route as the approver's act (services/api/src/catalogue-change-proposals.ts).
+  catalogue_change: {
+    kind: 'catalogue_change', label: 'A store manager\'s change to an item, a barcode or a GST rate (the owner approves; head office then makes it)',
+    makerPermission: 'catalogue.change.propose', checkerPermission: 'catalogue.pack.publish', validForMinutes: 24 * 60,
+  },
   // ── OB-288 till side — end
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
   // M22-FR-01 "contract/credit changes approved": a B2B contract (its price list, dates, terms, credit limit, expiry policy)

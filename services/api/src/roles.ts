@@ -514,6 +514,9 @@ const BASE_ROLES: readonly Role[] = [
       'catalogue.pack.read',
       'catalogue.merge.propose',
       'catalogue.category.propose',
+      // OB-773 (owner, 15 Nov 2026, choice 3 B): the manager PROPOSES a change to an item, a barcode or a GST rate; it is made
+      // only when the owner approves it (kind `catalogue_change`). Not `catalogue.pack.publish`: nothing changes on his word.
+      'catalogue.change.propose',
       'store.pack.read',
       'ai.proposal.read', 'ai.suggestion.dismiss',
       // ── OB-288 lane 4 · P1 — begin: the manager approves or rejects A03's (and the buyer's A02) drafts — a decision on

@@ -31,6 +31,10 @@ const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
 const mayRead = perms.has('catalogue.pack.read');
 const mayEdit = perms.has('catalogue.pack.publish');
+// OB-773 (owner, 15 Nov 2026, choice 3 B): a person who may PROPOSE but not publish (the store manager) fills the same form;
+// each save is sent for the owner's approval (POST /v1/catalogue/changes) and nothing changes until he approves it.
+const mayPropose = !mayEdit && perms.has('catalogue.change.propose');
+const mayChange = mayEdit || mayPropose;
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 // U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
@@ -85,6 +89,9 @@ const WORDS = {
     needsApprovalSafety: 'This needs a second person: {why} Press “Ask for approval”; once they approve it on their Approvals page, press “Save safety and label” again.',
     useSafetySave: 'You changed the safety, label or nutrition facts: save them with “Save safety and label” below. Nothing was saved.', savedVersion: 'Saved — version {v}.',
     yes: 'yes', count: '{n} on record', defined: '{n} levels', subsCount: '{n} in order', notSet: 'not set', notKnown: 'Not known', by: 'by', version: 'Version', attrsFor: 'Attributes of this category',
+    sendForApproval: 'Send for the owner\u2019s approval', whyOwner: 'Why (the owner reads it)',
+    proposeLead: 'You can propose changes to this product. Each one is sent for the owner\u2019s approval; nothing changes until he approves it.',
+    sentForApproval: 'Sent for the owner\u2019s approval. Nothing has changed yet — the change is made only when the owner approves it on his Approvals page.',
   },
   ta: {
     lang: 'English', title: 'பொருள் விவரங்கள்',
@@ -123,6 +130,9 @@ const WORDS = {
     needsApprovalSafety: 'இதற்கு இரண்டாம் நபர் தேவை: {why} “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும், மீண்டும் “பாதுகாப்பையும் லேபிளையும் சேமி” அழுத்துங்கள்.',
     useSafetySave: 'பாதுகாப்பு, லேபிள் அல்லது ஊட்டச்சத்து விவரங்களை மாற்றியுள்ளீர்கள்: கீழே உள்ள “பாதுகாப்பையும் லேபிளையும் சேமி” மூலம் சேமியுங்கள். எதுவும் சேமிக்கப்படவில்லை.', savedVersion: 'சேமிக்கப்பட்டது — பதிப்பு {v}.',
     yes: 'ஆம்', count: '{n} பதிவில்', defined: '{n} நிலைகள்', subsCount: '{n} வரிசையில்', notSet: 'அமைக்கப்படவில்லை', notKnown: 'தெரியவில்லை', by: 'செய்தவர்', version: 'பதிப்பு', attrsFor: 'இந்த வகையின் பண்புகள்',
+    sendForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பு', whyOwner: 'ஏன் (உரிமையாளர் படிப்பார்)',
+    proposeLead: 'இந்தப் பொருளில் மாற்றங்களை நீங்கள் முன்மொழியலாம். ஒவ்வொன்றும் உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்படும்; அவர் ஒப்புக்கொள்ளும் வரை எதுவும் மாறாது.',
+    sentForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்பட்டது. இன்னும் எதுவும் மாறவில்லை — உரிமையாளர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டால் மட்டுமே மாற்றம் செய்யப்படும்.',
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
@@ -278,7 +288,7 @@ function fillRecord() {
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
   setShopDate('m-from', ''); $('m-rupees').value = ''; $('r-why').value = ''; $('s-why').value = '';
-  if (!safetyConflict) { $('safety-status').className = 'status'; $('safety-status').textContent = held === null && mayEdit ? t('safetyFirst') : ''; }
+  if (!safetyConflict) { $('safety-status').className = 'status'; $('safety-status').textContent = held === null && mayChange ? t('safetyFirst') : ''; }
   paintAttributes();
 }
 
@@ -425,6 +435,9 @@ function paintWords() {
     ['bundle-h', 'tabBundle'], ['bundle-lead', 'bundleLead'], ['l-bd-why', 'why'], ['save-bundle', 'saveBundle'],
     ['subs-h', 'tabSubs'], ['subs-lead', 'subsLead'], ['l-sb-list', 'subsList'], ['l-sb-why', 'why'], ['save-subs', 'saveSubs']];
   for (const [id, k] of pairs) { const el = $(id); if (el) el.textContent = t(k); }
+  // OB-773: proposing, every save says plainly where it goes; the barcode asks why (the owner reads it).
+  if (mayPropose) for (const id of ['save', 'save-safety', 'add-barcode']) $(id).textContent = t('sendForApproval');
+  $('l-b-why').textContent = t('whyOwner'); $('b-why-row').hidden = !mayPropose;
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
   paintNutritionBoxes();
@@ -435,16 +448,21 @@ function paint() {
   const shown = productId !== '' && !readFailed && mayRead;
   $('tabs').hidden = false; // the tiles always say what the page holds; a section opens once a product is shown
   for (const v of ['record', 'codes', 'bundle', 'subs']) $(`view-${v}`).hidden = !shown || tab !== v;
+  // OB-773: the record, its label facts and a new barcode may be PROPOSED (for the owner's approval); the pack, the bundle
+  // and the substitutes stay with the person who keeps the catalogue.
+  const proposable = new Set(['record-form', 'attrs', 'm-from', 'm-rupees', 'save', 'r-why', 'barcode-form', 's-why', 'save-safety']);
   for (const id of ['record-form', 'attrs', 'm-from', 'm-rupees', 'save', 'r-why', 'barcode-form', 'save-pack', 'bundle-rows', 'save-bundle', 'bd-why', 'sb-list', 'sb-why', 'save-subs', 's-why', 'save-safety']) {
     const el = $(id); if (el === null) continue;
-    if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !mayEdit;
-    else for (const c of el.querySelectorAll('input, select, textarea, button')) c.disabled = !mayEdit;
+    const may = proposable.has(id) ? mayChange : mayEdit;
+    if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !may;
+    else for (const c of el.querySelectorAll('input, select, textarea, button')) c.disabled = !may;
   }
-  for (const id of ['save', 'add-barcode', 'save-pack', 'convert', 'save-bundle', 'save-subs']) whyDisabled($(id), mayEdit ? '' : 'role');
-  for (const el of document.querySelectorAll('#view-record fieldset input, #view-record fieldset select, #view-record fieldset textarea, #pack-rows input')) el.disabled = !mayEdit;
+  for (const id of ['save', 'add-barcode', 'save-pack', 'convert', 'save-bundle', 'save-subs']) whyDisabled($(id), (['save', 'add-barcode'].includes(id) ? mayChange : mayEdit) ? '' : 'role');
+  for (const el of document.querySelectorAll('#view-record fieldset input, #view-record fieldset select, #view-record fieldset textarea')) el.disabled = !mayChange;
+  for (const el of document.querySelectorAll('#pack-rows input')) el.disabled = !mayEdit;
   $('ask-approval').hidden = pendingAsk === null || !mayEdit;
   $('ask-safety-approval').hidden = pendingSafetyAsk === null || !mayEdit;
-  $('save-safety').disabled = !mayEdit || held === null; whyDisabled($('save-safety'), !mayEdit ? 'role' : held === null ? { en: WORDS.en.safetyFirst, ta: WORDS.ta.safetyFirst } : '');
+  $('save-safety').disabled = !mayChange || held === null; whyDisabled($('save-safety'), !mayChange ? 'role' : held === null ? { en: WORDS.en.safetyFirst, ta: WORDS.ta.safetyFirst } : '');
   $('safety-reload').hidden = !safetyConflict;
   if (safetyConflict) tell($('safety-status'), false, t('changedMeanwhile'));
   paintCategories(); paintMrp(); paintPanels();
@@ -480,7 +498,8 @@ async function load() {
   subs = sb.ok ? sb.body : undefined;
   const r = $('result');
   if (readFailed) tell(r, false, p.status === 0 ? t('unreachable') : t('cannotRead'));
-  else if (held === null) tell(r, true, mayEdit ? t('isNew') : t('cannotRead'));
+  else if (held === null) tell(r, true, mayChange ? t('isNew') : t('cannotRead'));
+  else if (mayPropose) { r.className = 'status'; r.textContent = t('proposeLead'); }
   else if (!mayEdit) { r.className = 'status'; r.textContent = t('readOnly'); } else { r.className = 'status'; r.textContent = ''; }
   paint();
   fillRecord();
@@ -507,6 +526,12 @@ async function saveRecord() {
     freshSafety = now.body?.product?.safety;
   }
   const product = recordFromForm(freshSafety);
+  if (mayPropose) {
+    const why = $('r-why').value.trim();
+    if (why === '') { tell(st, false, t('needWhy')); return; }
+    await propose(st, { change: 'product', productId, product, expectedVersion: heldVersion ?? 0, reason: why });
+    return;
+  }
   const details = { product, productId };
   // A second person's approval already given for exactly this record is named; else head office says whether one is needed.
   let approval = {};
@@ -543,6 +568,7 @@ async function saveSafety() {
   if (why === '') { tell(st, false, t('needWhy')); return; }
   if (heldVersion === undefined) { tell(st, false, t('cannotRead')); return; }
   const body = { expectedVersion: heldVersion, safety: safetyFromForm(), reason: why };
+  if (mayPropose) { await propose(st, { change: 'product_safety', productId, ...body }); return; }
   // W4 · OB-546: an age limit newly on a product on sale needs a second person — the approval given for exactly this save
   // is named; while it waits, nothing is sent.
   const subjectRef = `product:${productId}`;
@@ -567,6 +593,15 @@ async function saveSafety() {
   // Said only once head office's new version is read back into the form — what is shown is what head office kept.
   await load();
   tell($('safety-status'), true, found.decidedBy === undefined ? fill(t('savedVersion'), { v: heldVersion ?? out.body?.version }) : fill(t('usingApproval'), { by: found.decidedBy }));
+}
+
+/** OB-773: send a change for the owner's approval — head office records exactly it; nothing changes until he approves. */
+async function propose(st, body) {
+  const out = await call('POST', '/v1/catalogue/changes', body);
+  if (out.status === 409 && out.body?.error?.code === 'product_changed_meanwhile') { tell(st, false, t('changedMeanwhile')); $('safety-reload').hidden = false; return false; }
+  if (!out.ok) { say(st, out, ''); return false; }
+  tell(st, true, t('sentForApproval'));
+  return true;
 }
 
 async function askApproval() {
@@ -597,6 +632,12 @@ $('barcode-form').addEventListener('submit', async (e) => {
   const code = $('b-code').value.trim();
   const level = $('b-level').value.trim();
   if (code === '') return;
+  if (mayPropose) {
+    const why = $('b-why').value.trim();
+    if (why === '') { tell($('codes-status'), false, t('needWhy')); return; }
+    if (await propose($('codes-status'), { change: 'barcode', productId, code, kind: $('b-kind').value, ...(level === '' ? {} : { level }), reason: why })) { $('b-code').value = ''; $('b-level').value = ''; $('b-why').value = ''; }
+    return;
+  }
   const out = await call('POST', `/v1/catalogue/products/${encodeURIComponent(productId)}/barcodes/${encodeURIComponent(code)}`, { kind: $('b-kind').value, ...(level === '' ? {} : { level }) });
   if (!out.ok) { say($('codes-status'), out, ''); return; }
   $('b-code').value = ''; $('b-level').value = ''; await load(); showTab('codes'); tell($('codes-status'), true, t('saved'));

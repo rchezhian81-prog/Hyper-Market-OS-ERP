@@ -9516,6 +9516,79 @@
         }
       }
     },
+    "/v1/catalogue/changes": {
+      "post": {
+        "operationId": "postCatalogueChanges",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.change.propose",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCatalogueChangesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCatalogueChangesReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.change.propose\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/dual-mrp-check": {
       "get": {
         "operationId": "getCatalogueDualMrpCheck",
@@ -179276,6 +179349,112 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/category-policy.ts"
+      },
+      "PostCatalogueChangesReply": {
+        "type": "object",
+        "required": [
+          "nothingChangedYet",
+          "detail"
+        ],
+        "properties": {
+          "nothingChangedYet": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/catalogue-change-proposals.ts"
+      },
+      "PostCatalogueChangesRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "barcode"
+              },
+              {
+                "type": "string",
+                "const": "product_safety"
+              },
+              {
+                "type": "string",
+                "const": "product"
+              },
+              {
+                "type": "string",
+                "const": "tax_rate"
+              }
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "hsnCode": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "productId": {
+            "type": "string"
+          },
+          "rateBps": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "safety": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/api/src/catalogue-change-proposals.ts"
       },
       "PostCatalogueMergesByMergeIdDecisionReply200": {
         "type": "object",

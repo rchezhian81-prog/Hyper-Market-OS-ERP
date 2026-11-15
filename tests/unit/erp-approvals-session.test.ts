@@ -212,6 +212,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       floor_device_review: { en: APPROVALS_COPY.en.kindFloorDeviceReview, ta: APPROVALS_COPY.ta.kindFloorDeviceReview },
       // OB-681: the CA's own login — the owner asks, the IT custodian approves.
       ca_role_grant: { en: APPROVALS_COPY.en.kindCaRoleGrant, ta: APPROVALS_COPY.ta.kindCaRoleGrant },
+      // OB-773: a store manager's item, barcode or GST change — the owner approves; head office then makes it.
+      catalogue_change: { en: APPROVALS_COPY.en.kindCatalogueChange, ta: APPROVALS_COPY.ta.kindCatalogueChange },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());
@@ -551,5 +553,40 @@ describe('OB-420 — a floor-device review says who alone decides it (the named 
   });
   it('the page draws it under the request', () => {
     expect(readFileSync('apps/web-erp/web/approvals.js', 'utf8')).toContain('r.whoDecides');
+  });
+});
+
+describe('OB-773 — a store manager\'s catalogue change reads as the before and the after, and says whether head office made it', () => {
+  const change = row({
+    requestId: 'areq-cc', kind: 'catalogue_change', label: 'x', subjectRef: 'product:SALT', requestedBy: 'u-mgr', summary: 'Item change: Salt (SALT)',
+    details: { change: 'product', productId: 'SALT', product: { name: 'Salt', manufacturer: 'Salt Works' }, expectedVersion: 1, route: 'POST …', changes: [
+      { field: 'manufacturer', before: '', after: 'Salt Works' }, { field: 'safety.storageConditions', before: 'Dry', after: 'Cool and dry' },
+    ] },
+  });
+  it('shows the item and one "before → after" line per field — never the raw record — in English and Tamil', () => {
+    expect(presentRequest('en', change, true).details.map((d) => `${d.label}: ${d.value}`)).toEqual([
+      'Item: SALT', 'Manufacturer: nothing → Salt Works', 'Label: storage conditions: Dry → Cool and dry',
+    ]);
+    expect(presentRequest('en', change, true).label).toMatch(/^A store manager's change to an item, a barcode or a GST rate/);
+    expect(presentRequest('ta', change, true).details[1]).toMatchObject({ label: 'உற்பத்தியாளர்', value: 'ஒன்றுமில்லை → Salt Works' });
+  });
+  it('a used approval says it was made — or, in head office\'s words, that it could not be', () => {
+    expect(presentRequest('en', { ...change, status: 'used', decidedBy: 'u-owner', catalogueChange: { applied: true } }).status.label).toBe('Approved by u-owner and made — the change is in the catalogue.');
+    const notMade = presentRequest('en', { ...change, status: 'used', decidedBy: 'u-owner', catalogueChange: { applied: false, reason: 'Someone saved this item meanwhile.' } }).status;
+    expect(notMade).toMatchObject({ tone: 'error', label: 'Approved by u-owner, but head office could NOT make it: Someone saved this item meanwhile.' });
+  });
+  it('approving says head office made the change (or could not), never "the person who asked can now go ahead"', async () => {
+    const s = createApprovalsSession({ userId: 'u-owner' }, ports({
+      inbox: () => ({ waitingForMe: [change], mine: [], asAt: null }),
+      decide: async () => ({ result: 'decided', decision: 'approved', decidedBy: 'u-owner', catalogueChange: { applied: true } }),
+    }));
+    const made = await s.decide('areq-cc', 'approved', 'checked the pack');
+    expect(s.presentDecideOutcome('en', made).label).toBe('Approved. Head office has made the change.');
+    expect(s.presentDecideOutcome('ta', made).label).toMatch(/[஀-௿]/);
+    expect(s.presentDecideOutcome('en', { kind: 'decided', decision: 'approved', catalogueChange: { applied: false, reason: 'needs Finance' } }).label)
+      .toBe('Approved, but head office could NOT make the change: needs Finance');
+  });
+  it('the engine knows the kind: the store manager proposes, a person who may publish approves', () => {
+    expect(APPROVAL_KINDS['catalogue_change']).toMatchObject({ makerPermission: 'catalogue.change.propose', checkerPermission: 'catalogue.pack.publish' });
   });
 });

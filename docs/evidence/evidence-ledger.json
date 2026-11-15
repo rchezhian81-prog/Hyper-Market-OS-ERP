@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2384,
+  "testFiles": 2386,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -279,7 +279,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 22,
-        "integration": 23,
+        "integration": 24,
         "realDb": 6,
         "browser": 9,
         "connected": 5,
@@ -322,6 +322,7 @@
           "tests/integration/catalogue-product-duplicates.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/head-office-scale-label-rules-ride-the-signed-pack.test.ts",
+          "tests/integration/ob773-the-store-manager-proposes-and-the-owner-approves.test.ts",
           "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/pack-hierarchy.test.ts",

@@ -3827,7 +3827,16 @@ function approvalRowOf(raw: unknown): ApprovalRequestView | null {
     ...(nonBlank(r['decidedAt']) ? { decidedAt: r['decidedAt'] } : {}),
     ...(nonBlank(r['expiresAt']) || r['expiresAt'] === null ? { expiresAt: r['expiresAt'] as string | null } : {}),
     ...(nonBlank(r['usedBy']) ? { usedBy: r['usedBy'] } : {}),
+    ...catalogueChangeOf(r['catalogueChange']),
   };
+}
+
+/** OB-773: whether head office made an approved catalogue change (and its words when it did not) — read defensively. */
+function catalogueChangeOf(raw: unknown): { catalogueChange?: { applied: boolean; reason?: string } } {
+  if (raw === null || typeof raw !== 'object') return {};
+  const c = raw as Record<string, unknown>;
+  if (typeof c['applied'] !== 'boolean') return {};
+  return { catalogueChange: { applied: c['applied'], ...(nonBlank(c['reason']) ? { reason: c['reason'] } : {}) } };
 }
 
 const approvalRowsOf = (raw: unknown): ApprovalRequestView[] =>
@@ -3977,9 +3986,13 @@ async function postApprovalDecision(input: { readonly requestId: string; readonl
       body: JSON.stringify({ decision: input.decision, reason: input.reason }),
     });
     if (res.status >= 200 && res.status < 300) {
-      const body = (await res.json().catch(() => ({}))) as { decision?: unknown; decidedBy?: unknown };
+      const body = (await res.json().catch(() => ({}))) as { decision?: unknown; decidedBy?: unknown; catalogueChange?: { applied?: unknown; reason?: unknown } };
       const decision: DecisionWord = body.decision === 'rejected' ? 'rejected' : body.decision === 'approved' ? 'approved' : input.decision;
-      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '' };
+      // OB-773: an approved catalogue change is made at once — whether it was, and head office's words when it was not.
+      const cc = body.catalogueChange;
+      const made = cc !== undefined && typeof cc.applied === 'boolean'
+        ? { catalogueChange: { applied: cc.applied, ...(nonBlank(cc.reason) ? { reason: cc.reason } : {}) } } : {};
+      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '', ...made };
     }
     return { result: 'refused', ...(await refusalOf(res)) };
   } catch {
