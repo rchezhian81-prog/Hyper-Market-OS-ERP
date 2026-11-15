@@ -38,6 +38,7 @@ import { translator, presentScreenState, type BilingualCopy, type Lang } from '.
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { DiscrepancyKind } from '../../../packages/receiving/src/index';
 import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/quantity';
+import { quantityInWords } from './quantity-words';
 import { makeCaller, outcomeIn as decisionOutcomeIn, type Outcome } from './r4-insight-call';
 
 // ── what the screen was last told (the GRN list, one snapshot) ──────────────────────────────────────────────
@@ -75,6 +76,19 @@ export interface GrnDiscrepancyView {
   readonly requiresApproval: boolean;
   /** The server's plain-English specifics, shown as-is. */
   readonly detail: string;
+  /** D-037: the unit of the receipt line it is on (OB-31) — lets the screen say "4 pieces short", never "4 ea". */
+  readonly uom?: string;
+  /** D-037: the item's name, when this store computer's catalogue holds it. */
+  readonly productName?: string;
+}
+
+/** D-037: one line of a receipt — what became sellable of one item, in its own unit (OB-31). */
+export interface GrnItemView {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly name?: string;
+  readonly uom: string;
+  readonly sellableMinor: number;
 }
 
 /** A committed goods receipt, with its checked outcome — one row on the review list. */
@@ -112,6 +126,8 @@ export interface GrnRecordView {
    * added into one number. Absent (an older snapshot): the totals above are read as counts of pieces.
    */
   readonly quantitiesByUom?: GrnQuantitiesByUom;
+  /** D-037: what became sellable, item by item (absent: an older snapshot — the per-unit totals are shown). */
+  readonly items?: readonly GrnItemView[];
 }
 
 /** OB-773: a receipt's quantities per unit of measure, each in that unit's smallest steps (OB-31). */
@@ -254,7 +270,8 @@ export type CopyKey =
   | 'billMatchHeading' | 'billMatchLabel' | 'billMatchPlaceholder' | 'billMatchBtn' | 'billMatchNotYou' | 'billMatchedLine' | 'billMatchedKnown'
   | 'billMatchDone' | 'billMatchAlready' | 'billMatchSelf' | 'billMatchUnknownBill' | 'billMatchRefused' | 'billMatchLostLink' | 'billMatchNoLink'
   | 'billMatchNotPermitted' | 'billMatchReceiptUnknown' | 'billMatchNothingWaiting' | 'billMatchInvoiceMissing'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'shortWords' | 'excessHeldWords' | 'excessWithinWords';
 
 export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -339,6 +356,9 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     billMatchInvoiceMissing: 'Write the supplier bill number.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    shortWords: '{item}: {qty} short — a claim or credit note is due from the supplier',
+    excessHeldWords: '{item}: {qty} more than ordered — held, not on sale until a second person decides',
+    excessWithinWords: '{item}: {qty} more than ordered — within the allowed margin',
   },
   ta: {
     title: 'சரக்கு பெறுதல் மதிப்பாய்வு', langName: 'English',
@@ -421,6 +441,9 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     billMatchInvoiceMissing: 'சப்ளையர் பில் எண்ணை எழுதுங்கள்.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    shortWords: '{item}: {qty} குறைவு — சப்ளையரிடமிருந்து கோரிக்கை அல்லது வரவுக் குறிப்பு வர வேண்டும்',
+    excessHeldWords: '{item}: ஆர்டரை விட {qty} அதிகம் — இரண்டாம் நபர் முடிவு செய்யும் வரை விற்பனைக்கு இல்லை',
+    excessWithinWords: '{item}: ஆர்டரை விட {qty} அதிகம் — அனுமதித்த அளவுக்குள்',
   },
 };
 
@@ -437,6 +460,18 @@ const DISCREPANCY_COPY: Readonly<Record<GrnDifferenceKind, CopyKey>> = Object.fr
 const OWNER_MISSING_COPY: Readonly<Record<NonNullable<GrnDiscrepancyOwnerView['missing']>, CopyKey>> = Object.freeze({
   no_purchase_order: 'ownerNoPo', order_not_held: 'ownerOrderNotHeld', no_store_manager_named: 'ownerNoStoreManager', owner_not_decided: 'ownerNotDecided',
 });
+
+/**
+ * D-037: a short or an excess said in the shop's words — the item, then the quantity in its unit's plain word ("Biscuits:
+ * 4 pieces short …"), never head office's "4 ea short of the 48 ordered" (which is kept, unchanged, on the record). Any other
+ * difference, or one whose unit is not known, is head office's own words as before.
+ */
+export function differenceWords(lang: Lang, d: GrnDiscrepancyView): string {
+  if (d.uom === undefined || (d.kind !== 'short' && d.kind !== 'excess')) return d.detail;
+  const t = translator(GOODS_RECEIPT_COPY, lang);
+  const key: CopyKey = d.kind === 'short' ? 'shortWords' : d.requiresApproval ? 'excessHeldWords' : 'excessWithinWords';
+  return t(key).replace('{item}', d.productName ?? d.productId).replace('{qty}', quantityInWords(d.quantityMinor, d.uom, lang));
+}
 
 /** OB-508: the owner in words — the named people and their role, or head office's reason nobody is named. Never invented. */
 export function ownerWords(lang: Lang, owner: GrnDiscrepancyOwnerView | undefined): string | null {
@@ -480,6 +515,8 @@ export interface PresentedReceipt {
   readonly sellableQuantity: string;
   readonly quarantinedQuantity: string;
   readonly rejectedQuantity: string;
+  /** D-037: what became sellable, one line per item ("Biscuits — 44 pieces"); empty when the lines are not known. */
+  readonly sellableItems: readonly { readonly productId: string; readonly label: string }[];
   readonly discrepancies: readonly PresentedDiscrepancy[];
   /** Batch 2: the disposed-for-return lines, each with its state in words and its quantity in the line's unit. */
   readonly returnLines: readonly PresentedReturnLine[];
@@ -579,13 +616,49 @@ export function quantityForPerson(quantityMinor: number, uom: string): string {
  * volume is in its whole unit with its decimals ("2.5 kg"). Units are listed pieces first, then by code; nothing is "0 units"
  * unless nothing at all came in.
  */
-export function receiptQuantityForPerson(byUom: Readonly<Record<string, number>>, unitsWord: string): string {
+export function receiptQuantityForPerson(byUom: Readonly<Record<string, number>>, unitsWord: string, lang: Lang = 'en'): string {
   const parts = Object.entries(byUom)
     .filter(([, minor]) => minor !== 0)
     .map(([uom, minor]) => ({ code: normaliseUom(uom) ?? uom, minor }))
     .sort((a, b) => (a.code === b.code ? 0 : a.code === 'ea' ? -1 : b.code === 'ea' ? 1 : a.code < b.code ? -1 : 1))
-    .map(({ code, minor }) => (code === 'ea' ? `${minor.toLocaleString('en-IN')} ${unitsWord}` : quantityForPerson(minor, code)));
+    // D-037: each unit's plain word — "44 pieces", "2.5 kg" — never the code "ea" (OB-31: never ÷100 either).
+    .map(({ code, minor }) => quantityInWords(minor, code, lang));
   return parts.length === 0 ? `0 ${unitsWord}` : parts.join(' · ');
+}
+
+/**
+ * D-037: head office's raw goods-receipt record → what became sellable, ITEM BY ITEM, each in its line's own unit (OB-31) —
+ * the same per-line rule as `receiptQuantitiesByUom` (a line's sellable quantity plus what head office released of it). A
+ * one-line receipt takes head office's own `availableMinor`. `names` gives an item's name when the store computer knows it.
+ */
+export function receiptItemLines(g: Readonly<Record<string, unknown>>, names: ReadonlyMap<string, string> = new Map()): GrnItemView[] {
+  const captured = (typeof g['captured'] === 'object' && g['captured'] !== null ? g['captured'] : {}) as Record<string, unknown>;
+  const lines = (Array.isArray(captured['lines']) ? captured['lines'] : []) as Record<string, unknown>[];
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const items: GrnItemView[] = lines.map((l) => {
+    const lineId = String(l['lineId'] ?? '');
+    const productId = String(l['productId'] ?? '');
+    const name = names.get(productId);
+    return {
+      lineId, productId, ...(name === undefined ? {} : { name }),
+      uom: typeof l['uom'] === 'string' ? normaliseUom(l['uom']) ?? l['uom'] : 'ea',
+      sellableMinor: num(l['sellableMinor']) + releasedOfLine(g, l),
+    };
+  });
+  if (items.length === 1 && typeof g['availableMinor'] === 'number' && Number.isFinite(g['availableMinor'])) return [{ ...items[0]!, sellableMinor: g['availableMinor'] }];
+  return items;
+}
+
+/** What head office has released of one held line (an approved excess; a held line a second person accepted). */
+function releasedOfLine(g: Readonly<Record<string, unknown>>, l: Record<string, unknown>): number {
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const excess = g['excessDecision'] as { decision?: unknown } | undefined;
+  const assembled = g['assembledFrom'] as { onHandByLine?: Record<string, unknown> } | undefined;
+  const dispositions = (Array.isArray(g['dispositions']) ? g['dispositions'] : []) as Record<string, unknown>[];
+  const lineId = String(l['lineId'] ?? '');
+  return (excess?.decision === 'approved' && assembled === undefined ? num(l['heldMinor']) : 0)
+    + (dispositions.some((d) => d['lineId'] === lineId && d['disposition'] === 'accept')
+      ? Math.max(0, num(l['quarantinedMinor']) - num(assembled?.onHandByLine?.[lineId])) : 0);
 }
 
 /**
@@ -604,16 +677,9 @@ export function receiptQuantitiesByUom(g: Readonly<Record<string, unknown>>): Gr
   const sellable: Record<string, number> = {};
   const quarantined: Record<string, number> = {};
   const rejected: Record<string, number> = {};
-  const excess = g['excessDecision'] as { decision?: unknown } | undefined;
-  const assembled = g['assembledFrom'] as { onHandByLine?: Record<string, unknown> } | undefined;
-  const dispositions = (Array.isArray(g['dispositions']) ? g['dispositions'] : []) as Record<string, unknown>[];
   for (const l of lines) {
     const uom = uomOf(l);
-    const lineId = String(l['lineId'] ?? '');
-    const released = (excess?.decision === 'approved' && assembled === undefined ? num(l['heldMinor']) : 0)
-      + (dispositions.some((d) => d['lineId'] === lineId && d['disposition'] === 'accept')
-        ? Math.max(0, num(l['quarantinedMinor']) - num(assembled?.onHandByLine?.[lineId])) : 0);
-    add(sellable, uom, num(l['sellableMinor']) + released);
+    add(sellable, uom, num(l['sellableMinor']) + releasedOfLine(g, l));
     add(quarantined, uom, num(l['quarantinedMinor']));
     add(rejected, uom, num(l['rejectedMinor']));
   }
@@ -823,7 +889,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           .map((d) => ({
             kind: d.kind, label: t(DISCREPANCY_COPY[d.kind] ?? 'dkShort'),
             productId: d.productId, quantityMinor: d.quantityMinor, valueMinor: d.valueMinor, currency: d.currency,
-            requiresApproval: d.requiresApproval, detail: d.detail,
+            requiresApproval: d.requiresApproval, detail: differenceWords(lang, d),
             ownerLabel: ownerWords(lang, d.owner), valueNotKnown: d.valueNotKnown === true,
           }));
         return {
@@ -832,9 +898,10 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,
           // OB-773 (B-2): per unit of measure when head office's lines are known; otherwise the totals are counts of pieces.
-          sellableQuantity: receiptQuantityForPerson(g.quantitiesByUom?.sellable ?? { ea: g.sellableMinor }, t('unitsWord')),
-          quarantinedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.quarantined ?? { ea: g.quarantinedMinor }, t('unitsWord')),
-          rejectedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.rejected ?? { ea: g.rejectedMinor }, t('unitsWord')),
+          sellableQuantity: receiptQuantityForPerson(g.quantitiesByUom?.sellable ?? { ea: g.sellableMinor }, t('unitsWord'), lang),
+          quarantinedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.quarantined ?? { ea: g.quarantinedMinor }, t('unitsWord'), lang),
+          rejectedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.rejected ?? { ea: g.rejectedMinor }, t('unitsWord'), lang),
+          sellableItems: (g.items ?? []).map((i) => ({ productId: i.productId, label: `${i.name ?? i.productId} — ${quantityInWords(i.sellableMinor, i.uom, lang)}` })),
           discrepancies,
           returnLines: (g.returnLines ?? []).map((l) => presentReturnLine(lang, g.grnId, l)),
           costNotKnown: (g.costNotKnown ?? []).map((c) => ({ productId: c.productId, label: `${c.productId} — ${t('costNotKnownHeading')} (${t(c.because === 'no_issued_order' ? 'costNotKnownNoOrder' : 'costNotKnownNotOnOrder')})` })),

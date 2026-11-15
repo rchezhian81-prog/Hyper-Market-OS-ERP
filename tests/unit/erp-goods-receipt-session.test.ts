@@ -224,7 +224,7 @@ describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone bac
 
   // OB-773 (pilot audit B-2): the review showed "0.1 units" for 10 pieces — it divided head office's quantities by 100,
   // but an `ea` quantity IS a count (OB-31) and a kg quantity is grams. Pieces stay pieces, weights stay weights.
-  it('OB-773 · a receipt\'s quantities are said per unit: 10 pieces is "10 units", 2.5 kg is "2.5 kg", never added together', () => {
+  it('OB-773 · a receipt\'s quantities are said per unit: 10 pieces is "10 pieces" (D-037: the unit\'s plain word), 2.5 kg is "2.5 kg", never added together', () => {
     const raw = {
       availableMinor: 2_510,
       captured: { lines: [
@@ -234,8 +234,8 @@ describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone bac
     };
     const q = receiptQuantitiesByUom(raw);
     expect(q).toEqual({ sellable: { ea: 10, kg: 2_500 }, quarantined: { ea: 6, kg: 0 }, rejected: { ea: 0, kg: 750 } });
-    expect(receiptQuantityForPerson(q.sellable, 'units')).toBe('10 units · 2.5 kg');
-    expect(receiptQuantityForPerson(q.quarantined, 'units')).toBe('6 units');
+    expect(receiptQuantityForPerson(q.sellable, 'units')).toBe('10 pieces · 2.5 kg');
+    expect(receiptQuantityForPerson(q.quarantined, 'units')).toBe('6 pieces');
     expect(receiptQuantityForPerson({}, 'அலகுகள்')).toBe('0 அலகுகள்');
     // One unit: head office's own "became sellable" (it includes held stock released later) is used as it is.
     expect(receiptQuantitiesByUom({ availableMinor: 12, captured: { lines: [{ lineId: 'l1', uom: 'ea', sellableMinor: 10, heldMinor: 2 }] } }).sellable).toEqual({ ea: 12 });
@@ -249,8 +249,8 @@ describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone bac
 
     // The session says them; a snapshot without per-unit figures reads its totals as counts of pieces — never ÷100.
     const withUnits = session({ receipts: [grn({ sellableMinor: 2_510, quarantinedMinor: 6, rejectedMinor: 750, quantitiesByUom: q })] }).view('en').receipts[0]!;
-    expect([withUnits.sellableQuantity, withUnits.quarantinedQuantity, withUnits.rejectedQuantity]).toEqual(['10 units · 2.5 kg', '6 units', '0.75 kg']);
+    expect([withUnits.sellableQuantity, withUnits.quarantinedQuantity, withUnits.rejectedQuantity]).toEqual(['10 pieces · 2.5 kg', '6 pieces', '0.75 kg']);
     const counts = session({ receipts: [grn({ sellableMinor: 10, quarantinedMinor: 0, rejectedMinor: 0 })] }).view('ta').receipts[0]!;
-    expect(counts.sellableQuantity).toBe('10 அலகுகள்');
+    expect(counts.sellableQuantity).toBe('10 எண்ணிக்கை');
   });
 });

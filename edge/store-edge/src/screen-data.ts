@@ -557,8 +557,11 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
  * among them.
  */
 export type TodayFigure =
-  | { readonly known: true; readonly value: number; readonly unit?: 'inr'; readonly note?: string; readonly noteTa?: string }
+  | { readonly known: true; readonly value: number; readonly unit?: 'inr'; readonly note?: string; readonly noteTa?: string; readonly drawers?: readonly TodayDrawer[] }
   | { readonly known: false; readonly why: string; readonly whyTa?: string };
+
+/** D-009: one drawer the over/short figure counts — its shift (head office's sign-off is by shift) and its words. */
+export interface TodayDrawer { readonly shiftId: string; readonly words: string; readonly wordsTa: string }
 
 const notGiven = (what: string, whatTa: string): TodayFigure =>
   ({ known: false, why: `the store computer has not been given ${what}`, whyTa: `கடைக் கணினிக்கு ${whatTa} வழங்கப்படவில்லை` });
@@ -708,6 +711,8 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
       ...(today.length === 0 ? {} : {
         note: `${words.join('; ')} — closed today on this store computer; signing off is on the Cash over/short page`,
         noteTa: `${wordsTa.join('; ')} — இன்று இந்தக் கடைக் கணினியில் மூடப்பட்டது; கையொப்பம் கூடுதல்/குறைவு பக்கத்தில்`,
+        // D-009: each drawer by its shift, so Today can leave out one head office says is already signed off.
+        drawers: today.map((c, i) => ({ shiftId: c.shiftId, words: words[i]!, wordsTa: wordsTa[i]! })),
       }),
     };
   })();
