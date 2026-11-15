@@ -9,7 +9,7 @@ import { startEdge, type EdgeProcess } from '../../../edge/store-edge/src/main';
 import { writeSignedPack } from '../../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../../services/catalogue/src/index';
 import type { CatalogueProduct, CatalogueBarcode } from '../../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen } from '../../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../../support/till-operator';
 
 export const R3_TENANT = 't-sre';
 const keyOf = (name: string): string => ['r3', name, 'till', 'signing', 'key'].join('-').padEnd(48, '0');
@@ -43,6 +43,7 @@ export async function servedTill(browser: Browser, name: string, products: reado
     return w.posSession !== undefined && w.posSession.hasCatalogue();
   }, undefined, { timeout: 15_000 });
   await signInThroughScreen(page);
+  await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
   return {
     edge, page, dir,
     stop: async () => { await context.close(); await edge.stop(); if (existingDir === undefined) { /* the caller removes the dir */ } },

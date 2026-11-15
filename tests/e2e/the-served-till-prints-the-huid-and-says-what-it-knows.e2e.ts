@@ -9,7 +9,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **The served till at a 1366 × 768 counter screen, against a REAL store computer holding head office's SIGNED pack
@@ -99,6 +99,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => { const w = globalThis as unknown as PosWindow; return w.posSession !== undefined && w.posSession.hasCatalogue() && w.posBadge !== undefined; }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { edge, page };
   }
   const scan = async (page: Page, code: string, lines: number): Promise<void> => {
@@ -176,10 +177,10 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
 
     // ── P-08: the BOX's count while it answers … ──
     await refresh(page);
-    expect(await page.textContent('#unsent')).toBe('அனுப்பப்படாதவை: 2');
+    expect(await page.textContent('#unsent')).toBe('அனுப்பப்படாதவை: 3'); // two sales and the opening float (pilot audit D-5)
     expect(await page.getAttribute('#unsent', 'data-unknown')).toBeNull();
     await page.click('#lang');
-    expect(await page.textContent('#unsent')).toBe('Unsent: 2');
+    expect(await page.textContent('#unsent')).toBe('Unsent: 3');
     expect(await page.getAttribute('#unsent', 'data-waiting')).toBe('');
     await shot(page, 'gap-till-unsent-known');
 
@@ -207,6 +208,6 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
     // The box answers again: the real number comes back.
     await page.evaluate((base) => { (globalThis as unknown as PosWindow).laneWriteBase = base; }, `http://127.0.0.1:${edge.lane!.port}`);
     await refresh(page);
-    expect(await page.textContent('#unsent')).toBe('அனுப்பப்படாதவை: 2');
+    expect(await page.textContent('#unsent')).toBe('அனுப்பப்படாதவை: 3');
   });
 });

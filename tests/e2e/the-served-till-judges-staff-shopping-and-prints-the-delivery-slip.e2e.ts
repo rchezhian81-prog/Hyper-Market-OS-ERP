@@ -11,7 +11,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 import { auditPage } from './lib/a11y-audit';
 
 /**
@@ -107,6 +107,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till judges staff shopping and prints
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => { const w = globalThis as unknown as PosWindow; return w.posSession !== undefined && w.posSession.hasCatalogue(); }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return page;
   };
   const scanRice = async (page: Page): Promise<void> => {

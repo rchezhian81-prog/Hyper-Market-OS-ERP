@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **W3 · D06-FR-03 · OB-673 and D07-FR-04 · OB-677 through the till's SCREEN, with no head office at all.**
@@ -111,6 +111,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till takes a coupon and a gift card w
       return w.posSession !== undefined && w.posSession.hasCatalogue();
     }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
 
     // Two packs of dal (₹960), then the coupon.
     await scanDal(page);

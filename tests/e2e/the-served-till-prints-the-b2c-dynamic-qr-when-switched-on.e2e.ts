@@ -9,7 +9,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **A22 (OB-326, built switched OFF) — the served till in real trading, in a real Chromium against a real store computer
@@ -96,6 +96,7 @@ describe.skipIf(!HAVE_BROWSER)('A22 — the served till prints the B2C dynamic Q
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { page, edge, requests };
   };
   const sellOne = async (page: Page): Promise<void> => {

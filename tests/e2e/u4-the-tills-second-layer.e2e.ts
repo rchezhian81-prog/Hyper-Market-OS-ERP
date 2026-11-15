@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 import { TEST_IDP } from '../support/api-harness';
 import { auditPage } from './lib/a11y-audit';
 import { Tally } from './lib/tally';
@@ -273,7 +273,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
     await taps.tap('#pay-kinds button:text-is("UPI")');
     await page.waitForSelector('#quick button');
     await taps.tap('#quick button:first-child'); // "Up to ₹280.00"
-    await panelTitled(page, 'What did the card machine say?');
+    await panelTitled(page, 'Did the UPI payment come through? Check the shop\'s UPI app or sound box.'); // pilot audit D-6: UPI is not the card machine
     await taps.tap('#pay-kinds button:text-is("Approved")');
     const paid = await refusalShown(page);
     expect(paid.title).toBe('Approved'); // the split's own word: nothing is due back
@@ -312,6 +312,7 @@ describe.skipIf(!HAVE_BROWSER)('U4: the till\'s second layer — More under head
 
     const edge = await box('cable', { CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: BOX_TOKEN });
     const { page, errors } = await openTill(edge);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     const unsentSays = (n: string): Promise<unknown> => page.waitForFunction((want) => (globalThis as unknown as Doc).document.getElementById('unsent-count')?.textContent === want, n, { timeout: 20_000 });
 
     await page.keyboard.type('8901234567890');

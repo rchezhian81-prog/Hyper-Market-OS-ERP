@@ -10,7 +10,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, pinOf, takeFloatOnPage } from '../support/till-operator';
 import { auditPage } from './lib/a11y-audit';
 
 /**
@@ -94,6 +94,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till checks pack dates, BIS licences 
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { edge, page };
   }
   const scan = async (page: Page, code: string): Promise<void> => { await page.keyboard.type(code); await page.keyboard.press('Enter'); };

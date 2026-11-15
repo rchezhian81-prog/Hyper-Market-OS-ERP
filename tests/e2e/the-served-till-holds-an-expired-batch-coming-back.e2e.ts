@@ -10,7 +10,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 import { auditPage } from './lib/a11y-audit';
 
 /**
@@ -89,6 +89,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till holds an expired batch coming ba
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return page;
   };
   /** The refund against `receipt`, through the screen's own steps; `w` are the words of the language the till is in. */
