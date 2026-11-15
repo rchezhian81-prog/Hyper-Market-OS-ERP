@@ -68,6 +68,7 @@ import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
+import type { TillShiftCloseRecord } from './till-cash';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
 import { packCalendarDate, packTimeZone, packTradingDay, packWallClock } from './shop-zone';
 import { toCloudReturn } from './cloud-return';
@@ -100,6 +101,12 @@ export interface ScreenInput {
    * none. The owner's takings are counted net of them — the day book's own rule (`refundLegs`), never a second one.
    */
   readonly returns?: readonly unknown[];
+  /**
+   * D-2 (OB-740 · M14-FR-02 · P-08): the shift closes on this box's own till-cash log (`till-cash.ts`), as the box
+   * decided and recorded them. Absent on a box that keeps no till-cash log. The cash office's over/short desk shows the
+   * material ones when head office's worklist cannot be read, and Today counts the ones closed today.
+   */
+  readonly tillCloses?: readonly TillShiftCloseRecord[];
   /** Records on the disk that could not be read at all. Surfaced, never silently dropped. */
   readonly unreadableRecords: number;
   /** The store's real outbox — the only honest source for "has everything reached the cloud?". */
@@ -688,7 +695,41 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
         };
       })();
 
-  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, supplierClaimDisputes, ...(tillDevices === undefined ? {} : { tillDevices }) };
+  // D-2 (OB-740 · M14-FR-02 · P-08): the drawers that closed over or short beyond the tolerance TODAY, from this box's own
+  // till-cash log — so "Exceptions open: 0" beside a till that closed ₹649.50 short is never read as an all-clear. Whether
+  // the cash office has signed one off is head office's record (the Cash over/short page), so this counts closes, and says
+  // so. Only on a box that keeps a till-cash log.
+  const drawersOverShortToday: TodayFigure | undefined = input.tillCloses === undefined ? undefined : ((): TodayFigure => {
+    const today = materialCloses(input.tillCloses, input.tradingDay, 0);
+    const words = today.map((c) => `${c.tillId} ${c.varianceMinor < 0 ? 'short' : 'over'} ${rupeesOf(c.varianceMinor)}`);
+    const wordsTa = today.map((c) => `${c.tillId} ${c.varianceMinor < 0 ? 'குறைவு' : 'கூடுதல்'} ${rupeesOf(c.varianceMinor)}`);
+    return {
+      known: true, value: today.length,
+      ...(today.length === 0 ? {} : {
+        note: `${words.join('; ')} — closed today on this store computer; signing off is on the Cash over/short page`,
+        noteTa: `${wordsTa.join('; ')} — இன்று இந்தக் கடைக் கணினியில் மூடப்பட்டது; கையொப்பம் கூடுதல்/குறைவு பக்கத்தில்`,
+      }),
+    };
+  })();
+
+  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, supplierClaimDisputes, ...(tillDevices === undefined ? {} : { tillDevices }), ...(drawersOverShortToday === undefined ? {} : { drawersOverShortToday }) };
+}
+
+/** ₹ for a variance's magnitude, en-IN grouping (the direction word carries the sign). */
+const rupeesOf = (minor: number): string => `₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** How many trading days back the over/short desk shows the box's own material closes when head office cannot be read. */
+export const BOX_OVERSHORT_DAYS = 7;
+
+/**
+ * D-2: the shift closes on this box that were over or short beyond the tolerance (the box raised the exception at the
+ * close), on `tradingDay` and the `daysBack` days before it, biggest first. Pure.
+ */
+export function materialCloses(closes: readonly TillShiftCloseRecord[], tradingDay: string, daysBack: number): TillShiftCloseRecord[] {
+  return closes
+    .filter((c) => c.exceptionRaised && c.varianceMinor !== 0)
+    .filter((c) => { const d = daysBetween(c.tradingDay, tradingDay); return d >= 0 && d <= daysBack; })
+    .sort((a, b) => Math.abs(b.varianceMinor) - Math.abs(a.varianceMinor));
 }
 
 /** OB-392: the devices a lane card names, in the order it names them (printer, scanner, card machine). */
@@ -2721,6 +2762,17 @@ export function cashOfficePayload(input: ScreenInput): Record<string, unknown> |
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // D-2 (OB-740 · P-08): the drawers this box ITSELF recorded closing over or short beyond the tolerance, in the last
+  // BOX_OVERSHORT_DAYS trading days — the desk shows them when head office's worklist cannot be read, so a till that
+  // closed ₹649.50 short is never hidden behind "every drawer is signed off". Absent on a box with no till-cash log.
+  if (input.tillCloses !== undefined) {
+    payload['boxOverShort'] = {
+      days: BOX_OVERSHORT_DAYS,
+      closes: materialCloses(input.tillCloses, input.tradingDay, BOX_OVERSHORT_DAYS - 1).map((c) => ({
+        shiftId: c.shiftId, tillId: c.tillId, cashierId: c.cashierId, tradingDay: c.tradingDay, varianceMinor: c.varianceMinor, reasonCode: c.reasonCode,
+      })),
+    };
+  }
 
   return payload;
 }

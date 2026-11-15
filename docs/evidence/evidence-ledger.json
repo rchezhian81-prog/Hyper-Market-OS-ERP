@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2376,
+  "testFiles": 2379,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1343,10 +1343,10 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
+        "unit": 21,
         "integration": 20,
         "realDb": 8,
-        "browser": 8,
+        "browser": 9,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1368,6 +1368,7 @@
           "tests/unit/lane-server-till-cash.test.ts",
           "tests/unit/m14-fr-04-the-closed-day-evidence-pack.test.ts",
           "tests/unit/m14-fr-04-the-day-book-offers-the-evidence-pack.test.ts",
+          "tests/unit/ob740-a-failed-over-short-read-is-not-known.test.ts",
           "tests/unit/over-short-review.test.ts",
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
@@ -1410,6 +1411,7 @@
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
+          "tests/e2e/ob740-the-cash-office-never-says-signed-off-when-it-could-not-read.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",

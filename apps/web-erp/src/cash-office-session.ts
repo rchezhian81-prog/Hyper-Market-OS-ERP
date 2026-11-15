@@ -61,9 +61,26 @@ export interface OverShortSignOffPort {
   post(input: { readonly shiftId: string; readonly disposition: string; readonly note: string }): Promise<SignOffResult>;
 }
 
+/**
+ * D-2 (OB-740 · P-08): whether the worklist the screen holds was really READ from head office. An unread worklist is
+ * NOT an empty one — "every drawer is signed off" over a read that failed hid a till that closed ₹649.50 short. Absent
+ * means read (a worklist handed in directly).
+ */
+export type WorklistRead =
+  | { readonly read: true }
+  | { readonly read: false; readonly why: 'not_read_yet' | 'unreachable' | 'refused' };
+
 export interface CashOfficePorts {
   /** The over/short worklist the shell last read (live from the cloud, or the injected stand-in). */
   worklist(): CashOverShortData;
+  /** D-2: whether `worklist()` was really read from head office (absent: it was). */
+  worklistRead?(): WorklistRead;
+  /**
+   * D-2: the drawers THIS store computer recorded closing over or short beyond the tolerance (its own till-cash log),
+   * and over how many trading days. Shown only when head office's worklist could not be read; absent when the box keeps
+   * no till-cash log.
+   */
+  boxOverShort?(): { readonly days: number; readonly closes: readonly OverShortView[] } | undefined;
   /** Whether this user may read the over/short worklist (`till.shift.read`). */
   mayRead(): boolean;
   /** Whether this user may sign off an over/short (`till.overshort.review`). */
@@ -89,7 +106,8 @@ export type CopyKey =
   | 'dispMiscount' | 'dispChangeError' | 'dispBankingVariance' | 'dispUnexplained' | 'dispTheftSuspected'
   | 'signRecorded' | 'signRefused' | 'signLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noReview'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'notKnown' | 'whyNotReadYet' | 'whyUnreachable' | 'whyRefused' | 'boxHeading' | 'boxLead' | 'boxNone';
 
 export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -113,6 +131,13 @@ export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
     noReview: 'You can see the over/shorts, but signing one off needs cash-office permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    notKnown: 'Not known',
+    whyNotReadYet: 'head office has not been read yet, so whether any drawer is waiting to be signed off cannot be told',
+    whyUnreachable: 'head office could not be reached, so whether any drawer is waiting to be signed off cannot be told',
+    whyRefused: 'head office would not show the over/shorts for your sign-in, so whether any drawer is waiting to be signed off cannot be told',
+    boxHeading: 'Recorded on this store computer',
+    boxLead: 'These drawers closed over or short beyond the tolerance in the last {days} trading days, by this store computer’s own records. Whether head office has signed them off is not known until head office can be read — they cannot be signed off from here until then.',
+    boxNone: 'This store computer recorded no drawer closing over or short beyond the tolerance in the last {days} trading days — but head office could not be read, so a drawer closed on another computer is not known.',
   },
   ta: {
     title: 'கூடுதல் / குறைவு கையொப்பம்', langName: 'English',
@@ -135,6 +160,13 @@ export const CASH_OFFICE_COPY: BilingualCopy<CopyKey> = {
     noReview: 'கூடுதல்/குறைவுகளைப் பார்க்கலாம், ஆனால் கையொப்பமிட பணக்கச்சேரி அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    notKnown: 'தெரியவில்லை',
+    whyNotReadYet: 'தலைமை அலுவலகம் இன்னும் படிக்கப்படவில்லை, எனவே எந்தப் பணப்பெட்டியாவது கையொப்பத்துக்குக் காத்திருக்கிறதா என்று சொல்ல முடியாது',
+    whyUnreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே எந்தப் பணப்பெட்டியாவது கையொப்பத்துக்குக் காத்திருக்கிறதா என்று சொல்ல முடியாது',
+    whyRefused: 'உங்கள் உள்நுழைவுக்குத் தலைமை அலுவலகம் கூடுதல்/குறைவுகளைக் காட்டவில்லை, எனவே எந்தப் பணப்பெட்டியாவது கையொப்பத்துக்குக் காத்திருக்கிறதா என்று சொல்ல முடியாது',
+    boxHeading: 'இந்தக் கடைக் கணினியில் பதிவானவை',
+    boxLead: 'இந்தக் கடைக் கணினியின் சொந்தப் பதிவுகளின்படி, கடந்த {days} வர்த்தக நாட்களில் இந்தப் பணப்பெட்டிகள் சகிப்புத்தன்மையை மீறி கூடுதலாகவோ குறைவாகவோ மூடப்பட்டன. தலைமை அலுவலகம் இவற்றைக் கையொப்பமிட்டதா என்பது அதைப் படிக்கும் வரை தெரியாது — அதுவரை இங்கிருந்து கையொப்பமிட முடியாது.',
+    boxNone: 'கடந்த {days} வர்த்தக நாட்களில் சகிப்புத்தன்மையை மீறி கூடுதலாகவோ குறைவாகவோ மூடப்பட்ட பணப்பெட்டி எதையும் இந்தக் கடைக் கணினி பதிவு செய்யவில்லை — ஆனால் தலைமை அலுவலகத்தைப் படிக்க முடியவில்லை, எனவே வேறு கணினியில் மூடப்பட்ட பணப்பெட்டி தெரியாது.',
   },
 };
 
@@ -171,6 +203,15 @@ export interface PresentedOverShort {
 
 export interface CashOfficeView {
   readonly screenState: StatusPresentation;
+  /**
+   * D-2 (P-08): false when head office's worklist was NOT read — then `open` is empty because nothing is known, never
+   * because every drawer is signed off; the shell says "Not known — <why>" and never the all-clear.
+   */
+  readonly known: boolean;
+  /** Why it is not known, in the reader's language ('' when known). */
+  readonly notKnownWhy: string;
+  /** D-2: when not known, the drawers this store computer itself recorded closing over/short (null: it keeps none). */
+  readonly boxRecorded: { readonly lead: string; readonly rows: readonly PresentedOverShort[] } | null;
   readonly open: readonly PresentedOverShort[];
   readonly openCount: number;
   /** The net over/short across the open rows, formatted (₹, signed). */
@@ -195,8 +236,12 @@ export interface CashOfficeSession {
 }
 
 const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayReview: boolean): CashOfficeView => ({
-  screenState, open: [], openCount: 0, totalVariance: '₹0.00', totalVarianceMinor: 0, nobodyNamed, mayReview,
+  screenState, known: true, notKnownWhy: '', boxRecorded: null, open: [], openCount: 0, totalVariance: '₹0.00', totalVarianceMinor: 0, nobodyNamed, mayReview,
 });
+
+const WHY_KEY: Readonly<Record<Extract<WorklistRead, { read: false }>['why'], CopyKey>> = {
+  not_read_yet: 'whyNotReadYet', unreachable: 'whyUnreachable', refused: 'whyRefused',
+};
 
 /** Format paise as rupees; when `signed`, a positive value keeps a leading + so over/short reads at a glance. */
 const rupees = (minor: number, signed = false): string => {
@@ -248,6 +293,23 @@ export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOff
         return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed, mayReview);
       }
 
+      // D-2 (P-08): a worklist that was not read is NOT KNOWN — never the all-clear. What this store computer itself
+      // recorded closing over/short is shown instead, said to be the box's own record with its sign-off not known.
+      const read = ports.worklistRead?.() ?? { read: true };
+      if (!read.read) {
+        const why = t(WHY_KEY[read.why]);
+        const box = ports.boxOverShort?.();
+        const rows = box === undefined ? [] : box.closes.slice()
+          .sort((a, b) => Math.abs(b.varianceMinor) - Math.abs(a.varianceMinor))
+          .map((r) => present(lang, r));
+        return {
+          screenState: presentScreenState({ state: 'error', label: `${t('notKnown')} — ${why}` }),
+          known: false,
+          notKnownWhy: why,
+          boxRecorded: box === undefined ? null : { lead: t(rows.length === 0 ? 'boxNone' : 'boxLead').split('{days}').join(String(box.days)), rows },
+          open: [], openCount: 0, totalVariance: '', totalVarianceMinor: 0, nobodyNamed, mayReview,
+        };
+      }
       const worklist = ports.worklist();
       // Biggest exposure first — by absolute over/short, so a big over ranks with a big short.
       const open = worklist.open
@@ -257,6 +319,9 @@ export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOff
       const state = open.length === 0 ? 'empty' : 'ready';
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),
+        known: true,
+        notKnownWhy: '',
+        boxRecorded: null,
         open,
         openCount: open.length,
         totalVariance: rupees(worklist.totalVarianceMinor, true),
@@ -271,6 +336,7 @@ export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOff
     // records the sign-off in the reviewer's own name; the screen never sends a self-review.
     signOff: async (shiftId, disposition, note) => {
       if (!ports.mayReview() || !isDisposition(disposition)) return 'refused';
+      if (ports.worklistRead?.().read === false) return 'refused'; // D-2: nothing is signed off against a list not read
       const row = ports.worklist().open.find((r) => r.shiftId === shiftId);
       if (row === undefined) return 'refused';
       if (config.userId !== null && row.cashierId === config.userId) return 'refused'; // §28: not your own drawer
