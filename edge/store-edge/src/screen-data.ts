@@ -70,7 +70,8 @@ import type { ActivationHoldReport } from './activation-hold';
 import type { ZoneCheck } from './shop-zone';
 import type { TillShiftCloseRecord } from './till-cash';
 import { backupStanding, isLimitValue, ROLLBACK_LIMIT_NAMES, type BackupReport, type RollbackLimits } from '../../../packages/migration/src/rollback-limits'; // MG-11
-import { packCalendarDate, packTimeZone, packTradingDay, packWallClock } from './shop-zone';
+import { packCalendarDate, packRule, packTimeZone, packTradingDay, packWallClock } from './shop-zone';
+import { blockingOpen, cutoffWords, dayAfter, dayTheBoxCloses, foldClosingChecklist, type ClosingChecklist } from './closing-checklist';
 import { toCloudReturn } from './cloud-return';
 import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
@@ -176,6 +177,17 @@ export interface ScreenInput {
    * bill-number year wait for the clock to be back in step (`activation-hold.ts`). Absent: the box has no clock check.
    */
   readonly activationHold?: ActivationHoldReport;
+  /**
+   * Fix batch 3 (D-008 · D-011): the checklist completions on this box's completions log — each a manager's tick on the
+   * store rules' closing checklist, append-only. Folded with the pack's checklist for Today, the Checklists page and the
+   * day close alike (`closing-checklist.ts`). Absent: no ticks read (the pack's own "done" stands).
+   */
+  readonly checklistTicks?: readonly unknown[];
+}
+
+/** The store rules' closing checklist for one trading day, with this box's ticks — or undefined when head office sent none. */
+export function closingChecklistOn(input: ScreenInput, day: string): ClosingChecklist | undefined {
+  return input.pack.checklist.known ? foldClosingChecklist(input.pack.checklist.value, input.checklistTicks, day) : undefined;
 }
 
 /**
@@ -653,9 +665,11 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
     : notGiven('the recall notices', 'திரும்பப்பெறல் அறிவிப்புகள்');
 
   let checklistOpen: TodayFigure;
-  if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist', 'நாளின் சரிபார்ப்புப் பட்டியல்');
+  const closingToday = closingChecklistOn(input, input.tradingDay);
+  if (closingToday === undefined) checklistOpen = notGiven('the day\'s checklist', 'நாளின் சரிபார்ப்புப் பட்டியல்');
   else {
-    const open = pack.checklist.value.filter((i) => !i.done);
+    // D-008: the same items the Checklists page lists, with the ticks made on this box (one source).
+    const open = closingToday.items.filter((i) => !i.done);
     const blocking = open.filter((i) => i.blocking).length;
     checklistOpen = {
       known: true, value: open.length,
@@ -914,11 +928,12 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
     }));
   }
 
-  if (input.pack.checklist.known) {
+  const closingToday = closingChecklistOn(input, input.tradingDay);
+  if (closingToday !== undefined) {
     const result = assessChecklist({
-      checklistId: `${input.tradingDay}-closing`,
+      checklistId: closingToday.checklistId,
       kind: 'closing',
-      items: input.pack.checklist.value.map((i) => ({
+      items: closingToday.items.map((i) => ({
         itemId: i.itemId,
         description: i.description,
         done: i.done,
@@ -931,6 +946,20 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
       id: i.itemId,
       what: i.blocking ? `${i.description} (the shop cannot close without this)` : i.description,
     }));
+  }
+
+  // Fix batch 3 (D-012 · D-011 · M14-FR-04): the day the store computer closes if asked now — the most recently ENDED
+  // trading day, by the same rule its close uses (`dayTheBoxCloses`) — so the screen names that day on the button and in
+  // every message; when the running day can be closed (after the store's cutoff on the next calendar day); and the
+  // store rules' closing-checklist items for the day being closed that must be done first and are not (the box refuses
+  // the close while one is open). `checklistOpen` absent: head office sent no closing checklist, so none holds the close.
+  {
+    const closes = dayTheBoxCloses(input.tradingDay);
+    const closing = closingChecklistOn(input, closes);
+    payload['dayClose'] = {
+      closes, runningDay: input.tradingDay, runningDayClosesFrom: { day: dayAfter(input.tradingDay), at: cutoffWords(packRule(input.pack).cutoffMinutes) },
+      ...(closing === undefined ? {} : { checklistOpen: blockingOpen(closing).map((i) => ({ id: i.itemId, what: i.description })) }),
+    };
   }
 
   if (input.pack.products.known) {
@@ -3041,6 +3070,19 @@ export function checklistPayload(input: ScreenInput): Record<string, unknown> | 
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // Fix batch 3 (D-008): the store rules' closing checklist — the SAME items Today counts and the day close checks — with
+  // the ticks made on this box, for the running trading day; and, while it still has an item that must be done before
+  // it closes, the day waiting to be closed (the day the store computer closes next). Ticked on this box (POST
+  // /lane/checklist-tick), in the person's own name. Absent: head office sent this store no closing checklist.
+  const today = closingChecklistOn(input, input.tradingDay);
+  if (today !== undefined && today.items.length > 0) {
+    const closes = dayTheBoxCloses(input.tradingDay);
+    const waiting = closingChecklistOn(input, closes);
+    payload['storeChecklists'] = [
+      ...(waiting !== undefined && blockingOpen(waiting).length > 0 ? [{ ...waiting, waitingToClose: true }] : []),
+      today,
+    ];
+  }
 
   return payload;
 }
@@ -3249,11 +3291,11 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
       bills: kept.map((b) => ({ number: b.number, oldErpBillNumber: b.oldErpBillNumber, tradingDay: b.tradingDay, totalMinor: b.totalMinor, refundedMinor: b.refundedMinor })),
     };
   }
-  // OB-263: the evening check from the old ERP's item-wise and bill-wise files, kept on this box (offline). The pilot
-  // department it filters by (the applied department slice's, MG-05) — absent means not known, and nothing is compared.
+  // OB-263: the evening check from the old ERP's item-wise and bill-wise files, kept on this box (offline). OB-800: it
+  // compares the whole store, every department — there is no pilot department to send.
   if (input.mirrorPilot?.on === true && input.eveningCheck !== undefined) {
     payload['eveningCheck'] = {
-      ...(policy.pilotDepartment === undefined ? {} : { department: { categoryId: policy.pilotDepartment.categoryId, name: policy.pilotDepartment.name } }),
+      scope: 'whole_store',
       mappings: input.eveningCheck.mappings,
       days: input.eveningCheck.days,
     };

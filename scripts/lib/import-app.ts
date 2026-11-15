@@ -10,7 +10,8 @@
 //                with the original files as evidence — never deleted, hard rule #6), and recorded at head office by
 //                fingerprint (they never leave the PC).
 //   fix          each gap, by the person whose job it is (head office refuses anyone else by name): a GST rate by Finance;
-//                a barcode, a price, the label facts or "not in this department" by whoever runs the load.
+//                a barcode, "sold loose", a price, the label facts or "leave it out of the load" by whoever runs the load.
+//                OB-800: every department of the old ERP is read and loaded — no pilot department.
 //   facts later  OB-738: a label fact never holds an item back. A loaded item still missing one is listed from head
 //                office's own list ("facts still to read") until filled; facts saved here for a loaded item are also
 //                sent to head office as the product's safety save (a new version, audited, in that person's name).
@@ -25,8 +26,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME, readPurchaseReport, csv, forExcel, LABEL_FACTS, paiseText } from '../../packages/migration/src/bpal-slice';
-import { analyseOldSystem, importSummary, isReady, resolveImport, sliceFilesFor, type ImportFix, type OldItem, type ResolvedItem } from '../../packages/migration/src/old-system-import';
+import { readPurchaseReport, csv, forExcel, LABEL_FACTS, paiseText, storeDepartment, STORE_DEPARTMENTS } from '../../packages/migration/src/bpal-slice';
+import { analyseOldSystem, importSummary, isReady, resolveImport, sliceDepartmentsFor, sliceFilesFor, uomOf, type ImportFix, type OldItem, type ResolvedItem } from '../../packages/migration/src/old-system-import';
 import { runSliceCommand } from '../../packages/migration/src/slice-command';
 import { list } from '../../packages/migration/src/load-csv';
 import { LABEL_FACT_FIELD, type LabelFactKey } from '../../packages/product/src/product';
@@ -283,7 +284,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       const purchaseRows = sorted.purchases.flatMap((f) => f.rows);
       const reading = readPurchaseReport(purchaseRows);
       const analysis = analyseOldSystem({ eanRows: sorted.ean.flatMap((f) => f.rows), hsnRows: sorted.hsn.flatMap((f) => f.rows), purchaseRows, today: today() });
-      if (analysis.items.length === 0) throw new Said(422, 'No packaged-grocery item was found in the HSN report. Is it the HSN report (Item Id, Hsn Code, Gst %)?');
+      if (analysis.items.length === 0) throw new Said(422, 'No item was found in the reports. Is the HSN report the right one (Item Id, Hsn Code, Gst %)?');
       const importId = `bpal-${nowIso().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}`;
       const dir = dirOf(importId);
       if (existsSync(dir)) throw new Said(409, 'An import was read this same second — wait a moment and read again.');
@@ -307,7 +308,8 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
 
     if (m === 'GET' && rest === '') {
       const st = await standing(s, importId);
-      return { json: { importId, record: st.record, summary: importSummary(st.resolved), items: st.resolved, loads: st.loads, finance: st.finance, fixes: st.fixes.length, factsFrom: st.factsFrom } };
+      return { json: { importId, record: st.record, summary: importSummary(st.resolved), items: st.resolved, loads: st.loads, finance: st.finance, fixes: st.fixes.length, factsFrom: st.factsFrom,
+        departmentNames: Object.fromEntries(STORE_DEPARTMENTS.map((d) => [d.categoryId, d.name])) } };
     }
 
     if (m === 'POST' && rest === '/fix') {
@@ -318,7 +320,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       if (r.status === 403) {
         throw new Said(403, kind === 'tax'
           ? 'Not saved: an item\'s HSN and GST rate are a tax decision — only Finance (the accountant or the owner) can save it, signed in as themselves.'
-          : 'Not saved: a barcode, a price, the label facts or leaving an item out is fixed by whoever runs the load (the owner or the store manager), signed in as themselves.');
+          : 'Not saved: a barcode, "sold loose", a price, the label facts or leaving an item out is fixed by whoever runs the load (the owner or the store manager), signed in as themselves.');
       }
       if (r.status !== 201 && r.status !== 200) said(r, 'Not saved');
       // OB-738: facts read for an item already on sale go to the item itself too, so it leaves head office's list.
@@ -341,13 +343,15 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
         return { csv: { name: `${importId}-gaps.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'gap', 'what_to_do'], live.flatMap((r) => r.gaps.map((g) => [r.itemId, r.name, String(r.sold), g.kind, g.why])))) } };
       }
       if (what === 'facts-to-read.csv') {
-        // OB-738: every item in the department, loaded or not, with label facts still to read — best sellers first.
+        // OB-738: every packaged grocery, loaded or not, with label facts still to read — best sellers first.
         return { csv: { name: `${importId}-facts-to-read.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'facts_still_to_read', ...LABEL_FACTS],
           st.resolved.filter((r) => !r.excluded && r.factsToRead.length > 0).map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'on sale at the till' : 'not loaded yet', r.factsToRead.map((k) => k.replace(/_/g, ' ')).join('; '), ...LABEL_FACTS.map((k) => r.facts[k] ?? '')]))) } };
       }
       if (what === 'items.csv') {
-        return { csv: { name: `${importId}-items.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'barcodes', 'hsn', 'gst_percent', 'mrp', 'selling_price', 'cost', ...LABEL_FACTS],
-          st.resolved.map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'loaded' : r.excluded ? 'not in this department' : r.gaps.length === 0 ? 'ready' : `${r.gaps.length} gap(s)`,
+        // OB-800: every department — each item's department and how it is sold (kg or pieces) are columns too.
+        return { csv: { name: `${importId}-items.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'department', 'sold_by', 'barcodes', 'hsn', 'gst_percent', 'mrp', 'selling_price', 'cost', ...LABEL_FACTS],
+          st.resolved.map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'loaded' : r.excluded ? 'left out of the load' : r.gaps.length === 0 ? 'ready' : `${r.gaps.length} gap(s)`,
+            r.department === undefined ? 'not known until the HSN is settled' : storeDepartment(r.department)?.name ?? r.department, r.soldAs === 'loose_kg' ? 'kg (loose)' : r.soldAs === 'loose_count' ? 'piece (loose)' : 'piece (pack)',
             r.barcodes.join(' '), r.hsn ?? '', r.gstBps === undefined ? '' : String(r.gstBps / 100), r.price === undefined ? '' : paiseText(r.price.mrp), r.price === undefined ? '' : paiseText(r.price.sell), r.price === undefined ? '' : paiseText(r.price.cost),
             ...LABEL_FACTS.map((k) => r.facts[k] ?? '')]))) } };
       }
@@ -369,7 +373,9 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       mkdirSync(dir, { recursive: true });
       const files = sliceFilesFor(ready, st.read.ratesFrom);
       for (const [f, text] of Object.entries(files)) writeOnce(join(dir, f), text);
-      const base = { loadId, tenantId: deps.tenantId, operator: s.userId, storeId: deps.storeId, department: { categoryId: PILOT_CATEGORY_ID, name: PILOT_CATEGORY_NAME, regulated: ['food', 'packed'] }, files: {} };
+      // OB-800: the load names every department its items are in (no pilot department), each with its safety kinds.
+      const departments = sliceDepartmentsFor(ready).map((d) => ({ categoryId: d.categoryId, name: d.name, regulated: [...d.regulated] }));
+      const base = { loadId, tenantId: deps.tenantId, operator: s.userId, storeId: deps.storeId, departments, files: {} };
       writeOnce(manifest, `${JSON.stringify(base, null, 2)}\n`);
       const sealed = await sealSlice({
         manifest: base, files, targetKind: deps.targetKind, demoTenantIds: deps.demoTenantIds, sealAs: s.userId, backupRestoredOn: st.read.backupRestoredOn,
@@ -382,7 +388,8 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       if (staged.exceptionsCsv !== undefined) writeOnce(join(dir, 'exceptions.csv'), staged.exceptionsCsv);
       if (staged.exitCode !== 0) throw new Said(422, 'The load could not be staged. Nothing was loaded.', staged.lines);
       saveLoads(importId, [...st.loads, { loadId, itemIds: ready.map((r) => r.itemId), preparedBy: s.userId, preparedAt: nowIso() }]);
-      return { status: 201, json: { loadId, items: ready.length, lines: [...sealed.lines, ...staged.lines] } };
+      const kg = ready.filter((r) => uomOf(r) === 'kg').length;
+      return { status: 201, json: { loadId, items: ready.length, departments: departments.map((d) => ({ name: d.name, items: ready.filter((r) => r.department === d.categoryId).length })), soldByWeight: kg, lines: [...sealed.lines, ...staged.lines] } };
     }
 
     const lm = /^\/loads\/([A-Za-z0-9._-]+)\/(accept|apply)$/.exec(rest);

@@ -29,7 +29,13 @@ const ROLES = [
 export interface OfficeBox { readonly edge: EdgeProcess; readonly base: string; readonly lane: string; readonly dataDir: string; stop(): Promise<void> }
 
 /** Start the box (again, over the same folder, for a cold restart). `gate: false` starts it the old way, with no gate. */
-export async function startOfficeBox(opts: { readonly dataDir?: string; readonly gate?: boolean } = {}): Promise<OfficeBox> {
+export async function startOfficeBox(opts: {
+  readonly dataDir?: string; readonly gate?: boolean;
+  /** More pack sections (e.g. the store rules' closing `checklist`), merged over the default pack. */
+  readonly packExtras?: Record<string, unknown>;
+  /** More permissions for the store manager's role. */
+  readonly managerPermissions?: readonly string[];
+} = {}): Promise<OfficeBox> {
   const dataDir = opts.dataDir ?? await mkdtemp(join(tmpdir(), 'sre-office-gate-'));
   if (opts.dataDir === undefined) {
     const people = Object.values(PEOPLE);
@@ -38,8 +44,9 @@ export async function startOfficeBox(opts: { readonly dataDir?: string; readonly
       policies: { storeId: STORE, branchId: STORE, branchName: 'Office gate store', warehouseId: null, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
       people: people.map((p) => ({ userId: p.userId, displayName: p.displayName, roleId: p.roleId })),
-      roles: ROLES,
+      roles: ROLES.map((r) => (r.id === 'store_manager' ? { ...r, permissions: [...r.permissions, ...(opts.managerPermissions ?? [])] } : r)),
       roleAssignments: people.map((p) => ({ userId: p.userId, roleId: p.roleId, branchScope: [STORE] })),
+      ...(opts.packExtras ?? {}),
     }), 'utf8');
     const at = new Date().toISOString();
     await writeFile(join(dataDir, 'till-credentials.json'), JSON.stringify({ version: 1, credentials: people.map((p) => issueTillCredential({ userId: p.userId, pin: p.pin, key: tillPinKey(OFFICE_KEY), issuedAt: at, issuedBy: 'test' })) }), { mode: 0o600 });

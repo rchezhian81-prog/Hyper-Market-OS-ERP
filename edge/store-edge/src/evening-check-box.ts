@@ -1,5 +1,8 @@
 // OB-263 (owner, 21 Oct 2026, "Item-wise + bill-wise") — the evening check, kept and judged on the store computer (MG-10 ·
-// OB-259 · OB-264 · P-01 · P-08 · hard rules #1, #2, #6, #10).
+// OB-259 · OB-264 · OB-800 · P-01 · P-08 · hard rules #1, #2, #6, #10).
+//
+// OB-800 (owner, 15 Nov 2026): no pilot department — the whole store runs alongside the old ERP, and every department is
+// compared (`packages/migration/src/evening-check.ts`). Days loaded before it keep their one-department figures, as kept.
 //
 // The migration screen's "Running both" tab hands this box the old ERP's two reports for a day; this box reads them through
 // the mapping it holds, compares them with its OWN mirror sales and refunds (`packages/migration/src/evening-check.ts`),
@@ -101,7 +104,7 @@ export interface EveningDayView {
 
 export type EveningRefusal =
   | 'not_the_named_reconciler' | 'nobody_named_to_reconcile' | 'not_readable' | 'mapping_refused' | 'no_mapping'
-  | ReportRefusal | 'no_pilot_department' | 'no_catalogue' | 'code_looks_personal' | 'quantity_not_whole' | 'too_many_differences'
+  | ReportRefusal | 'no_catalogue' | 'code_looks_personal' | 'too_many_differences'
   | 'day_not_loaded' | 'unknown_difference' | 'reason_says_nothing' | 'reason_refused' | 'already_signed'
   | 'unexplained_material_difference' | 'statement_says_nothing' | 'nobody_named' | 'day_not_recorded' | 'could_not_write_durably';
 
@@ -115,7 +118,6 @@ export interface EveningSources {
   /** The cutover these days belong to (the pack's migration terms). */
   readonly cutoverId: () => string | undefined;
   readonly reconcilerUserId: () => string | undefined;
-  readonly department: () => { readonly categoryId: string; readonly name: string } | undefined;
   readonly catalogue: () => readonly CheckProduct[] | undefined;
   /** The box's own sale and refund records, read from its disk. */
   readonly records: () => Promise<{ readonly sales: readonly unknown[]; readonly refunds: readonly unknown[] }>;
@@ -322,11 +324,12 @@ export async function openEveningCheckBox(input: { readonly dataDir: string; rea
       if (!bill.ok) return refuse(bill.refusedBecause, 'The bill-wise list was not loaded:', bill.problems);
       const { sales, refunds } = await newSide();
       const result = eveningCheck({
-        businessDate: date, department: src.department(), catalogue: src.catalogue(),
+        // OB-800: the whole store, every department — no pilot department. A mapping still keeping the item-wise file to one
+        // department (OB-263 A, before OB-800) is read as it says, and the screen says so beside the figures (P-08).
+        businessDate: date, catalogue: src.catalogue(),
         itemWise: item.rows, sales, refunds,
-        // OB-263 A · B: the item-wise file kept to the pilot department by its own column; bill lines with or without tax.
+        // OB-263 B: bill lines with or without tax.
         billWise: { bills: bill.bills, withLines: bill.withLines, ...(current.bill_wise!.mapping.lineValuesIncludeTax === false ? { lineValuesIncludeTax: false } : {}) },
-        ...(item.summary.department === undefined ? {} : { departmentFiltered: true }),
         tolerance: { valueMinor: valueTol, taxMinor: taxTol },
       });
       if (!result.ok) return refuse(result.refusedBecause, result.detail);

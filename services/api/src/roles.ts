@@ -98,6 +98,9 @@ const BASE_ROLES: readonly Role[] = [
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',
+      // OB-773 3 B: held so the owner can still approve the store manager role, which carries it (§28: an approver holds
+      // what is granted). The owner's own proposal is never his to approve (self-approval is refused).
+      'catalogue.change.propose',
       // SF-06-b (OB-24 "A"): the owner defines product categories; a manager proposes them for the owner's approval.
       'catalogue.category.propose', 'catalogue.category.approve',
       // PA-06 = DF-3-a: read a store's setup file (the store computer's own identity holds it at its store).

@@ -37,6 +37,13 @@ export interface StoredChecklist {
   readonly signedBy?: string;
   readonly branchId?: string;
   readonly forDate?: string;
+  /**
+   * Fix batch 3 (D-008): `store_rules` — the store rules' closing checklist as the STORE COMPUTER holds it (the same items
+   * Today counts and the day close checks), ticked item by item on the box in the person's own name, never signed here.
+   */
+  readonly source?: 'store_rules';
+  /** A store-rules checklist for the day the store computer closes next, still with an item that must be done first. */
+  readonly waitingToClose?: boolean;
 }
 
 /** The checklist worklist the shell last read: the day's checklists. Empty means the day was clean; absent means
@@ -72,6 +79,19 @@ export interface ChecklistPorts {
   mayManage(): boolean;
   /** Records a signed checklist. Only reached from the explicit action, never on render. */
   submitPort(): SubmitChecklistPort;
+  /** Fix batch 3 (D-008): ticks one store-rules closing-checklist item on the store computer. Absent: no box to tick on. */
+  tickPort?(): TickChecklistPort;
+}
+
+/** What the store computer said to a tick (POST /lane/checklist-tick) — its own words when it refused. */
+export type TickResult =
+  | { readonly ticked: true }
+  | { readonly ticked: false; readonly reason: string; readonly reasonTa?: string }
+  | { readonly ticked: false; readonly lostLink: true };
+
+/** The tick of ONE store-rules closing-checklist item, on the box, as the person signed in (fix batch 3 · D-008). */
+export interface TickChecklistPort {
+  post(input: { readonly forDate: string; readonly itemId: string }): Promise<TickResult>;
 }
 
 export interface ChecklistConfig {
@@ -91,7 +111,9 @@ export type CopyKey =
   | 'submitRecorded' | 'submitRefused' | 'submitLostLink'
   | 'refusedNoRight' | 'refusedNobodySigning' | 'refusedGone' | 'refusedByHeadOffice'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noManage'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'storeRulesLabel' | 'waitingToCloseWord' | 'tickBtn' | 'tickRecorded' | 'tickLostLink' | 'tickNoBox'
+  | 'storeBlockedDetail' | 'storeOpenDetail' | 'storeDoneDetail' | 'doneByLabel';
 
 export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -118,6 +140,13 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     noManage: 'You can see the checklists, but signing one needs manager permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    // Fix batch 3 (D-008): the store rules' closing checklist, ticked item by item on the store computer.
+    storeRulesLabel: 'Store rules — closing checklist for', waitingToCloseWord: 'must be finished before this day can be closed',
+    tickBtn: 'Done', tickRecorded: 'Ticked — saved on the store computer in your name.',
+    tickLostLink: 'The store computer could not be reached — not ticked. Try again.',
+    tickNoBox: 'This page is not connected to the store computer, so nothing can be ticked here.',
+    storeBlockedDetail: 'item(s) must be done before the day closes', storeOpenDetail: 'item(s) still to do — none of them holds the day close',
+    storeDoneDetail: 'Every item is done.', doneByLabel: 'done by',
   },
   ta: {
     title: 'சரிபார்ப்புப் பட்டியல்கள்', langName: 'English',
@@ -142,8 +171,30 @@ export const CHECKLIST_COPY: BilingualCopy<CopyKey> = {
     noManage: 'பட்டியல்களைப் பார்க்கலாம், ஆனால் ஒன்றைக் கையொப்பமிட மேலாளர் அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    storeRulesLabel: 'கடை விதிகள் — மூடல் சரிபார்ப்புப் பட்டியல்:', waitingToCloseWord: 'இந்த நாளை முடிக்கும் முன் முடிக்கப்பட வேண்டும்',
+    tickBtn: 'முடிந்தது', tickRecorded: 'குறிக்கப்பட்டது — உங்கள் பெயரில் கடைக் கணினியில் சேமிக்கப்பட்டது.',
+    tickLostLink: 'கடைக் கணினியை அடைய முடியவில்லை — குறிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    tickNoBox: 'இந்தப் பக்கம் கடைக் கணினியுடன் இணைக்கப்படவில்லை, எனவே இங்கே எதையும் குறிக்க முடியாது.',
+    storeBlockedDetail: 'உருப்படி(கள்) நாள் முடியும் முன் செய்யப்பட வேண்டும்', storeOpenDetail: 'உருப்படி(கள்) இன்னும் செய்ய வேண்டும் — அவற்றில் எதுவும் நாள் முடிப்பைத் தடுக்கவில்லை',
+    storeDoneDetail: 'ஒவ்வொரு உருப்படியும் முடிந்தது.', doneByLabel: 'செய்தவர்',
   },
 };
+
+// Fix batch 3 (D-008): a trading day in words — "Friday 14 Nov" / "வெள்ளி 14 நவம்பர்" — from its date alone.
+const DAY_NAMES: Readonly<Record<Lang, readonly string[]>> = {
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  ta: ['ஞாயிறு', 'திங்கள்', 'செவ்வாய்', 'புதன்', 'வியாழன்', 'வெள்ளி', 'சனி'],
+};
+const MONTH_NAMES: Readonly<Record<Lang, readonly string[]>> = {
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'],
+};
+/** "Friday 14 Nov" in English, "வெள்ளி 14 நவம்பர்" in Tamil; empty for anything that is not a `YYYY-MM-DD`. */
+export function dayWords(lang: Lang, iso: string | undefined): string {
+  if (iso === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${DAY_NAMES[lang][d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_NAMES[lang][d.getUTCMonth()]}`;
+}
 
 export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(CHECKLIST_COPY.en) as CopyKey[]);
 
@@ -155,6 +206,8 @@ export interface PresentedItem {
   readonly description: string;
   readonly blocking: boolean;
   readonly done: boolean;
+  /** Who ticked it (a store-rules item ticked on the store computer). */
+  readonly doneBy?: string;
 }
 
 export interface PresentedChecklist {
@@ -175,6 +228,13 @@ export interface PresentedChecklist {
   /** blocked_item → error; not_signed / incomplete → warning; complete → ok. */
   readonly status: StatusPresentation;
   readonly needsAttention: boolean;
+  /** Fix batch 3 (D-008): the store rules' closing checklist on the store computer — ticked item by item, never signed. */
+  readonly storeRules: boolean;
+  /** Its trading day ("YYYY-MM-DD") and that day in words, in the page's language. */
+  readonly forDate: string | null;
+  readonly dayLabel: string;
+  /** The day the store computer closes next, still with an item that must be done first. */
+  readonly waitingToClose: boolean;
 }
 
 export interface ChecklistView {
@@ -203,6 +263,14 @@ export interface ChecklistSession {
   submit(checklistId: string, doneItemIds: readonly string[], sign: boolean): Promise<SubmitResult>;
   /** Present a submit outcome as one glanceable status the shell shows after the action. */
   presentSubmitResult(lang: Lang, result: SubmitResult): StatusPresentation;
+  /**
+   * Fix batch 3 (D-008): tick ONE store-rules closing-checklist item done, on the store computer, in the signed-in
+   * person's own name — a HUMAN write, only from an explicit tap. Refused here BEFORE any post without the right to
+   * manage the checklist, or for a checklist/item this page does not hold; the box re-checks all of it.
+   */
+  tick(checklistId: string, itemId: string): Promise<TickResult>;
+  /** Present a tick outcome — the box's own words when it refused (in Tamil when it said it in Tamil). */
+  presentTickResult(lang: Lang, result: TickResult): StatusPresentation;
 }
 
 const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean): ChecklistView => ({
@@ -225,7 +293,33 @@ const SEVERITY_KEY: Readonly<Record<ChecklistOutcome, CopyKey>> = Object.freeze(
 export function createChecklistSession(config: ChecklistConfig, ports: ChecklistPorts): ChecklistSession {
   const text = (lang: Lang, key: CopyKey): string => translator(CHECKLIST_COPY, lang)(key);
 
+  const presentStoreRules = (lang: Lang, stored: StoredChecklist): PresentedChecklist => {
+    const t = translator(CHECKLIST_COPY, lang);
+    const items: PresentedItem[] = stored.items.map((i) => ({
+      itemId: i.itemId, description: i.description, blocking: i.blocking, done: i.done, ...(i.doneBy === undefined ? {} : { doneBy: i.doneBy }),
+    }));
+    const outstanding = items.filter((i) => !i.done);
+    const blocking = outstanding.filter((i) => i.blocking);
+    // Never "not signed": the store rules' checklist is ticked item by item on the store computer, not signed here.
+    const outcome: ChecklistOutcome = blocking.length > 0 ? 'blocked_item' : outstanding.length > 0 ? 'incomplete' : 'complete';
+    const detail = blocking.length > 0 ? `${blocking.length} ${t('storeBlockedDetail')}: ${blocking.map((i) => i.description).join('; ')}`
+      : outstanding.length > 0 ? `${outstanding.length} ${t('storeOpenDetail')}` : t('storeDoneDetail');
+    const tone = outcome === 'blocked_item' ? 'error' : outcome === 'complete' ? 'ok' : 'degraded';
+    const icon = outcome === 'blocked_item' ? '✕' : outcome === 'complete' ? '✓' : '⚠';
+    const severityWord = t(SEVERITY_KEY[outcome]);
+    const dayLabel = dayWords(lang, stored.forDate);
+    const kindLabel = `${t('storeRulesLabel')} ${dayLabel}`;
+    return {
+      checklistId: stored.checklistId, kind: stored.kind, kindLabel, outcome, complete: outcome === 'complete', signedBy: null,
+      items, outstanding, detail, severityWord,
+      status: presentStatus({ tone, icon, label: `${severityWord} · ${kindLabel}`, announcement: detail, needsAttention: outcome !== 'complete' }),
+      needsAttention: outcome !== 'complete',
+      storeRules: true, forDate: stored.forDate ?? null, dayLabel, waitingToClose: stored.waitingToClose === true,
+    };
+  };
+
   const present = (lang: Lang, stored: StoredChecklist): PresentedChecklist => {
+    if (stored.source === 'store_rules') return presentStoreRules(lang, stored);
     const t = translator(CHECKLIST_COPY, lang);
     const result: ChecklistResult = assessChecklist({
       checklistId: stored.checklistId, kind: stored.kind, items: stored.items,
@@ -261,6 +355,7 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
         needsAttention: result.outcome !== 'complete',
       }),
       needsAttention: result.outcome !== 'complete',
+      storeRules: false, forDate: stored.forDate ?? null, dayLabel: dayWords(lang, stored.forDate), waitingToClose: false,
     };
   };
 
@@ -311,6 +406,8 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
       const data = ports.worklist();
       const stored = data.checklists.find((c) => c.checklistId === checklistId);
       if (stored === undefined) return refuse('refusedGone');
+      // The store rules' checklist is ticked on the store computer, item by item — never signed off to head office here.
+      if (stored.source === 'store_rules') return refuse('refusedGone');
       const ticked = new Set(doneItemIds);
       const items: ChecklistItem[] = stored.items.map((i) => (i.done || !ticked.has(i.itemId) ? i : { ...i, done: true }));
       const result = await ports.submitPort().post({
@@ -333,6 +430,26 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
       if (result === 'recorded') return presentStatus({ tone: 'ok', icon: '✓', label: t('submitRecorded'), needsAttention: false });
       if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('submitLostLink'), needsAttention: true });
       return presentStatus({ tone: 'error', icon: '✕', label: t(lastRefusal ?? 'submitRefused'), needsAttention: true });
+    },
+
+    tick: async (checklistId, itemId) => {
+      const en = translator(CHECKLIST_COPY, 'en');
+      const ta = translator(CHECKLIST_COPY, 'ta');
+      if (!ports.mayManage()) return { ticked: false, reason: en('refusedNoRight'), reasonTa: ta('refusedNoRight') };
+      const stored = ports.worklist().checklists.find((c) => c.checklistId === checklistId && c.source === 'store_rules');
+      const item = stored?.items.find((i) => i.itemId === itemId);
+      if (stored === undefined || item === undefined || stored.forDate === undefined) return { ticked: false, reason: en('refusedGone'), reasonTa: ta('refusedGone') };
+      const port = ports.tickPort?.();
+      if (port === undefined) return { ticked: false, reason: en('tickNoBox'), reasonTa: ta('tickNoBox') };
+      return port.post({ forDate: stored.forDate, itemId });
+    },
+
+    presentTickResult: (lang, result) => {
+      const t = translator(CHECKLIST_COPY, lang);
+      if (result.ticked) return presentStatus({ tone: 'ok', icon: '✓', label: t('tickRecorded'), needsAttention: false });
+      if ('lostLink' in result) return presentStatus({ tone: 'degraded', icon: '⚠', label: t('tickLostLink'), needsAttention: true });
+      const words = lang === 'ta' && result.reasonTa !== undefined && result.reasonTa !== '' ? result.reasonTa : result.reason;
+      return presentStatus({ tone: 'error', icon: '✕', label: words, needsAttention: true });
     },
   };
 }

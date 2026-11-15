@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2421,
+  "testFiles": 2428,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1354,7 +1354,7 @@
         "unit": 21,
         "integration": 20,
         "realDb": 8,
-        "browser": 9,
+        "browser": 10,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1418,6 +1418,7 @@
         "browser": [
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
           "tests/e2e/day-reopen-delivery.e2e.ts",
+          "tests/e2e/fix-batch3-the-day-close-names-its-day-and-waits-for-the-closing-checklist.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
           "tests/e2e/ob773-the-cash-office-never-says-signed-off-when-it-could-not-read.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
@@ -2379,7 +2380,7 @@
         "unit": 15,
         "integration": 28,
         "realDb": 13,
-        "browser": 13,
+        "browser": 14,
         "connected": 3,
         "device": 0,
         "uat": 0
@@ -2450,6 +2451,7 @@
         "browser": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/checklist-delivery.e2e.ts",
+          "tests/e2e/fix-batch3-the-day-close-names-its-day-and-waits-for-the-closing-checklist.e2e.ts",
           "tests/e2e/help-readings-and-losses-are-saved-at-the-store-with-the-line-down.e2e.ts",
           "tests/e2e/r4c-help-manager-tools-work-on-the-store-computer.e2e.ts",
           "tests/e2e/r4c-the-staff-list-adds-people-and-shifts.e2e.ts",
