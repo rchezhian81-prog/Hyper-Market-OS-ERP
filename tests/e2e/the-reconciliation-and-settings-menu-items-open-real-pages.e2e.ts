@@ -48,6 +48,9 @@ describe.skipIf(!HAVE_BROWSER)('OB-401: Reconciliation and Settings on the rail 
   // W1: on a long menu a workspace may be folded — open it first, as a person does (its heading is a button).
   const menuLink = async (page: Page, words: string) => {
     const link = page.locator('#sre-menu .group-section:not(.sre-quick) a').filter({ hasText: new RegExp(`^${words}$`) }).first(); // exact: "GST reconciliation" is a different screen
+    // D-027: a screen that is not the person's daily work sits under one closed "More" — open that first.
+    const more = page.locator('#sre-menu .sre-more-toggle');
+    if (!(await link.isVisible()) && (await more.count()) > 0 && (await more.getAttribute('aria-expanded')) !== 'true') await more.click();
     if (!(await link.isVisible())) await link.locator('xpath=ancestor::div[contains(@class,"group-section")]//button[contains(@class,"group-toggle")]').click();
     return link;
   };

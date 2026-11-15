@@ -125,7 +125,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     // The banner says WHERE the decision is — never a bare "decided" (P-08).
     expect(await page.textContent('#banner-title')).toBe('Decided');
     expect(await page.textContent('#banner-text')).toContain('Toor dal 1kg');
-    expect(await page.textContent('#banner-text')).toMatch(/Saved on this screen|With the store computer/);
+    expect(await page.textContent('#banner-text')).toMatch(/Saved\. It goes to head office when the line is up\.|With the store computer/);
 
     // Within a moment the relay has handed it to the box: the list says so, and the BOX has it — on its fsync'd
     // device-events log and in its queue for head office. This is what F11 said existed nowhere.
@@ -162,7 +162,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     await edge.lane!.stop();
 
     await decideTheOne(page);
-    expect(await page.textContent('#banner-text')).toContain('Saved on this screen');
+    expect(await page.textContent('#banner-text')).toContain('Saved. It goes to head office when the line is up.');
     await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.decisions()[0]?.state === 'retrying', undefined, { timeout: 10_000 });
     await page.click('#banner-ok');
     await page.waitForSelector('#saved-rows .row.saved[data-state="retrying"]');
@@ -180,7 +180,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     // The home tile counts it as not yet sent, and says how many are only on this screen.
     await page.click('#tab-home');
     await page.waitForSelector('#tiles .tile');
-    expect(await page.textContent('#tiles')).toContain('saved on this screen');
+    expect(await page.textContent('#tiles')).toContain('saved, going to head office when the line is up');
   });
 
   it('a delivery booked in and a blind count entered on the served screen → saved here → with the store computer (whole receipt; only what was counted) → reload → both still listed (SP-2b)', async () => {
@@ -197,7 +197,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     await page.waitForFunction(() => !((globalThis as unknown as ManagerWindow).document.querySelector('#banner') as { hidden: boolean }).hidden);
     expect(await page.textContent('#banner-title')).toBe('Delivery saved');
     expect(await page.textContent('#banner-text')).toContain('no purchase order');
-    expect(await page.textContent('#banner-text')).toMatch(/Saved on this screen|With the store computer/);
+    expect(await page.textContent('#banner-text')).toMatch(/Saved\. It goes to head office when the line is up\.|With the store computer/);
     await page.click('#banner-ok');
     await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.savedWork().find((w) => w.kind === 'receipt')?.state === 'handed_to_box', undefined, { timeout: 10_000 });
 

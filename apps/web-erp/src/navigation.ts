@@ -86,14 +86,24 @@ export const DAILY_GROUP = 'Daily';
  * this table's order. A role not listed gets no daily group — the workspaces alone, as before.
  */
 export const DAILY_WORK: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  owner: ['dashboard', 'approval-requests', 'morning-brief', 'company-report', 'owner-alerts', 'finance-close'],
-  store_manager: ['dashboard', 'approval-requests', 'cash-office', 'goods-receipt', 'stock-health', 'expiry', 'store-tasks'],
-  accountant: ['day-book', 'finance-close', 'supplier-bills', 'gst-returns', 'itc-review', 'approval-requests'],
+  // D-027 / D-007 (daily-work walk — "the screens are too complicated"; a reversible UI choice under OB-801): each list is
+  // SHORT — at most `DAILY_WORK_MAX` screens — and is all the rail shows open; every other screen the person may open sits
+  // under one closed "More" heading the chrome draws (sre-chrome.js). Nothing is removed and no permission changes.
+  owner: ['dashboard', 'approval-requests', 'morning-brief', 'reporting', 'price-lists', 'users', 'cash-office'],
+  store_manager: ['dashboard', 'approval-requests', 'cash-office', 'products', 'stock-health', 'expiry', 'store-tasks', 'buying', 'goods-receipt', 'supplier-bills'],
+  accountant: ['supplier-bills', 'approval-requests', 'day-book', 'cash-office', 'gst-returns', 'reporting'],
   chartered_accountant: ['gst-returns'],
-  cashier: ['till', 'my-tasks', 'approval-requests', 'my-payslip', 'help'],
+  cashier: ['till', 'my-tasks', 'my-payslip', 'ess', 'help'],
+  warehouse_user: ['warehouse-handheld', 'goods-receipt', 'indents', 'transfers', 'stock-ledger'],
+  receiver_qc: ['warehouse-handheld', 'goods-receipt', 'indents', 'transfers', 'stock-ledger'],
+  purchase_user: ['buying', 'requisitions', 'supplier-bills', 'suppliers', 'goods-receipt'],
+  purchase_approver: ['buying', 'requisitions', 'supplier-bills', 'suppliers', 'goods-receipt'],
   platform_admin: ['store-computers', 'integration-health', 'fleet', 'incidents'],
   security_reviewer: ['risk-acceptance'],
 });
+
+/** D-027: the most screens one role's daily list may hold — the owner asked for 8–10; the unit test holds every list to it. */
+export const DAILY_WORK_MAX = 10;
 
 /**
  * Within a workspace, the screens a person reaches for most come first (W1). Ids named here lead, in this order; every
@@ -823,6 +833,8 @@ export function navigationFor(
     if (!(context.roleIds ?? []).includes(roleId)) continue;
     for (const id of jobs) if (!dailyIds.includes(id) && permitted.some((i) => i.id === id)) dailyIds.push(id);
   }
+  // D-027: a person holding several roles still gets a short list — past DAILY_WORK_MAX a job stays in its workspace.
+  dailyIds.splice(DAILY_WORK_MAX);
   const daily = dailyIds.map((id) => permitted.find((i) => i.id === id)!);
 
   const groups: NavGroup[] = [];

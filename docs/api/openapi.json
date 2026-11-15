@@ -302781,6 +302781,12 @@
           },
           "ownerAction": {
             "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "uom": {
+            "type": "string"
           }
         },
         "additionalProperties": true

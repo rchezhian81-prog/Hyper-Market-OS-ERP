@@ -15,6 +15,8 @@ import { InMemoryEventStore, type EventStore } from '../../packages/persistence/
 import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation, type AuthThrottle } from '../../services/kernel/src/index';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
+import { withOfficeCalls } from '../../services/identity/src/office-call-authenticator';
+import { privilegeSealKey } from '../../packages/identity/src/till-seal';
 import { tokenRevocationAdapter, personalDataStore } from '../../services/api/src/adapters';
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
 import type { NumberSeriesStore } from '../../packages/persistence/src/number-series-store';
@@ -181,7 +183,11 @@ export function apiHarness(opts: {
   const secretUse = secretUseCounter({ store, now: opts.now ?? (() => new Date().toISOString()) });
   const kernel: Kernel = {
     router: built.router!,
-    authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
+    // Audit C-1 · ADR-0033 amendment 3: the store PC's sealed office calls, composed exactly as main.ts does it.
+    authenticate: withOfficeCalls({
+      privilegeKey: opts.privilegeSealSecret === undefined ? undefined : privilegeSealKey(opts.privilegeSealSecret),
+      revocations, fallback: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
+    }),
     access: tenantAccessResolver(store, ROLE_CATALOGUE, opts.now ?? (() => new Date().toISOString())),
     // Support/remote session binding (PA-10), composed exactly as main.ts does it.
     channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),

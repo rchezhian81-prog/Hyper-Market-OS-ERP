@@ -115,7 +115,19 @@ export interface HttpResponse {
 }
 
 /** Resolves a bearer token to a principal, or `undefined`. Identity (API-01) supplies the real one. */
-export type Authenticator = (token: string) => Promise<Principal | undefined> | Principal | undefined;
+export type Authenticator = (token: string, request?: AuthenticationContext) => Promise<Principal | undefined> | Principal | undefined;
+
+/**
+ * Audit C-1 · ADR-0033 amendment 3: the request a token arrived with, for an authenticator whose credential is bound to ONE
+ * request (the store PC's sealed office call) rather than to a session. A session token's authenticator ignores it.
+ */
+export interface AuthenticationContext {
+  readonly method: Method;
+  readonly path: string;
+  readonly query: Readonly<Record<string, string>>;
+  readonly body: unknown;
+  readonly idempotencyKey: string | undefined;
+}
 
 export interface StoredResult {
   /** Hash of the request this key was first used for. A different body under the same key is a bug. */
@@ -527,7 +539,10 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       if (lock.locked) throw tooManySignInAttempts(lock.retryAfterSeconds);
     }
 
-    const principal = await opts.authenticate(token);
+    const principal = await opts.authenticate(token, {
+      method: request.method, path: request.path, query: request.query ?? {}, body: request.body,
+      idempotencyKey: request.headers['idempotency-key'] ?? request.headers['Idempotency-Key'],
+    });
     if (principal === undefined) {
       // Record the failure so repeated guessing from this source backs off. Reported after the
       // audit is written on the way out; the caller still gets a plain 401, not a hint of the lock.

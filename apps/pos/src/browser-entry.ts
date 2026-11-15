@@ -35,9 +35,8 @@ import { createPosView, type PosView } from './view-adapter';
 import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
 import { createDeviceHeartbeat, type DeviceHeartbeat, type DeviceStatus } from './device-heartbeat';
 import {
-  createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
+  createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome, type ReturnableLineShown,
 } from './refund-view';
-import type { ReturnableLine } from '../../../packages/returns/src/return-register';
 import { assessExchange, returnedValueAtOriginalPrices, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
@@ -956,7 +955,8 @@ export type ExchangeOutcome =
 /** A looked-up bill, ready for the refund screen to show and act on. */
 export interface RefundLookup {
   readonly sale: { readonly saleId: string; readonly number: string; readonly totalMinor: number };
-  readonly returnable: readonly ReturnableLine[];
+  /** D-004: each line also says what may come back in words, in its unit ("0.850 kg", "3"). */
+  readonly returnable: readonly ReturnableLineShown[];
   readonly maxRefundMinor: number;
   /**
    * OB-390: what `quantityMinor` of a product on this bill is worth at the price the bill charged for it (the engine's own
@@ -1748,8 +1748,20 @@ export function bootPos(config?: {
   };
   // W3 · M36-FR-02 (OB-321): the shop's own name from the SIGNED catalogue pack this till holds — no network at sale time.
   const brandName = (): string | undefined => { const n = config?.catalogue?.branding?.productName; return typeof n === 'string' && n.trim() !== '' ? n.trim() : undefined; };
+  // D-006 (daily-work walkthrough): the bill names the cashier by the display name the people register gave at sign-in —
+  // only for the bill's OWN cashier, while that person is the one signed in; otherwise the login id, as before. Words only.
+  const cashierNameOf = (cashierId: string): string | undefined => {
+    const name = signedInName !== null && signedInName.userId === cashierId ? signedInName.name.trim() : '';
+    return name === '' ? undefined : name;
+  };
+  const billCashierName = (): { readonly cashierName?: string } => {
+    const bill = session.lastBill();
+    const name = bill === undefined ? undefined : cashierNameOf(bill.cashierId);
+    return name === undefined ? {} : { cashierName: name };
+  };
   const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), {
     ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
+    ...billCashierName(),
   });
   // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
   const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
@@ -1760,7 +1772,7 @@ export function bootPos(config?: {
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
     billTaxInvoice(session.lastBill(), {
       template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
-      ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...options,
+      ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...billCashierName(), ...options,
     });
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
@@ -1967,7 +1979,7 @@ export function bootPos(config?: {
       realTrading: config?.realTrading === true, identity: config?.taxInvoice ?? null, ...(input.language === undefined ? {} : { language: input.language }),
       template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...((b) => (b === undefined ? {} : { brandName: b }))(brandName()),
       ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }),
-      reason: body.reason, by, at: new Date().toISOString(),
+      cashierNameOf, reason: body.reason, by, at: new Date().toISOString(),
     });
     return { ...printed, laneMessage: said, ...(saidTa === undefined ? {} : { laneMessageTa: saidTa }) };
   };

@@ -78,7 +78,7 @@ import { returnIdOf } from './cloud-return';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { overrideReductionMinor } from '../../../packages/price-guard/src/till-override';
 import { createEdgeNode, type EdgeNode } from './index';
-import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
+import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneChecklistTickHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
 import { selfCheckoutBasketRecorder } from './self-checkout-baskets'; // OB-288 P6 (R8-3 · R8-7)
 import { billVoidRecorder, heldQuotationReleaser } from './bill-void-at-lane'; // R8-B · OB-523: a whole bill cancelled at the till frees its quotation · R9-A OB-533 a given-up held basket too
@@ -134,6 +134,7 @@ import { isGiftCardSaleRecord } from '../../../packages/loyalty/src/till-voucher
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
+import { blockingOpen, checklistBodiesOf, closingChecklistId, dayTheBoxCloses, foldClosingChecklist, tickRecord, TICK_AUTHORITY, TICK_WORDS, type TickRefusal } from './closing-checklist';
 import {
   readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS,
   type TillCashRecord, type TillShiftCloseRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
@@ -735,12 +736,16 @@ export async function startEdge(
   const tillClosesOf = (all: Awaited<ReturnType<typeof readLog>>): TillShiftCloseRecord[] => parsedReturns(all)
     .flatMap((raw) => { const read = readTillCashRecord(raw); return read !== undefined && read.kind === 'close' ? [read] : []; });
   let tillClosesNow: readonly TillShiftCloseRecord[] = tillClosesOf(await readLog(tillCashLog.path));
+  // Fix batch 3 (D-008 · D-011): the closing-checklist ticks on this box's completions log, re-read with the sales.
+  let checklistTicksNow: readonly unknown[] = checklistBodiesOf(parsedReturns(await readLog(completionsLog.path)));
+  const rereadTicks = async (): Promise<void> => { checklistTicksNow = checklistBodiesOf(parsedReturns(await readLog(completionsLog.path))); };
   const reread = async (): Promise<void> => {
     const all = await readLog(log.path);
     recordsNow = readSales(all.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
     recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
     returnsNow = parsedReturns(await readLog(returnsLog.path));
     tillClosesNow = tillClosesOf(await readLog(tillCashLog.path));
+    await rereadTicks();
   };
 
   const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
@@ -960,7 +965,10 @@ export async function startEdge(
       const completionKind = env.completionKind === 'task' ? 'task' : env.completionKind === 'checklist' ? 'checklist' : undefined;
       if (completionKind === undefined) return undefined;
       const body = env.body;
-      const id = (completionKind === 'checklist' ? checklistIdOf(body) : taskIdOf(body)) ?? `record-${index}`;
+      // Fix batch 3: the completion's own id when the envelope names it (a closing-checklist tick is one record per item,
+      // under the same checklist id), so a restart re-mints exactly the event `commitCompletion` queued.
+      const ownId = typeof (env as { completionId?: unknown }).completionId === 'string' && (env as { completionId: string }).completionId !== '' ? (env as { completionId: string }).completionId : undefined;
+      const id = ownId ?? (completionKind === 'checklist' ? checklistIdOf(body) : taskIdOf(body)) ?? `record-${index}`;
       return makeEvent({
         id: `edge-completion-${completionKind}-${id}`,
         type: completionKind === 'checklist' ? 'ChecklistCompleted' : 'TaskCompleted',
@@ -1484,6 +1492,7 @@ export async function startEdge(
   // sale/refund money path above, and a POST that somehow arrives before then gets an honest "starting up".
   const dayCloseRelay: { current?: LaneDayCloseHandler } = {};
   const dayReopenRelay: { current?: LaneDayReopenHandler } = {};
+  const checklistTickRelay: { current?: LaneChecklistTickHandler } = {};
   // The box's own account of its link to head office, for the sync badge on every served screen (design system
   // §1 rule 4). Late-bound like the day close: the agents that know when something last got through are created
   // further down, so the socket is wired now and the answer is filled in once they exist — until then it says
@@ -2045,6 +2054,10 @@ export async function startEdge(
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
     },
+    tickChecklist: (req) => {
+      const fn = checklistTickRelay.current;
+      return fn !== undefined ? fn(req) : Promise.resolve({ ticked: false as const, refusedBecause: 'could_not_save', reason: TICK_WORDS.could_not_save.en, reasonTa: TICK_WORDS.could_not_save.ta });
+    },
     reopenDay: (req) => {
       const fn = dayReopenRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ reopened: false as const, reason: 'the box is still starting up — try the reopen again in a moment' });
@@ -2255,6 +2268,7 @@ export async function startEdge(
       sales: recordsNow.sales,
       returns: returnsNow,
       tillCloses: tillClosesNow, // D-2: the box's own shift closes, for the over/short desk
+      checklistTicks: checklistTicksNow, // fix batch 3: the closing-checklist ticks made on this box
       unreadableRecords: recordsNow.unreadable,
       outbox,
       now,
@@ -2445,6 +2459,16 @@ export async function startEdge(
       },
     }),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
+    // Audit C-1 · ADR-0033 amendment 3: on the store PC (office PIN on, no head-office link) each office page's call is sealed
+    // for the person signed in by PIN and carried to the office API on this PC. Needs the privilege-seal key and the API.
+    ...(officeGate === null || headOfficeLinkSetting.on || settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined || privilegeApi === undefined ? {} : {
+      officeCalls: {
+        privilegeKey: privilegeSealKey(settings['BOX_PRIVILEGE_SEAL_KEY']),
+        apiBase: privilegeApi,
+        tenantId,
+        branchId: () => storeIdOfThisBox() ?? headOfficeStoreId ?? null,
+      },
+    }),
     ...(headOfficeLinkSetting.on ? {
       headOffice: (origin: string) => createHeadOfficeLink({
         settings: { ...headOfficeLinkSetting.settings, origin }, fetch: globalThis.fetch,
@@ -2602,11 +2626,16 @@ export async function startEdge(
     // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
     // be later than the day closed), so closing the previous date is the only one that can succeed.
     const currentTradingDate = packTradingDay(input.pack, input.now, rule);
-    const dayToClose = ((): string => {
-      const dt = new Date(`${currentTradingDate}T00:00:00Z`);
-      dt.setUTCDate(dt.getUTCDate() - 1);
-      return dt.toISOString().slice(0, 10);
-    })();
+    const dayToClose = dayTheBoxCloses(currentTradingDate);
+    // Fix batch 3 (D-011 · P-03): the store rules' closing-checklist items "that must be done before the day closes", for
+    // the day being closed, with the ticks made on this box. One still open and the day stays open — named, never counted.
+    await rereadTicks();
+    if (input.pack.checklist.known) {
+      const open = blockingOpen(foldClosingChecklist(input.pack.checklist.value, checklistTicksNow, dayToClose));
+      if (open.length > 0) {
+        return { closed: false, reason: `the day cannot close: ${open.length} closing-checklist item(s) for ${dayToClose} must be done before the day closes and are not done — ${open.map((i) => i.description).join('; ')}. Tick each one on the Checklists page.` };
+      }
+    }
     // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
     // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
     const unsentSyncItems = unsentAcrossAllQueues();
@@ -2714,6 +2743,34 @@ export async function startEdge(
   };
   // The lane socket, wired above through a relay, can now reach the authoritative close.
   dayCloseRelay.current = closeDay;
+
+  // Fix batch 3 (D-008 · M25-FR-02 · hard rules #2 #4 #6): tick ONE item of the store rules' closing checklist, as the
+  // person this box verified (the office sign-in), who must hold the right to manage the checklist in the store setup.
+  // Only for the running trading day or the day waiting to be closed. The tick is a NEW record on the completions log —
+  // the whole checklist as it now stands, this item done by this person now — durable before it is called done, then
+  // queued for head office's synced checklist route; nothing is overwritten, and a tick is never undone here.
+  checklistTickRelay.current = async (req) => {
+    const refuse = (because: TickRefusal) => ({ ticked: false as const, refusedBecause: because, reason: TICK_WORDS[because].en, reasonTa: TICK_WORDS[because].ta });
+    const person = req.verifiedPerson?.userId.trim() ?? '';
+    if (person === '') return refuse('nobody_signed_in');
+    const input = snapshot();
+    if (!(permissionsOf(person, input.pack) ?? []).includes(TICK_AUTHORITY)) return refuse('lacks_permission');
+    if (!input.pack.checklist.known || input.pack.checklist.value.length === 0) return refuse('no_checklist');
+    const running = packTradingDay(input.pack, input.now, packCutoff(input.pack));
+    if (req.forDate !== running && req.forDate !== dayTheBoxCloses(running)) return refuse('not_a_day_to_tick');
+    await rereadTicks();
+    const checklist = foldClosingChecklist(input.pack.checklist.value, checklistTicksNow, req.forDate);
+    const item = checklist.items.find((i) => i.itemId === req.itemId);
+    if (item === undefined) return refuse('no_such_item');
+    if (item.done) return refuse('already_done');
+    const storeIdHere = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
+    const record = tickRecord(checklist, item.itemId, person, input.now, storeIdHere ?? undefined);
+    // One record per item per day: the same tick sent twice is one record at head office (§31.1).
+    const outcome = await node.commitCompletion('checklist', `${closingChecklistId(req.forDate)}~${item.itemId}`, JSON.stringify(record));
+    if (!outcome.committed) return refuse('could_not_save');
+    await rereadTicks();
+    return { ticked: true as const, forDate: req.forDate, itemId: item.itemId, doneBy: person, doneAt: input.now };
+  };
 
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). The box owns this for the
   // same reason it owns the close: the locked day it holds is the source of truth, and the reopen is a

@@ -55,7 +55,7 @@ import {
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
 import { attachCharts } from '../../../packages/ui/src/charts'; // UI-3: the one chart drawing
-import { readLiveCounts, todayLiveFigures } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
+import { readLiveCounts, todayLiveFigures, overShortStillOpen } from './today-live-counts'; // screen gap audit Round A: Today's head-office counts
 import {
   createBuyingSession,
   type BuyingPorts, type BuyingSession, type InvoiceLine,
@@ -215,7 +215,7 @@ import {
 import {
   createChecklistSession,
   type ChecklistPorts, type ChecklistSession, type ChecklistData, type StoredChecklist,
-  type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult,
+  type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult, type TickChecklistPort, type TickResult,
 } from './checklist-session';
 import {
   createProductionSession,
@@ -266,7 +266,7 @@ import {
   type AdapterHealthView, type AdapterHealthState,
 } from './integration-health-session';
 import {
-  createGoodsReceiptSession, receiptQuantitiesByUom, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
+  createGoodsReceiptSession, receiptQuantitiesByUom, receiptItemLines, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView, type GrnDiscrepancyOwnerView,
   type GrnBillMatchPort,
@@ -446,6 +446,17 @@ export interface ManagerData {
   readonly receivingChecklist?: unknown;
   /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
   readonly packedProductIds?: unknown;
+  /**
+   * Fix batch 3 (D-012 · D-011 · M14-FR-04): the day the STORE COMPUTER closes if asked now (its most recently ended
+   * trading day), the running day and when it can be closed (after the store's cutoff), and the store rules' closing-
+   * checklist items for the day being closed that must be done first and are not (absent: no closing checklist sent).
+   */
+  readonly dayClose?: {
+    readonly closes: string;
+    readonly runningDay: string;
+    readonly runningDayClosesFrom: { readonly day: string; readonly at: string };
+    readonly checklistOpen?: readonly RegisterItem[];
+  };
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -1876,6 +1887,12 @@ export interface ChecklistScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: ChecklistData;
+  /**
+   * Fix batch 3 (D-008): the store rules' closing checklist(s) as the STORE COMPUTER holds them — the same items Today
+   * counts and the day close checks — for the running day (and the day waiting to be closed while it has a blocking item
+   * open). Shown first, ticked on the box. Absent: head office sent this store no closing checklist.
+   */
+  readonly storeChecklists?: readonly StoredChecklist[];
 }
 
 const CHECKLIST_READ_PERMISSION = 'workforce.checklist.read';
@@ -1887,10 +1904,18 @@ export function checklistPortsFromData(
   data: ChecklistScreenData | undefined,
   worklist?: ChecklistData,
   submitPort: SubmitChecklistPort = NOOP_SUBMIT_CHECKLIST_PORT,
+  tickPort?: TickChecklistPort,
 ): ChecklistPorts {
   const held = new Set(data?.permissions ?? []);
+  // Fix batch 3 (D-008): ONE source — the store computer's copy of the store rules' closing checklist leads; a head-office
+  // checklist filed under the same id (its relayed copy of the very same ticks) is not listed twice.
+  const store = (data?.storeChecklists ?? []).map((c) => ({ ...c, source: 'store_rules' as const }));
+  const ids = new Set(store.map((c) => c.checklistId));
+  const merged = (list: ChecklistData): ChecklistData =>
+    store.length === 0 ? list : { checklists: [...store, ...list.checklists.filter((c) => !ids.has(c.checklistId))] };
   return {
-    worklist: () => worklist ?? data?.worklist ?? EMPTY_CHECKLISTS,
+    worklist: () => merged(worklist ?? data?.worklist ?? EMPTY_CHECKLISTS),
+    ...(tickPort === undefined ? {} : { tickPort: () => tickPort }),
     // Default-deny: an absent permission list can read/sign nothing (the server would refuse it anyway).
     mayRead: () => held.has(CHECKLIST_READ_PERMISSION),
     mayManage: () => held.has(CHECKLIST_MANAGE_PERMISSION),
@@ -1903,12 +1928,44 @@ export function bootChecklist(
   data: ChecklistScreenData | undefined,
   worklist?: ChecklistData,
   submitPort?: SubmitChecklistPort,
+  tickPort?: TickChecklistPort,
 ): ChecklistSession | null {
   if (data === undefined) return null;
   return createChecklistSession(
     { userId: data.userId === undefined ? null : data.userId },
-    checklistPortsFromData(data, worklist, submitPort),
+    checklistPortsFromData(data, worklist, submitPort, tickPort),
   );
+}
+
+/**
+ * Fix batch 3 (D-008): tick ONE store-rules closing-checklist item on the STORE COMPUTER — a cross-port POST to the box's
+ * lane socket (`/lane/checklist-tick`) carrying the office sign-in, so the box records it in the signed-in person's own
+ * name. A dropped link is a lost link, never a tick (P-08). `undefined` with no box to post to.
+ */
+export function openChecklistTickPort(laneWriteBase: string | undefined): TickChecklistPort | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  return {
+    post: async ({ forDate, itemId }): Promise<TickResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { ticked: false, lostLink: true };
+      try {
+        const res = await fetchFn(`${laneWriteBase}/lane/checklist-tick`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ forDate, itemId }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ticked?: boolean; reason?: string; reasonTa?: string };
+        if (res.status >= 200 && res.status < 300 && body.ticked === true) return { ticked: true };
+        return {
+          ticked: false, reason: typeof body.reason === 'string' && body.reason !== '' ? body.reason : 'the store computer did not tick it',
+          ...(typeof body.reasonTa === 'string' && body.reasonTa !== '' ? { reasonTa: body.reasonTa } : {}),
+        };
+      } catch {
+        return { ticked: false, lostLink: true };
+      }
+    },
+  };
 }
 
 /** The authenticated POST of a manager's signed checklist — the manager's OWN session cookie
@@ -2693,6 +2750,9 @@ export async function fetchStockHealth(): Promise<StockHealthData | null> {
     out.negative = (exceptions['negative'] as Record<string, unknown>[]).map((r) => ({
       productId: String(r['productId']), locationId: String(r['locationId']), onHandMinor: Number(r['onHandMinor']),
       detail: String(r['detail'] ?? ''), ownerAction: String(r['ownerAction'] ?? ''),
+      // D-016: head office's name for the item and the unit its quantity is counted in (OB-31), when it said them.
+      ...(typeof r['name'] === 'string' && r['name'].trim() !== '' ? { name: r['name'] } : {}),
+      ...(typeof r['uom'] === 'string' && r['uom'].trim() !== '' ? { uom: r['uom'] } : {}),
     }));
     const at = asStr(exceptions['asAt']); if (at !== undefined) out.asAt['negative'] = at;
   }
@@ -3356,9 +3416,30 @@ export function goodsReceiptListPathFor(permissions: readonly string[] | undefin
     ? '/v1/inventory/goods-receipt-review' : '/v1/inventory/goods-receipt';
 }
 
+/**
+ * D-037: the items' names this store computer's own signed catalogue holds (`/directory/products`, served by the box — no
+ * head-office call). Empty when the box has none or cannot be read: the page then names an item by its code, never a guess.
+ */
+export async function readBoxProductNames(): Promise<ReadonlyMap<string, string>> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return new Map();
+  try {
+    const res = await fetchFn('/directory/products?limit=5000', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (!res.ok) return new Map();
+    const body = (await res.json()) as { known?: unknown; products?: unknown };
+    if (body?.known !== true || !Array.isArray(body.products)) return new Map();
+    const out = new Map<string, string>();
+    for (const p of body.products as { id?: unknown; name?: unknown }[]) if (typeof p?.id === 'string' && typeof p.name === 'string' && p.name.trim() !== '') out.set(p.id, p.name);
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
 export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): Promise<GoodsReceiptData | null> {
   const body = await getInventory(path);
   if (body === null || !Array.isArray(body['receipts'])) return null;
+  const names = await readBoxProductNames(); // D-037: items by name where the store computer knows them
 
   type Money = { readonly minor: number; readonly currency: string };
   const money = (v: unknown): Money => (typeof v === 'object' && v !== null ? v as Money : { minor: 0, currency: 'INR' });
@@ -3385,7 +3466,12 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       ...(Array.isArray(captured['discrepancies']) ? captured['discrepancies'] as Record<string, unknown>[] : []).map((d) => {
         const val = money(d['value']);
         const lineId = String(d['lineId'] ?? '');
+        // D-037: the unit of the line it is on, and the item's name, so the screen says "Biscuits: 4 pieces short".
+        const line = lines.find((l) => l['lineId'] === lineId);
+        const uom = typeof line?.['uom'] === 'string' ? line['uom'] : undefined;
+        const productName = names.get(String(d['productId'] ?? ''));
         return {
+          ...(uom === undefined ? {} : { uom }), ...(productName === undefined ? {} : { productName }),
           kind: String(d['kind']) as GrnDiscrepancyView['kind'], lineId,
           productId: String(d['productId'] ?? ''), quantityMinor: num(d['quantityMinor']),
           valueMinor: val.minor, currency: val.currency,
@@ -3430,6 +3516,7 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
       quantitiesByUom: receiptQuantitiesByUom(g), // OB-773 (B-2): pieces stay pieces, kilos stay kilos — never added together
+      items: receiptItemLines(g, names), // D-037: what became sellable, item by item
       discrepancies,
       returnLines: returnLinesOf(g, lines),
       ...(costNotKnown.length === 0 ? {} : { costNotKnown }),
@@ -5279,7 +5366,7 @@ interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
   /** Round A (screen gap audit): Today's approvals and purchase-order counts, read live from head office as the signed-in person. */
-  todayLive?: { readonly read: () => ReturnType<typeof readLiveCounts>; readonly figures: typeof todayLiveFigures };
+  todayLive?: { readonly read: () => ReturnType<typeof readLiveCounts>; readonly figures: typeof todayLiveFigures; readonly overShort: typeof overShortStillOpen };
   /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
   boxClockView?: typeof boxClockView;
   /**
@@ -5787,6 +5874,7 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
     ...(data.pendingPayments === undefined ? {} : { pendingPayments: () => register(data.pendingPayments) }),
+    ...(data.dayClose?.checklistOpen === undefined ? {} : { closingChecklist: () => register(data.dayClose?.checklistOpen) }),
   };
 }
 
@@ -6730,7 +6818,7 @@ if (browserWindow !== undefined) {
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
   // Round A: Today also counts what waits for this person at head office and head office's open orders — in their own
   // session, read only; offline the store computer's figures stay and the tiles say head office was not reached.
-  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch), figures: todayLiveFigures });
+  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch), figures: todayLiveFigures, overShort: overShortStillOpen });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   // The buyer's DURABLE device queue (SP-7a · F02): opened per store so the session writes into it and the relay drains
@@ -6979,14 +7067,15 @@ if (browserWindow !== undefined) {
   // screen never fakes (hard rule #5: no AI signs a checklist).
   const checklistData = browserWindow.checklistData;
   const submitChecklistPort = openSubmitChecklistPort();
-  const checklist = bootChecklist(checklistData, undefined, submitChecklistPort);
+  const checklistTickPort = openChecklistTickPort(browserWindow.laneWriteBase);
+  const checklist = bootChecklist(checklistData, undefined, submitChecklistPort, checklistTickPort);
   if (checklist !== null) {
     browserWindow.checklistSession = checklist;
     browserWindow.checklist = {
       refresh: fetchChecklistWorklist,
       present: (worklist) => createChecklistSession(
         { userId: checklistData?.userId === undefined ? null : checklistData.userId },
-        checklistPortsFromData(checklistData, worklist, submitChecklistPort),
+        checklistPortsFromData(checklistData, worklist, submitChecklistPort, checklistTickPort),
       ),
     };
   }

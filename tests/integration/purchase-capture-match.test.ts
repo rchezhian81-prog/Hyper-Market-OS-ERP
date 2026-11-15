@@ -132,6 +132,8 @@ describe('a supplier invoice is captured as the paper says it and matched agains
     const short = await capture(h, 'inv-sum', { ...PAPER, declaredTotalMinor: 9500 });
     expect(short.status).toBe(422);
     expect(codeOf(short)).toBe('does_not_add_up_to_the_invoice_total');
+    // D-044: said in rupees as a person reads them, never in paise ("9000 … 9500").
+    expect((short.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/^The lines add up to ₹90\.00 and the invoice says ₹95\.00\./);
     expect(codeOf(await capture(h, 'inv-empty', { ...PAPER, lines: [] }))).toBe('not_readable_as_a_supplier_invoice');
     expect(codeOf(await capture(h, 'inv-neg', { ...PAPER, lines: [{ productId: 'p1', quantity: -1, unitPriceMinor: 500, lineTotalMinor: -500 }] }))).toBe('not_readable_as_a_supplier_invoice');
     expect(((await get(h, '/v1/purchase/invoices', 'u-owner')).body as { count: number }).count).toBe(0);

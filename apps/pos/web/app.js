@@ -144,6 +144,8 @@ const WORDS = {
     lastContact: 'last contact',
     unsentHeld: 'sale(s) are saved on this box and waiting to be sent. Nothing is lost — they go as soon as head office can be reached.',
     reasonForVoid: 'Reason for void', tapLineFirst: 'Tap a line first.',
+    // D-002: OK on the void panel with no reason picked — the panel stays open and says so; nothing is voided.
+    pickReasonFirst: 'Pick a reason first — nothing was voided',
     scanFirst: 'Scan an item first.', read: 'Please read this',
     notEnough: 'Not enough — the customer still owes',
     receiptsUsedUp: 'This till has used all its receipt numbers. Do not take money — tell the manager to load a new number range.',
@@ -426,6 +428,7 @@ const WORDS = {
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
+    pickReasonFirst: 'முதலில் ஒரு காரணத்தைத் தேர்ந்தெடுக்கவும் — எதுவும் நீக்கப்படவில்லை',
     exact: 'சரியான தொகை',
     checkingBox: 'கடைப் பெட்டியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடைப் பெட்டி பதிலளிக்கவில்லை — இந்த வரிசையில் விற்பனைகளைச் சேமிக்க முடியாது',
@@ -1099,6 +1102,8 @@ let entryMasked = false;
 let entryFresh = false;
 /** D-14 (pilot audit): what OK on a number panel must say instead of closing — `null` when the answer is acceptable. */
 let entryCheck = null;
+/** D-002: what OK says when a choice that must be made has not been (the void reason); null = OK may close with none. */
+let choiceNeeded = null;
 /** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
 let entryIsCode = false;
 const CODE_DIGITS = 8;
@@ -1146,7 +1151,7 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false, replaceFirst = false, check = null }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false, replaceFirst = false, check = null, mustChoose = null }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   // OB-698 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
@@ -1169,6 +1174,8 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   entryMasked = mask === true;
   entryFresh = replaceFirst === true && !entryIsCode && !entryMasked;
   entryCheck = mode === 'number' && typeof check === 'function' ? check : null;
+  // D-002: a choice that must be made — OK with none picked keeps the panel open with these words, never a silent close.
+  choiceNeeded = mode === 'choice' && typeof mustChoose === 'string' ? mustChoose : null;
   paintEntry();
   el('entry').hidden = mode !== 'number';
   const lettersFirst = entryHasLetters && staffLetters !== true;
@@ -1253,6 +1260,7 @@ function closeSheet(answer) {
   entryHasLetters = false;
   entryFresh = false;
   entryCheck = null;
+  choiceNeeded = null;
   el('letterpad').hidden = true;
   el('pad-switch').hidden = true;
   entryValue = '0';
@@ -1303,6 +1311,8 @@ el('sheet-ok').addEventListener('click', () => {
     const problem = entryCheck(entryValue);
     if (problem) { el('entry-hint').textContent = problem; return; }
   }
+  // D-002: a reason that must be picked, and none was — say so and keep the panel open; nothing is done.
+  if (sheetMode === 'choice' && chosen === null && choiceNeeded !== null) { el('entry-hint').textContent = choiceNeeded; return; }
   closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
 // OB-698: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
@@ -1728,7 +1738,7 @@ el('qty').addEventListener('click', async () => {
 el('void').addEventListener('click', async () => {
   if (!selectedLineId) { tell(t('read'), t('tapLineFirst'), STOP); return; }
   // A reason is mandatory (M15) and it is chosen, not typed.
-  const reason = await ask({ title: t('reasonForVoid'), mode: 'choice' });
+  const reason = await ask({ title: t('reasonForVoid'), mode: 'choice', mustChoose: t('pickReasonFirst') });
   if (!reason) return;
   // The void, its value and the reason go to the store computer first (audit PF-07); the line goes only once it has them.
   if (session.voidAtTill) {
@@ -2802,7 +2812,7 @@ async function howManyBack(productId, line) {
   if (line.returnableMinor === 1) return 1;
   const qtyAns = await ask({
     title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
-    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
+    hint: `${t('refundCanReturn')}: ${line.returnableText ?? line.returnableMinor}`,
   });
   if (qtyAns === null) return null;
   const qty = Number(qtyAns);
@@ -2847,7 +2857,7 @@ async function startRefund() {
 
   // 2. Which item, and how many — capped at what is still returnable on the bill.
   const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
-    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableMinor}`,
+    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableText ?? l.returnableMinor}`,
   })));
   if (productId === null) return;
   const line = returnable.find((l) => l.productId === productId);
@@ -2979,7 +2989,7 @@ async function startExchange() {
 
   // 2. What is coming back, and how many — capped at what is still returnable on the bill.
   const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
-    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableMinor}`,
+    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableText ?? l.returnableMinor}`,
   })));
   if (productId === null) return;
   const line = returnable.find((l) => l.productId === productId);

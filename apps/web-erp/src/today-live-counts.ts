@@ -29,6 +29,8 @@ export type LiveRead<T> =
 export interface LiveCounts {
   readonly approvals: LiveRead<{ readonly waitingForMe: number; readonly routedToOwner: number }>;
   readonly purchaseOrders: LiveRead<{ readonly open: number; readonly awaitingApproval: number }>;
+  /** D-009: the shifts head office's cash office has already signed off (`GET /v1/shifts/over-short`, reviewed rows). */
+  readonly signedOffShifts?: LiveRead<readonly string[]>;
 }
 
 type Lang = 'en' | 'ta';
@@ -108,11 +110,52 @@ export async function readLiveCounts(fetchFn: typeof fetch | undefined): Promise
       return { result: 'lost_link' };
     }
   };
-  const [approvals, purchaseOrders] = await Promise.all([
+  const [approvals, purchaseOrders, signedOffShifts] = await Promise.all([
     get('/v1/approvals/requests', (b) => ({ waitingForMe: Array.isArray(b['waitingForMe']) ? b['waitingForMe'].length : 0, routedToOwner: nonNegInt(b['routedToOwnerAboveYourLimit']) })),
     get('/v1/purchase/orders', (b) => openOrdersOf(b['orders'])),
+    get('/v1/shifts/over-short', (b) => signedOffShiftsOf(b['overShort'])),
   ]);
-  return { approvals, purchaseOrders };
+  return { approvals, purchaseOrders, signedOffShifts };
+}
+
+/** D-009: the shifts head office's over/short list says are signed off (reviewed), from its body as it hands it over. */
+export function signedOffShiftsOf(rows: unknown): readonly string[] {
+  const out: string[] = [];
+  for (const raw of Array.isArray(rows) ? rows : []) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    if (r['reviewed'] === true && typeof r['shiftId'] === 'string') out.push(r['shiftId']);
+  }
+  return out;
+}
+
+/** The store computer's "closed over or short today" figure as it sends it (`TodayFigure` with its `drawers`, D-009). */
+export type OverShortTodayFigure =
+  | { readonly known: true; readonly value: number; readonly note?: string; readonly noteTa?: string; readonly drawers?: readonly { readonly shiftId: string; readonly words: string; readonly wordsTa: string }[] }
+  | { readonly known: false; readonly why: string; readonly whyTa?: string };
+
+const OVER_SHORT_TAIL = {
+  en: ' — closed today on this store computer; signing off is on the Cash over/short page',
+  ta: ' — இன்று இந்தக் கடைக் கணினியில் மூடப்பட்டது; கையொப்பம் கூடுதல்/குறைவு பக்கத்தில்',
+} as const;
+
+/**
+ * D-009: Today's "drawer(s) closed over or short today" leaves out every drawer head office says is already signed off on
+ * Cash over/short. When head office could not be read (or refused), or the store computer did not list its drawers, the
+ * store computer's own figure stands unchanged — a drawer is never dropped on a guess (P-08). Pure.
+ */
+export function overShortStillOpen(box: OverShortTodayFigure, live: LiveCounts | null): OverShortTodayFigure {
+  if (!box.known || box.drawers === undefined || live === null || live.signedOffShifts?.result !== 'read') return box;
+  const signed = new Set(live.signedOffShifts.value);
+  const open = box.drawers.filter((d) => !signed.has(d.shiftId));
+  if (open.length === box.drawers.length) return box;
+  return {
+    known: true, value: open.length, drawers: open,
+    ...(open.length === 0 ? {} : {
+      note: `${open.map((d) => d.words).join('; ')}${OVER_SHORT_TAIL.en}`,
+      noteTa: `${open.map((d) => d.wordsTa).join('; ')}${OVER_SHORT_TAIL.ta}`,
+    }),
+  };
 }
 
 /** The figures Today shows once head office answered (or did not): each tile's number and its plain note. */

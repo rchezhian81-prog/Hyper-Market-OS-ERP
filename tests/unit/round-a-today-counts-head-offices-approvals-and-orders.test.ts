@@ -39,13 +39,14 @@ describe('the two reads, in the person\'s own session', () => {
         ? reply(200, { waitingForMe: [{ requestId: 'a1' }], mine: [], routedToOwnerAboveYourLimit: 1 })
         : reply(403, { error: { code: 'forbidden' } });
     }) as unknown as typeof fetch);
-    expect(seen.sort()).toEqual(['/v1/approvals/requests', '/v1/purchase/orders']);
-    expect(counts).toEqual({ approvals: { result: 'read', value: { waitingForMe: 1, routedToOwner: 1 } }, purchaseOrders: { result: 'refused', status: 403 } });
+    // D-009: Today also reads head office's over/short list, to leave out a drawer already signed off.
+    expect(seen.sort()).toEqual(['/v1/approvals/requests', '/v1/purchase/orders', '/v1/shifts/over-short']);
+    expect(counts).toEqual({ approvals: { result: 'read', value: { waitingForMe: 1, routedToOwner: 1 } }, purchaseOrders: { result: 'refused', status: 403 }, signedOffShifts: { result: 'refused', status: 403 } });
     const offline = await readLiveCounts((async () => { throw new Error('offline'); }) as unknown as typeof fetch);
-    expect(offline).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' } });
+    expect(offline).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' }, signedOffShifts: { result: 'lost_link' } });
     // No head office behind this origin (404) or a fault (502) is "not reached", never a refusal or a zero.
     const absent = await readLiveCounts((async (url: string) => reply(url.includes('approvals') ? 404 : 502, {})) as unknown as typeof fetch);
-    expect(absent).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' } });
+    expect(absent).toEqual({ approvals: { result: 'lost_link' }, purchaseOrders: { result: 'lost_link' }, signedOffShifts: { result: 'lost_link' } });
   });
 });
 

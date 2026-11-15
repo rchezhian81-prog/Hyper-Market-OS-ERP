@@ -42,6 +42,7 @@
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
       findScreenHint: 'Find a screen — type a word like cash, GST or expiry', matchesOne: '1 screen matches', matchesMany: '{n} screens match',
       pinned: 'Pinned', recent: 'Recently opened', pinPage: 'Pin this page', unpinPage: 'Unpin this page',
+      more: 'More',
       signOut: 'Sign out',
       storeAlarm: 'The store computer needs you',
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
@@ -65,6 +66,7 @@
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
       findScreenHint: 'திரையைத் தேடு — பணம், ஜிஎஸ்டி, காலாவதி போன்ற சொல்லைத் தட்டச்சு செய்க', matchesOne: '1 திரை பொருந்துகிறது', matchesMany: '{n} திரைகள் பொருந்துகின்றன',
       pinned: 'மேலே வைத்தவை', recent: 'சமீபத்தில் திறந்தவை', pinPage: 'இந்தப் பக்கத்தை மேலே வை', unpinPage: 'மேலிருந்து எடு',
+      more: 'மேலும்',
       signOut: 'வெளியேறு',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
@@ -527,6 +529,15 @@
     if (recent.length > 0) scroller.append(quickSection('recent', t('recent'), recent.map((id) => offered.get(id))));
     const total = groups.reduce((n, g) => n + (g.items ?? []).length, 0);
     const opened = rememberedObject('open');
+    // D-027 / D-007: a person with a daily list sees THAT list open and every other screen they may open under one
+    // closed "More" — nothing removed, no permission changed (the box still sends every screen the role opens). "More"
+    // opens itself only when the page being shown lives in it, or while a search finds something in it; it is not
+    // remembered, so the short list is what every visit starts from.
+    const more = groups.some((g) => g.key === 'Daily') && groups.length > 1 ? moreSection() : null;
+    if (more) {
+      const inMore = groups.some((g) => g.key !== 'Daily' && (g.items ?? []).some((item) => isCurrent(item)));
+      setMoreOpen(more.section, inMore);
+    }
     for (const [index, group] of groups.entries()) {
       const key = typeof group.key === 'string' ? group.key : `g${index}`;
       const section = document.createElement('div');
@@ -565,8 +576,9 @@
       }
       section.append(title, list);
       setOpen(section, open);
-      scroller.append(section);
+      (more && key !== 'Daily' ? more.body : scroller).append(section);
     }
+    if (more) scroller.append(more.section); // after the daily list, which the box always sends first
     panel.append(personCard(nav));
     // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
     // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
@@ -613,6 +625,36 @@
     }
     section.append(title, list);
     return section;
+  }
+  /** D-027: the one closed "More" heading; every workspace that is not the daily list is drawn inside its body. */
+  function moreSection() {
+    const section = document.createElement('div');
+    section.className = 'sre-more';
+    section.dataset.key = 'More';
+    const title = document.createElement('p');
+    title.className = 'group';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'group-toggle sre-more-toggle';
+    toggle.setAttribute('aria-controls', 'sre-more-body');
+    toggle.textContent = t('more');
+    const body = document.createElement('div');
+    body.id = 'sre-more-body';
+    body.className = 'sre-more-body';
+    toggle.addEventListener('click', () => {
+      setMoreOpen(section, toggle.getAttribute('aria-expanded') !== 'true');
+      filterMenu(byId('sre-find')?.value ?? '');
+    });
+    title.append(toggle);
+    section.append(title, body);
+    return { section, body };
+  }
+  function setMoreOpen(section, open) {
+    const toggle = section.querySelector('.sre-more-toggle');
+    const body = section.querySelector('.sre-more-body');
+    if (toggle) toggle.setAttribute('aria-expanded', String(open));
+    section.dataset.open = String(open);
+    if (body) body.hidden = !open;
   }
   function setOpen(section, open) {
     const toggle = section.querySelector('.group-toggle');
@@ -962,6 +1004,13 @@
       }
       section.hidden = !hit;
       if (list && hit) list.hidden = false;
+    }
+    // D-027: the search looks under "More" too — its body shows while a search finds something there, and goes back
+    // to the way the person left it when the field is cleared.
+    for (const more of panel.querySelectorAll('.sre-more')) {
+      const body = more.querySelector('.sre-more-body');
+      if (!body) continue;
+      body.hidden = q === '' ? more.dataset.open !== 'true' : body.querySelector('.group-section:not([hidden])') === null;
     }
     let none = byId('sre-find-none');
     if (q !== '' && count === 0) {

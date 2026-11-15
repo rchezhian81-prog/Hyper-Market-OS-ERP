@@ -58,6 +58,11 @@ export interface BuildReceiptInput {
   readonly committedAt: string;
   readonly laneId: string;
   readonly cashierId: string;
+  /**
+   * D-006 (daily-work walkthrough): the cashier's display NAME, as the people register gave it — printed instead of the
+   * login id. Absent or blank → the id is printed, as before. Words only: the sale record still names the staff CODE.
+   */
+  readonly cashierName?: string;
   readonly currency: CurrencyCode;
   readonly lines: readonly ReceiptLineInput[];
   readonly taxBands: readonly TaxBandInput[];
@@ -186,6 +191,12 @@ function centre(text: string, width: number): string {
   return ' '.repeat(pad) + text;
 }
 
+/** D-006: who took the sale, as printed — the cashier's name when one is known, else the login id. */
+export function cashierShown(cashierId: string, cashierName: string | undefined): string {
+  const name = cashierName?.trim() ?? '';
+  return name === '' ? cashierId : name;
+}
+
 /** Quantity as printed: whole units as-is, weighed goods with their decimals ("1.234 kg", "500 g") — OB-31's one rule. */
 function quantityText(line: ReceiptLineInput): string {
   return quantityLabel(line.quantityMinor, line.uom);
@@ -210,7 +221,7 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
   }
 
   out.push(pair(`Bill: ${doc.number}`, doc.tradingDay, width));
-  out.push(pair(`Lane: ${doc.laneId}`, `Till: ${doc.cashierId}`, width));
+  out.push(pair(`Lane: ${doc.laneId}`, `Till: ${cashierShown(doc.cashierId, doc.cashierName)}`, width));
   out.push(rule);
 
   for (const line of doc.lines) {

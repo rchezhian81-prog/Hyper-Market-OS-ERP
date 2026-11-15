@@ -276,7 +276,14 @@ export interface NegativeStock {
   readonly onHandMinor: number;
   readonly detail: string;
   readonly ownerAction: string;
+  /** D-016: the item's name and its unit (OB-31: `onHandMinor` is a count for `ea`, grams for kg) when head office's
+   *  product master holds them — so a page says "Biscuits −4 pieces", never a code and never 1/100th. */
+  readonly name?: string;
+  readonly uom?: string;
 }
+
+/** D-016: what head office's product master says of one product — its name and the unit it is counted in. */
+export interface ProductFacts { readonly name: string; readonly uom: string }
 
 /** Negative on-hand, reported rather than prevented. */
 export const negativeStock = (rows: readonly Availability[]): readonly NegativeStock[] =>
@@ -369,6 +376,8 @@ export interface InventoryDeps {
    * branch-limited caller at any location that is not literally one of their branches).
    */
   readonly locationBranches?: LocationBranches;
+  /** D-016: each product's name and unit from the product master (absent → the exceptions read names neither). */
+  readonly productFacts?: (tenantId: string) => Promise<ReadonlyMap<string, ProductFacts>> | ReadonlyMap<string, ProductFacts>;
   readonly now: () => string;
 }
 
@@ -625,7 +634,13 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
                 : `${r.onHandMinor} of ${r.productId} is at ${r.locationId}, which is not a registered stock place (booked before the places were registered): register ${r.locationId} in the organisation, then move or write the stock off`,
             };
           });
-        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, strandedStock, scope: scope.scope, asAt: deps.now() } };
+        // D-016: each negative row carries the item's name and unit, so the office page says it in the shop's words.
+        const facts = deps.productFacts === undefined ? undefined : await deps.productFacts(ctx.tenantId);
+        const negative = negativeStock(rows).map((n) => {
+          const f = facts?.get(n.productId);
+          return f === undefined ? n : { ...n, name: f.name, uom: f.uom };
+        });
+        return { status: 200, body: { negative, transferShortfalls, strandedStock, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {

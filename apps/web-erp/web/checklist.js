@@ -73,7 +73,63 @@ let session = window.checklistSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 let canSignNow = false;
 
+/**
+ * Fix batch 3 (D-008): the store rules' closing checklist, as the STORE COMPUTER holds it — the same items Today counts and
+ * the day close checks. Each item still to do has its own "Done" button (for a person who may manage the checklist);
+ * a tap records it on the box in that person's own name. Nothing is signed here and a tick is never undone.
+ */
+function storeRulesRowNode(c) {
+  const li = document.createElement('li');
+  li.className = `row tone-${c.status.tone}`;
+  li.dataset.checklistId = c.checklistId;
+  li.dataset.storeRules = 'true';
+  li.dataset.forDate = c.forDate ?? '';
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = c.kindLabel;
+  const status = document.createElement('span');
+  status.className = 'status';
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = c.status.icon;
+  const slabel = document.createElement('span'); slabel.textContent = c.severityWord;
+  status.append(icon, slabel);
+  status.setAttribute('aria-label', c.status.announcement || c.status.label);
+  head.append(headline, status);
+  li.append(head);
+
+  if (c.waitingToClose) {
+    const w = document.createElement('div'); w.className = 'detail waiting'; w.textContent = `${c.dayLabel} — ${t('waitingToCloseWord')}`;
+    li.append(w);
+  }
+  const detail = document.createElement('div'); detail.className = 'detail'; detail.textContent = c.detail;
+  li.append(detail);
+
+  const items = document.createElement('ul'); items.className = 'items';
+  for (const it of c.items) {
+    const row = document.createElement('li');
+    row.dataset.itemId = it.itemId;
+    if (it.done) row.className = 'done';
+    const words = document.createElement('span'); words.className = 'what';
+    words.textContent = it.done && it.doneBy ? `${it.description} — ${t('doneByLabel')} ${it.doneBy}` : it.description;
+    row.append(words);
+    if (it.blocking) { const b = document.createElement('span'); b.className = 'blk'; b.textContent = t('blockingWord'); row.append(b); }
+    if (!it.done && canSignNow) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'act tick sre-btn';
+      btn.dataset.itemId = it.itemId;
+      btn.textContent = t('tickBtn');
+      btn.setAttribute('aria-label', `${t('tickBtn')}: ${it.description}`);
+      row.append(btn);
+    }
+    items.append(row);
+  }
+  li.append(items);
+  return li;
+}
+
 function rowNode(c) {
+  if (c.storeRules) return storeRulesRowNode(c);
   const li = document.createElement('li');
   li.className = `row tone-${c.status.tone}`;
   li.dataset.checklistId = c.checklistId;
@@ -173,6 +229,21 @@ function paintResult(presentation) {
 // The manager's sign-off — a HUMAN write that runs ONLY on this explicit click, never on load. Delegated from
 // the list so there is one handler; on success the worklist is re-read (a GET) so the checklist re-reads with its
 // new state. The server enforces the blocking-item rule and §28; the screen never fakes it.
+// Fix batch 3 (D-008): a store-rules closing-checklist item ticked on the store computer — only on this explicit tap; then
+// the page is reloaded so the box's own count (the same one Today and the day close read) is what shows.
+el('rows').addEventListener('click', (ev) => {
+  const btn = ev.target instanceof Element ? ev.target.closest('button.tick') : null;
+  if (!btn || typeof session.tick !== 'function') return;
+  const card = btn.closest('li.row');
+  if (!card) return;
+  btn.disabled = true;
+  void (async () => {
+    const result = await session.tick(card.dataset.checklistId, btn.dataset.itemId);
+    paintResult(session.presentTickResult(lang, result));
+    if (result.ticked) { setTimeout(() => { window.location.reload(); }, 600); } else { btn.disabled = false; }
+  })();
+});
+
 el('rows').addEventListener('click', (ev) => {
   const btn = ev.target instanceof Element ? ev.target.closest('button.sign') : null;
   if (!btn) return;

@@ -1,6 +1,6 @@
 # ADR 0033 — A privilege change on the store PC is a sealed, PIN-confirmed act relayed by the box, never a token the box mints
 
-- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B"); amended for step 4b-1 (OB-733 "A", OB-735 "A", OB-736 "A") and step 4b-2 (OB-734 "A", OB-735 "A", OB-739 "A")
+- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B"); amended for step 4b-1 (OB-733 "A", OB-735 "A", OB-736 "A") and step 4b-2 (OB-734 "A", OB-735 "A", OB-739 "A"); amendment 3 for every office page (audit C-1, OB-773 "1 A", 15 Nov 2026)
 - **Date:** 14 November 2026
 - **Context:** CR-01 OI-06 asks for people and roles to be managed on the store PC's screens. OB-731 "A" decided how a
   person proves who they are there: staff ID + own till PIN, the PIN typed again to confirm each privilege change, on
@@ -108,6 +108,32 @@
    the store manager.
 4. A cashier does not sign in to the office screens (not an office role), so a cashier's PIN is set or changed by the
    manager; office roles change their own.
+
+## Amendment 3 — every office page on the store PC (15 November 2026: audit C-1 / D-1, OB-795; OB-773 "1 A")
+
+The owner chose (OB-773 "1 A") that the store PC's office pages reach the office API by extending this ADR to every page.
+Before this, with the office PIN sign-in on and no head-office link, the box dropped every `/v1` call a page made, so no
+item, price, buying, approval, report or settlement page could read or save on the store PC (the owner's "most features do
+not work").
+
+1. **One sealed call per request.** For the person signed in by their own PIN (OB-259), the box seals each page call —
+   method, path, query, body digest, idempotency key, the shop, the person, this store, when their PIN sign-in began, the
+   moment and a fresh nonce — and carries it to the office API on the same PC (`CLOUD_API_URL`) as the bearer credential
+   (`packages/identity/src/office-call-seal.ts`). The box still mints no token: a seal is good for that one request only.
+2. **Its own key, derived.** The seal key is derived from the privilege-seal key under its own label (`sre-office-call-v1`),
+   so an office-call seal can never be read as a privilege record or a till seal, nor the other way round. It adds no power
+   the box did not already hold (the same key already seals role grants).
+3. **The API checks it, then runs every ordinary check.** `withOfficeCalls` (services/identity/src/office-call-authenticator.ts)
+   refuses a seal made with another key or edited, made for a different request (any of method, path, query, body or
+   idempotency key), older than 60 s or dated ahead, or used before; a person whose sign-ins were revoked is refused. Then
+   the call runs as that person: their own roles, branch scope, entitlements, idempotency and audit. Their sign-in evidence
+   is `amr: ["pin"]`, so a route that demands a second step (MFA) still refuses — privilege changes keep §1–§3's
+   PIN-typed-again path. With no privilege-seal key the API believes no office-call seal.
+4. **The box refuses first** a write not from a page it served, nobody signed in, or a person with no role at this store.
+   With no privilege-seal key, or the office API not answering, a call fails as a lost link (P-08), as before.
+5. **Found while proving it:** OB-773 3 B gave the store manager `catalogue.change.propose`, which the owner does not hold, so
+   OB-739 "A"'s "no reaching above yourself" refused the owner the store manager's PIN. A proposal changes nothing until the
+   owner approves it, so — like a relay permission — it is left out of that comparison (`isProposalOnlyPermission`).
 
 ## Reconsider-when
 

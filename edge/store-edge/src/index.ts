@@ -481,7 +481,8 @@ export function createEdgeNode(input: {
       // name when it has no id to address (hard rule #6).
       let body: unknown;
       try { body = JSON.parse(record) as unknown; } catch { body = record; }
-      const envelope = JSON.stringify({ completionKind, body });
+      // The completion's own id rides in the envelope, so a restart re-mints the same event (fix batch 3).
+      const envelope = JSON.stringify({ completionKind, completionId, body });
 
       // The durable write, then the queue — after the write, never before, the same ordering as the
       // sale and refund seams: a completion is durable before anything is told it happened.

@@ -200,10 +200,10 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       expect((await page.textContent('#rows')) ?? '').toContain('₹');
       // Freshness is on the page.
       expect(((await page.textContent('#asof')) ?? '').toLowerCase()).toContain('as of');
-      // OB-773 (B-2): pieces are shown as the count head office sent — 80 and 100 units, never 0.8 or 1.
+      // OB-773 (B-2): pieces are shown as the count head office sent — 80 and 100 pieces (D-037: item by item, the unit's plain word), never 0.8 or 1.
       const rows = (await page.textContent('#rows')) ?? '';
-      expect(rows).toContain('Became sellable: 80 units');
-      expect(rows).toContain('Became sellable: 100 units');
+      expect(rows).toContain('Became sellable: p-oil — 80 pieces');
+      expect(rows).toContain('Became sellable: p-rice — 100 pieces');
       expect(rows).not.toContain('0.8 units');
     } finally {
       await teardown();
@@ -317,8 +317,8 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
     try {
       await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows li.row').length > 0, undefined, { timeout: 10_000 });
       const rows = (await page.textContent('#rows')) ?? '';
-      expect(rows).toContain('Became sellable: 10 units · 2.5 kg');
-      expect(rows).toContain('Held back: 6 units');
+      expect(rows).toContain('Became sellable: p-biscuit — 10 pieces · p-dal — 2.5 kg');
+      expect(rows).toContain('Held back: 6 pieces');
       expect(rows).toContain('Refused: 0.75 kg');
       expect(rows).not.toContain('0.1 units');
       expect(rows).not.toContain('25.1');
