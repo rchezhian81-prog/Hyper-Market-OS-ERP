@@ -43,7 +43,7 @@ import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LA
 import { DOMAIN_TEMPLATE_VIEWS } from '../../purchase/src/import-templates-domains'; // OB-315: suppliers, price lists, opening stock, customers, loyalty balances
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
-  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
+  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, effectiveRoleCatalogue, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
   issuedReceiptSeries, bankedReceiptCounts, complianceAdapter, replenishmentParametersAdapter,
@@ -52,7 +52,6 @@ import { parametersAt } from '../../inventory/src/replenishment-parameters'; // 
 import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { floorPlanSpaceSection } from './p2-catalogue-adapters';
-import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { deliveryAsnOf } from './p3-procure-adapters'; // OB-288 P3 (M07-FR-01): the ASN rides with its open delivery
@@ -272,7 +271,9 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── people: the grants that reach this store, their roles, their names ─────────────────────────────────────────
   const grants = (await effectiveGrants(store, tenantId)).filter((g) => g.branchScope === 'all' || (Array.isArray(g.branchScope) && g.branchScope.includes(storeId)));
-  sections['roles'] = ROLE_CATALOGUE;
+  // ADR-0034: the roles as this shop has them now — the tills and office screens decide from this copy.
+  const roles = await effectiveRoleCatalogue(store, tenantId);
+  sections['roles'] = roles;
   sections['roleAssignments'] = grants.map((g) => ({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope }));
   const names = new Map((await peopleAdapter({ store, now }).people(tenantId)).map((p) => [p.userId, p.displayName] as const));
   const seen = new Set<string>();
@@ -312,7 +313,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   if (rules !== undefined) {
     // Who may approve a price below the floor at this store: the people whose grants here carry the authority — read from
     // the grants, never a list typed into a file.
-    const access = new AccessControl(ROLE_CATALOGUE, grants);
+    const access = new AccessControl(roles, grants);
     const approversOf = (permission: string): string[] => [...new Set(grants.map((g) => g.userId))].filter((u) => access.can({ userId: u, permission, branchId: storeId })).sort();
     sections['checklist'] = rules.checklist.map((c) => ({ itemId: c.itemId, description: c.description, done: false, blocking: c.blocking }));
     sections['managerPolicy'] = { approvalLimitMinor: rules.approvalLimitMinor };

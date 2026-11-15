@@ -242,6 +242,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'access_change', label: 'Change a person\'s access (joining, moving or leaving)',
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
   },
+  // CR-01 step 4c-1 · ADR-0034 · OB-740 "B": what a ROLE may do. A store manager asks and the owner approves
+  // (`identity.role.grant` — the owner's alone); when the owner asks, a store manager approves. The owner is always one of
+  // the two, and never approves his own. The apply route judges both again on the roles held at that moment.
+  role_permission_change: {
+    kind: 'role_permission_change', label: 'Change what a role may do (switch one permission on or off)',
+    makerPermission: 'identity.role.adjust', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+    whenTheOwnerAsks: { checkerPermission: 'identity.role.adjust', checkerRole: 'store_manager' },
+  },
   // Branches (PA-04 · M01-FR-04 "every transition except reopening needs the owner's approval; the person executing is
   // never the person approving"): the manager or owner who carries out the opening/closing asks; the OWNER approves
   // (`branch.transition.approve` — the owner's alone, like every other domain's approve authority).

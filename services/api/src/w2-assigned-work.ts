@@ -19,7 +19,8 @@ import type { Route, RequestContext, HandlerResult } from '../../kernel/src/inde
 import { apiError } from '../../kernel/src/index';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import { latestRoutes, latestWaves } from '../../fulfilment/src/assignments';
-import { assignmentsAdapter, effectiveGrants } from './adapters';
+import { assignmentsAdapter, effectiveGrants, effectiveRoleCatalogue } from './adapters';
+import type { Role } from '../../../packages/rbac/src/rbac';
 import { ROLE_CATALOGUE, PICKER_ROLE_ID, DELIVERY_ROLE_ID } from './roles';
 
 export const PICK_WORD = 'fulfilment.pack.record';
@@ -66,16 +67,18 @@ export const ASSIGNED_WORK_ROUTES: Readonly<Record<string, Read>> = Object.freez
 export function heldOnlyAsAssignedWork(
   grants: readonly { readonly userId: string; readonly roleId: string; readonly branchScope: readonly string[] | 'all' }[],
   userId: string, word: string, branchId: string | null,
+  /** The shop's roles now (`effectiveRoleCatalogue`, ADR-0034) — never the built-in list. */
+  roles: readonly Role[],
 ): string | undefined {
-  const roles = new Set<string>();
+  const held = new Set<string>();
   for (const g of grants) {
     if (g.userId !== userId) continue;
     if (branchId !== null && g.branchScope !== 'all' && !g.branchScope.includes(branchId)) continue;
-    if ((ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions ?? []).includes(word)) roles.add(g.roleId);
+    if ((roles.find((r) => r.id === g.roleId)?.permissions ?? []).includes(word)) held.add(g.roleId);
   }
-  if (roles.size === 0) return undefined;
-  const narrowed = [...roles].filter((r) => ASSIGNED_WORK_ROLES[r] === word);
-  return narrowed.length === roles.size ? narrowed[0] : undefined;
+  if (held.size === 0) return undefined;
+  const narrowed = [...held].filter((r) => ASSIGNED_WORK_ROLES[r] === word);
+  return narrowed.length === held.size ? narrowed[0] : undefined;
 }
 
 const notAssigned = (userId: string, roleId: string, s: Subject, store: string | null, relayed: boolean): Error => {
@@ -119,7 +122,7 @@ export function assignedWorkSurface(surface: Route[], input: { readonly store?: 
         const who = relayed ? s.person : ctx.userId;
         if (who !== undefined) {
           const branchId = ctx.branchId ?? null;
-          const roleId = heldOnlyAsAssignedWork(await effectiveGrants(store, ctx.tenantId), who, s.word, branchId);
+          const roleId = heldOnlyAsAssignedWork(await effectiveGrants(store, ctx.tenantId), who, s.word, branchId, await effectiveRoleCatalogue(store, ctx.tenantId));
           if (roleId !== undefined && (branchId === null || !(await isAssigned(ctx.tenantId, branchId, who, s)))) {
             throw notAssigned(who, roleId, s, branchId, relayed);
           }

@@ -18,8 +18,7 @@ import {
 import { staffRosterVisibility, type HrComplianceDeps, type WorkingTimeSettingChange, type RosterPublication, type StaffRosterVisibility } from '../../finance/src/hr-compliance';
 import type { StoredRoster } from '../../finance/src/roster-store';
 import { POSH_AUDIT_OBJECT, type PoshRegisterDeps } from '../../finance/src/posh-register';
-import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter, effectiveGrants, rolesHeldNow, isPersonNow, outsideLoginOf, ROLE_GRANTED, ROLE_REVOKED } from './adapters';
-import { ROLE_CATALOGUE } from './roles';
+import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter, effectiveGrants, effectiveRoleCatalogue, rolesHeldNow, isPersonNow, outsideLoginOf, ROLE_GRANTED, ROLE_REVOKED } from './adapters';
 import { COMMITTEE_ROLE_ID, type CommitteeMembershipDeps, type CommitteeChange } from '../../identity/src/committee-membership';
 import { CA_ROLE_ID, type CaRoleGrantDeps, type CaRoleGrant } from '../../identity/src/ca-role-grant';
 import { twoSignatureAdapter } from './gates-adapters'; // OB-681: the OB-330 security-reviewer register (the IT custodian)
@@ -129,7 +128,7 @@ export function committeeMembershipAdapter(input: { readonly store: EventStore; 
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(store, tenantId, userId, now()),
     committeeGrantsOf: async (tenantId, userId) => (await effectiveGrants(store, tenantId))
       .filter((g) => g.userId === userId && g.roleId === COMMITTEE_ROLE_ID).map((g) => ({ branchScope: g.branchScope })),
-    roles: () => ROLE_CATALOGUE,
+    roles: (tenantId) => effectiveRoleCatalogue(store, tenantId),
     isPerson: (tenantId, userId) => isPersonNow(store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(store, tenantId, userId, now()),
     recordChange: async (tenantId, c: CommitteeChange) => {
@@ -159,7 +158,7 @@ export function caRoleGrantAdapter(input: { readonly store: EventStore; readonly
   return {
     now,
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(store, tenantId, userId, now()),
-    roles: () => ROLE_CATALOGUE,
+    roles: (tenantId) => effectiveRoleCatalogue(store, tenantId),
     isPerson: (tenantId, userId) => isPersonNow(store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(store, tenantId, userId, now()),
     securityReviewer: async (tenantId) => { const r = await reviewers.reviewer(tenantId); return r === undefined ? undefined : { userId: r.userId, displayName: r.displayName }; },

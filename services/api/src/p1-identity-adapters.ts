@@ -47,7 +47,7 @@ import { pricingRoutes } from '../../pricing/src/index';
 import { orgDepartmentRoutes, currentLinks, type DepartmentLinkRecord, type DepartmentSaleLine } from '../../platform/src/org-departments';
 import { governedFlagRoutes, governSetupWrite, governConfigRollback, type GovernedFlagChange } from '../../platform/src/governed-config';
 import {
-  STREAM, streamName, effectiveGrants, rolesHeldNow, liveEmergencyRoles, peopleAdapter, emergencyAccessAdapter,
+  STREAM, streamName, effectiveGrants, effectiveRoleCatalogue, rolesHeldNow, liveEmergencyRoles, peopleAdapter, emergencyAccessAdapter,
   delegationAdapter, approvalDecisionAdapter, approvalRequestsAdapter, orgStructureAdapter, purchaseOrdersAdapter,
   adjustmentRequestAdapter, countsAdapter, productMasterAdapter, categoryRegisterAdapter, alertLifecycleAdapter,
   pricingAdapter, storeRulesAdapter,
@@ -97,7 +97,7 @@ export async function grantsWithDepartments(store: EventStore, tenantId: string)
 
 /** Which departments a person may act in with a permission — the RBAC engine's answer from the scoped grants. */
 export async function departmentScopeOf(store: EventStore, tenantId: string, userId: string, permission: string): Promise<readonly string[] | 'all'> {
-  return new AccessControl(ROLE_CATALOGUE, await grantsWithDepartments(store, tenantId)).departmentScopeOf(userId, permission);
+  return new AccessControl(await effectiveRoleCatalogue(store, tenantId), await grantsWithDepartments(store, tenantId)).departmentScopeOf(userId, permission);
 }
 
 /** product → department, through its primary category and the departments' categories. */
@@ -383,7 +383,7 @@ export function p1IdentitySurface(surface: Route[], input: {
     ...authorityRulesRoutes({ ...rules, approvals, ...audit, now }),
     ...approvalEscalationRoutes({ ...escalationDeps(base), now }),
     ...accessReviewRoutes({
-      now, authorityOf, roles: () => ROLE_CATALOGUE, machineRoleIds: MACHINE_ROLE_IDS,
+      now, authorityOf, roles: (tenantId) => effectiveRoleCatalogue(store, tenantId), machineRoleIds: MACHINE_ROLE_IDS,
       isItRole: (roleId) => { const r = ROLE_CATALOGUE.find((x) => x.id === roleId); return r !== undefined && isPlatformAdministrationRole(r); },
       people: async (tenantId) => (await peopleAdapter({ store, now }).people(tenantId)).map((p: PersonSignIn) => ({ userId: p.userId, username: p.username, displayName: p.displayName, state: p.state, secondFactor: p.secondFactor })),
       grants: (tenantId) => grantsWithDepartments(store, tenantId),

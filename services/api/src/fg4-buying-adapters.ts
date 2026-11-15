@@ -55,11 +55,10 @@ import {
 import { departmentOfCategory, withinDepartmentScope } from '../../../packages/org/src/departments';
 import { currentLinks, type DepartmentLinkRecord } from '../../platform/src/org-departments';
 import { departmentScopeOf, DEPARTMENT_LINKS_STREAM } from './p1-identity-adapters';
-import { ROLE_CATALOGUE } from './roles';
 import { RELABEL_STREAM } from './lp-workforce-adapters';
 import type { RelabelTask } from '../../pricing/src/relabel-tasks';
 import {
-  effectiveGrants, liveEmergencyRoles, approvalRequestsAdapter, categoryRegisterAdapter, productMasterAdapter, supplierMasterAdapter,
+  effectiveGrants, effectiveRoleCatalogue, liveEmergencyRoles, approvalRequestsAdapter, categoryRegisterAdapter, productMasterAdapter, supplierMasterAdapter,
   rosterStoreAdapter, warehouseAdapter, transfersAdapter, supplierPortalAdapter,
 } from './adapters';
 import { vmiRoutes, type VmiProposal, type VmiDecision } from '../../purchase/src/vmi';
@@ -384,12 +383,13 @@ const refusal = (code: string, whatHappened: string, nextSafeAction: string): Er
 /** The facts a scope is judged on — read from head office's own registers at the request, never from the request. */
 function scopeFacts(input: Base) {
   const { store, now } = input;
-  const rolePermissions = (roleId: string) => ROLE_CATALOGUE.find((r) => r.id === roleId)?.permissions;
   // CR-01 step 6b: the auto-approve rule, while (and only while) it places an act, is shop-wide — the owner's limit is set for
   // the whole shop. Any other caller, including a token that merely calls itself `rule:…`, is judged on its grants as before.
+  // The shop's ADJUSTED roles (CR-01 step 4c-1 · ADR-0034), read at the request.
+  const rolePermissionsOf = async (tenantId: string) => { const roles = await effectiveRoleCatalogue(store, tenantId); return (roleId: string) => roles.find((r) => r.id === roleId)?.permissions; };
   const roleScope = async (tenantId: string, userId: string, permission: string, dimension: RoleScopeDimension) => isTheRulePlacing(tenantId, userId) ? 'all' as const : roleScopeOf({
     scopes: foldRoleScopes(await payloads<RoleScopeRecord>(store, tenantId, FG4_STREAMS.roleScopes, 'RoleScopeSet')),
-    grants: await effectiveGrants(store, tenantId), rolePermissions, userId, permission, dimension,
+    grants: await effectiveGrants(store, tenantId), rolePermissions: await rolePermissionsOf(tenantId), userId, permission, dimension,
   });
   const categoryTree = async (tenantId: string) => {
     const [categories, products] = await Promise.all([categoryRegisterAdapter({ store, now }).categories(tenantId), productMasterAdapter({ store, now }).products(tenantId)]);
@@ -510,8 +510,7 @@ function scopeGuards(surface: Route[], input: Base): void {
   };
   /** The person a store computer relays for is judged on THEIR grants (the box's own are not theirs). A person who holds no
    *  grant with the permission is left to the route, which flags them (`receiver_unknown`, `counter_lacks_authority`). */
-  const holdsByGrant = async (tenantId: string, userId: string, permission: string): Promise<boolean> =>
-    (await effectiveGrants(store, tenantId)).some((g) => g.userId === userId && (ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions ?? []).includes(permission));
+  const holdsByGrant = async (tenantId: string, userId: string, permission: string): Promise<boolean> => { const roles = await effectiveRoleCatalogue(store, tenantId); return (await effectiveGrants(store, tenantId)).some((g) => g.userId === userId && (roles.find((r) => r.id === g.roleId)?.permissions ?? []).includes(permission)); };
   const relayedGuard = async (ctx: RequestContext, person: string | undefined, places: readonly (string | undefined)[]) => {
     if (person === undefined || !(await holdsByGrant(ctx.tenantId, person, 'inventory.movement.append'))) return;
     await locationGuard(ctx, places, { userId: person, permission: 'inventory.movement.append', relayed: true });
