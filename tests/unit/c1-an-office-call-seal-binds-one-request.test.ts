@@ -12,8 +12,8 @@ import { withOfficeCalls } from '../../services/identity/src/office-call-authent
 
 const KEY = officeCallKey(privilegeSealKey(randomBytes(32).toString('base64url')));
 const NOW = Date.parse('2026-11-15T10:00:00Z');
-const GET: OfficeCallRequest = { method: 'GET', path: '/v1/catalogue/products/SALT', query: { b: '2', a: '1' }, body: undefined, idempotencyKey: undefined };
-const POST: OfficeCallRequest = { method: 'POST', path: '/v1/catalogue/changes', query: {}, body: { productId: 'SALT', reason: 'x' }, idempotencyKey: 'k-1' };
+const GET: OfficeCallRequest & { readonly method: 'GET' } = { method: 'GET', path: '/v1/catalogue/products/SALT', query: { b: '2', a: '1' }, body: undefined, idempotencyKey: undefined };
+const POST: OfficeCallRequest & { readonly method: 'POST' } = { method: 'POST', path: '/v1/catalogue/changes', query: {}, body: { productId: 'SALT', reason: 'x' }, idempotencyKey: 'k-1' };
 const seal = (request: OfficeCallRequest, over: Partial<{ nowMs: number; key: Buffer; userId: string }> = {}): string => sealOfficeCall(over.key ?? KEY, {
   tenantId: 't-1', userId: over.userId ?? 'u-mgr', branchId: 'S1', request, signedInAt: NOW / 1000 - 60, nowMs: over.nowMs ?? NOW,
 });
