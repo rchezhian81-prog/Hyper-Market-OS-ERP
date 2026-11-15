@@ -1170,7 +1170,9 @@ export function buildSurface(deps: {
       // Verifier r19 (6a/6b): stock left at a place that is not (or no longer) a registered stock place is LISTED for head
       // office (GET /v1/inventory/exceptions → strandedStock) and named in the refusal — never a silent block.
       stockPlaces: async (t: string) => { const known = await knownStockPlace({ store, now }, t); return { registeredAny: known.registeredAny, isKnown: (l: string) => known(l), closed: known.closed }; },
-      frozenBy: async (t: string, l: string, p: string, k: string) => (countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId) }),
+      frozenBy: async (t: string, l: string, p: string, k: string) => (countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId),
+      // D-016: the exceptions read names each item and its unit from the product master (a page never shows a code or ÷100).
+      productFacts: async (t: string) => new Map((await productMasterAdapter({ store, now }).products(t)).map((p) => [p.productId, { name: p.name, uom: p.baseUom }] as const)) }),
     // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
     // receipt policy and the held-excess decision (F03).
     ...goodsReceiptRoutes(goodsReceiptDeps),

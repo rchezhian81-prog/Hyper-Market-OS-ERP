@@ -500,9 +500,12 @@ const refuseLines = (read: Extract<LinesRead, { ok: false }>, relayed: boolean) 
     ? 'Send the invoice\'s own lines { productId, quantity, unitPriceMinor, lineTotalMinor } only. Nothing was saved.'
     : relayed ? 'Do not discard it at the store. Keep it in the queue and raise it — the paper invoice exists.' : 'Check the line against the paper invoice and send it again. Nothing was saved.',
 });
+/** D-044: paise as a person reads rupees — ₹2,592.00 (Indian grouping), never the raw paise count. */
+const rupeesOf = (minor: number): string => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => apiError(422, {
   code: 'does_not_add_up_to_the_invoice_total',
-  whatHappened: `The lines add up to ${totalMinor} and the invoice says ${declared}. Either a line is wrong or a line is missing — and both mean paying something other than what was agreed.`,
+  whatHappened: `The lines add up to ${rupeesOf(totalMinor)} and the invoice says ${rupeesOf(declared)}. Either a line is wrong or a line is missing — and both mean paying something other than what was agreed.`,
   wasItSaved: 'not_saved',
   nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
 });

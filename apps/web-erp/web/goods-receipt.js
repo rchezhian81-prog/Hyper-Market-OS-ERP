@@ -78,6 +78,8 @@ function sampleSession() {
 
 let session = window.goodsReceiptSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+// D-037: a place by its name where the office's directory knows it (the id itself otherwise — never a guess).
+const placeName = (id) => { const o = window.sreOffice; const key = id ?? ''; return o && typeof o.nameOf === 'function' && key !== '' ? (o.nameOf('place', key) || key) : key; };
 // U1 · OB-698 (design system §1.3, §27.1): a money/stock click asks the shared consequence-and-confirm sheet first.
 // `null` = the person went back (nothing is sent); 'unavailable' = the sheet could not open (said, never silent).
 async function confirmFirst(spec) {
@@ -158,9 +160,14 @@ function receiptNode(r) {
   const facts = document.createElement('div');
   facts.className = 'facts';
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
-  fact(`${t('warehouseLabel')}: ${r.warehouseId}`);
+  fact(`${t('warehouseLabel')}: ${placeName(r.warehouseId)}`);
   fact(`${t('receivedByLabel')}: ${r.receivedBy}`);
-  fact(`${t('sellableLabel')}: ${qtyWords(r, 'sellable')}`);
+  // D-037: what became sellable item by item ("Biscuits — 44 pieces"), never biscuits and oil added into one number.
+  if (Array.isArray(r.sellableItems) && r.sellableItems.length > 0) {
+    const s = document.createElement('span'); s.className = 'sellable-items';
+    s.textContent = `${t('sellableLabel')}: ${r.sellableItems.map((i) => i.label).join(' · ')}`;
+    facts.append(s);
+  } else fact(`${t('sellableLabel')}: ${qtyWords(r, 'sellable')}`);
   if (r.quarantinedMinor > 0) fact(`${t('quarantinedLabel')}: ${qtyWords(r, 'quarantined')}`);
   if (r.rejectedMinor > 0) fact(`${t('rejectedLabel')}: ${qtyWords(r, 'rejected')}`);
   // OB-509: a line booked with its cost NOT KNOWN says so until its supplier bill is matched — never a ₹0 figure.

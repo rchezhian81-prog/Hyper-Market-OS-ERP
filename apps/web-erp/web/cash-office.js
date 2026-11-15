@@ -32,7 +32,7 @@ function sampleSession() {
   const sampleRow = (l) => ({
     shiftId: 'sample-till-3', tillId: 'till-3', cashierId: 'cashier', tradingDay: '2026-09-17',
     direction: l === 'ta' ? 'குறைவு' : 'Short', amount: '₹1,200.00', varianceMinor: -120000,
-    reasonCode: 'gave_wrong_change', isOwnDrawer: false, needsAttention: true,
+    reasonCode: 'gave_wrong_change', reasonWords: l === 'ta' ? 'தவறான சில்லறை கொடுக்கப்பட்டது' : 'Wrong change given', isOwnDrawer: false, needsAttention: true,
     status: { tone: 'degraded', icon: '⚠', label: l === 'ta' ? 'குறைவு' : 'Short', announcement: 'short', needsAttention: true },
   });
   const DISPOSITIONS = [
@@ -87,7 +87,9 @@ function rowNode(r) {
   const cby = document.createElement('span'); cby.textContent = `${t('cashierLabel')}: ${r.cashierId}`;
   const day = document.createElement('span'); day.textContent = `${t('dayLabel')}: ${r.tradingDay}`;
   facts.append(cby, day);
-  if (r.reasonCode) { const rc = document.createElement('span'); rc.textContent = `${t('reasonLabel')}: ${r.reasonCode}`; facts.append(rc); }
+  // D-015: the cashier's reason in plain words from the tested session ("Wrong change given"), never the bare code.
+  const reason = typeof r.reasonWords === 'string' && r.reasonWords !== '' ? r.reasonWords : r.reasonCode ? String(r.reasonCode).replace(/_/g, ' ') : '';
+  if (reason !== '') { const rc = document.createElement('span'); rc.className = 'reason'; rc.textContent = `${t('reasonLabel')}: ${reason}`; facts.append(rc); }
 
   li.append(head, status, facts);
   if (r.isOwnDrawer) { const own = document.createElement('div'); own.className = 'own'; own.textContent = t('yourDrawer'); li.append(own); }
