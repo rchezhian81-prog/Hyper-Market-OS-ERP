@@ -1,7 +1,7 @@
 # ADR 0034 — What a role may do is changed on screens by two people, as recorded adjustments to the built-in roles
 
-- **Status:** Proposed (design only — nothing is built until CR-01 step 4b-2, PR #926, is merged; the owner's answers
-  to OB-740, OB-741 and OB-742 are needed first)
+- **Status:** Accepted (owner, 15 Nov 2026: OB-740 "B", OB-741 "A", OB-742 "A"); not built until CR-01 step 4b-2
+  (PR #926) is merged
 - **Date:** 15 November 2026
 - **Context:** CR-01 OI-06 asks that "the owner or an administrator … changes what a role may do on screens; a privilege
   change still needs a second person (§28 maker-checker, hard rule 5) and is audited". The owner decided OB-730 "A"
@@ -58,13 +58,19 @@
      `ai.agent.enable`, `ai.killswitch.set`, `ai.budget.set`, `ai.model.approve`: these decide who may approve, what an
      AI agent may do on its own and how it is stopped. Moving them would weaken a two-person approval or the human
      control of AI (hard rule 5, OB-730 "A", OI-12).
-   - **g. The owner's reserved powers** — as the owner decides in **OB-741**.
+   - **g. The owner's reserved powers (OB-741 "A")** — a permission that only the owner holds in the **built-in** roles
+     (105 today) is never added to another role from a screen, and **the owner's own role is never reduced** from a
+     screen, so nobody can lock the owner out by mistake. The list is worked out from the built-in roles, not the adjusted
+     ones, so it cannot drift. Changing either needs a written decision and a programmer, as today.
 
    **Hard rule 5 itself is not changed by any adjustment:** AI agents are not roles. What an agent may draft is limited in
    the AI gateway's own scoped tools; no role adjustment can let an agent write to the database or commit a price,
    payment, refund, purchase, stock or privilege change. Item f stops a screen from changing who controls the agents.
-5. **Two people, never the same person** — the approval engine's kind `role_permission_change`, valid 24 hours, with the
-   maker and checker as the owner decides in **OB-740**. The checker sees exactly what changes and **who it affects**:
+5. **Two people, never the same person, the owner always one of them (OB-740 "B")** — the approval engine's kind
+   `role_permission_change`, valid 24 hours. Either the owner or a store manager asks; the other approves: a store
+   manager's ask is approved only by the owner, the owner's ask only by a store manager. Both act under a new permission,
+   `identity.role.adjust`, held by the owner and the store manager in the built-in roles (and itself on the never list,
+   item f). The platform administrator (IT) takes no part (OB-91, OB-95). The checker sees exactly what changes and **who it affects**:
    every person holding the role, by name. Audit events `role.permission.request`, `role.permission.adjust` and
    `role.permission.reject` are written in each person's own name. The owner is alerted when a change is asked for and
    when it is done (P-03).
@@ -79,6 +85,10 @@
    each with a plain name in English and Tamil (OI-09), the ones changed from the built-in role marked, and those on the
    never list shown as locked with the reason. Each permission that can be changed needs a plain English and Tamil name;
    none exists today, so writing them is part of the build.
+
+7a. **Delivered in two parts (OB-742 "A")**, each tested and merged on its own: **4c-1** the rules at head office
+   (decisions 1–5 and 7: the adjustments, the never list, two people, every reader on the adjusted list, the store
+   pack); **4c-2** the screen on the store PC (decisions 6 and 8: the page, the English and Tamil names, the PIN seal).
 
 ## Consequences
 
