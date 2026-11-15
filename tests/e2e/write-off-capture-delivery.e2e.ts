@@ -612,11 +612,19 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     const { page, errors, teardown } = await openPage(ho, false);
     try {
       expect(await hidden(page, 'sample')).toBe(false);
-      await fillLoss(page, { evidence: 'photo-17', rupees: '1140', sample: true });
+      // OB-773 (audit D-11): the chips are buttons too, and a sample page switches every button off — only the typed boxes
+      // can be filled, and nothing can be sent from here.
+      await page.fill('#wo-product', 'Toor dal 1kg');
+      await page.fill('#wo-qty', '12');
+      await page.fill('#wo-value', '1140');
+      await page.fill('#wo-evidence', 'photo-17');
       await page.fill('#wo-why', WHY);
-      expect((await clickFor(page, '#ask', /not connected/)).text)
-        .toBe('This is sample data and is not connected to the store computer or head office — nothing was asked and nothing was recorded.');
-      expect((await clickFor(page, '#record', /not connected/)).cls).toContain('tone-error');
+      expect(await page.locator('#loss-types button.chip').first().isDisabled()).toBe(true);
+      // OB-773 (audit D-11): on a sample page the shared chrome switches the action buttons off and says why in words,
+      // so a person cannot even try — and nothing can be asked or recorded from a sample.
+      expect(await page.isDisabled('#ask')).toBe(true);
+      expect(await page.isDisabled('#record')).toBe(true);
+      expect(await page.textContent('#sre-sample-why')).toContain('Its buttons are switched off, because nothing can be saved from a sample.');
       expect(ho.requests.filter((r) => r.method !== 'GET'), 'the sample sent something').toEqual([]);
       expect(errors).toEqual([]);
     } finally {
