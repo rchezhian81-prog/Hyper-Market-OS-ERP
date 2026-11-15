@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 
 /**
- * **D-11 and D-10 (pilot-first audit · OB-739 / OB-773 · P-08 · P-07): a page showing SAMPLE figures offers no real
+ * **D-11 and D-10 (pilot-first audit · OB-795 / OB-773 · P-08 · P-07): a page showing SAMPLE figures offers no real
  * action, and says ONE true thing about where its figures came from.**
  *
  * D-11: when the store pack lacked a page's section, Cash over/short, Day book and Reopen a locked day showed sample

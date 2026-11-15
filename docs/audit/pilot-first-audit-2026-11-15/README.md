@@ -1,6 +1,6 @@
-# Pilot-first audit (OB-739) — 15 November 2026
+# Pilot-first audit (OB-795) — 15 November 2026
 
-_Owner decision OB-739 "A": every page and action the pilot department (packaged groceries, OB-276) needs, as each role,
+_Owner decision OB-795 "A": every page and action the pilot department (packaged groceries, OB-276) needs, as each role,
 on the store PC's own version; bugs and setup gaps listed apart, then fixed in rounds the owner orders. Three read-only
 auditors ran the real code (head office's routes in the in-memory harness, the store box's screen server in real Chromium,
 the demo seed `db/seed/pilot`); scripts and raw output were kept outside the repository. Nothing was changed by the audit._

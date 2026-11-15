@@ -7,7 +7,7 @@ import type { TillShiftCloseRecord } from '../../edge/store-edge/src/till-cash';
 import { SyncOutbox } from '../../packages/sync/src/index';
 
 /**
- * **D-2 (pilot-first audit · OB-739 / OB-773 · M14-FR-02 · P-08 "no silent failure"): a till closed ₹649.50 short and the
+ * **D-2 (pilot-first audit · OB-795 / OB-773 · M14-FR-02 · P-08 "no silent failure"): a till closed ₹649.50 short and the
  * cash office's over/short page said "No over/shorts to account for — every drawer is signed off".**
  *
  * The page booted on an EMPTY worklist and, when its live read of head office failed, kept it — so a read that failed

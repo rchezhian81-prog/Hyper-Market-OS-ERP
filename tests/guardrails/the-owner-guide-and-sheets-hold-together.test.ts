@@ -85,7 +85,7 @@ function commandsIn(text: string): string[] {
   return out.filter((c) => c.startsWith('pnpm run ') || /start-till\.cmd till-pin/.test(c) || (c.startsWith(INSTALLED_STORE_COMPUTER) && !c.includes('<step>')));
 }
 
-/** OB-739: how a store-computer step is typed on the INSTALLED store PC (store-computer-windows-services.md, "Typing a …"). */
+/** OB-795: how a store-computer step is typed on the INSTALLED store PC (store-computer-windows-services.md, "Typing a …"). */
 const INSTALLED_STORE_COMPUTER = '.\\runtime\\node\\node.exe .\\scripts\\store-computer.mjs ';
 
 /** Why a store-computer step would not be understood — the same check, whichever way it is typed. */
@@ -218,7 +218,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
       const installed = step.startsWith('-- ') ? `store-computer.mjs ${step.slice(3)}` : step;
       expect(guide.includes(step) || guide.includes(installed), step).toBe(true);
     }
-    // OB-739: on a developer's copy, or as typed on the installed store PC.
+    // OB-795: on a developer's copy, or as typed on the installed store PC.
     for (const cmd of SETUP_COMMANDS) expect(guide.includes(`pnpm run store-computer -- ${cmd} `) || guide.includes(`${INSTALLED_STORE_COMPUTER}${cmd} `), cmd).toBe(true);
     expect(guide).toContain('F:\\SRE-data');
     expect(guide).toContain('current-release.json');

@@ -9,7 +9,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { prepareTillBox, signInAtLane, operatorHeader } from '../support/till-operator';
 
 /**
- * **D-2 — BLOCKS PILOT (pilot-first audit · OB-739 / OB-773 · M14-FR-02 · P-08): a till closed ₹500 short and the cash
+ * **D-2 — BLOCKS PILOT (pilot-first audit · OB-795 / OB-773 · M14-FR-02 · P-08): a till closed ₹500 short and the cash
  * office's over/short page said "No over/shorts to account for — every drawer is signed off".**
  *
  * On the store PC the office pages often cannot read head office. The page booted on an empty worklist and kept it when

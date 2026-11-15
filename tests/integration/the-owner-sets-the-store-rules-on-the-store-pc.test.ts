@@ -12,7 +12,7 @@ import { readPack } from '../../edge/store-edge/src/store-pack';
 import { managerPayload, reportingPayload, expiryPayload, servicePayload, type ScreenInput } from '../../edge/store-edge/src/screen-data';
 
 /**
- * D-3 (pilot-first audit, OB-739; fix round 1, OB-773) — the store's working rules, set by the owner's `store-rules`
+ * D-3 (pilot-first audit, OB-795; fix round 1, OB-773) — the store's working rules, set by the owner's `store-rules`
  * command on the store PC, through head office's EXISTING route (POST /v1/stores/:storeId/rules) as the owner, on the
  * real API — in memory and on PostgreSQL, with a COLD RESTART before the store PC's till pulls its setup:
  *
