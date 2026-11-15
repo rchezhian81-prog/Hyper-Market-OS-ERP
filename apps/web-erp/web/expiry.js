@@ -529,7 +529,8 @@ el('expired-read').addEventListener('click', () => { void readExpired(); });
 
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
-  el('whoami').textContent = window.expiryData?.userId ?? '';
+  // D-10 (OB-773): who is looking — the page's own payload, else the person the store computer signed in (its menu names them).
+  el('whoami').textContent = window.expiryData?.userId ?? window.sreNavigation?.userId ?? '';
   el('tab-expiry').textContent = t('goingOut');
   el('tab-recall').textContent = t('recalls');
   el('expiry-title').textContent = t('goingOut');
@@ -545,7 +546,9 @@ function paintChrome() {
   el('sample').textContent = t('sampleData');
 
   const nobody = el('nobody');
-  nobody.hidden = window.expiryData?.userId !== undefined;
+  // D-10: "not told who is using this screen" only when the page's payload really names nobody — never over a sample
+  // page (no payload at all: the sample line says why, and the header names whoever the store computer signed in).
+  nobody.hidden = window.expiryData?.userId !== undefined || real === undefined;
   nobody.textContent = nobody.hidden ? '' : t('nobodyNamed');
 
   renderExpiry();

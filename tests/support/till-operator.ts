@@ -219,3 +219,21 @@ export async function signInOnPhone(base: string, deviceCookie: string, staffId:
   if (body.signedIn !== true || session === undefined) throw new Error(`phone sign-in refused: ${body.laneMessage ?? res.status}`);
   return `${deviceCookie}; ${session}`;
 }
+
+/**
+ * Take the opening float on a served till page the way More → Take float records it (`posSession.till.moveCash`), on the
+ * box the page is served from. The till refuses a cash tender until a float is out (pilot audit D-5), so a test that takes
+ * cash through the screen takes the float first. Does nothing when a float is already out. Throws with the box's words if it refuses.
+ */
+export async function takeFloatOnPage(page: import('playwright-core').Page, amountMinor = 200_000): Promise<void> {
+  const outcome = await page.evaluate(async (minor) => {
+    const till = (globalThis as unknown as { posSession: { till: {
+      tillCash(): Promise<{ shiftOpen: boolean } | null>;
+      moveCash(i: { kind: string; amountMinor: number; at: string; movementId: string }): Promise<{ committed: boolean; laneMessage?: string }>;
+    } } }).posSession.till;
+    const now = await till.tillCash();
+    if (now !== null && now.shiftOpen) return { committed: true }; // a float is already out (a box restarted on its own disk)
+    return till.moveCash({ kind: 'float_issue', amountMinor: minor, at: new Date().toISOString(), movementId: `cm-test-float-${Date.now().toString(36)}` });
+  }, amountMinor);
+  if (!outcome.committed) throw new Error(`float refused: ${outcome.laneMessage ?? ''}`);
+}

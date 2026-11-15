@@ -106,6 +106,19 @@ export interface GrnRecordView {
   readonly billCosts?: readonly GrnBillCostView[];
   /** OB-534: how many of the receipt's lines no supplier bill is matched to yet (head office's lines less `billCosts`). */
   readonly unbilledLineCount?: number;
+  /**
+   * OB-773 (pilot audit B-2): the same three quantities, kept apart per unit of measure — head office's lines hold each in
+   * its line's own smallest steps (OB-31: a COUNT for `ea`, grams for kg, ml for L), so 10 pieces and 2.5 kg are never
+   * added into one number. Absent (an older snapshot): the totals above are read as counts of pieces.
+   */
+  readonly quantitiesByUom?: GrnQuantitiesByUom;
+}
+
+/** OB-773: a receipt's quantities per unit of measure, each in that unit's smallest steps (OB-31). */
+export interface GrnQuantitiesByUom {
+  readonly sellable: Readonly<Record<string, number>>;
+  readonly quarantined: Readonly<Record<string, number>>;
+  readonly rejected: Readonly<Record<string, number>>;
 }
 
 /** OB-534 — one receipt line costed from a matched supplier bill (OB-509 · OB-530), shown as-is. */
@@ -463,6 +476,10 @@ export interface PresentedReceipt {
   readonly sellableMinor: number;
   readonly quarantinedMinor: number;
   readonly rejectedMinor: number;
+  /** OB-773 (B-2): each quantity for a person — "10 units", "2.5 kg", "10 units · 2.5 kg" (OB-31), never ÷100. */
+  readonly sellableQuantity: string;
+  readonly quarantinedQuantity: string;
+  readonly rejectedQuantity: string;
   readonly discrepancies: readonly PresentedDiscrepancy[];
   /** Batch 2: the disposed-for-return lines, each with its state in words and its quantity in the line's unit. */
   readonly returnLines: readonly PresentedReturnLine[];
@@ -554,6 +571,55 @@ export function quantityForPerson(quantityMinor: number, uom: string): string {
   const per = minorPerUnitOf(code);
   if (per === 1) return `${quantityMinor} ${code}`;
   return `${(quantityMinor / per).toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${code}`;
+}
+
+/**
+ * OB-773 (pilot audit B-2): what a person reads for one receipt quantity kept per unit of measure. A count of pieces (`ea`)
+ * is the number itself with the word for units ("10 units"; OB-31: an `ea` quantity IS a count — never ÷100); a weight or
+ * volume is in its whole unit with its decimals ("2.5 kg"). Units are listed pieces first, then by code; nothing is "0 units"
+ * unless nothing at all came in.
+ */
+export function receiptQuantityForPerson(byUom: Readonly<Record<string, number>>, unitsWord: string): string {
+  const parts = Object.entries(byUom)
+    .filter(([, minor]) => minor !== 0)
+    .map(([uom, minor]) => ({ code: normaliseUom(uom) ?? uom, minor }))
+    .sort((a, b) => (a.code === b.code ? 0 : a.code === 'ea' ? -1 : b.code === 'ea' ? 1 : a.code < b.code ? -1 : 1))
+    .map(({ code, minor }) => (code === 'ea' ? `${minor.toLocaleString('en-IN')} ${unitsWord}` : quantityForPerson(minor, code)));
+  return parts.length === 0 ? `0 ${unitsWord}` : parts.join(' · ');
+}
+
+/**
+ * OB-773 (pilot audit B-2): head office's raw goods-receipt record → its quantities per unit of measure. Each line's own
+ * `uom` and smallest steps are kept (a line with no unit is a count of pieces, OB-31). "Became sellable" is head office's
+ * own `availableMinor` when every line shares one unit (it includes held stock released later); for a receipt mixing
+ * units, each line's sellable quantity plus what head office has released of it (an approved excess; a held line
+ * accepted by a second person) — the same rule as head office's `releasedUnitsOf`.
+ */
+export function receiptQuantitiesByUom(g: Readonly<Record<string, unknown>>): GrnQuantitiesByUom {
+  const captured = (typeof g['captured'] === 'object' && g['captured'] !== null ? g['captured'] : {}) as Record<string, unknown>;
+  const lines = (Array.isArray(captured['lines']) ? captured['lines'] : []) as Record<string, unknown>[];
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const uomOf = (l: Record<string, unknown>): string => (typeof l['uom'] === 'string' ? normaliseUom(l['uom']) ?? l['uom'] : 'ea');
+  const add = (into: Record<string, number>, uom: string, minor: number) => { into[uom] = (into[uom] ?? 0) + minor; };
+  const sellable: Record<string, number> = {};
+  const quarantined: Record<string, number> = {};
+  const rejected: Record<string, number> = {};
+  const excess = g['excessDecision'] as { decision?: unknown } | undefined;
+  const assembled = g['assembledFrom'] as { onHandByLine?: Record<string, unknown> } | undefined;
+  const dispositions = (Array.isArray(g['dispositions']) ? g['dispositions'] : []) as Record<string, unknown>[];
+  for (const l of lines) {
+    const uom = uomOf(l);
+    const lineId = String(l['lineId'] ?? '');
+    const released = (excess?.decision === 'approved' && assembled === undefined ? num(l['heldMinor']) : 0)
+      + (dispositions.some((d) => d['lineId'] === lineId && d['disposition'] === 'accept')
+        ? Math.max(0, num(l['quarantinedMinor']) - num(assembled?.onHandByLine?.[lineId])) : 0);
+    add(sellable, uom, num(l['sellableMinor']) + released);
+    add(quarantined, uom, num(l['quarantinedMinor']));
+    add(rejected, uom, num(l['rejectedMinor']));
+  }
+  const units = Object.keys(sellable);
+  if (units.length === 1 && typeof g['availableMinor'] === 'number' && Number.isFinite(g['availableMinor'])) sellable[units[0]!] = g['availableMinor'];
+  return { sellable, quarantined, rejected };
 }
 
 export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: GoodsReceiptPorts): GoodsReceiptSession {
@@ -765,6 +831,10 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           receivedBy: g.receivedBy, receivedAt: g.receivedAt, needsApproval: g.requiresApproval,
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,
+          // OB-773 (B-2): per unit of measure when head office's lines are known; otherwise the totals are counts of pieces.
+          sellableQuantity: receiptQuantityForPerson(g.quantitiesByUom?.sellable ?? { ea: g.sellableMinor }, t('unitsWord')),
+          quarantinedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.quarantined ?? { ea: g.quarantinedMinor }, t('unitsWord')),
+          rejectedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.rejected ?? { ea: g.rejectedMinor }, t('unitsWord')),
           discrepancies,
           returnLines: (g.returnLines ?? []).map((l) => presentReturnLine(lang, g.grnId, l)),
           costNotKnown: (g.costNotKnown ?? []).map((c) => ({ productId: c.productId, label: `${c.productId} — ${t('costNotKnownHeading')} (${t(c.because === 'no_issued_order' ? 'costNotKnownNoOrder' : 'costNotKnownNotOnOrder')})` })),

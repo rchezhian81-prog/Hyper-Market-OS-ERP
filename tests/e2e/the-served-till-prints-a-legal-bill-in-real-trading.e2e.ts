@@ -10,7 +10,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { writeSignedPack } from '../../edge/store-edge/src/signed-pack-file';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
-import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, pinOf, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **OB-271 — REAL TRADING on the served till, in a real Chromium against a real store box: the bill is the legal GST tax
@@ -124,6 +124,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { page, edge, requests };
   };
   const shows = (page: Page, panelId: string, titleId: string, startsWith: string): Promise<unknown> => page.waitForFunction(

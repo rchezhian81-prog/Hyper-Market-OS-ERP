@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2399,
+  "testFiles": 2407,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -534,7 +534,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 22,
-        "integration": 25,
+        "integration": 26,
         "realDb": 14,
         "browser": 12,
         "connected": 5,
@@ -579,6 +579,7 @@
           "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/paying-one-bill-checks-who-matched-that-bill.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-orders.test.ts",
           "tests/integration/purchase-tenant-isolation.test.ts",
@@ -1349,10 +1350,10 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
+        "unit": 21,
         "integration": 20,
         "realDb": 8,
-        "browser": 8,
+        "browser": 9,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1374,6 +1375,7 @@
           "tests/unit/lane-server-till-cash.test.ts",
           "tests/unit/m14-fr-04-the-closed-day-evidence-pack.test.ts",
           "tests/unit/m14-fr-04-the-day-book-offers-the-evidence-pack.test.ts",
+          "tests/unit/ob773-a-failed-over-short-read-is-not-known.test.ts",
           "tests/unit/over-short-review.test.ts",
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
@@ -1416,6 +1418,7 @@
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
+          "tests/e2e/ob773-the-cash-office-never-says-signed-off-when-it-could-not-read.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",

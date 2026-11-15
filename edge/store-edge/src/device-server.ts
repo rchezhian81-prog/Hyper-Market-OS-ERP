@@ -535,7 +535,7 @@ export function startDeviceServer(input: {
       // OB-180: the sign-in this page's records are stamped under — its reference and key, and the box's clock now.
       const stamping = input.operators!.stampFor(operatorToken, auth.deviceId);
       const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now(), lockTo: signInLockOf(screen, PHONE_SIGN_IN_ROUTE) }));
-      send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
+      send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId, snap.pack), {
         catalogueFreshness: catalogueFreshness(snap),
         // OB-606/607 (R16-A): the shop's zone from this box's SIGNED store pack (else the shop default), as the screens server
         // gives every page — the handheld shows "today" and every time by it, never by its phone's own zone; no network call.

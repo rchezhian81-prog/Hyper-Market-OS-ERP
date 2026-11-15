@@ -136,7 +136,7 @@ import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
 import {
   readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS,
-  type TillCashRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
+  type TillCashRecord, type TillShiftCloseRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
@@ -730,11 +730,17 @@ export async function startEdge(
     try { return [JSON.parse(r.record) as unknown]; } catch { return []; }
   });
   let returnsNow: readonly unknown[] = parsedReturns(await readLog(returnsLog.path));
+  // D-2 (OB-773 · P-08): the shift closes on this box's own till-cash log, re-read with the sales — so the cash office's
+  // over/short desk can show a drawer that closed short even when head office's worklist cannot be read.
+  const tillClosesOf = (all: Awaited<ReturnType<typeof readLog>>): TillShiftCloseRecord[] => parsedReturns(all)
+    .flatMap((raw) => { const read = readTillCashRecord(raw); return read !== undefined && read.kind === 'close' ? [read] : []; });
+  let tillClosesNow: readonly TillShiftCloseRecord[] = tillClosesOf(await readLog(tillCashLog.path));
   const reread = async (): Promise<void> => {
     const all = await readLog(log.path);
     recordsNow = readSales(all.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
     recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
     returnsNow = parsedReturns(await readLog(returnsLog.path));
+    tillClosesNow = tillClosesOf(await readLog(tillCashLog.path));
   };
 
   const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
@@ -2249,6 +2255,7 @@ export async function startEdge(
       pack,
       sales: recordsNow.sales,
       returns: returnsNow,
+      tillCloses: tillClosesNow, // D-2: the box's own shift closes, for the over/short desk
       unreadableRecords: recordsNow.unreadable,
       outbox,
       now,
