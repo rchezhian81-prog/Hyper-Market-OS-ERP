@@ -24,6 +24,8 @@ export const AGENT_PURPOSE: Readonly<Record<AgentId, AgentPurpose>> = {
   A08: 'data_quality',
   A09: 'marketing_segment',
   A10: 'workforce',
+  A12: 'supplier_bill_review',
+  A14: 'cash_variance_review',
 };
 
 // An Indian mobile or landline-style 10-digit number (optionally +91 / 0), not part of a longer digit run such as a

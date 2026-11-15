@@ -12,3 +12,4 @@ export * from './blanket-po'; // M06-FR-02 (OB-288 P3): standing agreements and 
 export * from './segregation'; // M06-FR-02 · §28 (OB-288 P3): one person never completes two steps of one purchase
 export * from './buying-scope'; // M06-FR-04 · OB-289/OB-290 (OB-288 P3): central/local procurement per order
 export * from './rebate-claims'; // D03-FR-03 · OB-404: the supplier rebate claim — raised, approved by Finance, sent, matched, overdue
+export * from './bill-mismatch-explainer'; // CR-01 OI-13-A12 (OB-763 B): why a supplier bill does not match, in plain words
