@@ -35,7 +35,9 @@ export interface SliceManifest {
   /** The store whose tills the prices are for. */
   readonly storeId: string;
   readonly currency?: string;
-  readonly department: SliceDepartment;
+  /** ONE department (OB-241) — or, OB-800 (the whole store), `departments`: exactly one of the two. */
+  readonly department?: SliceDepartment;
+  readonly departments?: readonly SliceDepartment[];
   readonly files: Readonly<Partial<Record<SliceFile, { readonly seal: SealedExtract; readonly declaredRows?: number }>>>;
 }
 
@@ -78,11 +80,19 @@ export function readSliceManifest(raw: unknown): { readonly manifest?: SliceMani
   if (!isObj(raw)) return { problems: ['slice.json is not an object'] };
   for (const key of ['loadId', 'tenantId', 'operator', 'storeId'] as const) if (!isStr(raw[key])) problems.push(`slice.json: "${key}" is required`);
   if (isStr(raw['loadId']) && !/^[A-Za-z0-9._-]{1,80}$/.test(raw['loadId'])) problems.push('slice.json: "loadId" may hold only letters, digits, dot, dash and underscore');
-  const d = raw['department'];
-  if (!isObj(d) || !isStr(d['categoryId']) || !isStr(d['name'])) problems.push('slice.json: "department" must be { categoryId, name, regulated? } — the ONE pilot department (OB-241)');
-  else if (d['regulated'] !== undefined && !(Array.isArray(d['regulated']) && d['regulated'].every((r) => (REGULATED as readonly string[]).includes(r as string)))) {
-    problems.push(`slice.json: "department.regulated" must be a list of ${REGULATED.join(', ')}`);
-  }
+  const oneDept = (d: unknown, where: string): void => {
+    if (!isObj(d) || !isStr(d['categoryId']) || !isStr(d['name'])) problems.push(`slice.json: "${where}" must be { categoryId, name, regulated? }`);
+    else if (d['regulated'] !== undefined && !(Array.isArray(d['regulated']) && d['regulated'].every((r) => (REGULATED as readonly string[]).includes(r as string)))) {
+      problems.push(`slice.json: "${where}.regulated" must be a list of ${REGULATED.join(', ')}`);
+    }
+  };
+  // OB-241: one department ("department") — or, OB-800, the whole store's ("departments"); exactly one of the two.
+  if (raw['department'] !== undefined && raw['departments'] !== undefined) problems.push('slice.json: give "department" (one) or "departments" (several), not both');
+  else if (raw['departments'] !== undefined) {
+    if (!Array.isArray(raw['departments']) || raw['departments'].length === 0) problems.push('slice.json: "departments" must be a list of { categoryId, name, regulated? } — at least one');
+    else raw['departments'].forEach((d, i) => oneDept(d, `departments[${i}]`));
+  } else if (raw['department'] === undefined) problems.push('slice.json: "department" must be { categoryId, name, regulated? } — the ONE pilot department (OB-241) — or "departments", a list of them (OB-800: the whole store)');
+  else oneDept(raw['department'], 'department');
   const files = raw['files'];
   if (!isObj(files)) problems.push('slice.json: "files" must map each file name to { seal, declaredRows? }');
   else {
@@ -123,7 +133,9 @@ export async function runSliceCommand(input: SliceCommandInput): Promise<SliceCo
     say(`REFUSED (demo_tenant) — tenant "${m.tenantId}" is a demo tenant. Real data never goes into it (pilot gate G4). Use the real tenant the bootstrap created on the store computer.`);
     return done(1, 'target');
   }
-  say(`Slice "${m.loadId}" — department ${m.department.categoryId} (${m.department.name}) into tenant ${m.tenantId}, prices for store ${m.storeId}.`);
+  say(m.departments === undefined
+    ? `Slice "${m.loadId}" — department ${m.department!.categoryId} (${m.department!.name}) into tenant ${m.tenantId}, prices for store ${m.storeId}.`
+    : `Slice "${m.loadId}" — ${m.departments.length} department(s) (${m.departments.map((d) => d.name).join(', ')}) into tenant ${m.tenantId}, prices for store ${m.storeId}.`);
 
   // ── accept: a named person, in their own session, accepts the list as the cloud holds it ─────────────
   if (input.mode === 'accept') {
@@ -167,7 +179,7 @@ export async function runSliceCommand(input: SliceCommandInput): Promise<SliceCo
   if (broken) { say('REFUSED — nothing was staged. Re-export and re-seal, or find out what changed the file.'); return done(1, 'seal'); }
 
   // ── staging: every row on its own ───────────────────────────────────────────────────────────────
-  const staged = stageSlice({ department: m.department, files: input.files, hasher });
+  const staged = stageSlice({ ...(m.departments === undefined ? { department: m.department! } : { departments: m.departments }), files: input.files, hasher });
   const exceptionsCsv = sliceExceptionsCsv(staged);
   if (staged.headerProblems.length > 0) {
     say('REFUSED — the files do not follow the published templates (download them with --templates):');
@@ -196,7 +208,9 @@ export async function runSliceCommand(input: SliceCommandInput): Promise<SliceCo
   if (input.mode === 'stage') {
     const res = await client.request({
       method: 'POST', path: loadPath, userId: m.operator, tenantId: m.tenantId, idempotencyKey: `${m.loadId}-stage-${staged.digest}`,
-      body: { sliceDigest: staged.digest, department: { categoryId: m.department.categoryId, name: m.department.name }, counts: staged.counts, exceptions: staged.exceptions },
+      // The load record names a department only for a one-department slice (the evening check reads it, OB-263); a
+      // whole-store load (OB-800) names none — its departments are bound into the slice digest.
+      body: { sliceDigest: staged.digest, ...(m.department === undefined ? {} : { department: { categoryId: m.department.categoryId, name: m.department.name } }), counts: staged.counts, exceptions: staged.exceptions },
     });
     if (res.status !== 200 && res.status !== 201) {
       const why = (res.body as { error?: { whatHappened?: string } } | undefined)?.error?.whatHappened ?? `HTTP ${res.status}`;

@@ -117,6 +117,8 @@ describe('the store computer hands the desk its own record of drawers that close
       known: true, value: 1,
       note: 'lane-1 short ₹649.50 — closed today on this store computer; signing off is on the Cash over/short page',
       noteTa: 'lane-1 குறைவு ₹649.50 — இன்று இந்தக் கடைக் கணினியில் மூடப்பட்டது; கையொப்பம் கூடுதல்/குறைவு பக்கத்தில்',
+      // D-009: each drawer by its shift, so Today can leave out one head office has signed off.
+      drawers: [{ shiftId: 'sh-1', words: 'lane-1 short ₹649.50', wordsTa: 'lane-1 குறைவு ₹649.50' }],
     });
     expect(todayFigures(input(withCashOffice(), []))['drawersOverShortToday']).toEqual({ known: true, value: 0 });
     expect(todayFigures(input(withCashOffice()))['drawersOverShortToday']).toBeUndefined();

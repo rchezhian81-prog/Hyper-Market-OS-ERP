@@ -94,9 +94,15 @@ function signalNode(s) {
   facts.className = 'facts';
   if (s.kind === 'negative_stock' && s.productId !== null) {
     // U2 · G16: the product's and the place's NAME where the ids were shown (the id itself when no name is known)
-    const where = document.createElement('span'); where.textContent = `${nameOf('product', s.productId)} @ ${nameOf('place', s.locationId)}`;
+    // D-016: head office's name for the item when it said it, else the office's directory name, else the id.
+    const where = document.createElement('span'); where.className = 'where';
+    where.textContent = typeof s.productName === 'string' && s.productName !== ''
+      ? `${s.productName} @ ${nameOf('place', s.locationId)}`
+      : `${nameOf('product', s.productId)} @ ${nameOf('place', s.locationId)}`;
     facts.append(where);
-    if (s.amountMinor !== null) { const qty = document.createElement('span'); qty.textContent = `${(s.amountMinor / 100).toLocaleString('en-IN')}`; facts.append(qty); }
+    // D-016 (OB-31): the quantity in the shop's words from the tested session ("−4 pieces", "−1.25 kg") — never ÷100.
+    const said = typeof s.quantity === 'string' && s.quantity !== '' ? s.quantity : (s.amountMinor !== null ? s.amountMinor.toLocaleString('en-IN') : '');
+    if (said !== '') { const qty = document.createElement('span'); qty.className = 'qty'; qty.textContent = said; facts.append(qty); }
     if (s.detail) { const act = document.createElement('span'); act.textContent = s.detail; facts.append(act); }
   } else if ((s.kind === 'uncosted_stock' || s.kind === 'aged_stock') && s.amountMinor !== null) {
     const val = document.createElement('span'); val.textContent = money(s.amountMinor, s.currency ?? 'INR'); facts.append(val);

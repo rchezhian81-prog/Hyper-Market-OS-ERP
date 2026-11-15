@@ -44,6 +44,8 @@ export function billTaxInvoice(
     readonly b2cDynamicQr?: B2cDynamicQrSetting;
     /** W3 · M36-FR-02: the shop's own name from the SIGNED pack (`snapshot.branding.productName`) — printed above the legal name. */
     readonly brandName?: string;
+    /** D-006: the cashier's display name from the people register — printed instead of the login id; absent → the id. */
+    readonly cashierName?: string;
   } = {},
 ): BillTaxInvoice {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
@@ -61,6 +63,7 @@ export function billTaxInvoice(
     ...(options.template?.footer === undefined ? {} : { footer: options.template.footer }),
     ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
     ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
+    ...(options.cashierName === undefined ? {} : { cashierName: options.cashierName }),
     b2cQr: qr,
   });
   const missing = invoiceRenderProblems(rows, bill.taxInvoice);
@@ -104,6 +107,8 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
    * header line (unless the published template already starts with it). Read from the pack: no network, nothing invented.
    */
   readonly brandName?: string;
+  /** D-006: the cashier's display name from the people register — printed instead of the login id; absent → the id. */
+  readonly cashierName?: string;
 } = {}): BillReceipt {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   let format: PaperFormat = DEFAULT_PAPER_FORMAT;
@@ -114,6 +119,7 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
     const doc = buildReceipt({
       number: bill.number, saleId: bill.saleId, tradingDay: bill.tradingDay, committedAt: bill.committedAt,
       laneId: bill.laneId, cashierId: bill.cashierId, currency: bill.currency,
+      ...(extras.cashierName === undefined ? {} : { cashierName: extras.cashierName }),
       lines: bill.lines, taxBands: bill.taxBands,
       netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
       tenders: bill.tenders, pricesIncludeTax: true,

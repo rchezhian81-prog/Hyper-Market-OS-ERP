@@ -74,6 +74,10 @@ const ROUTES: Record<string, unknown> = {
   '/v1/finance/gst/controls': { controls: { reverseCharge: { value: false }, einvoice30DayGuard: { value: false }, timeBarWarningDays: { value: 180, decision: 'OB-191' } }, said: { reverseCharge: 'off', einvoice30DayGuard: 'off', timeBarWarningDays: '180' } },
   '/v1/finance/e-invoice/reporting-guard': { switchedOn: false, said: 'off' },
   // Round A (screen gap audit): Today also counts what waits for the person at head office and head office's open orders.
+  // D-009 (fix batch 2): Today reads head office's over/short list (`GET /v1/shifts/over-short`) to leave out signed-off
+  // drawers; D-037: goods receipt names items from the store computer's own list (`/directory/products`). Nothing here.
+  '/v1/shifts/over-short': { overShort: [] },
+  '/directory/products': { known: true, version: 1, receivedAt: AT, count: 0, products: [] },
   '/v1/approvals/requests': { waitingForMe: [], mine: [], routedToOwnerAboveYourLimit: 0, asAt: AT },
   '/v1/purchase/orders': { orders: [], count: 0, awaitingApprovalCount: 0, storeNotNamedCount: 0 },
   '/v1/finance/filing-calendar': { nearBarNotJudged: false, entries: [{ type: 'GSTR3B', period: '082026', dueDate: '2026-09-20', timeBarDate: '2029-11-30', warning: 'overdue', daysOverdue: 28 }] },

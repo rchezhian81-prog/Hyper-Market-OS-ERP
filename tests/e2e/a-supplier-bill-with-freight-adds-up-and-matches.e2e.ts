@@ -154,7 +154,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a supplier
       await typeLine(2, 'DAL', '4', '100', '400');
       // Without the freight the printed total does not add up — head office refuses, in its words; nothing kept.
       await page.click('#type-save');
-      await says(page, 'type-status', /^Head office refused: The lines add up to 90000 and the invoice says 94550\./);
+      await says(page, 'type-status', /^Head office refused: The lines add up to ₹900\.00 and the invoice says ₹945\.50\./);
       await page.fill('#type-freight', 'twelve');
       await page.click('#type-save');
       await says(page, 'type-status', /^Freight, duty or other charges is not an amount of money/);

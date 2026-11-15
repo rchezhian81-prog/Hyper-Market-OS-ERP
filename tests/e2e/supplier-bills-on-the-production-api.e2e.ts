@@ -171,7 +171,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       await row.locator('.t-unitPrice').fill('50');
       await row.locator('.t-amount').fill('500');
       await s.page.click('#type-save');
-      await says(s.page, 'type-status', /^Head office refused: The lines add up to 50000 and the invoice says 60000\./);
+      await says(s.page, 'type-status', /^Head office refused: The lines add up to ₹500\.00 and the invoice says ₹600\.00\./);
       await s.page.fill('#type-total', '500');
       await s.page.click('#type-save');
       await says(s.page, 'type-status', /^Saved — the bill is on head office's register as sup-k-INV-77\./);

@@ -738,14 +738,20 @@ Every cashier signs in at the till with their own staff ID and their own six-dig
 classes and prices (OB-241); the department is **packaged groceries, barcode only** (OB-276): rice, pulses, flour, oil,
 spices, packed snacks and beverages. Loose or weighed goods stay on the old ERP.
 
+> **OB-800 (your decision, 15 Nov 2026): there is no pilot department any more.** The **whole store** — every
+> department — is loaded from Bpal and run alongside it. The import page reads every item; each goes into its department
+> (worked out from its HSN code), and loose goods are marked "sold loose" on the page. What to export from Bpal, and the
+> order of the steps, are on the one-page sheet `docs\runbooks\bpal-full-load-export-sheet.md` — print it. Where this
+> part still says "the department", read "every department".
+
 When the GO is written:
 1. **From the old ERP (Bpal) — the import page (OB-704: screens, not commands; every gap fixed here, never carried).**
    - **Open it:** the first time, in PowerShell in the live release folder, type `.\runtime\node\node.exe .\scripts\store-computer.mjs import`.
      It opens the page in the browser and puts **SRE Import** on the desktop; next time just double-click that. Keep its
      black window open while you work. The page is on this PC only: nobody else on the network can open it.
    - **Sign in** with your staff ID and your own till PIN. Every fix is saved in your name.
-   - **Read the files:** export from Bpal to Excel (.xlsx), from its report screens only — the **EANCODE** report, the
-     **HSN** report and the **Product wise Detail Report** for the last 12 months. Bpal exports that one **three months
+   - **Read the files:** export from Bpal to Excel (.xlsx), from its report screens only, **for every department** — the
+     **EANCODE** report, the **HSN** report and the **Product wise Detail Report** for the last 12 months. Bpal exports that one **three months
      at a time**, so a year is 4 or 5 files (in Bpal's date boxes the month comes first: `11/01/2025`–`01/31/2026`,
      `02/01/2026`–`04/30/2026`, `05/01/2026`–`07/31/2026`, `08/01/2026`–`10/31/2026`, `11/01/2026`–today). Any report may
      come as several files. Choose **all the files together, in the one box** (hold Ctrl and click each) and press **Read
@@ -754,11 +760,19 @@ When the GO is written:
      on another PC and checked (MG-02); after that it remembers it (a **Change** link is there for a newer check). The files
      are kept on this PC (`<data folder>\imports`) and never sent to the internet.
    - **Fix the gaps**, best sellers first. The tiles count the items waiting on each kind of fix; open an item to fix it:
-     - **Barcode** — scan or type the pack's barcode (a wrong check digit is refused).
+     - **Barcode or sold loose** — scan or type the pack's barcode (a wrong check digit is refused). If the item has no
+       pack barcode because it is sold **loose** (fruit and vegetables, loose rice, sugar, dal), choose **Or: sold
+       loose?** — **By weight (kg)** or **By count** — type the scale's PLU code if it has one, and press **Save: sold
+       loose**. The page shows a hint (for example "a part quantity") but never decides this for you.
      - **GST rate (Finance)** — only the accountant or you: the HSN and the GST slab (OB-697 still asks for Bpal to be
        corrected too, so today's bills are right).
      - **Price** — MRP, selling price and cost (a selling price above MRP is refused).
-     - **Leave it out of this department** — for an item that is not packaged groceries (for example loose goods).
+     - **Label facts (needed first)** — every department except packaged groceries: the facts its items need (for
+       food: allergens and country of origin; for packed goods: net quantity, packer, consumer care and country of
+       origin) are typed **before** the item can load.
+     - **Set up on the Products page** — tobacco, medicines and gold/silver are never loaded from Bpal (their legal
+       facts are not in it).
+     - **Leave it out of the load** — for an item the shop no longer sells.
    - **Label facts are NOT a gap any more (OB-738, your decision of 14 Nov 2026, "sell at the till only").** An item
      can be loaded before staff have read its five label facts off the pack: allergens (or `none`), country of origin,
      net quantity, packer, consumer care (M03-FR-03). The tile **Facts still to read (not a blocker)** counts them; it
@@ -770,7 +784,8 @@ When the GO is written:
      - For an item **already loaded**, type its facts on this same page: they go to the item on sale straight away (a
        new version, in your name, with the reason). When the fifth fact is in, the item leaves the list.
      - This is allowed only for packaged groceries loaded from the old system. Every other department, and any product
-       made on the Products page, still needs all five facts before it can be sold.
+       made on the Products page, still needs its facts before it can be sold (OB-800 asks you whether to change that —
+       until you answer, it stays this way).
    - **Load**, by two people: you press **Prepare a load** (your PIN; the files are sealed and every row checked); the
      store manager signs in on the same page, reads it and presses **Accept** (his PIN — you cannot accept your own);
      you press **Load** (your PIN). Items with no barcode, GST or price gap are loaded, with their facts or without; the

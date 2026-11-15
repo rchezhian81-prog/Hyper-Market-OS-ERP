@@ -64,21 +64,31 @@ const seconds = (s: number): string => {
   return a >= 60 ? `${Math.floor(a / 60)} min ${a % 60} s` : `${a} s`;
 };
 
-export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null, zone?: BoxZoneCheck | null, hold?: BoxActivationHold | null): BoxClockView {
+/** An ISO-8601 moment as the box writes it ("2026-11-15T17:17:11.002Z") — said in the shop's own time words instead. */
+const ISO_MOMENT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})/g;
+
+/**
+ * `when` (D-028): how the page says a moment in the shop's time words (the chrome's `sreShopDay.dateTimeOf`). Absent, or when
+ * it cannot say one, the moment stays as written — never dropped.
+ */
+export function boxClockView(lang: Lang, clock: BoxClockCheck | undefined | null, bills: readonly BoxClockFlaggedBill[] | undefined | null, zone?: BoxZoneCheck | null, hold?: BoxActivationHold | null, when?: (iso: string) => string): BoxClockView {
   const w = WORDS[lang];
+  const shop = (text: string): string => (when === undefined ? text : text.replace(ISO_MOMENT, (iso) => { const said = when(iso); return typeof said === 'string' && said.trim() !== '' ? said : iso; }));
   const list = Array.isArray(bills) ? bills : [];
   const flagMinutes = Math.round((clock?.thresholds?.flagSeconds ?? 300) / 60);
   const rows = list.map((b) => ({
     saleId: b.saleId,
-    label: `${b.number ?? b.saleId}${b.laneId === undefined ? '' : ` · ${w.lane} ${b.laneId}`} · ${b.committedAt} · ${w.out} ${seconds(b.offsetSeconds)}`,
+    label: `${b.number ?? b.saleId}${b.laneId === undefined ? '' : ` · ${w.lane} ${b.laneId}`} · ${shop(b.committedAt)} · ${w.out} ${seconds(b.offsetSeconds)}`,
   }));
   const attention = clock !== undefined && clock !== null && clock.needsAttention === true;
   const zoneAttention = zone !== undefined && zone !== null && zone.needsAttention === true;
   const held = hold !== undefined && hold !== null && hold.held === true;
   const show = attention || rows.length > 0 || zoneAttention || held;
   const tone: BoxClockView['tone'] = clock?.verdict === 'flag_bills' || held || (rows.length > 0 && clock?.verdict !== 'in_step') ? 'error' : attention || zoneAttention ? 'warn' : rows.length > 0 ? 'warn' : 'ok';
-  const words = clock === undefined || clock === null ? '' : lang === 'ta' ? clock.staffMessageTa : clock.staffMessage;
-  const zoneWords = !zoneAttention ? '' : lang === 'ta' ? zone.staffMessageTa : zone.staffMessage;
-  const holdWords = !held ? '' : lang === 'ta' ? hold.staffMessageTa : hold.staffMessage;
+  // D-028: the clock line is said only when the clock is OUT or NOT KNOWN — a clock that agrees with head office says nothing
+  // (control by exception, P-03), even while the strip is up for the time zone or a hold.
+  const words = clock === undefined || clock === null || clock.verdict === 'in_step' ? '' : shop(lang === 'ta' ? clock.staffMessageTa : clock.staffMessage);
+  const zoneWords = !zoneAttention ? '' : shop(lang === 'ta' ? zone.staffMessageTa : zone.staffMessage);
+  const holdWords = !held ? '' : shop(lang === 'ta' ? hold.staffMessageTa : hold.staffMessage);
   return { show, tone, icon: tone === 'error' ? 'circle-alert' : 'clock', words, zoneWords, holdWords, billsHeading: w.billsHeading(flagMinutes), bills: rows };
 }

@@ -194,6 +194,8 @@ export interface PresentedOverShort {
   readonly amount: string;
   readonly varianceMinor: number;
   readonly reasonCode: string | null;
+  /** D-015: the cashier's reason in plain words ("Wrong change given"); null when none was given. */
+  readonly reasonWords: string | null;
   /** True when the logged-in reviewer counted this drawer — the screen flags it and refuses the sign-off. */
   readonly isOwnDrawer: boolean;
   /** Every open over/short needs attention (P-03) — a degraded tone with an icon and word. */
@@ -250,6 +252,28 @@ const rupees = (minor: number, signed = false): string => {
   return `${sign}₹${body}`;
 };
 
+/**
+ * D-015: the reasons a cashier picks at the till's close (`apps/pos/web/app.js` CASH_REASONS — the same codes and words), in
+ * plain words for the cash office. A code this list does not know is said with its underscores as spaces, never as a bare code.
+ */
+export const CASHIER_REASON_WORDS: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
+  wrong_change: { en: 'Wrong change given', ta: 'தவறான சில்லறை கொடுக்கப்பட்டது' },
+  gave_wrong_change: { en: 'Wrong change given', ta: 'தவறான சில்லறை கொடுக்கப்பட்டது' },
+  miscount: { en: 'Miscounted', ta: 'தவறாக எண்ணப்பட்டது' },
+  float_error: { en: 'The float was wrong', ta: 'ஆரம்பப் பணம் தவறு' },
+  unrecorded_movement: { en: 'Cash moved without recording', ta: 'பதிவு செய்யாமல் பணம் நகர்த்தப்பட்டது' },
+  unexplained: { en: 'Cannot explain', ta: 'விளக்க முடியவில்லை' },
+});
+
+/** D-015: a cashier's reason code → plain words in the reader's language (null when no reason was given). */
+export function cashierReasonWords(lang: Lang, code: string | null): string | null {
+  if (code === null || code.trim() === '') return null;
+  const known = CASHIER_REASON_WORDS[code];
+  if (known !== undefined) return known[lang];
+  const plain = code.replace(/_/g, ' ').trim();
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
+}
+
 const isDisposition = (v: string): v is OverShortDisposition => (OVER_SHORT_DISPOSITIONS as readonly string[]).includes(v);
 
 export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOfficePorts): CashOfficeSession {
@@ -269,6 +293,7 @@ export function createCashOfficeSession(config: CashOfficeConfig, ports: CashOff
       amount: rupees(Math.abs(r.varianceMinor)), // magnitude only; the direction word carries the sign
       varianceMinor: r.varianceMinor,
       reasonCode: r.reasonCode,
+      reasonWords: cashierReasonWords(lang, r.reasonCode),
       isOwnDrawer,
       // Every open over/short is work — a degraded tone that asks for a glance (P-03). Colour is never the
       // only signal: an icon and the direction word ride with it. The worklist ordering puts the biggest

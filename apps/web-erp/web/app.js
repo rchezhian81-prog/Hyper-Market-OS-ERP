@@ -67,7 +67,7 @@ const WORDS = {
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
     // Everything this screen saved — decisions, deliveries, counts — and where each has got to (SP-2a/2b).
     savedHere: 'Saved on this screen', savedLead: 'Decisions, deliveries and counts this screen saved, and where each has got to. Nothing here is lost on a reload.',
-    approvedWord: 'Approved', rejectedWord: 'Rejected', heldHere: 'saved on this screen, not yet with the store computer',
+    approvedWord: 'Approved', rejectedWord: 'Rejected', heldHere: 'saved, going to head office when the line is up',
     linesWord: 'lines', noOrderWord: 'no purchase order',
     read: 'Please read this', done: 'Done',
     deliveryNote: 'Delivery note number', poNumber: 'Purchase order number (leave empty if there is none)',
@@ -154,7 +154,7 @@ const WORDS = {
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
     decided: 'முடிவு பதிவாகியது', requestedBy: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
     savedHere: 'இந்தத் திரையில் சேமிக்கப்பட்டவை', savedLead: 'இந்தத் திரை சேமித்த முடிவுகள், டெலிவரிகள், எண்ணிக்கைகள் — ஒவ்வொன்றும் எங்கே உள்ளது. மறுபடியும் ஏற்றினாலும் இங்கு எதுவும் இழக்கப்படாது.',
-    approvedWord: 'ஒப்புதல் அளிக்கப்பட்டது', rejectedWord: 'மறுக்கப்பட்டது', heldHere: 'இந்தத் திரையில் சேமிக்கப்பட்டது, கடை கணினிக்கு இன்னும் செல்லவில்லை',
+    approvedWord: 'ஒப்புதல் அளிக்கப்பட்டது', rejectedWord: 'மறுக்கப்பட்டது', heldHere: 'சேமிக்கப்பட்டது, இணைப்பு வந்ததும் தலைமை அலுவலகத்திற்குச் செல்லும்',
     linesWord: 'வரிகள்', noOrderWord: 'கொள்முதல் ஆர்டர் இல்லை',
     read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     deliveryNote: 'டெலிவரி நோட்டு எண்', poNumber: 'கொள்முதல் ஆர்டர் எண் (இல்லையென்றால் காலியாக விடவும்)',
@@ -280,7 +280,8 @@ const REFUSAL_WORDS = {
  * are the owner's words: saved here · retrying · with the store computer · posted · refused.
  */
 const STATE_WORDS = {
-  saved_here: { en: 'Saved on this screen — not yet with the store computer', ta: 'இந்தத் திரையில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
+  // D-030: on the store PC this screen IS the store computer — what is still to happen is the trip to head office.
+  saved_here: { en: 'Saved. It goes to head office when the line is up.', ta: 'சேமிக்கப்பட்டது. இணைப்பு வந்ததும் தலைமை அலுவலகத்திற்குச் செல்லும்.' },
   retrying: { en: 'Saved on this screen — the store computer could not be reached, trying again', ta: 'இந்தத் திரையில் சேமிக்கப்பட்டது — கடை கணினியை அடைய முடியவில்லை, மீண்டும் முயற்சிக்கிறது' },
   handed_to_box: { en: 'With the store computer — it will send this to head office', ta: 'கடை கணினியிடம் உள்ளது — அது இதை தலைமை அலுவலகத்திற்கு அனுப்பும்' },
   posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவாகியது' },
@@ -809,7 +810,10 @@ function renderHome() {
     counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'), claimDisputes: figureOf('supplierClaimDisputes'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
     // D-2: only on a store computer that keeps a till-cash log.
-    overShort: todayFigures() && todayFigures().drawersOverShortToday ? figureOf('drawersOverShortToday') : null,
+    // D-009: a drawer head office says is signed off on Cash over/short is left out (the box's figure stands when it cannot tell).
+    overShort: todayFigures() && todayFigures().drawersOverShortToday
+      ? (window.todayLive && typeof window.todayLive.overShort === 'function' ? window.todayLive.overShort(figureOf('drawersOverShortToday'), live) : figureOf('drawersOverShortToday'))
+      : null,
   };
   const overShortToday = today.overShort && today.overShort.known ? amountOf(today.overShort) : 0;
   el('tiles').replaceChildren(
@@ -1509,7 +1513,9 @@ el('do-close').addEventListener('click', () => {
  */
 function paintBoxClock() {
   const md = window.managerData;
-  const v = typeof window.boxClockView === 'function' ? window.boxClockView(lang, md && md.clock, md && md.clockFlaggedBills, md && md.timeZone, md && md.activationHold) : null;
+  // D-028: moments in the shop's own time words (OB-607), never a computer timestamp.
+  const shopWords = (iso) => window.sreShopDay?.dateTimeOf?.(iso) ?? '';
+  const v = typeof window.boxClockView === 'function' ? window.boxClockView(lang, md && md.clock, md && md.clockFlaggedBills, md && md.timeZone, md && md.activationHold, shopWords) : null;
   const strip = el('box-clock');
   if (v === null || !v.show) { strip.hidden = true; return; }
   strip.hidden = false;

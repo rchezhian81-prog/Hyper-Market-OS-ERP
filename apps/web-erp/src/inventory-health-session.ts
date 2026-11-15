@@ -20,6 +20,7 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { Ratio } from '../../../packages/stock/src/metrics';
+import { quantityInWords } from './quantity-words';
 
 // ── what the screen was last told (the five inventory reads, folded into one snapshot) ──────────────────────
 
@@ -27,7 +28,7 @@ import type { Ratio } from '../../../packages/stock/src/metrics';
 export interface AvailabilityRowView {
   readonly productId: string;
   readonly locationId: string;
-  /** On-hand quantity in minor units (×100). */
+  /** On-hand quantity in its unit's smallest steps (OB-31: a count for `ea`, grams for kg). */
   readonly onHandMinor: number;
 }
 
@@ -39,6 +40,10 @@ export interface NegativeStockView {
   /** The server's plain-English explanation and suggested owner action — data, shown as-is. */
   readonly detail: string;
   readonly ownerAction: string;
+  /** D-016: head office's name for the item, when it said it. */
+  readonly name?: string;
+  /** D-016: the unit `onHandMinor` is counted in (OB-31: a count for `ea`, grams for kg); absent → a count of pieces. */
+  readonly uom?: string;
 }
 
 /** Stock valued at weighted-average cost (`GET /v1/inventory/valuation`). */
@@ -155,7 +160,7 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(STOCK_HEA
 
 export type SignalKind = 'healthy' | 'negative_stock' | 'uncosted_stock' | 'aged_stock';
 
-/** One health signal, worst-first. `amountMinor` is a QUANTITY for negative stock (units ×100) and a MONEY
+/** One health signal, worst-first. `amountMinor` is a QUANTITY for negative stock (its unit's smallest steps, OB-31) and a MONEY
  *  value for uncosted/aged; the view reads `kind` to know which, so it never shows rupees as units. */
 export interface PresentedSignal {
   readonly kind: SignalKind;
@@ -166,6 +171,10 @@ export interface PresentedSignal {
   readonly currency: string | null;
   /** Server-supplied specifics (e.g. the suggested owner action for a negative row); '' when none. */
   readonly detail: string;
+  /** D-016: for a negative row, the item's name (head office's; null when it did not say — the page then names it). */
+  readonly productName?: string | null;
+  /** D-016: for a negative row, the quantity in the shop's words ("−4 pieces", "−1.25 kg") — never ÷100 (OB-31). */
+  readonly quantity?: string | null;
 }
 
 /** A headline number. The value is typed so the view formats it right and never has to guess a unit; a ratio
@@ -261,10 +270,12 @@ export function createStockHealthSession(config: StockHealthConfig, ports: Stock
           kind: 'negative_stock',
           status: presentStatus({
             tone: 'error', icon: '⚠', label: t('sigNegative'),
-            announcement: `${t('sigNegative')}: ${row.productId} @ ${row.locationId}`, needsAttention: true,
+            announcement: `${t('sigNegative')}: ${row.name ?? row.productId} @ ${row.locationId}`, needsAttention: true,
           }),
           productId: row.productId, locationId: row.locationId, amountMinor: row.onHandMinor, currency: null,
           detail: saidIn(lang, row.ownerAction),
+          productName: row.name ?? null,
+          quantity: quantityInWords(row.onHandMinor, row.uom ?? 'ea', lang),
         });
       }
 

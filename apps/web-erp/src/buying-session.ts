@@ -385,6 +385,9 @@ export interface BuyingSession {
  * @param outbox the DURABLE device queue this screen's captures are written to (required, as on the manager screen and the
  *   handhelds — F02 was exactly the forgotten queue: `ok: true` returned and the invoice existed nowhere).
  */
+/** D-044: paise as rupees with Indian grouping — ₹2,592.00. */
+const rupeesWords = (minor: number): string => `${minor < 0 ? '−' : ''}₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, outbox: SyncOutbox): BuyingSession {
   const inr = (minor: number): Money => money(minor, config.currency);
   const now = config.now ?? (() => new Date().toISOString());
@@ -535,7 +538,8 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
           ok: false,
           refusal: 'does_not_add_up_to_the_invoice_total',
           detail:
-            `the lines add up to ${input.preview.sumMinor} and the invoice says ${input.preview.declaredTotalMinor}. ` +
+            // D-044: rupees as a person reads them (₹2,592.00), never the raw paise.
+            `the lines add up to ${rupeesWords(input.preview.sumMinor)} and the invoice says ${rupeesWords(input.preview.declaredTotalMinor)}. ` +
             'Either a line is wrong or a line is missing — and both mean paying something other than what was agreed.',
         };
       }
