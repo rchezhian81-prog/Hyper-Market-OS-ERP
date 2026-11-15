@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { apiHarness } from '../support/api-harness';
 import { ApiError, type Route, type RequestContext } from '../../services/kernel/src/index';
+import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { movementJobsSurface, movementReachOf, movementKindRefusal, RELAYED_MOVEMENT_KINDS } from '../../services/api/src/w2-movement-jobs';
 
 /**
@@ -14,17 +15,17 @@ const g = (userId: string, roleId: string, branchScope: readonly string[] | 'all
 
 describe('how a person holds the stock-movement word', () => {
   it('none, any (through a role that is not narrowed) or narrowed to the union of the narrowed roles\' kinds', () => {
-    expect(movementReachOf([g('a', 'cashier')], 'a', 'store-1')).toEqual({ kind: 'none' });
-    expect(movementReachOf([g('a', 'store_manager')], 'a', 'store-1')).toEqual({ kind: 'any' });
-    expect(movementReachOf([g('a', 'receiver_qc')], 'a', 'store-1')).toEqual({ kind: 'narrowed', roles: ['receiver_qc'], jobs: ['count', 'receive'] });
-    expect(movementReachOf([g('a', 'receiver_qc'), g('a', 'warehouse_user')], 'a', 'store-1')).toEqual({ kind: 'narrowed', roles: ['receiver_qc', 'warehouse_user'], jobs: ['count', 'receive', 'move_in_store', 'transfer'] });
-    expect(movementReachOf([g('a', 'warehouse_user'), g('a', 'owner', 'all')], 'a', 'store-1')).toEqual({ kind: 'any' });
+    expect(movementReachOf([g('a', 'cashier')], 'a', 'store-1', ROLE_CATALOGUE)).toEqual({ kind: 'none' });
+    expect(movementReachOf([g('a', 'store_manager')], 'a', 'store-1', ROLE_CATALOGUE)).toEqual({ kind: 'any' });
+    expect(movementReachOf([g('a', 'receiver_qc')], 'a', 'store-1', ROLE_CATALOGUE)).toEqual({ kind: 'narrowed', roles: ['receiver_qc'], jobs: ['count', 'receive'] });
+    expect(movementReachOf([g('a', 'receiver_qc'), g('a', 'warehouse_user')], 'a', 'store-1', ROLE_CATALOGUE)).toEqual({ kind: 'narrowed', roles: ['receiver_qc', 'warehouse_user'], jobs: ['count', 'receive', 'move_in_store', 'transfer'] });
+    expect(movementReachOf([g('a', 'warehouse_user'), g('a', 'owner', 'all')], 'a', 'store-1', ROLE_CATALOGUE)).toEqual({ kind: 'any' });
     // A manager at another store does not widen a warehouse user here.
-    expect(movementReachOf([g('a', 'warehouse_user'), g('a', 'store_manager', ['store-2'])], 'a', 'store-1')).toMatchObject({ kind: 'narrowed' });
+    expect(movementReachOf([g('a', 'warehouse_user'), g('a', 'store_manager', ['store-2'])], 'a', 'store-1', ROLE_CATALOGUE)).toMatchObject({ kind: 'narrowed' });
   });
 
   it('the refusal says who, what their role may do and what this was; a kind they may do is not refused', () => {
-    const reach = movementReachOf([g('u-r', 'receiver_qc')], 'u-r', null);
+    const reach = movementReachOf([g('u-r', 'receiver_qc')], 'u-r', null, ROLE_CATALOGUE);
     expect(movementKindRefusal(reach, 'u-r', { job: 'receive', what: 'a goods receipt' }, false)).toBeUndefined();
     const e = movementKindRefusal(reach, 'u-r', { job: null, what: 'a stock write-off' }, true) as ApiError;
     expect(e).toBeInstanceOf(ApiError);

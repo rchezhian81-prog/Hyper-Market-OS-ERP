@@ -20,7 +20,8 @@ export interface AccessReviewDeps {
   readonly grants: (tenantId: string) => Promise<readonly ReviewGrant[]>;
   /** Emergency grants still live now (not revoked, not expired). */
   readonly emergency: (tenantId: string) => Promise<readonly ReviewEmergencyGrant[]>;
-  readonly roles: () => readonly ReviewRole[];
+  /** The shop's roles now (ADR-0034: the built-in roles with the shop's recorded adjustments). */
+  readonly roles: (tenantId: string) => Promise<readonly ReviewRole[]> | readonly ReviewRole[];
   readonly machineRoleIds: readonly string[];
   readonly isItRole: (roleId: string) => boolean;
   /** The server's money authority (OB-290) — shown per person. Optional on a bare stub. */
@@ -36,7 +37,7 @@ export function accessReviewRoutes(deps: AccessReviewDeps): readonly Route[] {
       permission: 'identity.access.review',
       handler: async (ctx) => {
         const [people, grants, emergency] = await Promise.all([deps.people(ctx.tenantId), deps.grants(ctx.tenantId), deps.emergency(ctx.tenantId)]);
-        const rows = reviewAccess({ people, grants, emergency, roles: deps.roles(), machineRoleIds: deps.machineRoleIds, isItRole: deps.isItRole });
+        const rows = reviewAccess({ people, grants, emergency, roles: await deps.roles(ctx.tenantId), machineRoleIds: deps.machineRoleIds, isItRole: deps.isItRole });
         const withLimits = await Promise.all(rows.map(async (r) => ({
           ...r,
           ...(deps.authorityOf === undefined || r.machine ? {} : {
@@ -62,7 +63,7 @@ export function accessReviewRoutes(deps: AccessReviewDeps): readonly Route[] {
       api: 'API-01', method: 'GET', path: '/v1/identity/permission-matrix',
       permission: 'identity.access.review',
       handler: async (ctx) => {
-        const roles = deps.roles();
+        const roles = await deps.roles(ctx.tenantId);
         if (ctx.query['format'] === 'csv') {
           return { status: 200, body: { format: 'csv', filename: `permission-matrix-${shopDateIn(deps.now())}.csv`, csv: permissionMatrixCsv(roles) } };
         }

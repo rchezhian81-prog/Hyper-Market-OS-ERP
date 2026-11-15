@@ -71,9 +71,10 @@
    manager's ask is approved only by the owner, the owner's ask only by a store manager. Both act under a new permission,
    `identity.role.adjust`, held by the owner and the store manager in the built-in roles (and itself on the never list,
    item f). The platform administrator (IT) takes no part (OB-91, OB-95). The checker sees exactly what changes and **who it affects**:
-   every person holding the role, by name. Audit events `role.permission.request`, `role.permission.adjust` and
-   `role.permission.reject` are written in each person's own name. The owner is alerted when a change is asked for and
-   when it is done (P-03).
+   every person holding the role, by name. The ask, the approval and a rejection are recorded by the approval engine in
+   each person's own name; the applied change is audited as `role.permission.adjust` in the asker's name with the approver
+   named. The owner is alerted when a change is applied (P-03) — he is always one of the two, so every ask already reaches
+   him in his own approvals list or comes from him (implementation note 1).
 6. **On the store PC** the act is sealed after the person's PIN is typed again and relayed exactly as ADR-0033 decides for
    giving a role (`role_permission_request`, `role_permission_approval`, `role_permission_rejection`; the dedicated
    privilege-seal key; refused when the seal is missing, wrong, older than 300 s or reused). With the head-office link off,
@@ -108,6 +109,27 @@
   refused; separation-of-duties refused; undo restores the built-in role exactly; the audit events and owner alerts
   written; on the store PC, a missing, wrong, stale or reused seal refused (ADR-0033); the page says "not yet on the
   tills" until the box reports the pack.
+
+## Implementation notes (4c-1, built 15 November 2026)
+
+1. **The owner's alert is raised when a change is applied**, not also when it is asked: under OB-740 "B" the owner is
+   always one of the two people, so an ask either comes from him or waits in his own approvals list.
+2. **Decision 4a also covers a machine's relay permissions.** The owner holds nearly every permission, so "held only by
+   locked roles" is judged leaving the owner out: the 21 relay permissions only the store computer and the owner hold
+   (`identity.grants.sync` and the like) are the machine's and are refused for a person's role. The owner's reserved list
+   (OB-741) is unchanged — 105 permissions only the owner holds.
+3. **Neither person gives what they do not hold** (the grant route's §28 rule): adding a permission is refused when the
+   asker or the approver does not hold it.
+4. **Both people are judged again when the change is applied**, on the roles they hold at that moment, before the
+   approval is spent; the apply route also asks for a recent MFA re-authentication, as giving a role does. The store PC's
+   PIN route (decision 6, 4c-2) replaces that re-authentication as ADR-0033 does.
+5. **Where the built-in list is still read**, and why each is safe, is pinned by
+   `tests/guardrails/cr01-step4c1-every-access-decision-reads-the-adjusted-roles.test.ts`: role ids and names; the fold
+   itself; the first owner laid down at setup; whether a role is the IT function (an adjustment can never flip it); and
+   OB-676's starting suggestion of which roles a delivery-exception queue may name (narrower is safe — the work itself is
+   judged on the adjusted roles).
+6. **Decision 7's "not yet on the tills"** is said in words by the apply route in 4c-1; the page that shows it until the
+   store PC reports the new pack is part of 4c-2.
 
 ## Reconsider-when
 
