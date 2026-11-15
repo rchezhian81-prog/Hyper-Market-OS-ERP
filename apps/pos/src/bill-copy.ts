@@ -116,10 +116,13 @@ export function billCopyPrint(answer: BillCopyAnswer, options: {
   readonly template?: BillTemplate | null; readonly fssaiLicenceNo?: string; readonly b2cDynamicQr?: B2cDynamicQrSetting;
   /** W3 · M36-FR-02: the shop's own name from the signed pack — the copy carries it as the bill did. */
   readonly brandName?: string;
+  /** D-006: the display name of the cashier who took the bill, when this till knows it — printed instead of the login id. */
+  readonly cashierNameOf?: (cashierId: string) => string | undefined;
   readonly reason: string; readonly by: string; readonly at: string;
 }): BillCopyPrint {
   const made = committedBillOf(answer, options.realTrading ? (options.identity ?? null) : undefined);
   if (!made.ok) return made;
+  const cashierName = options.cashierNameOf?.(made.bill.cashierId);
   const copyLine = options.language === 'ta' ? `நகல் எண் ${answer.copyNumber} (Copy ${answer.copyNumber})` : `Copy ${answer.copyNumber}`;
   if (options.realTrading) {
     const inv: BillTaxInvoice = billTaxInvoice(made.bill, {
@@ -127,6 +130,7 @@ export function billCopyPrint(answer: BillCopyAnswer, options: {
       ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
       ...(options.b2cDynamicQr === undefined ? {} : { b2cDynamicQr: options.b2cDynamicQr }),
       ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
+      ...(cashierName === undefined ? {} : { cashierName }),
     });
     if (!inv.ok) return inv;
     return {
@@ -137,6 +141,7 @@ export function billCopyPrint(answer: BillCopyAnswer, options: {
   const rec: BillReceipt = billReceipt(made.bill, options.template ?? null, {
     ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
     ...(options.brandName === undefined ? {} : { brandName: options.brandName }),
+    ...(cashierName === undefined ? {} : { cashierName }),
     reprintOf: { reason: `${options.reason} — ${copyLine}`, by: options.by, at: options.at },
   });
   if (!rec.ok) return rec;

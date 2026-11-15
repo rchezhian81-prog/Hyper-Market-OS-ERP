@@ -14,6 +14,7 @@
 // no-receipt cap, the no-receipt path is UNAVAILABLE (fail safe) rather than defaulted to a guess.
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { quantityLabel } from '../../../packages/contracts/src/quantity';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import {
   returnRegister, returnableLines, alreadyRefundedMinor,
@@ -124,10 +125,23 @@ export interface RefundViewDeps {
   readonly priorRefunds?: readonly PriorRefund[];
 }
 
+/**
+ * D-004 (daily-work walkthrough): a returnable line with what may come back in WORDS, in its unit — a weighed line "0.850 kg"
+ * (never a bare 850, read as 850 items), a counted line "3". Words only: `returnableMinor` stays the integer the rules count.
+ */
+export interface ReturnableLineShown extends ReturnableLine {
+  readonly returnableText: string;
+}
+
+/** "0.850 kg" for 850 g of a kg product, "1.250 L" for a litre product, "3" for a count — the same words as the bill line. */
+export function returnableWords(returnableMinor: number, uom: string): string {
+  return quantityLabel(returnableMinor, uom);
+}
+
 /** The tested surface the refund screen binds to. */
 export interface RefundView {
-  /** What may still be returned on a bill, per product — for the screen to cap the stepper. */
-  returnable(sale: OriginalSale): readonly ReturnableLine[];
+  /** What may still be returned on a bill, per product — for the screen to cap the stepper — and, in words, in its unit. */
+  returnable(sale: OriginalSale): readonly ReturnableLineShown[];
   /** The most this bill may still refund (paid − already refunded), in minor units. */
   maxRefundMinor(sale: OriginalSale): number;
   /** Whether this draft needs a §28 approver — so the screen asks for a manager BEFORE submitting. */
@@ -155,7 +169,8 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
   const currency: CurrencyCode = deps.policy.currency ?? 'INR';
   const register = () => returnRegister(deps.priorReturns ?? []);
 
-  const returnable = (sale: OriginalSale): readonly ReturnableLine[] => returnableLines(sale, register());
+  const returnable = (sale: OriginalSale): readonly ReturnableLineShown[] => returnableLines(sale, register())
+    .map((l) => ({ ...l, returnableText: returnableWords(l.returnableMinor, l.uom) }));
 
   const maxRefundMinor = (sale: OriginalSale): number => Math.max(
     0, sale.totalMinor - alreadyRefundedMinor(sale.saleId, deps.priorRefunds ?? []),
