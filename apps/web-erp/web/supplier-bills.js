@@ -70,6 +70,17 @@ const WORDS = {
     mayNotCapture: 'Your role matches supplier bills to deliveries — below, under "Deliveries waiting for their bill". Handing in and confirming bills is done by a person with that right.', mayNotMatch: 'Checking a bill against the order needs the bill-checking right — another person does it.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
     typedAs: 'Typed onto the register as', typedBy: 'typed by',
+    // D-045 (fix batch 3): the bills on head office's register waiting to be checked against their order — for the person
+    // who checks bills but does not hand them in (the accountant).
+    toCheckH: 'Bills waiting to be checked against the order', toCheckCount: 'Waiting to be checked', checkThis: 'Check against the order',
+    notChecked: 'not checked yet', heldBack: 'checked — held back, do not pay yet', toCheckNone: 'No bill is waiting to be checked against its order.',
+    mayCheckOnly: 'Handing in and typing bills is done by a person with that right. Here you check the bills on head office\'s register against their order, and below you match deliveries to their bill.',
+    // D-043 (fix batch 3): a paper bill typed with no file; its lines filled from the order.
+    typePaper: 'Type a paper bill (no file needed)', paperH: 'Paper bill — typed, no file',
+    typeLedePaper: 'Type the bill as the paper says it — no scan or photo is needed. Fill the lines from the order, then change only what the paper shows differently and add its GST; head office checks every line multiplies and the lines, with any freight, duty or other charges, add up to the total.',
+    fromOrder: 'Fill the lines from the order', needPo: 'Type the purchase order number first.',
+    filledFromOrder: 'Filled {n} line(s) from order {po}: the quantities received and the agreed prices. Type the GST and anything the paper shows differently.',
+    leftFromOrder: 'Left for you to type: {ids}.', nothingFromOrder: 'Nothing on order {po} could be filled — nothing has been received against it yet, or its lines are weighed or priced per case. Type the lines from the paper.',
     // OB-509 (G3): deliveries waiting for their bill.
     cnkH: 'Deliveries waiting for their bill',
     cnkLede: 'Goods that came with no order, or that were not on the order, are booked with their cost not known. Pick the supplier\'s bill for the delivery and match it: their cost becomes the bill\'s. A typed figure never sets the stock\'s value.',
@@ -120,6 +131,14 @@ const WORDS = {
     mayNotCapture: 'உங்கள் பங்கு சப்ளையர் பில்களை டெலிவரிகளுடன் பொருத்துகிறது — கீழே, "பில்லுக்காகக் காத்திருக்கும் டெலிவரிகள்" என்பதில். பில்களைக் கொடுப்பதும் உறுதிசெய்வதும் அந்த உரிமை உள்ள ஒருவரின் வேலை.', mayNotMatch: 'பில்லை ஆர்டருடன் சரிபார்க்க பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
     typedAs: 'தட்டச்சு செய்து பதிவேட்டில் சேர்த்த எண்', typedBy: 'தட்டச்சு செய்தவர்',
+    toCheckH: 'ஆர்டருடன் சரிபார்க்கக் காத்திருக்கும் பில்கள்', toCheckCount: 'சரிபார்க்கக் காத்திருப்பவை', checkThis: 'ஆர்டருடன் சரிபார்',
+    notChecked: 'இன்னும் சரிபார்க்கப்படவில்லை', heldBack: 'சரிபார்க்கப்பட்டது — நிறுத்தி வைக்கப்பட்டது, இன்னும் செலுத்த வேண்டாம்', toCheckNone: 'ஆர்டருடன் சரிபார்க்கக் காத்திருக்கும் பில் எதுவும் இல்லை.',
+    mayCheckOnly: 'பில்களைக் கொடுப்பதும் தட்டச்சு செய்வதும் அந்த உரிமை உள்ள ஒருவரின் வேலை. இங்கே தலைமை அலுவலகப் பதிவேட்டில் உள்ள பில்களை அவற்றின் ஆர்டருடன் சரிபார்க்கிறீர்கள்; கீழே டெலிவரிகளை அவற்றின் பில்லுடன் பொருத்துகிறீர்கள்.',
+    typePaper: 'காகித பில்லைத் தட்டச்சு செய் (கோப்பு தேவையில்லை)', paperH: 'காகித பில் — தட்டச்சு, கோப்பு இல்லை',
+    typeLedePaper: 'தாளில் உள்ளபடி பில்லைத் தட்டச்சு செய்யுங்கள் — ஸ்கேனோ புகைப்படமோ தேவையில்லை. ஆர்டரிலிருந்து வரிகளை நிரப்பி, தாளில் வேறுபடுவதை மட்டும் மாற்றி அதன் GST ஐச் சேர்க்கவும்; ஒவ்வொரு வரியும் பெருக்கலில் சரியா, வரிகளும் கட்டணங்களும் சேர்ந்து மொத்தத்துடன் பொருந்துகிறதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
+    fromOrder: 'ஆர்டரிலிருந்து வரிகளை நிரப்பு', needPo: 'முதலில் கொள்முதல் ஆர்டர் எண்ணைத் தட்டச்சு செய்யவும்.',
+    filledFromOrder: '{po} ஆர்டரிலிருந்து {n} வரி(கள்) நிரப்பப்பட்டன: பெற்ற அளவுகளும் ஒப்புக்கொண்ட விலைகளும். GST ஐயும் தாளில் வேறுபடுவதையும் தட்டச்சு செய்யவும்.',
+    leftFromOrder: 'நீங்கள் தட்டச்சு செய்ய வேண்டியவை: {ids}.', nothingFromOrder: '{po} ஆர்டரிலிருந்து எதையும் நிரப்ப முடியவில்லை — அதற்கு எதுவும் இன்னும் பெறப்படவில்லை, அல்லது அதன் வரிகள் எடையிலோ பெட்டி விலையிலோ உள்ளன. தாளிலிருந்து வரிகளைத் தட்டச்சு செய்யவும்.',
     cnkH: 'பில்லுக்காகக் காத்திருக்கும் டெலிவரிகள்',
     cnkLede: 'ஆர்டர் இல்லாமல் வந்த அல்லது ஆர்டரில் இல்லாத பொருட்கள் விலை தெரியாமல் பதிவு செய்யப்படுகின்றன. அந்த டெலிவரிக்கான சப்ளையர் பில்லைத் தேர்ந்தெடுத்துப் பொருத்துங்கள்: அவற்றின் விலை பில்லின் விலையாகும். தட்டச்சு செய்த எண் ஒருபோதும் இருப்பின் மதிப்பை அமைக்காது.',
     cnkReading: 'பில்லுக்காகக் காத்திருக்கும் டெலிவரிகளைப் படிக்கிறது…', cnkNone: 'எந்த டெலிவரியும் பில்லுக்காகக் காத்திருக்கவில்லை — எல்லா விலைகளும் தெரியும்.',
@@ -145,6 +164,10 @@ const inr = (minor) => (minor === null || minor === undefined ? '—' : '₹' + 
 let register = null;
 let openDoc = null;
 let typeRows = [];
+let toCheck = null; // D-045: the bills waiting to be checked, for a person who checks but does not hand in
+let openCheck = null; // D-045: the bill opened from that list
+let paperSeq = 0; // D-043: each paper bill typed with no file is its own typing form
+const fill = (text, vals) => text.replace(/\{(\w+)\}/g, (_, k) => String(vals[k] ?? `{${k}}`));
 
 function say(el, answer, good) {
   if (answer.ok) { el.className = 'status good'; el.textContent = good; return; }
@@ -162,7 +185,19 @@ async function refresh() {
   // accountant) is offered this page for "Deliveries waiting for their bill". The register of bills handed in is a capture
   // read head office refuses that role, so it is not asked for — the page says plainly what this role does here instead of
   // opening on a refusal for work the role was never given.
-  if (!session.mayCapture) { $('register-status').textContent = t('mayNotCapture'); return; }
+  if (!session.mayCapture) {
+    // D-045 (fix batch 3): a person who checks bills (the accountant) sees the bills on head office's register still waiting
+    // to be checked against their order — the invoice register (`purchase.commitment.read`), not the capture register.
+    if (!(session.mayMatch && session.mayReadBills)) { $('register-status').textContent = t('mayNotCapture'); return; }
+    $('register-status').textContent = t('reading');
+    const answer = await session.billsToCheck();
+    if (!answer.ok) { say($('register-status'), answer, ''); return; }
+    toCheck = answer.value;
+    $('register-status').className = 'status';
+    $('register-status').textContent = toCheck.length === 0 ? t('toCheckNone') : '';
+    renderToCheck();
+    return;
+  }
   $('register-status').textContent = t('reading');
   const answer = await session.register();
   if (!answer.ok) {
@@ -223,6 +258,49 @@ function renderRegister() {
   }));
 }
 
+// ── D-045: the bills waiting to be checked against their order (the accountant's list) ──────────────────────
+function renderToCheck() {
+  if (toCheck === null) return;
+  $('waiting').textContent = String(toCheck.length);
+  $('register').replaceChildren(...toCheck.map((b) => {
+    const li = document.createElement('li');
+    li.className = 'bill';
+    li.dataset.invoice = b.invoiceId;
+    li.dataset.state = b.state;
+    const head = document.createElement('div');
+    head.className = 'head';
+    const what = cell('span', b.invoiceId, 'what');
+    const pill = chipFor(b.state === 'held_back' ? 'error' : 'pending', pair(b.state === 'held_back' ? 'heldBack' : 'notChecked'));
+    const go = document.createElement('button'); go.classList.add('sre-btn');
+    go.type = 'button';
+    go.dataset.act = 'check';
+    go.textContent = t('checkThis');
+    go.addEventListener('click', () => { openCheck = b; renderCheckDrawer(); $('drawer').scrollIntoView({ block: 'start' }); });
+    head.append(what, pill, go);
+    li.append(head, cell('div', checkFacts(b), 'facts'));
+    return li;
+  }));
+}
+function checkFacts(b) {
+  const supplier = window.sreOffice ? (window.sreOffice.nameOf('supplier', b.supplierId) ?? b.supplierId) : b.supplierId;
+  return [`${t('supplier')} ${supplier}`, b.poId ? `${t('order')} ${b.poId}` : t('noOrder'), `${t('invoiced')} ${inr(b.totalMinor)}`].join(' · ');
+}
+/** The drawer for a bill opened from the to-check list: only "Check against the order" — nothing to hand in or type. */
+function renderCheckDrawer() {
+  const b = openCheck;
+  if (b === null) return;
+  openDoc = null;
+  $('drawer').hidden = false;
+  $('drawer').dataset.doc = b.invoiceId;
+  $('drawer-h').textContent = `${t('drawerH')} ${b.invoiceId} — ${t(b.state === 'held_back' ? 'heldBack' : 'notChecked')}`;
+  $('drawer-facts').textContent = checkFacts(b);
+  $('drawer-problems').replaceChildren();
+  $('confirm-part').hidden = true;
+  $('type-part').hidden = true;
+  $('match-part').hidden = false;
+  void renderMatchPart({ state: 'confirmed' }, b.invoiceId);
+}
+
 // ── Hand in ────────────────────────────────────────────────────────────────
 
 const toBase64 = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
@@ -256,8 +334,9 @@ function renderDrawer() {
   $('drawer').hidden = d === null;
   if (d === null) return;
   $('drawer').dataset.doc = d.documentId;
-  $('drawer-h').textContent = `${t('drawerH')} ${d.extracted?.supplierInvoiceNo ?? d.documentId} — ${t(`st_${d.state}`)}`;
-  $('drawer-facts').textContent = factsOf(d) + (d.extracted?.irn ? ` · ${t('irn')} ${d.extracted.irn.slice(0, 16)}…` : '');
+  $('drawer-h').textContent = d.paper ? `${t('paperH')}${d.invoiceId ? ` — ${d.invoiceId}` : ''}` : `${t('drawerH')} ${d.extracted?.supplierInvoiceNo ?? d.documentId} — ${t(`st_${d.state}`)}`;
+  $('drawer-facts').textContent = d.paper ? '' : factsOf(d) + (d.extracted?.irn ? ` · ${t('irn')} ${d.extracted.irn.slice(0, 16)}…` : '');
+  $('type-lede').textContent = d.paper ? t('typeLedePaper') : t('typeLede');
   $('drawer-problems').replaceChildren(...d.problems.map((p) => cell('li', p === 'irp_signature_not_verified' ? t('unverifiedIrp') : p)));
 
   const canCapture = session !== null && session.mayCapture;
@@ -314,7 +393,9 @@ $('confirm').addEventListener('click', async () => {
 });
 
 function renderTyping(d) {
-  if ($('type-invoice').dataset.doc !== d.documentId) {
+  const form = d.paper ? d.paperKey : d.documentId;
+  if ($('type-invoice').dataset.form !== form) {
+    $('type-invoice').dataset.form = form;
     $('type-invoice').dataset.doc = d.documentId;
     $('type-invoice').value = '';
     $('type-supplier').value = d.supplierId ?? '';
@@ -351,7 +432,32 @@ $('type-save').addEventListener('click', async () => {
   const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId, charges });
   if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : answer.problem === 'charges_not_money' ? t('chargesNotMoney') : t('needTyped')); return; }
   say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.` : '');
+  // D-043: a paper bill typed with no file is on the register now — its drawer offers the check against the order.
+  if (answer.ok && d.paper) { openDoc = { ...d, state: 'captured', invoiceId: answer.value.invoiceId }; renderDrawer(); }
   if (answer.ok) await refresh();
+});
+
+// ── D-043 (fix batch 3): a paper bill with no file, and its lines filled from the order ──────────────────────
+$('type-paper').addEventListener('click', () => {
+  paperSeq += 1;
+  openDoc = {
+    paper: true, paperKey: `paper-${paperSeq}`, documentId: '', channel: 'ocr', state: 'awaiting_manual_capture', receivedBy: '', receivedAt: '',
+    supplierId: $('hand-supplier').value.trim() || null, poId: $('hand-po').value.trim() || null, extracted: null, lines: [], problems: [],
+  };
+  renderDrawer();
+  $('drawer').scrollIntoView({ block: 'start' });
+});
+$('type-from-order').addEventListener('click', async () => {
+  const poId = $('type-po').value.trim();
+  if (poId === '') { sayLocal($('type-status'), t('needPo')); return; }
+  const answer = await session.linesFromOrder(poId);
+  if (!answer.ok) { say($('type-status'), answer, ''); return; }
+  const { lines, left } = answer.value;
+  if (lines.length === 0) { sayLocal($('type-status'), fill(t('nothingFromOrder'), { po: poId })); return; }
+  typeRows = lines.map((l) => ({ ...l }));
+  drawTypeRows();
+  $('type-status').className = 'status good';
+  $('type-status').textContent = fill(t('filledFromOrder'), { n: lines.length, po: poId }) + (left.length === 0 ? '' : ` ${fill(t('leftFromOrder'), { ids: left.join(', ') })}`);
 });
 
 // ── The three-way match ────────────────────────────────────────────────────
@@ -438,6 +544,7 @@ $('run-match').addEventListener('click', async () => {
   const answer = await session.match(invoiceId);
   say($('match-status'), answer, answer.ok ? (answer.value.blocked ? t('blocked') : t('agreed')) : '');
   if (answer.ok) drawMatch(answer.value);
+  if (answer.ok && toCheck !== null) void refresh(); // D-045: a bill that now agrees leaves the to-check list
 });
 
 // ── Deliveries waiting for their bill (OB-509 · G3) ─────────────────────────
@@ -660,18 +767,26 @@ function paint() {
   $('l-type-invoice').textContent = t('confirmInvoice'); $('l-type-supplier').textContent = t('supplierCode'); $('l-type-po').textContent = t('poNumber'); $('l-type-total').textContent = t('typeTotal');
   $('l-type-freight').textContent = t('typeFreight'); $('l-type-duty').textContent = t('typeDuty'); $('l-type-other').textContent = t('typeOther');
   $('type-add-line').textContent = t('addLine'); $('type-save').textContent = t('typeSave');
+  $('type-paper').textContent = t('typePaper'); $('type-from-order').textContent = t('fromOrder');
   $('l-other-reason').textContent = t('otherReason'); $('other-cost').textContent = t('otherCost'); $('other-tax').textContent = t('otherTax');
   if (shownMatch !== null && !$('other-part').hidden) drawOtherCharges(shownMatch);
   $('match-h').textContent = t('matchH'); $('match-lede').textContent = t('matchLede'); $('run-match').textContent = t('runMatch');
   $('cnk-h').textContent = t('cnkH'); $('cnk-lede').textContent = t('cnkLede');
-  if (session !== null && !session.mayCapture) $('register-status').textContent = t('mayNotCapture');
+  const checkOnly = session !== null && !session.mayCapture && session.mayMatch && session.mayReadBills;
+  if (session !== null && !session.mayCapture && !checkOnly) $('register-status').textContent = t('mayNotCapture');
+  if (checkOnly) {
+    $('register-h').textContent = t('toCheckH'); $('l-waiting').textContent = t('toCheckCount');
+    $('check-only').textContent = t('mayCheckOnly');
+    if (toCheck !== null && toCheck.length === 0) $('register-status').textContent = t('toCheckNone');
+  }
   if (session !== null && !session.mayMatch) $('cnk-status').textContent = t('cnkMayNot');
   else if (waitingList !== null && waitingList.receipts.length === 0) $('cnk-status').textContent = t('cnkNone');
   if (who === null || session === null) { $('nobody').hidden = false; $('nobody').textContent = t('nobody'); }
-  renderRegister();
+  if (checkOnly) renderToCheck(); else renderRegister();
   renderWaiting();
   paintAdvances();
   if (openDoc !== null) renderDrawer();
+  else if (openCheck !== null) renderCheckDrawer();
 }
 
 $('lang').addEventListener('click', () => {
@@ -691,8 +806,16 @@ if (who === null || session === null) {
   // the dominant card is the accountant's job and not somebody else's.
   const registerSection = $('register-h').closest('section');
   if (registerSection !== null) {
-    registerSection.hidden = true;
-    registerSection.parentNode.insertBefore($('cnk-section'), registerSection);
+    // D-045 (fix batch 3): a person who checks bills sees this section as the bills waiting to be checked against their
+    // order (head office's invoice register); the scan-reading summary is not theirs. Anyone else: not drawn at all.
+    if (session.mayMatch && session.mayReadBills) {
+      $('check-only').hidden = false;
+      $('engine').closest('div').hidden = true;
+      registerSection.parentNode.insertBefore(registerSection, $('cnk-section'));
+    } else {
+      registerSection.hidden = true;
+      registerSection.parentNode.insertBefore($('cnk-section'), registerSection);
+    }
   }
 }
 paint();

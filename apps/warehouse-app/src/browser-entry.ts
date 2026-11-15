@@ -92,14 +92,16 @@ export function openWarehouseRelay(
  * nothing assigned), and the shell says so rather than showing empty bins that read as work done.
  */
 /**
- * OB-37: the delivery the receiver chose (`?delivery=<poId>`), or the only one waiting, becomes the delivery this phone
- * receives against — its order lines and the goods-receipt id head office gave it. Several waiting and none chosen: no
- * delivery is preset, and the phone asks the receiver to choose (nothing is received under a made-up one).
+ * OB-37: the delivery the receiver chose (`?delivery=<poId>`) becomes the delivery this phone receives against — its order
+ * lines and the goods-receipt id head office gave it. None chosen (D-031: even when only one is waiting): no delivery is
+ * preset, and the phone asks the receiver to choose (nothing is received under a made-up or guessed one).
  */
 export function withChosenDelivery(data: WarehouseAssignment | undefined, chosen: string | null): WarehouseAssignment | undefined {
   const list = data?.openDeliveries;
   if (data === undefined || list === undefined) return data;
-  const pick = list.find((d) => d.poId === chosen) ?? (list.length === 1 ? list[0] : undefined);
+  // D-031 (fix batch 3): only the delivery the receiver CHOSE — never the only one listed by default. The order at the door
+  // may be one the list does not show yet, and a scan booked against the wrong order went straight to head office's stock.
+  const pick = list.find((d) => d.poId === chosen);
   const { grnId: _g, poId: _p, ordered: _o, asn: _a, ...rest } = data;
   void _g; void _p; void _o; void _a;
   // OB-288 P3 (M07-FR-01): the chosen delivery's advance ship notice comes with it, cached for offline receiving.

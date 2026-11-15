@@ -349,6 +349,9 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await taps.tap('#receive');
     await page.waitForSelector('#scan:not([hidden])');
     await taps.scan('890RICE');
+    // D-032: the quantity keypad, 1 already keyed — OK is the third interaction (tap, scan, OK).
+    await page.waitForSelector('#qty:not([hidden])');
+    await taps.tap('#qty-ok');
     await page.waitForSelector('#banner.good:not([hidden])');
     expect(taps.reset(), 'receive a line').toBeLessThanOrEqual(3);
     // The line is on the handheld's own queue before anything else happens — receiving works with the cable out (§31).

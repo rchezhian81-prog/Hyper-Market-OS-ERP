@@ -38,8 +38,10 @@ describe('the warehouse phone receives against the delivery at the door (OB-37)'
     }
   });
 
-  it('exactly one waiting: it is preset; no list from the box: the assignment is left as it came', () => {
-    expect(withChosenDelivery({ ...base, openDeliveries: [two.openDeliveries[0]!] }, null)).toMatchObject({ poId: 'po-1', grnId: 'grn-po-1-1' });
+  it('exactly one waiting: still NOT preset — the receiver chooses it first (D-031); no list from the box: the assignment is left as it came', () => {
+    const one = withChosenDelivery({ ...base, openDeliveries: [two.openDeliveries[0]!], grnId: 'grn-po-1-1', poId: 'po-1', ordered: ordered(25_000) }, null)!;
+    expect([one.grnId, one.poId, one.ordered]).toEqual([undefined, undefined, undefined]);
+    expect(withChosenDelivery({ ...base, openDeliveries: [two.openDeliveries[0]!] }, 'po-1')).toMatchObject({ poId: 'po-1', grnId: 'grn-po-1-1' });
     const legacy = { ...base, grnId: 'g', poId: 'p', ordered: ordered(3) };
     expect(withChosenDelivery(legacy, 'po-1')).toBe(legacy);
     expect(withChosenDelivery(undefined, null)).toBeUndefined();

@@ -137,6 +137,7 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     // Two hours of work: the strip ticks (the latest time this sign-in has seen is kept beside the queue).
     await page.clock.pauseAt(start + 2 * H);
     await scan(page);
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     await page.click('#banner-ok');
     expect((await queued(page)).map((i) => [i.event.type, i.stamp?.ref])).toEqual([['ReceivingScanned', ref]]);
@@ -147,6 +148,7 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     await page.click('#receive');
     await page.waitForSelector('#scan:not([hidden])');
     await scan(page);
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await lockedForTheClock(page);
     const q = await queued(page);
     expect(q.map((i) => [i.event.type, i.state])).toEqual([['ReceivingScanned', 'pending'], ['ReceivingScanned', 'pending']]);
@@ -173,6 +175,7 @@ describe.skipIf(!HAVE_BROWSER)('F11: the handheld locks when its clock is turned
     await page.waitForSelector('#scan:not([hidden])');
     await page.clock.pauseAt(start + 2 * H);
     await scan(page);
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     await page.click('#banner-ok');
 

@@ -52,6 +52,8 @@
       .verdict.ready { border-left-color: var(--good); } .verdict.problem { border-left-color: var(--danger); }
       .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
       .muted { color: var(--muted); font-size: var(--fs-sm); }
+      fieldset.pay-bills { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; margin: 0; min-width: 0; }
+      fieldset.pay-bills legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -76,11 +78,14 @@
           <label for="hand-po"><span id="l-hand-po">Purchase order number (if you have it)</span><input id="hand-po" autocomplete="off" /></label>
         </div>
         <button id="hand-in" class="primary sre-btn sre-btn-primary" type="button">Hand in this bill</button>
+        <!-- D-043: a paper bill is typed with no scan or photo; the file above stays optional. -->
+        <button id="type-paper" class="sre-btn" type="button">Type a paper bill (no file needed)</button>
         <p class="status" id="hand-status" role="status" aria-live="polite"></p>
       </section>
 
       <section aria-labelledby="register-h">
         <h2 id="register-h">Bills handed in</h2>
+        <p class="lede" id="check-only" hidden></p>
         <div class="summary">
           <div><span class="label" id="l-waiting">Waiting for a person</span><span class="value" id="waiting">—</span></div>
           <div><span class="label" id="l-engine">Reading scans</span><span class="value" id="engine">—</span></div>
@@ -140,8 +145,13 @@
           <label for="pay-on"><span id="l-pay-on"></span><input id="pay-on" type="date" /></label>
           <label for="pay-method"><span id="l-pay-method"></span><select id="pay-method"></select></label>
           <label for="pay-ref"><span id="l-pay-ref"></span><input id="pay-ref" type="text" autocomplete="off" /></label>
-          <label for="pay-settles"><span id="l-pay-settles"></span><input id="pay-settles" type="text" autocomplete="off" /></label>
         </div>
+        <!-- D-047: the chosen supplier's matched, unpaid bills as tick boxes, with the running total (supplier-payments.js). -->
+        <fieldset id="pay-bills" class="pay-bills"><legend id="l-pay-settles"></legend>
+          <p class="muted" id="pay-bills-note" role="status" aria-live="polite"></p>
+          <div id="pay-bills-list"></div>
+          <p class="facts" id="pay-bills-total" aria-live="polite"></p>
+        </fieldset>
         <div><button id="pay-ask" type="button" class="sre-btn"></button></div>
         <p class="status" id="pay-status" role="status" aria-live="polite"></p>
         <h3 id="pay-asks-h"></h3>
@@ -205,6 +215,8 @@
             <label for="type-duty"><span id="l-type-duty">Duty on the bill (₹)</span><input id="type-duty" inputmode="decimal" autocomplete="off" /></label>
             <label for="type-other"><span id="l-type-other">Other charges on the bill (₹)</span><input id="type-other" inputmode="decimal" autocomplete="off" /></label>
           </div>
+          <!-- D-043: the lines filled from the order (quantities received, agreed prices); only differences are typed. -->
+          <button id="type-from-order" type="button" class="sre-btn">Fill the lines from the order</button>
           <div id="type-lines"></div>
           <button id="type-add-line" type="button" class="sre-btn">Add a line</button>
           <button id="type-save" class="primary sre-btn sre-btn-primary" type="button">Save this bill</button>

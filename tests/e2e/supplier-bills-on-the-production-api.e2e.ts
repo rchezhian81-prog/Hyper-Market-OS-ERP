@@ -234,22 +234,26 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       await s.page.reload({ waitUntil: 'load' });
       // Round 1 (screen audit B): the menu offers this page to the accountant for "Deliveries waiting for their bill"; the page
       // no longer opens on head office refusing a capture read the role was never given.
-      await says(s.page, 'register-status', /^Your role matches supplier bills to deliveries/);
+      // D-045 (fix batch 3): the accountant sees the bills on head office's register waiting to be checked against their
+      // order (the invoice register, read with a word the role already holds) — both bills here are held back.
+      await says(s.page, 'register-h', /^Bills waiting to be checked against the order$/);
+      await says(s.page, 'check-only', /^Handing in and typing bills is done by a person with that right/);
+      await s.page.locator('#register li[data-invoice="sup-k-KA-101"][data-state="held_back"] button[data-act="check"]').waitFor({ timeout: 15_000 });
       expect(await s.page.getAttribute('#register-status', 'class')).not.toContain('err');
       await says(s.page, 'cnk-status', /\S/);
       expect(await s.page.textContent('#cnk-status')).not.toMatch(/refused|needs the bill-checking right/);
       expect(reads).toContain('GET /v1/inventory/receipts-cost-not-known');
       expect(reads).not.toContain('GET /v1/purchase/invoice-documents');
+      expect(reads).toContain('GET /v1/purchase/invoices');
       expect(refusals).toEqual([]);
       expect(await s.page.locator('#hand-section').isHidden()).toBe(true);
-      expect(await s.page.locator('#register li').count()).toBe(0);
-      // OB-702 · G15 (lane 1): the register of bills handed in (a capture read) is not drawn for this role, and
-      // "Deliveries waiting for their bill" is the first section on the page — the accountant's own work leads.
-      expect(await s.page.locator('#register-h').locator('xpath=ancestor::section[1]').isHidden()).toBe(true);
-      expect(await s.page.locator('main section:not([hidden])').first().getAttribute('id')).toBe('cnk-section');
+      expect(await s.page.locator('#register li').count()).toBe(2);
+      // OB-702 · G15 + D-045: the accountant's own work leads — the bills to check, then "Deliveries waiting for their bill".
+      expect(await s.page.locator('#register-h').locator('xpath=ancestor::section[1]').isHidden()).toBe(false);
+      expect(await s.page.locator('main section:not([hidden])').nth(1).getAttribute('id')).toBe('cnk-section');
       await s.page.click('#lang');
       expect(await s.page.locator('#title').innerText()).toBe('சப்ளையர் பில்கள்');
-      expect(await s.page.locator('#register-h').innerText()).toBe('கொடுக்கப்பட்ட பில்கள்');
+      expect(await s.page.locator('#register-h').innerText()).toBe('ஆர்டருடன் சரிபார்க்கக் காத்திருக்கும் பில்கள்');
       expect(s.writes).toEqual([]);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

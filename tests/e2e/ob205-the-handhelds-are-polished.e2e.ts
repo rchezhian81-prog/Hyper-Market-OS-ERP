@@ -56,7 +56,7 @@ const WAREHOUSE: Shell = {
     contents: { 'BIN-A|p-rice|': 40 },
     pickLines: [{ lineId: 'pl-1', orderRef: 'ORD-77', productId: 'p-rice', batchId: null, binId: 'BIN-A', quantityMinor: 12, uom: 'EA' }],
     indentLines: [{ indentId: 'ind-1', productId: 'p-rice', uom: 'EA', outstandingMinor: 6, requestedBy: 'u-floor', toLocationId: 'store-1' }],
-    openDeliveries: [{ poId: 'po-1', number: 'PO-0042', supplierId: 'sup-aavin', ordered: [{ productId: 'p-rice', quantityMinor: 100, unitCost: { minor: 4000 } }, { productId: 'p-icecream', quantityMinor: 20, unitCost: { minor: 9000 } }] }],
+    openDeliveries: [{ poId: 'po-1', number: 'PO-0042', supplierId: 'sup-aavin', grnId: 'grn-1', ordered: [{ productId: 'p-rice', quantityMinor: 100, unitCost: { minor: 4000 } }, { productId: 'p-icecream', quantityMinor: 20, unitCost: { minor: 9000 } }] }],
     receivingChecklist: RECEIVING,
   }),
 };
@@ -336,9 +336,14 @@ describe.skipIf(!HAVE_BROWSER)('OB-205: the staff phones, polished — at 360 an
         expect(await audit(page, 'ta')).toEqual([]);
         await page.click('#dsd-cancel');
         // The receiving checklist: "n of m checked", and the corrective actions stay hidden until a check fails.
+        // D-031: the order at the door is chosen first — the one listed is never assumed.
+        await page.click('#deliveries a[href="?delivery=po-1"]');
+        await page.waitForFunction('globalThis.warehouseSession !== undefined && new URLSearchParams(location.search).get("delivery") === "po-1"', undefined, { timeout: 15_000 });
+        if (await page.evaluate('document.documentElement.lang') !== 'ta') await tamil(page);
         await page.click('#receive');
         await page.waitForSelector('#scan:not([hidden])');
         await page.keyboard.type('890ICE'); await page.keyboard.press('Enter');
+        await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
         await page.waitForSelector('#banner:not([hidden])');
         await page.click('#banner-ok');
         await page.click('#done-receiving');

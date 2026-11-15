@@ -127,6 +127,11 @@
       p.result.tone-degraded { color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+      /* D-047: the supplier's matched, unpaid bills as tick boxes. */
+      fieldset.pay-bills { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; margin: 8px 0; min-width: 0; }
+      fieldset.pay-bills legend { font-weight: 600; padding: 0 4px; }
+      fieldset.pay-bills label.inline { display: flex; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+      fieldset.pay-bills input[type='checkbox'] { width: 22px; height: 22px; }
     </style>
   </head>
   <body>
@@ -281,8 +286,13 @@
           <div><label for="pay-on" id="l-pay-on"></label><input id="pay-on" type="date" /></div>
           <div><label for="pay-method" id="l-pay-method"></label><select id="pay-method"></select></div>
           <div><label for="pay-ref" id="l-pay-ref"></label><input id="pay-ref" type="text" autocomplete="off" /></div>
-          <div><label for="pay-settles" id="l-pay-settles"></label><input id="pay-settles" type="text" autocomplete="off" /></div>
         </div>
+        <!-- D-047: the chosen supplier's matched, unpaid bills as tick boxes, with the running total (supplier-payments.js). -->
+        <fieldset id="pay-bills" class="pay-bills"><legend id="l-pay-settles"></legend>
+          <p class="note" id="pay-bills-note" role="status" aria-live="polite"></p>
+          <div id="pay-bills-list"></div>
+          <p class="note" id="pay-bills-total" aria-live="polite"></p>
+        </fieldset>
         <button id="pay-ask" class="act" type="button"></button>
         <p class="note" id="pay-status" role="status" aria-live="polite"></p>
         <h4 id="pay-asks-h"></h4>

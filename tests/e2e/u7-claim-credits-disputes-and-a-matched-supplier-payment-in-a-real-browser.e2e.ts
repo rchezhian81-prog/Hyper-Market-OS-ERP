@@ -138,7 +138,7 @@ describe.skipIf(!HAVE_BROWSER)('U7: draft credits, disputed claims and a supplie
       await page.fill('#pay-on', ddmm);
       await page.selectOption('#pay-method', 'bank_transfer');
       await page.fill('#pay-ref', 'NEFT-77001');
-      await page.fill('#pay-settles', 'inv-a');
+      await page.locator('#pay-bills-list input[value="inv-a"]').check(); // D-047: the bill it settles is ticked, not typed
       await page.click('#pay-ask');
       await says(page, '#pay-status', /^Asked\./);
       // A second person approves it in their own session.
