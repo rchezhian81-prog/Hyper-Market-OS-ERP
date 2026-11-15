@@ -5,6 +5,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## THE PLAN FROM 15 NOVEMBER 2026 — the whole store, working, simple (OB-800, OB-801) — READ THIS FIRST
+- **Owner's direction (15 Nov, in writing):** no pilot department. Finish the whole product; the owner runs the whole store on it **in parallel with Bpal** (Bpal stays the record until he says otherwise) and asks for corrections from daily use. He says the screens are too complicated and most features do not work. **Nothing new is built until every daily task works and is simple.**
+- **Working rules (OB-801, written into CLAUDE.md):** decide small reversible things yourself and list them each evening; ask the owner only money / tax / legal / security, batched daily; merge when every check is green; ONE working conversation at a time; report only done / store actions / blocked.
+- **Order of work:**
+  1. **Prove every daily task end to end, as each role does it** (cashier, store manager, warehouse, purchase, accountant, owner) on a copy set up like the real store, in a real browser: open the screen, do the task, see the result where it should land. Every failure and every confusing step goes on one defect list (`docs/registers/daily-work-defects.md`).
+  2. **Fix the list**, simplest first: fewer screens, fewer fields, plain words, one obvious button per task. Each fix proved by an automated test that does the task as the person would.
+  3. **Full load from Bpal** (every department, not a pilot): the owner's one list of exports and the backup check (MG-02), then load, publish prices, first sale.
+  4. **Parallel run** beside Bpal; the owner's corrections fixed as they come.
+  5. Only then the remaining roadmap items (CR-01 4c-2, 4d, 4e; OI-13 A11/A13; the rest).
+- **Paused until step 2 is done:** new features in every other conversation (CR-01 4c-2 included).
+- **Owner, meanwhile:** pause the other conversations. Nothing else.
+- **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
+
 ## Round 1b: the store manager proposes item, barcode and GST changes; the owner approves (15 November 2026) · OB-773 3 B · OB-796
 - **Why:** the audit found only the owner could change an item, barcode or GST rate (C-8); the owner chose (OB-773 3 B) that the store manager may make changes the owner approves, and then (OB-796) that his approval also counts as Finance's for the sensitive tax changes, and that anyone holding the publish authority (today only the owner) approves.
 - **What changed:** new permission `catalogue.change.propose` (store manager only); new approval kind `catalogue_change` through a new route `POST /v1/catalogue/changes` (item details incl. HSN and MRP, label facts, a barcode, a GST rate); on Product details and GST rates the manager's button reads "Send for the owner's approval" (EN/TA) and nothing changes until approval; the owner's Approvals page shows each field before → after; approving makes exactly that change through the ordinary catalogue route as the owner's act, once; refusing keeps the reason; a change to an item saved meanwhile is not made; the general approvals route refuses this kind; direct edits unchanged.
