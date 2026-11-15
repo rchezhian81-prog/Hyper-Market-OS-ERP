@@ -82,7 +82,18 @@ function commandsIn(text: string): string[] {
     if (inFence) { out.push(line.trim()); continue; }
     for (const m of line.matchAll(/`([^`]+)`/g)) out.push(m[1]!.trim());
   }
-  return out.filter((c) => c.startsWith('pnpm run ') || /start-till\.cmd till-pin/.test(c));
+  return out.filter((c) => c.startsWith('pnpm run ') || /start-till\.cmd till-pin/.test(c) || (c.startsWith(INSTALLED_STORE_COMPUTER) && !c.includes('<step>')));
+}
+
+/** OB-739: how a store-computer step is typed on the INSTALLED store PC (store-computer-windows-services.md, "Typing a …"). */
+const INSTALLED_STORE_COMPUTER = '.\\runtime\\node\\node.exe .\\scripts\\store-computer.mjs ';
+
+/** Why a store-computer step would not be understood — the same check, whichever way it is typed. */
+function storeComputerProblems(rest: readonly string[]): string[] {
+  const parsed = parseCommandLine(rest);
+  const cmd = parsed.command ?? '';
+  if (!EXISTING_COMMANDS.includes(cmd)) return [`store-computer: "${cmd}" is not a command the tool has`];
+  return parsed.problems.map((p) => `store-computer ${cmd}: ${p}`);
 }
 
 /** The flags a command reads, taken from its own source. */
@@ -110,14 +121,7 @@ export function commandProblems(command: string, scripts: Readonly<Record<string
         const parsed = parseTillInstallArgs(rest) as { unknown: string[] };
         return parsed.unknown.map((u) => `till:install: ${u} is not a flag it reads`);
       }
-      case 'store-computer': {
-        const parsed = parseCommandLine(rest);
-        const cmd = parsed.command ?? '';
-        if (!EXISTING_COMMANDS.includes(cmd)) {
-          return [`store-computer: "${cmd}" is not a command the tool has`];
-        }
-        return parsed.problems.map((p) => `store-computer ${cmd}: ${p}`);
-      }
+      case 'store-computer': return storeComputerProblems(rest);
       case 'token:store': return unknown(TOKEN_FLAGS);
       case 'tenant:bootstrap': return unknown(BOOTSTRAP_FLAGS);
       case 'migration:slice': return unknown(SLICE_FLAGS);
@@ -127,6 +131,7 @@ export function commandProblems(command: string, scripts: Readonly<Record<string
       default: return flags.length === 0 ? [] : [`${script}: this guardrail does not know where its flags are read — add it here`];
     }
   }
+  if (command.startsWith(INSTALLED_STORE_COMPUTER)) return storeComputerProblems(w.slice(2));
   const at = w.indexOf('till-pin');
   if (at !== -1) return w.slice(at + 1).filter((a) => a.startsWith('--') && !TILL_PIN_FLAGS.has(a)).map((f) => `till-pin: ${f} is not a flag it reads`);
   return [];
@@ -200,6 +205,8 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(commandProblems('pnpm run till:install -- --lane lane-1 --colour blue', pkg.scripts)[0]).toMatch(/--colour is not a flag it reads/);
     expect(commandProblems('pnpm run store-computer -- teleport', pkg.scripts)).toHaveLength(1);
     expect(commandProblems('pnpm run store-computer -- grant --as a --colour blue', pkg.scripts)).toHaveLength(2);
+    expect(commandProblems(`${INSTALLED_STORE_COMPUTER}store-rules --as a --colour blue`, pkg.scripts)).toHaveLength(2);
+    expect(commandProblems(`${INSTALLED_STORE_COMPUTER}teleport`, pkg.scripts)).toHaveLength(1);
     expect(commandProblems('pnpm run till:pin -- --user u1 --by "A B" --forever', pkg.scripts)).toEqual(['till:pin: --forever is not a flag it reads']);
     expect(commandProblems('C:\\SRE\\till\\start-till.cmd till-pin --user u1 --by "A B" --forever', pkg.scripts)).toHaveLength(1);
   });
@@ -209,7 +216,8 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     for (const step of ['schedule-backup --to', '--every 60', 'unschedule-backup', 'backup-status', 'autostart', 'migrate-data-folder', 'update --from', '-- status', '-- seal --dir', '-- parallel-policy']) {
       expect(guide, step).toContain(step);
     }
-    for (const cmd of SETUP_COMMANDS) expect(guide, cmd).toContain(`pnpm run store-computer -- ${cmd} `);
+    // OB-739: on a developer's copy, or as typed on the installed store PC.
+    for (const cmd of SETUP_COMMANDS) expect(guide.includes(`pnpm run store-computer -- ${cmd} `) || guide.includes(`${INSTALLED_STORE_COMPUTER}${cmd} `), cmd).toBe(true);
     expect(guide).toContain('F:\\SRE-data');
     expect(guide).toContain('current-release.json');
     // The data lives in C:\SRE-data now: no settings path inside the release folder is left.
