@@ -385,7 +385,8 @@ describe('the refund screen gives money back, safely', () => {
     // first (audit PF-06) — and that flow asks the machine question.
     expect(flow).toMatch(/cardAttempt\(kind, quote\.balanceMinor\)/);
     const card = code(APP).slice(code(APP).indexOf('async function cardAttempt('), code(APP).indexOf('async function takeCardOrUpi('));
-    expect(card).toContain("t('tapTerminal')");
+    // Pilot audit D-6: a card asks the card machine; UPI asks the shop's UPI app or sound box — its own words.
+    expect(card).toContain("t(upi ? 'upiAsk' : 'tapTerminal')");
     expect(card).toMatch(/session\.startCardPayment\(/);
     expect(flow).toContain("t('exchangeRefunds')");
     expect(flow).toMatch(/refundTender === 'store_credit'/);

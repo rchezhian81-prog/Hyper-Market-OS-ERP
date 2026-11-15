@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { auditPage } from './lib/a11y-audit';
 
@@ -83,6 +83,7 @@ describe.skipIf(!HAVE_BROWSER)('the till asks the age question on the served scr
     await page.waitForFunction(() => { const w = globalThis as unknown as PosWindow; return w.posSession !== undefined && w.posSession.hasCatalogue(); }, undefined, { timeout: 15_000 });
     // The cashier signs in for the shift (SP-4b): the answer to the age question is given in their name.
     await signInThroughScreen(page); // staff ID, then the till PIN — checked by the box (ADR-0020)
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { edge, page };
   }
   const scan = async (page: Page, code: string): Promise<void> => { await page.keyboard.type(code); await page.keyboard.press('Enter'); };

@@ -177,6 +177,12 @@ const WORDS = {
     queueBasket: 'Handheld basket (queue)', queueBasketCode: 'The four digits on the queue handheld', queueBasketHint: 'The till prices every line itself. Check the bag, then take the payment.',
     givenUp: 'Basket given up. It stays on the record with your name and the reason.',
     tapTerminal: 'What did the card machine say?',
+    upiAsk: 'Did the UPI payment come through? Check the shop\'s UPI app or sound box.',
+    upiNoAnswerMsg: 'The UPI payment has not shown on the shop\'s UPI app or sound box, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the UPI app, and if it is unclear, ask the manager before trying again.',
+    cashNeedsFloatTitle: 'No float in the drawer yet',
+    cashNeedsFloat: 'Take the opening float first (More → Take float). Nothing was charged. Card or UPI can still be taken.',
+    keyCashFirst: 'Key the cash the customer gave, then OK — or tap Exact {amount}. Nothing was charged.',
+    qtyNotZero: 'The quantity must be 1 or more. Key the number of items, then OK.',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
     more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
     find: 'Find', findTitle: 'Find an item', findHint: 'Type part of the name, or key the barcode or code. A scan still works here.',
@@ -457,6 +463,12 @@ const WORDS = {
     queueBasket: 'கருவிக் கூடை (வரிசை)', queueBasketCode: 'வரிசைக் கருவியில் உள்ள நான்கு இலக்கங்கள்', queueBasketHint: 'ஒவ்வொரு வரியையும் இந்த பில்லிங்கே விலையிடும். பையைச் சரிபார்த்து, பிறகு கட்டணத்தைப் பெறுங்கள்.',
     givenUp: 'கூடை கைவிடப்பட்டது. உங்கள் பெயரும் காரணமும் பதிவில் இருக்கும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
+    upiAsk: 'UPI பணம் வந்ததா? கடையின் UPI செயலியையோ ஒலிப்பெட்டியையோ (சவுண்ட் பாக்ஸ்) பார்க்கவும்.',
+    upiNoAnswerMsg: 'கடையின் UPI செயலியிலோ ஒலிப்பெட்டியிலோ UPI பணம் இன்னும் காட்டப்படவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். UPI செயலியைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
+    cashNeedsFloatTitle: 'டிராயரில் இன்னும் ஆரம்பப் பணம் இல்லை',
+    cashNeedsFloat: 'முதலில் ஆரம்பப் பணத்தை எடுக்கவும் (மேலும் → ஆரம்பப் பணம் எடு). எதுவும் வசூலிக்கப்படவில்லை. கார்டு அல்லது UPI இப்போதும் பெறலாம்.',
+    keyCashFirst: 'வாடிக்கையாளர் கொடுத்த பணத்தை உள்ளிட்டு சரி அழுத்தவும் — அல்லது சரியான தொகை {amount} அழுத்தவும். எதுவும் வசூலிக்கப்படவில்லை.',
+    qtyNotZero: 'எண்ணிக்கை 1 அல்லது அதற்கு மேல் இருக்க வேண்டும். பொருட்களின் எண்ணிக்கையை உள்ளிட்டு சரி அழுத்தவும்.',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
     more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
     find: 'தேடு', findTitle: 'பொருளைத் தேடு', findHint: 'பெயரின் ஒரு பகுதியைத் தட்டச்சு செய்யவும், அல்லது பார்கோடு / குறியீட்டை உள்ளிடவும். இங்கே ஸ்கேன் செய்தாலும் சேரும்.',
@@ -1082,6 +1094,11 @@ let chosen = null;
 // are gone the moment the panel closes (ADR-0020 — never shown, never stored).
 let entryValue = '0';
 let entryMasked = false;
+/** D-4 (pilot audit): the value shown is the CURRENT one (a line's quantity), greyed — the first key typed replaces it,
+ *  never adds to it ("3" on a line of 1 is 3, not 13). OK with nothing typed keeps it. */
+let entryFresh = false;
+/** D-14 (pilot audit): what OK on a number panel must say instead of closing — `null` when the answer is acceptable. */
+let entryCheck = null;
 /** A code (the handheld's 4 digits, the phone's 6): every digit counts, a leading 0 included — never read as a number. */
 let entryIsCode = false;
 const CODE_DIGITS = 8;
@@ -1095,10 +1112,13 @@ const BILL_CHARS = 32;
 const PIN_DIGITS = 6;
 function paintEntry() {
   el('entry').textContent = entryMasked ? '•'.repeat(entryValue.length) : entryValue;
+  el('entry').classList.toggle('fresh', entryFresh);
   if (entryMasked) el('entry').setAttribute('aria-label', `${entryValue.length} / ${PIN_DIGITS}`); else el('entry').removeAttribute('aria-label');
 }
 function typeIntoEntry(key, literal = false) {
-  const current = entryValue;
+  // The first key on a fresh value starts the answer over: a digit replaces it; C and ⌫ clear it.
+  const current = entryFresh ? '0' : entryValue;
+  entryFresh = false;
   // A LETTER from the letters pad is always a character, never a command: the letter C is not the digit pad's Clear.
   const next = literal
     ? (current.length < BILL_CHARS ? current + key : current)
@@ -1126,7 +1146,7 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false, replaceFirst = false, check = null }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
   // OB-698 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
@@ -1147,6 +1167,8 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   entryMaxDigits = barcode === true ? BARCODE_DIGITS : CODE_DIGITS;
   entryValue = entryIsCode ? '' : initial;
   entryMasked = mask === true;
+  entryFresh = replaceFirst === true && !entryIsCode && !entryMasked;
+  entryCheck = mode === 'number' && typeof check === 'function' ? check : null;
   paintEntry();
   el('entry').hidden = mode !== 'number';
   const lettersFirst = entryHasLetters && staffLetters !== true;
@@ -1229,6 +1251,8 @@ function closeSheet(answer) {
   entryMasked = false;
   entryIsCode = false;
   entryHasLetters = false;
+  entryFresh = false;
+  entryCheck = null;
   el('letterpad').hidden = true;
   el('pad-switch').hidden = true;
   entryValue = '0';
@@ -1274,6 +1298,11 @@ el('pad-switch').addEventListener('click', () => {
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
+  // D-14: a number the question cannot take keeps the panel open and says, in words, what to key — never a silent close.
+  if (sheetMode === 'number' && el('reasons').hidden && entryCheck !== null) {
+    const problem = entryCheck(entryValue);
+    if (problem) { el('entry-hint').textContent = problem; return; }
+  }
   closeSheet(sheetMode === 'confirm' ? true : sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
 });
 // OB-698: Escape on a confirm panel is Go back — nothing is sent. (Enter never confirms: the verb is reached only by a tap, or
@@ -1672,8 +1701,12 @@ window.posBadge = { refresh: refreshBadge, state: () => box };
 el('qty').addEventListener('click', async () => {
   if (!selectedLineId) { tell(t('read'), t('tapLineFirst'), STOP); return; }
   // Tap the line, tap Qty, tap the number: three (pos-cashier.md). The keypad + OK remain for larger quantities.
+  // D-4: the panel shows the line's quantity now, greyed; the first digit keyed replaces it (3 is 3, never 13).
+  const current = session.basket().find((l) => l.lineId === selectedLineId);
+  const now = current && Number.isInteger(current.qty) && current.qty > 0 ? String(current.qty) : '1';
   const answer = await ask({
-    title: t('quantity'), mode: 'number', initial: '1',
+    title: t('quantity'), mode: 'number', initial: now, replaceFirst: true,
+    check: (value) => (Number(value) > 0 ? null : t('qtyNotZero')),
     quick: ['2', '3', '4', '5', '6'].map((n) => ({ label: n, value: n })),
   });
   if (answer === null) return;
@@ -1857,6 +1890,20 @@ function quickCash(payableMinor) {
   return [{ label: `${t('exact')} ${inr(payableMinor)}`, value: String(rupees) }, ...notes.map((note) => ({ label: inr(note * 100), value: String(note) }))];
 }
 
+/**
+ * D-5 (pilot audit): is a float out on this till? Asked of the STORE COMPUTER over this till's own loopback (the same socket
+ * a sale is saved through) — never the cloud. With no answer (a stand-alone shell, or the box not answering) the till does
+ * not invent a refusal: the store computer is what records the drawer, and it says no where it must.
+ */
+async function floatIsOut() {
+  try {
+    const cash = await session.till.tillCash();
+    return cash === null || cash.shiftOpen === true;
+  } catch {
+    return true;
+  }
+}
+
 el('tender').addEventListener('click', async () => {
   const payable = session.payableMinor();
   if (payable <= 0) { tell(t('read'), t('scanFirst'), STOP); return; }
@@ -1876,6 +1923,8 @@ el('tender').addEventListener('click', async () => {
   if (kind === 'split') return splitPayment(payable);
   if (kind === 'gift_card') return splitPayment(payable, 'gift_card');
   if (kind !== 'cash') return takeCardOrUpi(kind, payable);
+  // D-5: no cash into a drawer that has no float — the cashier is told the next step, and card or UPI still work.
+  if (!(await floatIsOut())) { tell(t('cashNeedsFloatTitle'), t('cashNeedsFloat'), STOP); return; }
 
   const changeFor = (rupees) => Math.round(rupees * 100) - payable;
   const received = await ask({
@@ -1886,10 +1935,13 @@ el('tender').addEventListener('click', async () => {
       ? `${t('notEnough')} ${inr(-changeFor(rupees))}`
       : `${t('changeDue')}: ${inr(changeFor(rupees))}`),
     quick: quickCash(payable),
+    // D-14: OK with nothing keyed, or too little, keeps the panel open and says what to key — it never closes silently.
+    check: (value) => (Number(value) <= 0 ? t('keyCashFirst').replace('{amount}', inr(payable))
+      : changeFor(Number(value)) < 0 ? `${t('notEnough')} ${inr(-changeFor(Number(value)))}` : null),
   });
   if (received === null) return;
   const change = changeFor(Number(received));
-  if (change < 0) return; // the panel already said so, in words, as they typed
+  if (change < 0) return; // the panel refuses OK on too little; a quick note is never below the bill
 
   // The receipt number comes from the store computer, saved on its disk first (audit PF-04 · M01-FR-02). If it cannot
   // give one — the range is spent, the box cannot save — the till stops: no money is taken, the manager is told.
@@ -2194,7 +2246,10 @@ async function askMachineRef() {
 }
 
 async function cardAttempt(kind, amountMinor) {
-  const machine = () => choose(`${t('tapTerminal')} — ${inr(amountMinor)}`, [
+  // D-6 (pilot audit): UPI is not the card machine — the cashier checks the shop's UPI app or sound box, and is asked so.
+  const upi = kind === 'upi';
+  const notPaidMsg = (outcome) => (outcome === 'declined' ? t('declinedMsg') : t(upi ? 'upiNoAnswerMsg' : 'noAnswerMsg'));
+  const machine = () => choose(`${t(upi ? 'upiAsk' : 'tapTerminal')} — ${inr(amountMinor)}`, [
     { value: 'approved', label: t('approved'), icon: 'circle-check' },
     { value: 'declined', label: t('declined'), icon: 'x' },
     { value: 'no_answer', label: t('noAnswer'), icon: 'clock' },
@@ -2202,7 +2257,7 @@ async function cardAttempt(kind, amountMinor) {
   if (!session.startCardPayment) {
     const outcome = await machine();
     if (outcome === null) return null;
-    if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
+    if (outcome !== 'approved') { tell(t('read'), notPaidMsg(outcome), STOP); return null; }
     return '';
   }
   let started = await session.startCardPayment(kind, amountMinor);
@@ -2231,7 +2286,7 @@ async function cardAttempt(kind, amountMinor) {
   const answered = said === 'approved' && machineRef ? await session.answerCardPayment(started.attemptId, said, undefined, machineRef) : await session.answerCardPayment(started.attemptId, said);
   if (!answered.ok) { tell(t('read'), answered.laneMessage, STOP); return null; }
   // Said in the cashier's words: an unpaid sale does not commit, and the goods stay on the counter.
-  if (said !== 'approved') { tell(t('read'), said === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
+  if (said !== 'approved') { tell(t('read'), notPaidMsg(said), STOP); return null; }
   if (machineRef) machineRefs.set(started.attemptId, machineRef);
   return started.attemptId;
 }
@@ -2349,6 +2404,8 @@ async function splitPayment(payable, first) {
       remaining -= part.amountMinor;
       continue;
     }
+    // D-5: the cash part of a split goes into the drawer too — refused with no float out; the other tenders stay offered.
+    if (kind === 'cash' && !(await floatIsOut())) { tell(t('cashNeedsFloatTitle'), t('cashNeedsFloat'), STOP); continue; }
     const max = kind === 'loyalty_points' ? pointsMax : kind === 'store_credit' ? creditMax : remaining;
     const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(remaining)}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
       // One tap: the notes that cover what is left, or the most this part may be.

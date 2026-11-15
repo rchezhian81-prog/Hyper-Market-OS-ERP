@@ -191,6 +191,8 @@
         font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; font-variant-numeric: var(--numbers);
         background: var(--panel-2); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); min-height: 68px;
       }
+      /* D-4: the current value, shown greyed and dashed — the first key typed replaces it (a quantity of 1, key 3: 3, never 13). */
+      .entry.fresh { color: var(--muted); border-style: dashed; }
       /* OB-264: the typed field for an answer with letters (the old system's bill number). */
       .entry-text {
         font: inherit; font-size: 32px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 10px 16px; min-height: 68px;

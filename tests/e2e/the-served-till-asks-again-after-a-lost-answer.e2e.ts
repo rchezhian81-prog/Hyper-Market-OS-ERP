@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page, type Route } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **The served till, in a real Chromium against a real store box, when the box's answer to a sale is lost (audit A8).**
@@ -76,6 +76,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till asks the store computer again wh
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.hasCatalogue() === true, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { page, edge, wire };
   };
   const ringAndPayCash = async (page: Page): Promise<void> => {

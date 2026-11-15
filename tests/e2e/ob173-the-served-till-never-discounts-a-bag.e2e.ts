@@ -13,7 +13,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { splitInclusive } from '../../packages/pricing/src/pricing';
 import { money } from '../../packages/contracts/src/money';
 import { rate } from '../../packages/contracts/src/rate';
-import { prepareTillBox, signInThroughScreen, signInAtLane, operatorHeader } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, signInAtLane, operatorHeader, takeFloatOnPage } from '../support/till-operator';
 
 /**
  * **OB-173 "A" (owner, 17 Oct 2026, "Never discount bags") in a real browser against a REAL store computer.**
@@ -93,6 +93,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-173: the served till never discounts a carry 
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => { const w = globalThis as unknown as PosWindow; return w.posSession !== undefined && w.posSession.hasCatalogue(); }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     return { edge, page };
   }
   const scan = async (page: Page, code: string): Promise<void> => { await page.keyboard.type(code); await page.keyboard.press('Enter'); };
