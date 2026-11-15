@@ -3832,6 +3832,9 @@
               },
               "tobaccoWarning": {
                 "$ref": "#/components/schemas/TobaccoWarningRecord"
+              },
+              "labelFactsFollow": {
+                "$ref": "#/components/schemas/LabelFactsFollow"
               }
             },
             "additionalProperties": true
@@ -6524,6 +6527,31 @@
         },
         "additionalProperties": true
       },
+      "LabelFactsFollow": {
+        "type": "object",
+        "required": [
+          "decision",
+          "loadId",
+          "markedBy",
+          "markedAt"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "const": "OB-738"
+          },
+          "loadId": {
+            "type": "string"
+          },
+          "markedBy": {
+            "type": "string"
+          },
+          "markedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "LineBundle": {
         "type": "object",
         "required": [
@@ -7182,6 +7210,9 @@
           },
           "tobaccoWarning": {
             "$ref": "#/components/schemas/TobaccoWarningRecord"
+          },
+          "labelFactsFollow": {
+            "$ref": "#/components/schemas/LabelFactsFollow"
           }
         },
         "additionalProperties": true
