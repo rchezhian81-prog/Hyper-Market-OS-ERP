@@ -11,6 +11,9 @@ const perms = new Set(Array.isArray(who?.permissions) ? who.permissions : []);
 const named = typeof who?.userId === 'string' && who.userId !== '';
 const mayRead = perms.has('catalogue.pack.read');
 const mayEdit = perms.has('catalogue.pack.publish');
+// OB-773 (owner, 15 Nov 2026, choice 3 B): a person who may PROPOSE but not publish (the store manager) may send a GST rate
+// for the owner's approval (POST /v1/catalogue/changes); nothing is recorded until he approves it. The cess stays as it was.
+const mayPropose = !mayEdit && perms.has('catalogue.change.propose');
 let lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
 
 // U2 · G10 (UI/UX gap audit): a refusal says what happened, that nothing was changed, and the next safe action — the
@@ -41,6 +44,9 @@ const WORDS = {
     refused: 'Head office refused:', unreachable: 'Head office could not be reached. Nothing was recorded — try again.', cannotRead: 'The rates could not be read from head office.',
     readOnly: 'You can read the rates. A new rate is recorded by the person who keeps the catalogue and approved by Finance.', noRight: 'This account may not read the tax classes.',
     nobody: 'Nobody is signed in on this computer, so nothing can be shown.', notKnown: 'Not known', products: '{n}',
+    sendForApproval: 'Send for the owner\u2019s approval', whyOwner: 'Why (the owner reads it)',
+    proposeLead: 'You can propose a GST rate. It is sent for the owner\u2019s approval; nothing is recorded until he approves it.',
+    sentForApproval: 'Sent for the owner\u2019s approval. Nothing has changed yet — the rate is recorded only when the owner approves it on his Approvals page.',
   },
   ta: {
     lang: 'English', title: 'GST மற்றும் செஸ் விகிதங்கள்',
@@ -59,6 +65,9 @@ const WORDS = {
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் பதியப்படவில்லை — மீண்டும் முயலவும்.', cannotRead: 'விகிதங்களைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை.',
     readOnly: 'விகிதங்களை நீங்கள் படிக்கலாம். புதிய விகிதத்தைப் பட்டியலைப் பராமரிப்பவர் பதிகிறார், நிதி ஒப்புக்கொள்கிறது.', noRight: 'இந்தக் கணக்கு வரி வகுப்புகளைப் படிக்க முடியாது.',
     nobody: 'இந்தக் கணினியில் யாரும் உள்நுழையவில்லை, எனவே எதையும் காட்ட முடியாது.', notKnown: 'தெரியவில்லை', products: '{n}',
+    sendForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பு', whyOwner: 'ஏன் (உரிமையாளர் படிப்பார்)',
+    proposeLead: 'GST விகிதத்தை நீங்கள் முன்மொழியலாம். அது உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்படும்; அவர் ஒப்புக்கொள்ளும் வரை எதுவும் பதியப்படாது.',
+    sentForApproval: 'உரிமையாளரின் ஒப்புதலுக்கு அனுப்பப்பட்டது. இன்னும் எதுவும் மாறவில்லை — உரிமையாளர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டால் மட்டுமே விகிதம் பதியப்படும்.',
   },
 };
 const t = (k) => WORDS[lang]?.[k] ?? WORDS.en[k] ?? k;
@@ -183,18 +192,20 @@ function paintRecord() {
       : [...periods].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom)).map((p) => { const li = document.createElement('li'); li.dataset.from = p.effectiveFrom; li.textContent = words(p); return li; }));
   $('gst-list').replaceChildren(...list(open.gst, gstWords));
   $('cess-list').replaceChildren(...list(open.cess, cessWords));
-  for (const id of ['g-from', 'g-rate', 'g-save', 'c-from', 'c-adv', 'c-spec', 'c-per', 'c-save', 'why']) $(id).disabled = !mayEdit;
-  whyDisabled($('g-save'), mayEdit ? '' : 'role'); whyDisabled($('c-save'), mayEdit ? '' : 'role');
+  for (const id of ['g-from', 'g-rate', 'g-save', 'c-from', 'c-adv', 'c-spec', 'c-per', 'c-save', 'why']) $(id).disabled = !(mayEdit || (mayPropose && ['g-from', 'g-rate', 'g-save', 'why'].includes(id)));
+  whyDisabled($('g-save'), mayEdit || mayPropose ? '' : 'role'); whyDisabled($('c-save'), mayEdit ? '' : 'role');
   $('ask').hidden = pending === null || !mayEdit;
 }
 
 function paint() {
   // U3 · OB-699: the read-only line is the page's own word — it follows the language toggle like every other
-  { const st = $('page-status'); if (st && st.dataset.readOnly === 'on') st.textContent = t('readOnly'); }
+  { const st = $('page-status'); if (st && st.dataset.readOnly === 'on') st.textContent = t(mayPropose ? 'proposeLead' : 'readOnly'); }
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['list-h', 'listH'], ['list-lead', 'listLead'],
      ['l-hsn', 'hsn'], ['open', 'open'], ['gst-h', 'gstH'], ['cess-h', 'cessH'],
     ['l-g-from', 'from'], ['l-g-rate', 'rate'], ['g-save', 'saveGst'], ['l-c-from', 'from'], ['l-c-adv', 'adv'], ['l-c-spec', 'spec'], ['l-c-per', 'per'], ['c-save', 'saveCess'], ['l-why', 'why'], ['ask', 'ask']]) { const el = $(id); if (el) el.textContent = t(k); }
+  // OB-773: proposing, the GST button says plainly where it goes, and the reason is for the owner.
+  if (mayPropose) { $('g-save').textContent = t('sendForApproval'); $('l-why').textContent = t('whyOwner'); }
   $('lang').textContent = t('lang');
   $('nobody').hidden = named; $('nobody').textContent = t('nobody');
   paintList(); paintRecord();
@@ -209,7 +220,7 @@ async function load() {
   classes = read.map((k) => ({ ...k, products: counts.get(k.hsn) ?? 0 }));
   const st = $('page-status');
   if (read.some((k) => k.failed !== null)) say(st, read.find((k) => k.failed !== null).failed, '');
-  else if (!mayEdit) { st.className = 'status'; st.dataset.readOnly = 'on'; st.textContent = t('readOnly'); } else { st.dataset.readOnly = 'off'; st.textContent = ''; }
+  else if (!mayEdit) { st.className = 'status'; st.dataset.readOnly = 'on'; st.textContent = t(mayPropose ? 'proposeLead' : 'readOnly'); } else { st.dataset.readOnly = 'off'; st.textContent = ''; }
   paint();
 }
 
@@ -248,12 +259,24 @@ async function record(kind, path, body, details, summary) {
   tell($('record-status'), true, found.decidedBy === undefined ? t('saved') : fill(t('savedWith'), { by: found.decidedBy }));
 }
 
+/** OB-773: a GST rate sent for the owner's approval — head office records exactly it; nothing changes until he approves. */
+async function proposeRate(hsnCode, effectiveFrom, rateBps) {
+  const st = $('record-status');
+  const why = $('why').value.trim();
+  if (why === '') { tell(st, false, t('needWhy')); return; }
+  const out = await call('POST', '/v1/catalogue/changes', { change: 'tax_rate', hsnCode, effectiveFrom, rateBps, reason: why });
+  if (!out.ok) { say(st, out, ''); return; }
+  $('why').value = '';
+  tell(st, true, t('sentForApproval'));
+}
+
 $('pick').addEventListener('submit', (e) => { e.preventDefault(); void openClass($('hsn').value.trim()); });
 $('g-save').addEventListener('click', () => {
   const from = dateOf('g-from'); const rate = $('g-rate').value.trim();
   if (open === null || from === '' || rate === '') { tell($('record-status'), false, t('needFigures')); return; }
   const rateBps = Math.round(Number(rate) * 100);
   const body = { rateBps: Number.isFinite(rateBps) ? rateBps : rate };
+  if (mayPropose) { void proposeRate(open.hsn, from, body.rateBps); return; }
   void record('tax_rate_change', `/v1/catalogue/tax-classes/${encodeURIComponent(open.hsn)}/rates/${encodeURIComponent(from)}`, body, { ...body, hsnCode: open.hsn, effectiveFrom: from }, `GST on HSN ${open.hsn}: ${rate}% from ${from}`);
 });
 $('c-save').addEventListener('click', () => {

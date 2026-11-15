@@ -49,7 +49,12 @@ export interface ApprovalRequestView {
   readonly usedBy?: string;
   /** OB-420: for a kind one named person alone decides (a floor-device review), who that is now — or that nobody is. */
   readonly decider?: DeciderView;
+  /** OB-773: a catalogue change the owner approved — whether head office made it, and if not, why. */
+  readonly catalogueChange?: CatalogueChangeMade;
 }
+
+/** OB-773: whether an approved catalogue change was made (head office's own words when it was not). */
+export interface CatalogueChangeMade { readonly applied: boolean; readonly reason?: string }
 
 /** OB-420: who alone decides a request, as the server hands it over (only on a waiting request of such a kind). */
 export type DeciderView =
@@ -84,7 +89,7 @@ export type AskResult = { readonly result: 'asked'; readonly request: ApprovalRe
 
 export type DecisionWord = 'approved' | 'rejected';
 /** A checker's decision as the server recorded it. */
-export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string } | Refused | LostLink;
+export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string; readonly catalogueChange?: CatalogueChangeMade } | Refused | LostLink;
 
 export interface ApprovalsPorts {
   /** The inbox the shell last read (live from head office, or the injected stand-in). */
@@ -137,7 +142,11 @@ export type CopyKey =
   | 'deciderNamedReviewer' | 'deciderNoReviewer'
   | 'yesWord' | 'noWord'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  // OB-773: a store manager's catalogue change — the before and after, and whether head office made it.
+  | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade'
+  | 'fieldName' | 'fieldSku' | 'fieldBaseUom' | 'fieldCategory' | 'fieldTaxClass' | 'fieldLifecycle' | 'fieldBrand' | 'fieldManufacturer'
+  | 'fieldParent' | 'fieldMrp' | 'fieldAttributes' | 'fieldBarcodes' | 'fieldNewBarcode' | 'fieldGstRate' | 'fieldLabelFact';
 
 export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -229,6 +238,15 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to use approvals.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    kindCatalogueChange: 'A store manager\'s change to an item, a barcode or a GST rate (the owner approves; head office then makes it)',
+    changeItem: 'Item', changeHsn: 'HSN class', changeNothing: 'nothing',
+    statusChangeMade: 'Approved by {who} and made — the change is in the catalogue.',
+    statusChangeNotMade: 'Approved by {who}, but head office could NOT make it: {reason}',
+    decidedChangeMade: 'Approved. Head office has made the change.',
+    decidedChangeNotMade: 'Approved, but head office could NOT make the change: {reason}',
+    fieldName: 'Name', fieldSku: 'SKU', fieldBaseUom: 'Unit it is counted in', fieldCategory: 'Category', fieldTaxClass: 'Tax (HSN) class', fieldLifecycle: 'Lifecycle',
+    fieldBrand: 'Brand', fieldManufacturer: 'Manufacturer', fieldParent: 'A variant of', fieldMrp: 'MRP', fieldAttributes: 'Attributes',
+    fieldBarcodes: 'Barcodes', fieldNewBarcode: 'New barcode', fieldGstRate: 'GST rate', fieldLabelFact: 'Label',
   },
   ta: {
     title: 'அனுமதிகள்', langName: 'English',
@@ -317,6 +335,15 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'அனுமதிகளைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    kindCatalogueChange: 'கடை மேலாளர் ஒரு பொருள், பார்கோடு அல்லது GST விகிதத்தில் செய்த மாற்றம் (உரிமையாளர் ஒப்புக்கொண்டால் தலைமை அலுவலகம் அதைச் செய்யும்)',
+    changeItem: 'பொருள்', changeHsn: 'HSN வகுப்பு', changeNothing: 'ஒன்றுமில்லை',
+    statusChangeMade: '{who} ஒப்புக்கொண்டார், மாற்றம் செய்யப்பட்டது — அது பட்டியலில் உள்ளது.',
+    statusChangeNotMade: '{who} ஒப்புக்கொண்டார், ஆனால் தலைமை அலுவலகத்தால் அதைச் செய்ய முடியவில்லை: {reason}',
+    decidedChangeMade: 'ஒப்புக்கொள்ளப்பட்டது. தலைமை அலுவலகம் மாற்றத்தைச் செய்துவிட்டது.',
+    decidedChangeNotMade: 'ஒப்புக்கொள்ளப்பட்டது, ஆனால் தலைமை அலுவலகத்தால் மாற்றத்தைச் செய்ய முடியவில்லை: {reason}',
+    fieldName: 'பெயர்', fieldSku: 'SKU', fieldBaseUom: 'எண்ணப்படும் அலகு', fieldCategory: 'வகை', fieldTaxClass: 'வரி (HSN) வகுப்பு', fieldLifecycle: 'வாழ்க்கைச் சுழற்சி',
+    fieldBrand: 'பிராண்ட்', fieldManufacturer: 'உற்பத்தியாளர்', fieldParent: 'இதன் வகைமாறு', fieldMrp: 'MRP', fieldAttributes: 'பண்புகள்',
+    fieldBarcodes: 'பார்கோடுகள்', fieldNewBarcode: 'புதிய பார்கோடு', fieldGstRate: 'GST விகிதம்', fieldLabelFact: 'லேபிள்',
   },
 };
 
@@ -382,6 +409,14 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   tenant_closure: 'kindTenantClosure',
   // OB-407: the named security reviewer's signature on switching on a floor device (cameras, shelf labels, RFID, sensors).
   floor_device_review: 'kindFloorDeviceReview',
+  // OB-773: a store manager's item, barcode or GST change — the owner approves; head office then makes it.
+  catalogue_change: 'kindCatalogueChange',
+};
+/** OB-773: the fields a catalogue change names, in both languages; a label fact is "Label: <fact spelt out>". */
+const FIELD_COPY: Readonly<Record<string, CopyKey>> = {
+  name: 'fieldName', sku: 'fieldSku', baseUom: 'fieldBaseUom', primaryCategoryId: 'fieldCategory', taxClass: 'fieldTaxClass', lifecycle: 'fieldLifecycle',
+  brand: 'fieldBrand', manufacturer: 'fieldManufacturer', parentProductId: 'fieldParent', mrpHistory: 'fieldMrp', attributes: 'fieldAttributes',
+  barcodes: 'fieldBarcodes', newBarcode: 'fieldNewBarcode', gstRate: 'fieldGstRate',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
@@ -506,7 +541,7 @@ export interface ApprovalsView {
 
 /** The outcome of pressing Approve or Reject. */
 export type DecideOutcome =
-  | { readonly kind: 'decided'; readonly decision: DecisionWord }
+  | { readonly kind: 'decided'; readonly decision: DecisionWord; readonly catalogueChange?: CatalogueChangeMade }
   | { readonly kind: 'needs_reason' }
   | { readonly kind: 'nobody_named' }
   | { readonly kind: 'not_permitted' }
@@ -543,6 +578,12 @@ export function presentRequestStatus(lang: Lang, r: ApprovalRequestView, waiting
     case 'expired':
       return presentStatus({ tone: 'idle', icon: '⌛', label: t('statusExpired'), needsAttention: false });
     case 'used':
+      // OB-773: a catalogue change says whether head office made it, in its own words when it did not.
+      if (r.catalogueChange !== undefined) {
+        return r.catalogueChange.applied
+          ? presentStatus({ tone: 'ok', icon: '✓', label: fill(t('statusChangeMade'), { who }), needsAttention: false })
+          : presentStatus({ tone: 'error', icon: '✕', label: fill(t('statusChangeNotMade'), { who, reason: r.catalogueChange.reason ?? '—' }), needsAttention: true });
+      }
       return presentStatus({ tone: 'idle', icon: '✔', label: t('statusUsed'), needsAttention: false });
   }
 }
@@ -556,14 +597,35 @@ export function presentDecider(lang: Lang, r: ApprovalRequestView): StatusPresen
     : presentStatus({ tone: 'degraded', icon: '⚠', label: t('deciderNoReviewer'), needsAttention: true });
 }
 
+/**
+ * OB-773: a catalogue change reads as the item (or HSN class) and one "before → after" line per field head office worked
+ * out — never the raw record. A field with nothing before (or after) says "nothing".
+ */
+function catalogueChangeLines(t: (k: CopyKey) => string, d: Readonly<Record<string, unknown>>): PresentedDetail[] {
+  const subject: PresentedDetail[] = typeof d['productId'] === 'string'
+    ? [{ key: 'productId', label: t('changeItem'), value: d['productId'] }]
+    : typeof d['hsnCode'] === 'string' ? [{ key: 'hsnCode', label: t('changeHsn'), value: d['hsnCode'] }] : [];
+  const lines = (d['changes'] as unknown[]).flatMap((c): PresentedDetail[] => {
+    if (c === null || typeof c !== 'object') return [];
+    const f = c as Record<string, unknown>;
+    const field = typeof f['field'] === 'string' ? f['field'] : '';
+    const known = FIELD_COPY[field];
+    const label = known !== undefined ? t(known) : field.startsWith('safety.') ? `${t('fieldLabelFact')}: ${spellOut(field.slice(7)).toLowerCase()}` : spellOut(field);
+    const said = (v: unknown): string => (typeof v === 'string' && v.trim() !== '' ? v : t('changeNothing'));
+    return [{ key: field, label, value: `${said(f['before'])} → ${said(f['after'])}` }];
+  });
+  return [...subject, ...lines];
+}
+
 /** One request presented for reading — label, amount, details as key: value lines, and its status chip. */
 export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForReader = false): PresentedRequest {
   const t = translator(APPROVALS_COPY, lang);
   const kindKey = KIND_COPY[r.kind];
-  const details: PresentedDetail[] = Object.keys(r.details).map((key) => {
-    const known = DETAIL_COPY[key];
-    return { key, label: known === undefined ? spellOut(key) : t(known), value: detailValue(t, key, r.details[key]) };
-  });
+  const details: PresentedDetail[] = r.kind === 'catalogue_change' && Array.isArray(r.details['changes']) ? catalogueChangeLines(t, r.details)
+    : Object.keys(r.details).map((key) => {
+      const known = DETAIL_COPY[key];
+      return { key, label: known === undefined ? spellOut(key) : t(known), value: detailValue(t, key, r.details[key]) };
+    });
   return {
     requestId: r.requestId,
     kind: r.kind,
@@ -622,7 +684,7 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       if (row === undefined || row.status !== 'waiting') return { kind: 'not_waiting' };
       if (row.requestedBy === config.userId) return { kind: 'own_request' }; // §28 — never sent
       const r = await ports.decide({ requestId, decision, reason: reason.trim() });
-      if (r.result === 'decided') return { kind: 'decided', decision: r.decision };
+      if (r.result === 'decided') return { kind: 'decided', decision: r.decision, ...(r.catalogueChange === undefined || r.decision !== 'approved' ? {} : { catalogueChange: r.catalogueChange }) };
       if (r.result === 'lost_link') return { kind: 'lost_link' };
       if (r.code === 'self_approval') return { kind: 'own_request' };
       return { kind: 'refused', code: r.code, whatHappened: r.whatHappened };
@@ -634,6 +696,12 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
       switch (o.kind) {
         case 'decided':
+          // OB-773: an approved catalogue change is made at once — said, and so is a change head office could not make (P-08).
+          if (o.catalogueChange !== undefined) {
+            return o.catalogueChange.applied
+              ? presentStatus({ tone: 'ok', icon: '✓', label: t('decidedChangeMade'), needsAttention: false })
+              : presentStatus({ tone: 'degraded', icon: '⚠', label: fill(t('decidedChangeNotMade'), { reason: o.catalogueChange.reason ?? '—' }), needsAttention: true });
+          }
           return presentStatus({ tone: 'ok', icon: '✓', label: t(o.decision === 'approved' ? 'decidedApproved' : 'decidedRejected'), needsAttention: false });
         case 'needs_reason': return err(t('decideNeedsReason'));
         case 'nobody_named': return err(t('decideNobody'));
