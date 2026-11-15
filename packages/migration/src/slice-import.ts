@@ -1,6 +1,8 @@
 // MG-05 / MG-04 / §34.1 — the FIRST real-data load as the owner decided it (OB-241, D3 option B): ONE pilot
 // department's products, barcodes, tax classes and prices (B1 plus OC-21), from four CSV files that follow a
-// published template, with PER-ROW exceptions instead of a whole-file refusal.
+// published template, with PER-ROW exceptions instead of a whole-file refusal. OB-800 (owner, 15 Nov 2026): no pilot
+// department — the old ERP's WHOLE catalogue is loaded, so a slice may name several departments (`departments`), each
+// product row naming one of them; the rules per row are unchanged.
 //
 // The bulk loader (`load.ts`) refuses the whole extract on the first malformed row — right for a full rehearsal,
 // wrong for a department slice that a person fills in by hand from the old ERP's export: one mistyped MRP would
@@ -60,7 +62,7 @@ export const SLICE_TEMPLATES: Readonly<Record<SliceFile, SliceTemplate>> = Objec
       sku: 'The SKU; blank means the item code.',
       description: 'The name the till prints.',
       uom: 'The unit it is sold in: each, kg, litre, g, ml.',
-      category: 'The pilot department\'s category id — every row must name it.',
+      category: 'The department\'s category id — one of the departments slice.json names (OB-800: the whole store may be loaded at once).',
       hsn_code: 'One of the HSN codes in tax-classes.csv.',
       brand: 'Optional.',
       status: 'active, new or clearance (discontinued counts as clearance). Blank means active.',
@@ -205,7 +207,10 @@ export interface SliceDepartment {
 }
 
 export interface StagedSlice {
-  readonly department: SliceDepartment;
+  /** The one department of a single-department slice (OB-241); absent when the slice names several (OB-800). */
+  readonly department?: SliceDepartment;
+  /** Every department the slice names — one for a single-department slice. */
+  readonly departments: readonly SliceDepartment[];
   /** The bundle the loader will send — the STAGED rows only. Suppliers, customers and stock are never in a slice. */
   readonly bundle: ExtractBundle;
   /** Every quarantined row, in file order, file by file. Never pruned. */
@@ -249,7 +254,10 @@ function canonical(v: unknown): string {
  * (a product with no price cannot be sold, so it is quarantined), then barcodes (for staged products only).
  */
 export function stageSlice(input: {
-  readonly department: SliceDepartment;
+  /** ONE department (OB-241) … */
+  readonly department?: SliceDepartment;
+  /** … or several (OB-800: the whole store) — exactly one of the two. */
+  readonly departments?: readonly SliceDepartment[];
   readonly files: Readonly<Partial<Record<SliceFile, string>>>;
   readonly hasher?: Hasher;
 }): StagedSlice {
@@ -275,12 +283,18 @@ export function stageSlice(input: {
     read[f] = r;
     counts[f].rows = r.records.length;
   }
-  const dept = input.department;
-  const regulatedBad = (dept.regulated ?? []).filter((r) => !REGULATED.includes(r));
-  if (dept.categoryId.trim() === '' || dept.name.trim() === '') headerProblems.push('the slice must name the pilot department (category id and name)');
-  if (regulatedBad.length > 0) headerProblems.push(`the department's regulated kinds must be among ${REGULATED.join(', ')} (not ${regulatedBad.join(', ')})`);
-
-  const category: Category = { categoryId: dept.categoryId, name: dept.name, parentId: null, ...(dept.regulated === undefined ? {} : { regulated: dept.regulated }) };
+  if ((input.department === undefined) === (input.departments === undefined)) headerProblems.push('the slice must name its department (one) or its departments (several) — exactly one of the two');
+  const depts: readonly SliceDepartment[] = input.departments ?? (input.department === undefined ? [] : [input.department]);
+  if (input.departments !== undefined && input.departments.length === 0) headerProblems.push('the slice names no department');
+  for (const dept of depts) {
+    const regulatedBad = (dept.regulated ?? []).filter((r) => !REGULATED.includes(r));
+    if (dept.categoryId.trim() === '' || dept.name.trim() === '') headerProblems.push(input.departments === undefined ? 'the slice must name the pilot department (category id and name)' : 'the slice must name each department (category id and name)');
+    if (regulatedBad.length > 0) headerProblems.push(`the department's regulated kinds must be among ${REGULATED.join(', ')} (not ${regulatedBad.join(', ')})`);
+  }
+  const doubledDept = depts.map((d) => d.categoryId).filter((c, i, all) => all.indexOf(c) !== i);
+  if (doubledDept.length > 0) headerProblems.push(`a department is named twice: ${[...new Set(doubledDept)].join(', ')}`);
+  const deptIds = depts.map((d) => d.categoryId);
+  const categories: Category[] = depts.map((d) => ({ categoryId: d.categoryId, name: d.name, parentId: null, ...(d.regulated === undefined ? {} : { regulated: d.regulated }) }));
   const rowsOf = (f: SliceFile): readonly SliceRecord[] => (headerProblems.length > 0 ? [] : read[f]?.records ?? []);
   const unreadable = (f: SliceFile, r: SliceRecord): r is UnreadableRecord => {
     if ('unreadable' in r) { quarantine(f, r.line, '', 'unreadable_line', `line ${r.line} could not be read: ${r.unreadable}`); return true; }
@@ -329,7 +343,12 @@ export function stageSlice(input: {
     const hsn = cell(r.row, 'hsn_code');
     const missing = [name === undefined ? 'description' : '', uom === undefined ? 'uom' : '', categoryId === undefined ? 'category' : '', hsn === undefined ? 'hsn_code' : ''].filter((m) => m !== '');
     if (missing.length > 0) { q('missing_value', `blank: ${missing.join(', ')}`, missing[0]); continue; }
-    if (categoryId !== dept.categoryId) { q('outside_the_department', `category "${categoryId}" is not the pilot department "${dept.categoryId}" — the first load is one department only (OB-241)`, 'category'); continue; }
+    if (!deptIds.includes(categoryId!)) {
+      q('outside_the_department', input.departments === undefined
+        ? `category "${categoryId}" is not the pilot department "${deptIds[0]}" — the first load is one department only (OB-241)`
+        : `category "${categoryId}" is not one of the departments this load names (${deptIds.join(', ')})`, 'category');
+      continue;
+    }
     if (!stagedHsn.has(hsn!)) { q('no_tax_class', `HSN ${hsn} has no staged rate in tax-classes.csv — a product cannot go on sale without a tax class (OC-21)`, 'hsn_code'); continue; }
     const lifecycle = lifecycleOf(cell(r.row, 'status'));
     if (lifecycle === undefined) { q('bad_value', `status "${cell(r.row, 'status')}" is not active, new or clearance`, 'status'); continue; }
@@ -353,9 +372,9 @@ export function stageSlice(input: {
     // OB-738 (option A, 14 Nov 2026): in the packaged-groceries department an item whose label facts are not read yet is
     // STAGED, its blank facts kept blank (never "none", never a guess) and listed as facts still to read; head office lets
     // them follow, sells it at the till only and lists it until they are filled. Every other department: the full rule.
-    const follow = dept.categoryId === LABEL_FACTS_MAY_FOLLOW_IN && missingLabelFacts({ safety }).length > 0;
+    const follow = categoryId === LABEL_FACTS_MAY_FOLLOW_IN && missingLabelFacts({ safety }).length > 0;
     const product = {
-      productId: id, sku, name: name!, baseUom: uom!, primaryCategoryId: dept.categoryId, taxClass: hsn!, lifecycle,
+      productId: id, sku, name: name!, baseUom: uom!, primaryCategoryId: categoryId!, taxClass: hsn!, lifecycle,
       ...(brand === undefined ? {} : { brand }),
       ...(Object.keys(safety).length === 0 ? {} : { safety }),
       ...(follow ? { labelFactsFollow: true as const } : {}),
@@ -368,10 +387,10 @@ export function stageSlice(input: {
     } as ProductRecord;
     let ruleProblems: string[] = [];
     try {
-      ruleProblems = validateProduct(record, [category]).issues.filter((i) => i.severity === 'blocks_publish').map((i) => i.message);
+      ruleProblems = validateProduct(record, categories).issues.filter((i) => i.severity === 'blocks_publish').map((i) => i.message);
     } catch (err) {
       if (!(err instanceof CategoryNotFoundError)) throw err;
-      ruleProblems = [`category ${dept.categoryId} could not be read`];
+      ruleProblems = [`category ${categoryId} could not be read`];
     }
     if (ruleProblems.length > 0) { q('product_rules', ruleProblems.join('; ')); continue; }
     skuOwner.set(sku.toLowerCase(), id);
@@ -458,7 +477,7 @@ export function stageSlice(input: {
     .map(([id, d]) => ({ ...d.product, barcodes: barcodesFor.get(id) ?? [], ...prices.get(id)! }));
   // Only the tax classes a staged product uses are sent — and every one the file listed is accounted for.
   const bundle: ExtractBundle = {
-    categories: [{ categoryId: dept.categoryId, name: dept.name, parentId: null, ...(dept.regulated === undefined ? {} : { regulated: dept.regulated }) }],
+    categories: depts.map((d) => ({ categoryId: d.categoryId, name: d.name, parentId: null, ...(d.regulated === undefined ? {} : { regulated: d.regulated }) })),
     taxRates, products, suppliers: [], customers: [], openingStock: [],
   };
 
@@ -476,13 +495,14 @@ export function stageSlice(input: {
   counts['barcodes.csv'].staged = products.reduce((n, p) => n + p.barcodes.length, 0);
   // A row can only be staged or quarantined. Products are the one file where the count can differ (a later
   // dependent quarantine re-uses the product's own line), so the arithmetic is said, never assumed.
-  const digest = hasher(canonical({ department: dept, bundle, exceptions, headerProblems }));
+  // A single-department slice's digest is what it always was; a several-department slice binds the whole list.
+  const digest = hasher(canonical({ ...(input.departments === undefined ? { department: input.department } : { departments: input.departments }), bundle, exceptions, headerProblems }));
   // OB-738: the bundle already carries each item's mark (so the acceptance binds to it); this is the list in words.
   const factsToRead = [...drafts.values()]
     .filter((d) => d.product.labelFactsFollow === true)
     .map((d) => ({ line: d.line, itemId: d.product.productId, facts: missingLabelFacts(d.product) }))
     .filter((f) => f.facts.length > 0);
-  return { department: dept, bundle, exceptions, counts, digest, headerProblems, factsToRead };
+  return { ...(input.department === undefined ? {} : { department: input.department }), departments: depts, bundle, exceptions, counts, digest, headerProblems, factsToRead };
 }
 
 /** The exception list as a CSV the acceptor reads — one quarantined row per line, with its reason. */

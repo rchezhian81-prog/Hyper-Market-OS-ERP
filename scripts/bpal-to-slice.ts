@@ -7,13 +7,14 @@
 //
 // Writes tax-classes.csv, products.csv, prices.csv and barcodes.csv (the published templates), label-facts.csv (the items
 // still waiting for their five label facts, best sellers first), bpal-set-aside.csv (every item it could not take, with
-// the reason) and — when the folder has none — slice.json naming the pilot department. A folder whose slice.json already
+// the reason) and — when the folder has none — slice.json naming every department its items are in (OB-800: the whole
+// store, no pilot department). A folder whose slice.json already
 // holds seals is never written into: a sealed file is evidence (hard rule #6); the next load uses a new folder.
 // The rules are in packages/migration/src/bpal-slice.ts (tested). Nothing here talks to the network.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { bpalToSlice, labelFactsFrom, readCsv, readPurchaseReport, PILOT_CATEGORY_ID, PILOT_CATEGORY_NAME } from '../packages/migration/src/bpal-slice';
+import { bpalToSlice, labelFactsFrom, readCsv, readPurchaseReport, storeDepartment } from '../packages/migration/src/bpal-slice';
 import { parseFlags } from './lib/operator-env';
 import { readXlsxTable } from './lib/xlsx-read.mjs';
 import { shopDateIn } from '../packages/calendar/src/shop-clock';
@@ -87,10 +88,10 @@ put('hsn-to-check.csv', result.hsnToCheckCsv);
 if (!manifestExists) {
   const tenantId = need('tenant', 'the tenant id from Part 5 of the workbook (for slice.json)');
   const manifest = {
-    loadId: str('load-id') ?? `slice-${PILOT_CATEGORY_ID}-1`,
+    loadId: str('load-id') ?? 'slice-whole-store-1',
     tenantId, operator: need('operator', 'the login of the person who stages the load (for slice.json)'),
     storeId: need('store', 'the store code, e.g. SRE-MAIN (for slice.json)'),
-    department: { categoryId: PILOT_CATEGORY_ID, name: PILOT_CATEGORY_NAME, regulated: ['food', 'packed'] },
+    departments: result.departments.map((d) => ({ categoryId: d.categoryId, name: d.name, regulated: [...d.regulated] })),
     files: {},
   };
   put('slice.json', `${JSON.stringify(manifest, null, 2)}\n`);
@@ -99,13 +100,14 @@ if (!manifestExists) {
 const c = result.counts;
 out(`Read the old ERP's reports into ${outDir} (the old ERP itself was not touched).`);
 out(`  Purchase report: ${purchases.rows} row(s), ${purchases.datedRows} with a date, from ${purchases.oldest ?? '?'} to ${purchases.newest ?? '?'}; prices are taken from the 12 months to ${today}.`);
-out(`  In the pilot department (packaged groceries, OB-694): ${c.inDepartment} item(s).`);
+out(`  Items in the old ERP's reports, every department (OB-800): ${c.items} item(s).`);
 out(`  Ready to load (barcode, HSN and price): ${c.ready} item(s), ${c.barcodes} barcode(s), ${c.taxClasses} tax class(es).`);
-out(`  Of those, label facts still to read off the pack: ${c.factsStillToRead} item(s) — they load and sell at the till only, and stay listed until filled (OB-738); label-facts.csv, best sellers first.`);
+for (const [id, n] of Object.entries(c.byDepartment)) out(`    ${storeDepartment(id)?.name ?? id}: ${n} item(s)`);
+out(`  Of those, packaged groceries with label facts still to read off the pack: ${c.factsStillToRead} item(s) — they load and sell at the till only, and stay listed until filled (OB-738); label-facts.csv, best sellers first.`);
 if (c.alreadyLoaded > 0) out(`  Already loaded by an earlier slice (not written again): ${c.alreadyLoaded} item(s).`);
 out(`  Set aside, each with its reason: ${c.setAside} item(s) — bpal-set-aside.csv. Nothing was guessed.`);
 out('  HSN codes the old ERP taxes at more than one rate, for the accountant: hsn-to-check.csv.');
-out(manifestExists ? '  slice.json was already there and was kept as it is.' : '  slice.json written: the pilot department, packaged groceries.');
+out(manifestExists ? '  slice.json was already there and was kept as it is.' : `  slice.json written: ${result.departments.length} department(s) — ${result.departments.map((d) => d.name).join(', ') || 'none ready yet'}.`);
 out(c.ready === 0
   ? 'Next: nothing is ready to load — read bpal-set-aside.csv for why each item was set aside.'
   : `Next: check the four files, then seal them (Part 22, step 2).${c.factsStillToRead > 0 ? ' Meanwhile staff keep filling label-facts.csv from the packs (allergens or "none", country of origin, net quantity, packer, consumer care), best sellers first.' : ''}`);

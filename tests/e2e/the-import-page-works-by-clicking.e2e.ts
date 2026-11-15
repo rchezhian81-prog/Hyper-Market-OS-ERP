@@ -17,7 +17,10 @@ import { xlsx } from '../support/xlsx';
  * his staff use it: sign in with a staff ID and PIN, choose the three Excel reports, read them. OB-738 (owner, 14 Nov 2026,
  * replacing OB-696; "sell at the till only"): an item with no label facts is ready to load all the same — the facts are
  * on their own "Facts still to read" tile, best sellers first; typed in (some now, the rest later) and saved, the item
- * leaves that list. No command is typed anywhere. Made-up data.
+ * leaves that list. No command is typed anywhere. OB-800 (owner, 15 Nov 2026, no pilot department): a banana sold loose
+ * is marked "sold loose, by weight" with its scale PLU by clicking, then its food facts are typed, and it is ready — in
+ * kg, in the loose-foods department; a shampoo (personal care) waits on its label facts, which a packaged grocery would
+ * not. Made-up data.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -26,9 +29,13 @@ const EAN = [['Item Id', 'Item Name', 'EanCode'], ['11', 'TEST RICE 1KG', '89012
 const HSN = [['Item Id', 'Item Name', 'Hsn Code', 'Item Quantity', 'Gst %'], ['11', 'TEST RICE 1KG', '10063020', '500', '5'], ['12', 'TEST DAL 500G', '07133100', '300', '5']];
 const BUYS = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/11/2026', '1', '11', '60', '60', '70', '80']];
 const BUYS_EARLIER = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/09/2026', '1', '12', '50', '50', '60', '65']];
+// OB-800: the whole store — a loose banana (no pack barcode, a part quantity sold) and a shampoo (personal care).
+const EAN_800 = [['Item Id', 'Item Name', 'EanCode'], ['41', 'TEST SHAMPOO 180ML', '8901234567906']];
+const HSN_800 = [['Item Id', 'Item Name', 'Hsn Code', 'Item Quantity', 'Gst %'], ['40', 'TEST BANANA', '08039010', '412.5', '0'], ['41', 'TEST SHAMPOO 180ML', '33051090', '80', '18']];
+const BUYS_800 = [['Purc Date', 'Purc No', 'Item Id', 'Cost', 'NetCost', 'Selling', 'MRP'], ['01/11/2026', '1', '40', '30', '30', '40', '40'], ['01/11/2026', '1', '41', '90', '90', '110', '120']];
 
 describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-704)', () => {
-  let browser: Browser; let server: Server; let base = ''; let dir = '';
+  let browser: Browser; let server: Server; let base = ''; let dir = ''; let tick = 0;
   beforeAll(async () => {
     const h = apiHarness();
     const T = randomUUID();
@@ -38,12 +45,13 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     const app = createImportApp({
       client: { request: async (r) => h.raw({ method: r.method, path: r.path, ...(r.body === undefined ? {} : { body: r.body }), ...(r.idempotencyKey === undefined ? {} : { idempotencyKey: r.idempotencyKey }), token: buildPersonToken({ sub: r.userId, tenantId: r.tenantId, ttlSeconds: 300, authTimeSec: Math.floor(Date.parse(r.signedInAt) / 1000) }, TEST_IDP.policy(), Date.now()) }) },
       verifyPin: (u, p) => (u === 'owner-01' && p === '111111' ? 'ok' : 'wrong'), tenantId: T, storeId: 'SRE-T1', targetKind: 'rehearsal', demoTenantIds: ['pilot-demo'],
-      dataDir: join(dir, 'imports'), pageHtml: readFileSync('scripts/import-page/index.html', 'utf8'), now: () => new Date('2026-11-07T10:00:00.000Z'),
+      dataDir: join(dir, 'imports'), pageHtml: readFileSync('scripts/import-page/index.html', 'utf8'), now: () => new Date(Date.parse('2026-11-07T10:00:00.000Z') + 1000 * tick++), // one second a call: two reads never share an import id
     });
     server = createServer((rq, rs) => { void app(rq, rs); });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    for (const [name, rows] of [['EANCODE.xlsx', EAN], ['HSN.xlsx', HSN], ['Purchases-1.xlsx', BUYS_EARLIER], ['Purchases-2.xlsx', BUYS]] as const) writeFileSync(join(dir, name), xlsx([...SHOP, ...rows]));
+    for (const [name, rows] of [['EANCODE.xlsx', EAN], ['HSN.xlsx', HSN], ['Purchases-1.xlsx', BUYS_EARLIER], ['Purchases-2.xlsx', BUYS],
+      ['EANCODE-800.xlsx', EAN_800], ['HSN-800.xlsx', HSN_800], ['Purchases-800.xlsx', BUYS_800]] as const) writeFileSync(join(dir, name), xlsx([...SHOP, ...rows]));
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 90_000);
   afterAll(async () => { await browser?.close(); await new Promise<void>((r) => server.close(() => r())); });
@@ -69,7 +77,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.fill('#backup-on', '2026-11-06');
     await page.click('#read-form button[type=submit]');
     await page.waitForSelector('#work:not([hidden])');
-    expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
+    expect(await page.textContent('#msg')).toContain('Read: 2 items, every department. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
     // OB-738: the rice has no label facts yet and is ready to load all the same; both items are on the facts tile.
     expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
     const factsTile = page.locator('#tiles .tile', { hasText: 'Facts still to read (not a blocker)' });
@@ -90,7 +98,8 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     expect(await riceNow.getByLabel('Country of origin').inputValue()).toBe('India'); // what was read stays shown
     for (const [label, value] of Object.entries({ 'Net quantity (e.g. 500 g)': '1 kg', 'Packer / manufacturer / importer, and town': 'Test Foods, Chennai', 'Consumer care phone or email': '1800 000 000' })) await riceNow.getByLabel(label).fill(value);
     await riceNow.getByRole('button', { name: 'Save this fix' }).click();
-    await page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(q: string): { textContent: string | null } | null } }).document.querySelector('#tiles .tile:nth-child(6) .v')?.textContent === '1');
+    await page.waitForFunction(() => [...(globalThis as unknown as { document: { querySelectorAll(q: string): Iterable<{ textContent: string | null; querySelector(q: string): { textContent: string | null } | null }> } }).document.querySelectorAll('#tiles .tile')]
+      .find((t) => (t.textContent ?? '').includes('facts still to read'))?.querySelector('.v')?.textContent === '1');
     expect(await page.locator('details.item', { hasText: 'TEST RICE 1KG' }).count()).toBe(0); // off the facts list
     expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
 
@@ -101,12 +110,60 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     const dal = page.locator('details.item', { hasText: 'TEST DAL 500G' });
     await dal.locator('summary').click();
     await dal.getByLabel(/Barcode\(s\) as printed/).fill('8901234567911');
-    await dal.locator('.gap', { hasText: 'Barcode:' }).getByRole('button', { name: 'Save this fix' }).click();
+    await dal.locator('.gap', { hasText: 'Barcode or sold loose:' }).getByRole('button', { name: 'Save this fix' }).click();
     await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('msg')?.textContent ?? '').includes('not a pack barcode'));
     await page.click('#back');
     await page.waitForSelector('#backup-known:not([hidden])');
     expect(await page.isVisible('#backup-label')).toBe(false);
     expect(await page.textContent('#backup-known')).toContain('last restored and checked on 2026-11-06');
+    expect(errors).toEqual([]);
+  });
+
+  it('OB-800: the whole store — a loose banana is marked "sold loose, by weight" with its PLU by clicking; a shampoo waits on its label facts', { timeout: 60_000 }, async () => {
+    const page = await (await browser.newContext({ viewport: { width: 390, height: 860 } })).newPage(); // a phone-sized window too
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${base}/`);
+    await page.fill('#staff', 'owner-01');
+    await page.fill('#pin', '111111');
+    await page.click('#signin-form button[type=submit]');
+    await page.waitForSelector('#start:not([hidden])');
+    await page.setInputFiles('#f-all', [join(dir, 'HSN-800.xlsx'), join(dir, 'EANCODE-800.xlsx'), join(dir, 'Purchases-800.xlsx')]);
+    if (await page.isVisible('#backup-label')) await page.fill('#backup-on', '2026-11-06');
+    await page.click('#read-form button[type=submit]');
+    await page.waitForSelector('#work:not([hidden])');
+    expect(await page.textContent('#msg')).toContain('Read: 2 items, every department.');
+    expect(await page.textContent('#by-department')).toContain('Packaged groceries: 0 ready, 0 loaded, 1 waiting');
+    expect(await page.textContent('#by-department')).toContain('Personal care: 0 ready, 0 loaded, 1 waiting');
+    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (0 ready item(s))');
+
+    // The shampoo: personal care keeps the full rule — its label facts are a gap, not "later".
+    const shampoo = page.locator('details.item', { hasText: 'TEST SHAMPOO 180ML' });
+    expect(await shampoo.locator('.chip').first().textContent()).toBe('Label facts (needed first)');
+    await shampoo.locator('summary').click();
+    expect(await shampoo.locator('.gap .why').first().textContent()).toContain('only packaged groceries may load before their label facts are read');
+
+    // The banana: no pack barcode; the page hints, a person decides — sold loose, by weight, with the scale's PLU.
+    const banana = page.locator('details.item', { hasText: 'TEST BANANA' });
+    await banana.locator('summary').click();
+    expect(await banana.locator('.gap .why').first().textContent()).toContain('a part quantity, so it may be sold by weight');
+    await banana.getByLabel('Or: sold loose?').selectOption('kg');
+    await banana.getByLabel(/Scale PLU code/).fill('00123');
+    await banana.getByRole('button', { name: 'Save: sold loose' }).click();
+    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('msg')?.textContent ?? '').includes('Saved for TEST BANANA'));
+    const bananaNow = page.locator('details.item', { hasText: 'TEST BANANA' });
+    expect(await bananaNow.locator('.id').textContent()).toContain('Loose foods (by weight or by count) · Sold loose by weight (kg)');
+    expect(await bananaNow.locator('.id').textContent()).toContain('PLU 00123');
+    await bananaNow.locator('summary').click();
+    // A loose food needs its allergens and origin before it loads.
+    await bananaNow.getByLabel('Allergens (write "none" when the pack declares none)').fill('none');
+    await bananaNow.getByLabel('Country of origin').fill('India');
+    await bananaNow.locator('.gap', { hasText: 'Label facts (needed first):' }).getByRole('button', { name: 'Save this fix' }).click();
+    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('prepare-btn')?.textContent ?? '') === 'Prepare a load (1 ready item(s))');
+    expect(await page.locator('#tiles .tile', { hasText: 'Sold loose (kg or count)' }).locator('.v').textContent()).toBe('1');
+    expect(await page.textContent('#by-department')).toContain('Loose foods (by weight or by count): 1 ready');
+    // No sideways scrolling on the phone-sized window.
+    expect(await page.evaluate(() => { const d = (globalThis as unknown as { document: { documentElement: { scrollWidth: number; clientWidth: number } } }).document.documentElement; return d.scrollWidth <= d.clientWidth; })).toBe(true);
     expect(errors).toEqual([]);
   });
 });

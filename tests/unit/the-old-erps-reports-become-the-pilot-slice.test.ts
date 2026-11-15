@@ -47,7 +47,7 @@ const run = (labelFacts?: ReadonlyMap<string, Readonly<Partial<Record<LabelFact,
 const reasonOf = (out: ReturnType<typeof run>, id: string): string => out.setAside.find((s) => s.itemId === id)?.reason ?? '';
 
 describe('the old ERP\'s reports become the pilot department\'s slice — nothing guessed, every item accounted for', () => {
-  it('OB-694: the department is packaged food and beverages by HSN; ice cream (2105) and soap stay out', () => {
+  it('OB-694 names the packaged-groceries department by HSN; OB-800: ice cream and soap are read too, every item accounted for', () => {
     expect(inPilotDepartment('10063020')).toBe(true);
     expect(inPilotDepartment('0402')).toBe(true);
     expect(inPilotDepartment('21050000')).toBe(false);
@@ -56,7 +56,8 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(inPilotDepartment('0026')).toBe(false);
     const out = run();
     const ids = new Set([...readCsv(out.labelFactsSheet).map((r) => r['item_code']), ...out.setAside.map((s) => s.itemId)]);
-    expect([...ids].sort()).toEqual(['1001', '1002', '1003', '1004', '1006', '1007']);
+    expect([...ids].sort()).toEqual(['1001', '1002', '1003', '1004', '1005', '1006', '1007', '2001']);
+    expect(out.counts.items).toBe(8);
   });
 
   it('a barcode with a wrong check digit, a selling price above MRP, no purchase in 12 months and one HSN at two rates are each set aside with the reason', () => {
@@ -183,18 +184,21 @@ describe('the command on the store PC: three .xlsx reports in, the slice folder 
     const first = cmd(dir);
     expect(first.status, first.stdout + first.stderr).toBe(0);
     expect(first.stdout).toContain('Ready to load (barcode, HSN and price): 1 item(s), 2 barcode(s), 1 tax class(es).');
-    expect(first.stdout).toContain('Of those, label facts still to read off the pack: 1 item(s)');
+    expect(first.stdout).toContain('Of those, packaged groceries with label facts still to read off the pack: 1 item(s)');
+    expect(first.stdout).toContain('Items in the old ERP\'s reports, every department (OB-800): 8 item(s).');
+    expect(first.stdout).toContain('    Packaged groceries: 1 item(s)');
     for (const f of ['tax-classes.csv', 'products.csv', 'prices.csv', 'barcodes.csv', 'label-facts.csv', 'bpal-set-aside.csv', 'hsn-to-check.csv', 'slice.json']) expect(existsSync(join(dir, 'slice', f)), f).toBe(true);
-    expect(JSON.parse(readFileSync(join(dir, 'slice', 'slice.json'), 'utf8'))).toMatchObject({ storeId: 'TEST-STORE', operator: 'owner-01', department: { categoryId: PILOT_CATEGORY_ID, regulated: ['food', 'packed'] }, files: {} });
+    expect(JSON.parse(readFileSync(join(dir, 'slice', 'slice.json'), 'utf8'))).toMatchObject({ storeId: 'TEST-STORE', operator: 'owner-01', departments: [{ categoryId: PILOT_CATEGORY_ID, name: 'Packaged groceries', regulated: ['food', 'packed'] }], files: {} });
+    expect(JSON.parse(readFileSync(join(dir, 'slice', 'slice.json'), 'utf8')).loadId).toBe('slice-whole-store-1');
 
     // Staff fill the sheet (as Excel saves it) and give it back.
-    const sheet = readFileSync(join(dir, 'slice', 'label-facts.csv'), 'utf8').replace('1001,TEST RICE 1KG,8901234567890,400,,,,,,no', '1001,TEST RICE 1KG,8901234567890,400,none,India,1 kg,"Test Foods, Testville",Test Foods 1800 000 000,no');
+    const sheet = readFileSync(join(dir, 'slice', 'label-facts.csv'), 'utf8').replace('1001,TEST RICE 1KG,Packaged groceries,8901234567890,400,,,,,,no', '1001,TEST RICE 1KG,Packaged groceries,8901234567890,400,none,India,1 kg,"Test Foods, Testville",Test Foods 1800 000 000,no');
     expect(sheet).toContain('none,India,1 kg');
     writeFileSync(join(dir, 'slice', 'label-facts.csv'), sheet);
     const second = cmd(dir, ['--label-facts', join(dir, 'slice', 'label-facts.csv')]);
     expect(second.status, second.stdout).toBe(0);
     expect(second.stdout).toContain('Ready to load (barcode, HSN and price): 1 item(s), 2 barcode(s), 1 tax class(es).');
-    expect(second.stdout).toContain('Of those, label facts still to read off the pack: 0 item(s)');
+    expect(second.stdout).toContain('Of those, packaged groceries with label facts still to read off the pack: 0 item(s)');
     expect(second.stdout).toContain('slice.json was already there and was kept as it is.');
   });
 
