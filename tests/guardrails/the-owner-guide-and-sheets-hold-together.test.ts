@@ -35,12 +35,15 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Recor
 const EVENING_EN = ['Running both', 'Evening check from the old system\'s files', 'Which day', 'Which column is which', 'Save the mapping', 'Change',
   'Columns found — ready to load', 'Load and compare', 'Items that differ', 'Not in the new catalogue', 'Why do they differ', 'Which one was wrong',
   'Save the reasons', 'What you checked (in your own words)', 'Sign the day', 'Item-wise template', 'Bill-wise template', 'Not known',
-  // OB-263 A · B (owner, 21 Oct 2026): the department column's pilot value, and the bill lines' tax question.
-  'Which of these is the pilot department?', 'Do the bill lines\' values already include the tax?', 'Not in this report'];
+  // OB-263 B (owner, 21 Oct 2026): the bill lines' tax question. OB-800 (owner, 15 Nov 2026): no pilot department — the
+  // whole store's totals and each department's.
+  'Do the bill lines\' values already include the tax?', 'Not in this report', 'The whole store\'s totals', 'Each department',
+  'Department not known', 'a part quantity of an item sold in whole units'];
 const EVENING_TA = ['இரண்டையும் இயக்குதல்', 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு', 'எந்த நாள்', 'எந்த நெடுவரிசை எது', 'பொருத்தத்தைச் சேமி', 'மாற்று',
   'நெடுவரிசைகள் கிடைத்தன — ஏற்றத் தயார்', 'ஏற்றி ஒப்பிடு', 'வேறுபடும் பொருட்கள்', 'புதிய பட்டியலில் இல்லை', 'ஏன் வேறுபடுகின்றன', 'எது தவறு',
   'காரணங்களைச் சேமி', 'நாளில் கையெழுத்திடு', 'பொருள் வாரியான வார்ப்புரு', 'பில் வாரியான வார்ப்புரு', 'தெரியவில்லை',
-  'இவற்றில் எது பைலட் துறை?', 'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', 'இந்த அறிக்கையில் இல்லை'];
+  'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', 'இந்த அறிக்கையில் இல்லை', 'முழுக் கடையின் மொத்தங்கள்', 'ஒவ்வொரு துறையும்',
+  'துறை தெரியவில்லை', 'முழு அலகுகளில் விற்கப்படும் பொருளுக்குப் பகுதி அளவு'];
 
 /** The sheets the owner asked for (OB-255, OB-248 with OB-252, OB-254, and the forgotten PIN). */
 const SHEETS = ['sop-01-pc-down', 'sop-02-mirror-keying', 'sop-03-owner-evening-check', 'sop-04-forgotten-pin'] as const;
@@ -376,12 +379,15 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/No need to send anything first\*\* \(OB-275\)/);
     expect(guide).toMatch(/Never send\s+these files to anyone/);
     expect(guide).toContain('## Part 32 — Real trading: after the pilot passes and your written GO only (OB-271)');
-    // OB-263 A · B: the department column and the bill lines' tax question, in the sheet (both languages) and the guide.
+    // OB-263 B: the bill lines' tax question, in the sheet (both languages) and the guide. OB-800: no pilot department —
+    // the whole store, every department; a mapping still keeping one department is said, never silent (OB-263 A).
     for (const text of [evening, guide]) {
-      expect(text).toMatch(/Which of these is the\s+pilot department\?/);
+      expect(text).toMatch(/OB-800/);
+      expect(text).toMatch(/whole\s+store/);
       expect(text).toMatch(/Do the bill lines' values already include the\s+tax\?/);
+      expect(text).toMatch(/the screen says how many, never\s+silently|counted, never\s+silently/);
     }
-    expect(evening).toMatch(/rows are then left out, and the screen says how many — never silently/);
+    expect(eveningTa).toContain('OB-800');
     expect(eveningTa).toContain('OB-263 A');
     expect(eveningTa).toContain('OB-263 B');
   });

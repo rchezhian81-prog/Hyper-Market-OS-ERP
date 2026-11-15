@@ -1120,14 +1120,28 @@ account when you leave the PC (**Windows key + L**), never sign out.
 
 ## Part 31 — The evening check from the old ERP's two files (OB-263)
 
-Each evening the new till's mirror sales are compared with the old ERP's own reports for the day, for the pilot
-department only (OB-263). The store computer does the comparison itself, with no internet, and sends the result to
-this copy's books afterwards. Sheet 3 has the evening steps; this part is the first time.
+Each evening the new till's mirror sales are compared with the old ERP's own reports for the day (OB-263) — for the
+**whole store, every department** (OB-800, your decision of 15 Nov 2026: there is no pilot department; Bpal stays the
+record and you check the two side by side). The store computer does the comparison itself, with no internet, and sends
+the result to this copy's books afterwards. Sheet 3 has the evening steps; this part is the first time.
+
+What the screen shows after **Load and compare** (OB-800):
+- **The whole store's totals** — sales value, tax, number of bills and quantity per unit, old system beside the new till.
+- **Each department** — every department's items compared, the items that differ, and its value, tax and quantity. The
+  department of each item is the one the Bpal load gave it from its HSN code (Part 22's table), so the two always agree.
+  **Department not known** and **Not in the new catalogue** are listed apart, never folded into a department. The
+  departments add up to the whole store's totals.
+- **Loose goods by weight** are compared to the gram (three decimals: 1.250 kg). One gram of difference is shown as a
+  difference: no allowance is made for rounding until you decide one (it is asked separately).
+- An item sold in whole pieces that the old report shows as a part (1.5) is not refused: it is shown as a difference,
+  marked **a part quantity of an item sold in whole units**, for you to explain.
+- Every bill of the store is rung on both, so an old bill not keyed on the new till is a difference even when the
+  bill-wise list has no item lines.
 
 1. **Find the two reports on the old ERP, once.** The menu names differ from one ERP to another. In the old ERP's
    reports, look for:
    - an **item-wise sales report**: each item with its code or barcode, the quantity sold, the value and the tax, for one
-     day — and, if it lets you, for one department;
+     day — for **every department** (never one department: OB-800);
    - a **bill-wise list**: each bill with its bill number, date and total — and, if it can, the items on each bill.
    If you cannot find either, **STOP AND ASK**: send a photo of the reports menu.
 2. **Save each from Excel as CSV**: **File**, **Save As**, type **CSV UTF-8 (Comma delimited) (\*.csv)**, into a folder
@@ -1135,12 +1149,14 @@ this copy's books afterwards. Sheet 3 has the evening steps; this part is the fi
 3. **No need to send anything first** (OB-275): the screen reads whatever column names the old ERP uses. Never send
    these files to anyone: they hold bills, prices and customers' details.
 4. Open the migration screen (Sheet 3, step 6), click **Running both**, and under **Evening check from the old system's
-   files** check that it names the pilot department. If it says the pilot department is not known, the department's
-   products have not been applied yet (Part 22).
+   files** check that it says it compares **the whole store — every department** (OB-800). If it says this store
+   computer holds no catalogue yet, the products have not been loaded and published yet (Part 22, Part 24).
 5. Pick the item-wise file. On **Which column is which**, choose the old ERP's column for each of our fields; never
-   choose a customer's name or mobile column; answer the date and tax questions. If the report has a department column,
-   choose it for **Department** and pick the pilot department's name in **Which of these is the pilot department?** —
-   the other departments' rows are then left out and counted on the screen (OB-263 A). Press **Save the mapping**. Do
+   choose a customer's name or mobile column; answer the date and tax questions. There is no department to choose: the
+   screen no longer asks **Which of these is the pilot department?** (OB-263 A, before OB-800) and reads the whole
+   report. A mapping saved before OB-800 that still keeps one department is shown in a warning beside the figures —
+   the other departments' rows are left out and counted, never silently; press **Change** and save it again. Press
+   **Save the mapping**. Do
    the same for the bill-wise file; with its item columns, answer **Do the bill lines' values already include the
    tax?** — no means each bill is compared without tax on both sides (OB-263 B). The screen shows the mapping with your
    name and the time; **Change** changes it later, and every earlier one is kept.

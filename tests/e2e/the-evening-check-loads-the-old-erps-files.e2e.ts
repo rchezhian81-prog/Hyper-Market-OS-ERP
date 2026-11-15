@@ -16,7 +16,8 @@ const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${
  * **OB-263 (owner, 21 Oct 2026, "Item-wise + bill-wise") — the whole evening check in a real Chromium, against a real store
  * computer with the office PIN (OB-259), in English and then in Tamil, at the owner's desk and at 360 pixels wide.**
  *
- * The owner signs in with their own PIN and opens "Running both". The evening check names the pilot department. They pick
+ * The owner signs in with their own PIN and opens "Running both". The evening check says it compares the whole store
+ * (OB-800: no pilot department — even on a store computer whose pack still names one). They pick
  * the old system's item-wise report (CSV, with a title line and a customer-mobile column): the screen asks once which
  * column is which, from the file's own header row; saved on the store computer, shown with who set it. The same for the
  * bill-wise list (semicolons, items under each bill). Load and compare: the day's totals old against new, the items that
@@ -112,12 +113,9 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     for (const [field, column] of [['item_code', 'Item Code'], ['quantity', 'Qty'], ['value', 'Net Amount'], ['tax', 'GST Amt'], ['sale_date', 'Bill Date']]) await page.selectOption(`#ec-map-${field}`, column!);
     await page.selectOption('#ec-map-date-order', 'dmy');
     await page.selectOption('#ec-map-includes-tax', 'yes');
-    // OB-263 A: the report's own department column — then which of ITS values is the pilot department, from the file.
+    // OB-800: no pilot department — the report's department column is not offered to keep one; the whole report is read.
+    expect(await page.$('#ec-map-department')).toBeNull();
     expect(await page.isVisible('#ec-map-pilot-value')).toBe(false);
-    await page.selectOption('#ec-map-department', 'Dept');
-    await page.waitForSelector('#ec-map-pilot-box:not([hidden])');
-    expect(await page.$$eval('#ec-map-pilot-value option', (o) => o.map((x) => x.textContent))).toEqual(['— choose —', 'GROCERY', 'Personal Care']);
-    await page.selectOption('#ec-map-pilot-value', 'GROCERY');
     await page.click('#ec-map-save');
   };
   const mapBillWise = async (page: Page): Promise<void> => {
@@ -168,7 +166,7 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     await page.click('#tab-both');
     await page.waitForSelector('#ec:not([hidden])');
     expect(await text(page, '#ec-title')).toBe('Evening check from the old system\'s files');
-    expect(await text(page, '#ec-dept')).toBe('Pilot department: Grocery (grocery)');
+    expect(await text(page, '#ec-dept')).toContain('the whole store — every department (OB-800: there is no pilot department)');
     expect(await page.$eval('#ec-load', (b) => [!!b.querySelector('svg'), (b.textContent ?? '').trim()])).toEqual([true, 'Load and compare']);
     await chooseDay(page, day);
     await says(page, 'ec-result', 'No files have been loaded for this day yet.');
@@ -190,23 +188,25 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     expect(await text(page, '#ec-mapping-item_wise')).toContain('set by u-owner');
     expect(await text(page, '#ec-mapping-item_wise')).toContain('Item code or barcode ← Item Code');
     expect(await text(page, '#ec-mapping-item_wise')).not.toContain('Customer Mobile');
-    expect(await text(page, '#ec-mapping-item_wise')).toContain('Pilot department in the file: GROCERY');
+    expect(await text(page, '#ec-mapping-item_wise')).not.toContain('GROCERY');
     expect(await text(page, '#ec-mapping-bill_wise')).toContain('Yes — the line values include tax');
 
     // ── Load and compare.
     await page.click('#ec-load');
     expect(await banner(page)).toMatchObject({ title: 'Loaded and compared' });
     const totals = await page.$$eval('#ec-totals tbody tr', (trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => (td.textContent ?? '').trim())));
-    expect(totals[0]).toEqual(['Sales value (₹)', '₹300.00', '₹255.00', '-₹45.00']);
+    // OB-800: the whole shop's report — the shampoo and the face cream count too.
+    expect(totals[0]).toEqual(['Sales value (₹)', '₹649.00', '₹255.00', '-₹394.00']);
     expect(totals[2]).toEqual(['Number of bills', '3', '2', '-1']);
     expect(totals.slice(-2)).toEqual([['Payments taken (₹)', 'Not compared in the mirror pilot (OB-256, OB-265)', '—', '—'], ['Loyalty points', 'Not compared in the mirror pilot (OB-256, OB-265)', '—', '—']]);
     expect(await text(page, '#ec-items')).toContain('Sugar 1kg (P3)');
     expect(await text(page, '#ec-bills')).toContain('OLD/103');
-    expect(await text(page, '#ec-bills')).toContain('On the old system with pilot items, not keyed on the new till');
+    expect(await text(page, '#ec-bills')).toContain('On the old system, not keyed on the new till');
     expect(await text(page, '#ec-explain')).toContain('CN/9');
-    // OB-263 A: the other department's rows (shampoo, and a face cream not even in the catalogue) are set aside, counted.
-    expect(await text(page, '#ec-dept-rows')).toBe('Pilot department in the file: GROCERY · 2 rows of other departments in the file, not compared · 0 rows with no department written, not compared');
-    expect(await text(page, '#ec-result')).not.toContain('X-999');
+    // OB-800: nothing is set aside by department — the shampoo is compared, the face cream is "not in the new catalogue".
+    expect(await page.isVisible('#ec-dept-rows')).toBe(false);
+    expect(await text(page, '#ec-notincat')).toContain('X-999');
+    expect(await text(page, '#ec-items')).toContain('Shampoo (S1)');
     expect(await page.isVisible('#ec-bills-basis')).toBe(false);
 
     // Signing is refused while a difference has no reason.
@@ -230,7 +230,7 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.click('#lang');
     expect(await text(page, '#ec-title')).toBe('பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு');
-    expect(await text(page, '#ec-dept')).toBe('பைலட் துறை: Grocery (grocery)');
+    expect(await text(page, '#ec-dept')).toContain('முழுக் கடை — ஒவ்வொரு துறையும்');
     expect(await page.$$eval('#ec-totals thead th', (ths) => ths.map((th) => th.textContent))).toEqual(['எது', 'பழைய அமைப்பு', 'புதிய கல்லா', 'வேறுபாடு']);
     expect(await text(page, '#ec-totals')).toContain('மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை (OB-256, OB-265)');
     // In Tamil, the bill-wise mapping is changed: its line values are before tax (OB-263 B) — kept, with who changed it.
@@ -255,9 +255,9 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     await chooseDay(page, before);
     await page.click('#ec-load');
     expect(await banner(page)).toMatchObject({ title: 'ஏற்றி ஒப்பிடப்பட்டது' });
-    expect(await text(page, '#ec-bills')).toContain('பழைய அமைப்பில் பைலட் பொருட்களுடன் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை');
-    expect(await text(page, '#ec-bills-basis')).toBe('பில் வரிகள் வரிக்கு முந்தையவை, எனவே பைலட் பொருட்கள் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகின்றன.');
-    expect(await text(page, '#ec-dept-rows')).toContain('கோப்பில் வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை');
+    expect(await text(page, '#ec-bills')).toContain('பழைய அமைப்பில் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை');
+    expect(await text(page, '#ec-bills-basis')).toBe('பில் வரிகள் வரிக்கு முந்தையவை, எனவே ஒவ்வொரு பில்லும் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகிறது.');
+    expect(await text(page, '#ec-depts-title')).toBe('ஒவ்வொரு துறையும்');
     await page.fill('#ec-statement', 'பழைய அறிக்கைகளைப் புதிய கல்லாவுடன் வரி வரியாக ஒப்பிட்டேன், எல்லாம் சரிபார்த்தேன்');
     await page.click('#ec-sign');
     expect(await banner(page)).toMatchObject({ title: 'இந்த நாளில் இன்னும் கையெழுத்திட முடியாது' });

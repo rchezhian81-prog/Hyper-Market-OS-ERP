@@ -8,7 +8,7 @@ import { dayDigestOf, signParallelDay } from '../../packages/migration/src/paral
  * OB-263 (owner, 21 Oct 2026) — the evening check's comparison engine: the old ERP's item-wise and bill-wise figures for a
  * day (already read through their mappings) against the new till's mirror sales and refunds for the same day.
  *
- *   • only the PILOT DEPARTMENT (the catalogue's department of each product); other departments counted and said; an old
+ *   • OB-800: the WHOLE STORE, every department (its own tests: ob800-the-evening-check-compares-the-whole-store); an old
  *     code that matches NO catalogue product listed "not in the new catalogue" — a difference, never dropped;
  *   • per item: quantity, value and tax; the new side is the day's mirror sales LESS its mirror refunds (OB-258);
  *   • the totals: value, tax, quantity per unit, the number of bills — "not known" where it cannot be known, never 0;
@@ -21,7 +21,6 @@ import { dayDigestOf, signParallelDay } from '../../packages/migration/src/paral
  */
 
 const DAY = '2026-10-21';
-const DEPT = { categoryId: 'grocery', name: 'Grocery' };
 const CATALOGUE: CheckProduct[] = [
   { productId: 'P1', name: 'Toor dal 1kg', barcodes: ['8901234567890'], categoryId: 'grocery', uom: 'ea', taxBps: 500 },
   { productId: 'P2', name: 'Loose rice', barcodes: [], categoryId: 'grocery', uom: 'kg', taxBps: 0 },
@@ -35,7 +34,7 @@ const dal = (q: number) => ({ productId: 'P1', quantityMinor: q, uom: 'ea', line
 const rice = (g: number, value: number) => ({ productId: 'P2', quantityMinor: g, uom: 'kg', lineTotalMinor: value, taxRateBps: 0 });
 
 const base = {
-  businessDate: DAY, department: DEPT, catalogue: CATALOGUE, tolerance: { valueMinor: 0, taxMinor: 0 },
+  businessDate: DAY, catalogue: CATALOGUE, tolerance: { valueMinor: 0, taxMinor: 0 },
   sales: [sale(1, 'OLD/1', [dal(2)]), sale(2, 'OLD/2', [rice(1250, 7500)]), sale(9, 'OLD/9', [dal(1)], '2026-10-20')],
   refunds: [] as CheckRefund[],
   itemWise: [row(3, 'P1', 2000, 21_000, tax5(21_000)), row(4, 'P2', 1250, 7500, 0)],
@@ -52,22 +51,24 @@ describe('the evening check, item by item and in total', () => {
     expect(c.totals).toEqual({
       value: { old: 28_500, new: 28_500 }, tax: { old: 1000, new: { known: true, minor: 1000 } },
       quantity: [{ uom: 'ea', old: 2, new: 2 }, { uom: 'kg', old: 1250, new: 1250 }],
-      bills: { old: { known: false, why: expect.stringContaining('no item lines') }, new: 2 },
+      // OB-800: every bill of the store is rung on both, so the old list's bill count is known even without its item lines.
+      bills: { old: { known: true, minor: 2 }, new: 2 },
     });
     expect(c.bills).toEqual({ checked: 'presence_only', valueBasis: 'with_tax', valueNotKnown: 0, matched: 2, differences: [] });
     expect(c.notCompared).toEqual([{ area: 'payments', decision: 'OB-256' }, { area: 'loyalty', decision: 'OB-265' }]);
-    // The MG-10 day: the totals only (no bill count: not known — never a 0); nothing beyond tolerance.
-    expect(c.comparisons.map((x) => [x.area, x.subject])).toEqual([['sales_value', undefined], ['tax', undefined], ['stock_movement', 'ea'], ['stock_movement', 'kg']]);
+    // The MG-10 day: the totals only; nothing beyond tolerance.
+    expect(c.comparisons.map((x) => [x.area, x.subject])).toEqual([['sales_value', undefined], ['tax', undefined], ['sales_count', undefined], ['stock_movement', 'ea'], ['stock_movement', 'kg']]);
     expect(compareParallelDay({ tenantId: 't', businessDate: DAY, comparisons: c.comparisons }).differences).toEqual([]);
   });
 
-  it('keeps only the pilot department: another department\'s rows counted and not compared; a code the catalogue lacks listed', () => {
+  it('OB-800: another department\'s rows are compared too (no pilot department); a code the catalogue lacks listed', () => {
     const r = eveningCheck({ ...base, itemWise: [...base.itemWise, row(5, '8900000000099', 1000, 25_000, 3814), row(6, 'X-404', 1000, 5000, 238)] });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.check.otherDepartments).toEqual({ rows: 1, valueMinor: 25_000 });
+    expect(r.check.otherDepartments).toBeUndefined();
+    expect(r.check.items.find((i) => i.productId === 'S1')).toMatchObject({ categoryId: 'personal_care', differs: ['quantity', 'value', 'tax'] });
     expect(r.check.notInCatalogue).toEqual([{ code: 'X-404', quantityThousandths: 1000, valueMinor: 5000, taxMinor: 238, lines: [6] }]);
-    expect(r.check.totals.value).toEqual({ old: 33_500, new: 28_500 });
+    expect(r.check.totals.value).toEqual({ old: 58_500, new: 28_500 });
     expect(r.check.comparisons).toEqual(expect.arrayContaining([{ area: 'item_not_in_catalogue', subject: 'X-404', legacyValue: 1, newValue: 0, toleranceMinor: 0 }]));
   });
 
@@ -101,14 +102,15 @@ describe('the evening check, item by item and in total', () => {
     expect(r.check.comparisons.some((c) => c.area === 'tax')).toBe(false);
   });
 
-  it('a whole-unit item with a part quantity on the old report is refused, in words', () => {
-    expect(eveningCheck({ ...base, itemWise: [row(3, 'P1', 1500, 15_750, 750)] })).toMatchObject({ ok: false, refusedBecause: 'quantity_not_whole' });
+  it('OB-800: a whole-unit item with a part quantity on the old report is compared in thousandths — a difference, never a refusal', () => {
+    const r = eveningCheck({ ...base, itemWise: [row(3, 'P1', 1500, 15_750, 750)] });
+    expect(r.ok && r.check.items.find((i) => i.productId === 'P1')).toMatchObject({ quantityInThousandths: true, old: { quantityMinor: 1500 }, new: { quantityMinor: 2000 }, differs: expect.arrayContaining(['quantity']) });
   });
 });
 
 describe('bill by bill, by the old bill number (OB-264)', () => {
   const withLines = (bills: OldBill[]) => ({ bills, withLines: true });
-  it('with the bills\' item lines: not keyed, not on the old list, a value that differs; bills without pilot items ignored', () => {
+  it('with the bills\' item lines: not keyed, not on the old list, a value that differs — every bill, every department (OB-800)', () => {
     const r = eveningCheck({
       ...base,
       sales: [sale(1, 'OLD/1', [dal(2)]), sale(2, 'OLD/22', [rice(1250, 7500)])],
@@ -122,16 +124,19 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.check.bills).toEqual({
-      checked: 'lines', valueBasis: 'with_tax', valueNotKnown: 0, matched: 1,
+      checked: 'lines', valueBasis: 'with_tax', valueNotKnown: 0, matched: 0,
       differences: [
+        // OB-800: the shampoo line counts too — the new till's OLD/1 has the dal only.
+        { billNumber: 'OLD/1', kind: 'value_differs', oldValueMinor: 31_500, newValueMinor: 21_000, newBill: 'B1' },
         { billNumber: 'OLD/2', kind: 'not_keyed', oldValueMinor: 7500 },
+        { billNumber: 'OLD/3', kind: 'not_keyed', oldValueMinor: 9900 },
         { billNumber: 'OLD/4', kind: 'not_keyed', oldValueMinor: 10_000 },
         { billNumber: 'OLD/22', kind: 'not_on_old', newValueMinor: 7500, newBill: 'B2' },
       ],
     });
-    expect(r.check.totals.bills).toEqual({ old: { known: true, minor: 3 }, new: 2 });
+    expect(r.check.totals.bills).toEqual({ old: { known: true, minor: 4 }, new: 2 });
     expect(r.check.comparisons).toEqual(expect.arrayContaining([
-      { area: 'sales_count', legacyValue: 3, newValue: 2, toleranceMinor: 0 },
+      { area: 'sales_count', legacyValue: 4, newValue: 2, toleranceMinor: 0 },
       { area: 'bill_not_keyed', subject: 'OLD/2', legacyValue: 1, newValue: 0, toleranceMinor: 0 },
       { area: 'bill_not_on_old', subject: 'OLD/22', legacyValue: 0, newValue: 1, toleranceMinor: 0 },
     ]));
@@ -139,9 +144,9 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
     expect(differs.ok && differs.check.bills.differences).toEqual([{ billNumber: 'OLD/1', kind: 'value_differs', oldValueMinor: 20_000, newValueMinor: 21_000, newBill: 'B1' }]);
   });
 
-  it('without the item lines only presence is checked, and the result says so', () => {
+  it('without the item lines only presence is checked — both ways (OB-800: every bill is rung on both) — and the result says so', () => {
     const r = eveningCheck({ ...base, sales: [sale(1, 'OLD/1', [dal(2)]), sale(2, 'OLD/99', [rice(1250, 7500)])] });
-    expect(r.ok && r.check.bills).toEqual({ checked: 'presence_only', valueBasis: 'with_tax', valueNotKnown: 0, matched: 1, differences: [{ billNumber: 'OLD/99', kind: 'not_on_old', newValueMinor: 7500, newBill: 'B2' }] });
+    expect(r.ok && r.check.bills).toEqual({ checked: 'presence_only', valueBasis: 'with_tax', valueNotKnown: 0, matched: 1, differences: [{ billNumber: 'OLD/2', kind: 'not_keyed', oldValueMinor: 7500 }, { billNumber: 'OLD/99', kind: 'not_on_old', newValueMinor: 7500, newBill: 'B2' }] });
   });
 
   it('a credit note, a return or an exchange on the old files is listed to EXPLAIN — never matched to anything (OB-269)', () => {
@@ -165,7 +170,7 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
   });
 });
 
-describe('OB-263 A and B (owner, 21 Oct 2026): the file\'s own department, and bill lines before tax', () => {
+describe('OB-263 B (owner, 21 Oct 2026): bill lines before tax', () => {
   const withLines = (bills: OldBill[], lineValuesIncludeTax?: boolean) => ({ bills, withLines: true, ...(lineValuesIncludeTax === undefined ? {} : { lineValuesIncludeTax }) });
   const exTax = (incl: number): number => incl - tax5(incl);
 
@@ -194,26 +199,14 @@ describe('OB-263 A and B (owner, 21 Oct 2026): the file\'s own department, and b
     });
     expect(r.ok && r.check.bills).toMatchObject({ valueBasis: 'without_tax', valueNotKnown: 1, matched: 1, differences: [] });
   });
-
-  it('A: a file kept to the pilot department by its own column lists every unmatched code — never refused as "the whole shop"', () => {
-    const many = Array.from({ length: 1001 }, (_, i) => row(i + 2, `X${i}`, 1000, 100, 0));
-    expect(eveningCheck({ ...base, itemWise: many })).toMatchObject({ ok: false, detail: expect.stringContaining('save it again for the pilot department') });
-    const filtered = eveningCheck({ ...base, itemWise: many, departmentFiltered: true });
-    // Still far too many differences for one day (the safety cap) — but said as a wrong mapping, not "the whole shop".
-    expect(filtered).toMatchObject({ ok: false, refusedBecause: 'too_many_differences' });
-    expect(!filtered.ok && filtered.detail).not.toContain('save it again for the pilot department');
-    const few = eveningCheck({ ...base, itemWise: [...base.itemWise, row(9, 'X-1', 1000, 100, 0)], departmentFiltered: true });
-    expect(few.ok && few.check.notInCatalogue.map((n) => n.code)).toEqual(['X-1']);
-  });
 });
 
 describe('what it refuses, in words', () => {
-  it('no pilot department, no catalogue, a phone number in the item column, far too many differences', () => {
-    expect(eveningCheck({ ...base, department: undefined })).toMatchObject({ ok: false, refusedBecause: 'no_pilot_department' });
+  it('no catalogue, a phone number in the item column, far too many differences', () => {
     expect(eveningCheck({ ...base, catalogue: [] })).toMatchObject({ ok: false, refusedBecause: 'no_catalogue' });
     expect(eveningCheck({ ...base, itemWise: [row(3, '9876543210', 1000, 100, 0)] })).toMatchObject({ ok: false, refusedBecause: 'code_looks_personal', detail: expect.stringContaining('looks like a phone number') });
     const whole = Array.from({ length: MAX_DAY_DIFFERENCES + 1 }, (_, i) => row(i + 2, `X${i}`, 1000, 100, 0));
-    expect(eveningCheck({ ...base, itemWise: whole })).toMatchObject({ ok: false, refusedBecause: 'too_many_differences', detail: expect.stringContaining('save it again for the pilot department (Grocery) only') });
+    expect(eveningCheck({ ...base, itemWise: whole })).toMatchObject({ ok: false, refusedBecause: 'too_many_differences', detail: expect.stringContaining('wrong column in the mapping') });
   });
   it('a subject head office can keep: odd characters become "_", at most 64', () => {
     expect(subjectOf('A&B (1)')).toBe('A_B _1_');
