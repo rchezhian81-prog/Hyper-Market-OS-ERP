@@ -496,6 +496,10 @@ const BASE_ROLES: readonly Role[] = [
       // running the evaluation set (AI-NFR-09). The owner holds all four.
       'ai.proposal.decide', 'ai.incident.manage', 'ai.model.approve', 'ai.evaluation.run',
       // ── OB-288 lane 4 · P1 — end
+      // ── CR-01 OI-12 (OB-712) — begin: the owner asks for an auto-approve limit (or to start auto-approval), may confirm one
+      // SOMEBODY ELSE asked (never his own — the route refuses it), and may stop all auto-approval at once.
+      'ai.autoapprove.read', 'ai.autoapprove.propose', 'ai.autoapprove.confirm', 'ai.autoapprove.stop',
+      // ── CR-01 OI-12 — end
     ],
   },
   {
@@ -516,6 +520,10 @@ const BASE_ROLES: readonly Role[] = [
       // record that commits nothing; the transfer, markdown or order still goes through its own route and approvals.
       'ai.proposal.decide',
       // ── OB-288 lane 4 · P1 — end
+      // ── CR-01 OI-12 — begin: the manager sees the auto-approve limits and may STOP all auto-approval at once (with a
+      // reason); he sets no limit and starts nothing.
+      'ai.autoapprove.read', 'ai.autoapprove.stop',
+      // ── CR-01 OI-12 — end
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
@@ -842,6 +850,9 @@ const BASE_ROLES: readonly Role[] = [
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
       'identity.self.read', 'payroll.ess.self',
+      // CR-01 OI-12 (OB-712; the second person per OB-659): the accountant confirms or refuses an auto-approve limit the
+      // owner asked for. Asks for none and stops nothing.
+      'ai.autoapprove.read', 'ai.autoapprove.confirm',
       'finance.journal.post', 'finance.posting.configure', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       // M19-FR-01 / Item 2: the finance / payment-reconciliation exception queue (which queues a role staffs is
