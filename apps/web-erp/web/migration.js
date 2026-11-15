@@ -1114,15 +1114,15 @@ function renderOld() {
 //
 // The owner saves two reports from the old system for the day — the item-wise sales report and the bill-wise list — as
 // CSV, and picks them here. The page reads only each file's own header row (for the one-time "which column is which"
-// mapping); the store computer reads the figures through the saved mapping, keeps only the pilot department, compares them
-// with its own mirror sales and refunds, and keeps the figures (never the files). Every difference needs a reason; then the
+// mapping); the store computer reads the figures through the saved mapping, takes the WHOLE STORE — every department
+// (OB-800: no pilot department) — compares them with its own mirror sales and refunds, and keeps the figures (never the files). Every difference needs a reason; then the
 // day is signed. All of it on the store computer, with no internet; head office hears it the way a day always goes.
 
 const EC_WORDS = {
   en: {
     title: 'Evening check from the old system\'s files',
-    lead: 'Save two reports from the old system for the day, as CSV: the item-wise sales report and the bill-wise list. Pick them below. The first time, say which column is which — once. Then load them: the store computer compares them with the new till, for the pilot department only. Write a reason on every difference, then sign the day.',
-    dept: 'Pilot department', deptUnknown: 'The pilot department is not known on this store computer yet — it comes from the department slice once it is applied. Nothing can be compared until then.',
+    lead: 'Save two reports from the old system for the day, as CSV: the item-wise sales report and the bill-wise list. Pick them below. The first time, say which column is which — once. Then load them: the store computer compares them with the new till, for the whole store — every department. Write a reason on every difference, then sign the day.',
+    deptWhole: 'What is compared: the whole store — every department (OB-800: there is no pilot department). Each department\'s totals are shown, and the whole store\'s total.',
     date: 'Which day', templates: 'Our templates (what each column means)',
     tpl_item_wise: 'Item-wise template', tpl_bill_wise: 'Bill-wise template',
     file_item_wise: '1. The old system\'s item-wise sales report for the day (CSV)', file_bill_wise: '2. The old system\'s bill-wise list for the day (CSV)',
@@ -1136,27 +1136,31 @@ const EC_WORDS = {
     choose: '— choose —', notInReport: 'Not in this report',
     dateOrder: 'How does the report write its dates?', dmy: 'Day first (21/10/2026)', mdy: 'Month first (10/21/2026)', ymd: 'Year first (2026-10-21)',
     tax: 'Does the report\'s sales value already include the tax?', taxYes: 'Yes — the value includes tax', taxNo: 'No — the value is before tax',
-    pilotValue: 'Which of these is the pilot department?', pilotKept: 'Pilot department in the file',
+    pilotValue: 'Which of these is the pilot department?', pilotKept: 'Kept to one department of the file (before OB-800 — press Change and save again to read the whole store)',
+    keptOneDept: 'The saved mapping keeps the item-wise report to one department', keptOneDeptRest: 'rows of other departments were not read, so the new till\'s sales of those items show as differences. The whole store is compared now (OB-800): press Change on the item-wise mapping and save it again.',
     linesTax: 'Do the bill lines\' values already include the tax?', linesTaxYes: 'Yes — the line values include tax', linesTaxNo: 'No — the line values are before tax',
     otherDeptRows: 'rows of other departments in the file, not compared', noDeptRows: 'rows with no department written, not compared',
-    billsWithoutTax: 'The bill lines are before tax, so the pilot items are compared without tax on both sides.', valueNotKnownBills: 'bill(s) in both whose value without tax is not known (a new-till line has no tax rate), not compared',
+    billsWithoutTax: 'The bill lines are before tax, so every bill is compared without tax on both sides.', valueNotKnownBills: 'bill(s) in both whose value without tax is not known (a new-till line has no tax rate), not compared',
     mapSave: 'Save the mapping', mapCancel: 'Cancel', mapSaved: 'Mapping saved on this store computer',
     mappingsTitle: 'Which column is which (saved on this store computer)', noMapping: 'Not mapped yet.', change: 'Change',
     setBy: 'set by', changedBefore: 'earlier mappings',
     tolValue: 'Allowed difference in value (₹)', tolTax: 'Allowed difference in tax (₹)', tolBad: 'The allowed difference must be rupees, 0 or more.',
     load: 'Load and compare', loaded: 'Loaded and compared', bothFiles: 'Pick both files first: the item-wise report and the bill-wise list.',
     notLoaded: 'No files have been loaded for this day yet.',
-    totals: 'The day\'s totals (pilot department)', what: 'What', old: 'Old system', new: 'New till', difference: 'Difference',
+    totals: 'The whole store\'s totals', totalsDept: 'The day\'s totals (pilot department)', what: 'What',
+    deptTitle: 'Each department', deptCol: 'Department', itemsCol: 'Items compared', differCol: 'Items that differ',
+    group_no_department: 'Department not known', group_not_in_catalogue: 'Not in the new catalogue',
+    partQty: 'a part quantity of an item sold in whole units', old: 'Old system', new: 'New till', difference: 'Difference',
     value: 'Sales value (₹)', taxRow: 'Tax (₹)', bills: 'Number of bills', qty: 'Quantity',
     notKnown: 'Not known', agrees: 'agrees',
     payments: 'Payments taken (₹)', loyalty: 'Loyalty points', notComparedShort: 'Not compared in the mirror pilot (OB-256, OB-265)',
-    items: 'Items that differ', itemsAgree: 'items agree', noItemDiff: 'Every pilot item agrees.',
+    items: 'Items that differ', itemsAgree: 'items agree', noItemDiff: 'Every item agrees.',
     item: 'Item', qtyCol: 'Quantity', valueCol: 'Value (₹)', taxCol: 'Tax (₹)',
     notInCat: 'Not in the new catalogue', notInCatLead: 'Items on the old system\'s report that match no product of the new catalogue. Each is a difference.',
     billsTitle: 'Bill by bill', billsLines: 'The bill-wise list has each bill\'s items, so every check below was made.',
-    billsPresence: 'The bill-wise list has no item lines. So only this is checked: every bill keyed on the new till is on the old list. Which old bills had pilot items, and their values, cannot be compared.',
+    billsPresence: 'The bill-wise list has no item lines. So only this is checked: every bill is on both — on the old list and keyed on the new till. The bills\' values cannot be compared.',
     billsMatched: 'bills match', noBillDiff: 'No bill differs.', bill: 'Bill',
-    bill_not_keyed: 'On the old system with pilot items, not keyed on the new till', bill_not_on_old: 'Keyed on the new till, not on the old list (mistyped, or another day)', bill_value: 'In both, but the pilot items differ in value',
+    bill_not_keyed: 'On the old system, not keyed on the new till', bill_not_on_old: 'Keyed on the new till, not on the old list (mistyped, or another day)', bill_value: 'In both, but the items differ in value',
     explainTitle: 'To explain: returns, credit notes and exchanges on the old system', explainLead: 'The old files show these. They are not matched to anything (exchanges are done on the old system only, OB-269). Write what each one was.',
     readTitle: 'What was read, and what was not compared', otherDepts: 'rows for other departments, not compared', outsideNew: 'new-till lines outside the pilot department, not compared',
     fileRead: 'rows read', totalLines: 'total line(s) at the foot, not used', withoutCode: 'line(s) with no code, not used', underAbove: 'item line(s) under the bill above', dateNotChecked: 'The item-wise report has no date column: check yourself that it is for the chosen day.',
@@ -1171,12 +1175,12 @@ const EC_WORDS = {
     sessionEnded: 'Your office sign-in has ended. Open the migration screen again and enter your PIN.',
     area_sales_value: 'Sales value (₹)', area_tax: 'Tax (₹)', area_sales_count: 'Number of bills', area_stock_movement: 'Quantity',
     area_item_quantity: 'Quantity of', area_item_value: 'Value of', area_item_tax: 'Tax of', area_item_not_in_catalogue: 'Not in the new catalogue:',
-    area_bill_not_keyed: 'Not keyed on the new till: old bill', area_bill_not_on_old: 'Not on the old list: old bill', area_bill_value: 'Pilot items differ in value: old bill', area_old_return: 'Return, credit note or exchange on the old system:',
+    area_bill_not_keyed: 'Not keyed on the new till: old bill', area_bill_not_on_old: 'Not on the old list: old bill', area_bill_value: 'Items differ in value: old bill', area_old_return: 'Return, credit note or exchange on the old system:',
   },
   ta: {
     title: 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு',
-    lead: 'அந்த நாளுக்கான இரண்டு அறிக்கைகளைப் பழைய அமைப்பிலிருந்து CSV ஆகச் சேமியுங்கள்: பொருள் வாரியான விற்பனை அறிக்கையும் பில் வாரியான பட்டியலும். கீழே அவற்றைத் தேர்ந்தெடுங்கள். முதல் முறை மட்டும், எந்த நெடுவரிசை எது என்று சொல்லுங்கள். பிறகு ஏற்றுங்கள்: கடைக் கணினி அவற்றைப் புதிய கல்லாவுடன், பைலட் துறைக்கு மட்டும், ஒப்பிடும். ஒவ்வொரு வேறுபாட்டுக்கும் காரணம் எழுதி, பின் நாளில் கையெழுத்திடுங்கள்.',
-    dept: 'பைலட் துறை', deptUnknown: 'பைலட் துறை இந்தக் கடைக் கணினிக்கு இன்னும் தெரியவில்லை — துறைப் பகுதி ஏற்றப்பட்ட பிறகு அது வரும். அதுவரை எதையும் ஒப்பிட முடியாது.',
+    lead: 'அந்த நாளுக்கான இரண்டு அறிக்கைகளைப் பழைய அமைப்பிலிருந்து CSV ஆகச் சேமியுங்கள்: பொருள் வாரியான விற்பனை அறிக்கையும் பில் வாரியான பட்டியலும். கீழே அவற்றைத் தேர்ந்தெடுங்கள். முதல் முறை மட்டும், எந்த நெடுவரிசை எது என்று சொல்லுங்கள். பிறகு ஏற்றுங்கள்: கடைக் கணினி அவற்றைப் புதிய கல்லாவுடன், முழுக் கடைக்கும் — ஒவ்வொரு துறைக்கும் — ஒப்பிடும். ஒவ்வொரு வேறுபாட்டுக்கும் காரணம் எழுதி, பின் நாளில் கையெழுத்திடுங்கள்.',
+    deptWhole: 'ஒப்பிடப்படுவது: முழுக் கடை — ஒவ்வொரு துறையும் (OB-800: பைலட் துறை இல்லை). ஒவ்வொரு துறையின் மொத்தங்களும் முழுக் கடையின் மொத்தமும் காட்டப்படுகின்றன.',
     date: 'எந்த நாள்', templates: 'எங்கள் வார்ப்புருக்கள் (ஒவ்வொரு நெடுவரிசையின் பொருள்)',
     tpl_item_wise: 'பொருள் வாரியான வார்ப்புரு', tpl_bill_wise: 'பில் வாரியான வார்ப்புரு',
     file_item_wise: '1. அந்த நாளுக்கான பழைய அமைப்பின் பொருள் வாரியான விற்பனை அறிக்கை (CSV)', file_bill_wise: '2. அந்த நாளுக்கான பழைய அமைப்பின் பில் வாரியான பட்டியல் (CSV)',
@@ -1190,27 +1194,31 @@ const EC_WORDS = {
     choose: '— தேர்ந்தெடுங்கள் —', notInReport: 'இந்த அறிக்கையில் இல்லை',
     dateOrder: 'அறிக்கை தேதிகளை எப்படி எழுதுகிறது?', dmy: 'நாள் முதலில் (21/10/2026)', mdy: 'மாதம் முதலில் (10/21/2026)', ymd: 'ஆண்டு முதலில் (2026-10-21)',
     tax: 'அறிக்கையின் விற்பனை மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', taxYes: 'ஆம் — மதிப்பில் வரி அடங்கும்', taxNo: 'இல்லை — மதிப்பு வரிக்கு முந்தையது',
-    pilotValue: 'இவற்றில் எது பைலட் துறை?', pilotKept: 'கோப்பில் பைலட் துறை',
+    pilotValue: 'இவற்றில் எது பைலட் துறை?', pilotKept: 'கோப்பின் ஒரு துறைக்கு மட்டும் வைக்கப்பட்டது (OB-800-க்கு முன் — முழுக் கடையையும் படிக்க "மாற்று" அழுத்தி மீண்டும் சேமியுங்கள்)',
+    keptOneDept: 'சேமித்த பொருத்தம் பொருள் வாரியான அறிக்கையை ஒரு துறைக்கு மட்டும் வைக்கிறது', keptOneDeptRest: 'வேறு துறைகளின் வரிகள் படிக்கப்படவில்லை, எனவே அந்தப் பொருட்களின் புதிய கல்லா விற்பனைகள் வேறுபாடுகளாகத் தெரியும். இப்போது முழுக் கடையும் ஒப்பிடப்படுகிறது (OB-800): பொருள் வாரியான பொருத்தத்தில் "மாற்று" அழுத்தி மீண்டும் சேமியுங்கள்.',
     linesTax: 'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', linesTaxYes: 'ஆம் — வரி மதிப்பில் வரி அடங்கும்', linesTaxNo: 'இல்லை — வரி மதிப்பு வரிக்கு முந்தையது',
     otherDeptRows: 'கோப்பில் வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை', noDeptRows: 'துறை எழுதப்படாத வரிகள், ஒப்பிடப்படவில்லை',
-    billsWithoutTax: 'பில் வரிகள் வரிக்கு முந்தையவை, எனவே பைலட் பொருட்கள் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகின்றன.', valueNotKnownBills: 'இரண்டிலும் உள்ள, வரி இல்லாத மதிப்பு தெரியாத பில்(கள்) (புதிய கல்லா வரியில் வரி விகிதம் இல்லை), ஒப்பிடப்படவில்லை',
+    billsWithoutTax: 'பில் வரிகள் வரிக்கு முந்தையவை, எனவே ஒவ்வொரு பில்லும் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகிறது.', valueNotKnownBills: 'இரண்டிலும் உள்ள, வரி இல்லாத மதிப்பு தெரியாத பில்(கள்) (புதிய கல்லா வரியில் வரி விகிதம் இல்லை), ஒப்பிடப்படவில்லை',
     mapSave: 'பொருத்தத்தைச் சேமி', mapCancel: 'ரத்து செய்', mapSaved: 'பொருத்தம் இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது',
     mappingsTitle: 'எந்த நெடுவரிசை எது (இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது)', noMapping: 'இன்னும் பொருத்தப்படவில்லை.', change: 'மாற்று',
     setBy: 'அமைத்தவர்', changedBefore: 'முந்தைய பொருத்தங்கள்',
     tolValue: 'மதிப்பில் அனுமதிக்கப்பட்ட வேறுபாடு (₹)', tolTax: 'வரியில் அனுமதிக்கப்பட்ட வேறுபாடு (₹)', tolBad: 'அனுமதிக்கப்பட்ட வேறுபாடு ரூபாயில், 0 அல்லது அதற்கு மேல் இருக்க வேண்டும்.',
     load: 'ஏற்றி ஒப்பிடு', loaded: 'ஏற்றி ஒப்பிடப்பட்டது', bothFiles: 'முதலில் இரண்டு கோப்புகளையும் தேர்ந்தெடுங்கள்: பொருள் வாரியான அறிக்கையும் பில் வாரியான பட்டியலும்.',
     notLoaded: 'இந்த நாளுக்கு இன்னும் எந்தக் கோப்பும் ஏற்றப்படவில்லை.',
-    totals: 'நாளின் மொத்தங்கள் (பைலட் துறை)', what: 'எது', old: 'பழைய அமைப்பு', new: 'புதிய கல்லா', difference: 'வேறுபாடு',
+    totals: 'முழுக் கடையின் மொத்தங்கள்', totalsDept: 'நாளின் மொத்தங்கள் (பைலட் துறை)', what: 'எது',
+    deptTitle: 'ஒவ்வொரு துறையும்', deptCol: 'துறை', itemsCol: 'ஒப்பிட்ட பொருட்கள்', differCol: 'வேறுபடும் பொருட்கள்',
+    group_no_department: 'துறை தெரியவில்லை', group_not_in_catalogue: 'புதிய பட்டியலில் இல்லை',
+    partQty: 'முழு அலகுகளில் விற்கப்படும் பொருளுக்குப் பகுதி அளவு', old: 'பழைய அமைப்பு', new: 'புதிய கல்லா', difference: 'வேறுபாடு',
     value: 'விற்பனை மதிப்பு (₹)', taxRow: 'வரி (₹)', bills: 'பில்களின் எண்ணிக்கை', qty: 'அளவு',
     notKnown: 'தெரியவில்லை', agrees: 'பொருந்துகிறது',
     payments: 'பெற்ற பணம் (₹)', loyalty: 'விசுவாசப் புள்ளிகள்', notComparedShort: 'மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை (OB-256, OB-265)',
-    items: 'வேறுபடும் பொருட்கள்', itemsAgree: 'பொருட்கள் பொருந்துகின்றன', noItemDiff: 'ஒவ்வொரு பைலட் பொருளும் பொருந்துகிறது.',
+    items: 'வேறுபடும் பொருட்கள்', itemsAgree: 'பொருட்கள் பொருந்துகின்றன', noItemDiff: 'ஒவ்வொரு பொருளும் பொருந்துகிறது.',
     item: 'பொருள்', qtyCol: 'அளவு', valueCol: 'மதிப்பு (₹)', taxCol: 'வரி (₹)',
     notInCat: 'புதிய பட்டியலில் இல்லை', notInCatLead: 'பழைய அமைப்பின் அறிக்கையில் உள்ள, புதிய பட்டியலின் எந்தப் பொருளுடனும் பொருந்தாத பொருட்கள். ஒவ்வொன்றும் ஒரு வேறுபாடு.',
     billsTitle: 'பில் வாரியாக', billsLines: 'பில் வாரியான பட்டியலில் ஒவ்வொரு பில்லின் பொருட்களும் உள்ளன, எனவே கீழே உள்ள எல்லாச் சரிபார்ப்புகளும் செய்யப்பட்டன.',
-    billsPresence: 'பில் வாரியான பட்டியலில் பொருள் வரிகள் இல்லை. எனவே இது மட்டுமே சரிபார்க்கப்படுகிறது: புதிய கல்லாவில் பதிவான ஒவ்வொரு பில்லும் பழைய பட்டியலில் உள்ளதா. எந்தப் பழைய பில்களில் பைலட் பொருட்கள் இருந்தன, அவற்றின் மதிப்பு என்ன என்பதை ஒப்பிட முடியாது.',
+    billsPresence: 'பில் வாரியான பட்டியலில் பொருள் வரிகள் இல்லை. எனவே இது மட்டுமே சரிபார்க்கப்படுகிறது: ஒவ்வொரு பில்லும் இரண்டிலும் உள்ளதா — பழைய பட்டியலிலும் புதிய கல்லாவிலும். பில்களின் மதிப்பை ஒப்பிட முடியாது.',
     billsMatched: 'பில்கள் பொருந்துகின்றன', noBillDiff: 'எந்தப் பில்லும் வேறுபடவில்லை.', bill: 'பில்',
-    bill_not_keyed: 'பழைய அமைப்பில் பைலட் பொருட்களுடன் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை', bill_not_on_old: 'புதிய கல்லாவில் பதிவானது, பழைய பட்டியலில் இல்லை (தவறாக உள்ளிடப்பட்டது, அல்லது வேறு நாள்)', bill_value: 'இரண்டிலும் உள்ளது, ஆனால் பைலட் பொருட்களின் மதிப்பு வேறுபடுகிறது',
+    bill_not_keyed: 'பழைய அமைப்பில் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை', bill_not_on_old: 'புதிய கல்லாவில் பதிவானது, பழைய பட்டியலில் இல்லை (தவறாக உள்ளிடப்பட்டது, அல்லது வேறு நாள்)', bill_value: 'இரண்டிலும் உள்ளது, ஆனால் பொருட்களின் மதிப்பு வேறுபடுகிறது',
     explainTitle: 'விளக்க வேண்டியவை: பழைய அமைப்பில் திருப்பங்கள், கடன் குறிப்புகள், பரிமாற்றங்கள்', explainLead: 'பழைய கோப்புகள் இவற்றைக் காட்டுகின்றன. இவை எதனுடனும் பொருத்தப்படுவதில்லை (பரிமாற்றங்கள் பழைய அமைப்பில் மட்டுமே, OB-269). ஒவ்வொன்றும் என்ன என்று எழுதுங்கள்.',
     readTitle: 'படிக்கப்பட்டவை, ஒப்பிடப்படாதவை', otherDepts: 'வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை', outsideNew: 'பைலட் துறைக்கு வெளியே உள்ள புதிய கல்லா வரிகள், ஒப்பிடப்படவில்லை',
     fileRead: 'வரிகள் படிக்கப்பட்டன', totalLines: 'கடைசியில் உள்ள மொத்த வரி(கள்), பயன்படுத்தப்படவில்லை', withoutCode: 'குறியீடு இல்லாத வரி(கள்), பயன்படுத்தப்படவில்லை', underAbove: 'மேலே உள்ள பில்லின் கீழ் பொருள் வரி(கள்)', dateNotChecked: 'பொருள் வாரியான அறிக்கையில் தேதி நெடுவரிசை இல்லை: அது தேர்ந்தெடுத்த நாளுக்கானது என்று நீங்களே சரிபாருங்கள்.',
@@ -1225,7 +1233,7 @@ const EC_WORDS = {
     sessionEnded: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. இடமாற்றத் திரையை மீண்டும் திறந்து உங்கள் PIN-ஐ உள்ளிடுங்கள்.',
     area_sales_value: 'விற்பனை மதிப்பு (₹)', area_tax: 'வரி (₹)', area_sales_count: 'பில்களின் எண்ணிக்கை', area_stock_movement: 'அளவு',
     area_item_quantity: 'அளவு —', area_item_value: 'மதிப்பு —', area_item_tax: 'வரி —', area_item_not_in_catalogue: 'புதிய பட்டியலில் இல்லை:',
-    area_bill_not_keyed: 'புதிய கல்லாவில் பதிவாகவில்லை: பழைய பில்', area_bill_not_on_old: 'பழைய பட்டியலில் இல்லை: பழைய பில்', area_bill_value: 'பைலட் பொருட்களின் மதிப்பு வேறுபடுகிறது: பழைய பில்', area_old_return: 'பழைய அமைப்பில் திருப்பம், கடன் குறிப்பு அல்லது பரிமாற்றம்:',
+    area_bill_not_keyed: 'புதிய கல்லாவில் பதிவாகவில்லை: பழைய பில்', area_bill_not_on_old: 'பழைய பட்டியலில் இல்லை: பழைய பில்', area_bill_value: 'பொருட்களின் மதிப்பு வேறுபடுகிறது: பழைய பில்', area_old_return: 'பழைய அமைப்பில் திருப்பம், கடன் குறிப்பு அல்லது பரிமாற்றம்:',
   },
 };
 /** Each refusal the store computer can give, in the screen's own words (its detail follows, in English, on the English screen). */
@@ -1243,9 +1251,7 @@ const EC_REFUSALS = {
   looks_personal: { en: 'The bill number column holds what look like phone numbers. Check the mapping. Nothing was kept.', ta: 'பில் எண் நெடுவரிசையில் தொலைபேசி எண்கள் போலத் தெரிகின்றன. பொருத்தத்தைச் சரிபாருங்கள். எதுவும் வைக்கப்படவில்லை.' },
   code_looks_personal: { en: 'The item code column holds what looks like a phone number. Check the mapping. Nothing was kept.', ta: 'பொருள் குறியீட்டு நெடுவரிசையில் தொலைபேசி எண் போலத் தெரிகிறது. பொருத்தத்தைச் சரிபாருங்கள். எதுவும் வைக்கப்படவில்லை.' },
   repeated_bill: { en: 'A bill is on more than one row.', ta: 'ஒரு பில் ஒன்றுக்கு மேற்பட்ட வரிகளில் உள்ளது.' },
-  quantity_not_whole: { en: 'A quantity is not a whole number for an item sold in whole units.', ta: 'முழு அலகுகளில் விற்கப்படும் பொருளுக்கு அளவு முழு எண் அல்ல.' },
   too_many_differences: { en: 'Far too many differences — a wrong column or another day\'s file.', ta: 'மிக அதிக வேறுபாடுகள் — தவறான நெடுவரிசை அல்லது வேறு நாளின் கோப்பு.' },
-  no_pilot_department: { en: 'The pilot department is not known yet.', ta: 'பைலட் துறை இன்னும் தெரியவில்லை.' },
   no_catalogue: { en: 'This store computer holds no catalogue yet.', ta: 'இந்தக் கடைக் கணினியில் இன்னும் பொருள் பட்டியல் இல்லை.' },
   day_not_loaded: { en: 'Load the files for this day first.', ta: 'முதலில் இந்த நாளுக்கான கோப்புகளை ஏற்றுங்கள்.' },
   reason_says_nothing: { en: 'Say what really happened, in at least a full sentence.', ta: 'உண்மையில் என்ன நடந்தது என்று குறைந்தது ஒரு முழு வாக்கியத்தில் சொல்லுங்கள்.' },
@@ -1279,8 +1285,12 @@ function ecPaise(text) {
   const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(v);
   return m === null ? NaN : Number(m[1]) * 100 + Number(((m[2] ?? '') + '00').slice(0, 2));
 }
-/** A quantity in its unit's smallest step, worded: 1.234 kg, 500 g, a bare count for "each". */
-function ecQty(minor, uom) {
+/**
+ * A quantity in its unit's smallest step, worded: 1.234 kg, 500 g, a bare count for "each". `thousandths` (OB-800): the
+ * figure is in thousandths of the unit — a part quantity of an item sold in whole units — worded with three decimals.
+ */
+function ecQty(minor, uom, thousandths) {
+  if (thousandths === true) { const s = minor < 0 ? '-' : ''; const a = Math.abs(minor); return `${s}${Math.floor(a / 1000)}.${String(a % 1000).padStart(3, '0')}${uom === 'ea' || uom === undefined ? '' : ` ${uom}`}`; }
   if (uom === 'kg' || uom === 'L') { const s = minor < 0 ? '-' : ''; const a = Math.abs(minor); return `${s}${Math.floor(a / 1000)}.${String(a % 1000).padStart(3, '0')} ${uom}`; }
   return uom === 'ea' || uom === undefined ? Number(minor).toLocaleString('en-IN') : `${Number(minor).toLocaleString('en-IN')} ${uom}`;
 }
@@ -1382,7 +1392,8 @@ function ecOpenMapping(kind) {
   el('ec-map').hidden = false;
   el('ec-map-title').textContent = `${ec('mapTitle')} — ${ec(`report_${kind}`)}`;
   el('ec-map-lead').textContent = ec('mapLead');
-  el('ec-map-fields').replaceChildren(...spec.fields.map((f) => {
+  // OB-800: no pilot department, so the report's department column is not offered — the whole report is read.
+  el('ec-map-fields').replaceChildren(...spec.fields.filter((f) => f.key !== 'department').map((f) => {
     const wrap = document.createElement('div');
     const label = document.createElement('label');
     label.htmlFor = `ec-map-${f.key}`;
@@ -1430,7 +1441,7 @@ function ecOpenMapping(kind) {
     const keep = list.find((v) => (before !== '' && same(v, before)) || (before === '' && was !== undefined && same(v, was)));
     pick.value = keep ?? '';
   };
-  if (kind === 'item_wise') el('ec-map-department').addEventListener('change', paintPilot);
+  if (kind === 'item_wise') el('ec-map-department')?.addEventListener('change', paintPilot);
   paintPilot();
   labelled(el('ec-map-save'), 'list-checks', ec('mapSave'));
   labelled(el('ec-map-cancel'), 'x', ec('mapCancel'));
@@ -1440,7 +1451,7 @@ el('ec-map-save').addEventListener('click', async () => {
   const kind = ecState.mapping;
   if (!kind) return;
   const columns = {};
-  for (const f of ecState.kit.reports[kind].fields) { const v = el(`ec-map-${f.key}`).value; if (v !== '') columns[f.key] = v; }
+  for (const f of ecState.kit.reports[kind].fields) { const v = el(`ec-map-${f.key}`)?.value ?? ''; if (v !== '') columns[f.key] = v; }
   const order = el('ec-map-date-order').value;
   const tax = el('ec-map-includes-tax').value;
   const linesTax = el('ec-map-lines-tax').value;
@@ -1513,8 +1524,10 @@ function ecDifferenceWords(d) {
   const item = check?.items.find((i) => i.productId === d.subject);
   const subject = d.area.startsWith('item_') && item ? `${item.name ?? item.productId} (${item.productId})` : (d.subject ?? '');
   const comparison = ecState.day?.current?.comparisons.find((c) => c.area === d.area && c.subject === d.subject);
-  const uom = d.area === 'stock_movement' ? d.subject : item?.uom;
-  const show = (v) => (EC_MONEY.has(d.area) ? money(v) : d.area === 'item_quantity' || d.area === 'stock_movement' || d.area === 'sales_count' ? ecQty(v, uom) : null);
+  // OB-800: a quantity total in thousandths of its unit says so in its subject ("ea/1000").
+  const perMille = d.area === 'stock_movement' ? /\/1000$/.test(d.subject ?? '') : item?.quantityInThousandths === true;
+  const uom = d.area === 'stock_movement' ? (d.subject ?? '').replace(/\/1000$/, '') : item?.uom;
+  const show = (v) => (EC_MONEY.has(d.area) ? money(v) : d.area === 'item_quantity' || d.area === 'stock_movement' ? ecQty(v, uom, perMille) : d.area === 'sales_count' ? String(v) : null);
   const figures = comparison && show(comparison.legacyValue) !== null ? ` — ${ec('old')} ${show(comparison.legacyValue)}, ${ec('new')} ${show(comparison.newValue)}` : '';
   return `${ec(`area_${d.area}`)} ${subject}${figures}`.replace(/\s+/g, ' ').trim();
 }
@@ -1547,17 +1560,32 @@ function ecPaintDay() {
     ecRow([ecCell(ec('value')), ecCell(money(tt.value.old), 'num'), ecCell(money(tt.value.new), 'num'), diffCell(tt.value.old, tt.value.new, money)], Math.abs(tt.value.new - tt.value.old) > c.tolerance.valueMinor),
     ecRow([ecCell(ec('taxRow')), ecCell(money(tt.tax.old), 'num'), ecCell(taxNew === null ? null : money(taxNew), 'num'), diffCell(tt.tax.old, taxNew, money)], taxNew !== null && Math.abs(taxNew - tt.tax.old) > c.tolerance.taxMinor),
     ecRow([ecCell(ec('bills')), ecCell(billsOld === null ? null : String(billsOld), 'num'), ecCell(String(tt.bills.new), 'num'), diffCell(billsOld, tt.bills.new, (v) => String(v))], billsOld !== null && billsOld !== tt.bills.new),
-    ...tt.quantity.map((q) => ecRow([ecCell(`${ec('qty')} (${q.uom})`), ecCell(ecQty(q.old, q.uom), 'num'), ecCell(ecQty(q.new, q.uom), 'num'), diffCell(q.old, q.new, (v) => ecQty(v, q.uom))], q.old !== q.new)),
+    ...tt.quantity.map((q) => ecRow([ecCell(`${ec('qty')} (${q.uom})`), ecCell(ecQty(q.old, q.uom, q.inThousandths), 'num'), ecCell(ecQty(q.new, q.uom, q.inThousandths), 'num'), diffCell(q.old, q.new, (v) => ecQty(v, q.uom, q.inThousandths))], q.old !== q.new)),
     ecRow([ecCell(ec('payments')), ecCell(ec('notComparedShort')), ecCell('—'), ecCell('—')]),
     ecRow([ecCell(ec('loyalty')), ecCell(ec('notComparedShort')), ecCell('—'), ecCell('—')]),
   ];
-  parts.push(ecHeading(`${ec('totals')}: ${c.department.name}`, 'ec-totals-title'), ecTable('ec-totals', [[ec('what')], [ec('old'), true], [ec('new'), true], [ec('difference'), true]], rows));
+  // OB-800: the whole store's totals; a day loaded before OB-800 keeps its one department's title.
+  parts.push(ecHeading(c.department ? `${ec('totalsDept')}: ${c.department.name}` : ec('totals'), 'ec-totals-title'), ecTable('ec-totals', [[ec('what')], [ec('old'), true], [ec('new'), true], [ec('difference'), true]], rows));
+  // OB-800: each department's totals (the department the Bpal load gave each item from its HSN), adding up to the above.
+  if (Array.isArray(c.departments) && c.departments.length > 0) {
+    const name = (d) => (d.group === 'department' ? d.name : ec(`group_${d.group}`));
+    const qty = (d, side) => d.quantity.map((q) => ecQty(q[side], q.uom, q.inThousandths)).join(' · ');
+    parts.push(ecHeading(ec('deptTitle'), 'ec-depts-title'), ecTable('ec-depts', [[ec('deptCol')], [ec('itemsCol'), true], [ec('differCol'), true], [`${ec('valueCol')} ${ec('old')} → ${ec('new')}`, true], [`${ec('taxCol')} ${ec('old')} → ${ec('new')}`, true], [`${ec('qtyCol')} ${ec('old')} → ${ec('new')}`, true]], c.departments.map((d) => {
+      const taxNow = ecKnown(d.tax.new, (v) => v);
+      return ecRow([
+        ecCell(name(d)), ecCell(String(d.items), 'num'), ecCell(String(d.itemsDiffering), 'num'),
+        ecCell(`${money(d.value.old)} → ${money(d.value.new)}`, 'num'),
+        ecCell(taxNow === null ? null : `${money(d.tax.old)} → ${money(taxNow)}`, 'num'),
+        ecCell(d.quantity.length === 0 ? '—' : `${qty(d, 'old')} → ${qty(d, 'new')}`, 'num'),
+      ], d.itemsDiffering > 0 || Math.abs(d.value.new - d.value.old) > c.tolerance.valueMinor);
+    })));
+  }
   // Items that differ.
   const differing = c.items.filter((i) => i.differs.length > 0);
   parts.push(ecHeading(ec('items'), 'ec-items-title'));
   parts.push(differing.length === 0 ? emptyLine(ec('noItemDiff')) : ecTable('ec-items', [[ec('item')], [ec('qtyCol'), true], [ec('valueCol'), true], [ec('taxCol'), true]], differing.map((i) => ecRow([
-    ecCell(`${i.name ?? i.productId} (${i.productId})`),
-    ecCell(`${ecQty(i.old.quantityMinor, i.uom)} → ${ecQty(i.new.quantityMinor, i.uom)}`, 'num'),
+    ecCell(`${i.name ?? i.productId} (${i.productId})${i.quantityInThousandths ? ` — ${ec('partQty')}` : ''}`),
+    ecCell(`${ecQty(i.old.quantityMinor, i.uom, i.quantityInThousandths)} → ${ecQty(i.new.quantityMinor, i.uom, i.quantityInThousandths)}`, 'num'),
     ecCell(`${money(i.old.valueMinor)} → ${money(i.new.valueMinor)}`, 'num'),
     ecCell(i.new.tax.known ? `${money(i.old.taxMinor)} → ${money(i.new.tax.minor)}` : null, 'num'),
   ], true))));
@@ -1587,13 +1615,17 @@ function ecPaintDay() {
   parts.push(ecHeading(ec('readTitle'), 'ec-read-title'));
   parts.push(line(`${ec('report_item_wise')}: ${f.itemWise.rowsRead} ${ec('fileRead')} · ${f.itemWise.totalLines} ${ec('totalLines')} · ${f.itemWise.withoutCode} ${ec('withoutCode')}`));
   if (f.itemWise.dateChecked === false) parts.push(ecPara(ec('dateNotChecked'), 'warn', 'ec-date-not-checked'));
-  // OB-263 A: the rows the file's own department column set aside — counted and said, never silently dropped.
+  // OB-263 A: the rows the file's own department column set aside — counted and said, never silently dropped. OB-800: the
+  // whole store is compared now, so a mapping still keeping one department is a warning to change it.
   if (f.itemWise.department) {
     const d = f.itemWise.department;
-    parts.push(ecPara(`${ec('pilotKept')}: ${d.pilotValue} · ${d.otherDepartmentRows} ${ec('otherDeptRows')} · ${d.noDepartmentRows} ${ec('noDeptRows')}`, 'lead', 'ec-dept-rows'));
+    parts.push(c.scope === 'whole_store'
+      ? ecPara(`${ec('keptOneDept')} (${d.pilotValue}): ${d.otherDepartmentRows + d.noDepartmentRows} ${ec('keptOneDeptRest')}`, 'warn', 'ec-dept-rows')
+      : ecPara(`${ec('pilotKept')}: ${d.pilotValue} · ${d.otherDepartmentRows} ${ec('otherDeptRows')} · ${d.noDepartmentRows} ${ec('noDeptRows')}`, 'lead', 'ec-dept-rows'));
   }
   parts.push(line(`${ec('report_bill_wise')}: ${f.billWise.rowsRead} ${ec('fileRead')} · ${f.billWise.totalLines} ${ec('totalLines')} · ${f.billWise.withoutCode} ${ec('withoutCode')}${f.billWise.linesUnderBillAbove ? ` · ${f.billWise.linesUnderBillAbove} ${ec('underAbove')}` : ''}`));
-  parts.push(line(`${c.otherDepartments.rows} ${ec('otherDepts')} (${money(c.otherDepartments.valueMinor)}) · ${c.newOutsideDepartment.lines} ${ec('outsideNew')}`));
+  // Before OB-800 only: what lay outside the one pilot department.
+  if (c.otherDepartments && c.newOutsideDepartment) parts.push(line(`${c.otherDepartments.rows} ${ec('otherDepts')} (${money(c.otherDepartments.valueMinor)}) · ${c.newOutsideDepartment.lines} ${ec('outsideNew')}`));
   result.replaceChildren(...parts);
 
   // The differences, each with its reason — or the box for one.
@@ -1692,7 +1724,8 @@ function renderEvening() {
   for (const [id, key] of [['ec-title', 'title'], ['ec-lead', 'lead'], ['ec-date-label', 'date'], ['ec-templates-title', 'templates'],
     ['ec-file-item_wise-label', 'file_item_wise'], ['ec-file-bill_wise-label', 'file_bill_wise'], ['ec-mappings-title', 'mappingsTitle'],
     ['ec-tol-value-label', 'tolValue'], ['ec-tol-tax-label', 'tolTax'], ['ec-statement-label', 'statement']]) el(id).textContent = ec(key);
-  el('ec-dept').textContent = ecState.data.department ? `${ec('dept')}: ${ecState.data.department.name} (${ecState.data.department.categoryId})` : ec('deptUnknown');
+  // OB-800: no pilot department — the whole store, every department, is compared.
+  el('ec-dept').textContent = ec('deptWhole');
   labelled(el('ec-template-item_wise'), 'file-text', ec('tpl_item_wise'));
   labelled(el('ec-template-bill_wise'), 'file-text', ec('tpl_bill_wise'));
   labelled(el('ec-load'), 'git-compare-arrows', ec('load'));

@@ -2198,7 +2198,6 @@ export async function startEdge(
       tenantId,
       cutoverId: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.cutoverId : undefined),
       reconcilerUserId: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.dailyReconcilerUserId : undefined),
-      department: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.pilotDepartment : undefined),
       catalogue: () => tillCatalogue(pack, node.pack(), new Date().toISOString())?.products.map((p) => ({
         productId: p.productId, name: p.name, barcodes: p.barcodes.map((b) => b.code), uom: p.uom,
         ...(p.categoryId === undefined ? {} : { categoryId: p.categoryId }), ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),

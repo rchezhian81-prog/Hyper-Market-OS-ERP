@@ -10,8 +10,8 @@ import { readMigrationFeed } from '../../edge/sync-agent/src/migration-feed';
 import { checkRefundOf, checkSaleOf } from '../../edge/store-edge/src/evening-check-box';
 
 /**
- * OB-263 · MG-05 — the evening check keeps only the PILOT DEPARTMENT's items, and the department comes from the store's own
- * catalogue: each product's department (the product master's primary category — what the department slice loads) rides
+ * OB-263 · MG-05 — the department of each product comes from the store's own catalogue (OB-800: the evening check now
+ * compares every department and totals each one — it no longer keeps one pilot department): each product's department (the product master's primary category — what the department slice loads) rides
  * the signed catalogue pack to the store computer, UNDER the signature; and which department is the pilot's comes from
  * head office's register — the newest applied department slice. A pack without departments signs exactly as before; a
  * feed whose department is not readable is not taken. The till's own sale and refund records are read for the check as
