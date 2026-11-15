@@ -1,6 +1,6 @@
 # ADR 0033 — A privilege change on the store PC is a sealed, PIN-confirmed act relayed by the box, never a token the box mints
 
-- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B")
+- **Status:** Accepted (owner, 14 Nov 2026: OB-731 "A", OB-732 "B"); amended for step 4b-1 (OB-733 "A", OB-735 "A", OB-736 "A")
 - **Date:** 14 November 2026
 - **Context:** CR-01 OI-06 asks for people and roles to be managed on the store PC's screens. OB-731 "A" decided how a
   person proves who they are there: staff ID + own till PIN, the PIN typed again to confirm each privilege change, on
@@ -57,6 +57,31 @@
 - Tests: the box seals only after a fresh PIN check with the route's permission; the API refuses a missing seal, a
   wrong seal, a stale `confirmedAt`, a reused request id, a requester approving their own request, an approver lacking
   what is granted; the audit event and the owner alert are written.
+
+## Amendment 1 — CR-01 step 4b-1 (14 November 2026: OB-733 "A", OB-735 "A", OB-736 "A")
+
+1. **Adding a person on the store PC records a STORE-PC PERSON** (OB-733 "A"), not a sign-in: a name and a staff id on head
+   office's people register (`PersonRecordedForStorePc`, state `store_pc`), with **no sign-in made anywhere** — no office or
+   phone login, no one-time password. They work only on the store PC and its tills, by their till PIN. The name alone gives
+   no authority, so **one person** adds it — the maker's word, `identity.role.request` (the owner, the store manager; never
+   `platform.person.provision`, which stays the IT administrator's for identity-server sign-ins, OB-95) — by PIN, audited
+   (`person.store_pc.record`, `via: office_pin`) and the owner alerted. Refused by code: a sign-in name, PIN or password in
+   the body; a job or shared name; oneself; somebody already on the register or already holding a role. A later sign-in at
+   the identity server upgrades the same record. The access review shows such a person as "store PC only" and flags a
+   privileged role held without a second factor.
+2. **Rejecting a pending request** is a new sealed kind, `role_grant_rejection`, with the checker's word
+   (`identity.role.grant`) and a reason (≤ 300 characters); head office runs the person's own reject handler as them and
+   audits `role.grant.reject` with `via: office_pin`. A rejection changes nobody's access, so it raises no owner alert.
+3. **The Users & roles page's lists are read through the box** (`GET /v1/identity/box/users-view?for=<person>`, under the
+   store token, store computers only): head office judges **the named person's own authority** with the same gates as the
+   person's own reads (roles and who holds what with `identity.role.request`; what waits with `identity.role.read`) and
+   answers for **the box's own store only** (grants and requests naming that store, or every store). A read asks for no PIN
+   and changes nothing; a read the box cannot make is said, never shown as an empty list.
+   **Residual risk (stated):** whoever holds the store token can read who holds which role at that store, and the names on
+   the register — the same reach the box's signed pack already gives it (OB-54 binding to one store).
+4. **Not yet on the store PC (OB-736 "A", step 4b-2):** taking a role back and "they have left" (two people, OB-735 "A"),
+   and setting or cancelling a till PIN on screens (OB-734 "A"). The page says so in both languages and does not offer them;
+   limiting a role still needs the head-office link.
 
 ## Reconsider-when
 

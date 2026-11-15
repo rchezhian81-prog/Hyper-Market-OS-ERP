@@ -13,8 +13,9 @@
 
 import { DECIDER_STAMP_FIELD, checkDeciderStamp, sealDecision, type DeciderStamp } from './till-seal';
 
-export type PrivilegeKind = 'person_provision' | 'role_request' | 'role_grant_approval';
-export const PRIVILEGE_KINDS: readonly PrivilegeKind[] = Object.freeze(['person_provision', 'role_request', 'role_grant_approval']);
+/** CR-01 step 4b-1: `role_grant_rejection` — a second person turns a pending request down, by PIN (OB-735 · ADR-0033 amended). */
+export type PrivilegeKind = 'person_provision' | 'role_request' | 'role_grant_approval' | 'role_grant_rejection';
+export const PRIVILEGE_KINDS: readonly PrivilegeKind[] = Object.freeze(['person_provision', 'role_request', 'role_grant_approval', 'role_grant_rejection']);
 /** How the acting person proved it was them: their own till PIN, typed again on the office screen (OB-731 "A"). */
 export const PRIVILEGE_VIA = 'office_pin';
 /** The "lane" a privilege seal names: the office screens' own (edge/store-edge/src/office-sign-in.ts `OFFICE_LANE`). */
