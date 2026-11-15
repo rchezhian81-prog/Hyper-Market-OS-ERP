@@ -16,6 +16,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   5. Only then the remaining roadmap items (CR-01 4c-2, 4d, 4e; OI-13 A11/A13; the rest).
 - **Paused until step 2 is done:** new features in every other conversation (CR-01 4c-2 included).
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
+- **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
 ## Round 1b: the store manager proposes item, barcode and GST changes; the owner approves (15 November 2026) · OB-773 3 B · OB-796
 - **Why:** the audit found only the owner could change an item, barcode or GST rate (C-8); the owner chose (OB-773 3 B) that the store manager may make changes the owner approves, and then (OB-796) that his approval also counts as Finance's for the sensitive tax changes, and that anyone holding the publish authority (today only the owner) approves.
