@@ -48,6 +48,19 @@ screens themselves show English and Tamil, as built.
 
 ---
 
+> **Since the setup program (CR-01, `SRE-Setup.exe`), read this first (OB-739/OB-740, 15 Nov 2026).** Parts 1–16 describe
+> the older way this PC was set up (Docker, a ZIP and pnpm); the setup program has replaced them, so skip them on a PC set up
+> by `SRE-Setup.exe`. From Part 17 on, every `store-computer` step is typed in **PowerShell as administrator**, in the
+> install folder, like this:
+>
+> ```powershell
+> cd "C:\Program Files\SRE Retail OS"
+> .\runtime\node\node.exe .\scripts\store-computer.mjs <step>
+> ```
+>
+> (`store-computer` on its own is not a command Windows knows on that PC.) Lines that still start with `pnpm run` are for a
+> developer's copy only.
+
 ## Part 1 — Check the computer
 
 > **Done on 21 Oct 2026 — your photos passed** (OB-282, OB-283, OB-284). The pilot PC is the **Windows 11 Pro** PC
@@ -581,7 +594,7 @@ PIN. You never type anybody else's PIN.
 
 1. In PowerShell in `C:\SRE`, type as one line, with your values:
    ```
-   pnpm run store-computer -- shop --as owner-01 --approver accountant-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
+   .\runtime\node\node.exe .\scripts\store-computer.mjs shop --as owner-01 --approver accountant-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
    ```
    - Two people (M01-FR-01): you, the owner (`--as`), set the shop up and ask for the store to be made active, and the
      accountant (`--approver`) approves it with **their own** PIN — when the owner raises a structural change himself,
@@ -606,7 +619,7 @@ PIN. You never type anybody else's PIN.
 
 1. Type as one line, with your values:
    ```
-   pnpm run store-computer -- store-settings --as owner-01 --store <store-code> --cutoff 00:00 --stale-after-minutes <minutes> --count-approval-rupees <rupees> --handover-tolerance-rupees <rupees> --cash-variance-rupees <rupees>
+   .\runtime\node\node.exe .\scripts\store-computer.mjs store-settings --as owner-01 --store <store-code> --cutoff 00:00 --stale-after-minutes <minutes> --count-approval-rupees <rupees> --handover-tolerance-rupees <rupees> --cash-variance-rupees <rupees>
    ```
    - It reads your values back to you in words. Type `YES`, then your PIN.
    - **When it worked:** `done — store … settings saved as version 1.` and `DONE —`. Every later change is a new
@@ -651,7 +664,7 @@ shop** used (its seed, `db/seed/pilot/dataset.ts`) — a starting point to discu
    ```
    .\runtime\node\node.exe .\scripts\store-computer.mjs store-rules --as owner-01 --store <store-code> --checklist "$HOME\Documents\closing-checklist.txt" --near-expiry-days 30 --approval-limit-rupees 5000 --margin-floor-percent 20 --reports-late-after-minutes 5 --reports-old-after-minutes 60 --return-window-days 7 --refund-approval-rupees 2000 --no-receipt-cap-rupees 500 --desk-authority-rupees 50 --compensation-cap-rupees 500 --journal-takings TK --journal-tax TX --journal-refunds RF --dormant-after-days 60 --ai-old-after-minutes 60 --refill-below-percent 50 --shelf-count-old-after-minutes 120 --refill-role store_manager --write-off-second-person-rupees 500
    ```
-   (On a developer's copy with pnpm the line starts `pnpm run store-computer -- store-rules` instead.)
+   (On a developer's copy with pnpm the line starts `.\runtime\node\node.exe .\scripts\store-computer.mjs store-rules` instead.)
    - It reads every value and every checklist item back to you in words. Type `YES`, then your PIN.
    - A missing or mistyped value is refused **by name**, and nothing is saved.
    - **When it worked:** `done — store … working rules saved as version 1.` and `DONE —`. Typing the same line again
@@ -669,7 +682,7 @@ pilot the new bill is never given to a customer (OB-248), but the prefix still k
 
 1. Type:
    ```
-   pnpm run store-computer -- bill-prefix --as owner-01 --store <store-code> --till lane-1 --prefix <prefix> --reason "mirror pilot till"
+   .\runtime\node\node.exe .\scripts\store-computer.mjs bill-prefix --as owner-01 --store <store-code> --till lane-1 --prefix <prefix> --reason "mirror pilot till"
    ```
    - Type `YES`, then your PIN. **When it worked:** `DONE — the bill prefix … is issued to till lane-1`.
 
@@ -681,7 +694,7 @@ sales to this copy's books (for the evening check). Two steps.
 1. **The till's own sign-in gets its role** — the store computer role, at this store only. This is the first act done by
    **two people**: the store manager asks, you approve. Both sit at the PC; each types their own PIN when asked.
    ```
-   pnpm run store-computer -- grant --as store-manager-01 --approver owner-01 --person store-edge --role store_computer --store <store-code> --reason "the till on the store PC"
+   .\runtime\node\node.exe .\scripts\store-computer.mjs grant --as store-manager-01 --approver owner-01 --person store-edge --role store_computer --store <store-code> --reason "the till on the store PC"
    ```
    - It lists the two steps: the manager asks, you approve. Type `YES`. Then it asks the **manager** for their PIN (the
      manager types it), then **you** for yours.
@@ -699,7 +712,7 @@ sales to this copy's books (for the evening check). Two steps.
    - The store token lasts **30 days**. **Write today's date in the workbook**, and run this same command again before
      30 days are up (it makes a new token).
 3. Restart the computer and sign in (the till starts again by itself, with its new settings). Then type
-   `pnpm run store-computer -- status` — every line `OK` except, until Part 28, the backup.
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs status` — every line `OK` except, until Part 28, the backup.
 
 ## Part 21 — Staff and their till PINs
 
@@ -708,7 +721,7 @@ Every cashier signs in at the till with their own staff ID and their own six-dig
 **The pilot cashier is `cashier-01` (OB-277)**: the trained mirror keyer. Write in the workbook which staff member holds it. A second cashier, if needed, is `cashier-02`. For each cashier:
 1. **Their role at head office** — the store manager asks, you approve, each with their own PIN:
    ```
-   pnpm run store-computer -- grant --as store-manager-01 --approver owner-01 --person cashier-01 --role cashier --store <store-code> --reason "pilot cashier"
+   .\runtime\node\node.exe .\scripts\store-computer.mjs grant --as store-manager-01 --approver owner-01 --person cashier-01 --role cashier --store <store-code> --reason "pilot cashier"
    ```
    - **When it worked:** `DONE — <cashier> holds "cashier" at store …`. The till learns it the next time it reaches this
      copy's books (within a few minutes).
@@ -727,7 +740,7 @@ spices, packed snacks and beverages. Loose or weighed goods stay on the old ERP.
 
 When the GO is written:
 1. **From the old ERP (Bpal) — the import page (OB-704: screens, not commands; every gap fixed here, never carried).**
-   - **Open it:** the first time, in PowerShell in the live release folder, type `pnpm run store-computer -- import`.
+   - **Open it:** the first time, in PowerShell in the live release folder, type `.\runtime\node\node.exe .\scripts\store-computer.mjs import`.
      It opens the page in the browser and puts **SRE Import** on the desktop; next time just double-click that. Keep its
      black window open while you work. The page is on this PC only: nobody else on the network can open it.
    - **Sign in** with your staff ID and your own till PIN. Every fix is saved in your name.
@@ -772,7 +785,7 @@ When the GO is written:
 2. **Seal the exported files** (MG-02). The old ERP's own backup must have been **restored and checked** first; say on
    which day. The person who took the export seals it, in their own name:
    ```
-   pnpm run store-computer -- seal --dir C:\SRE-slice --as <their-login> --backup-restored-on <YYYY-MM-DD>
+   .\runtime\node\node.exe .\scripts\store-computer.mjs seal --dir C:\SRE-slice --as <their-login> --backup-restored-on <YYYY-MM-DD>
    ```
    - It asks the person sealing for **their own till PIN** (`<their-login>'s till PIN:`); nothing shows while they
      type, and only they type it (OB-257). Without the right PIN nothing is sealed and nothing is sent.
@@ -795,7 +808,7 @@ day, how many clean days in a row are needed, the most days it may last, and the
 are your decisions (you are the daily reconciler for the first two weeks, OB-254). The cutover id is the one on the
 migration screen.
 ```
-pnpm run store-computer -- parallel-policy --as owner-01 --cutover <cutover-id> --reconciler owner-01 --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
+.\runtime\node\node.exe .\scripts\store-computer.mjs parallel-policy --as owner-01 --cutover <cutover-id> --reconciler owner-01 --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
 ```
 - It asks for **your own till PIN** (`owner-01's till PIN:`); nothing shows while you type (OB-257). Without the
   right PIN nothing is written and nothing is sent.
@@ -808,7 +821,7 @@ the next time it reaches this copy's books.
 
 1. Type:
    ```
-   pnpm run store-computer -- publish-catalogue --as owner-01 --store <store-code>
+   .\runtime\node\node.exe .\scripts\store-computer.mjs publish-catalogue --as owner-01 --store <store-code>
    ```
    - Type `YES`, then your PIN. **When it worked:** `done — the catalogue pack version … is published.` and `DONE —`.
 2. Within a few minutes the till's Sale screen stops saying it has no price list. Scan three products from the pilot
@@ -888,7 +901,7 @@ exists (26b).
    - `till.env` is there only after Part 13. Before that, check `.env.real` only; check `till.env` after Part 13.
    - **If you also see `BUILTIN\Users`, `NT AUTHORITY\Authenticated Users`, `BUILTIN\Administrators` or the purchase
      staff's account:** the lock did not reach that file. Stop and send the photo.
-   - `pnpm run store-computer -- doctor` checks the same thing for you, read-only: its `Data lock` line must say `only
+   - `.\runtime\node\node.exe .\scripts\store-computer.mjs doctor` checks the same thing for you, read-only: its `Data lock` line must say `only
      you and Windows itself (SYSTEM) can read F:\SRE-data, …`. A `FIX` there names who else can read it.
 3. Check from the other accounts' side: switch to the `Till` account, open File Explorer and double-click
    `F:\SRE-data`.
@@ -993,7 +1006,7 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
    disk inside the computer that holds the shop's data (OB-283), and the tool refuses it — and every other disk inside
    the PC — on purpose. Only a USB or removable drive is taken.
    ```
-   pnpm run store-computer -- schedule-backup --to G:\sre-auto --every 60
+   .\runtime\node\node.exe .\scripts\store-computer.mjs schedule-backup --to G:\sre-auto --every 60
    ```
    - **When it worked:** `AUTOMATIC BACKUP ON — every 60 minutes to G:\sre-auto, encrypted to backup key …, while you are
      signed in to Windows.`, the names of two Windows tasks, then `Taking the first backup now…` and `BACKUP DONE —`.
@@ -1003,7 +1016,7 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
    - Then prove that first backup restores: the line it printed after `Next:` (a `restore-check`).
 2. Every morning, check it:
    ```
-   pnpm run store-computer -- backup-status
+   .\runtime\node\node.exe .\scripts\store-computer.mjs backup-status
    ```
    - It shows the backup key, `Automatic: every 60 minutes to G:\sre-auto`, `Last good:` with how long ago, and **what
      is on the drive: how many backups, how much space they use, how much is free, and about how many more days fit**.
@@ -1021,8 +1034,8 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
      say the last backup is too old.
    - A `RED —` line: plug the drive in, then send a photo.
 3. **Your own daily copy**, at closing: plug in **your own** drive and type
-   `pnpm run store-computer -- backup --to E:\sre-real` (Part 8, step 2). Then unplug it and take it with you.
-4. To stop the hourly backup (only if told to): `pnpm run store-computer -- unschedule-backup`. Every backup already on
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs backup --to E:\sre-real` (Part 8, step 2). Then unplug it and take it with you.
+4. To stop the hourly backup (only if told to): `.\runtime\node\node.exe .\scripts\store-computer.mjs unschedule-backup`. Every backup already on
    the drives is kept, and the office screen turns red after two hours with no backup — on purpose.
 
 ## Part 29 — Installing a new version (update)
@@ -1039,7 +1052,7 @@ Windows tasks follow it by themselves.
      `F:\SRE-data` by itself, from the note in `C:\ProgramData\SRE` — nothing to type for that.
 3. Open PowerShell in the **current** live folder (the first time: `C:\SRE`) and type:
    ```
-   pnpm run store-computer -- update --from C:\SRE-2026-11
+   .\runtime\node\node.exe .\scripts\store-computer.mjs update --from C:\SRE-2026-11
    ```
    - It takes a backup first (to the drive that stays in), stops the till, installs and builds the new version (it needs
      the internet once, for its packages), starts it on the **same** data, makes it the live release and starts the
@@ -1052,7 +1065,7 @@ Windows tasks follow it by themselves.
 4. From now on open PowerShell in the **new** folder. Keep the old folder: it is now the **previous** release (the
    rollback drill's `--previous`, Part 11). Never delete the live or the previous release folder; only older ones.
 5. Lock the new folder (Part 26c, step 1, first line, with the new folder's name), and run
-   `pnpm run store-computer -- status`.
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs status`.
 
 ## Part 30 — The daily routine (mirror pilot)
 
