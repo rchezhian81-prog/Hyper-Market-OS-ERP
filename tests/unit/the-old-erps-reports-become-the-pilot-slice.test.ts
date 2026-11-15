@@ -72,7 +72,7 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(readCsv(out.setAsideCsv).length).toBe(out.setAside.length);
   });
 
-  it('OB-733 (replacing OB-696): with no label facts the item is still written — its facts BLANK, never "none" — and listed in the sheet as not all read', () => {
+  it('OB-738 (replacing OB-696): with no label facts the item is still written — its facts BLANK, never "none" — and listed in the sheet as not all read', () => {
     const out = run();
     expect(out.counts).toMatchObject({ ready: 1, factsStillToRead: 1 });
     expect(readCsv(out.files['products.csv'])).toEqual([{ item_code: '1001', description: 'TEST RICE 1KG', uom: 'pcs', category: PILOT_CATEGORY_ID, hsn_code: '10063020', status: 'active',
@@ -87,7 +87,7 @@ describe('the old ERP\'s reports become the pilot department\'s slice — nothin
     expect(staged.factsToRead.map((f) => [f.itemId, f.facts.length])).toEqual([['1001', 5]]);
   });
 
-  it('OB-733: some facts read, the rest still to read — the read ones are written, the item is counted as still to read', () => {
+  it('OB-738: some facts read, the rest still to read — the read ones are written, the item is counted as still to read', () => {
     const out = run(new Map([['1001', { allergens: 'none', country_of_origin: 'India' }]]));
     expect(out.counts).toMatchObject({ ready: 1, factsStillToRead: 1 });
     expect(readCsv(out.files['products.csv'])[0]).toMatchObject({ allergens: 'none', country_of_origin: 'India', net_quantity: '', packer: '', consumer_care: '' });

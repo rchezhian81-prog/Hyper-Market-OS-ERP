@@ -11,7 +11,7 @@
 //                fingerprint (they never leave the PC).
 //   fix          each gap, by the person whose job it is (head office refuses anyone else by name): a GST rate by Finance;
 //                a barcode, a price, the label facts or "not in this department" by whoever runs the load.
-//   facts later  OB-733: a label fact never holds an item back. A loaded item still missing one is listed from head
+//   facts later  OB-738: a label fact never holds an item back. A loaded item still missing one is listed from head
 //                office's own list ("facts still to read") until filled; facts saved here for a loaded item are also
 //                sent to head office as the product's safety save (a new version, audited, in that person's name).
 //   load         the ready items → the four published slice files → SEALED (MG-02), STAGED (MG-05), ACCEPTED by a
@@ -149,7 +149,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
     }
     const loaded = new Set(loads.filter((l) => l.applied === true).flatMap((l) => l.itemIds));
     const resolved = resolveImport(read.items, body.fixes, loaded);
-    // OB-733 (P-08): for an item already loaded, "facts still to read" is head office's own list — the item on sale — not
+    // OB-738 (P-08): for an item already loaded, "facts still to read" is head office's own list — the item on sale — not
     // what this import's fixes say. When head office cannot be asked, the import's view is shown and said to be so.
     let factsFrom: 'head office' | 'this import' = 'this import';
     if (loaded.size > 0) {
@@ -167,7 +167,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
   };
 
   /**
-   * OB-733: the label facts just saved for an item ALREADY LOADED, sent to head office's label-facts save for that product
+   * OB-738: the label facts just saved for an item ALREADY LOADED, sent to head office's label-facts save for that product
    * (the same people who enter them before a load, `migration.load.record`) — the product's version read first, only the
    * facts given sent, the rest of the product untouched. Head office keeps it as a new version in this person's name,
    * audited with the reason, and drops the item from its list once all five are recorded. A fact left blank here is not
@@ -186,7 +186,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
       given[LABEL_FACT_FIELD[k]] = k === 'allergens' ? (v.toLowerCase() === 'none' ? [] : list(v)) : v;
     }
     const r = await call('POST', `/v1/catalogue/products/${encodeURIComponent(itemId)}/label-facts`,
-      { expectedVersion: version, facts: given, reason: `label facts read off the pack (OB-733): ${reason}` },
+      { expectedVersion: version, facts: given, reason: `label facts read off the pack (OB-738): ${reason}` },
       `label-facts-${itemId}-v${String(version)}-${sha256(JSON.stringify(given)).slice(0, 16)}`);
     if (r.status === 403) throw new Said(403, `${notUpdated}: label facts are filled in by whoever runs the load (the owner or the store manager), signed in as themselves.`);
     if (r.status !== 201 && r.status !== 200) said(r, notUpdated);
@@ -321,7 +321,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
           : 'Not saved: a barcode, a price, the label facts or leaving an item out is fixed by whoever runs the load (the owner or the store manager), signed in as themselves.');
       }
       if (r.status !== 201 && r.status !== 200) said(r, 'Not saved');
-      // OB-733: facts read for an item already on sale go to the item itself too, so it leaves head office's list.
+      // OB-738: facts read for an item already on sale go to the item itself too, so it leaves head office's list.
       if (kind === 'label' && isObj(b['value'])) {
         const itemId = String(b['itemId']);
         const loaded = loadsOf(importId).some((l) => l.applied === true && l.itemIds.includes(itemId));
@@ -341,7 +341,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
         return { csv: { name: `${importId}-gaps.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'gap', 'what_to_do'], live.flatMap((r) => r.gaps.map((g) => [r.itemId, r.name, String(r.sold), g.kind, g.why])))) } };
       }
       if (what === 'facts-to-read.csv') {
-        // OB-733: every item in the department, loaded or not, with label facts still to read — best sellers first.
+        // OB-738: every item in the department, loaded or not, with label facts still to read — best sellers first.
         return { csv: { name: `${importId}-facts-to-read.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'facts_still_to_read', ...LABEL_FACTS],
           st.resolved.filter((r) => !r.excluded && r.factsToRead.length > 0).map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'on sale at the till' : 'not loaded yet', r.factsToRead.map((k) => k.replace(/_/g, ' ')).join('; '), ...LABEL_FACTS.map((k) => r.facts[k] ?? '')]))) } };
       }

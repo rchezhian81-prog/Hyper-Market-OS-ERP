@@ -52,6 +52,7 @@
       <section id="page-intro" aria-labelledby="page-h">
         <h2 id="page-h">Users &amp; roles</h2>
         <p class="lead" id="lead"></p>
+        <p class="meta" id="store-pc-note" hidden></p>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
         <button id="reload" type="button" class="quiet sre-btn sre-btn-quiet" hidden><span id="reload-text"></span></button>
       </section>
@@ -66,6 +67,16 @@
         <p class="meta" id="holders-lead"></p>
         <p class="status" id="holders-status" role="status" aria-live="polite"></p>
         <ul class="rows" id="holder-rows"></ul>
+      </section>
+      <section id="add" hidden aria-labelledby="add-h">
+        <h3 id="add-h"></h3>
+        <p class="meta" id="add-lead"></p>
+        <form class="row-form" id="add-form">
+          <label for="a-name"><span id="a-name-l"></span><input id="a-name" autocomplete="off" maxlength="80" /></label>
+          <label for="a-staff"><span id="a-staff-l"></span><input id="a-staff" autocomplete="off" maxlength="64" /></label>
+          <button id="a-add" type="submit" class="sre-btn sre-btn-primary"><span id="a-add-text"></span></button>
+        </form>
+        <p class="status" id="add-status" role="status" aria-live="polite"></p>
       </section>
       <section id="give" hidden aria-labelledby="give-h">
         <h3 id="give-h"></h3>

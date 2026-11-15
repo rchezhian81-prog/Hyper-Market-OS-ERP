@@ -29,7 +29,12 @@ export { isGenericName };
 export const PERSON_PROVISION_PERMISSION = 'platform.person.provision';
 export const PERSON_READ_PERMISSION = 'platform.person.read';
 
-export type PersonSignInState = 'requested' | 'issued' | 'ended';
+/**
+ * `store_pc` (CR-01 step 4b-1 · OB-733 "A"): a person recorded on the store PC's office screens — a name and staff id, NO
+ * sign-in at the identity server (no office or phone login). They work only on the store PC and its tills, by their till
+ * PIN, and hold only what a role gives them (two people). A later sign-in at the identity server upgrades the same record.
+ */
+export type PersonSignInState = 'requested' | 'issued' | 'ended' | 'store_pc';
 
 /** One person's sign-in, folded from the identity ledger. Never holds a password. */
 export interface PersonSignIn {
@@ -49,7 +54,9 @@ export type PersonSignInEvent =
   | { readonly type: 'PersonSignInIssued'; readonly userId: string; readonly issuedBy: string; readonly resumed: boolean; readonly at: string }
   | { readonly type: 'PersonSignInEnded'; readonly userId: string; readonly endedBy: string; readonly reason: string; readonly at: string }
   /** The identity server refused the name: the unfinished request is closed, so another name can be tried. */
-  | { readonly type: 'PersonSignInWithdrawn'; readonly userId: string; readonly reason: string; readonly at: string };
+  | { readonly type: 'PersonSignInWithdrawn'; readonly userId: string; readonly reason: string; readonly at: string }
+  /** CR-01 step 4b-1 (OB-733 "A"): recorded on the store PC by a person who confirmed with their own PIN — no sign-in made. */
+  | { readonly type: 'PersonRecordedForStorePc'; readonly userId: string; readonly displayName: string; readonly recordedBy: string; readonly storeId: string | null; readonly at: string };
 
 /** Fold the events, in append order, into one record per person. */
 export function foldPeople(events: readonly PersonSignInEvent[]): readonly PersonSignIn[] {
@@ -57,10 +64,18 @@ export function foldPeople(events: readonly PersonSignInEvent[]): readonly Perso
   for (const e of events) {
     const p = byId.get(e.userId);
     if (e.type === 'PersonSignInRequested') {
-      if (p === undefined) {
+      // A store-PC person given a sign-in later: the same record, now asked for at the identity server.
+      if (p === undefined || p.state === 'store_pc') {
         byId.set(e.userId, {
           userId: e.userId, username: e.username, displayName: e.displayName, state: 'requested',
           secondFactor: e.secondFactor, requestedBy: e.requestedBy, requestedAt: e.at,
+        });
+      }
+    } else if (e.type === 'PersonRecordedForStorePc') {
+      if (p === undefined) {
+        byId.set(e.userId, {
+          userId: e.userId, username: e.userId, displayName: e.displayName, state: 'store_pc',
+          secondFactor: false, requestedBy: e.recordedBy, requestedAt: e.at,
         });
       }
     } else if (p !== undefined && e.type === 'PersonSignInIssued') {
@@ -178,8 +193,9 @@ export async function giveSignIn(
     throw notSaved(503, 'identity_server_not_connected', 'This deployment is not connected to the identity server, so no sign-in can be given from here.', 'The administrator sets the provisioner secret on the server (runbook: identity server). Nothing was saved.');
   }
 
-  const existing = (await deps.people(ctx.tenantId)).find((p) => p.userId === userId || p.username === username);
-  if (existing !== undefined && (existing.userId !== userId || existing.username !== username)) {
+  const existing = (await deps.people(ctx.tenantId)).find((p) => p.userId === userId || (p.state !== 'store_pc' && p.username === username));
+  // A store-PC person (OB-733) has no sign-in name yet: the same person may be given one, under any free name.
+  if (existing !== undefined && existing.state !== 'store_pc' && (existing.userId !== userId || existing.username !== username)) {
     throw notSaved(409, 'sign_in_name_or_person_already_used', `${existing.userId} already has the sign-in name "${existing.username}".`, 'Choose another sign-in name, or check who this person is. Nothing was saved.');
   }
   if (existing?.state === 'issued') {
@@ -194,6 +210,11 @@ export async function giveSignIn(
 
   const at = deps.now();
   const resume = existing?.state === 'requested';
+  // A sign-in name a store-PC person's staff id already is (another person's) is never reused for somebody else.
+  const nameTaken = (await deps.people(ctx.tenantId)).find((p) => p.state === 'store_pc' && p.userId !== userId && p.userId === username);
+  if (nameTaken !== undefined) {
+    throw notSaved(409, 'sign_in_name_or_person_already_used', `"${username}" is ${nameTaken.userId}'s staff id on the store PC.`, 'Choose another sign-in name, or check who this person is. Nothing was saved.');
+  }
   if (!resume) {
     await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInRequested', userId, username, displayName, secondFactor: true, requestedBy: ctx.userId, at });
   }

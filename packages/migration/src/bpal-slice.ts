@@ -13,7 +13,7 @@
 //   • OB-694 — an item is in the department when its HSN is in chapters 07 08 09 10 11 12 15 17 18 19 20 21 (not 2105,
 //     ice cream) or 22, or heading 0402 (milk powder) / 0409 (honey). Sold per piece (`pcs`): barcode only.
 //   • OB-695 — its MRP, selling price and cost are those of its NEWEST purchase row in the last 12 months.
-//   • OB-733 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a label fact a packed food
+//   • OB-738 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a label fact a packed food
 //     must carry (M03-FR-03) is never invented, and its absence no longer holds an item back. Every item is written into
 //     products.csv with the facts staff have read into label-facts.csv (best sellers first) and the rest BLANK — never
 //     "none". The loader lets the blank ones follow; head office lists them until read, and the item sells at the till
@@ -73,14 +73,14 @@ export interface BpalSliceInput {
 
 export interface BpalSliceOutput {
   readonly files: { readonly 'tax-classes.csv': string; readonly 'products.csv': string; readonly 'prices.csv': string; readonly 'barcodes.csv': string };
-  /** The staff's label-facts sheet: every item not yet loaded, best sellers first, with what is filled (OB-733). */
+  /** The staff's label-facts sheet: every item not yet loaded, best sellers first, with what is filled (OB-738). */
   readonly labelFactsSheet: string;
   readonly setAsideCsv: string;
   /** For the accountant: each HSN whose items the old ERP taxes at more than one rate, with the items at each rate. */
   readonly hsnToCheckCsv: string;
   readonly setAside: readonly SetAside[];
   readonly counts: {
-    /** `ready`: every item written into the four files. `factsStillToRead`: those of them with a label fact blank (OB-733). */
+    /** `ready`: every item written into the four files. `factsStillToRead`: those of them with a label fact blank (OB-738). */
     readonly inDepartment: number; readonly ready: number; readonly factsStillToRead: number;
     readonly setAside: number; readonly alreadyLoaded: number; readonly barcodes: number; readonly taxClasses: number;
   };
@@ -283,7 +283,7 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     priced.set(id, { mrp: p.mrp, sell: p.sell, cost: p.cost });
   }
 
-  // ── label facts (M03-FR-03 · OB-733): every item is ready; a fact not read yet is written blank and listed ─────────
+  // ── label facts (M03-FR-03 · OB-738): every item is ready; a fact not read yet is written blank and listed ─────────
   const already = input.alreadyLoaded ?? new Set<string>();
   const facts: ReadonlyMap<string, Readonly<Partial<Record<LabelFact, string>>>> = input.labelFacts ?? new Map();
   const ready: string[] = [];

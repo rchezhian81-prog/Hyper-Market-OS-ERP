@@ -259,6 +259,8 @@ copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
      twice. Write the passphrase on paper and lock that paper away from this PC (with the BitLocker key, Part 26d).
      **If it is forgotten, nobody can open the backups — not even me.** The PC keeps only a sealed key that the
      passphrase opens, never the passphrase. It then says `BACKUP PASSPHRASE SET — backup key …`.
+     **If the paper is ever lost:** a new passphrase can be set without losing anything — see *A new backup passphrase,
+     when the old one is lost* in `store-computer-windows-services.md` (OB-737).
    - **When it worked:** it says `BACKUP DONE —` with the backup's name, its size and how long it took, then a line
      `Manifest: E:\sre-real\…manifest.json`. **Write that manifest's file name in the workbook.**
    - It refuses, on purpose, every disk inside this PC — `C:`, `F:` and any other — and a network folder: a backup on
@@ -693,7 +695,7 @@ When the GO is written:
        corrected too, so today's bills are right).
      - **Price** — MRP, selling price and cost (a selling price above MRP is refused).
      - **Leave it out of this department** — for an item that is not packaged groceries (for example loose goods).
-   - **Label facts are NOT a gap any more (OB-733, your decision of 14 Nov 2026, "sell at the till only").** An item
+   - **Label facts are NOT a gap any more (OB-738, your decision of 14 Nov 2026, "sell at the till only").** An item
      can be loaded before staff have read its five label facts off the pack: allergens (or `none`), country of origin,
      net quantity, packer, consumer care (M03-FR-03). The tile **Facts still to read (not a blocker)** counts them; it
      opens the list, best sellers first. Open an item and type the facts you have read; you may give some now and the

@@ -6534,7 +6534,7 @@
         "properties": {
           "decision": {
             "type": "string",
-            "const": "OB-733"
+            "const": "OB-738"
           },
           "loadId": {
             "type": "string"

@@ -127,7 +127,7 @@ const $ = (id) => document.getElementById(id);
 const PAGE = 40;
 const LABELS = { allergens: 'Allergens (write "none" when the pack declares none)', country_of_origin: 'Country of origin', net_quantity: 'Net quantity (e.g. 500 g)', packer: 'Packer / manufacturer / importer, and town', consumer_care: 'Consumer care phone or email' };
 const GAP_NAMES = { barcode: 'Barcode', tax: 'GST rate (Finance)', price: 'Price' };
-// OB-733: label facts never hold an item back. They are read off the pack later, best sellers first, and listed until done.
+// OB-738: label facts never hold an item back. They are read off the pack later, best sellers first, and listed until done.
 const FACTS_NOTE = 'Not a blocker: the item loads and sells at the till. It is not sold online or by scan-and-go until all five facts are read off the pack. Allergens: write "none" only when the pack says so — blank means not read yet, never "none".';
 const SLABS = [0, 0.25, 3, 5, 12, 18, 28, 40];
 let me = null; let current = null; let view = 'gap:any'; let page = 0;
@@ -302,7 +302,7 @@ function gapForm(it, g) {
   return box;
 }
 
-// OB-733: the label facts still to read — the ones already read are shown, the rest can be filled now or later.
+// OB-738: the label facts still to read — the ones already read are shown, the rest can be filled now or later.
 function factsForm(it) {
   const box = document.createElement('div'); box.className = 'gap later';
   box.append(Object.assign(document.createElement('p'), { className: 'why', textContent: `Facts still to read off the pack: ${it.factsToRead.map((k) => k.replace(/_/g, ' ')).join(', ')}${it.loaded ? ' (this item is on sale at the till)' : ''}.` }));

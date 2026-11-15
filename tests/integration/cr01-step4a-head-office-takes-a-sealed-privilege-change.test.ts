@@ -159,11 +159,11 @@ describe('CR-01 step 4a: the box-relay privilege routes accept only a fresh, sea
     expect(codeOf(self)).toBe('granting_to_yourself');
   });
 
-  it('adding a person from the store PC comes in step 4b: a plain-words 501, nobody added', async () => {
+  it('adding a person from the store PC (built in 4b-1) takes a staff id and a name only — a sign-in name is not read', async () => {
     const h = await shop();
     const r = await relay(h, '/v1/identity/box/people', sealPrivilegeRecord(KEY, record('person_provision', 'u-owner', { signInName: 'priya.k', displayName: 'Priya K' })));
-    expect(r.status).toBe(501);
-    expect(codeOf(r)).toBe('comes_in_step_4b');
+    expect(r.status).toBe(400);
+    expect(codeOf(r)).toBe('not_readable_as_a_person');
   });
 
   it('with no privilege-seal key at head office, every relay is refused 503 — never trusted', async () => {

@@ -799,7 +799,7 @@ export function buildSurface(deps: {
     // dedicated privilege-seal key and relayed under the box's store token — the SAME person routes run as that person.
     ...boxPrivilegeRoutes({
       // With no ledger (the documented surface only) nothing is a store computer, so every relay is refused.
-      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : boxPrivilegeAdapter({ store, now })),
+      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : { ...boxPrivilegeAdapter({ store, now }), people: peopleAdapter({ store, now }) /* CR-01 step 4b-1 · OB-733 */ }),
       identity: identityDeps,
       ...(privilegeKey === undefined ? {} : { privilegeSealKey: privilegeKey }),
     }),

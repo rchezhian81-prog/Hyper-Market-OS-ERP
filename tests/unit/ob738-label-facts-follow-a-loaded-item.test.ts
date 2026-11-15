@@ -13,7 +13,7 @@ import {
 import { LABEL_FACTS, PILOT_CATEGORY_ID } from '../../packages/migration/src/bpal-slice';
 import { checkOnlineListing, type OnlineListingFacts, type OnlineShopDetails } from '../../packages/storefront/src/listing-duties';
 
-// OB-733 (owner, 14 Nov 2026, in writing "1A", replacing OB-696; recorded on its branch as OB-730) and option A of the same
+// OB-738 (owner, 14 Nov 2026, in writing "1A", replacing OB-696; recorded on its branch as OB-730) and option A of the same
 // day ("sell at the till only"): a packaged-groceries item may be LOADED from the old ERP before staff have read its five
 // label facts off the pack. The facts stay REQUIRED TO BE KEPT (M03-FR-03): every loaded item still missing one is listed
 // until filled (P-03 · P-08); blank allergens are never "none"; the item sells at the till (the customer holds the printed
@@ -74,7 +74,7 @@ describe('the product rule (packages/product): which items may have their label 
   const record = (over: Partial<ProductRecord> = {}): ProductRecord => ({
     productId: 'p1', tenantId: T, sku: 'P1', name: 'Test oil', baseUom: 'pcs', primaryCategoryId: LABEL_FACTS_MAY_FOLLOW_IN, taxClass: '15121110', lifecycle: 'active', ...over,
   });
-  const MARK = { decision: 'OB-733', loadId: 'l1', markedBy: 'u-owner', markedAt: now() } as const;
+  const MARK = { decision: 'OB-738', loadId: 'l1', markedBy: 'u-owner', markedAt: now() } as const;
 
   it('pins its words to the import\'s: the one department is the pilot department, and the five facts are the same five', () => {
     expect(LABEL_FACTS_MAY_FOLLOW_IN).toBe(PILOT_CATEGORY_ID);
@@ -91,7 +91,7 @@ describe('the product rule (packages/product): which items may have their label 
   it('with the mark, in packaged groceries: publishable, every missing fact still said — as "not yet read", never dropped', () => {
     const v = validateProduct(record({ labelFactsFollow: MARK }), [grocery]);
     expect(v.publishable).toBe(true);
-    const later = v.issues.filter((i) => i.message.startsWith('label fact not yet read off the pack (OB-733'));
+    const later = v.issues.filter((i) => i.message.startsWith('label fact not yet read off the pack (OB-738'));
     expect(later.map((i) => i.severity)).toEqual(['advisory', 'advisory', 'advisory', 'advisory', 'advisory']);
     expect(outstandingLabelFacts(record({ labelFactsFollow: MARK }))).toEqual(['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
   });
@@ -120,7 +120,7 @@ describe('head office: the mark is set by the load, listed until filled, filled 
     const held = (await read('oil')).product;
     expect(held.lifecycle).toBe('active');
     expect(held.safety?.allergens).toBeUndefined();
-    expect(held.labelFactsFollow).toEqual({ decision: 'OB-733', loadId: 'bpal-20261114-load-1', markedBy: 'u-owner', markedAt: now() });
+    expect(held.labelFactsFollow).toEqual({ decision: 'OB-738', loadId: 'bpal-20261114-load-1', markedBy: 'u-owner', markedAt: now() });
     const list = await outstanding();
     expect(list.items).toEqual([{ productId: 'oil', name: 'Test sunflower oil 1L', lifecycle: 'active', facts: ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care'], loadId: 'bpal-20261114-load-1', loadedBy: 'u-owner', loadedAt: now() }]);
     expect(audit.find((a) => a.action === 'catalogue.product.label_facts.follow')).toMatchObject({ actorId: 'u-owner', objectId: 'oil' });
@@ -128,7 +128,7 @@ describe('head office: the mark is set by the load, listed until filled, filled 
 
   it('the mark is never taken from the body\'s product; without the load\'s request the full rule refuses it', async () => {
     const { publish } = rig();
-    const sneaky = await publish('oil', { ...oil(), labelFactsFollow: { decision: 'OB-733', loadId: 'x', markedBy: 'x', markedAt: 'x' } });
+    const sneaky = await publish('oil', { ...oil(), labelFactsFollow: { decision: 'OB-738', loadId: 'x', markedBy: 'x', markedAt: 'x' } });
     expect(sneaky.status).toBe(422);
     expect(code(sneaky)).toBe('product_not_publishable');
   });

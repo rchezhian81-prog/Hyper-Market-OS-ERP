@@ -125,7 +125,7 @@ export function customerFollowupsDeps(input: { readonly store: EventStore; reado
         barcodes: p.snapshot.barcodes.map((c) => ({ code: c.code, productId: c.productId, kind: c.kind })),
       };
     },
-    // OB-733: an item still waiting for its label facts is sold at the till only — never through a phone basket.
+    // OB-738: an item still waiting for its label facts is sold at the till only — never through a phone basket.
     labelFactsOutstanding: async (t, productId) => {
       const record = await productMasterAdapter({ store, now }).product(t, productId);
       return record === undefined ? [] : outstandingLabelFacts(record);

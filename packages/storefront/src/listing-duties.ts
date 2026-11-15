@@ -49,7 +49,7 @@ export interface OnlineListingFacts {
   readonly bestBefore?: string;
   readonly countryOfOrigin?: string;
   /**
-   * OB-733 (option A: sold at the till only): the label facts still to read off the pack for an item loaded before they were
+   * OB-738 (option A: sold at the till only): the label facts still to read off the pack for an item loaded before they were
    * read. Any here and the item is not listed or sold online — the online customer cannot hold the pack. Absent/empty: none.
    */
   readonly labelFactsOutstanding?: readonly string[];
@@ -113,7 +113,7 @@ export function checkOnlineListing(facts: OnlineListingFacts, shop: OnlineShopDe
   if (delivery.deliveryFeeMinor === undefined || !Number.isInteger(delivery.deliveryFeeMinor) || delivery.deliveryFeeMinor < 0) missing.push('delivery fee');
   if (facts.carriesDate && (facts.bestBefore === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(facts.bestBefore))) missing.push('best-before date');
   if (blank(facts.countryOfOrigin)) missing.push('country of origin');
-  if ((facts.labelFactsOutstanding ?? []).length > 0) missing.push('label facts read off the pack'); // OB-733
+  if ((facts.labelFactsOutstanding ?? []).length > 0) missing.push('label facts read off the pack'); // OB-738
   missing.push(...shopDetailsMissing(shop));
   if (missing.length === 0) return { publishable: true, missing: [], detail: `${facts.name} carries every detail the online store must show before payment` };
   return { publishable: false, refusal: `online listing incomplete: ${missing[0]}`, missing, detail: `${facts.name} cannot be published online until ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} set; it still sells in the shop` };

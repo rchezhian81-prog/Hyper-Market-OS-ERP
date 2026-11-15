@@ -261,7 +261,7 @@ export interface ProductRecord {
    */
   readonly tobaccoWarning?: TobaccoWarningRecord;
   /**
-   * OB-733 (owner, 14 Nov 2026, "1A", first recorded as OB-730 on its branch; option A of 14 Nov: "sell at the till only"):
+   * OB-738 (owner, 14 Nov 2026, "1A", first recorded as OB-730 on its branch; option A of 14 Nov: "sell at the till only"):
    * an item of the pilot department loaded from the old ERP before staff have read its five label facts off the pack. Its
    * missing facts do not stop it publishing or selling AT THE TILL (the customer holds the printed pack); they stay
    * REQUIRED TO BE KEPT (M03-FR-03) and are listed until filled (P-03 · P-08). It is never listed online or taken by
@@ -271,16 +271,16 @@ export interface ProductRecord {
   readonly labelFactsFollow?: LabelFactsFollow;
 }
 
-/** OB-733: who let an item's label facts follow its load, when, and from which load. Never from a request body. */
+/** OB-738: who let an item's label facts follow its load, when, and from which load. Never from a request body. */
 export interface LabelFactsFollow {
-  readonly decision: 'OB-733';
+  readonly decision: 'OB-738';
   readonly loadId: string;
   readonly markedBy: string;
   readonly markedAt: string;
 }
 
 /**
- * OB-733: the ONE department whose loaded items may have their label facts follow — packaged groceries (OB-276 · OB-694),
+ * OB-738: the ONE department whose loaded items may have their label facts follow — packaged groceries (OB-276 · OB-694),
  * the pilot department's category id (`PILOT_CATEGORY_ID` in packages/migration/src/bpal-slice.ts, pinned equal by a test).
  * Every other department, and every product authored on a screen, keeps the full rule.
  */
@@ -307,16 +307,16 @@ export function missingLabelFacts(product: Pick<ProductRecord, 'safety'>): reado
 }
 
 /**
- * OB-733: the label facts still to read for an item whose facts were let follow its load — empty when it carries no such
+ * OB-738: the label facts still to read for an item whose facts were let follow its load — empty when it carries no such
  * mark (then the full publish rule judges it) or when all five are recorded.
  */
 export function outstandingLabelFacts(product: Pick<ProductRecord, 'safety' | 'labelFactsFollow'>): readonly LabelFactKey[] {
   return product.labelFactsFollow === undefined ? [] : missingLabelFacts(product);
 }
 
-/** OB-733: whether this product's missing label facts may follow (marked, and in the one department the decision names). */
+/** OB-738: whether this product's missing label facts may follow (marked, and in the one department the decision names). */
 export function labelFactsMayFollow(product: Pick<ProductRecord, 'labelFactsFollow' | 'primaryCategoryId'>): boolean {
-  return product.labelFactsFollow?.decision === 'OB-733' && product.primaryCategoryId === LABEL_FACTS_MAY_FOLLOW_IN;
+  return product.labelFactsFollow?.decision === 'OB-738' && product.primaryCategoryId === LABEL_FACTS_MAY_FOLLOW_IN;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';
@@ -668,7 +668,7 @@ export function validateProduct(
     }
   }
 
-  // OB-733 (option A, 14 Nov 2026): an item marked "label facts follow" in the one department the decision names publishes
+  // OB-738 (option A, 14 Nov 2026): an item marked "label facts follow" in the one department the decision names publishes
   // and sells at the till with a label fact NOT YET READ — the issue stays, as advisory, in words that say it is outstanding.
   // Only a fact not given at all is let follow: a fact given but unreadable (a consumer-care line with no phone or email)
   // is still refused. Allergens left blank are "not yet read", never "none".
@@ -678,7 +678,7 @@ export function validateProduct(
       const issue = issues[i]!;
       const fact = followFields.get(issue.field);
       if (issue.severity !== 'blocks_publish' || fact === undefined || labelFactRecorded(safety, fact)) continue;
-      issues[i] = { field: issue.field, severity: 'advisory', message: `label fact not yet read off the pack (OB-733: sold at the till, listed until filled) — ${issue.message}` };
+      issues[i] = { field: issue.field, severity: 'advisory', message: `label fact not yet read off the pack (OB-738: sold at the till, listed until filled) — ${issue.message}` };
     }
   }
 

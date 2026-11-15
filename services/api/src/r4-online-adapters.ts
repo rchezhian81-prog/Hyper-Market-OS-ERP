@@ -140,7 +140,7 @@ function onlineStoreDepsOf(input: { readonly store: EventStore; readonly now: ()
       sellingPriceMinor: p.unitPriceMinor, taxRateBps: p.taxBps,
       carriesDate, ...(dated[0] === undefined ? {} : { bestBefore: dated[0] }),
       ...(m?.safety?.countryOfOrigin === undefined ? {} : { countryOfOrigin: m.safety.countryOfOrigin }),
-      // OB-733: an item on sale at the till with label facts still to read is never listed or sold online.
+      // OB-738: an item on sale at the till with label facts still to read is never listed or sold online.
       ...(m === undefined || outstandingLabelFacts(m).length === 0 ? {} : { labelFactsOutstanding: outstandingLabelFacts(m) }),
       seller: other === undefined ? { own: true } : { own: false, sellerId: other.ownerId ?? other.ownership! },
     };

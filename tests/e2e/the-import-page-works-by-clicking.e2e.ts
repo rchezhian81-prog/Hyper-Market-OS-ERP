@@ -14,7 +14,7 @@ import { xlsx } from '../support/xlsx';
 
 /**
  * OB-704 (owner, 7 Nov 2026: "screens, not commands") — the import page, driven in a real browser the way the owner and
- * his staff use it: sign in with a staff ID and PIN, choose the three Excel reports, read them. OB-733 (owner, 14 Nov 2026,
+ * his staff use it: sign in with a staff ID and PIN, choose the three Excel reports, read them. OB-738 (owner, 14 Nov 2026,
  * replacing OB-696; "sell at the till only"): an item with no label facts is ready to load all the same — the facts are
  * on their own "Facts still to read" tile, best sellers first; typed in (some now, the rest later) and saved, the item
  * leaves that list. No command is typed anywhere. Made-up data.
@@ -70,7 +70,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.click('#read-form button[type=submit]');
     await page.waitForSelector('#work:not([hidden])');
     expect(await page.textContent('#msg')).toContain('Read: 2 packaged-grocery items. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 2 file(s), 2 rows, from 2026-09-01 to 2026-11-01');
-    // OB-733: the rice has no label facts yet and is ready to load all the same; both items are on the facts tile.
+    // OB-738: the rice has no label facts yet and is ready to load all the same; both items are on the facts tile.
     expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
     const factsTile = page.locator('#tiles .tile', { hasText: 'Facts still to read (not a blocker)' });
     expect(await factsTile.locator('.v').textContent()).toBe('2');

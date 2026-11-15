@@ -101,7 +101,7 @@ out(`Read the old ERP's reports into ${outDir} (the old ERP itself was not touch
 out(`  Purchase report: ${purchases.rows} row(s), ${purchases.datedRows} with a date, from ${purchases.oldest ?? '?'} to ${purchases.newest ?? '?'}; prices are taken from the 12 months to ${today}.`);
 out(`  In the pilot department (packaged groceries, OB-694): ${c.inDepartment} item(s).`);
 out(`  Ready to load (barcode, HSN and price): ${c.ready} item(s), ${c.barcodes} barcode(s), ${c.taxClasses} tax class(es).`);
-out(`  Of those, label facts still to read off the pack: ${c.factsStillToRead} item(s) — they load and sell at the till only, and stay listed until filled (OB-733); label-facts.csv, best sellers first.`);
+out(`  Of those, label facts still to read off the pack: ${c.factsStillToRead} item(s) — they load and sell at the till only, and stay listed until filled (OB-738); label-facts.csv, best sellers first.`);
 if (c.alreadyLoaded > 0) out(`  Already loaded by an earlier slice (not written again): ${c.alreadyLoaded} item(s).`);
 out(`  Set aside, each with its reason: ${c.setAside} item(s) — bpal-set-aside.csv. Nothing was guessed.`);
 out('  HSN codes the old ERP taxes at more than one rate, for the accountant: hsn-to-check.csv.');

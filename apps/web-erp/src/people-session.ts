@@ -22,7 +22,8 @@ import type { Lang } from '../../../packages/ui/src/index';
 /** The authority head office checks before giving anybody a sign-in — the platform administrator's. */
 export const PERSON_PROVISION_PERMISSION = 'platform.person.provision';
 
-export type PersonState = 'requested' | 'issued' | 'ended';
+/** `store_pc` (CR-01 step 4b-1 · OB-733): recorded on the store PC — staff id and PIN there only, no sign-in here yet. */
+export type PersonState = 'requested' | 'issued' | 'ended' | 'store_pc';
 
 /** One person's sign-in as head office lists it. Never holds a password. */
 export interface PersonRow {
@@ -64,7 +65,7 @@ const COPY = {
     nameLabel: 'Full name', signInLabel: 'Sign-in name', signInHint: 'Their own name, for example asha.k — lower case, 3 to 40 letters or digits.',
     issueBtn: 'Give a sign-in', checkAgainBtn: 'Check again', handedOverBtn: 'I have handed it over',
     noneYet: 'Nobody has been given a sign-in from here yet.',
-    stateRequested: 'asked for — not finished', stateIssued: 'has a sign-in', stateEnded: 'sign-in ended (left)',
+    stateRequested: 'asked for — not finished', stateStorePc: 'store PC only (staff id and till PIN; no sign-in)', stateIssued: 'has a sign-in', stateEnded: 'sign-in ended (left)',
     givenBy: 'given by', on: 'on',
     sourceRead: 'Head office, as at {at}.', sourceChecking: 'Asking head office…',
     sourceNotConnected: 'This screen is not connected to head office, so no sign-in can be given here.',
@@ -103,7 +104,7 @@ const COPY = {
     nameLabel: 'முழுப் பெயர்', signInLabel: 'உள்நுழைவுப் பெயர்', signInHint: 'அவரது சொந்தப் பெயர், எ.கா. asha.k — சிறிய எழுத்துகள், 3 முதல் 40 எழுத்துகள் அல்லது எண்கள்.',
     issueBtn: 'உள்நுழைவு கொடு', checkAgainBtn: 'மீண்டும் பார்', handedOverBtn: 'நான் ஒப்படைத்துவிட்டேன்',
     noneYet: 'இங்கிருந்து இன்னும் யாருக்கும் உள்நுழைவு கொடுக்கப்படவில்லை.',
-    stateRequested: 'கேட்கப்பட்டது — முடியவில்லை', stateIssued: 'உள்நுழைவு உள்ளது', stateEnded: 'உள்நுழைவு முடிந்தது (விலகினார்)',
+    stateRequested: 'கேட்கப்பட்டது — முடியவில்லை', stateStorePc: 'கடைக் கணினியில் மட்டும் (பணியாளர் எண், PIN; உள்நுழைவு இல்லை)', stateIssued: 'உள்நுழைவு உள்ளது', stateEnded: 'உள்நுழைவு முடிந்தது (விலகினார்)',
     givenBy: 'கொடுத்தவர்', on: 'அன்று',
     sourceRead: 'தலைமை அலுவலகம், {at} நிலவரப்படி.', sourceChecking: 'தலைமை அலுவலகத்திடம் கேட்கிறது…',
     sourceNotConnected: 'இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை, எனவே இங்கே உள்நுழைவு கொடுக்க முடியாது.',
@@ -257,7 +258,7 @@ export function createPeopleSession(config: PeopleConfig, port?: PeoplePort, now
         rows: people.map((p) => ({
           userId: p.userId,
           name: `${p.displayName} (${p.signInName})`,
-          stateWords: t(lang, p.state === 'issued' ? 'stateIssued' : p.state === 'ended' ? 'stateEnded' : 'stateRequested'),
+          stateWords: t(lang, p.state === 'issued' ? 'stateIssued' : p.state === 'ended' ? 'stateEnded' : p.state === 'store_pc' ? 'stateStorePc' : 'stateRequested'),
           tone: p.state === 'issued' ? 'ok' as const : p.state === 'requested' ? 'degraded' as const : 'idle' as const,
           detail: `${t(lang, 'givenBy')} ${p.requestedBy} ${t(lang, 'on')} ${shopTime(p.issuedAt ?? p.requestedAt)}`,
         })),

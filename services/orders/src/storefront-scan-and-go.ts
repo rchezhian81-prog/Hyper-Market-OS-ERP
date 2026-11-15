@@ -57,7 +57,7 @@ export interface PhoneBasketRecall {
 export interface ScanAndGoDeps {
   readonly pack: (tenantId: string) => Promise<ScanAndGoPack | undefined>;
   /**
-   * OB-733 (option A: sold at the till only): the label facts still to read off the pack for a product loaded before they
+   * OB-738 (option A: sold at the till only): the label facts still to read off the pack for a product loaded before they
    * were read — empty when none. Such a product is scanned by the cashier, never put in a phone basket. Absent: none known.
    */
   readonly labelFactsOutstanding?: (tenantId: string, productId: string) => Promise<readonly string[]>;

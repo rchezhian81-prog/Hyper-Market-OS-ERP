@@ -25,7 +25,7 @@ import { xlsx } from '../support/xlsx';
  *   load         the owner prepares (sealed + staged) — and cannot accept his own load; the manager accepts — and cannot
  *                load it; the owner loads it: the products are in the catalogue at the fixed price, with the fixed barcode
  *   carried?     an item with a gap left is NOT in the load, and the loaded ones are not prepared again
- *   OB-733       a label fact is NOT a gap (owner, 14 Nov 2026, replacing OB-696; option A "sell at the till only"): an
+ *   OB-738       a label fact is NOT a gap (owner, 14 Nov 2026, replacing OB-696; option A "sell at the till only"): an
  *                item with facts still to read loads with them blank (never "none") and is on head office's list; the
  *                facts saved later on this page for a loaded item reach the item on sale, and it leaves the list
  */
@@ -129,7 +129,7 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       let v = await view();
       expect(gapsOf(v, '12')).toEqual(['barcode', 'price']);
       expect(gapsOf(v, '13')).toEqual(['tax']);
-      // OB-733: no label fact is a gap — the clean items are ready with all five facts still to read.
+      // OB-738: no label fact is a gap — the clean items are ready with all five facts still to read.
       expect(v.summary.ready).toBe(2);
       expect(v.summary).toMatchObject({ factsToRead: 4, gaps: { barcode: 1, tax: 1, price: 1 } });
 
@@ -148,7 +148,7 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect((await fixAs(manager, '12', 'barcode', { barcodes: ['8901234567913'] }, 'scanned from the pack')).status).toBe(201);
       expect((await fixAs(manager, '12', 'price', { mrp: '65', sell: '60', cost: '50' }, 'from the supplier bill')).status).toBe(201);
       for (const item of ['11', '12']) expect((await fixAs(manager, item, 'label', LABEL)).status).toBe(201);
-      // OB-733: some facts read now, the rest later; item 14 has none read at all — neither is held back.
+      // OB-738: some facts read now, the rest later; item 14 has none read at all — neither is held back.
       expect((await fixAs(manager, '13', 'label', { country_of_origin: 'India', net_quantity: '250 g' })).status).toBe(201);
       v = await view();
       expect(v.items.filter((i) => i.gaps.length === 0).map((i) => i.itemId).sort()).toEqual(['11', '12', '13', '14']);
@@ -164,7 +164,7 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       const loadId = prepared.body['loadId'] as string;
       expect(prepared.body['items']).toBe(4);
       expect((prepared.body['lines'] as string[]).join('\n')).toMatch(/SEALED — products\.csv: 4 row\(s\)/);
-      expect((prepared.body['lines'] as string[]).join('\n')).toContain('Label facts still to read (OB-733): 2 staged item(s)');
+      expect((prepared.body['lines'] as string[]).join('\n')).toContain('Label facts still to read (OB-738): 2 staged item(s)');
       // Blank is written blank — never "none", never a guess.
       expect(readFileSync(join(dataDir, id, loadId, 'products.csv'), 'utf8')).toContain('14,TEST OIL 1L,pcs,packaged-groceries,15079010,active,,,,,');
 
@@ -183,7 +183,7 @@ describe.each(backings)('the import page fixes every gap, then two people load �
 
       const products = ((await req('GET', '/v1/catalogue/products', undefined, OWNER)).body as { products: { productId: string }[] }).products.map((p) => p.productId).sort();
       expect(products).toEqual(['11', '12', '13', '14']);
-      // OB-733: on sale at the till, and on head office's list of facts still to read, until filled.
+      // OB-738: on sale at the till, and on head office's list of facts still to read, until filled.
       const outstanding = async () => ((await req('GET', '/v1/catalogue/label-facts-outstanding', undefined, OWNER)).body as { items: { productId: string; facts: string[]; loadId: string; loadedBy: string }[] }).items;
       expect((await outstanding()).map((x) => [x.productId, x.facts, x.loadId, x.loadedBy])).toEqual([
         ['13', ['allergens', 'packer', 'consumer_care'], loadId, OWNER], ['14', ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care'], loadId, OWNER]]);
@@ -199,7 +199,7 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect(again.status).toBe(422);
       expect(String(again.body['error'])).toContain('No item is ready');
 
-      // ── facts later (OB-733): saved on this page for a LOADED item, they reach the item on sale ─────────────────
+      // ── facts later (OB-738): saved on this page for a LOADED item, they reach the item on sale ─────────────────
       const later = await fixAs(manager, '14', 'label', { allergens: 'none', country_of_origin: 'India', net_quantity: '1 L', packer: 'Test Oils, Erode', consumer_care: 'care@testoils.example' });
       expect(later.status, JSON.stringify(later.body)).toBe(201);
       expect(later.body['onSale']).toEqual({ updated: true, factsStillToRead: [] });

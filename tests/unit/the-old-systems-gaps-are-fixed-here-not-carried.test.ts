@@ -6,7 +6,7 @@ import { stageSlice } from '../../packages/migration/src/slice-import';
 // OB-704 (owner, 7 Nov 2026): "I want to fill the gaps in our software. I don't want to carry the gaps." The old ERP's
 // gaps — a barcode with a wrong check digit, one HSN at two GST rates, a missing price, the five label facts a packed
 // food needs — are each FIXED here by a person, every fix kept; an item with any gap left is never written. Made-up data.
-// OB-733 (owner, 14 Nov 2026, replacing OB-696; option A "sell at the till only"): a label fact not read yet is NOT a gap —
+// OB-738 (owner, 14 Nov 2026, replacing OB-696; option A "sell at the till only"): a label fact not read yet is NOT a gap —
 // the item loads with it blank (never "none"), and it is listed as a fact still to read until filled.
 
 const table = (rows: readonly (readonly string[])[]): SheetRow[] => rows.slice(1).map((r) => Object.fromEntries(rows[0]!.map((h, i) => [h, r[i] ?? ''])));
@@ -36,7 +36,7 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(items().map((i) => i.itemId)).toEqual(['11', '12', '13', '14', '15', '16']);
   });
 
-  it('every gap is named on its item; a label fact is NOT a gap (OB-733) — with no fix, the clean item is ready, its five facts listed to read', () => {
+  it('every gap is named on its item; a label fact is NOT a gap (OB-738) — with no fix, the clean item is ready, its five facts listed to read', () => {
     const r = resolveImport(items(), []);
     expect(kinds(r, '11')).toEqual([]);
     expect(kinds(r, '12')).toEqual(['barcode']);
@@ -79,7 +79,7 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(validateFix('price', { mrp: '', sell: '60', cost: '40' }, 'from the bill').join(' ')).toContain('MRP must be an amount');
     expect(validateFix('tax', { hsn: '09023020', gstPercent: 7 }, 'checked').join(' ')).toContain('one of the slabs');
     expect(validateFix('tax', { hsn: '34011110', gstPercent: 18 }, 'checked').join(' ')).toContain('not packaged food');
-    // OB-733: some facts now and the rest later is fine; nothing at all, or a field that is not a label fact, is refused.
+    // OB-738: some facts now and the rest later is fine; nothing at all, or a field that is not a label fact, is refused.
     expect(validateFix('label', { ...LABEL, packer: '' }, 'read')).toEqual([]);
     expect(validateFix('label', { allergens: '', country_of_origin: ' ' }, 'read').join(' ')).toContain('give at least one label fact');
     expect(validateFix('label', { ...LABEL, mrp: '10' }, 'read').join(' ')).toContain('"mrp" is not one of the five label facts');
@@ -87,7 +87,7 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(validateFix('barcode', { barcodes: ['8901234567890'] }, 'scanned')).toEqual([]);
   });
 
-  it('OB-733: label facts given over several fixes add up, fact by fact; a blank in a later fix never unreads one', () => {
+  it('OB-738: label facts given over several fixes add up, fact by fact; a blank in a later fix never unreads one', () => {
     const fixes = [
       fix('11', 'label', { allergens: 'none', country_of_origin: 'India' }),
       fix('11', 'label', { net_quantity: '1 kg', allergens: '' }),
@@ -100,7 +100,7 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(isReady(it11)).toBe(true);
   });
 
-  it('OB-733: an item with facts still to read is written with them BLANK (never "none") and the slice stages it, listed', () => {
+  it('OB-738: an item with facts still to read is written with them BLANK (never "none") and the slice stages it, listed', () => {
     const fixes = [fix('11', 'label', { country_of_origin: 'India', net_quantity: '1 kg' })];
     const ready = resolveImport(items(), fixes).filter(isReady);
     const files = sliceFilesFor(ready, '2026-11-06');

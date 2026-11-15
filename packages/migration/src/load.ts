@@ -74,7 +74,7 @@ export interface ExtractProduct {
   /** 0–9999; the price route refuses a price below cost + floor without an approver. */
   readonly marginFloorBps: number;
   /**
-   * OB-733 (option A: sold at the till only): a packaged-groceries item loaded before its five label facts are read off the
+   * OB-738 (option A: sold at the till only): a packaged-groceries item loaded before its five label facts are read off the
    * pack. The publish asks head office to let the missing facts follow (`labelFactsFollow: { loadId }`); head office lists
    * them until filled and keeps the item off the online store and scan-and-go. Absent: the full rule.
    */
@@ -248,9 +248,9 @@ function productRecordOf(p: ExtractProduct, tenantId: string, judged = false): P
     primaryCategoryId: p.primaryCategoryId, taxClass: p.taxClass, lifecycle: p.lifecycle,
     ...(p.brand === undefined ? {} : { brand: p.brand }),
     ...(p.safety === undefined ? {} : { safety: p.safety }),
-    // OB-733: judged here as head office will judge it once the load asks for the facts to follow. Never sent in the
+    // OB-738: judged here as head office will judge it once the load asks for the facts to follow. Never sent in the
     // product body — head office sets the mark itself, from the load's request (planLoad).
-    ...(judged && p.labelFactsFollow === true ? { labelFactsFollow: { decision: 'OB-733' as const, loadId: tenantId, markedBy: tenantId, markedAt: '' } } : {}),
+    ...(judged && p.labelFactsFollow === true ? { labelFactsFollow: { decision: 'OB-738' as const, loadId: tenantId, markedBy: tenantId, markedAt: '' } } : {}),
   };
 }
 

@@ -22,7 +22,8 @@ import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkPrivilegeRecord, PRIVILEGE_VIA, type PrivilegeKind, type PrivilegeRecord } from '../../../packages/identity/src/privilege-seal';
 import { identityRoutes, type IdentityDeps } from './index';
-import { PERSON_PROVISION_PERMISSION } from './people';
+import type { PeopleDeps } from './people';
+import { isGenericName, PRODUCT_ID, readablePersonName, tidyPersonName } from '../../../packages/identity/src/sign-in-names';
 
 /** The relay permissions the store computer's identity holds (services/api/src/roles.ts) — they grant nothing themselves. */
 export const PEOPLE_SYNC_PERMISSION = 'identity.people.sync';
@@ -31,7 +32,16 @@ export const BOX_PRIVILEGE_PATHS = Object.freeze({
   people: '/v1/identity/box/people',
   grants: '/v1/identity/box/grants',
   approve: '/v1/identity/box/grants/:grantId/approve',
+  /** CR-01 step 4b-1: a second person turns a pending request down, by PIN. */
+  reject: '/v1/identity/box/grants/:grantId/reject',
+  /** CR-01 step 4b-1: what the Users & roles page shows the person signed in on the store PC, at this store only. */
+  view: '/v1/identity/box/users-view',
 });
+/**
+ * The authority to add a store-PC person (OB-733 "A"): the MAKER's word — the owner and the store manager, who ask for roles.
+ * A store-PC person holds no authority until a role is approved by a second person, so the name alone needs one person.
+ */
+export const STORE_PC_PERSON_AUTHORITY = 'identity.role.request';
 /** The role a store computer's credential holds (packages/platform `STORE_COMPUTER_ROLE`). */
 const STORE_COMPUTER_ROLE = 'store_computer';
 
@@ -43,10 +53,14 @@ export interface PrivilegeChangeAlert {
   readonly actingUserId: string;
   /** Whose access it is about. */
   readonly subjectUserId: string;
+  /** The role (empty for a person added — `person_provision`). */
   readonly roleId: string;
   readonly branchScope: readonly string[] | 'all';
+  /** The grant request (empty for a person added). */
   readonly grantId: string;
   readonly requestedBy: string;
+  /** For a person added (`person_provision`): their name. */
+  readonly displayName?: string;
   /** For an approval: who approved it (the acting person). Absent for a request (it waits for a second person). */
   readonly approvedBy?: string;
   /** When the PIN was confirmed at the store PC, and when head office recorded it. */
@@ -69,6 +83,11 @@ export interface BoxPrivilegeDeps {
   readonly rolesHeldBy: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   /** Raise the owner's alert for an accepted change. Absent on a bare stub only. */
   readonly raiseOwnerAlert?: (tenantId: string, alert: PrivilegeChangeAlert) => Promise<void>;
+  /**
+   * CR-01 step 4b-1 (OB-733 "A"): the people register — the same one head office's people routes fold. Absent: adding a
+   * person from the store PC is refused (503), never half done.
+   */
+  readonly people?: Pick<PeopleDeps, 'people' | 'recordPerson' | 'holdsAnyRole'>;
 }
 
 const refuse = (status: number, code: string, whatHappened: string, nextSafeAction: string) =>
@@ -94,13 +113,18 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
   };
   const REQUEST_ROUTE = '/v1/identity/grants';
   const APPROVE_ROUTE = '/v1/identity/grants/:grantId/approve';
+  const REJECT_ROUTE = '/v1/identity/grants/:grantId/reject';
+
+  const mustBeStoreComputer = async (ctx: RequestContext): Promise<void> => {
+    const held = await deps.rolesHeldBy(ctx.tenantId, ctx.userId);
+    if (!held.includes(STORE_COMPUTER_ROLE)) {
+      throw refuse(403, 'not_a_store_computer', 'Only the store PC itself relays a privilege change confirmed by PIN on its office screens, or reads for them. This credential is not a store computer\'s.', 'A person uses their own routes with their own head-office sign-in. Nothing changed.');
+    }
+  };
 
   /** Every relay: a store computer, the key, the seal, the clock, the one-use id, the person's own authority. */
   const accept = async (ctx: RequestContext, kind: PrivilegeKind, permission: string): Promise<PrivilegeRecord> => {
-    const held = await deps.rolesHeldBy(ctx.tenantId, ctx.userId);
-    if (!held.includes(STORE_COMPUTER_ROLE)) {
-      throw refuse(403, 'not_a_store_computer', 'Only the store PC itself relays a privilege change confirmed by PIN on its office screens. This credential is not a store computer\'s.', 'A person uses their own routes with their own head-office sign-in. Nothing changed.');
-    }
+    await mustBeStoreComputer(ctx);
     if (deps.privilegeSealKey === undefined) {
       throw refuse(503, 'privilege_seal_key_not_set', 'Head office holds no privilege-seal key (BOX_PRIVILEGE_SEAL_KEY), so it cannot check a privilege change sealed on the store PC.', 'The administrator runs the store computer setup again, which adds the key once, then restarts the office service. Nothing changed.');
     }
@@ -109,7 +133,7 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
       throw refuse(checked.refusedBecause === 'privilege_record_not_readable' ? 400 : 403, checked.refusedBecause, checked.why, 'Nobody\'s access changed. The person confirms with their PIN again on the store PC\'s office screen.');
     }
     const record = checked.record;
-    if (kind === 'role_grant_approval' && record.body['grantId'] !== (ctx.params['grantId'] ?? '')) {
+    if ((kind === 'role_grant_approval' || kind === 'role_grant_rejection') && record.body['grantId'] !== (ctx.params['grantId'] ?? '')) {
       throw refuse(403, 'privilege_record_does_not_match', `The sealed approval is for request ${String(record.body['grantId'])}, not ${ctx.params['grantId'] ?? ''}.`, 'Nobody\'s access changed.');
     }
     const spent = await deps.spendRequestId(ctx.tenantId, { requestId: record.requestId, kind, userId: record.userId, relayedBy: ctx.userId, at: deps.now() });
@@ -136,16 +160,52 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
 
   return [
     {
-      // OI-06 "add a person" from the store PC. A person head office can sign in needs the identity server (POST
-      // /v1/identity/people answers 503 without one); recording a person without one is CR-01 step 4b.
+      // OI-06 "add a person" from the store PC (CR-01 step 4b-1 · OB-733 "A"): a STORE-PC PERSON — their name and staff id
+      // recorded on head office's people register, NO sign-in made anywhere (the store PC has no identity server). They hold
+      // nothing until a role is asked for and approved by a second person; they sign in only on the store PC, by till PIN.
+      // One person adds the name (the maker's authority, `identity.role.request`), confirmed by PIN; recorded and alerted.
       api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.people,
       permission: PEOPLE_SYNC_PERMISSION, idempotent: true,
       handler: async (ctx) => {
-        const held = await deps.rolesHeldBy(ctx.tenantId, ctx.userId);
-        if (!held.includes(STORE_COMPUTER_ROLE)) {
-          throw refuse(403, 'not_a_store_computer', 'Only the store PC itself relays a privilege change confirmed by PIN on its office screens.', 'Nothing changed.');
+        const record = await accept(ctx, 'person_provision', STORE_PC_PERSON_AUTHORITY);
+        if (deps.people === undefined) {
+          throw refuse(503, 'people_register_not_wired', 'Head office has no people register wired here, so nobody can be added from the store PC.', 'Nobody was added. The administrator checks the office service\'s setup.');
         }
-        throw refuse(501, 'comes_in_step_4b', `Adding a person from the store PC's office screen comes in step 4b (CR-01 OI-06). It needs ${PERSON_PROVISION_PERMISSION} and a people register the store PC can write without an identity server; that is not built yet.`, 'Nobody was added. Until then a person is added at head office.');
+        const b = record.body;
+        const userId = typeof b['userId'] === 'string' ? b['userId'].trim().toLowerCase() : '';
+        const displayName = typeof b['displayName'] === 'string' ? tidyPersonName(b['displayName']) : '';
+        const extra = Object.keys(b).filter((k) => k !== 'userId' && k !== 'displayName');
+        if (!PRODUCT_ID.test(userId) || !readablePersonName(displayName) || extra.length > 0) {
+          throw refuse(400, 'not_readable_as_a_person', 'Adding a person on the store PC needs { userId (their staff id: 3–64 of a–z, 0–9, . _ -), displayName (their full name) } and nothing else — never a PIN or a password.', 'Type the person\'s staff id and full name. Nobody was added.');
+        }
+        if (isGenericName(userId) || isGenericName(displayName)) {
+          throw refuse(422, 'shared_or_generic_sign_in', `"${isGenericName(displayName) ? displayName : userId}" names a job, a place or a shared account, not a person. Every staff id belongs to one named person, so that every action is theirs (M02-FR-01).`, 'Use the person\'s own staff id and name. Nobody was added.');
+        }
+        if (userId === record.userId) {
+          throw refuse(422, 'signing_in_yourself', 'Nobody adds themselves.', 'Ask another person who may add people. Nobody was added.');
+        }
+        const known = (await deps.people.people(ctx.tenantId)).find((p) => p.userId === userId || p.username === userId);
+        if (known !== undefined) {
+          throw refuse(409, 'person_already_known', `${userId} is already on the people register (${known.displayName}, ${known.state === 'ended' ? 'left' : 'here'}). A person is added once; somebody who left is not revived from here.`, 'Check the staff id. Nobody was added.');
+        }
+        if (await deps.people.holdsAnyRole(ctx.tenantId, userId)) {
+          throw refuse(422, 'person_already_holds_authority', `${userId} already holds a role, so they are not a new person.`, 'Check the staff id. Nobody was added.');
+        }
+        const at = deps.now();
+        await deps.people.recordPerson(ctx.tenantId, { type: 'PersonRecordedForStorePc', userId, displayName, recordedBy: record.userId, storeId: ctx.branchId, at });
+        await deps.identity.recordAudit?.(ctx.tenantId, {
+          actorId: record.userId, action: 'person.store_pc.record', objectType: 'user', objectId: userId,
+          at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { displayName, signIn: 'none (store PC only)', via: PRIVILEGE_VIA, relayedBy: ctx.userId, privilegeRequestId: record.requestId },
+          correlationId: record.requestId,
+        });
+        await alert(ctx, {
+          requestId: record.requestId, kind: 'person_provision', actingUserId: record.userId, subjectUserId: userId,
+          roleId: '', branchScope: ctx.branchId === null ? [] : [ctx.branchId], grantId: '', requestedBy: record.userId,
+          displayName, confirmedAt: record.confirmedAt,
+        });
+        return { status: 201, body: { userId, displayName, state: 'store_pc', signIn: 'none', via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
       },
     },
     {
@@ -190,14 +250,79 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
         return { status: out.status, body: { ...b, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
       },
     },
+    {
+      // CR-01 step 4b-1: THE CHECKER turns a pending request down, confirmed by PIN on the store PC (the same handler as
+      // POST /v1/identity/grants/:grantId/reject, run as the acting person, a reason required). A rejection changes nobody's
+      // access, so no owner alert; it is audited in the person's name.
+      api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.reject,
+      permission: GRANTS_SYNC_PERMISSION, idempotent: true,
+      handler: async (ctx) => {
+        const record = await accept(ctx, 'role_grant_rejection', 'identity.role.grant');
+        const grantId = ctx.params['grantId'] ?? '';
+        const out = await runAs(REJECT_ROUTE, ctx, record, { grantId }, { reason: record.body['reason'] });
+        const b = (isObj(out.body) ? out.body : {}) as Record<string, unknown>;
+        if (out.status === 200 && b['alreadyDecided'] !== true) {
+          const pending = (await deps.identity.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
+          await deps.identity.recordAudit?.(ctx.tenantId, {
+            actorId: record.userId, action: 'role.grant.reject', objectType: 'user', objectId: pending?.userId ?? '',
+            at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+            before: null,
+            after: { roleId: pending?.roleId ?? '', requestedBy: pending?.requestedBy ?? '', rejectedBy: record.userId, reason: String(record.body['reason'] ?? ''), via: PRIVILEGE_VIA, relayedBy: ctx.userId, privilegeRequestId: record.requestId },
+            correlationId: grantId,
+          });
+        }
+        return { status: out.status, body: { ...b, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
+      },
+    },
+    {
+      // CR-01 step 4b-1: what the Users & roles page shows the person signed in on the store PC's office screens (`for`),
+      // read by the box under its store token. Head office judges the PERSON's authority here — the same gates as the
+      // person's own reads: the roles and who holds what with `identity.role.request`, what waits with `identity.role.read`
+      // — and shows THIS store only: grants and requests that reach the box's own store (or every store). Read only.
+      api: 'API-01', method: 'GET', path: BOX_PRIVILEGE_PATHS.view,
+      permission: GRANTS_SYNC_PERMISSION,
+      handler: async (ctx) => {
+        await mustBeStoreComputer(ctx);
+        const forUser = typeof ctx.query['for'] === 'string' ? ctx.query['for'].trim() : '';
+        if (forUser === '') {
+          throw refuse(400, 'needs_a_person', 'Say whose view this is: ?for=<the person signed in on the office screens>.', 'Nothing was read.');
+        }
+        const held = new Set(await deps.identity.permissionsOf(ctx.tenantId, forUser));
+        const store = ctx.branchId;
+        const here = (scope: readonly string[] | 'all'): boolean => scope === 'all' || (store !== null && scope.includes(store));
+        const mayAsk = held.has('identity.role.request');
+        const mayRead = held.has('identity.role.read');
+        const body: Record<string, unknown> = { asAt: deps.now(), for: forUser, storeId: store, mayAsk, mayRead, mayDecide: held.has('identity.role.grant') };
+        if (mayAsk || mayRead) {
+          body['roles'] = await deps.identity.roles(ctx.tenantId);
+          body['awaitingOwnerApproval'] = deps.identity.rolesAwaitingOwnerApproval ?? [];
+        }
+        if (mayAsk) {
+          const grants = deps.identity.currentGrants === undefined ? [] : await deps.identity.currentGrants(ctx.tenantId);
+          body['grants'] = [...grants].filter((g) => here(g.branchScope))
+            .map((g) => ({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope }))
+            .sort((a, b) => a.userId.localeCompare(b.userId) || a.roleId.localeCompare(b.roleId));
+          const people = deps.people === undefined ? [] : await deps.people.people(ctx.tenantId);
+          body['people'] = people.filter((p) => p.state !== 'ended').map((p) => ({ userId: p.userId, displayName: p.displayName, state: p.state }))
+            .sort((a, b) => a.userId.localeCompare(b.userId));
+        }
+        if (mayRead) {
+          body['pending'] = (await deps.identity.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending' && here(g.branchScope));
+        }
+        return { status: 200, body };
+      },
+    },
   ];
 }
 
 /** The owner alert's words: who, what, when, approved by whom (ADR-0033 §5). */
 export function privilegeAlertWords(a: PrivilegeChangeAlert): string {
   const where = a.branchScope === 'all' ? 'every store' : a.branchScope.join(', ') || 'no store named';
-  const what = a.kind === 'role_request'
-    ? `${a.actingUserId} asked for the ${a.roleId} role for ${a.subjectUserId} (${where}); it waits for a second person to approve`
-    : `${a.actingUserId} approved the ${a.roleId} role for ${a.subjectUserId} (${where}), asked for by ${a.requestedBy}`;
-  return `${what}. Confirmed by PIN on the store PC${a.storeId === null ? '' : ` of store ${a.storeId}`} at ${a.confirmedAt}, recorded at ${a.at} (request ${a.grantId}). If you did not expect this, look at Users & roles today.`;
+  const what = a.kind === 'person_provision'
+    ? `${a.actingUserId} added a new person on the store PC: ${a.displayName ?? a.subjectUserId} (staff id ${a.subjectUserId}). They hold no role yet; a role needs a second person`
+    : a.kind === 'role_request'
+      ? `${a.actingUserId} asked for the ${a.roleId} role for ${a.subjectUserId} (${where}); it waits for a second person to approve`
+      : `${a.actingUserId} approved the ${a.roleId} role for ${a.subjectUserId} (${where}), asked for by ${a.requestedBy}`;
+  const ref = a.grantId === '' ? a.requestId : a.grantId;
+  return `${what}. Confirmed by PIN on the store PC${a.storeId === null ? '' : ` of store ${a.storeId}`} at ${a.confirmedAt}, recorded at ${a.at} (request ${ref}). If you did not expect this, look at Users & roles today.`;
 }
