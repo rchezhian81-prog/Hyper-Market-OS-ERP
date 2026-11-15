@@ -37,9 +37,23 @@ const OWNER_PERMISSIONS = ROLE_CATALOGUE.find((r) => r.id === OWNER_ROLE_ID)!.pe
 
 const { at: AT } = theEvening();
 const DAY = shopDay(SHOP_ZONE, () => AT);
-/** What the person types: 00:45 and 00:50 on the shop's today (the pinned moment is the shop's 01:00). */
-const TYPED_FROM = `${DAY.today()}T00:45`;
-const TYPED_TO = `${DAY.today()}T00:50`;
+/**
+ * What the person types: 15 and 10 minutes before the pinned moment, on the shop's clock and the shop's today. The pinned
+ * moment is the shop's 01:00 (00:45 and 00:50), except from 18:30 to 19:30 UTC, when `theEvening()` pins the real moment
+ * (the shop's 00:00–01:00): a fixed "00:45" was then still to come and the "in the shop's past" check failed (CI, 15 Nov
+ * 2026, 18:52 UTC). Kept inside the shop's today: in its first quarter-hour the times start at 00:00.
+ */
+const shopClockOf = (ms: number): string => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: SHOP_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${parts['year']}-${parts['month']}-${parts['day']}T${parts['hour']}:${parts['minute']}`;
+};
+const typedBefore = (minutes: number, fallback: string): string => {
+  const t = shopClockOf(Date.parse(AT) - minutes * 60_000);
+  return t.startsWith(DAY.today()) ? t : `${DAY.today()}T${fallback}`;
+};
+const TYPED_FROM = typedBefore(15, '00:00');
+const TYPED_TO = typedBefore(10, '00:01');
 const MEANT_FROM = instantOf(TYPED_FROM, SHOP_ZONE);
 const MEANT_TO = instantOf(TYPED_TO, SHOP_ZONE);
 /** What the device's own clock made of it before round 15 — must never be sent. */
