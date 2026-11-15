@@ -214,7 +214,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
   it('every command lane 2 and the owner setup (OB-257) promised exists, the guide uses each, and no stale stop mark is left', () => {
     expect(EXISTING_COMMANDS).toEqual(expect.arrayContaining(['doctor', 'prepare', 'up', 'check', 'backup', 'restore-check', 'drill', ...LANE_2_COMMANDS, ...SETUP_COMMANDS]));
     for (const step of ['schedule-backup --to', '--every 60', 'unschedule-backup', 'backup-status', 'autostart', 'migrate-data-folder', 'update --from', '-- status', '-- seal --dir', '-- parallel-policy']) {
-      // OB-740: a step may be written in the developer form (`-- seal`) or the installed-PC form (`store-computer.mjs seal`).
+      // OB-773: a step may be written in the developer form (`-- seal`) or the installed-PC form (`store-computer.mjs seal`).
       const installed = step.startsWith('-- ') ? `store-computer.mjs ${step.slice(3)}` : step;
       expect(guide.includes(step) || guide.includes(installed), step).toBe(true);
     }

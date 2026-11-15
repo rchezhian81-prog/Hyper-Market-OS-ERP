@@ -38,7 +38,7 @@ interface BrowserGlobals {
 
 const AT = '2026-09-20T08:30:00.000Z';
 
-/** The GRN list a manager's screen pulls: one delivery needing a second person (§28), then a clean one. OB-740 (pilot audit
+/** The GRN list a manager's screen pulls: one delivery needing a second person (§28), then a clean one. OB-773 (pilot audit
  *  B-2): quantities are what head office really sends — each line in its own unit's smallest steps (OB-31): an `ea` line is
  *  a plain COUNT of pieces (80 tins of oil is 80, never 80_00), a kg line is grams. */
 const CLOUD = {
@@ -200,7 +200,7 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       expect((await page.textContent('#rows')) ?? '').toContain('₹');
       // Freshness is on the page.
       expect(((await page.textContent('#asof')) ?? '').toLowerCase()).toContain('as of');
-      // OB-740 (B-2): pieces are shown as the count head office sent — 80 and 100 units, never 0.8 or 1.
+      // OB-773 (B-2): pieces are shown as the count head office sent — 80 and 100 units, never 0.8 or 1.
       const rows = (await page.textContent('#rows')) ?? '';
       expect(rows).toContain('Became sellable: 80 units');
       expect(rows).toContain('Became sellable: 100 units');
@@ -297,7 +297,7 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
     }
   });
 
-  it('OB-740 · pieces show as pieces and weights as weights — a delivery of 10 pieces and 2.5 kg is never "0.1 units"', async () => {
+  it('OB-773 · pieces show as pieces and weights as weights — a delivery of 10 pieces and 2.5 kg is never "0.1 units"', async () => {
     const MIXED = {
       receipts: [{
         grnId: 'g-mixed', number: 'GRN-9', poId: 'po-9', warehouseId: 'W1', receivedBy: 'u-recv', receivedAt: AT,

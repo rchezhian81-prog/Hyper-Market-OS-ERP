@@ -2399,7 +2399,7 @@ export interface CashOfficeData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: CashOverShortData;
-  /** D-2 (OB-740): the drawers the store computer itself recorded closing over/short, over its last `days` trading days. */
+  /** D-2 (OB-773): the drawers the store computer itself recorded closing over/short, over its last `days` trading days. */
   readonly boxOverShort?: { readonly days: number; readonly closes: readonly OverShortView[] };
 }
 
@@ -2410,7 +2410,7 @@ export type OverShortRead =
 
 const OVERSHORT_READ_PERMISSION = 'till.shift.read';
 const OVERSHORT_REVIEW_PERMISSION = 'till.overshort.review';
-// D-2 (OB-740 · P-08): this empty list stands ONLY behind a worklist that is marked unread (`worklistRead` says so), so the
+// D-2 (OB-773 · P-08): this empty list stands ONLY behind a worklist that is marked unread (`worklistRead` says so), so the
 // session says "Not known — why", never "every drawer is signed off". It is never shown as head office's answer.
 const UNREAD_OVERSHORT_WORKLIST: CashOverShortData = Object.freeze({ openCount: 0, totalVarianceMinor: 0, open: [] });
 const NOOP_SIGNOFF_PORT: OverShortSignOffPort = { post: async () => 'lost_link' };
@@ -3429,7 +3429,7 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       sellableMinor: num(g['availableMinor']),
       quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
-      quantitiesByUom: receiptQuantitiesByUom(g), // OB-740 (B-2): pieces stay pieces, kilos stay kilos — never added together
+      quantitiesByUom: receiptQuantitiesByUom(g), // OB-773 (B-2): pieces stay pieces, kilos stay kilos — never added together
       discrepancies,
       returnLines: returnLinesOf(g, lines),
       ...(costNotKnown.length === 0 ? {} : { costNotKnown }),

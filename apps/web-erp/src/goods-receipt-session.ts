@@ -107,14 +107,14 @@ export interface GrnRecordView {
   /** OB-534: how many of the receipt's lines no supplier bill is matched to yet (head office's lines less `billCosts`). */
   readonly unbilledLineCount?: number;
   /**
-   * OB-740 (pilot audit B-2): the same three quantities, kept apart per unit of measure — head office's lines hold each in
+   * OB-773 (pilot audit B-2): the same three quantities, kept apart per unit of measure — head office's lines hold each in
    * its line's own smallest steps (OB-31: a COUNT for `ea`, grams for kg, ml for L), so 10 pieces and 2.5 kg are never
    * added into one number. Absent (an older snapshot): the totals above are read as counts of pieces.
    */
   readonly quantitiesByUom?: GrnQuantitiesByUom;
 }
 
-/** OB-740: a receipt's quantities per unit of measure, each in that unit's smallest steps (OB-31). */
+/** OB-773: a receipt's quantities per unit of measure, each in that unit's smallest steps (OB-31). */
 export interface GrnQuantitiesByUom {
   readonly sellable: Readonly<Record<string, number>>;
   readonly quarantined: Readonly<Record<string, number>>;
@@ -476,7 +476,7 @@ export interface PresentedReceipt {
   readonly sellableMinor: number;
   readonly quarantinedMinor: number;
   readonly rejectedMinor: number;
-  /** OB-740 (B-2): each quantity for a person — "10 units", "2.5 kg", "10 units · 2.5 kg" (OB-31), never ÷100. */
+  /** OB-773 (B-2): each quantity for a person — "10 units", "2.5 kg", "10 units · 2.5 kg" (OB-31), never ÷100. */
   readonly sellableQuantity: string;
   readonly quarantinedQuantity: string;
   readonly rejectedQuantity: string;
@@ -574,7 +574,7 @@ export function quantityForPerson(quantityMinor: number, uom: string): string {
 }
 
 /**
- * OB-740 (pilot audit B-2): what a person reads for one receipt quantity kept per unit of measure. A count of pieces (`ea`)
+ * OB-773 (pilot audit B-2): what a person reads for one receipt quantity kept per unit of measure. A count of pieces (`ea`)
  * is the number itself with the word for units ("10 units"; OB-31: an `ea` quantity IS a count — never ÷100); a weight or
  * volume is in its whole unit with its decimals ("2.5 kg"). Units are listed pieces first, then by code; nothing is "0 units"
  * unless nothing at all came in.
@@ -589,7 +589,7 @@ export function receiptQuantityForPerson(byUom: Readonly<Record<string, number>>
 }
 
 /**
- * OB-740 (pilot audit B-2): head office's raw goods-receipt record → its quantities per unit of measure. Each line's own
+ * OB-773 (pilot audit B-2): head office's raw goods-receipt record → its quantities per unit of measure. Each line's own
  * `uom` and smallest steps are kept (a line with no unit is a count of pieces, OB-31). "Became sellable" is head office's
  * own `availableMinor` when every line shares one unit (it includes held stock released later); for a receipt mixing
  * units, each line's sellable quantity plus what head office has released of it (an approved excess; a held line
@@ -831,7 +831,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           receivedBy: g.receivedBy, receivedAt: g.receivedAt, needsApproval: g.requiresApproval,
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,
-          // OB-740 (B-2): per unit of measure when head office's lines are known; otherwise the totals are counts of pieces.
+          // OB-773 (B-2): per unit of measure when head office's lines are known; otherwise the totals are counts of pieces.
           sellableQuantity: receiptQuantityForPerson(g.quantitiesByUom?.sellable ?? { ea: g.sellableMinor }, t('unitsWord')),
           quarantinedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.quarantined ?? { ea: g.quarantinedMinor }, t('unitsWord')),
           rejectedQuantity: receiptQuantityForPerson(g.quantitiesByUom?.rejected ?? { ea: g.rejectedMinor }, t('unitsWord')),

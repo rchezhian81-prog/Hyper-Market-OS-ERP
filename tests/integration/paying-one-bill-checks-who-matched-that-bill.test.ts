@@ -5,7 +5,7 @@ import { P3, p3Shop, caller, issuedOrder, received } from '../support/p3-purchas
 import { sentWithApproval } from '../support/approval-request';
 import type { ApiHarness } from '../support/api-harness';
 
-// OB-740 (pilot audit B-1, BLOCKS PILOT): the segregation-of-duties check on a supplier payment (M06-FR-02 · §28 "cannot
+// OB-773 (pilot audit B-1, BLOCKS PILOT): the segregation-of-duties check on a supplier payment (M06-FR-02 · §28 "cannot
 // receive, match and pay same transaction", OB-288 P3) looked at EVERY bill of the supplier still open, not the bills the
 // payment settles. The accountant who matched the bill on order A could then never record (or approve) the payment of a
 // DIFFERENT bill on order B — and as only the owner and the accountant pay, no supplier could ever be paid. The rule is
@@ -24,7 +24,7 @@ function pay(h: ApiHarness, T: string, paymentId: string, amountMinor: number, p
     (b) => h.request({ method: 'POST', path: `/v1/purchase/suppliers/sup-1/payments/${paymentId}`, userId: payer, tenantId: T, idempotencyKey: `pay-${paymentId}`, body: b }));
 }
 
-describe.each(backings)('paying a bill checks who matched THAT bill, not every open bill (OB-740 · M06-FR-02 · §28) — on $name', ({ harness }) => {
+describe.each(backings)('paying a bill checks who matched THAT bill, not every open bill (OB-773 · M06-FR-02 · §28) — on $name', ({ harness }) => {
   it('the matcher of order A may pay order B\'s bill; nobody may pay a bill they matched; an on-account payment still checks every open bill', async () => {
     const h = harness();
     const T = randomUUID();
@@ -54,7 +54,7 @@ describe.each(backings)('paying a bill checks who matched THAT bill, not every o
     expect(codeOf(await pay(h, T, 'pay-4', 60_000, P3.MATCHER, P3.OWNER, ['inv-B']))).toBe('segregation_of_duties');
 
     // THE BUG: the accountant records the payment of order B's bill, the owner approves it. Neither touched order B, so it
-    // goes through (before OB-740 it was refused because the accountant matched order A's bill).
+    // goes through (before OB-773 it was refused because the accountant matched order A's bill).
     const paidB = await pay(h, T, 'pay-5', 50_000, P3.MATCHER, P3.OWNER, ['inv-B']);
     expect(paidB.status, JSON.stringify(paidB.body)).toBe(201);
 

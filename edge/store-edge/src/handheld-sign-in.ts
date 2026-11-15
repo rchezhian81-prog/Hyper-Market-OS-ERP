@@ -102,7 +102,7 @@ const PERSON_KEY: Readonly<Record<HandheldSource, string>> = Object.freeze({ war
  * makes names them. Work head office handed to SOMEBODY ELSE by name (a wave for another picker, a route for another driver)
  * is not theirs to do — it is withheld (null: the phone shows no work), never silently re-assigned.
  *
- * OB-740 (pilot audit B-3): on the warehouse screen, given the store setup, it also says whether THIS person may receive a
+ * OB-773 (pilot audit B-3): on the warehouse screen, given the store setup, it also says whether THIS person may receive a
  * delivery (`receiving`, from `phoneReceivingOf`) — so the phone refuses "Receive a delivery" before any scan instead of
  * queueing scans head office will refuse (OB-623).
  */
@@ -114,7 +114,7 @@ export function asPhoneHolder(screen: HandheldSource, payload: Record<string, un
   return { ...payload, [key]: userId, ...(screen === 'warehouse' && pack !== undefined ? { receiving: phoneReceivingOf(userId, pack) } : {}) };
 }
 
-/** OB-740: what the warehouse phone is told about receiving — allowed, or not with the words to say (English and Tamil). */
+/** OB-773: what the warehouse phone is told about receiving — allowed, or not with the words to say (English and Tamil). */
 export interface PhoneReceiving {
   readonly allowed: boolean;
   readonly en?: string;
@@ -125,7 +125,7 @@ export interface PhoneReceiving {
 const ROLE_NAMES_TA: Readonly<Record<string, string>> = Object.freeze({ [RECEIVER_QC_ROLE]: 'பெறுநர் / தரச் சோதனை', [WAREHOUSE_USER_ROLE]: 'கிடங்கு பயனர்' });
 
 /**
- * OB-740 (pilot audit B-3): may this person record a goods receipt — head office's own rule (OB-623, `@sre/rbac`
+ * OB-773 (pilot audit B-3): may this person record a goods receipt — head office's own rule (OB-623, `@sre/rbac`
  * movement-jobs), judged HERE from the store setup's roles and this branch's role assignments, with no network. A person
  * who receives through any un-narrowed role (owner, store manager) or the Receiver / QC role may; a person whose stock work
  * comes ONLY through the Warehouse user role may not (put away, count, pick, issue and transfers stay theirs). A store setup

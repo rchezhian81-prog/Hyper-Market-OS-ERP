@@ -19,10 +19,10 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { floorPriceMinor, type OverrideLimit, type TillControls } from '../../../packages/price-guard/src/till-override';
 import type { VersionPolicy } from '../../../packages/platform-admin/src/devices';
 import type { IncomingSale } from '../../pos/src/sale-intake';
-import { averageBuyingCosts, catalogueAdapter, effectiveGrants, orgStructureAdapter, saleStockLocationOf, storeRulesAdapter, versionPolicyAdapter } from './adapters';
+import { averageBuyingCosts, catalogueAdapter, effectiveGrants, effectiveRoleCatalogue, orgStructureAdapter, saleStockLocationOf, storeRulesAdapter, versionPolicyAdapter } from './adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { authorityOfAdapter } from './p1-identity-adapters';
-import { OWNER_ROLE_ID, ROLE_CATALOGUE } from './roles';
+import { OWNER_ROLE_ID } from './roles';
 import type { PackSigner } from '../../catalogue/src/pack';
 
 interface Base { readonly store: EventStore; readonly now: () => string; readonly settings: DurableTenantSettings; readonly signer: PackSigner }
@@ -61,7 +61,7 @@ export function tillControlsPackSectionOf(input: Base) {
     const published = await catalogueAdapter({ store: input.store, now: input.now, signer: input.signer }).currentPack(tenantId);
     const { floors, notKnown } = await floorsAt(input, tenantId, storeId, (published?.snapshot.products ?? []).map((p) => p.productId));
     const grants = (await effectiveGrants(input.store, tenantId)).filter((g) => g.branchScope === 'all' || (Array.isArray(g.branchScope) && g.branchScope.includes(storeId)));
-    const access = new AccessControl(ROLE_CATALOGUE, grants);
+    const access = new AccessControl(await effectiveRoleCatalogue(input.store, tenantId), grants);
     const approvers = [...new Set(grants.map((g) => g.userId))].filter((u) => access.can({ userId: u, permission: TILL_OVERRIDE_AUTHORITY, branchId: storeId })).sort();
     const overrideLimits: Record<string, OverrideLimit> = {};
     let limitsVersion = 0;

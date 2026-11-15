@@ -180,7 +180,7 @@ describe.skipIf(!HAVE_BROWSER)('warehouse handheld delivery, end to end in a rea
     }
   });
 
-  it('OB-740 · a Warehouse user pressing "Receive a delivery" is told who receives, before any scan — nothing queued; put-away still works', async () => {
+  it('OB-773 · a Warehouse user pressing "Receive a delivery" is told who receives, before any scan — nothing queued; put-away still works', async () => {
     // The store computer judged the person signed in (head office's OB-623 rule): a Warehouse user may not receive.
     const words = {
       en: 'You cannot receive a delivery: your role (Warehouse user) does not receive goods. A delivery is received by the Receiver / QC or the store manager — ask one of them to sign in on this phone. Nothing was scanned or recorded.',

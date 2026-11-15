@@ -62,7 +62,7 @@ export interface OverShortSignOffPort {
 }
 
 /**
- * D-2 (OB-740 · P-08): whether the worklist the screen holds was really READ from head office. An unread worklist is
+ * D-2 (OB-773 · P-08): whether the worklist the screen holds was really READ from head office. An unread worklist is
  * NOT an empty one — "every drawer is signed off" over a read that failed hid a till that closed ₹649.50 short. Absent
  * means read (a worklist handed in directly).
  */

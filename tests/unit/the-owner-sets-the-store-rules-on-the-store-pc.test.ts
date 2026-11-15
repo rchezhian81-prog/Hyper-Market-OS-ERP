@@ -7,7 +7,7 @@ import { world as storePc } from '../support/store-computer-world';
 import { PILOT_FOUNDATION } from '../../db/seed/pilot/dataset';
 
 /**
- * D-3 (pilot-first audit, OB-739; fix round 1, OB-740) — nothing on the real store PC set the store's working rules
+ * D-3 (pilot-first audit, OB-739; fix round 1, OB-773) — nothing on the real store PC set the store's working rules
  * (POST /v1/stores/:storeId/rules), so the Today page's Tasks / Checklist / Expiring soon said "Not known" and Reports and
  * Expiry showed sample data. `store-rules` is an owner setup command like `store-settings` (OB-257): every value typed by
  * the owner (nothing defaulted), the closing checklist from a plain text file, the plan said and a YES asked, the owner's

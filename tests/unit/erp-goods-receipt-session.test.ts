@@ -222,9 +222,9 @@ describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone bac
     expect([quantityForPerson(12, 'EA'), quantityForPerson(250, 'kg'), quantityForPerson(1_500, 'L')]).toEqual(['12 ea', '0.25 kg', '1.5 L']);
   });
 
-  // OB-740 (pilot audit B-2): the review showed "0.1 units" for 10 pieces — it divided head office's quantities by 100,
+  // OB-773 (pilot audit B-2): the review showed "0.1 units" for 10 pieces — it divided head office's quantities by 100,
   // but an `ea` quantity IS a count (OB-31) and a kg quantity is grams. Pieces stay pieces, weights stay weights.
-  it('OB-740 · a receipt\'s quantities are said per unit: 10 pieces is "10 units", 2.5 kg is "2.5 kg", never added together', () => {
+  it('OB-773 · a receipt\'s quantities are said per unit: 10 pieces is "10 units", 2.5 kg is "2.5 kg", never added together', () => {
     const raw = {
       availableMinor: 2_510,
       captured: { lines: [

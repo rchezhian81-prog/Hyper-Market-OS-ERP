@@ -56,7 +56,7 @@ const WORDS = {
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices', claimDisputesOpen: 'Disputed supplier claims open',
     attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnClaimDisputes: 'disputed supplier claims to settle — open Supplier claims', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
-    // D-2 (OB-740): drawers closed over/short today, from the store computer's own till-cash log — not in the exceptions count.
+    // D-2 (OB-773): drawers closed over/short today, from the store computer's own till-cash log — not in the exceptions count.
     attnOverShort: 'drawer(s) closed over or short today — sign-off is on Cash over / short', overShortNotCounted: 'not counted here: {n} drawer(s) closed over or short today — see Needs attention',
     // OB-392: lane health on Today — one tap per lane.
     lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
@@ -627,7 +627,7 @@ function renderAttention(floor, today) {
   if (today.hoApprovals) add(today.hoApprovals, 'approvalsLabel', 'attnHoApprovals', { rail: 'approval-requests' });
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
-  // D-2 (OB-740 · M14-FR-02): a drawer that closed over/short today is work for the cash office, said here with its till
+  // D-2 (OB-773 · M14-FR-02): a drawer that closed over/short today is work for the cash office, said here with its till
   // and amount (the box's words) — it is not on the exceptions register, so it is never hidden behind "Exceptions open: 0".
   if (today.overShort && today.overShort.known && amountOf(today.overShort) > 0) {
     rows.push({ tone: 'attention', n: amountOf(today.overShort), text: `${t('attnOverShort')} (${todayWords(today.overShort.note, today.overShort.noteTa) ?? ''})`, target: { rail: 'cash-office' } });

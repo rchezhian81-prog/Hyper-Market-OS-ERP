@@ -435,7 +435,7 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         }
         // OB-288 P3 (M06-FR-02 · §28 "cannot receive, match and pay same transaction"): neither the person recording this
         // payment nor its approver may have raised, received or matched an order whose bill it pays — refused by name, before
-        // the approval is spent. OB-740 (audit B-1): "whose bill it pays" means the bills this payment SETTLES when it names
+        // the approval is spent. OB-773 (audit B-1): "whose bill it pays" means the bills this payment SETTLES when it names
         // them — not every bill still open — or with only two people able to pay, every payment would be refused because one
         // of them matched SOME other bill of the supplier. A payment that names no bill (paid on account) cannot say which
         // bills it pays, so it is still checked against every bill still open (the stricter reading; never looser).

@@ -14,7 +14,7 @@ export interface SegregationPort {
   readonly actorsOf: (tenantId: string, poId: string) => Promise<PurchaseActors>;
   /**
    * The actors of every order a NEW payment to this supplier would pay: the orders of the bills it settles when it names
-   * them (OB-740), plus every bill still open when it names none or pays more than the bills it names (`ordersOfAPayment`).
+   * them (OB-773), plus every bill still open when it names none or pays more than the bills it names (`ordersOfAPayment`).
    */
   readonly ordersPaidBy: (tenantId: string, supplierId: string, paying?: { readonly settles: readonly string[]; readonly amountMinor: number }) => Promise<readonly PurchaseActors[]>;
 }

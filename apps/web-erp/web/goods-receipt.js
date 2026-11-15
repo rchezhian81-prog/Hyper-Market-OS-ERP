@@ -25,7 +25,7 @@ function money(minor, currency) {
   return sym + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// OB-740 (pilot audit B-2): quantities are NOT divided here. Head office keeps each line in its own unit's smallest steps
+// OB-773 (pilot audit B-2): quantities are NOT divided here. Head office keeps each line in its own unit's smallest steps
 // (OB-31: a count for pieces, grams for kg) and the tested session says them for a person ("10 units", "2.5 kg").
 /** The session's words for a quantity; an older session without them gets the plain count of pieces. */
 function qtyWords(r, which) {

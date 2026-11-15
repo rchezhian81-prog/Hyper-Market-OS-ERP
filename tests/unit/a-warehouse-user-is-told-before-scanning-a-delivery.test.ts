@@ -10,7 +10,7 @@ import { WarehouseSession, FEEDBACK_CODES, NOT_YOURS_TO_RECEIVE } from '../../ap
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 
 /**
- * **OB-740 (pilot audit B-3): a Warehouse user is told on the handheld, BEFORE any scan, that a delivery is not theirs to
+ * **OB-773 (pilot audit B-3): a Warehouse user is told on the handheld, BEFORE any scan, that a delivery is not theirs to
  * receive.** Head office refuses every goods receipt from a person whose stock work comes only through the Warehouse user
  * role (`not_your_kind_of_stock_movement`, owner decision OB-623 — kept). The handheld used to let them scan anyway, and
  * the scans sat at the store as refused items — a dead end. Now the store computer judges the person signed in by the SAME
@@ -60,7 +60,7 @@ describe('one rule for head office and the store computer (OB-623 · @sre/rbac)'
     expect(reachAllows(reachFor('cashier'), 'receive')).toBe(false);
     // Head office's judgement over its grants agrees, word for word.
     const g = (u: string, r: string) => ({ userId: u, roleId: r, branchScope: ['b1'] as readonly string[] });
-    expect(movementReachOf([g('a', WAREHOUSE_USER_ROLE_ID)], 'a', 'b1')).toEqual(reachFor(WAREHOUSE_USER_ROLE_ID));
+    expect(movementReachOf([g('a', WAREHOUSE_USER_ROLE_ID)], 'a', 'b1', ROLE_CATALOGUE)).toEqual(reachFor(WAREHOUSE_USER_ROLE_ID));
   });
 });
 

@@ -24,11 +24,12 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
-import { effectiveGrants } from './adapters';
+import { effectiveGrants, effectiveRoleCatalogue } from './adapters';
+import type { Role } from '../../../packages/rbac/src/rbac';
 import { ROLE_CATALOGUE } from './roles';
 import { MOVE_WORD, JOB_WORDS, movementReachOfRoles, type MovementJob, type MovementReach } from '../../../packages/rbac/src/movement-jobs';
 
-// OB-740 (pilot audit B-3): the rule itself lives in @sre/rbac, so the store computer tells the warehouse handheld — before
+// OB-773 (pilot audit B-3): the rule itself lives in @sre/rbac, so the store computer tells the warehouse handheld — before
 // the first scan — exactly what head office would refuse after it. Re-exported here under the names head office uses.
 export { MOVE_WORD, JOB_WORDS, NARROWED_MOVEMENT_ROLES, type MovementJob, type MovementReach } from '../../../packages/rbac/src/movement-jobs';
 
@@ -126,12 +127,14 @@ export const RELAYED_MOVEMENT_KINDS: Readonly<Record<string, { readonly person: 
 export function movementReachOf(
   grants: readonly { readonly userId: string; readonly roleId: string; readonly branchScope: readonly string[] | 'all' }[],
   userId: string, branchId: string | null,
+  /** The shop's roles now (`effectiveRoleCatalogue`, ADR-0034) — never the built-in list. */
+  catalogue: readonly Role[],
 ): MovementReach {
   const held: { roleId: string; permissions: readonly string[] }[] = [];
   for (const g of grants) {
     if (g.userId !== userId) continue;
     if (branchId !== null && g.branchScope !== 'all' && !g.branchScope.includes(branchId)) continue;
-    held.push({ roleId: g.roleId, permissions: ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions ?? [] });
+    held.push({ roleId: g.roleId, permissions: catalogue.find((r) => r.id === g.roleId)?.permissions ?? [] });
   }
   return movementReachOfRoles(held);
 }
@@ -164,7 +167,7 @@ export function movementJobsSurface(surface: Route[], input: { readonly store?: 
   // A bare composition (no store: the API-surface document, a stub) judges over a store that holds no grants — nobody narrowed.
   const store = input.store ?? new InMemoryEventStore();
   const reach = async (ctx: RequestContext, userId: string): Promise<MovementReach> =>
-    movementReachOf(await effectiveGrants(store, ctx.tenantId), userId, ctx.branchId ?? null);
+    movementReachOf(await effectiveGrants(store, ctx.tenantId), userId, ctx.branchId ?? null, await effectiveRoleCatalogue(store, ctx.tenantId));
   for (let i = 0; i < surface.length; i += 1) {
     const route = surface[i]!;
     const key = keyOf(route);

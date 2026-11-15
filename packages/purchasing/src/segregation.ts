@@ -92,7 +92,7 @@ export function ordersAPaymentPays(input: {
 }
 
 /**
- * OB-740 (pilot audit B-1): which orders ONE payment pays, from the bills it names. A payment that names the bills it
+ * OB-773 (pilot audit B-1): which orders ONE payment pays, from the bills it names. A payment that names the bills it
  * settles pays THOSE bills' orders — not every bill still open, or a person who matched one bill of a supplier could never
  * record or approve the payment of a different bill of the same supplier (with only two people able to pay, no supplier
  * could ever be paid). The conservative rest is kept, never loosened:

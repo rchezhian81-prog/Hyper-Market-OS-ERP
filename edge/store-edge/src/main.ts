@@ -729,7 +729,7 @@ export async function startEdge(
     try { return [JSON.parse(r.record) as unknown]; } catch { return []; }
   });
   let returnsNow: readonly unknown[] = parsedReturns(await readLog(returnsLog.path));
-  // D-2 (OB-740 · P-08): the shift closes on this box's own till-cash log, re-read with the sales — so the cash office's
+  // D-2 (OB-773 · P-08): the shift closes on this box's own till-cash log, re-read with the sales — so the cash office's
   // over/short desk can show a drawer that closed short even when head office's worklist cannot be read.
   const tillClosesOf = (all: Awaited<ReturnType<typeof readLog>>): TillShiftCloseRecord[] => parsedReturns(all)
     .flatMap((raw) => { const read = readTillCashRecord(raw); return read !== undefined && read.kind === 'close' ? [read] : []; });

@@ -83,7 +83,7 @@ const WORDS = {
   en: {
     // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the session's own words are the detail).
     app_version_too_old: 'Update this handheld',
-    // OB-740 (pilot audit B-3): a Warehouse user may not receive a delivery (OB-623) — said before any scan.
+    // OB-773 (pilot audit B-3): a Warehouse user may not receive a delivery (OB-623) — said before any scan.
     not_your_kind_of_stock_movement: 'Not yours to receive',
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
@@ -946,7 +946,7 @@ function renderDeliveries() {
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 el('receive').addEventListener('click', async () => {
-  // OB-740 (pilot audit B-3): a person who may not receive a delivery (a Warehouse user, OB-623) is told so HERE, before the
+  // OB-773 (pilot audit B-3): a person who may not receive a delivery (a Warehouse user, OB-623) is told so HERE, before the
   // scan panel opens — who can receive, and that nothing was recorded — instead of scanning goods head office will refuse.
   const notYours = real !== undefined && typeof real.receivingRefusal === 'function' ? real.receivingRefusal() : undefined;
   if (notYours !== undefined) { feltResult(notYours); return; }

@@ -104,7 +104,7 @@ function paint() {
   el('whoami').textContent = window.cashOfficeData?.userId ?? '';
   el('lang').textContent = t('langName');
 
-  // D-2 (OB-740 · P-08): the all-clear ONLY when head office's worklist was read and came back empty. A worklist that
+  // D-2 (OB-773 · P-08): the all-clear ONLY when head office's worklist was read and came back empty. A worklist that
   // could not be read is "Not known — why", never "every drawer is signed off".
   const known = view.known !== false;
   el('open-count').textContent = !known ? view.screenState.label : view.openCount === 0 ? t('allClear') : `${view.openCount} ${t('openCount')}`;
@@ -209,7 +209,7 @@ el('sample').hidden = window.cashOfficeSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
 
-// Read the live worklist (a GET — read-only). D-2 (OB-740 · P-08): offline or refused, the screen says the worklist is
+// Read the live worklist (a GET — read-only). D-2 (OB-773 · P-08): offline or refused, the screen says the worklist is
 // NOT KNOWN and why — never the empty list's "every drawer is signed off" — and shows what this store computer itself
 // recorded closing over/short.
 async function refresh() {

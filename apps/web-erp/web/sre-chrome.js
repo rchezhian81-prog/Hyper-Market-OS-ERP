@@ -246,7 +246,7 @@
     setText(strip, t('storeCopy').replace('{at}', String(copy.shownAt ?? '')).replace('{age}', age));
   }
 
-  // ── D-11 · D-10 (OB-740 · P-08): a page showing SAMPLE figures offers no action, and says one true thing ─────────
+  // ── D-11 · D-10 (OB-773 · P-08): a page showing SAMPLE figures offers no action, and says one true thing ─────────
   // Every office page falls back to clearly-marked sample figures (`#sample`) when the store computer did not give it
   // its section. A sample must never carry a real action: so while the strip shows, every button in the page's `main`
   // is switched off — except the ones that only change what is LOOKED at (a filter, a column sort, a tab, "back to the

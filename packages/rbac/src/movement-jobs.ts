@@ -3,7 +3,7 @@
 //
 // The ONE rule, shared by head office (services/api/src/w2-movement-jobs.ts judges every route and relayed record the
 // stock-movement word opens) and the store computer (edge/store-edge/src/handheld-sign-in.ts tells the warehouse handheld,
-// offline, whether the person signed in may receive a delivery). OB-740 (pilot audit B-3): the handheld used to let a
+// offline, whether the person signed in may receive a delivery). OB-773 (pilot audit B-3): the handheld used to let a
 // Warehouse user scan a delivery that head office then refused every time — a dead end at the store. Both sides now read
 // the same table, so the phone refuses BEFORE the first scan exactly what head office would refuse after it.
 //

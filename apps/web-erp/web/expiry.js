@@ -529,7 +529,7 @@ el('expired-read').addEventListener('click', () => { void readExpired(); });
 
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
-  // D-10 (OB-740): who is looking — the page's own payload, else the person the store computer signed in (its menu names them).
+  // D-10 (OB-773): who is looking — the page's own payload, else the person the store computer signed in (its menu names them).
   el('whoami').textContent = window.expiryData?.userId ?? window.sreNavigation?.userId ?? '';
   el('tab-expiry').textContent = t('goingOut');
   el('tab-recall').textContent = t('recalls');

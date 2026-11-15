@@ -443,7 +443,7 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
       };
     }
     case 'store-rules': {
-      // D-3 (pilot-first audit, OB-739 · OB-740): the store's working rules (DF-3-b-1, POST /v1/stores/:storeId/rules) —
+      // D-3 (pilot-first audit, OB-739 · OB-773): the store's working rules (DF-3-b-1, POST /v1/stores/:storeId/rules) —
       // every value the route needs, typed by the owner; none defaulted (the route defaults none either).
       const store = need('store', CODE, "the store's code");
       const file = (v['checklist'] ?? '').trim();

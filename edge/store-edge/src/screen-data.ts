@@ -102,7 +102,7 @@ export interface ScreenInput {
    */
   readonly returns?: readonly unknown[];
   /**
-   * D-2 (OB-740 · M14-FR-02 · P-08): the shift closes on this box's own till-cash log (`till-cash.ts`), as the box
+   * D-2 (OB-773 · M14-FR-02 · P-08): the shift closes on this box's own till-cash log (`till-cash.ts`), as the box
    * decided and recorded them. Absent on a box that keeps no till-cash log. The cash office's over/short desk shows the
    * material ones when head office's worklist cannot be read, and Today counts the ones closed today.
    */
@@ -695,7 +695,7 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
         };
       })();
 
-  // D-2 (OB-740 · M14-FR-02 · P-08): the drawers that closed over or short beyond the tolerance TODAY, from this box's own
+  // D-2 (OB-773 · M14-FR-02 · P-08): the drawers that closed over or short beyond the tolerance TODAY, from this box's own
   // till-cash log — so "Exceptions open: 0" beside a till that closed ₹649.50 short is never read as an all-clear. Whether
   // the cash office has signed one off is head office's record (the Cash over/short page), so this counts closes, and says
   // so. Only on a box that keeps a till-cash log.
@@ -2762,7 +2762,7 @@ export function cashOfficePayload(input: ScreenInput): Record<string, unknown> |
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
-  // D-2 (OB-740 · P-08): the drawers this box ITSELF recorded closing over or short beyond the tolerance, in the last
+  // D-2 (OB-773 · P-08): the drawers this box ITSELF recorded closing over or short beyond the tolerance, in the last
   // BOX_OVERSHORT_DAYS trading days — the desk shows them when head office's worklist cannot be read, so a till that
   // closed ₹649.50 short is never hidden behind "every drawer is signed off". Absent on a box with no till-cash log.
   if (input.tillCloses !== undefined) {

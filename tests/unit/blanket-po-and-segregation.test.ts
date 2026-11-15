@@ -93,7 +93,7 @@ describe('separation of duties across one purchase (M06-FR-02 · §28)', () => {
     expect(ordersAPaymentPays({ openingMinor: 0, bills, paidBeforeMinor: 1_100 })).toEqual([]);
   });
 
-  it('OB-740: a payment that names its bills pays THOSE bills\' orders; on account, more than named, or an unknown bill → every open bill too', () => {
+  it('OB-773: a payment that names its bills pays THOSE bills\' orders; on account, more than named, or an unknown bill → every open bill too', () => {
     const bills = [
       { invoiceId: 'i-A', poId: 'po-A', payableMinor: 500, at: '2026-10-01' },
       { invoiceId: 'i-B', poId: 'po-B', payableMinor: 300, at: '2026-10-02' },

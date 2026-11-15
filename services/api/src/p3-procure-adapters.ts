@@ -190,7 +190,7 @@ async function supplierLedgerFacts(store: EventStore, tenantId: string, supplier
  * raiser of the requisition it came from; every receiver (goods receipts, the handheld's scanners, receipt postings); every
  * person who matched a bill against it; and every person who recorded or approved a payment that paid one of its bills
  * (the bills it names when it names them; otherwise the bills still open when it was recorded, oldest first —
- * `ordersOfAPayment`, OB-740).
+ * `ordersOfAPayment`, OB-773).
  */
 export async function purchaseActorsOf(input: Base, tenantId: string, poId: string): Promise<PurchaseActors> {
   const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
@@ -237,7 +237,7 @@ export function segregationAdapter(input: Base): SegregationPort {
     ordersPaidBy: async (tenantId, supplierId, paying) => {
       const facts = await supplierLedgerFacts(input.store, tenantId, supplierId);
       const paid = facts.payments.reduce((s, p) => s + p.amountMinor, 0);
-      // OB-740: the bills this payment names, not every bill still open (on-account payments still check every open bill).
+      // OB-773: the bills this payment names, not every bill still open (on-account payments still check every open bill).
       const orders = ordersOfAPayment({
         openingMinor: facts.openingMinor, bills: facts.bills, paidBeforeMinor: paid,
         settles: paying?.settles ?? [], amountMinor: paying?.amountMinor ?? Number.MAX_SAFE_INTEGER,

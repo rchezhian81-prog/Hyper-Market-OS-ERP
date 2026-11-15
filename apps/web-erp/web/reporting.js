@@ -169,7 +169,7 @@ el('back').addEventListener('click', () => { show('reports'); });
 
 function renderFreshness() {
   const strip = el('freshness');
-  // D-10 (OB-740 · P-08): a page showing the SAMPLE has no freshness of its own — "head office has never sent anything"
+  // D-10 (OB-773 · P-08): a page showing the SAMPLE has no freshness of its own — "head office has never sent anything"
   // over sample figures contradicts the sample line and the store-copy line. The sample line (and the chrome's word
   // under it) says the one true thing; this strip stays out of it.
   strip.hidden = real === undefined;

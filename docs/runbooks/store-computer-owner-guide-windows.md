@@ -48,7 +48,7 @@ screens themselves show English and Tamil, as built.
 
 ---
 
-> **Since the setup program (CR-01, `SRE-Setup.exe`), read this first (OB-739/OB-740, 15 Nov 2026).** Parts 1–16 describe
+> **Since the setup program (CR-01, `SRE-Setup.exe`), read this first (OB-739/OB-773, 15 Nov 2026).** Parts 1–16 describe
 > the older way this PC was set up (Docker, a ZIP and pnpm); the setup program has replaced them, so skip them on a PC set up
 > by `SRE-Setup.exe`. From Part 17 on, every `store-computer` step is typed in **PowerShell as administrator**, in the
 > install folder, like this:

@@ -11,7 +11,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { readTillCashRecord } from '../../edge/store-edge/src/till-cash';
 
 /**
- * **Pilot-first audit, fix round 1 (OB-739 · OB-740) — four till faults, through the cashier's own buttons in a real
+ * **Pilot-first audit, fix round 1 (OB-739 · OB-773) — four till faults, through the cashier's own buttons in a real
  * Chromium against a real store box.**
  *
  *  - **D-4** Qty: the panel shows the line's quantity now, greyed; the first digit keyed REPLACES it — 3 is 3 (it used to be

@@ -150,7 +150,7 @@ export type ReceiveOutcome =
   | 'manufacture_date_required'
   /** OB-521: the handheld's app is withdrawn or too old, and this scan would START receiving a delivery. */
   | 'app_version_too_old'
-  /** OB-740 · OB-623: the person signed in on the handheld may not receive a delivery (a Warehouse user) — nothing scanned. */
+  /** OB-773 · OB-623: the person signed in on the handheld may not receive a delivery (a Warehouse user) — nothing scanned. */
   | 'not_your_kind_of_stock_movement';
 
 export interface ReceiveResult {
