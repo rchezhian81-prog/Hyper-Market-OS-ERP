@@ -31,6 +31,7 @@ export const AUTO_APPROVE_COPY = {
     neverH: 'Never auto-approved', neverLead: 'No limit can ever be set for these. They always wait for a person:',
     never_permission_change: 'A change to anybody\'s permissions', never_refund: 'A refund', never_payment_to_new_payee: 'A payment to a new payee',
     decisionsH: 'What the rule decided recently', noDecisions: 'Nothing yet.', approvedByRule: 'Approved by rule', waits: 'Waits for a person',
+    placedByRule: 'Placed by the rule', placedAs: 'Placed as', refusedByRoute: 'Refused by the ordinary route — waits for a person', refusedAt: 'Refused by',
     historyH: 'Every change, kept', noHistory: 'No change yet.', wasConfirmed: 'confirmed', wasRefused: 'refused',
     confirmTitle: 'Confirm this change?', confirmDetail: 'From now on the rule approves an assistant\'s drafts inside this limit, in the name of the two of you. Anything above it still waits for a person.',
     confirmAuthority: 'You are the second person. Your name is recorded with the rule.', confirmLabel: 'Confirm',
@@ -58,6 +59,7 @@ export const AUTO_APPROVE_COPY = {
     neverH: 'ஒருபோதும் தானியங்கு ஒப்புதல் இல்லை', neverLead: 'இவற்றுக்கு ஒருபோதும் வரம்பு அமைக்க முடியாது. இவை எப்போதும் ஒரு நபருக்காகக் காத்திருக்கும்:',
     never_permission_change: 'யாருடைய அனுமதிகளிலும் மாற்றம்', never_refund: 'பணத்தைத் திருப்பித் தருதல்', never_payment_to_new_payee: 'புதிய பெறுநருக்குப் பணம் செலுத்துதல்',
     decisionsH: 'விதி சமீபத்தில் முடிவு செய்தவை', noDecisions: 'இன்னும் எதுவும் இல்லை.', approvedByRule: 'விதியால் ஒப்புதல்', waits: 'ஒரு நபருக்காகக் காத்திருக்கிறது',
+    placedByRule: 'விதியால் வைக்கப்பட்டது', placedAs: 'வைக்கப்பட்ட எண்', refusedByRoute: 'வழக்கமான வழி மறுத்தது — ஒரு நபருக்காகக் காத்திருக்கிறது', refusedAt: 'மறுத்தது',
     historyH: 'ஒவ்வொரு மாற்றமும், பதிவில்', noHistory: 'இன்னும் மாற்றம் இல்லை.', wasConfirmed: 'உறுதிப்படுத்தப்பட்டது', wasRefused: 'மறுக்கப்பட்டது',
     confirmTitle: 'இந்த மாற்றத்தை உறுதிப்படுத்தவா?', confirmDetail: 'இனி இந்த வரம்புக்குள் உள்ள உதவியாளரின் வரைவுகளை உங்கள் இருவரின் பெயரில் விதி ஒப்புதல் அளிக்கும். அதற்கு மேல் உள்ளவை இன்னும் ஒரு நபருக்காகக் காத்திருக்கும்.',
     confirmAuthority: 'நீங்கள் இரண்டாவது நபர். உங்கள் பெயர் விதியுடன் பதிவு செய்யப்படும்.', confirmLabel: 'உறுதிப்படுத்து',
@@ -91,7 +93,12 @@ export interface AutoApproveView {
   readonly kinds: readonly KindView[];
   readonly pending: readonly PendingView[];
   readonly never: readonly string[];
-  readonly decisions: readonly { readonly proposalId: string; readonly outcome: string; readonly because?: string; readonly approvedBy?: string; readonly detail: string; readonly at: string }[];
+  readonly decisions: readonly {
+    readonly proposalId: string; readonly outcome: string; readonly because?: string; readonly approvedBy?: string; readonly detail: string; readonly at: string;
+    /** CR-01 step 6b: what the ordinary route placed for the rule — or which route refused it, and with what code. */
+    readonly placed?: { readonly route: string; readonly reference: string };
+    readonly refusedBy?: { readonly route: string; readonly code: string };
+  }[];
   readonly history: readonly { readonly requestId: string; readonly action: string; readonly kind?: string; readonly limit?: number; readonly decision: string; readonly askedBy: string; readonly decidedBy: string; readonly decidedAt: string; readonly reason: string }[];
 }
 
@@ -140,6 +147,8 @@ export function shapeAutoApprove(raw: Record<string, unknown>, viewerId: string 
     decisions: arr(raw['decisions']).map((d) => ({
       proposalId: str(d['proposalId']), outcome: str(d['outcome']), ...(typeof d['because'] === 'string' ? { because: d['because'] } : {}),
       ...(typeof d['approvedBy'] === 'string' ? { approvedBy: d['approvedBy'] } : {}), detail: str(d['detail']), at: str(d['at']),
+      ...(d['placed'] !== null && typeof d['placed'] === 'object' ? { placed: { route: str((d['placed'] as Record<string, unknown>)['route']), reference: str((d['placed'] as Record<string, unknown>)['reference']) } } : {}),
+      ...(d['refusedBy'] !== null && typeof d['refusedBy'] === 'object' ? { refusedBy: { route: str((d['refusedBy'] as Record<string, unknown>)['route']), code: str((d['refusedBy'] as Record<string, unknown>)['code']) } } : {}),
     })),
     history: arr(raw['history']).map((x) => ({
       requestId: str(x['requestId']), action: str(x['action']), ...(typeof x['kind'] === 'string' ? { kind: x['kind'] } : {}),

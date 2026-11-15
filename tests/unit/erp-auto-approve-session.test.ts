@@ -86,6 +86,22 @@ describe('the Auto-approve limits page session (CR-01 OI-12)', () => {
     expect(limitOf('percent_bps', '12.5')).toBeUndefined();
   });
 
+  it('CR-01 step 6b: shows what the rule PLACED (and where), and what a route REFUSED (with its reason) — never just "approved"', async () => {
+    const decisions = [
+      { proposalId: 'a02-x', outcome: 'auto_approved', approvedBy: 'rule:reorder_from_approved_supplier-v1', detail: 'within', at: '2026-11-14T05:00:00.000Z', placed: { route: 'POST /v1/purchase/orders/:poId + /approval', reference: 'po-auto-1', by: 'rule:auto-approve' } },
+      { proposalId: 'a03-y', outcome: 'waits_for_a_person', because: 'refused_by_route', detail: 'below the floor', at: '2026-11-14T05:01:00.000Z', refusedBy: { route: 'POST /v1/prices/changes', code: 'price_below_floor', ruleId: 'markdown_short_dated-v1' } },
+    ];
+    const fetch = (async () => new Response(JSON.stringify({ ...READ, decisions }), { status: 200 })) as unknown as typeof globalThis.fetch;
+    const out = await createAutoApproveSession({ viewer: OWNER, fetch }).read();
+    if (out.result !== 'ok') throw new Error('read failed');
+    expect(out.value.decisions[0]).toMatchObject({ placed: { reference: 'po-auto-1', route: 'POST /v1/purchase/orders/:poId + /approval' } });
+    expect(out.value.decisions[1]).toMatchObject({ because: 'refused_by_route', refusedBy: { route: 'POST /v1/prices/changes', code: 'price_below_floor' } });
+    for (const lang of ['en', 'ta'] as const) {
+      expect(AUTO_APPROVE_COPY[lang].placedByRule.length).toBeGreaterThan(0);
+      expect(AUTO_APPROVE_COPY[lang].refusedByRoute.length).toBeGreaterThan(0);
+    }
+  });
+
   it('every English word has a Tamil twin', () => {
     expect(Object.keys(AUTO_APPROVE_COPY.ta).sort()).toEqual(Object.keys(AUTO_APPROVE_COPY.en).sort());
     for (const v of Object.values(AUTO_APPROVE_COPY.ta)) expect(v.trim().length).toBeGreaterThan(0);

@@ -44,6 +44,14 @@ const draft = (act: DraftAct | undefined, over: Record<string, unknown> = {}) =>
   proposalId: 'a02-x', agent: 'A02' as const, act, evidenceCount: 2, createdAt: later(5), ...over,
 });
 
+describe('OB-770 B: a markdown with other stock of the product at the store is unusual', () => {
+  it('waits for a person when the draft says other stock is there', () => {
+    const d = decideDraft({ draft: draft({ kind: 'markdown_short_dated', productId: 'p-curd', batchId: 'b-1', percentOffBps: 1_000, daysToExpiry: 3, otherStockAtStore: 5 }, { agent: 'A03' }), state: liveState(), aiStopped: false, now: later(6) });
+    expect(d).toMatchObject({ outcome: 'waits_for_a_person', because: 'unusual' });
+    expect(d.detail).toMatch(/5 more/);
+  });
+});
+
 describe('which acts may ever have a rule', () => {
   it('offers exactly the three kinds of act, each drafted by one named assistant', () => {
     expect(Object.keys(AUTO_APPROVE_KINDS).sort()).toEqual(['markdown_short_dated', 'reorder_from_approved_supplier', 'stock_transfer']);
