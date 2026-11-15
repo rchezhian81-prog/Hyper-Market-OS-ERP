@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2376,
+  "testFiles": 2378,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -530,7 +530,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 22,
-        "integration": 25,
+        "integration": 26,
         "realDb": 14,
         "browser": 12,
         "connected": 5,
@@ -575,6 +575,7 @@
           "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/paying-one-bill-checks-who-matched-that-bill.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-orders.test.ts",
           "tests/integration/purchase-tenant-isolation.test.ts",

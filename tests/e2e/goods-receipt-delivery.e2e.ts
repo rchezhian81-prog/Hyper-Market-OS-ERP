@@ -38,25 +38,27 @@ interface BrowserGlobals {
 
 const AT = '2026-09-20T08:30:00.000Z';
 
-/** The GRN list a manager's screen pulls: one delivery needing a second person (§28), then a clean one. */
+/** The GRN list a manager's screen pulls: one delivery needing a second person (§28), then a clean one. OB-740 (pilot audit
+ *  B-2): quantities are what head office really sends — each line in its own unit's smallest steps (OB-31): an `ea` line is
+ *  a plain COUNT of pieces (80 tins of oil is 80, never 80_00), a kg line is grams. */
 const CLOUD = {
   receipts: [
     {
       grnId: 'g-approve', number: 'GRN-2', poId: 'po-2', warehouseId: 'W1', receivedBy: 'u-recv', receivedAt: AT,
-      availableMinor: 80_00,
+      availableMinor: 80,
       captured: {
         requiresApproval: true, discrepancyValue: { minor: 150_00, currency: 'INR' },
-        discrepancies: [{ lineId: 'l1', productId: 'p-oil', kind: 'excess', quantityMinor: 20_00, value: { minor: 150_00, currency: 'INR' }, requiresApproval: true, detail: '20 more than ordered' }],
-        lines: [{ lineId: 'l1', productId: 'p-oil', sellableMinor: 80_00, quarantinedMinor: 0, rejectedMinor: 0, disposition: 'sellable', uom: 'ea', batchId: null, expiry: null }],
+        discrepancies: [{ lineId: 'l1', productId: 'p-oil', kind: 'excess', quantityMinor: 20, value: { minor: 150_00, currency: 'INR' }, requiresApproval: true, detail: '20 more than ordered' }],
+        lines: [{ lineId: 'l1', productId: 'p-oil', sellableMinor: 80, quarantinedMinor: 0, rejectedMinor: 0, disposition: 'sellable', uom: 'ea', batchId: null, expiry: null }],
       },
     },
     {
       grnId: 'g-clean', number: 'GRN-1', poId: 'po-1', warehouseId: 'W1', receivedBy: 'u-recv', receivedAt: AT,
-      availableMinor: 100_00,
+      availableMinor: 100,
       captured: {
         requiresApproval: false, discrepancyValue: { minor: 0, currency: 'INR' },
         discrepancies: [],
-        lines: [{ lineId: 'l1', productId: 'p-rice', sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, disposition: 'sellable', uom: 'ea', batchId: null, expiry: null }],
+        lines: [{ lineId: 'l1', productId: 'p-rice', sellableMinor: 100, quarantinedMinor: 0, rejectedMinor: 0, disposition: 'sellable', uom: 'ea', batchId: null, expiry: null }],
       },
     },
   ],
@@ -198,6 +200,11 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       expect((await page.textContent('#rows')) ?? '').toContain('₹');
       // Freshness is on the page.
       expect(((await page.textContent('#asof')) ?? '').toLowerCase()).toContain('as of');
+      // OB-740 (B-2): pieces are shown as the count head office sent — 80 and 100 units, never 0.8 or 1.
+      const rows = (await page.textContent('#rows')) ?? '';
+      expect(rows).toContain('Became sellable: 80 units');
+      expect(rows).toContain('Became sellable: 100 units');
+      expect(rows).not.toContain('0.8 units');
     } finally {
       await teardown();
     }
@@ -287,6 +294,36 @@ describe.skipIf(!HAVE_BROWSER)('manager goods-receipt review, end to end in a re
       expect((await second.page.textContent('#no-return')) ?? '').toContain('stock-movement permission');
     } finally {
       await second.teardown();
+    }
+  });
+
+  it('OB-740 · pieces show as pieces and weights as weights — a delivery of 10 pieces and 2.5 kg is never "0.1 units"', async () => {
+    const MIXED = {
+      receipts: [{
+        grnId: 'g-mixed', number: 'GRN-9', poId: 'po-9', warehouseId: 'W1', receivedBy: 'u-recv', receivedAt: AT,
+        availableMinor: 2_510, // head office's own sum across the lines — meaningless across units, so the screen keeps them apart
+        captured: {
+          requiresApproval: false, discrepancyValue: { minor: 0, currency: 'INR' }, discrepancies: [],
+          lines: [
+            { lineId: 'l1', productId: 'p-biscuit', sellableMinor: 10, quarantinedMinor: 6, rejectedMinor: 0, disposition: 'sellable', uom: 'ea', batchId: null, expiry: null },
+            { lineId: 'l2', productId: 'p-dal', sellableMinor: 2_500, quarantinedMinor: 0, rejectedMinor: 750, disposition: 'sellable', uom: 'kg', batchId: null, expiry: null },
+          ],
+        },
+      }],
+      count: 1, needingApprovalCount: 0,
+    };
+    const rec: Recorder = { goodsReceiptData: readerWith(['inventory.availability.read']), status: 200, gets: [], cloud: MIXED };
+    const { page, teardown } = await open(rec);
+    try {
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows li.row').length > 0, undefined, { timeout: 10_000 });
+      const rows = (await page.textContent('#rows')) ?? '';
+      expect(rows).toContain('Became sellable: 10 units · 2.5 kg');
+      expect(rows).toContain('Held back: 6 units');
+      expect(rows).toContain('Refused: 0.75 kg');
+      expect(rows).not.toContain('0.1 units');
+      expect(rows).not.toContain('25.1');
+    } finally {
+      await teardown();
     }
   });
 

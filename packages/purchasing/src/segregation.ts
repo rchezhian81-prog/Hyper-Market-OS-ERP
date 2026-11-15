@@ -90,3 +90,31 @@ export function ordersAPaymentPays(input: {
   }
   return [...out];
 }
+
+/**
+ * OB-740 (pilot audit B-1): which orders ONE payment pays, from the bills it names. A payment that names the bills it
+ * settles pays THOSE bills' orders — not every bill still open, or a person who matched one bill of a supplier could never
+ * record or approve the payment of a different bill of the same supplier (with only two people able to pay, no supplier
+ * could ever be paid). The conservative rest is kept, never loosened:
+ *  - a payment that names no bill (paid on account) cannot say what it pays, so it pays every bill still open
+ *    (`ordersAPaymentPays`);
+ *  - a payment for MORE than the bills it names puts the excess on account, so every bill still open counts as well;
+ *  - a named bill head office does not hold as matched is no evidence of what is paid, so the payment is read as on account.
+ */
+export function ordersOfAPayment(input: {
+  readonly openingMinor: number;
+  readonly bills: readonly { readonly invoiceId: string; readonly poId: string | null; readonly payableMinor: number; readonly at: string }[];
+  readonly paidBeforeMinor: number;
+  readonly settles: readonly string[];
+  readonly amountMinor: number;
+}): readonly string[] {
+  const onAccount = () => ordersAPaymentPays({ openingMinor: input.openingMinor, bills: input.bills, paidBeforeMinor: input.paidBeforeMinor });
+  if (input.settles.length === 0) return onAccount();
+  const named = input.bills.filter((b) => input.settles.includes(b.invoiceId));
+  if (named.length !== new Set(input.settles).size) return onAccount();
+  const out = new Set<string>();
+  for (const b of named) if (b.poId !== null) out.add(b.poId);
+  const namedMinor = named.reduce((s, b) => s + Math.max(0, b.payableMinor), 0);
+  if (input.amountMinor > namedMinor) for (const po of onAccount()) out.add(po);
+  return [...out];
+}

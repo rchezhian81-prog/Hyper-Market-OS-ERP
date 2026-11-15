@@ -24,6 +24,9 @@ import type { HandheldSource } from '../../../packages/sync/src/device-relay';
 import { DRIVER_PHONE_AUTHORITY, PHONE_LATE_ARRIVAL_MS, deviceLaneOf, type TillOperators } from './till-operators';
 import { PHONE_CLOCK_MARKS_KEY, PHONE_CLOCK_TOLERANCE_MS } from '../../../packages/sync/src/sign-in-stamp';
 import type { PhoneOperators } from './device-server';
+import type { StorePack } from './store-pack';
+import { assignmentsFrom, rolesFrom } from './screen-navigation';
+import { RECEIVER_QC_ROLE, WAREHOUSE_USER_ROLE, movementReachOfRoles, reachAllows } from '../../../packages/rbac/src/movement-jobs';
 
 /** The permission each phone's job needs — exactly the one head office re-verifies on that job's records. */
 export const HANDHELD_AUTHORITY: Readonly<Record<HandheldSource, string>> = Object.freeze({
@@ -98,13 +101,67 @@ const PERSON_KEY: Readonly<Record<HandheldSource, string>> = Object.freeze({ war
  * The screen's payload as the SIGNED-IN person's: the field naming who does the job becomes them, so every record the phone
  * makes names them. Work head office handed to SOMEBODY ELSE by name (a wave for another picker, a route for another driver)
  * is not theirs to do — it is withheld (null: the phone shows no work), never silently re-assigned.
+ *
+ * OB-740 (pilot audit B-3): on the warehouse screen, given the store setup, it also says whether THIS person may receive a
+ * delivery (`receiving`, from `phoneReceivingOf`) — so the phone refuses "Receive a delivery" before any scan instead of
+ * queueing scans head office will refuse (OB-623).
  */
-export function asPhoneHolder(screen: HandheldSource, payload: Record<string, unknown> | null, userId: string): Record<string, unknown> | null {
+export function asPhoneHolder(screen: HandheldSource, payload: Record<string, unknown> | null, userId: string, pack?: StorePack): Record<string, unknown> | null {
   if (payload === null) return null;
   const key = PERSON_KEY[screen];
   const named = payload[key];
   if (screen !== 'warehouse' && typeof named === 'string' && named !== '' && named !== userId) return null;
-  return { ...payload, [key]: userId };
+  return { ...payload, [key]: userId, ...(screen === 'warehouse' && pack !== undefined ? { receiving: phoneReceivingOf(userId, pack) } : {}) };
+}
+
+/** OB-740: what the warehouse phone is told about receiving — allowed, or not with the words to say (English and Tamil). */
+export interface PhoneReceiving {
+  readonly allowed: boolean;
+  readonly en?: string;
+  readonly ta?: string;
+}
+
+/** The Tamil names of the two narrowed roles (services/api/src/roles.ts `nameTa`); any other role keeps the setup's name. */
+const ROLE_NAMES_TA: Readonly<Record<string, string>> = Object.freeze({ [RECEIVER_QC_ROLE]: 'பெறுநர் / தரச் சோதனை', [WAREHOUSE_USER_ROLE]: 'கிடங்கு பயனர்' });
+
+/**
+ * OB-740 (pilot audit B-3): may this person record a goods receipt — head office's own rule (OB-623, `@sre/rbac`
+ * movement-jobs), judged HERE from the store setup's roles and this branch's role assignments, with no network. A person
+ * who receives through any un-narrowed role (owner, store manager) or the Receiver / QC role may; a person whose stock work
+ * comes ONLY through the Warehouse user role may not (put away, count, pick, issue and transfers stay theirs). A store setup
+ * with no role register cannot say — refused (fail closed), the same as head office would without a grant.
+ */
+export function phoneReceivingOf(userId: string, pack: StorePack): PhoneReceiving {
+  const nothing = 'Nothing was scanned or recorded.';
+  const nothingTa = 'எதுவும் ஸ்கேன் செய்யப்படவில்லை, பதிவு செய்யப்படவில்லை.';
+  const who = 'A delivery is received by the Receiver / QC or the store manager — ask one of them to sign in on this phone.';
+  const whoTa = 'வரவைப் பெறுபவர் பெறுநர் / தரச் சோதனை அல்லது கடை மேலாளர் — அவர்களில் ஒருவரை இந்தக் கைபேசியில் உள்நுழையச் சொல்லுங்கள்.';
+  if (!pack.roles.known || !pack.roleAssignments.known) {
+    return {
+      allowed: false,
+      en: `This store computer does not hold the staff roles, so it cannot say you may receive a delivery. ${who} ${nothing}`,
+      ta: `இந்தக் கடைக் கணினியில் பணியாளர் பங்குகள் இல்லை, எனவே நீங்கள் வரவைப் பெறலாமா என்று சொல்ல முடியாது. ${whoTa} ${nothingTa}`,
+    };
+  }
+  const branchId = pack.policies.known ? pack.policies.value.branchId : null;
+  const roles = rolesFrom(pack.roles.value);
+  const held = assignmentsFrom(pack.roleAssignments.value)
+    .filter((a) => a.userId === userId && (a.branchScope === 'all' || (branchId !== null && a.branchScope.includes(branchId))))
+    .map((a) => ({ roleId: a.roleId, name: roles.find((r) => r.id === a.roleId)?.name ?? a.roleId, permissions: roles.find((r) => r.id === a.roleId)?.permissions ?? [] }));
+  const reach = movementReachOfRoles(held);
+  if (reachAllows(reach, 'receive')) return { allowed: true };
+  const narrowed = reach.kind === 'narrowed' ? held.filter((h) => reach.roles.includes(h.roleId)) : [];
+  const roleEn = narrowed.map((h) => h.name).join(' and ');
+  const roleTa = narrowed.map((h) => ROLE_NAMES_TA[h.roleId] ?? h.name).join(', ');
+  return {
+    allowed: false,
+    en: narrowed.length > 0
+      ? `You cannot receive a delivery: your role (${roleEn}) does not receive goods. ${who} ${nothing} You can still put away, pick, count and issue stock to the floor.`
+      : `You cannot receive a delivery: your role does not receive goods. ${who} ${nothing}`,
+    ta: narrowed.length > 0
+      ? `நீங்கள் வரவைப் பெற முடியாது: உங்கள் பங்கு (${roleTa}) சரக்கு பெறுவதில்லை. ${whoTa} ${nothingTa} அடுக்குதல், எடுத்தல், எண்ணுதல், தளத்திற்கு வழங்குதல் ஆகியவற்றை நீங்கள் தொடர்ந்து செய்யலாம்.`
+      : `நீங்கள் வரவைப் பெற முடியாது: உங்கள் பங்கு சரக்கு பெறுவதில்லை. ${whoTa} ${nothingTa}`,
+  };
 }
 
 export function escapeHtml(s: string): string {

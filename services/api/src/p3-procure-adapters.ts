@@ -21,7 +21,7 @@ import {
 import { masterLifecycleOf } from './r3-ops-adapters';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import {
-  judgeCallOff, ordersAPaymentPays, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
+  judgeCallOff, ordersOfAPayment, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
 } from '../../../packages/purchasing/src/index';
 import type { SegregationPort } from '../../purchase/src/segregation-of-duties';
 import type { StoredRequisition } from '../../purchase/src/rfq';
@@ -189,7 +189,8 @@ async function supplierLedgerFacts(store: EventStore, tenantId: string, supplier
  * Who did each of the four steps on one purchase order — from head office's own registers only: the order's buyer and every
  * raiser of the requisition it came from; every receiver (goods receipts, the handheld's scanners, receipt postings); every
  * person who matched a bill against it; and every person who recorded or approved a payment that paid one of its bills
- * (a payment pays the bills still open when it was recorded, oldest first — `ordersAPaymentPays`).
+ * (the bills it names when it names them; otherwise the bills still open when it was recorded, oldest first —
+ * `ordersOfAPayment`, OB-740).
  */
 export async function purchaseActorsOf(input: Base, tenantId: string, poId: string): Promise<PurchaseActors> {
   const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
@@ -219,7 +220,10 @@ export async function purchaseActorsOf(input: Base, tenantId: string, poId: stri
     const facts = await supplierLedgerFacts(input.store, tenantId, po.supplierId);
     let paidBefore = 0;
     for (const pay of facts.payments) {
-      const open = ordersAPaymentPays({ openingMinor: facts.openingMinor, bills: facts.bills.filter((b) => b.at <= pay.recordedAt), paidBeforeMinor: paidBefore });
+      const open = ordersOfAPayment({
+        openingMinor: facts.openingMinor, bills: facts.bills.filter((b) => b.at <= pay.recordedAt), paidBeforeMinor: paidBefore,
+        settles: pay.settles ?? [], amountMinor: pay.amountMinor,
+      });
       if (open.includes(poId)) { payment.add(pay.recordedBy); payment.add(pay.approvedBy); }
       paidBefore += pay.amountMinor;
     }
@@ -230,10 +234,14 @@ export async function purchaseActorsOf(input: Base, tenantId: string, poId: stri
 export function segregationAdapter(input: Base): SegregationPort {
   return {
     actorsOf: (tenantId, poId) => purchaseActorsOf(input, tenantId, poId),
-    ordersPaidBy: async (tenantId, supplierId) => {
+    ordersPaidBy: async (tenantId, supplierId, paying) => {
       const facts = await supplierLedgerFacts(input.store, tenantId, supplierId);
       const paid = facts.payments.reduce((s, p) => s + p.amountMinor, 0);
-      const orders = ordersAPaymentPays({ openingMinor: facts.openingMinor, bills: facts.bills, paidBeforeMinor: paid });
+      // OB-740: the bills this payment names, not every bill still open (on-account payments still check every open bill).
+      const orders = ordersOfAPayment({
+        openingMinor: facts.openingMinor, bills: facts.bills, paidBeforeMinor: paid,
+        settles: paying?.settles ?? [], amountMinor: paying?.amountMinor ?? Number.MAX_SAFE_INTEGER,
+      });
       return Promise.all(orders.map((poId) => purchaseActorsOf(input, tenantId, poId)));
     },
   };
