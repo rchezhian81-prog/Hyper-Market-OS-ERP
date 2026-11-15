@@ -261,6 +261,8 @@ copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
      passphrase opens, never the passphrase. It then says `BACKUP PASSPHRASE SET — backup key …`.
      **If the paper is ever lost:** a new passphrase can be set without losing anything — see *A new backup passphrase,
      when the old one is lost* in `store-computer-windows-services.md` (OB-737).
+     On the installed store PC, type `store-computer` steps as `.\runtime\node\node.exe .\scripts\store-computer.mjs <step>`
+     in `C:\Program Files\SRE Retail OS` — see the top of that page.
    - **When it worked:** it says `BACKUP DONE —` with the backup's name, its size and how long it took, then a line
      `Manifest: E:\sre-real\…manifest.json`. **Write that manifest's file name in the workbook.**
    - It refuses, on purpose, every disk inside this PC — `C:`, `F:` and any other — and a network folder: a backup on

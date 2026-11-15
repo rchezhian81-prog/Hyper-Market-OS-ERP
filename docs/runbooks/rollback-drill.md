@@ -17,7 +17,9 @@ developer's machine.** The drill refuses `MIGRATION_TARGET_KIND=production` befo
 
 **On the store PC once it runs as Windows services (CR-01 step 3e, ADR-0032):** the same drill, the same order and
 targets, with `store-computer drill --by "<name>" --to <backup drive folder> [--previous <installed release folder>]
-[--run]`, run as administrator with every till closed. The previous release is, by default, the newest copy the updater
+[--run]`, run as administrator with every till closed — on the installed PC typed as
+`.\runtime\node\node.exe .\scripts\store-computer.mjs drill …` in `C:\Program Files\SRE Retail OS` (`store-computer` is
+not a command Windows knows by name; see "Typing a `store-computer` command" in `store-computer-windows-services.md`). The previous release is, by default, the newest copy the updater
 kept (`C:\Program Files\SRE Retail OS kept\<version>` — one is kept at every update from the Software update page).
 Steps 1–2 (backup; restore into a scratch database and reconcile) run at the keyboard; steps 3–4 (the previous release's
 program put back and its own setup run, checked; then this release put back and checked) run by themselves as the task
