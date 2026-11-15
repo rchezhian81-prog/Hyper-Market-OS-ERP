@@ -117,7 +117,7 @@ export function evaluationRoutes(deps: {
       permission: 'ai.evaluation.run', idempotent: true,
       handler: async (ctx) => {
         const agent = ctx.params['agent'] ?? '';
-        if (!(agent in AGENTS)) refuse(400, 'unknown_agent', `${agent} is not an agent in the authority catalogue (A01…A10).`, 'Nothing was run.');
+        if (!(agent in AGENTS)) refuse(400, 'unknown_agent', `${agent} is not an agent in the authority catalogue (A01…A10, A12, A14).`, 'Nothing was run.');
         if (!agentsInTheSet().includes(agent as AgentId)) {
           refuse(404, 'no_evaluation_cases', `Evaluation set v${EVALUATION_SET_VERSION} has no cases for ${agent}.`, 'Nothing was run.');
         }

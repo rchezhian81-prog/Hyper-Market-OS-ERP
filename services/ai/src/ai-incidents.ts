@@ -107,7 +107,7 @@ export function aiIncidentRoutes(deps: { readonly incidents: AiIncidentStore; re
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['summary']) || (b['summary'] as string).length > 1_000 || (b['agent'] !== undefined && !(typeof b['agent'] === 'string' && b['agent'] in AGENTS))) {
-          refuse(400, 'not_readable_as_an_ai_incident', 'An AI incident needs { summary (what the assistant said or did, ≤ 1,000 characters), agent? (A01…A10) }.', 'Nothing was raised.');
+          refuse(400, 'not_readable_as_an_ai_incident', 'An AI incident needs { summary (what the assistant said or did, ≤ 1,000 characters), agent? (A01…A10, A12, A14) }.', 'Nothing was raised.');
         }
         const at = deps.now();
         const incident: AiIncidentRaised = {
