@@ -725,6 +725,7 @@
     'customer-value': 'chart-column', // W3 — an icon already in the set
     'message-queue': 'message-circle', // W3 — an icon already in the set
     'compensation-limits': 'banknote', // W3 — an icon already in the set
+    'auto-approve': 'shield-check', // CR-01 OI-12 — an icon already in the set
     'compensation': 'banknote', // U6 — an icon already in the set
     'satisfaction': 'clipboard-check', // U6 — an icon already in the set
     'consent-check': 'shield-check', // U6 — an icon already in the set
