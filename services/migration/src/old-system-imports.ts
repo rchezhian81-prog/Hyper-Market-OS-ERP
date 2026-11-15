@@ -7,8 +7,8 @@
 //   • the IMPORT — its id, the fingerprint (digest) of what the PC read, the files' names, sizes and digests, how many
 //     items it found, the day the rates were read and the day the old ERP's backup was restored and checked (MG-02).
 //     One import id, one fingerprint: a different read is a new import, never a silent replacement.
-//   • each FIX — one person's correction of one gap of one item (a barcode, a price, the label facts, "not in this
-//     department") — or, by Finance only, its HSN and GST rate. Kept for ever; the latest fix of a kind applies.
+//   • each FIX — one person's correction of one gap of one item (a barcode, "sold loose", a price, the label facts, "leave it
+//     out of the load") — or, by Finance only, its HSN and GST rate. Kept for ever; the latest fix of a kind applies.
 //
 // Who may fix what is the separation the owner's roles already draw: a GST rate is a tax decision, so only Finance
 // (`catalogue.tax.approve` — the accountant or the owner); everything else whoever runs the load (`migration.load.record`
@@ -147,10 +147,10 @@ export function oldSystemImportRoutes(deps: MigrationDeps): readonly Route[] {
       },
     },
     {
-      // A barcode, a price, the label facts, or "not in this department" — by whoever runs the load.
+      // A barcode, "sold loose" (OB-800), a price, the label facts, or "leave it out of the load" — by whoever runs the load.
       api: 'API-12', method: 'POST', path: '/v1/migration/old-system-imports/:importId/fixes',
       permission: 'migration.load.record', idempotent: true,
-      handler: (ctx) => recordFix(deps, ctx, ['barcode', 'price', 'label', 'exclude']),
+      handler: (ctx) => recordFix(deps, ctx, ['barcode', 'price', 'label', 'exclude', 'loose']),
     },
     {
       // An item's HSN and GST rate — by Finance only.

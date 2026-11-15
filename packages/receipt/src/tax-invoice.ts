@@ -42,6 +42,7 @@ import { splitInclusiveWithCess, InvalidCessInput, type CessRate } from '../../f
 import { gstStateOf, GST_STATE_NAMES } from '../../finance/src/gst-states';
 import { quantityLabel, normaliseUom } from '../../contracts/src/quantity';
 import type { B2cQrPlan } from './b2c-dynamic-qr';
+import { cashierShown } from './receipt';
 
 /** The shop's legal identity as a tax invoice prints it — from the store's setup (OB-257 `shop`), never typed at a till. */
 export interface TaxInvoiceIdentity {
@@ -564,6 +565,8 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
    * differs from it. Untagged: it carries no Rule 46 field, so the legal name, address and GSTIN below stay what they are.
    */
   readonly brandName?: string;
+  /** D-006: the cashier's display name from the people register, printed instead of the login id; absent → the id. */
+  readonly cashierName?: string;
 } = {}): readonly InvoiceRow[] {
   const w = LABELS[options.language ?? 'en'];
   const rows: InvoiceRow[] = [];
@@ -625,7 +628,7 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
     rows.push({ kind: 'pair', fields: ['tender'], left: `${w['paid']}: ${kind}${t.machineRef === undefined ? '' : ` (${w['approval']} ${t.machineRef})`}`, right: invoiceAmount(t.amountMinor) });
   }
   if (doc.changeMinor !== undefined) rows.push({ kind: 'pair', fields: ['change'], left: w['change']!, right: invoiceAmount(doc.changeMinor) });
-  rows.push({ kind: 'text', fields: ['till'], text: `${w['till']} ${doc.laneId} · ${w['cashier']} ${doc.cashierId}` });
+  rows.push({ kind: 'text', fields: ['till'], text: `${w['till']} ${doc.laneId} · ${w['cashier']} ${cashierShown(doc.cashierId, options.cashierName)}` });
   // A22: the B2C dynamic QR — only when switched on AND every detail is set; never a QR with a guessed part.
   if (options.b2cQr?.state === 'ready') rows.push({ kind: 'qr', fields: ['b2c_qr'], text: w['b2cQr']!, qr: { svg: options.b2cQr.svg, payload: options.b2cQr.payload } });
   rule();
