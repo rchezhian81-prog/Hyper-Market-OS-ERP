@@ -53703,6 +53703,213 @@
         }
       }
     },
+    "/v1/identity/role-permissions": {
+      "get": {
+        "operationId": "getIdentityRolePermissions",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIdentityRolePermissionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/role-permissions/check": {
+      "post": {
+        "operationId": "postIdentityRolePermissionsCheck",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityRolePermissionsCheckRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityRolePermissionsCheckReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/role-permissions/{requestId}": {
+      "post": {
+        "operationId": "postIdentityRolePermissionsByRequestId",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-reauth": {
+          "withinSeconds": 300,
+          "amr": [
+            "mfa"
+          ]
+        },
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityRolePermissionsByRequestIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityRolePermissionsByRequestIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\", or a recent re-authentication is needed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/identity/role-scopes": {
       "get": {
         "operationId": "getIdentityRoleScopes",
@@ -143821,6 +144028,150 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/access-review.ts"
       },
+      "GetIdentityRolePermissionsReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "roles",
+          "ownerReserved",
+          "lockedPermissions",
+          "history",
+          "howAChangeIsMade"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "locked",
+                "permissions",
+                "added",
+                "removed",
+                "roleId",
+                "name"
+              ],
+              "properties": {
+                "locked": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "reason",
+                        "words"
+                      ],
+                      "properties": {
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "controls_roles_approvals_or_ai",
+                            "it_and_business_kept_apart",
+                            "machine_role",
+                            "outside_party_role",
+                            "owner_reserved",
+                            "owner_role_never_reduced",
+                            "posh_committee",
+                            "security_reviewer"
+                          ]
+                        },
+                        "words": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "permissions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "added": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "removed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "nameTa": {
+                  "type": "string"
+                },
+                "roleId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "ownerReserved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lockedPermissions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "match",
+                "reason",
+                "words"
+              ],
+              "properties": {
+                "match": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "controls_roles_approvals_or_ai",
+                    "it_and_business_kept_apart",
+                    "machine_role",
+                    "outside_party_role",
+                    "owner_reserved",
+                    "owner_role_never_reduced",
+                    "posh_committee",
+                    "security_reviewer"
+                  ]
+                },
+                "words": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RolePermissionAdjustment"
+            }
+          },
+          "howAChangeIsMade": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
       "GetIdentityRoleScopesReply": {
         "type": "object",
         "required": [
@@ -210189,6 +210540,279 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/people.ts"
+      },
+      "PostIdentityRolePermissionsByRequestIdReply": {
+        "type": "object",
+        "required": [
+          "requestedBy",
+          "approvedBy",
+          "affectedPeople",
+          "appliesAtHeadOffice",
+          "onTheTills",
+          "roleId",
+          "permission",
+          "change",
+          "requestId"
+        ],
+        "properties": {
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "affectedPeople": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appliesAtHeadOffice": {
+            "type": "string"
+          },
+          "onTheTills": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsByRequestIdRequest": {
+        "type": "object",
+        "required": [
+          "change",
+          "permission",
+          "reason",
+          "roleId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "permission": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsCheckReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "allowed",
+              "affectedPeople",
+              "approvedBy",
+              "roleId",
+              "permission",
+              "change"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "boolean"
+              },
+              "affectedPeople": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "userId",
+                    "branchScope"
+                  ],
+                  "properties": {
+                    "userId": {
+                      "type": "string"
+                    },
+                    "branchScope": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "const": "all"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "roleId": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "allowed",
+              "refusal",
+              "affectedPeople",
+              "roleId",
+              "permission",
+              "change"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "boolean"
+              },
+              "refusal": {
+                "type": "object",
+                "required": [
+                  "whatHappened",
+                  "code"
+                ],
+                "properties": {
+                  "whatHappened": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "controls_roles_approvals_or_ai",
+                      "it_and_business_kept_apart",
+                      "machine_role",
+                      "outside_party_role",
+                      "owner_reserved",
+                      "owner_role_never_reduced",
+                      "posh_committee",
+                      "security_reviewer"
+                    ]
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "affectedPeople": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "userId",
+                    "branchScope"
+                  ],
+                  "properties": {
+                    "userId": {
+                      "type": "string"
+                    },
+                    "branchScope": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "const": "all"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "roleId": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsCheckRequest": {
+        "type": "object",
+        "required": [
+          "change",
+          "permission",
+          "roleId"
+        ],
+        "properties": {
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "permission": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
       },
       "PostIdentityRoleScopesByUserIdByRoleIdByDimensionReply": {
         "$ref": "#/components/schemas/RoleScopeRecord",
@@ -316139,6 +316763,54 @@
             "type": "string"
           },
           "setAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RolePermissionAdjustment": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "roleId",
+          "permission",
+          "change",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "approvalId",
+          "at"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "at": {
             "type": "string"
           }
         },
