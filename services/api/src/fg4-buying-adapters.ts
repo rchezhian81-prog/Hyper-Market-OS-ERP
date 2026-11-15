@@ -20,6 +20,7 @@
 // place, same path, same permission); `contractExpirySweep(input)` is the line on the ops-alert worker. Every register here
 // is append-only on its own stream (hard rules #2, #6). Nothing here is committed by an AI (hard rule #5).
 
+import { isTheRulePlacing } from './ai-auto-approve-executor';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -384,7 +385,9 @@ const refusal = (code: string, whatHappened: string, nextSafeAction: string): Er
 function scopeFacts(input: Base) {
   const { store, now } = input;
   const rolePermissions = (roleId: string) => ROLE_CATALOGUE.find((r) => r.id === roleId)?.permissions;
-  const roleScope = async (tenantId: string, userId: string, permission: string, dimension: RoleScopeDimension) => roleScopeOf({
+  // CR-01 step 6b: the auto-approve rule, while (and only while) it places an act, is shop-wide — the owner's limit is set for
+  // the whole shop. Any other caller, including a token that merely calls itself `rule:…`, is judged on its grants as before.
+  const roleScope = async (tenantId: string, userId: string, permission: string, dimension: RoleScopeDimension) => isTheRulePlacing(tenantId, userId) ? 'all' as const : roleScopeOf({
     scopes: foldRoleScopes(await payloads<RoleScopeRecord>(store, tenantId, FG4_STREAMS.roleScopes, 'RoleScopeSet')),
     grants: await effectiveGrants(store, tenantId), rolePermissions, userId, permission, dimension,
   });

@@ -65,6 +65,8 @@ export const HEAD_OFFICE_PAGE_SCREENS = Object.freeze([
   // W3 (customers): data requests (M16-FR-03), customer value (D07-FR-05), the message queue (M31-FR-04), compensation limits
   // (M21-FR-03) and gift cards (D07-FR-04).
   'data-requests', 'customer-value', 'message-queue', 'compensation-limits', 'gift-cards',
+  // CR-01 OI-12 (OB-712): the owner's auto-approve limits for the assistants' drafts.
+  'auto-approve',
   // Wave 3 (security, people and operations): emergency access, safety incidents, operational alerts, document retention,
   // sales commission.
   'emergency-access', 'safety-incidents', 'ops-alerts', 'document-retention', 'sales-commission',
@@ -199,6 +201,7 @@ const GLOBAL_OF: Readonly<Record<HeadOfficePageScreen, string>> = Object.freeze(
   'customer-value': 'customerValueData',
   'message-queue': 'messageQueueData',
   'compensation-limits': 'compensationLimitsData',
+  'auto-approve': 'autoApproveData',
   'gift-cards': 'giftCardsData',
   'emergency-access': 'emergencyAccessData',
   'safety-incidents': 'safetyIncidentsData',
