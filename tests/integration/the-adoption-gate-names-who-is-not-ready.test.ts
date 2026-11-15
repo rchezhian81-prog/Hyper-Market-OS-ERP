@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
+import { BUILT_IN_SOPS } from '../../packages/workforce/src/sop-library.generated';
 
 // QG-09 Adoption · M25-FR-01/03/04 · D11-FR-04 · OB-320 (owner, 23 Oct 2026: "the role curriculum is built from the
 // SOP sheets and the owner guide, one list per role; the owner approves it on screen before it counts; until then QG-09
@@ -122,7 +123,9 @@ describe.each(backings)('the adoption gate names who is not ready (QG-09) — on
     expect((await call('POST', '/v1/hr/workforce/sops/SOP-01/acknowledgements/u-cash/synced', 'u-cash', relayed)).status).toBe(403);
     expect((await ok(call('POST', '/v1/hr/workforce/sops/SOP-01/acknowledgements/u-cash/synced', 'box-1', relayed), 'relayed')).status).toBe(202);
     expect(codeOf(await call('POST', '/v1/hr/workforce/sops/SOP-01/acknowledgements/u-nobody/synced', 'box-1', { ...relayed, employeeId: 'u-nobody' }))).toBe('person_may_not_acknowledge');
-    for (const [who, sop] of [['u-mgr', 'SOP-01'], ['u-owner', 'SOP-03'], ['u-owner', 'SOP-04']] as const) await ok(call('POST', `/v1/hr/workforce/sops/${sop}/acknowledge`, who, { version: 1 }), `ack ${who} ${sop}`);
+    // Each sheet's CURRENT version, as the help library holds it (a sheet whose words changed is a new version — OB-800 changed SOP-03).
+    const current = (sop: string): number => BUILT_IN_SOPS.find((x) => x.sopId === sop)!.version;
+    for (const [who, sop] of [['u-mgr', 'SOP-01'], ['u-owner', 'SOP-03'], ['u-owner', 'SOP-04']] as const) await ok(call('POST', `/v1/hr/workforce/sops/${sop}/acknowledge`, who, { version: current(sop) }), `ack ${who} ${sop}`);
 
     // ── floor support: a department and its champion (an owner input) ──
     await ok(call('POST', '/v1/org/nodes/C1', 'u-it', { kind: 'company', name: 'SRE Retail' }), 'company');

@@ -32,8 +32,8 @@ const byId = (r: ReturnType<typeof resolveImport>, id: string) => r.find((x) => 
 const kinds = (r: ReturnType<typeof resolveImport>, id: string) => byId(r, id).gaps.map((g) => g.kind).sort();
 
 describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => {
-  it('reads the department (OB-694), best sellers first; soap is not in it', () => {
-    expect(items().map((i) => i.itemId)).toEqual(['11', '12', '13', '14', '15', '16']);
+  it('reads every item, best sellers first — OB-800: no pilot department, so the soap is read too', () => {
+    expect(items().map((i) => i.itemId)).toEqual(['90', '11', '12', '13', '14', '15', '16']);
   });
 
   it('every gap is named on its item; a label fact is NOT a gap (OB-738) — with no fix, the clean item is ready, its five facts listed to read', () => {
@@ -47,9 +47,15 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(byId(r, '13').gaps.find((g) => g.kind === 'tax')!.why).toContain('2 HSN/GST readings');
     expect(byId(r, '15').gaps.find((g) => g.kind === 'barcode')!.why).toContain('also on item 16');
     expect(r.filter(isReady).map((x) => x.itemId)).toEqual(['11']);
-    for (const it of r) expect(it.factsToRead).toEqual(['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
-    expect(importSummary(r).gaps).toEqual({ barcode: 3, tax: 3, price: 2 }); // 12 (check digit), 15 and 16 (one shared barcode)
-    expect(importSummary(r)).toMatchObject({ items: 6, ready: 1, factsToRead: 6 });
+    for (const it of r.filter((x) => !['90', '13'].includes(x.itemId))) expect([it.department, it.factsToRead]).toEqual(['packaged-groceries', ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']]);
+    // 13's HSN is not settled (two readings): its department — and so which label rule applies — waits for Finance.
+    expect([byId(r, '13').department, byId(r, '13').factsToRead]).toEqual([undefined, []]);
+    // OB-800: the soap is personal care — its label facts are a gap there (OB-738 is packaged groceries' only).
+    expect(kinds(r, '90')).toEqual(['barcode', 'label', 'price']);
+    expect(byId(r, '90').factsToRead).toEqual([]);
+    // 12 (check digit), 15 and 16 (one shared barcode), 90 (none)
+    expect(importSummary(r).gaps).toEqual({ barcode: 4, tax: 3, price: 3, label: 1, setup: 0 });
+    expect(importSummary(r)).toMatchObject({ items: 7, ready: 1, factsToRead: 5 });
   });
 
   it('each fix closes its own gap; the latest fix of a kind applies; "not in this department" takes an item out of every count', () => {
@@ -78,7 +84,9 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(validateFix('price', { mrp: '50', sell: '60', cost: '40' }, 'from the bill').join(' ')).toContain('above the MRP');
     expect(validateFix('price', { mrp: '', sell: '60', cost: '40' }, 'from the bill').join(' ')).toContain('MRP must be an amount');
     expect(validateFix('tax', { hsn: '09023020', gstPercent: 7 }, 'checked').join(' ')).toContain('one of the slabs');
-    expect(validateFix('tax', { hsn: '34011110', gstPercent: 18 }, 'checked').join(' ')).toContain('not packaged food');
+    // OB-800: any department's HSN is a fix Finance may make; a code that is not 4, 6 or 8 digits is not.
+    expect(validateFix('tax', { hsn: '34011110', gstPercent: 18 }, 'checked')).toEqual([]);
+    expect(validateFix('tax', { hsn: '3401111', gstPercent: 18 }, 'checked').join(' ')).toContain('4, 6 or 8 digits');
     // OB-738: some facts now and the rest later is fine; nothing at all, or a field that is not a label fact, is refused.
     expect(validateFix('label', { ...LABEL, packer: '' }, 'read')).toEqual([]);
     expect(validateFix('label', { allergens: '', country_of_origin: ' ' }, 'read').join(' ')).toContain('give at least one label fact');

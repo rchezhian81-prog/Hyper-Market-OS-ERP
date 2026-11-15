@@ -131,7 +131,8 @@ describe.each(backings)('the import page fixes every gap, then two people load �
       expect(gapsOf(v, '13')).toEqual(['tax']);
       // OB-738: no label fact is a gap — the clean items are ready with all five facts still to read.
       expect(v.summary.ready).toBe(2);
-      expect(v.summary).toMatchObject({ factsToRead: 4, gaps: { barcode: 1, tax: 1, price: 1 } });
+      // OB-800: 13's department waits on its HSN (two readings), so it is on no label-facts list until Finance settles it.
+      expect(v.summary).toMatchObject({ factsToRead: 3, gaps: { barcode: 1, tax: 1, price: 1 } });
 
       // ── fix: by the right person, refused to the wrong one, each by name ──────────────────────────────────────
       const fixAs = (cookie: string, itemId: string, kind: string, value: unknown, reason = 'read off the pack') => call(cookie, 'POST', `/api/imports/${id}/fix`, { itemId, kind, value, reason });

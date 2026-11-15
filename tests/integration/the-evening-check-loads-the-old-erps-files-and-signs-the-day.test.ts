@@ -23,8 +23,8 @@ import type { EveningDayView } from '../../edge/store-edge/src/evening-check-box
  * computer with the office PIN (OB-259), relayed to head office — in memory and, with DATABASE_URL, on real PostgreSQL
  * with both the store computer and head office restarted cold.**
  *
- *   head office: the parallel-run terms (the owner reconciles every day, OB-254) and the department slice APPLIED (its
- *   department is the pilot's, MG-05) → the store computer pulls both → three mirror sales and one mirror refund rung on
+ *   head office: the parallel-run terms (the owner reconciles every day, OB-254) and a department slice APPLIED (OB-800:
+ *   the evening check still compares the WHOLE store — every department) → the store computer pulls both → three mirror sales and one mirror refund rung on
  *   the till → the owner signs in with their own PIN and loads the two files: refused until the columns are mapped →
  *   maps each once, from the file's own header row (the mobile column is never chosen) → loads them: the differences are
  *   raised item by item and bill by bill (a sugar line short, an item not in the catalogue, an old bill not keyed, a bill
@@ -104,7 +104,8 @@ const billWise = (withOld103 = true): string => ['Bill No;Date;Customer Name;Bil
   ...(withOld103 ? ['OLD/103;21/10/2026;Arun;45.00;P3;1;42.86'] : []),
   'OLD/150;21/10/2026;Selvi;105.00;P1;1;100.00',
   'CN/9;21/10/2026;Ravi Kumar;-105.00;P1;-1;-100.00'].join('\n');
-const ITEM_MAPPING = { columns: { item_code: 'Item Code', department: 'Dept', quantity: 'Qty', value: 'Net Amount', tax: 'GST Amt', sale_date: 'Bill Date' }, dateOrder: 'dmy', valueIncludesTax: true, pilotDepartmentValue: 'GROCERY' };
+// OB-800: the whole shop's report, read whole — no department kept (there is no pilot department).
+const ITEM_MAPPING = { columns: { item_code: 'Item Code', quantity: 'Qty', value: 'Net Amount', tax: 'GST Amt', sale_date: 'Bill Date' }, dateOrder: 'dmy', valueIncludesTax: true };
 const BILL_MAPPING = { columns: { bill_number: 'Bill No', bill_date: 'Date', bill_total: 'Bill Amount', item_code: 'Item', quantity: 'Qty', line_value: 'Amount' }, dateOrder: 'dmy', lineValuesIncludeTax: false };
 const REASON = 'one sugar was rung on the old till only while the new till was being restarted';
 
@@ -207,17 +208,17 @@ describe.each(backings)('OB-263 — the evening check from the old ERP\'s files,
     };
     const load = (item = itemWise(), bills = billWise()) => door('load', { businessDate: DAY, itemWise: item, billWise: bills, tolerance: { valueMinor: 0, taxMinor: 0 } });
 
-    // The page carries the pilot department from head office's register, and the evening check is offered.
+    // OB-800: the evening check is offered for the whole store — no pilot department, even with a department slice applied.
     const page = await (await fetch(`${base()}/migration/`, { headers: { cookie } })).text();
-    expect(page).toContain('"eveningCheck":{"department":{"categoryId":"grocery","name":"Grocery"}');
+    expect(page).toContain('"eveningCheck":{"scope":"whole_store"');
 
     // Not mapped yet: refused, in words.
     expect((await load()).out).toMatchObject({ ok: false, refusedBecause: 'no_mapping', detail: expect.stringContaining('Map the columns first') });
     // A mapping the file cannot satisfy is refused; then each report is mapped once from its own header row.
     expect((await door('mapping', { report: 'item_wise', mapping: { ...ITEM_MAPPING, valueIncludesTax: undefined }, header: ['Item Code', 'Qty'] })).out).toMatchObject({ ok: false, refusedBecause: 'mapping_refused' });
-    expect((await door('mapping', { report: 'item_wise', mapping: ITEM_MAPPING, header: ['Item Code', 'Item Name', 'Dept', 'Customer Mobile', 'Qty', 'Net Amount', 'GST Amt', 'Bill Date'] })).out).toMatchObject({ ok: true, mapping: { setBy: OWNER, mapping: { pilotDepartmentValue: 'GROCERY' } } });
+    expect((await door('mapping', { report: 'item_wise', mapping: ITEM_MAPPING, header: ['Item Code', 'Item Name', 'Dept', 'Customer Mobile', 'Qty', 'Net Amount', 'GST Amt', 'Bill Date'] })).out).toMatchObject({ ok: true, mapping: { setBy: OWNER, mapping: { columns: { item_code: 'Item Code' } } } });
     // OB-263 A · B: a department column with no pilot value, and item lines with no tax answer, are refused.
-    expect((await door('mapping', { report: 'item_wise', mapping: { ...ITEM_MAPPING, pilotDepartmentValue: undefined } })).out).toMatchObject({ ok: false, problems: [expect.stringContaining('which value of the department column')] });
+    expect((await door('mapping', { report: 'item_wise', mapping: { ...ITEM_MAPPING, columns: { ...ITEM_MAPPING.columns, department: 'Dept' } } })).out).toMatchObject({ ok: false, problems: [expect.stringContaining('which value of the department column')] });
     expect((await door('mapping', { report: 'bill_wise', mapping: { ...BILL_MAPPING, lineValuesIncludeTax: undefined } })).out).toMatchObject({ ok: false, problems: [expect.stringContaining('already include the tax')] });
     expect((await door('mapping', { report: 'bill_wise', mapping: BILL_MAPPING, header: ['Bill No', 'Date', 'Customer Name', 'Bill Amount', 'Item', 'Qty', 'Amount'] })).out).toMatchObject({ ok: true });
 
@@ -233,30 +234,32 @@ describe.each(backings)('OB-263 — the evening check from the old ERP\'s files,
     expect(loaded.out.ok, JSON.stringify(loaded.out)).toBe(true);
     const day = loaded.out.day!;
     const c = day.current!.check;
-    expect(c.department).toEqual({ categoryId: 'grocery', name: 'Grocery' });
-    expect(c.items.map((i) => [i.productId, i.differs])).toEqual([['P1', []], ['P3', ['quantity', 'value', 'tax']]]);
-    // OB-263 A: the file's own department column kept the pilot department; the other department's rows (one of them not
-    // in the new catalogue at all) are set aside — counted and said — and never become differences.
-    expect(day.current!.files.itemWise.department).toEqual({ pilotValue: 'GROCERY', otherDepartmentRows: 2, noDepartmentRows: 0 });
-    expect(c.otherDepartments).toEqual({ rows: 0, valueMinor: 0 });
-    // OB-263 B: the bill lines are before tax, so both sides are compared without tax — and OLD/101, OLD/102 agree.
-    expect(c.bills).toMatchObject({ checked: 'lines', valueBasis: 'without_tax', valueNotKnown: 0, matched: 2 });
-    expect(c.notInCatalogue.map((x) => x.code)).toEqual(['X-404']);
+    // OB-800: the whole store — every department; the shampoo the old ERP sold and the new till did not is a difference.
+    expect(c.scope).toBe('whole_store');
+    expect(c.department).toBeUndefined();
+    expect(c.items.map((i) => [i.productId, i.differs])).toEqual([['P1', []], ['P3', ['quantity', 'value', 'tax']], ['S1', ['quantity', 'value', 'tax']]]);
+    expect(day.current!.files.itemWise.department).toBeUndefined();
+    expect(c.departments!.map((d) => [d.group, d.name])).toEqual([['department', 'grocery'], ['department', 'personal_care'], ['not_in_catalogue', 'Not in the new catalogue']]);
+    // OB-263 B: the bill lines are before tax, so both sides are compared without tax — OLD/102 agrees; OLD/101's shampoo
+    // line counts now (every department), and the new till's OLD/101 has the dal only.
+    expect(c.bills).toMatchObject({ checked: 'lines', valueBasis: 'without_tax', valueNotKnown: 0, matched: 1 });
+    expect(c.notInCatalogue.map((x) => x.code)).toEqual(['X-404', 'X-999']);
     expect(c.totals.bills).toEqual({ old: { known: true, minor: 4 }, new: 3 });
-    expect(c.bills.differences.map((b) => [b.billNumber, b.kind])).toEqual([['OLD/103', 'not_keyed'], ['OLD/150', 'not_keyed'], ['OLD/105', 'not_on_old']]);
+    expect(c.bills.differences.map((b) => [b.billNumber, b.kind])).toEqual([['OLD/101', 'value_differs'], ['OLD/103', 'not_keyed'], ['OLD/150', 'not_keyed'], ['OLD/105', 'not_on_old']]);
     expect(c.explain.map((e) => e.subject)).toEqual(['bill:CN/9']);
     expect(c.notCompared.map((x) => x.area)).toEqual(['payments', 'loyalty']);
     expect(day.differences.map((d) => [d.area, d.subject ?? ''])).toEqual([
       ['sales_value', ''], ['tax', ''], ['sales_count', ''], ['stock_movement', 'ea'],
-      ['item_quantity', 'P3'], ['item_value', 'P3'], ['item_tax', 'P3'], ['item_not_in_catalogue', 'X-404'],
-      ['bill_not_keyed', 'OLD/103'], ['bill_not_keyed', 'OLD/150'], ['bill_not_on_old', 'OLD/105'], ['old_return', 'bill:CN/9'],
+      ['item_quantity', 'P3'], ['item_value', 'P3'], ['item_tax', 'P3'], ['item_quantity', 'S1'], ['item_value', 'S1'], ['item_tax', 'S1'],
+      ['item_not_in_catalogue', 'X-999'], ['item_not_in_catalogue', 'X-404'],
+      ['bill_value', 'OLD/101'], ['bill_not_keyed', 'OLD/103'], ['bill_not_keyed', 'OLD/150'], ['bill_not_on_old', 'OLD/105'], ['old_return', 'bill:CN/9'],
     ]);
     expect(c.bills.differences.find((b) => b.kind === 'not_on_old')!.newBill).toBe(mistyped);
 
     // Signing is REFUSED while any has no reason — and the refusal names every one.
     const early = await door('sign', { businessDate: DAY, statement: 'compared both old reports with the new till, line by line' });
     expect(early).toMatchObject({ status: 422, out: { ok: false, refusedBecause: 'unexplained_material_difference' } });
-    expect(early.out.problems).toHaveLength(12);
+    expect(early.out.problems).toHaveLength(17);
     expect(early.out.problems).toEqual(expect.arrayContaining([expect.stringContaining('bill not on old · OLD/105')]));
 
     // ── The line is cut; both restart cold. Everything is on the store computer's own disk.
@@ -266,7 +269,7 @@ describe.each(backings)('OB-263 — the evening check from the old ERP\'s files,
     edge = await startBox();
     cookie = await signIn(OWNER);
     const back = (await door(`day?date=${DAY}`)).out as Out & { day: EveningDayView };
-    expect(back.day.differences).toHaveLength(12);
+    expect(back.day.differences).toHaveLength(17);
     expect(back.day.newTillChangedSinceLoad).toBe(false);
 
     // A reason that says nothing is refused; then a real reason on every difference; then signed — all offline.
