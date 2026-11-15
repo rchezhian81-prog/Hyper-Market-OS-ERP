@@ -89,6 +89,23 @@ He is not a programmer. Therefore:
 - Never treat silence as approval.
 - If you think a request is a mistake, say so before doing it.
 
+## Standing working rules (owner, 15 Nov 2026, in writing: "yes" — OB-801)
+These narrow the rules above; they never lift a hard rule.
+- **Decide the small things yourself.** For a choice that is reversible and touches no money, tax,
+  legal or security matter, pick the recommended option, record it in docs/registers/decisions.md
+  marked "decided under OB-801", and carry on. Give the owner one short list of these each evening;
+  he may reverse any of them.
+- **Ask the owner only** about money, tax, legal or security - in one batch a day, never one by one.
+- **"Merge yourself" is standing:** merge a pull request when every required check is green.
+- **One working conversation at a time.** Before starting, check docs/STATUS.md and open pull
+  requests; never start work another conversation already owns. Take the next free OB number
+  only after reading main's register and every open branch's.
+- **Report only:** what is done, what the owner must physically do in the store, and what is
+  blocked. No question for things that are yours to decide.
+- **Direction (OB-800):** no pilot department. Finish the whole product so the owner runs the
+  whole store on it in parallel with the old ERP (Bpal stays the record until he says otherwise).
+  Daily work must be simple and must actually work; that comes before any new feature.
+
 ## Session discipline
 - Start every session by reading this file and docs/STATUS.md.
 - End every session by updating docs/STATUS.md: what changed, what is next,

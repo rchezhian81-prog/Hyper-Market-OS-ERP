@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
-import { theEvening, pinTheEveningClock, pinThePageClock } from '../support/evening-clock';
+import { theEvening, pinTheEveningClock, pinThePageClock, EVENING_UTC } from '../support/evening-clock';
 import { instantOf, wallClockIn } from '../../packages/calendar/src/trading-day';
 /** The shop's dd/mm/yyyy, as a person types it into the shared date field (U2). */
 const ddmm = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
@@ -31,14 +31,18 @@ const CASHIER = 'u-ravi';
 const DATA = 'storeOpsData';
 // The whole journey runs at an evening UTC moment (19:30 UTC — already tomorrow in the shop), pinned so the evening case
 // is proven whenever this runs.
-const EVENING = theEvening();
+let EVENING = theEvening();
+// Case (a) needs a MISSED slot on the shop's today, so the pinned moment must be the shop's 01:00 (19:30 UTC). From 18:30
+// to 19:30 UTC the evening clock gives the real moment instead (never pinned ahead, OB-422) — the shop's 00:xx, when no
+// slot of today can be missed yet; the suite then waits for 19:30 UTC in `beforeAll` (it failed at 18:55 UTC, 15 Nov 2026).
+const AT_THE_EVENING = (e: { readonly at: string }): boolean => e.at.endsWith(`T${EVENING_UTC}:00.000Z`);
 // OB-606 (round 13): the browsers run on a device in New York — NOT India — where 19:30 UTC is still the afternoon of the
 // shop's yesterday. Each screen must show the shop's day anyway (round 12 worked around the food-safety board's own-zone
 // "today" by running it in a zone where it was midday; the board now takes the shop's day and the work-around is gone).
 const DEVICE_ZONE = 'America/New_York';
 // The food-safety slots: hourly from 23:00 the shop's yesterday — 23:00 (yesterday's board), 00:00 (today's, MISSED by
 // 00:59) and 01:00, the pinned moment itself (today's, DUE).
-const SHOP_MIDNIGHT = Date.parse(instantOf(`${EVENING.shopDate}T00:00`, 'Asia/Kolkata'));
+let SHOP_MIDNIGHT = Date.parse(instantOf(`${EVENING.shopDate}T00:00`, 'Asia/Kolkata'));
 const slot = (hoursFromShopMidnight: number) => new Date(SHOP_MIDNIGHT + hoursFromShopMidnight * HOUR).toISOString();
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-operations screens (OB-154) on the production API, in a real browser', () => {
@@ -50,9 +54,16 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
   let H = 0;
   const at = (hours: number) => new Date(H + hours * HOUR).toISOString();
   // The shop's own date: the price is dated by the shop's day, never the UTC date (from 18:30 UTC it is already tomorrow).
-  const today = EVENING.shopDate;
+  let today = EVENING.shopDate;
 
   beforeAll(async () => {
+    if (!AT_THE_EVENING(EVENING)) {
+      const evening = Date.parse(`${new Date().toISOString().slice(0, 10)}T${EVENING_UTC}:00.000Z`);
+      await new Promise((r) => setTimeout(r, Math.max(0, evening - Date.now()) + 1_000));
+      EVENING = theEvening();
+      SHOP_MIDNIGHT = Date.parse(instantOf(`${EVENING.shopDate}T00:00`, 'Asia/Kolkata'));
+      today = EVENING.shopDate;
+    }
     pinTheEveningClock(EVENING);
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     const intoHour = Date.now() % HOUR;
@@ -83,7 +94,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the store-
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
-  }, 360_000);
+  }, 4_200_000); // up to an hour's wait for 19:30 UTC (above), then the seeding
 
   afterAll(async () => {
     await browser?.close();

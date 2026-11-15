@@ -5,6 +5,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## THE PLAN FROM 15 NOVEMBER 2026 — the whole store, working, simple (OB-800, OB-801) — READ THIS FIRST
+- **Owner's direction (15 Nov, in writing):** no pilot department. Finish the whole product; the owner runs the whole store on it **in parallel with Bpal** (Bpal stays the record until he says otherwise) and asks for corrections from daily use. He says the screens are too complicated and most features do not work. **Nothing new is built until every daily task works and is simple.**
+- **Working rules (OB-801, written into CLAUDE.md):** decide small reversible things yourself and list them each evening; ask the owner only money / tax / legal / security, batched daily; merge when every check is green; ONE working conversation at a time; report only done / store actions / blocked.
+- **Order of work:**
+  1. **Prove every daily task end to end, as each role does it** (cashier, store manager, warehouse, purchase, accountant, owner) on a copy set up like the real store, in a real browser: open the screen, do the task, see the result where it should land. Every failure and every confusing step goes on one defect list (`docs/registers/daily-work-defects.md`).
+  2. **Fix the list**, simplest first: fewer screens, fewer fields, plain words, one obvious button per task. Each fix proved by an automated test that does the task as the person would.
+  3. **Full load from Bpal** (every department, not a pilot): the owner's one list of exports and the backup check (MG-02), then load, publish prices, first sale.
+  4. **Parallel run** beside Bpal; the owner's corrections fixed as they come.
+  5. Only then the remaining roadmap items (CR-01 4c-2, 4d, 4e; OI-13 A11/A13; the rest).
+- **Paused until step 2 is done:** new features in every other conversation (CR-01 4c-2 included).
+- **Owner, meanwhile:** pause the other conversations. Nothing else.
+- **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
+
 ## Fix batch 1 of THE PLAN: the store PC's office pages work again (15 November 2026) · audit C-1 / D-1 · OB-773 "1 A"
 - **Why:** on the store PC as installed (office PIN on, no head-office link) every office page said "Head office could not be reached. Nothing was saved" — items, prices, buying, approvals, reports, settlement. This was the single biggest reason "most features do not work".
 - **What changed (ADR-0033 amendment 3):** the store PC now carries each office page's call to the office API on the same PC as the person signed in by their own PIN — sealed for that one request (60 s, once, its own derived key); the office API runs that person's own permission checks; a route that needs a second step still refuses. Also fixed: the owner was refused the store manager's till PIN since #933 (a "propose a change" permission is not authority).
