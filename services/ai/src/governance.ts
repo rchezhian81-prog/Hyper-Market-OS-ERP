@@ -149,7 +149,7 @@ export function aiGovernanceRoutes(deps: AiGovernanceDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const scope = b['scope'] as KillScope;
         if (!SCOPES.includes(scope) || (b['agentId'] !== undefined && !isAgent(b['agentId'])) || (b['reason'] !== undefined && typeof b['reason'] !== 'string')) {
-          refuse(400, 'not_readable_as_a_kill_switch', 'A kill switch needs { scope: all_ai | customer_facing | single_agent, agentId? (A01…A10), reason }.', 'Nothing was stopped. Send it again with the scope and a reason.');
+          refuse(400, 'not_readable_as_a_kill_switch', 'A kill switch needs { scope: all_ai | customer_facing | single_agent, agentId? (A01…A10, A12, A14), reason }.', 'Nothing was stopped. Send it again with the scope and a reason.');
         }
         const at = deps.now();
         const agentId = b['agentId'] as AgentId | undefined;

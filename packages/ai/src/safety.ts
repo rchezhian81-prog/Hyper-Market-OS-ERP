@@ -243,7 +243,10 @@ export type AgentPurpose =
   | 'fraud_review'
   | 'operations'
   | 'data_quality'
-  | 'workforce';
+  | 'workforce'
+  // CR-01 OI-13 (OB-763 B): A12 reads supplier bills, A14 reads till closes — neither needs any customer's personal data.
+  | 'supplier_bill_review'
+  | 'cash_variance_review';
 
 /**
  * The PII each purpose may legitimately see. **Anything absent is stripped** — an allowlist,
@@ -260,6 +263,8 @@ export const PII_BY_PURPOSE: Readonly<Record<AgentPurpose, readonly PiiField[]>>
   operations: [],
   data_quality: ['customer_id'],
   workforce: [],
+  supplier_bill_review: [],
+  cash_variance_review: [],
   fraud_review: ['customer_id', 'loyalty_id'],
   marketing_segment: ['customer_id'],
   // Only the two customer-facing agents see a person, and only what the conversation needs.
