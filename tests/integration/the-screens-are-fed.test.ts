@@ -2581,7 +2581,7 @@ describe('AI control, fed by the box', () => {
     const outcome = ai.pull({ scope: 'all_ai', reason: 'the provider is answering nonsense' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.stops).toHaveLength(10);
+    expect(outcome.stops).toHaveLength(12); // A01–A10 and the owner's A12, A14 (OB-763 B)
     expect(outcome.detail).toContain('u-owner');
   });
 

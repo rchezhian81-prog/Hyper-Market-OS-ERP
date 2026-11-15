@@ -3,6 +3,11 @@
 **Status:** DRAFT FOR DECISION. Nothing in this paper is built. Nothing here is a requirement until the owner picks it
 in writing. Silence is not approval.
 
+**Owner's decision (OB-763 B, 14 Nov 2026, in writing):** A12 and A14 before go-live, on rules — each is now its own
+requirement and is built: `CR-01-OI-13-A12-supplier-bill-match-explainer.md` and
+`CR-01-OI-13-A14-cash-office-variance-explainer.md`. A11 and A13 in the two weeks after go-live; A15–A19 later, each after
+a fresh decision; A20 not built.
+
 **Where this comes from**
 
 - CR-01 item OI-13 (`docs/roadmap/roadmap-v2.2-change-CR-01-owner-installable-product.md`): a catalogue of proposed new

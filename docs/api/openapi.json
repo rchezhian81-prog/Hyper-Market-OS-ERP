@@ -120548,7 +120548,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "name": {
@@ -120880,7 +120882,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "name": {
@@ -120892,6 +120896,7 @@
                 "approver": {
                   "type": "string",
                   "enum": [
+                    "accountant",
                     "agent_supervisor",
                     "buyer",
                     "customer",
@@ -121189,7 +121194,9 @@
                         "A07",
                         "A08",
                         "A09",
-                        "A10"
+                        "A10",
+                        "A12",
+                        "A14"
                       ]
                     },
                     "summary": {
@@ -121360,6 +121367,15 @@
                         }
                       ]
                     },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProposalReason"
+                      }
+                    },
+                    "draftText": {
+                      "type": "string"
+                    },
                     "committed": {
                       "type": "boolean",
                       "const": false
@@ -121431,7 +121447,9 @@
                         "A07",
                         "A08",
                         "A09",
-                        "A10"
+                        "A10",
+                        "A12",
+                        "A14"
                       ]
                     },
                     "at": {
@@ -121995,7 +122013,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122047,7 +122067,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122127,7 +122149,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122651,7 +122675,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "summary": {
@@ -122821,6 +122847,15 @@
                       "additionalProperties": true
                     }
                   ]
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalReason"
+                  }
+                },
+                "draftText": {
+                  "type": "string"
                 },
                 "committed": {
                   "type": "boolean",
@@ -173491,6 +173526,7 @@
                   "purpose": {
                     "type": "string",
                     "enum": [
+                      "cash_variance_review",
                       "customer_service",
                       "customer_shopping",
                       "data_quality",
@@ -173500,6 +173536,7 @@
                       "owner_brief",
                       "purchase_question",
                       "stock_question",
+                      "supplier_bill_review",
                       "workforce"
                     ]
                   },
@@ -174084,7 +174121,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "summary": {
@@ -174207,7 +174246,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -262308,7 +262349,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 }
               },
@@ -262346,7 +262389,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 }
               },
@@ -262384,7 +262429,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -262402,7 +262449,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           }
@@ -262479,7 +262528,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -267833,7 +267884,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "name": {
@@ -267848,6 +267901,7 @@
           "approver": {
             "type": "string",
             "enum": [
+              "accountant",
               "agent_supervisor",
               "buyer",
               "customer",
@@ -267896,7 +267950,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "ceilingMinor": {
@@ -267972,7 +268028,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "summary": {
@@ -269946,7 +270004,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "at": {
@@ -270065,7 +270125,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "ordinaryRoute": {
@@ -270136,7 +270198,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "tool": {
@@ -274978,7 +275042,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "kind": {
@@ -287342,7 +287408,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "setVersion": {
@@ -296601,7 +296669,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "reason": {
@@ -300813,7 +300883,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "requestedBy": {
@@ -300940,6 +301012,7 @@
                   "purpose": {
                     "type": "string",
                     "enum": [
+                      "cash_variance_review",
                       "customer_service",
                       "customer_shopping",
                       "data_quality",
@@ -300949,6 +301022,7 @@
                       "owner_brief",
                       "purchase_question",
                       "stock_question",
+                      "supplier_bill_review",
                       "workforce"
                     ]
                   },
@@ -308780,7 +308854,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "summary": {
@@ -308954,6 +309030,15 @@
               }
             ]
           },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalReason"
+            }
+          },
+          "draftText": {
+            "type": "string"
+          },
           "committed": {
             "type": "boolean",
             "const": false
@@ -308988,7 +309073,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "decision": {
@@ -309013,6 +309100,39 @@
           "committedAnything": {
             "type": "boolean",
             "const": false
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProposalReason": {
+        "type": "object",
+        "required": [
+          "code",
+          "values",
+          "sentence"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "sentence": {
+            "type": "string"
+          },
+          "recordRef": {
+            "type": "string"
           }
         },
         "additionalProperties": true
