@@ -179,7 +179,7 @@ export interface UsersSession {
   takeBacks(): Done<readonly TakeBackRow[]>;
   /** CR-01 step 4b-2 (OB-735): approve (done at once) or reject a take-back, by PIN, with a reason. Store PC only. */
   decideTakeBack(approvalId: string, decision: 'approve' | 'reject', reason: string): Done<{ readonly decided: 'approved' | 'rejected'; readonly words: string }>;
-  /** CR-01 step 4b-2 (OB-734 · OB-737): set or cancel somebody's till PIN, or change your own. Store PC only. */
+  /** CR-01 step 4b-2 (OB-734 · OB-739): set or cancel somebody's till PIN, or change your own. Store PC only. */
   tillPin(action: 'set' | 'cancel' | 'own', staffId: string): Done<{ readonly done: 'set' | 'cancel' | 'own' }>;
 }
 

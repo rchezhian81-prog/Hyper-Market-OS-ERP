@@ -8,7 +8,7 @@ import { createUsersSession, officePrivilegeFrom, usersWords, type PinAsk } from
 import { isRelayPermission, privilegeAlertWords } from '../../services/identity/src/box-privilege';
 
 /**
- * **CR-01 step 4b-2 · OB-734 "A" · OB-735 "A" · OB-737 "A" · ADR-0033 amendment 2: till PINs and take-backs on the store PC —
+ * **CR-01 step 4b-2 · OB-734 "A" · OB-735 "A" · OB-739 "A" · ADR-0033 amendment 2: till PINs and take-backs on the store PC —
  * the new PIN never leaves the box; it is written there only after head office has the record; a leaver's PIN is cancelled.**
  */
 
@@ -134,7 +134,7 @@ describe('the box: a take-back asked and decided — a leaver\'s PIN cancelled h
   });
 });
 
-describe('head office: OB-737 compares authority, not the till\'s relay hops', () => {
+describe('head office: OB-739 compares authority, not the till\'s relay hops', () => {
   it('a *.sync hop and the template pull are relays; a real permission is not', () => {
     for (const p of ['cash.movement.sync', 'approvals.decision.sync', 'org.template.pull']) expect(isRelayPermission(p)).toBe(true);
     for (const p of ['identity.role.grant', 'cash.movement.record', 'price.change.approve']) expect(isRelayPermission(p)).toBe(false);

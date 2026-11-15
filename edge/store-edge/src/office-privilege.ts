@@ -54,7 +54,7 @@ export const PRIVILEGE_AUTHORITY: Readonly<Record<PrivilegeKind, string>> = Obje
   role_grant_rejection: 'identity.role.grant',
   access_change_request: 'identity.role.request',
   access_change_decision: 'identity.role.grant',
-  // Somebody else's PIN: the maker's word (and head office refuses reaching above yourself, OB-737). Your own: see `pinAuthority`.
+  // Somebody else's PIN: the maker's word (and head office refuses reaching above yourself, OB-739). Your own: see `pinAuthority`.
   till_pin_change: 'identity.role.request',
 });
 /** Changing your OWN till PIN needs only that you are you — your current PIN, as at the office sign-in. */

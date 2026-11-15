@@ -12,13 +12,13 @@ import { prepareTillBox, pinOf } from '../support/till-operator';
 import type { HttpRequest } from '../../services/kernel/src/index';
 
 /**
- * **CR-01 step 4b-2 · OI-06 · ADR-0033 amendment 2 · OB-734 "A" · OB-735 "A" · OB-737 "A" on the REAL till service
+ * **CR-01 step 4b-2 · OI-06 · ADR-0033 amendment 2 · OB-734 "A" · OB-735 "A" · OB-739 "A" on the REAL till service
  * (`startEdge`) and head office's REAL pipeline over HTTP.**
  *
  *   A till PIN set on the office screen works at once — at the office sign-in, which reads the SAME till-credentials file
  *   as the tills — and the old one stops; a cancelled PIN opens nothing; your own PIN is changed with your current one. The
  *   new PIN is in nothing relayed, logged or printed, and a PIN typed differently twice changes nothing. The manager cannot
- *   touch the owner's PIN (OB-737). A take-back asked by the manager and approved by the owner is done at once; a leaver's
+ *   touch the owner's PIN (OB-739). A take-back asked by the manager and approved by the owner is done at once; a leaver's
  *   till PIN stops working on this box.
  */
 

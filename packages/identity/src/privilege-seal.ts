@@ -17,7 +17,7 @@ import { DECIDER_STAMP_FIELD, checkDeciderStamp, sealDecision, type DeciderStamp
  * CR-01 step 4b-1: `role_grant_rejection` — a second person turns a pending request down, by PIN (OB-735 · ADR-0033 amended).
  * CR-01 step 4b-2: `access_change_request` (ask to take a role back, or record a leaver), `access_change_decision` (the second
  * person approves — the change is then applied — or rejects it), `till_pin_change` (a till PIN set, changed or cancelled on
- * screen; the PIN itself never in the record) — OB-734, OB-735, OB-737, ADR-0033 amendment 2.
+ * screen; the PIN itself never in the record) — OB-734, OB-735, OB-739, ADR-0033 amendment 2.
  */
 export type PrivilegeKind = 'person_provision' | 'role_request' | 'role_grant_approval' | 'role_grant_rejection'
   | 'access_change_request' | 'access_change_decision' | 'till_pin_change';

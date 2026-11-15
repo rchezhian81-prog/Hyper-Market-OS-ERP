@@ -203,7 +203,7 @@ $('add-form').addEventListener('submit', async (e) => {
   $('add-status').textContent = out.result === 'ok' ? t('added') : api.outcomeWords(lang, out);
   if (out.result === 'ok') { $('g-person').value = out.value.userId; $('a-staff').value = ''; $('a-name').value = ''; void loadHolders(); }
 });
-// CR-01 step 4b-2 (OB-734 · OB-737): till PINs — the asker's PIN, then the person types their new PIN twice (hidden).
+// CR-01 step 4b-2 (OB-734 · OB-739): till PINs — the asker's PIN, then the person types their new PIN twice (hidden).
 const pinAct = async (action) => {
   $('pins-status').textContent = t('reading');
   const out = await session.tillPin(action, $('p-staff').value);

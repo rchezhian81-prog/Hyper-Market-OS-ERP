@@ -41,14 +41,14 @@ export const BOX_PRIVILEGE_PATHS = Object.freeze({
   accessChanges: '/v1/identity/box/access-changes',
   /** CR-01 step 4b-2 (OB-735): the second person approves (the change is applied at once) or rejects it. */
   accessChangeDecide: '/v1/identity/box/access-changes/:approvalId/decide',
-  /** CR-01 step 4b-2 (OB-734 · OB-737): a till PIN set, changed or cancelled on the store PC's screen. */
+  /** CR-01 step 4b-2 (OB-734 · OB-739): a till PIN set, changed or cancelled on the store PC's screen. */
   tillPins: '/v1/identity/box/till-pins',
 });
 /** What a till PIN act is (OB-734 "A"): somebody else's set or cancelled by a manager, or the person's own changed. */
 export const TILL_PIN_ACTIONS = ['set', 'cancel', 'own'] as const;
 export type TillPinAction = (typeof TILL_PIN_ACTIONS)[number];
 /**
- * OB-737 "A" compares AUTHORITY: a relay permission is left out — a `*.sync` hop (the box passing on what a person did; each
+ * OB-739 "A" compares AUTHORITY: a relay permission is left out — a `*.sync` hop (the box passing on what a person did; each
  * "grants no authority of its own", services/api/src/roles.ts) and the till's read of the published templates. Without this,
  * every cashier would "hold more" than the store manager, who the owner said sets cashiers' PINs.
  */
@@ -470,7 +470,7 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
       },
     },
     {
-      // CR-01 step 4b-2 (OB-734 "A" · OB-737 "A"): a till PIN set or cancelled for somebody else (the maker's word, and never
+      // CR-01 step 4b-2 (OB-734 "A" · OB-739 "A"): a till PIN set or cancelled for somebody else (the maker's word, and never
       // for somebody who holds any permission the acting person does not — no reaching above yourself), or the person's own
       // PIN changed (their CURRENT PIN confirmed it). The PIN itself never comes here: the store PC keeps only its fingerprint.
       // Recorded in the acting person's name; the owner is alerted when it is somebody else's PIN.
@@ -503,11 +503,11 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
           if (registered === undefined && !grants.some((g) => g.userId === userId && here(g.branchScope))) {
             throw refuse(404, 'person_not_known_here', `${userId} is not on the people register and holds no role at this store.`, 'Check the staff id, or add the person first. Nothing changed.');
           }
-          // OB-737 "A": never somebody who holds any permission the acting person does not.
+          // OB-739 "A": never somebody who holds any permission the acting person does not.
           const mine = new Set(await deps.identity.permissionsOf(ctx.tenantId, record.userId));
           const above = (await deps.identity.permissionsOf(ctx.tenantId, userId)).filter((p) => !mine.has(p) && !isRelayPermission(p));
           if (above.length > 0) {
-            throw refuse(403, 'person_holds_more_authority', `${userId} holds authority ${record.userId} does not (${above.slice(0, 3).join(', ')}${above.length > 3 ? ', …' : ''}), so ${record.userId} may not set or cancel their PIN (owner decision OB-737).`, 'Somebody who holds at least what they hold does it; the owner resets his own PIN at the store PC\'s keyboard. Nothing changed.');
+            throw refuse(403, 'person_holds_more_authority', `${userId} holds authority ${record.userId} does not (${above.slice(0, 3).join(', ')}${above.length > 3 ? ', …' : ''}), so ${record.userId} may not set or cancel their PIN (owner decision OB-739).`, 'Somebody who holds at least what they hold does it; the owner resets his own PIN at the store PC\'s keyboard. Nothing changed.');
           }
         }
         const at = deps.now();

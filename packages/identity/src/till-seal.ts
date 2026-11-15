@@ -172,7 +172,7 @@ export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist
   | 'role_grant_approval'
   /** CR-01 step 4b-1: a second person turned a pending request down, by PIN (ADR-0033 amended, OB-735). */
   | 'role_grant_rejection'
-  /** CR-01 step 4b-2 (OB-734 · OB-735 · OB-737): a take-back asked / decided, and a till PIN set, changed or cancelled — by PIN. */
+  /** CR-01 step 4b-2 (OB-734 · OB-735 · OB-739): a take-back asked / decided, and a till PIN set, changed or cancelled — by PIN. */
   | 'access_change_request'
   | 'access_change_decision'
   | 'till_pin_change';

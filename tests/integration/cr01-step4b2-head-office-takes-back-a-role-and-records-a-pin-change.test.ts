@@ -8,7 +8,7 @@ import { alertLifecycleAdapter, peopleAdapter } from '../../services/api/src/ada
 import { privilegeAlertIdOf } from '../../services/api/src/box-privilege-adapters';
 
 /**
- * **CR-01 step 4b-2 · OI-06 · ADR-0033 amendment 2 · OB-734 "A" · OB-735 "A" · OB-737 "A": head office takes a role back,
+ * **CR-01 step 4b-2 · OI-06 · ADR-0033 amendment 2 · OB-734 "A" · OB-735 "A" · OB-739 "A": head office takes a role back,
  * records a leaver, and records a till PIN change the store PC sealed — on head office's real pipeline.**
  *
  *   • TAKE BACK (two people, each by PIN): the maker asks through the person's own approval route (kind `access_change`); the
@@ -16,7 +16,7 @@ import { privilegeAlertIdOf } from '../../services/api/src/box-privilege-adapter
  *     the lifecycle route AS the maker. Never the maker deciding; never somebody without the checker's word. A leaver loses
  *     every role, their store-PC record is ended, and the store PC is told to cancel their till PIN. The owner is alerted.
  *   • TILL PINS: somebody else's set or cancelled with the maker's word — never for somebody who holds any permission the
- *     acting person does not (OB-737 "A"); your own changed with only your current PIN. The PIN never comes to head office.
+ *     acting person does not (OB-739 "A"); your own changed with only your current PIN. The PIN never comes to head office.
  */
 
 const T = 't-cr01-4b2';
@@ -150,7 +150,7 @@ describe('CR-01 step 4b-2: a till PIN set, cancelled or changed on the store PC 
     expect(alerts.find((a) => a.alert.alertId === privilegeAlertIdOf(cancel.requestId))?.alert.detail).toContain('u-mgr cancelled till PIN of u-cash');
   });
 
-  it('OB-737 "A": never somebody who holds more — the manager cannot touch the owner\'s or the accountant\'s PIN; the owner can', async () => {
+  it('OB-739 "A": never somebody who holds more — the manager cannot touch the owner\'s or the accountant\'s PIN; the owner can', async () => {
     const h = await shop();
     for (const who of ['u-owner', 'u-two']) {
       for (const action of ['set', 'cancel']) {
