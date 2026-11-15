@@ -11,7 +11,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Tests:** 26 new (16 unit, 10 integration, 4 of them on the real till program and head office's real pipeline); the 4a tests updated where they pinned "comes in step 4b".
 - **Next:** 4b-2 — till PINs on screens (OB-734), take back a role and "they have left" (OB-735). Then 4c (OB-730), 4d, 4e (OB-722). **For the owner meanwhile:** nothing new in the store until the next Store PC release is installed. **Blocked:** nothing. **Owner decisions needed:** none.
 
-## The pilot resumes: GO, 1A 2A 3A (14 November 2026, OB-730)
+## The pilot resumes: GO, 1A 2A 3A (14 November 2026, OB-782 — first recorded as OB-730, renumbered 15 Nov because OB-730 is the role-changes decision)
 - **Decided:** the owner's written GO for the pilot department load; label facts no longer hold an item back (1A — kept, listed until filled, a sale never blocked); the HSN codes with two GST rates are decided by Finance on the Import page AND corrected in Bpal (2A); Bpal's HSN report covers the last 12 months (3A).
 - **To build before the load (1A):** the Import page's ready rule, the product loader (`packages/migration/src/slice-import.ts` refuses a food item with blank facts today) and the converter (`bpal-slice.ts`) accept blank label facts with an outstanding-facts list shown until done; facts can be added to an item already loaded. Planned for a fresh session (this one is long).
 - **Owner, meanwhile:** export from Bpal (EANCODE; HSN for 12 months; Product wise Detail Report in 3-month files); restore Bpal's backup on another PC and check it, and note the day (MG-02); the accountant marks the ~25 two-rate HSN codes and the Bpal correction is arranged (2A).
