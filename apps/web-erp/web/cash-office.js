@@ -46,6 +46,7 @@ function sampleSession() {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
     view: (l) => ({
       screenState: { tone: 'ok', icon: '✓', label: '', announcement: '', needsAttention: false },
+      known: true, notKnownWhy: '', boxRecorded: null,
       open: [sampleRow(l)], openCount: 1, totalVariance: '-₹1,200.00', totalVarianceMinor: -120000, nobodyNamed: false, mayReview: true,
     }),
     dispositionOptions: (l) => DISPOSITIONS.map((d) => ({ value: d.value, label: d.label[l] ?? d.label.en })),
@@ -103,8 +104,21 @@ function paint() {
   el('whoami').textContent = window.cashOfficeData?.userId ?? '';
   el('lang').textContent = t('langName');
 
-  el('open-count').textContent = view.openCount === 0 ? t('allClear') : `${view.openCount} ${t('openCount')}`;
-  el('exposure').textContent = view.openCount === 0 ? '' : `${t('exposureLabel')}: ${view.totalVariance}`;
+  // D-2 (OB-740 · P-08): the all-clear ONLY when head office's worklist was read and came back empty. A worklist that
+  // could not be read is "Not known — why", never "every drawer is signed off".
+  const known = view.known !== false;
+  el('open-count').textContent = !known ? view.screenState.label : view.openCount === 0 ? t('allClear') : `${view.openCount} ${t('openCount')}`;
+  el('exposure').textContent = !known || view.openCount === 0 ? '' : `${t('exposureLabel')}: ${view.totalVariance}`;
+
+  // D-2: what this store computer itself recorded closing over/short — shown when head office could not be read.
+  const box = el('box');
+  const rec = known ? null : view.boxRecorded;
+  box.hidden = !rec;
+  if (rec) {
+    el('box-heading').textContent = t('boxHeading');
+    el('box-lead').textContent = rec.lead;
+    el('box-rows').replaceChildren(...rec.rows.map((r) => rowNode(r)));
+  }
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
@@ -140,8 +154,9 @@ function paint() {
   if (view.open.length === 0) {
     state.hidden = false;
     // U5: the shared state part — nothing to sign off / not permitted / head office unreachable, as word + icon.
+    // D-2: an unread worklist wears the shared "not known" shape, never the empty "nothing yet".
     const o = window.sreOffice;
-    if (o && typeof o.state === 'function') o.state(state, stateKind(view.screenState.tone), { title: view.screenState.label, detail: '' });
+    if (o && typeof o.state === 'function') o.state(state, known ? stateKind(view.screenState.tone) : 'unknown', { title: view.screenState.label, detail: '' });
     else state.textContent = view.screenState.label;
   } else {
     state.hidden = true;
@@ -194,13 +209,16 @@ el('sample').hidden = window.cashOfficeSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
 
-// Read the live worklist (a GET — read-only). Offline or refused, the screen keeps its current view and the
-// stale strip already says the page is what the box last told it.
+// Read the live worklist (a GET — read-only). D-2 (OB-740 · P-08): offline or refused, the screen says the worklist is
+// NOT KNOWN and why — never the empty list's "every drawer is signed off" — and shows what this store computer itself
+// recorded closing over/short.
 async function refresh() {
   const api = window.cashOffice;
   if (!api || typeof api.refresh !== 'function') return;
-  const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  const out = await api.refresh();
+  if (out && out.result === 'read') session = api.present(out.worklist);
+  else session = api.unread(out && out.result === 'refused' ? 'refused' : 'unreachable');
+  paint();
 }
 refresh();
 

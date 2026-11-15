@@ -56,6 +56,8 @@ const WORDS = {
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices', claimDisputesOpen: 'Disputed supplier claims open',
     attnApprovals: 'approvals you can clear', attnHoApprovals: 'approvals waiting for you at head office — open Approvals', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnClaimDisputes: 'disputed supplier claims to settle — open Supplier claims', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
+    // D-2 (OB-740): drawers closed over/short today, from the store computer's own till-cash log — not in the exceptions count.
+    attnOverShort: 'drawer(s) closed over or short today — sign-off is on Cash over / short', overShortNotCounted: 'not counted here: {n} drawer(s) closed over or short today — see Needs attention',
     // OB-392: lane health on Today — one tap per lane.
     lanesTitle: 'Lanes', laneWord: 'Lane', laneAllWorking: 'every device working', laneProblems: 'device problem(s)', laneNotReported: 'the till has not reported its devices yet',
     lanePrinter: 'Printer', laneScanner: 'Scanner', laneCard: 'Card machine', laneLastHeard: 'Till last reported', laneUnsent: 'Not yet at head office', laneLastSync: 'Last sent to head office',
@@ -143,6 +145,7 @@ const WORDS = {
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்', claimDisputesOpen: 'திறந்த சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள்',
     attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnHoApprovals: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கும் ஒப்புதல்கள் — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnClaimDisputes: 'தீர்க்க வேண்டிய சர்ச்சைக்குரிய விநியோகஸ்தர் உரிமைக்கோரல்கள் — விநியோகஸ்தர் உரிமைக்கோரல்கள் பக்கத்தைத் திறக்கவும்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
+    attnOverShort: 'இன்று கூடுதலாகவோ குறைவாகவோ மூடப்பட்ட பணப்பெட்டி(கள்) — கையொப்பம் கூடுதல் / குறைவு பக்கத்தில்', overShortNotCounted: 'இங்கு எண்ணப்படவில்லை: இன்று கூடுதலாகவோ குறைவாகவோ மூடப்பட்ட {n} பணப்பெட்டி(கள்) — கவனம் தேவை பகுதியைப் பார்க்கவும்',
     lanesTitle: 'கல்லாக்கள்', laneWord: 'கல்லா', laneAllWorking: 'எல்லாச் சாதனங்களும் வேலை செய்கின்றன', laneProblems: 'சாதனச் சிக்கல்(கள்)', laneNotReported: 'கல்லா இன்னும் தன் சாதனங்களைப் பற்றிச் சொல்லவில்லை',
     lanePrinter: 'அச்சுப்பொறி', laneScanner: 'ஸ்கேனர்', laneCard: 'கார்டு இயந்திரம்', laneLastHeard: 'கல்லா கடைசியாகச் சொன்னது', laneUnsent: 'தலைமை அலுவலகத்துக்கு இன்னும் செல்லாதவை', laneLastSync: 'தலைமை அலுவலகத்துக்குக் கடைசியாக அனுப்பியது',
     devOk: 'வேலை செய்கிறது', devDegraded: 'சரியாக வேலை செய்யவில்லை', devFailed: 'செயலிழந்தது', devNotReported: 'சொல்லப்படவில்லை', laneNever: 'ஒருபோதும் இல்லை', laneBills: 'இந்தக் கல்லாவின் பில்(கள்) அல்லது திருப்பம்(கள்)',
@@ -624,6 +627,11 @@ function renderAttention(floor, today) {
   if (today.hoApprovals) add(today.hoApprovals, 'approvalsLabel', 'attnHoApprovals', { rail: 'approval-requests' });
   add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
   add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
+  // D-2 (OB-740 · M14-FR-02): a drawer that closed over/short today is work for the cash office, said here with its till
+  // and amount (the box's words) — it is not on the exceptions register, so it is never hidden behind "Exceptions open: 0".
+  if (today.overShort && today.overShort.known && amountOf(today.overShort) > 0) {
+    rows.push({ tone: 'attention', n: amountOf(today.overShort), text: `${t('attnOverShort')} (${todayWords(today.overShort.note, today.overShort.noteTa) ?? ''})`, target: { rail: 'cash-office' } });
+  }
   add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
   // U7 · OB-727 (owner: B): the disputed supplier claims still open, settled on Supplier claims.
   add(today.claimDisputes, 'claimDisputesOpen', 'attnClaimDisputes', { rail: 'supplier-claims' });
@@ -800,7 +808,10 @@ function renderHome() {
     hoApprovals: liveFigures ? liveFigures.headOffice : null,
     counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'), claimDisputes: figureOf('supplierClaimDisputes'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
+    // D-2: only on a store computer that keeps a till-cash log.
+    overShort: todayFigures() && todayFigures().drawersOverShortToday ? figureOf('drawersOverShortToday') : null,
   };
+  const overShortToday = today.overShort && today.overShort.known ? amountOf(today.overShort) : 0;
   el('tiles').replaceChildren(
     // The takings first (OB-15: "sales today") — the box's own log, never a guess; its note says how many sales.
     tile({ figure: today.sales, label: t('salesTodayLabel'), money: true, iconName: 'rupee' }),
@@ -812,7 +823,11 @@ function renderHome() {
       attentionWhen: (n) => n > 0,
       iconName: 'check',
     }),
-    tile({ figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'alert' }),
+    tile({
+      figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'alert',
+      // D-2: a 0 here beside a drawer that closed short is not an all-clear — the tile says what it leaves out.
+      ...(overShortToday > 0 ? { note: t('overShortNotCounted').replace('{n}', String(overShortToday)) } : {}),
+    }),
     tile({
       figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'cloud',
       // How many of those are still only on this screen (SP-2a) — a fact the store computer cannot show.

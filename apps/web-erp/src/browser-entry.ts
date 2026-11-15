@@ -238,7 +238,7 @@ import {
 } from './facilities-session';
 import {
   createCashOfficeSession,
-  type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView,
+  type CashOfficePorts, type CashOfficeSession, type CashOverShortData, type OverShortView, type WorklistRead,
   type OverShortSignOffPort, type SignOffResult,
 } from './cash-office-session';
 import {
@@ -2399,21 +2399,39 @@ export interface CashOfficeData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: CashOverShortData;
+  /** D-2 (OB-740): the drawers the store computer itself recorded closing over/short, over its last `days` trading days. */
+  readonly boxOverShort?: { readonly days: number; readonly closes: readonly OverShortView[] };
 }
+
+/** D-2: what one live read of the over/short worklist answered — the worklist, or why it could not be read (P-08). */
+export type OverShortRead =
+  | { readonly result: 'read'; readonly worklist: CashOverShortData }
+  | { readonly result: 'unreachable' | 'refused' };
 
 const OVERSHORT_READ_PERMISSION = 'till.shift.read';
 const OVERSHORT_REVIEW_PERMISSION = 'till.overshort.review';
-const EMPTY_OVERSHORT_WORKLIST: CashOverShortData = Object.freeze({ openCount: 0, totalVarianceMinor: 0, open: [] });
+// D-2 (OB-740 · P-08): this empty list stands ONLY behind a worklist that is marked unread (`worklistRead` says so), so the
+// session says "Not known — why", never "every drawer is signed off". It is never shown as head office's answer.
+const UNREAD_OVERSHORT_WORKLIST: CashOverShortData = Object.freeze({ openCount: 0, totalVarianceMinor: 0, open: [] });
 const NOOP_SIGNOFF_PORT: OverShortSignOffPort = { post: async () => 'lost_link' };
 
+/**
+ * The cash office's ports. `worklist` is head office's answer when one was READ (passed in, or carried by the box);
+ * otherwise the worklist is NOT KNOWN — `unread` says why (default: not read yet) — and never an empty list (D-2).
+ */
 export function cashOfficePortsFromData(
   data: CashOfficeData | undefined,
   worklist?: CashOverShortData,
   signOffPort: OverShortSignOffPort = NOOP_SIGNOFF_PORT,
+  unread: Extract<WorklistRead, { read: false }>['why'] = 'not_read_yet',
 ): CashOfficePorts {
   const held = new Set(data?.permissions ?? []);
+  const had = worklist ?? data?.worklist;
+  const box = data?.boxOverShort;
   return {
-    worklist: () => worklist ?? data?.worklist ?? EMPTY_OVERSHORT_WORKLIST,
+    worklist: () => had ?? UNREAD_OVERSHORT_WORKLIST,
+    worklistRead: () => (had !== undefined ? { read: true } : { read: false, why: unread }),
+    ...(box === undefined ? {} : { boxOverShort: () => box }),
     // Default-deny: an absent permission list can read/sign off nothing (the server would refuse it anyway).
     mayRead: () => held.has(OVERSHORT_READ_PERMISSION),
     mayReview: () => held.has(OVERSHORT_REVIEW_PERMISSION),
@@ -2467,15 +2485,16 @@ interface RawOverShortRow {
 }
 
 /** Read the live over/short worklist (a GET — read-only) and keep only the OPEN (unsigned) rows — the ones the
- *  cash office has to work. Returns null offline/refused so the shell keeps whatever it was showing. */
-export async function fetchOverShortWorklist(): Promise<CashOverShortData | null> {
+ *  cash office has to work. Offline or refused it says which (D-2 · P-08): the shell then shows "Not known — why",
+ *  never the empty list's all-clear. */
+export async function fetchOverShortWorklist(): Promise<OverShortRead> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-  if (fetchFn === undefined) return null;
+  if (fetchFn === undefined) return { result: 'unreachable' };
   try {
     const res = await fetchFn('/v1/shifts/over-short', {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
     });
-    if (res.status >= 400) return null;
+    if (res.status >= 400) return { result: 'refused' };
     const body = (await res.json()) as { overShort?: readonly RawOverShortRow[] };
     const open: OverShortView[] = (body.overShort ?? [])
       .filter((r) => !r.reviewed)
@@ -2483,9 +2502,9 @@ export async function fetchOverShortWorklist(): Promise<CashOverShortData | null
         shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
         varianceMinor: r.varianceMinor, reasonCode: r.reasonCode,
       }));
-    return { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open };
+    return { result: 'read', worklist: { openCount: open.length, totalVarianceMinor: open.reduce((s, r) => s + r.varianceMinor, 0), open } };
   } catch {
-    return null;
+    return { result: 'unreachable' };
   }
 }
 
@@ -5570,8 +5589,10 @@ interface ManagerWindow {
   cashOfficeSession?: CashOfficeSession;
   /** The shell reads the live over/short worklist through this and re-presents it — a GET read, never a write. */
   cashOffice?: {
-    refresh(): Promise<CashOverShortData | null>;
+    refresh(): Promise<OverShortRead>;
     present(worklist: CashOverShortData): CashOfficeSession;
+    /** D-2: the session when head office's worklist could not be read — "Not known", with the box's own record. */
+    unread(why: 'unreachable' | 'refused'): CashOfficeSession;
   };
   riskAcceptanceData?: RiskAcceptanceData;
   /** OB-288 integration follow-up: the Recalls and trace page served from the store box — who is looking, their permissions,
@@ -7063,6 +7084,10 @@ if (browserWindow !== undefined) {
       present: (worklist) => createCashOfficeSession(
         { userId: cashOfficeData?.userId === undefined ? null : cashOfficeData.userId },
         cashOfficePortsFromData(cashOfficeData, worklist, signOffPort),
+      ),
+      unread: (why) => createCashOfficeSession(
+        { userId: cashOfficeData?.userId === undefined ? null : cashOfficeData.userId },
+        cashOfficePortsFromData(cashOfficeData, undefined, signOffPort, why),
       ),
     };
   }

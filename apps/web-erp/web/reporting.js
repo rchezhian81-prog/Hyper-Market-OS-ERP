@@ -168,8 +168,13 @@ el('back').addEventListener('click', () => { show('reports'); });
 // ── How current everything here is ──────────────────────────────────────────
 
 function renderFreshness() {
-  const state = session.freshness();
   const strip = el('freshness');
+  // D-10 (OB-740 · P-08): a page showing the SAMPLE has no freshness of its own — "head office has never sent anything"
+  // over sample figures contradicts the sample line and the store-copy line. The sample line (and the chrome's word
+  // under it) says the one true thing; this strip stays out of it.
+  strip.hidden = real === undefined;
+  if (real === undefined) return;
+  const state = session.freshness();
   strip.className = `freshness ${state.state}`;
   // A number quoted three hours after the sync stopped looks exactly like a live one, so this sits
   // at the very top of the page rather than beside any one figure.
@@ -451,7 +456,8 @@ el('export').addEventListener('click', () => {
 
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
-  el('whoami').textContent = window.reportingData?.userId ?? '';
+  // D-10: who is looking — the page's own payload, else the person the store computer signed in (its menu names them).
+  el('whoami').textContent = window.reportingData?.userId ?? window.sreNavigation?.userId ?? '';
   el('tab-reports').textContent = t('reports');
   el('tab-blocked').textContent = t('cannotRun');
   el('tab-backlog').textContent = t('whatNext');
