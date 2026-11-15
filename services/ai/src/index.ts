@@ -26,6 +26,7 @@ import {
   AGENTS,
   FORBIDDEN_TOOLS,
   type AgentDefinition,
+  type DraftAct,
   type AgentId as EngineAgentId,
 } from '../../../packages/ai/src/index';
 import type { DataQualityWorklistItem, DataQualityFinding } from '../../../packages/product/src/index';
@@ -150,6 +151,11 @@ export interface Proposal {
   readonly createdAt: string;
   /** AI-NFR-04: always present on a proposal the run route accepts (a builder may set a more specific one). */
   readonly confidence?: Confidence;
+  /**
+   * CR-01 OI-12: exactly what would be done (who, what, how much), when the assistant can say it. Only a draft with one can be
+   * measured against an owner-set auto-approve limit; a draft without one always waits for a person.
+   */
+  readonly act?: DraftAct;
   /**
    * Typed as the literal `false`. A proposal has committed nothing and can commit nothing —
    * hard rule #5 in the type system rather than in a comment.
@@ -335,6 +341,11 @@ export interface AiDeps {
   /** The sum of every agent's own ceiling — the shop's cap may not be set below it. */
   readonly agentCeilingsTotal?: (tenantId: string) => Promise<number> | number;
   readonly proposalOutcomes?: (tenantId: string) => Promise<readonly { readonly proposalId: string; readonly decision: 'approved' | 'rejected'; readonly by: string; readonly at: string; readonly reason?: string }[]>;
+  /**
+   * CR-01 OI-12: after a run is recorded, the owner-set auto-approve rule decides each new draft (services/ai/src/auto-approve.ts
+   * `sweepDrafts`). Deterministic — no model, no spend. Absent → every draft waits for a person, as before.
+   */
+  readonly afterRun?: (tenantId: string, proposals: readonly Proposal[]) => Promise<readonly { readonly proposalId: string; readonly outcome: string }[]>;
   readonly now: () => string;
 }
 
@@ -475,10 +486,12 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         const at = deps.now();
         const runId = `run-${agent}-${ctx.idempotencyKey ?? at}`;
         await deps.recordRun?.(ctx.tenantId, { runId, agent, by: ctx.userId, at, costMinor: cost.costMinor, calledAModel: cost.calledAModel, proposals, refused: refusals });
+        // CR-01 OI-12: the owner-set rule (never the assistant) decides each draft — approved by rule, or waits for a person.
+        const ruleDecisions = (await deps.afterRun?.(ctx.tenantId, proposals)) ?? [];
         return {
           status: 200,
           body: {
-            runId, proposals, refused: refusals,
+            runId, proposals, refused: refusals, ruleDecisions,
             costMinor: cost.costMinor, calledAModel: cost.calledAModel,
             ...(callerEstimate === undefined ? {} : { ignoredFromCaller: ['estimatedCostMinor (the server meters the cost)'] }),
             // Stated on every reply, so nothing downstream can read a proposal as an action.

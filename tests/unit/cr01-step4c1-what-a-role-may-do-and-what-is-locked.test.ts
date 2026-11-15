@@ -101,14 +101,14 @@ describe('CR-01 step 4c-1: what can be changed from a screen, and what never can
   });
 
   it('f. never who controls roles, approvals or AI — even for the owner\'s own role (hard rule 5)', () => {
-    for (const p of ['identity.role.grant', 'identity.role.request', ROLE_ADJUST_PERMISSION, 'identity.ca.grant.request', 'approvals.rules.approve', 'ai.agent.enable', 'ai.killswitch.set', 'ai.budget.set', 'ai.model.approve']) {
+    for (const p of ['identity.role.grant', 'identity.role.request', ROLE_ADJUST_PERMISSION, 'identity.ca.grant.request', 'approvals.rules.approve', 'ai.agent.enable', 'ai.killswitch.set', 'ai.budget.set', 'ai.model.approve', 'ai.autoapprove.propose', 'ai.autoapprove.confirm', 'ai.autoapprove.stop']) {
       expect(judge(STORE_MANAGER_ROLE_ID, p, holders(p).includes(STORE_MANAGER_ROLE_ID) ? 'remove' : 'add'), p).toMatchObject({ reason: 'controls_roles_approvals_or_ai' });
     }
   });
 
   it('g. OB-741 "A": the owner\'s reserved powers never go to another role, and the owner\'s own role is never reduced', () => {
     const reserved = ownerReservedPermissions(ROLE_CATALOGUE, OWNER_ROLE_ID);
-    expect(reserved.size).toBe(105);
+    expect(reserved.size).toBe(106); // 105 when decided (OB-741); + ai.autoapprove.propose (CR-01 step 6b, the owner's alone)
     expect(reserved.has('price.change.approve')).toBe(true);
     expect(reserved.has(ROLE_ADJUST_PERMISSION)).toBe(false); // the store manager holds it too (OB-740 "B")
     for (const p of reserved) {

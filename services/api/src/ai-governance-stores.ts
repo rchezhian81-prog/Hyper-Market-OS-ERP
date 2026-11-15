@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
-import type { AgentId, KillSwitch } from '../../../packages/ai/src/index';
+import type { AgentId, AutoApproveDecision, KillSwitch } from '../../../packages/ai/src/index';
 import { STREAM, streamName } from './adapters';
 import {
   foldKillSwitches, stoppedByScopedSwitches,
@@ -81,8 +81,14 @@ export function aiGovernanceStore(input: { readonly store: EventStore; readonly 
       const s = streams();
       const approved = await all<ProposalOutcome>(store, tenantId, s.outcomes, 'AIRecommendationApproved');
       const rejected = await all<ProposalOutcome>(store, tenantId, s.outcomes, 'AIRecommendationRejected');
+      // CR-01 OI-12: a draft approved by an owner-set rule is decided too — by the RULE (`rule:<ruleId>`), never by a person
+      // who did not decide it, and never by the assistant. Written under the same key, so only one decision ever lands.
+      const byRule = (await all<AutoApproveDecision>(store, tenantId, s.outcomes, 'AIDraftAutoApproved')).flatMap((d): ProposalOutcome[] =>
+        d.outcome === 'auto_approved'
+          ? [{ proposalId: d.proposalId, agent: d.draftedBy, decision: 'approved', by: d.approvedBy, at: d.at, reason: d.detail, wouldRequire: d.ordinaryRoute, committedAnything: false }]
+          : []);
       const first = new Map<string, ProposalOutcome>();
-      for (const o of [...approved, ...rejected].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) if (!first.has(o.proposalId)) first.set(o.proposalId, o);
+      for (const o of [...approved, ...rejected, ...byRule].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) if (!first.has(o.proposalId)) first.set(o.proposalId, o);
       return [...first.values()];
     },
     // AIRecommendationApproved / AIRecommendationRejected — keyed on the proposal, so a second decision cannot land.

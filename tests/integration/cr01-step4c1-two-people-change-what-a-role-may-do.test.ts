@@ -74,7 +74,7 @@ describe('CR-01 step 4c-1: two people change what a role may do — at head offi
     expect(body.roles.find((r) => r.roleId === 'cashier')).toMatchObject({ added: ['pos.return.approve'], locked: null });
     expect(body.roles.find((r) => r.roleId === 'store_computer')!.locked).toMatchObject({ reason: 'machine_role' });
     expect(body.history.map((x) => x.requestId)).toEqual(['RP1']);
-    expect(body.ownerReserved).toHaveLength(105);
+    expect(body.ownerReserved).toHaveLength(106); // 105 when decided (OB-741); + CR-01 step 6b's owner-only permission
 
     // Audited in the asker's name, the approver named; the owner alerted with who it reaches.
     const trail = await h.request({ method: 'GET', path: '/v1/audit/trail', userId: 'u-owner', tenantId: T, query: { objectType: 'role', objectId: 'cashier' } });

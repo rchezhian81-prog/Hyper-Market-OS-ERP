@@ -128,7 +128,10 @@
    itself; the first owner laid down at setup; whether a role is the IT function (an adjustment can never flip it); and
    OB-676's starting suggestion of which roles a delivery-exception queue may name (narrower is safe — the work itself is
    judged on the adjusted roles).
-6. **Decision 7's "not yet on the tills"** is said in words by the apply route in 4c-1; the page that shows it until the
+6. **CR-01 step 6b's auto-approve permissions (`ai.autoapprove.*`) are on the never list** (item f: they decide what an AI
+   agent's draft may commit on its own). Step 6b also added one permission only the owner holds
+   (`ai.autoapprove.propose`), so the owner's reserved list, worked out from the built-in roles, is now 106.
+7. **Decision 7's "not yet on the tills"** is said in words by the apply route in 4c-1; the page that shows it until the
    store PC reports the new pack is part of 4c-2.
 
 ## Reconsider-when
