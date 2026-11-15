@@ -5,6 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## THE PLAN FROM 15 NOVEMBER 2026 — the whole store, working, simple (OB-800, OB-801) — READ THIS FIRST
+- **Owner's direction (15 Nov, in writing):** no pilot department. Finish the whole product; the owner runs the whole store on it **in parallel with Bpal** (Bpal stays the record until he says otherwise) and asks for corrections from daily use. He says the screens are too complicated and most features do not work. **Nothing new is built until every daily task works and is simple.**
+- **Working rules (OB-801, written into CLAUDE.md):** decide small reversible things yourself and list them each evening; ask the owner only money / tax / legal / security, batched daily; merge when every check is green; ONE working conversation at a time; report only done / store actions / blocked.
+- **Order of work:**
+  1. **Prove every daily task end to end, as each role does it** (cashier, store manager, warehouse, purchase, accountant, owner) on a copy set up like the real store, in a real browser: open the screen, do the task, see the result where it should land. Every failure and every confusing step goes on one defect list (`docs/registers/daily-work-defects.md`).
+  2. **Fix the list**, simplest first: fewer screens, fewer fields, plain words, one obvious button per task. Each fix proved by an automated test that does the task as the person would.
+  3. **Full load from Bpal** (every department, not a pilot): the owner's one list of exports and the backup check (MG-02), then load, publish prices, first sale.
+  4. **Parallel run** beside Bpal; the owner's corrections fixed as they come.
+  5. Only then the remaining roadmap items (CR-01 4c-2, 4d, 4e; OI-13 A11/A13; the rest).
+- **Paused until step 2 is done:** new features in every other conversation (CR-01 4c-2 included).
+- **Owner, meanwhile:** pause the other conversations. Nothing else.
+
 ## Fix round 1 of the pilot-first audit (15 November 2026) · OB-773
 - **Why:** the audit (OB-795, `docs/audit/pilot-first-audit-2026-11-15/`) found what would stop or hurt the pilot; the owner chose (OB-773) 1 A — the store PC's office pages reaching the office API is CR-01 step 4's to build (extend ADR-0033 to every page); 2 A — this round; 3 B — the store manager may change items, barcodes and GST with the owner approving (round 1b, next).
 - **Fixed (each with tests seen failing first):** B-1 a supplier payment checks only who matched/raised the bills it pays (no supplier could be paid before); B-2 goods receipt review shows pieces and kilograms, not 1/100th; B-3 a warehouse-only person is told before scanning a delivery that receiving is the Receiver / QC's or store manager's (OB-623 rule now one shared table); D-2 Cash over/short says "Not known — why" when it cannot read, never "all signed off", and shows the store PC's own short drawers; Today flags a drawer closed short; D-3 a new owner step `store-rules` sets the closing checklist, near-expiry days, limits and the other store rules from the store PC (guide Part 18b); D-4 the till's Qty keypad replaces the number (3 is 3, not 13); D-5 cash is refused until the opening float is taken (card/UPI still work), Close till reachable after; D-6 UPI asks about the UPI app or sound box, not the card machine; D-10 Reports and Expiry say one true thing; D-11 every page showing sample figures greys out its action buttons (about 35 pages, one rule in the shared chrome); C-11 the owner guide gives the installed-PC command form from Part 17 on, with a read-first note.
