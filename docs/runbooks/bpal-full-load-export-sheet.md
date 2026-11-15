@@ -71,5 +71,7 @@ If a report also has a **date box** we have not listed (for example the EANCODE 
 - **Label facts outside packaged groceries.** Today only packaged groceries may load before their label facts are read
   (OB-738, "sell at the till only"). Household, personal care, dairy and loose foods wait until their facts are typed.
   Whether to change that is your decision — it is asked separately, with options.
-- **The evening check** (owner guide Part 31) still compares **one** department. Before the first parallel day with the
-  whole store, it needs a change — ask before you start that day.
+- **The evening check** (owner guide Part 31) now compares the **whole store**: every department's totals (the same
+  departments as this load, from the HSN code) and the whole store's total; loose goods to the gram. Export Bpal's
+  item-wise report for **every department** — never one. Whether to allow a small kg rounding difference is asked
+  separately; until you decide, even one gram shows as a difference.

@@ -3212,11 +3212,11 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
       bills: kept.map((b) => ({ number: b.number, oldErpBillNumber: b.oldErpBillNumber, tradingDay: b.tradingDay, totalMinor: b.totalMinor, refundedMinor: b.refundedMinor })),
     };
   }
-  // OB-263: the evening check from the old ERP's item-wise and bill-wise files, kept on this box (offline). The pilot
-  // department it filters by (the applied department slice's, MG-05) — absent means not known, and nothing is compared.
+  // OB-263: the evening check from the old ERP's item-wise and bill-wise files, kept on this box (offline). OB-800: it
+  // compares the whole store, every department — there is no pilot department to send.
   if (input.mirrorPilot?.on === true && input.eveningCheck !== undefined) {
     payload['eveningCheck'] = {
-      ...(policy.pilotDepartment === undefined ? {} : { department: { categoryId: policy.pilotDepartment.categoryId, name: policy.pilotDepartment.name } }),
+      scope: 'whole_store',
       mappings: input.eveningCheck.mappings,
       days: input.eveningCheck.days,
     };

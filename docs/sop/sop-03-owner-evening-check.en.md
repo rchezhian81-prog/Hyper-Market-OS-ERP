@@ -2,12 +2,14 @@
 
 **Sheet id:** SOP-03 · **Decisions:** OB-254 (the owner is the daily reconciler and the incident owner for the first two
 weeks), MG-10, OB-263 (the old ERP's item-wise and bill-wise reports, loaded as files), OB-256 and OB-265 (payments and
-loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-269 (exchanges on the old ERP only) ·
+loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-269 (exchanges on the old ERP only),
+OB-800 (no pilot department: the whole store runs alongside Bpal and is compared, every department) ·
 **Language:** English (Tamil: `sop-03-owner-evening-check.ta.md`)
 **For:** the owner, every evening after closing.
 
 > **Before the first day:** the parallel-run terms (who reconciles every day, how many clean days) must be written once,
-> with `store-computer parallel-policy` (owner guide Part 23), and the pilot department's products loaded (Part 22). The
+> with `store-computer parallel-policy` (owner guide Part 23), and the whole store's products loaded from Bpal (Part 22,
+> OB-800 — there is no pilot department). The
 > new till's side of the check is the store computer's own record of the day's mirror sales and refunds: every one was
 > keyed "Paid on old system" with the old bill number (Sheet 2, steps 5 to 7).
 
@@ -19,8 +21,8 @@ loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-
    ERP only, OB-269). Each one explains a difference.
 3. **On the old ERP, save the item-wise sales report for today.** The menu names differ from one ERP to another, so look
    for the sales reports and choose the one that lists each item with its quantity, value and tax ("item-wise",
-   "product-wise" or similar). Choose today's date only. If the report lets you choose a department or category, choose
-   the pilot department only. Send it to Excel (an "Export" or "Excel" button). If you cannot find the report, **STOP AND
+   "product-wise" or similar). Choose today's date only, and **every department** — the whole store (OB-800); never
+   one department or category. Send it to Excel (an "Export" or "Excel" button). If you cannot find the report, **STOP AND
    ASK**: send a photo of the reports menu.
 4. **On the old ERP, save the bill-wise list for today** the same way: the report that lists each bill with its bill
    number, date and total ("bill-wise", "invoice register" or similar). If it can also show the items on each bill, choose
@@ -33,17 +35,18 @@ loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-
 6. In **your own** Windows account, open the migration screen: in Microsoft Edge open the till favourite, and in the
    address bar change the word `pos` at the end to `migration`. Press Enter. The screen says **Enter your PIN**: type
    your own staff ID and your own till PIN, and press **Sign in** (OB-259).
-7. Click **Running both**. Under **Evening check from the old system's files**, check the pilot department it names, and
-   set **Which day** to today.
+7. Click **Running both**. Under **Evening check from the old system's files**, check that it says it compares **the
+   whole store — every department** (OB-800), and set **Which day** to today.
 8. **The first time only — say which column is which.** Under **1.** pick the item-wise file. The screen shows
    **Which column is which**: for each of our fields (**Item code or barcode**, **Quantity sold**, **Sales value (₹)**,
    **Tax (₹)**, the date if the report has one) choose the old ERP's own column from the list. Never choose a customer's
    name or mobile column. Answer **How does the report write its dates?** and **Does the report's sales value already
    include the tax?**.
-   - If the report has a department column (OB-263 A): choose it for **Department**, then in
-     **Which of these is the pilot department?** choose the pilot department's own name, from the names the file holds. The other departments'
-     rows are then left out, and the screen says how many — never silently. If the report has no department column,
-     leave **Department** at **Not in this report** and save the report for the pilot department only (step 3).
+   - A field the report does not have (the date, for example) stays at **Not in this report**.
+   - There is no department to choose (OB-800): the whole report is read. The screen no longer asks
+     **Which of these is the pilot department?** (OB-263 A, before OB-800). If a mapping saved before OB-800 still keeps
+     one department, the screen says so in a warning beside the figures — the other departments' rows are left out and
+     the screen says how many, never silently: press **Change** and save the mapping again.
    - Press **Save the mapping**.
 
    Then under **2.** pick the bill-wise file and do the same (**Bill number**, **Bill date**, **Bill total (₹)**, and the
@@ -61,14 +64,21 @@ loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-
    - A file for another day, a missing column, or a line it cannot read is refused, and the screen says which line. Fix
      the file in Excel, save it as CSV again, and load again.
 10. **Read the differences**, top to bottom:
-    - **The day's totals (pilot department)**: sales value, tax, number of bills and quantity — old system beside the new
-      till. **Payments taken (₹)** and **Loyalty points** say **Not compared in the mirror pilot** (OB-256, OB-265): the
+    - **The whole store's totals**: sales value, tax, number of bills and quantity — old system beside the new till.
+      Loose goods sold by weight are compared to the gram (three decimals, for example 1.250 kg); even one gram of
+      difference is shown. An item sold in whole pieces that the old report shows as a part (1.5) is shown as a
+      difference, with **a part quantity of an item sold in whole units** beside it — never refused.
+    - **Each department**: each department's items compared, the items that differ, its value, tax and quantity — old
+      system → new till. The departments are the ones the Bpal load gave each item from its HSN code (owner guide
+      Part 22). **Department not known** and **Not in the new catalogue** are listed apart. They add up to the whole
+      store's totals. **Payments taken (₹)** and **Loyalty points** say **Not compared in the mirror pilot** (OB-256, OB-265): the
       old ERP takes every payment and keeps loyalty. They are never counted as zero. **Not known** means a file did not
       say it — it is never a zero.
     - **Items that differ** and **Not in the new catalogue**: an item on the old report the new till does not have.
-    - **Bill by bill**: an old bill with pilot items **not keyed on the new till**; a bill keyed on the new till **not on
-      the old list** (the old bill number was mistyped, or it is another day's); a bill whose pilot items **differ in
-      value**. If the bill-wise list has no item lines, the screen says that only the keyed bills could be checked.
+    - **Bill by bill**: an old bill **not keyed on the new till** (every bill of the store is rung on both); a bill keyed
+      on the new till **not on the old list** (the old bill number was mistyped, or it is another day's); a bill whose
+      items **differ in value**. If the bill-wise list has no item lines, the screen says that only whether each bill is
+      on both could be checked.
     - **To explain: returns, credit notes and exchanges on the old system** — write what each one was (OB-269).
     - To check one bill by hand, **Bill by bill (mirror pilot)** further down lists the day's sales on the new till:
       **New bill**, **Old bill**, **Amount** and **Refunded**.
