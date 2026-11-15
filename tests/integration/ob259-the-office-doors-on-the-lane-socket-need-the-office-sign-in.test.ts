@@ -60,8 +60,10 @@ describe('the lane socket\'s office doors need the office sign-in (OB-259)', () 
       try { return [JSON.parse(line.slice(at)) as Record<string, unknown>]; } catch { return []; }
     });
 
-  it('the office doors are exactly the day close, the reopen and the office screens\' hand-over — none of the till\'s', () => {
-    expect(Object.keys(OFFICE_LANE_ROUTES).sort()).toEqual(['/lane/day-close', '/lane/day-reopen', '/lane/outbox']);
+  it('the office doors are exactly the day close, the reopen, the closing-checklist tick and the office screens\' hand-over — none of the till\'s', () => {
+    // Fix batch 3 (D-008): the closing-checklist tick is an office job too, held to the checklist's own permission.
+    expect(Object.keys(OFFICE_LANE_ROUTES).sort()).toEqual(['/lane/checklist-tick', '/lane/day-close', '/lane/day-reopen', '/lane/outbox']);
+    expect(OFFICE_LANE_ROUTES['/lane/checklist-tick']).toBe('workforce.roster.manage');
     for (const till of ['/lane/sales', '/lane/returns', '/lane/operator/sign-in', '/lane/cash-movements', '/lane/shift-close', '/lane/approvals', '/lane/receipt-numbers', '/lane/held-bills', '/lane/payment-attempts', '/lane/till-activity']) {
       expect(Object.keys(OFFICE_LANE_ROUTES), till).not.toContain(till);
     }

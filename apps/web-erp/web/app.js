@@ -106,6 +106,11 @@ const WORDS = {
     carried: 'The day is closed and locked. These payments are on head office\'s list until the provider answers',
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
+    // Fix batch 3 (D-012): the day the store computer closes, named on the button and in every message.
+    closeNamed: 'Close {day}', closeThisDay: 'This closes {day} — the last trading day that has ended.',
+    runningDayWhen: 'Today, {day}, is still trading. It can be closed from {at} on {next}, after the store\'s day cutoff.',
+    readyToClose: 'Nothing is open for {day}', readyNote: 'Key your till PIN, then press "{button}".',
+    closedNamed: '{day} is closed and locked.', stillOpenNamed: '{day} cannot close yet',
     andMore: 'and more', whatToDo: 'What to do',
     // OB-271 · audit A9: the day's card and UPI list (real trading only).
     cardDayTitle: 'Card and UPI today — match against the machine\'s settlement slip',
@@ -192,6 +197,10 @@ const WORDS = {
     carryPinHint: 'இரண்டாம் நபர் இதைத் தாமே இந்தத் திரையில் தட்டச்சு செய்ய வேண்டும்.',
     carried: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது. வழங்குநர் பதில் தரும் வரை இந்தக் கட்டணங்கள் தலைமை அலுவலகப் பட்டியலில் இருக்கும்',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
+    closeNamed: '{day} நாளை முடி', closeThisDay: 'இது {day} நாளை முடிக்கும் — முடிந்துவிட்ட கடைசி வியாபார நாள்.',
+    runningDayWhen: 'இன்று, {day}, வியாபாரம் இன்னும் நடக்கிறது. கடையின் நாள் முடிவு நேரத்துக்குப் பிறகு, {next} {at} முதல் அதை முடிக்கலாம்.',
+    readyToClose: '{day} நாளுக்கு எதுவும் திறந்திருக்கவில்லை', readyNote: 'உங்கள் கல்லா PIN-ஐ உள்ளிட்டு, "{button}" அழுத்தவும்.',
+    closedNamed: '{day} முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpenNamed: '{day} நாளை இன்னும் முடிக்க முடியாது',
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
     cardDayTitle: 'இன்றைய கார்டு மற்றும் UPI — இயந்திரத்தின் செட்டில்மென்ட் சீட்டுடன் சரிபார்க்கவும்',
     cardDayLead: 'இன்று இந்தக் கடை கணினியின் கல்லாக்களில் நடந்த ஒவ்வொரு கார்டு மற்றும் UPI கட்டணமும், கடையின் இயந்திரம் அச்சிட்ட எண்ணுடன். நாளை முடிக்கும் முன் ஒவ்வொன்றையும் இயந்திரத்தின் செட்டில்மென்ட் சீட்டுடன் சரிபார்க்கவும். கார்டு எண் ஒருபோதும் சேமிக்கப்படுவதோ காட்டப்படுவதோ இல்லை.',
@@ -217,6 +226,29 @@ const WORDS = {
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+
+// Fix batch 3 (D-012): a trading day in words — "Friday 14 Nov" / "வெள்ளி 14 நவம்பர்" — from its date, never this device's clock.
+const DAY_NAMES = {
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  ta: ['ஞாயிறு', 'திங்கள்', 'செவ்வாய்', 'புதன்', 'வியாழன்', 'வெள்ளி', 'சனி'],
+};
+const MONTH_NAMES = {
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  ta: ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்', 'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'],
+};
+function dayWords(iso) {
+  if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${DAY_NAMES[lang][d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_NAMES[lang][d.getUTCMonth()]}`;
+}
+const fill = (text, vars) => text.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+/** The day the STORE COMPUTER closes if asked now, as it told this page (`managerData.dayClose`) — null with no box. */
+const boxDayClose = () => {
+  const dc = window.managerData && window.managerData.dayClose;
+  return dc && typeof dc.closes === 'string' ? dc : null;
+};
+/** "Close Friday 14 Nov" — or the plain words when no store computer has said which day. */
+const closeButtonWords = () => { const dc = boxDayClose(); return dc ? fill(t('closeNamed'), { day: dayWords(dc.closes) }) : t('closeNow'); };
 
 /**
  * One entry per `BlockerKind` in the model, in both languages.
@@ -250,6 +282,10 @@ const BLOCKER_WORDS = {
   payments_pending: {
     en: { title: 'card or UPI payment(s) have no final answer yet', todo: 'The customer may or may not have paid. Do not run the card again. Check each payment with the provider (the till\'s Check payment button), then check again.' },
     ta: { title: 'கார்டு அல்லது UPI கட்டணம்(கள்) இன்னும் இறுதி பதில் பெறவில்லை', todo: 'வாடிக்கையாளர் பணம் செலுத்தியிருக்கலாம் அல்லது இல்லாமல் இருக்கலாம். கார்டை மீண்டும் தேய்க்க வேண்டாம். ஒவ்வொரு கட்டணத்தையும் வழங்குநரிடம் சரிபார்த்து, மீண்டும் பார்க்கவும்.' },
+  },
+  checklist_open: {
+    en: { title: 'closing-checklist item(s) must be done before the day closes', todo: 'Do each one and tick it on the Checklists page, then check again.' },
+    ta: { title: 'மூடல் பட்டியல் உருப்படி(கள்) நாள் முடியும் முன் செய்யப்பட வேண்டும்', todo: 'ஒவ்வொன்றையும் செய்து, சரிபார்ப்புப் பட்டியல்கள் பக்கத்தில் குறியிட்டு, மீண்டும் பார்க்கவும்.' },
   },
   rules_refused: {
     en: { title: 'The day-close rules refused', todo: 'The screen and the rules disagree. Do not force it — report this.' },
@@ -1416,7 +1452,10 @@ el('check-close').addEventListener('click', () => {
   el('close-pin-row').hidden = (blockers.length > 0 && !onlyPaymentsOpen(blockers)) || !session.canCloseViaBox;
   // OB-55: only card/UPI payments open — offer the close with them carried to head office, on a second person's PIN.
   el('carry-row').hidden = !onlyPaymentsOpen(blockers);
-  if (blockers.length > 0) tell(t('stillOpen'), onlyPaymentsOpen(blockers) ? t('carryLead') : t('closedNote'));
+  const dc = boxDayClose();
+  if (blockers.length > 0) tell(dc ? fill(t('stillOpenNamed'), { day: dayWords(dc.closes) }) : t('stillOpen'), onlyPaymentsOpen(blockers) ? t('carryLead') : t('closedNote'));
+  // D-012: the confirmation names the day the store computer will close.
+  else if (dc && session.canCloseViaBox) tell(fill(t('readyToClose'), { day: dayWords(dc.closes) }), fill(t('readyNote'), { button: closeButtonWords() }), true);
 });
 
 el('do-carry').addEventListener('click', () => {
@@ -1445,7 +1484,7 @@ el('do-carry').addEventListener('click', () => {
     });
     if (outcome.closed) {
       const named = session.blockersForClose(localStamp()).flatMap((b) => b.items.map((i) => i.what));
-      tell(t('dayClosed'), `${t('carried')}${named.length > 0 ? `: ${named.join('; ')}` : '.'}`, true);
+      tell(fill(t('closedNamed'), { day: dayWords(outcome.tradingDay) }), `${t('carried')}${named.length > 0 ? `: ${named.join('; ')}` : '.'}`, true);
       el('blockers').replaceChildren();
       el('carry-row').hidden = true;
       el('close-pin-row').hidden = true;
@@ -1474,7 +1513,8 @@ el('do-close').addEventListener('click', () => {
       const outcome = await session.closeViaBox({ ...closeInput, closerPin });
       el('close-pin-row').hidden = true;
       if (outcome.closed) {
-        tell(t('dayClosed'), t('closedNote'), true);
+        // D-012: the day the BOX closed, by name — "Friday 14 Nov is closed and locked."
+        tell(fill(t('closedNamed'), { day: dayWords(outcome.tradingDay) }), t('closedNote'), true);
         el('do-close').hidden = true;
         el('blockers').replaceChildren();
         return;
@@ -1484,7 +1524,8 @@ el('do-close').addEventListener('click', () => {
       // is one, and always carry the box's own reason so a manager is never told a bare "no".
       renderBlockers(session.blockersForClose(localStamp()));
       el('do-close').hidden = true;
-      tell(t('stillOpen'), boxReason(outcome));
+      const dcNow = boxDayClose();
+      tell(dcNow ? fill(t('stillOpenNamed'), { day: dayWords(dcNow.closes) }) : t('stillOpen'), boxReason(outcome));
       return;
     }
 
@@ -1567,7 +1608,11 @@ function paintChrome() {
   el('count-location-label').textContent = t('whereIsIt');
   el('enter-count').textContent = t('enterCount');
   el('close-title').textContent = t('closeDay');
-  el('close-lead').textContent = t('closedNote');
+  // D-012: which trading day the store computer closes, and when today's can be closed (after the store's cutoff).
+  const dc = boxDayClose();
+  el('close-lead').textContent = dc && session.canCloseViaBox
+    ? `${fill(t('closeThisDay'), { day: dayWords(dc.closes) })} ${fill(t('runningDayWhen'), { day: dayWords(dc.runningDay), at: dc.runningDayClosesFrom?.at ?? '', next: dayWords(dc.runningDayClosesFrom?.day) })} ${t('closedNote')}`
+    : t('closedNote');
   worded(el('check-close'), 'list-checks', t('checkOpen'));
   el('approvals-col-what').textContent = t('colRequest');
   el('approvals-col-value').textContent = t('colValue');
@@ -1575,7 +1620,7 @@ function paintChrome() {
   el('close-pin-hint').textContent = t('closePinHint');
   el('carry-pin-hint').textContent = t('carryPinHint');
   if (!el('carry-needs').hidden) el('carry-needs').textContent = t('carryNeeds');
-  el('do-close').textContent = t('closeNow');
+  el('do-close').textContent = session.canCloseViaBox ? closeButtonWords() : t('closeNow');
   el('close-pin-label').textContent = t('closePin');
   el('close-pin').setAttribute('aria-label', t('closePin'));
   el('carry-lead').textContent = t('carryLead');

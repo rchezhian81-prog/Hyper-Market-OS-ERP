@@ -103,6 +103,12 @@ export interface ManagerPorts {
    */
   pendingPayments?(tradingDay: string): Register;
   /**
+   * Fix batch 3 (D-011 · P-03): the store rules' closing-checklist items that "must be done before the day closes" and
+   * are not done, for the day the STORE COMPUTER closes next (its most recently ended trading day). Absent: head office
+   * sent no closing checklist, so none holds the close. Present, an open one blocks the close — the box refuses it too.
+   */
+  closingChecklist?(): Register;
+  /**
    * Ask the STORE COMPUTER to close and lock the trading day (M14-FR-04).
    *
    * Absent means this screen is not wired to a box — the local preview close is used instead, and it
@@ -200,6 +206,8 @@ export const BLOCKER_KINDS = Object.freeze([
   'nobody_named',
   /** A card or UPI payment has no final answer yet — the day's takings are not known (D04-FR-02 · PF-06). */
   'payments_pending',
+  /** A store-rules closing-checklist item that must be done before the day closes is not done (fix batch 3 · D-011). */
+  'checklist_open',
 ] as const);
 
 export type BlockerKind = (typeof BLOCKER_KINDS)[number];
@@ -245,6 +253,8 @@ export function blockerSentence(blocker: Blocker): string {
       return 'Nobody is named on this screen, so nobody can close the day.';
     case 'payments_pending':
       return `${blocker.count} card or UPI payment(s) still have no final answer from the provider.`;
+    case 'checklist_open':
+      return `${blocker.count} closing-checklist item(s) must be done before the day closes and are not done.`;
   }
 }
 
@@ -688,6 +698,7 @@ export function createManagerSession(
       { source: 'exceptions', kind: 'exceptions_open', register: ports.openExceptions(config.tradingDay) },
       { source: 'unsent', kind: 'items_unsent', register: unsentIncludingHeldHere() },
       ...(ports.pendingPayments === undefined ? [] : [{ source: 'payments', kind: 'payments_pending' as BlockerKind, register: ports.pendingPayments(config.tradingDay) }]),
+      ...(ports.closingChecklist === undefined ? [] : [{ source: 'checklist', kind: 'checklist_open' as BlockerKind, register: ports.closingChecklist() }]),
     ];
     for (const gate of gates) {
       if (!gate.register.known) {
@@ -704,9 +715,9 @@ export function createManagerSession(
       }
     }
 
-    // Tasks are deliberately NOT a gate. M14-FR-04 names exceptions and unsent items; an unfinished
-    // shelf-replenishment task is not a reason a day's takings cannot be locked, and adding gates
-    // the roadmap does not ask for is how a close nobody can pass gets worked around instead.
+    // Staff tasks in general are NOT a gate. Only the store rules' closing-checklist items head office marked as
+    // "must be done before the day closes" are (fix batch 3 · D-011, above) — the store's own rule, which the box
+    // enforces too; an unfinished non-blocking item never holds the close.
     return blockers;
   };
 

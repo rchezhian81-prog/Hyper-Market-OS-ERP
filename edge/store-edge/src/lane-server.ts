@@ -125,6 +125,13 @@ const LANE_DAY_CLOSE_ROUTE = '/lane/day-close';
  * day-close log. Its body is `{ dayCloseId, reopenedBy, reason, approvedBy }`.
  */
 const LANE_DAY_REOPEN_ROUTE = '/lane/day-reopen';
+
+/**
+ * Fix batch 3 (D-008 · M25-FR-02): the CLOSING-CHECKLIST tick route, POST /lane/checklist-tick. The Checklists page asks
+ * the box to record ONE store-rules closing-checklist item as done, by the person signed in to the office screens, for
+ * the running trading day or the day waiting to be closed. Body `{ forDate, itemId }`; the box records it append-only.
+ */
+const LANE_CHECKLIST_TICK_ROUTE = '/lane/checklist-tick';
 /**
  * The STATUS read route (Stage G slice 2 · design system §1 rule 4). The box's own account of its link to head
  * office — cloud reachability, everything still unsent across its queues, dead letters, when something last got
@@ -329,6 +336,19 @@ export interface LaneOperatorPort {
   seal?(subject: Omit<TillSealSubject, 'tenantId'>): string;
 }
 
+/** What the box does when a person ticks a store-rules closing-checklist item (fix batch 3 · D-008). */
+export type LaneChecklistTickHandler = (
+  req: {
+    readonly forDate: string;
+    readonly itemId: string;
+    /** The person this box verified for the request (the office sign-in, or the hosted sign-in). Absent: nobody — refused. */
+    readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+  },
+) => Promise<
+  | { readonly ticked: true; readonly forDate: string; readonly itemId: string; readonly doneBy: string; readonly doneAt: string }
+  | { readonly ticked: false; readonly refusedBecause: string; readonly reason: string; readonly reasonTa?: string }
+>;
+
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
   req: {
@@ -474,6 +494,8 @@ export function laneCallRefusal(
 export const OFFICE_LANE_ROUTES: Readonly<Record<string, string | null>> = Object.freeze({
   '/lane/day-close': 'till.dayclose.read',
   '/lane/day-reopen': 'till.dayclose.read',
+  // Fix batch 3 (D-008): ticking the closing checklist needs the right that signs a checklist (M25-FR-02).
+  [LANE_CHECKLIST_TICK_ROUTE]: 'workforce.roster.manage',
   [DEVICE_OUTBOX_PATH]: null,
 });
 const isOfficeLaneRoute = (pathname: string): boolean => Object.prototype.hasOwnProperty.call(OFFICE_LANE_ROUTES, pathname);
@@ -553,6 +575,11 @@ export function startLaneServer(input: {
    * `{ dayCloseId, reopenedBy, reason, approvedBy }`; the box makes the authoritative decision.
    */
   readonly reopenDay?: LaneDayReopenHandler;
+  /**
+   * Fix batch 3 (D-008): record one store-rules closing-checklist item as done. Absent on a box that keeps no closing
+   * checklist, in which case POST /lane/checklist-tick answers 404.
+   */
+  readonly tickChecklist?: LaneChecklistTickHandler;
   /**
    * The box's sync status for the screens' badges (GET /lane/sync-status). Absent on a lane that does not report
    * one, in which case the route answers 404 and the screen says it could not ask.
@@ -1599,6 +1626,48 @@ export function startLaneServer(input: {
       return;
     }
 
+    // Fix batch 3 (D-008): POST /lane/checklist-tick — one closing-checklist item ticked by the person signed in to the office
+    // screens. Same loopback + application/json authorization as every other write, and the office gate (with the
+    // tick's own permission), both decided BEFORE the body is read. 200 on a real attempt: the body says ticked or why not.
+    if (req.method === 'POST' && pathname === LANE_CHECKLIST_TICK_ROUTE) {
+      const doTick = input.tickChecklist;
+      if (doTick === undefined) {
+        send(res, 404, { ticked: false, reason: 'this box keeps no closing checklist' }, cors);
+        req.resume();
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) {
+        send(res, authRefusal.status, { ticked: false, reason: authRefusal.reason }, cors);
+        req.resume();
+        return;
+      }
+      const officeAsked = officeAnswer(req, pathname);
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (reason) => ({ ticked: false, reason }));
+        if (body === undefined) return;
+        const office = await officeAsked;
+        if (!office.ok) {
+          send(res, office.status, { ticked: false, ...officeWords(office.refusedBecause) }, cors);
+          return;
+        }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const forDate = typeof b['forDate'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b['forDate']) ? b['forDate'] : undefined;
+        const itemId = typeof b['itemId'] === 'string' && b['itemId'].trim() !== '' ? b['itemId'].trim() : undefined;
+        if (forDate === undefined || itemId === undefined) {
+          send(res, 400, { ticked: false, reason: 'a tick needs the checklist\'s day and the item' }, cors);
+          return;
+        }
+        try {
+          const verifiedPerson = office.person ?? verifiedPersonOf(req);
+          send(res, 200, await doTick({ forDate, itemId, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
+        } catch (e) {
+          send(res, 200, { ticked: false, reason: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
+
     // The till's CASH read route: GET /lane/till-cash (SP-4c). Custody only — whether a float is out and who holds it —
     // never a balance (the drawer is counted blind). Refused to a foreign origin like every other read; 404 on a box
     // that keeps no till cash; never cached, because "a shift is open" from an hour ago is exactly the guess to avoid.
@@ -1729,7 +1798,7 @@ export function startLaneServer(input: {
 
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
-    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
+    if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_CHECKLIST_TICK_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
       || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE
       || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE
       || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE

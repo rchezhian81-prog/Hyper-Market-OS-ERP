@@ -215,7 +215,7 @@ import {
 import {
   createChecklistSession,
   type ChecklistPorts, type ChecklistSession, type ChecklistData, type StoredChecklist,
-  type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult,
+  type SubmitChecklistPort, type SubmitResult as ChecklistSubmitResult, type TickChecklistPort, type TickResult,
 } from './checklist-session';
 import {
   createProductionSession,
@@ -446,6 +446,17 @@ export interface ManagerData {
   readonly receivingChecklist?: unknown;
   /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
   readonly packedProductIds?: unknown;
+  /**
+   * Fix batch 3 (D-012 · D-011 · M14-FR-04): the day the STORE COMPUTER closes if asked now (its most recently ended
+   * trading day), the running day and when it can be closed (after the store's cutoff), and the store rules' closing-
+   * checklist items for the day being closed that must be done first and are not (absent: no closing checklist sent).
+   */
+  readonly dayClose?: {
+    readonly closes: string;
+    readonly runningDay: string;
+    readonly runningDayClosesFrom: { readonly day: string; readonly at: string };
+    readonly checklistOpen?: readonly RegisterItem[];
+  };
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -1876,6 +1887,12 @@ export interface ChecklistScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: ChecklistData;
+  /**
+   * Fix batch 3 (D-008): the store rules' closing checklist(s) as the STORE COMPUTER holds them — the same items Today
+   * counts and the day close checks — for the running day (and the day waiting to be closed while it has a blocking item
+   * open). Shown first, ticked on the box. Absent: head office sent this store no closing checklist.
+   */
+  readonly storeChecklists?: readonly StoredChecklist[];
 }
 
 const CHECKLIST_READ_PERMISSION = 'workforce.checklist.read';
@@ -1887,10 +1904,18 @@ export function checklistPortsFromData(
   data: ChecklistScreenData | undefined,
   worklist?: ChecklistData,
   submitPort: SubmitChecklistPort = NOOP_SUBMIT_CHECKLIST_PORT,
+  tickPort?: TickChecklistPort,
 ): ChecklistPorts {
   const held = new Set(data?.permissions ?? []);
+  // Fix batch 3 (D-008): ONE source — the store computer's copy of the store rules' closing checklist leads; a head-office
+  // checklist filed under the same id (its relayed copy of the very same ticks) is not listed twice.
+  const store = (data?.storeChecklists ?? []).map((c) => ({ ...c, source: 'store_rules' as const }));
+  const ids = new Set(store.map((c) => c.checklistId));
+  const merged = (list: ChecklistData): ChecklistData =>
+    store.length === 0 ? list : { checklists: [...store, ...list.checklists.filter((c) => !ids.has(c.checklistId))] };
   return {
-    worklist: () => worklist ?? data?.worklist ?? EMPTY_CHECKLISTS,
+    worklist: () => merged(worklist ?? data?.worklist ?? EMPTY_CHECKLISTS),
+    ...(tickPort === undefined ? {} : { tickPort: () => tickPort }),
     // Default-deny: an absent permission list can read/sign nothing (the server would refuse it anyway).
     mayRead: () => held.has(CHECKLIST_READ_PERMISSION),
     mayManage: () => held.has(CHECKLIST_MANAGE_PERMISSION),
@@ -1903,12 +1928,44 @@ export function bootChecklist(
   data: ChecklistScreenData | undefined,
   worklist?: ChecklistData,
   submitPort?: SubmitChecklistPort,
+  tickPort?: TickChecklistPort,
 ): ChecklistSession | null {
   if (data === undefined) return null;
   return createChecklistSession(
     { userId: data.userId === undefined ? null : data.userId },
-    checklistPortsFromData(data, worklist, submitPort),
+    checklistPortsFromData(data, worklist, submitPort, tickPort),
   );
+}
+
+/**
+ * Fix batch 3 (D-008): tick ONE store-rules closing-checklist item on the STORE COMPUTER — a cross-port POST to the box's
+ * lane socket (`/lane/checklist-tick`) carrying the office sign-in, so the box records it in the signed-in person's own
+ * name. A dropped link is a lost link, never a tick (P-08). `undefined` with no box to post to.
+ */
+export function openChecklistTickPort(laneWriteBase: string | undefined): TickChecklistPort | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  return {
+    post: async ({ forDate, itemId }): Promise<TickResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { ticked: false, lostLink: true };
+      try {
+        const res = await fetchFn(`${laneWriteBase}/lane/checklist-tick`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ forDate, itemId }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ticked?: boolean; reason?: string; reasonTa?: string };
+        if (res.status >= 200 && res.status < 300 && body.ticked === true) return { ticked: true };
+        return {
+          ticked: false, reason: typeof body.reason === 'string' && body.reason !== '' ? body.reason : 'the store computer did not tick it',
+          ...(typeof body.reasonTa === 'string' && body.reasonTa !== '' ? { reasonTa: body.reasonTa } : {}),
+        };
+      } catch {
+        return { ticked: false, lostLink: true };
+      }
+    },
+  };
 }
 
 /** The authenticated POST of a manager's signed checklist — the manager's OWN session cookie
@@ -5817,6 +5874,7 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
     ...(data.pendingPayments === undefined ? {} : { pendingPayments: () => register(data.pendingPayments) }),
+    ...(data.dayClose?.checklistOpen === undefined ? {} : { closingChecklist: () => register(data.dayClose?.checklistOpen) }),
   };
 }
 
@@ -7009,14 +7067,15 @@ if (browserWindow !== undefined) {
   // screen never fakes (hard rule #5: no AI signs a checklist).
   const checklistData = browserWindow.checklistData;
   const submitChecklistPort = openSubmitChecklistPort();
-  const checklist = bootChecklist(checklistData, undefined, submitChecklistPort);
+  const checklistTickPort = openChecklistTickPort(browserWindow.laneWriteBase);
+  const checklist = bootChecklist(checklistData, undefined, submitChecklistPort, checklistTickPort);
   if (checklist !== null) {
     browserWindow.checklistSession = checklist;
     browserWindow.checklist = {
       refresh: fetchChecklistWorklist,
       present: (worklist) => createChecklistSession(
         { userId: checklistData?.userId === undefined ? null : checklistData.userId },
-        checklistPortsFromData(checklistData, worklist, submitChecklistPort),
+        checklistPortsFromData(checklistData, worklist, submitChecklistPort, checklistTickPort),
       ),
     };
   }
