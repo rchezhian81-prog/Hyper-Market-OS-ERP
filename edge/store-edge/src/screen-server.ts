@@ -50,7 +50,7 @@ import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
 import { OWNER_ROLE, UPDATE_PATHS, openShiftsAnswer, requestUpdate, updatePage, type UpdateDeps, type UpdateProgressView } from './update-page'; // CR-01 step 3c/3d (OI-05)
-import { PRIVILEGE_BODY_MAX_BYTES, PRIVILEGE_PATHS, privilegeAct, privilegeDoorOf, type PrivilegeDeps } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
+import { PRIVILEGE_BODY_MAX_BYTES, PRIVILEGE_PATHS, officeUsersView, privilegeAct, privilegeDoorOf, type PrivilegeDeps } from './office-privilege'; // CR-01 step 4a/4b-1 (OI-06 · ADR-0033)
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -682,6 +682,18 @@ export function startScreenServer(input: {
     json(res, out.status, out.answer);
   };
   /**
+   * CR-01 step 4b-1: the Users & roles page's lists, read through the box for the person signed in to the office screens —
+   * GET only, the same "only on this PC, office PIN on, head-office link off" rule as the privilege acts. No PIN, no change.
+   */
+  const usersViewDoor = async (req: IncomingMessage, res: ServerResponse, privilege: PrivilegeDeps): Promise<void> => {
+    req.resume();
+    if (office === undefined || input.trustForwardedUser === true || input.headOffice !== undefined) { json(res, 404, { ok: false, refusedBecause: 'not_on_this_computer', en: 'These lists are read here only on the store PC itself, with the office PIN sign-in on.', ta: 'இந்தப் பட்டியல்கள் கடைக் கணினியில் மட்டுமே, அலுவலக PIN உள்நுழைவுடன் படிக்கப்படும்.' }); return; }
+    if (req.method !== 'GET') { json(res, 405, { ok: false, refusedBecause: 'wrong_method', en: 'Read with GET.', ta: 'GET மூலம் படியுங்கள்.' }); return; }
+    const session = await office.check(officeTokenOf(req.headers['cookie']));
+    const out = await officeUsersView(privilege, session.ok ? { userId: session.userId } : null);
+    json(res, out.status, out.answer);
+  };
+  /**
    * OB-388 · ADR-0029: a page's `/v1` call, carried to head office with the person's OWN head-office session — never the
    * box's machine credential, never a PIN. Refused here, in head office's own error shape, when there is no head-office
    * session (401), when the office PIN sign-in (if on) has ended (401) or is another person (403), when the person holds no
@@ -807,6 +819,11 @@ export function startScreenServer(input: {
       // OB-424 · ADR-0030: the handheld seal — public material only, on this loopback socket only.
       if (input.handheldSeal !== undefined && (doorPath === HANDHELD_SEAL_PATHS.page || doorPath === HANDHELD_SEAL_PATHS.page.slice(0, -1) || doorPath === HANDHELD_SEAL_PATHS.certificate)) {
         await sealDoor(req, res, doorPath, input.handheldSeal);
+        return;
+      }
+      // CR-01 step 4b-1: the Users & roles page's lists, read through the box.
+      if (input.privilege !== undefined && doorPath === PRIVILEGE_PATHS.view) {
+        await usersViewDoor(req, res, input.privilege);
         return;
       }
       // CR-01 step 4a (OI-06 · ADR-0033): a privilege act confirmed by PIN — routed before the read-only rule.
@@ -980,7 +997,7 @@ export function startScreenServer(input: {
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
           // CR-01 step 4a (ADR-0033): on the store PC with the head-office link off, the office pages make a privilege change
           // through the box's own doors, the PIN typed again for each act.
-          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve' } }),
+          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: PRIVILEGE_PATHS.people, view: PRIVILEGE_PATHS.view } }),
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           // Round 4c: behind the authenticating front (the hosted copy) the box draws no Sign out bar — the front signed the

@@ -2353,6 +2353,16 @@ export async function startEdge(
         return { status: r.status, body: await r.json().catch(() => ({})) };
       } catch { return 'unreachable'; }
     },
+    // CR-01 step 4b-1: the Users & roles page's lists, read under the same store token (GET, nothing changed).
+    read: privilegeApi === undefined || privilegeToken === undefined ? undefined : async (path: string): Promise<RelayAnswer> => {
+      try {
+        const r = await fetch(`${privilegeApi.replace(/\/+$/, '')}${path}`, {
+          method: 'GET', signal: AbortSignal.timeout(15_000),
+          headers: { authorization: `Bearer ${privilegeToken}`, accept: 'application/json' },
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      } catch { return 'unreachable'; }
+    },
     verifyPin: updateDeps.verifyPin,
     record: async (entry: Record<string, unknown>) => { await privilegeLog.append(JSON.stringify(entry)); },
     now: () => new Date().toISOString(),
