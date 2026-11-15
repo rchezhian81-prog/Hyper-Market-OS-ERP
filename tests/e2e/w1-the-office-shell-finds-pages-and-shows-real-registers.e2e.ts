@@ -58,14 +58,16 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
     return s;
   };
 
-  for (const [who, roleId, daily] of [
-    [PEOPLE.cashier, 'cashier', ['Till', 'My tasks', 'Approvals', 'My payslip', 'Help and procedures']],
-    [PEOPLE.manager, 'store_manager', ['Today', 'Approvals', 'Cash over / short', 'Goods receipt review', 'Stock health', 'Expiry & recalls', 'Store tasks']],
-    [PEOPLE.owner, 'owner', ['Today', 'Approvals', 'Morning brief', 'Company report', 'Owner alerts and schedules', 'Month-end']],
-    [PEOPLE.accountant, 'accountant', ['Day book', 'Month-end', 'Supplier bills', 'GST returns', 'Input tax credit (GSTR-2B)', 'Approvals']],
+  // D-027 / D-007: the daily lists are the short ones (≤ 10); the cashier's no longer holds Approvals, so the cashier stands
+  // on a daily page (My tasks) here. The rail's sections are unchanged in content — the workspaces now sit inside "More".
+  for (const [who, roleId, where, here, daily] of [
+    [PEOPLE.cashier, 'cashier', '/my-tasks', 'My tasks', ['Till', 'My tasks', 'My payslip', 'My self-service', 'Help and procedures']],
+    [PEOPLE.manager, 'store_manager', '/approvals', 'Approvals', ['Today', 'Approvals', 'Cash over / short', 'Products', 'Stock health', 'Expiry & recalls', 'Store tasks', 'Buying', 'Goods receipt review', 'Supplier bills']],
+    [PEOPLE.owner, 'owner', '/approvals', 'Approvals', ['Today', 'Approvals', 'Morning brief', 'Reports', 'Price lists', 'Users & roles', 'Cash over / short']],
+    [PEOPLE.accountant, 'accountant', '/approvals', 'Approvals', ['Supplier bills', 'Approvals', 'Day book', 'GST returns', 'Reports']],
   ] as const) {
     it(`the ${roleId}'s menu: exactly the screens the role opens, in the task workspaces, the daily work first`, async () => {
-      const { context, page, errors } = await open(who, '/approvals');
+      const { context, page, errors } = await open(who, where);
       try {
         const want = expectedMenu(roleId);
         expect(want[0]!.group).toBe('Your daily work');
@@ -75,10 +77,11 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
           items: [...s.querySelectorAll('a')].map((a) => (a.textContent ?? '').trim()),
         })));
         expect(got).toEqual(want);
-        // the daily work stands open; the Approvals page is the current one, marked once
+        // the daily work stands open, "More" stands closed; the page shown is the current one, marked once
         expect(await page.getAttribute('#sre-menu .group-section[data-key="Daily"] .group-toggle', 'aria-expanded')).toBe('true');
-        expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Approvals']);
-        expect(await page.textContent('#sre-crumbs')).toBe('Workspace › Your daily work › Approvals');
+        expect(await page.getAttribute('#sre-menu .sre-more-toggle', 'aria-expanded')).toBe('false');
+        expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual([here]);
+        expect(await page.textContent('#sre-crumbs')).toBe(`Workspace › Your daily work › ${here}`);
         expect(errors).toEqual([]);
       } finally { await context.close(); }
     }, 60_000);
@@ -123,6 +126,8 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
       const open1 = await page.$$eval('#sre-menu .group-section:not(.sre-quick)', (s) => s.filter((x) => (x as unknown as { dataset: Record<string, string> }).dataset["open"] === "true").map((x) => (x as unknown as { dataset: Record<string, string> }).dataset["key"]));
       expect(open1).toEqual(['Daily']);
       expect(await page.isVisible('#sre-menu a:text-is("Customers")')).toBe(false);
+      // D-027: the workspaces sit under one closed "More" — open it first, then the workspace
+      await page.click('#sre-menu .sre-more-toggle');
       await page.click('#sre-menu .group-section[data-key="Customers"] .group-toggle');
       expect(await page.getAttribute('#sre-menu .group-section[data-key="Customers"] .group-toggle', 'aria-expanded')).toBe('true');
       expect(await page.isVisible('#sre-menu a:text-is("Customers")')).toBe(true);
@@ -136,7 +141,9 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
       await page.goto(`${shop.base}/approvals`, { waitUntil: 'load' });
       await page.waitForFunction('globalThis.sreChrome !== undefined');
       expect(await texts(page, '#sre-menu .sre-quick[data-key="pinned"] a')).toEqual(['Customers']);
+      // the workspace is remembered open, but "More" itself starts closed again on a daily page (D-027)
       expect(await page.getAttribute('#sre-menu .group-section[data-key="Customers"] .group-toggle', 'aria-expanded')).toBe('true');
+      expect(await page.getAttribute('#sre-menu .sre-more-toggle', 'aria-expanded')).toBe('false');
       await page.goto(`${shop.base}/customers`, { waitUntil: 'load' });
       await page.waitForFunction('globalThis.sreChrome !== undefined');
       await page.click('#sre-pin'); // unpin

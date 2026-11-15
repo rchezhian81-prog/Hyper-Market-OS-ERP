@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import {
-  DAILY_GROUP, DAILY_WORK, ERP_NAVIGATION, NAV_GROUP_LABELS, NAV_ITEM_ORDER, NAV_SEARCH_WORDS, navigationFor, permissionsOpening,
+  DAILY_GROUP, DAILY_WORK, DAILY_WORK_MAX, ERP_NAVIGATION, NAV_GROUP_LABELS, NAV_ITEM_ORDER, NAV_SEARCH_WORDS, navigationFor, permissionsOpening,
 } from '../../apps/web-erp/src/navigation';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 
@@ -47,20 +47,37 @@ describe('the regrouped menu never changes who may open what (P-04)', () => {
   });
 });
 
-describe('each role the owner named sees its daily jobs first (W1)', () => {
+describe('each role the owner named sees its daily jobs first (W1 · D-027: a short list, at most ten)', () => {
   const daily = (roleId: string) => { const g = menuOf(roleId)[0]!; expect(g.group).toBe(DAILY_GROUP); return g.items.map((i) => i.label); };
 
-  it('the store manager: Today, Approvals, the cash over / short, goods received, stock, expiry, store tasks', () => {
-    expect(daily('store_manager')).toEqual(['Today', 'Approvals', 'Cash over / short', 'Goods receipt review', 'Stock health', 'Expiry & recalls', 'Store tasks']);
+  it('the store manager: Today, Approvals, cash over / short, products, stock, expiry, store tasks, buying, goods received, supplier bills', () => {
+    expect(daily('store_manager')).toEqual(['Today', 'Approvals', 'Cash over / short', 'Products', 'Stock health', 'Expiry & recalls', 'Store tasks', 'Buying', 'Goods receipt review', 'Supplier bills']);
   });
-  it('the owner: Today, Approvals, the morning brief, the company report, his alerts, month-end', () => {
-    expect(daily('owner')).toEqual(['Today', 'Approvals', 'Morning brief', 'Company report', 'Owner alerts and schedules', 'Month-end']);
+  it('the owner: Today, Approvals, the morning brief, reports, price lists, users & roles, cash over / short', () => {
+    expect(daily('owner')).toEqual(['Today', 'Approvals', 'Morning brief', 'Reports', 'Price lists', 'Users & roles', 'Cash over / short']);
   });
-  it('the accountant: the day book, month-end, supplier bills, GST returns, input tax credit, approvals', () => {
-    expect(daily('accountant')).toEqual(['Day book', 'Month-end', 'Supplier bills', 'GST returns', 'Input tax credit (GSTR-2B)', 'Approvals']);
+  it('the accountant: supplier bills, approvals, the day book, GST returns, reports — not the over/short review the role does not hold', () => {
+    expect(daily('accountant')).toEqual(['Supplier bills', 'Approvals', 'Day book', 'GST returns', 'Reports']);
   });
-  it('the cashier: the till first, then their tasks, approvals, payslip and help — and nothing of the office they cannot open', () => {
-    expect(daily('cashier')).toEqual(['Till', 'My tasks', 'Approvals', 'My payslip', 'Help and procedures']);
+  it('the warehouse and receiving roles: the handheld, goods receipt, transfers, stock ledger (Floor indents only where the role reads indents)', () => {
+    for (const r of ['warehouse_user', 'receiver_qc']) expect(daily(r)).toEqual(['Warehouse handheld', 'Goods receipt review', 'Transfers', 'Stock ledger']);
+  });
+  it('the purchase roles: buying, requisitions, suppliers (bills and goods receipt only where the role holds them)', () => {
+    for (const r of ['purchase_user', 'purchase_approver']) expect(daily(r)).toEqual(['Buying', 'Requisitions and quotes', 'Suppliers']);
+  });
+  it('D-027: no role\'s daily list is longer than DAILY_WORK_MAX (10) — and a person holding every role still gets at most ten', () => {
+    expect(DAILY_WORK_MAX).toBeLessThanOrEqual(10);
+    for (const [role, jobs] of Object.entries(DAILY_WORK)) expect(jobs.length, `${role} has ${jobs.length} daily jobs`).toBeLessThanOrEqual(DAILY_WORK_MAX);
+    const roles = Object.keys(DAILY_WORK);
+    const access = new AccessControl(ROLE_CATALOGUE as never, roles.map((roleId) => ({ userId: 'u', roleId, branchScope: 'all' as const })));
+    const groups = navigationFor(access, { userId: 'u', branchId: 'S1', roleIds: roles });
+    expect(groups[0]!.group).toBe(DAILY_GROUP);
+    expect(groups[0]!.items.length).toBe(DAILY_WORK_MAX);
+    const ids = groups.flatMap((g) => g.items.map((i) => i.id));
+    expect(new Set(ids).size, 'a screen offered twice').toBe(ids.length); // past the cap a job stays in its workspace, once
+  });
+  it('the cashier: the till first, then their tasks, payslip, self-service and help — and nothing of the office they cannot open', () => {
+    expect(daily('cashier')).toEqual(['Till', 'My tasks', 'My payslip', 'My self-service', 'Help and procedures']);
     const all = menuOf('cashier').flatMap((g) => g.items.map((i) => i.id));
     for (const no of ['finance-close', 'day-book', 'users', 'payroll', 'customers', 'reporting']) expect(all).not.toContain(no);
   });
