@@ -77,7 +77,8 @@ describe('every port the cloud API depends on is actually supplied', () => {
   it('supplies a real authenticator, not one that lets everybody in', () => {
     // The pinned verifier — since GAP-SEC-05 wrapped as `revocationAwareAuthenticator` (verify, THEN refuse a
     // revoked or over-long token); either name is the real thing, a stub is not.
-    expect(main).toMatch(/authenticate:\s*(?:tokenAuthenticator|revocationAwareAuthenticator)\(/);
+    // Audit C-1 · ADR-0033 am. 3: the store PC's sealed office calls wrap the SAME token verifier, which stays the fallback.
+    expect(main).toMatch(/authenticate:\s*(?:tokenAuthenticator\(|revocationAwareAuthenticator\(|withOfficeCalls\(\{[\s\S]{0,400}?fallback:\s*revocationAwareAuthenticator\()/);
     // The shape it used to have: default-deny, but nobody could use the system.
     expect(main).not.toMatch(/authenticate:\s*\(\)\s*(?::\s*[\w |]+)?=>\s*undefined/);
   });

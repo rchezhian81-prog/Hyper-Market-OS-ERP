@@ -193,6 +193,7 @@ import { outboundTransportFromEnv } from '../../platform/src/https-outbound-tran
 import { shopRealmsFrom, type ShopRealm } from '../../identity/src/shop-realms';
 import { customerRealmsFrom, type CustomerRealm } from '../../identity/src/customer-realms'; // OB-510 · ADR-0031 amended
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
+import { withOfficeCalls } from '../../identity/src/office-call-authenticator'; // audit C-1 · ADR-0033 amendment 3
 import { sessionChannelsOf } from './session-channels';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
@@ -2469,6 +2470,13 @@ export function outboundSecretsFromEnv(env: Readonly<Record<string, string | und
   return out;
 }
 
+/** The privilege-seal key exactly as `buildApi` takes it (dedicated, ≥ 32 characters, equal to no other secret), or none. */
+function storePcPrivilegeKey(settings: Readonly<Record<string, string | undefined>>): Buffer | undefined {
+  const raw = settings['BOX_PRIVILEGE_SEAL_KEY'];
+  if (raw === undefined || raw.length < 32 || [settings['PACK_SIGNING_KEY'], settings['BOX_HISTORY_SEAL_KEY']].includes(raw)) return undefined;
+  return privilegeSealKey(raw);
+}
+
 export async function startApi(
   env: Readonly<Record<string, string | undefined>> = process.env,
   out: (text: string) => void = (text) => { process.stdout.write(text); },
@@ -2747,7 +2755,13 @@ export async function startApi(
     // …and, since GAP-SEC-05, a token is ALSO refused when it outlives the configured ceiling
     // (`IDP_MAX_TOKEN_LIFETIME_SECONDS`) or the tenant has revoked it — by id, or every token of a user issued
     // before a moment. The revocation list is the one the identity routes write to.
-    authenticate: revocationAwareAuthenticator(
+    // Audit C-1 · ADR-0033 amendment 3: on the store PC, an office page's call sealed by the box for the person signed in by
+    // PIN (bound to that one request, 60 s, once) is believed with the privilege-seal key; every other token as before.
+    authenticate: withOfficeCalls({
+      privilegeKey: storePcPrivilegeKey(settings),
+      revocations,
+      onRefusal: (detail) => { err(`auth refused: ${detail}\n`); },
+      fallback: revocationAwareAuthenticator(
       [
         {
           secret: settings['IDP_SIGNING_KEY']!,
@@ -2778,6 +2792,7 @@ export async function startApi(
       revocations,
       (reason) => { err(`auth refused: ${reason}\n`); },
     ),
+    }),
     // Real, per-tenant authorization. Was `new AccessControl([], [])` — a global, empty table that
     // authorised NOTHING and, worse, was never rebuilt from anyone's grants, so the whole least-
     // privilege apparatus was inert on the live surface. Now every request resolves the caller's

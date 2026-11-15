@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Fix batch 1 of THE PLAN: the store PC's office pages work again (15 November 2026) · audit C-1 / D-1 · OB-773 "1 A"
+- **Why:** on the store PC as installed (office PIN on, no head-office link) every office page said "Head office could not be reached. Nothing was saved" — items, prices, buying, approvals, reports, settlement. This was the single biggest reason "most features do not work".
+- **What changed (ADR-0033 amendment 3):** the store PC now carries each office page's call to the office API on the same PC as the person signed in by their own PIN — sealed for that one request (60 s, once, its own derived key); the office API runs that person's own permission checks; a route that needs a second step still refuses. Also fixed: the owner was refused the store manager's till PIN since #933 (a "propose a change" permission is not authority).
+- **Tests:** unit 4, integration 3 (real store box + office API over HTTP), browser 1 (manager types staff ID + PIN, opens Product details, sees the item, sends a change — seen failing first with the owner's exact words); the 4b-2 test that was failing on main passes; unit 11,101 and guardrails 2,116 pass; type check and lint clean.
+- **Running in parallel (same conversation):** the role-by-role daily-task walkthrough → `docs/registers/daily-work-defects.md`.
+- **Next:** merge when green (OB-801); the defect list; fix batches. **Store:** nothing until the next Store PC update is installed. **Blocked:** nothing. **Owner decisions needed:** none.
+
 ## Round 1b: the store manager proposes item, barcode and GST changes; the owner approves (15 November 2026) · OB-773 3 B · OB-796
 - **Why:** the audit found only the owner could change an item, barcode or GST rate (C-8); the owner chose (OB-773 3 B) that the store manager may make changes the owner approves, and then (OB-796) that his approval also counts as Finance's for the sensitive tax changes, and that anyone holding the publish authority (today only the owner) approves.
 - **What changed:** new permission `catalogue.change.propose` (store manager only); new approval kind `catalogue_change` through a new route `POST /v1/catalogue/changes` (item details incl. HSN and MRP, label facts, a barcode, a GST rate); on Product details and GST rates the manager's button reads "Send for the owner's approval" (EN/TA) and nothing changes until approval; the owner's Approvals page shows each field before → after; approving makes exactly that change through the ordinary catalogue route as the owner's act, once; refusing keeps the reason; a change to an item saved meanwhile is not made; the general approvals route refuses this kind; direct edits unchanged.

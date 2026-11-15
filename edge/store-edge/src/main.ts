@@ -2446,6 +2446,16 @@ export async function startEdge(
       },
     }),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
+    // Audit C-1 · ADR-0033 amendment 3: on the store PC (office PIN on, no head-office link) each office page's call is sealed
+    // for the person signed in by PIN and carried to the office API on this PC. Needs the privilege-seal key and the API.
+    ...(officeGate === null || headOfficeLinkSetting.on || settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined || privilegeApi === undefined ? {} : {
+      officeCalls: {
+        privilegeKey: privilegeSealKey(settings['BOX_PRIVILEGE_SEAL_KEY']),
+        apiBase: privilegeApi,
+        tenantId,
+        branchId: () => storeIdOfThisBox() ?? headOfficeStoreId ?? null,
+      },
+    }),
     ...(headOfficeLinkSetting.on ? {
       headOffice: (origin: string) => createHeadOfficeLink({
         settings: { ...headOfficeLinkSetting.settings, origin }, fetch: globalThis.fetch,

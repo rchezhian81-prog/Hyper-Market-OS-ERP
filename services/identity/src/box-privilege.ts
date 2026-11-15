@@ -54,6 +54,12 @@ export type TillPinAction = (typeof TILL_PIN_ACTIONS)[number];
  */
 export const isRelayPermission = (permission: string): boolean => permission.endsWith('.sync') || permission === 'org.template.pull';
 /**
+ * OB-773 3 B (round 1b) added `catalogue.change.propose` to the store manager only: a PROPOSAL that changes nothing until the
+ * owner approves it, so it is no authority of its own either. Without this the owner — who approves those proposals and may
+ * set anybody's PIN (OB-739 "A") — was refused the store manager's PIN, because the manager "held" a word the owner does not.
+ */
+export const isProposalOnlyPermission = (permission: string): boolean => permission === 'catalogue.change.propose';
+/**
  * The authority to add a store-PC person (OB-733 "A"): the MAKER's word — the owner and the store manager, who ask for roles.
  * A store-PC person holds no authority until a role is approved by a second person, so the name alone needs one person.
  */
@@ -505,7 +511,7 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
           }
           // OB-739 "A": never somebody who holds any permission the acting person does not.
           const mine = new Set(await deps.identity.permissionsOf(ctx.tenantId, record.userId));
-          const above = (await deps.identity.permissionsOf(ctx.tenantId, userId)).filter((p) => !mine.has(p) && !isRelayPermission(p));
+          const above = (await deps.identity.permissionsOf(ctx.tenantId, userId)).filter((p) => !mine.has(p) && !isRelayPermission(p) && !isProposalOnlyPermission(p));
           if (above.length > 0) {
             throw refuse(403, 'person_holds_more_authority', `${userId} holds authority ${record.userId} does not (${above.slice(0, 3).join(', ')}${above.length > 3 ? ', …' : ''}), so ${record.userId} may not set or cancel their PIN (owner decision OB-739).`, 'Somebody who holds at least what they hold does it; the owner resets his own PIN at the store PC\'s keyboard. Nothing changed.');
           }

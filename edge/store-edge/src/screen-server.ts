@@ -45,7 +45,8 @@ import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
 import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './head-office-pages'; // OB-380
 import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
-import { rolesAtThisStore } from './office-sign-in';
+import { OFFICE_SESSION_MINUTES, rolesAtThisStore } from './office-sign-in';
+import { bodyAsTheApiReadsIt, officeCallKey, sealOfficeCall } from '../../../packages/identity/src/office-call-seal'; // audit C-1 · ADR-0033 am. 3
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
 import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
@@ -527,6 +528,23 @@ export function startScreenServer(input: {
    * only with the office PIN sign-in on and NO head-office link (with the link on, the person's own session is used).
    */
   readonly privilege?: PrivilegeDeps;
+  /**
+   * Audit C-1 / D-1 · OB-773 "1 A" · ADR-0033 amendment 3: the office pages' `/v1` calls on the store PC itself — office PIN
+   * sign-in on, NO head-office link, never behind a forwarding front. Each call is sealed for the person signed in by PIN
+   * (bound to that one request) with a key derived from the privilege-seal key, and carried to the office API on this PC.
+   * Absent: such a call fails as a lost link, as before.
+   */
+  readonly officeCalls?: {
+    /** `privilegeSealKey(BOX_PRIVILEGE_SEAL_KEY)` — the office-call key is derived from it. */
+    readonly privilegeKey: Buffer;
+    /** The office API (`CLOUD_API_URL`). */
+    readonly apiBase: string;
+    readonly tenantId: string;
+    /** The store this box is (its store setup's branch), or null when it has none yet. */
+    readonly branchId: () => string | null;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly now?: () => number;
+  };
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -769,6 +787,55 @@ export function startScreenServer(input: {
   };
 
   /**
+   * Audit C-1 · ADR-0033 amendment 3: a page's `/v1` call on the store PC, sealed for the person signed in by their own PIN
+   * and carried to the office API on this PC. Refused here, in the API's own error shape, when the office sign-in has ended
+   * (401), the person holds no role at this store (403), or a write did not come from a page this box served (403). The API
+   * then runs the person's own permission, branch, entitlement and step-up checks. A lost API fails as a lost link (P-08).
+   */
+  const officeCallKeyBytes = input.officeCalls === undefined ? undefined : officeCallKey(input.officeCalls.privilegeKey);
+  const carryToOfficeApi = async (req: IncomingMessage, res: ServerResponse, oc: NonNullable<typeof input.officeCalls>, gate: OfficeGate): Promise<void> => {
+    const refuse = (status: number, code: HeadOfficeCallRefusal): void => { req.resume(); send(res, status, 'application/json; charset=utf-8', headOfficeCallRefusal(code)); };
+    const method = (req.method ?? 'GET').toUpperCase();
+    const write = method !== 'GET' && method !== 'HEAD';
+    if (write && !sameOrigin(req)) { refuse(403, 'not_from_this_screen'); return; }
+    const pin = await gate.check(officeTokenOf(req.headers['cookie']));
+    if (!pin.ok) { refuse(401, 'office_sign_in_needed'); return; }
+    const roles = rolesAtThisStore(pin.userId, input.snapshot().pack);
+    if (roles === null || roles.length === 0) { refuse(403, 'not_at_this_store'); return; }
+    const raw = write ? await readBody(req, HEAD_OFFICE_CALL_MAX_BYTES) : null;
+    if (write && raw === null) { send(res, 413, 'application/json; charset=utf-8', headOfficeCallRefusal('too_large')); return; }
+    if (!write) req.resume();
+    let url: URL;
+    try { url = new URL(req.url ?? '/', 'http://screen'); } catch { refuse(403, 'not_from_this_screen'); return; }
+    const query: Record<string, string> = {};
+    url.searchParams.forEach((v, k) => { query[k] = v; });
+    const idem = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined;
+    const nowMs = (oc.now ?? Date.now)();
+    const seal = sealOfficeCall(officeCallKeyBytes!, {
+      tenantId: oc.tenantId, userId: pin.userId, branchId: oc.branchId(),
+      request: { method, path: url.pathname, query, body: bodyAsTheApiReadsIt(raw), idempotencyKey: idem },
+      signedInAt: Math.floor(Date.parse(pin.expiresAt) / 1000) - OFFICE_SESSION_MINUTES * 60, nowMs,
+    });
+    const headers: Record<string, string> = { authorization: `Bearer ${seal}`, accept: 'application/json' };
+    if (idem !== undefined) headers['idempotency-key'] = idem;
+    const type = req.headers['content-type'];
+    if (raw !== null && raw !== '') headers['content-type'] = typeof type === 'string' ? type : 'application/json';
+    let answer: Response;
+    try {
+      answer = await (oc.fetch ?? globalThis.fetch)(`${oc.apiBase.replace(/\/+$/, '')}${url.pathname}${url.search}`, {
+        method, headers, ...(raw === null || raw === '' ? {} : { body: raw }), signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      req.socket.destroy(); // P-08: the office API did not answer — the page says so in its own words, never a made-up answer
+      return;
+    }
+    const bytes = Buffer.from(await answer.arrayBuffer());
+    for (const h of ['content-type', 'content-disposition', 'retry-after']) { const v = answer.headers.get(h); if (v !== null) res.setHeader(h, v); }
+    res.statusCode = answer.status;
+    res.end(bytes);
+  };
+
+  /**
    * OB-424: the seal panel and its `authority.crt`. Read-only. With the office PIN on, for a person signed in to the office
    * screens (anyone who sets up a handheld is); the material itself is public. Nothing to show → the panel says why in
    * words, and the download answers 404 in words: never a made-up seal.
@@ -857,6 +924,10 @@ export function startScreenServer(input: {
       }
       if (isHeadOfficeCall(doorPath)) {
         if (link === undefined) {
+          if (input.officeCalls !== undefined && office !== undefined && input.trustForwardedUser !== true && input.headOffice === undefined) {
+            await carryToOfficeApi(req, res, input.officeCalls, office);
+            return;
+          }
           req.resume();
           req.socket.destroy();
           return;
