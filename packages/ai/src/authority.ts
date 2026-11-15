@@ -1,4 +1,5 @@
-// Agent authority boundaries — A01…A10 (Stage 17 / AI-NFR-01…12 / §7.1 / §28 / P-05).
+// Agent authority boundaries — A01…A10 (Stage 17 / AI-NFR-01…12 / §7.1 / §28 / P-05), and the agents the owner chose
+// from the CR-01 OI-13 catalogue: A12 and A14 (OB-763 B, 14 Nov 2026). A11 and A13 follow after go-live.
 //
 // **AI-NFR-12, absolute:** no autonomous payment, refund, purchase commitment, price change,
 // stock adjustment or user-privilege change. The language model never writes directly to a
@@ -24,7 +25,7 @@
 
 import type { ToolProposal } from './gateway';
 
-export type AgentId = 'A01' | 'A02' | 'A03' | 'A04' | 'A05' | 'A06' | 'A07' | 'A08' | 'A09' | 'A10';
+export type AgentId = 'A01' | 'A02' | 'A03' | 'A04' | 'A05' | 'A06' | 'A07' | 'A08' | 'A09' | 'A10' | 'A12' | 'A14';
 
 export type ApprovalRole =
   | 'none'
@@ -36,7 +37,9 @@ export type ApprovalRole =
   | 'operator'
   | 'security_officer'
   | 'data_steward'
-  | 'marketing_approver';
+  | 'marketing_approver'
+  /** CR-01 OI-13-A12: the accounts person who works supplier bills (the accountant role). */
+  | 'accountant';
 
 export interface AgentDefinition {
   readonly agentId: AgentId;
@@ -76,7 +79,7 @@ export const FORBIDDEN_TOOLS: readonly string[] = [
   'approve_own_proposal',
 ];
 
-/** The ten agents, in the roadmap's own authority order. */
+/** The ten roadmap agents in the roadmap's own authority order, then the owner's chosen CR-01 OI-13 agents. */
 export const AGENTS: Readonly<Record<AgentId, AgentDefinition>> = {
   A01: {
     agentId: 'A01',
@@ -178,6 +181,32 @@ export const AGENTS: Readonly<Record<AgentId, AgentDefinition>> = {
     requiresEvidence: true,
     customerFacing: false,
     purpose: 'role-aware guidance and task assistance — NO HR decisions',
+  },
+  // CR-01 OI-13-A12 (OB-763 B): after the goods arrive, on the bill — it explains why a supplier bill does not match its
+  // order and the goods received (M07 three-way match) and drafts the query or debit-note request. The accounts person
+  // decides; a debit note touches what the shop pays, so it is never auto-approved. Read, explain and draft tools only.
+  A12: {
+    agentId: 'A12',
+    name: 'Supplier-bill match explainer',
+    allowedTools: ['read_supplier_bill', 'read_purchase_order', 'read_goods_receipt', 'read_price_history', 'explain_bill_mismatch', 'draft_supplier_query', 'draft_debit_note_request'],
+    approver: 'accountant',
+    readOnly: false,
+    requiresEvidence: true,
+    customerFacing: false,
+    purpose: 'explain in plain words why a supplier bill does not match the order and the goods received, and DRAFT the supplier query or debit-note request — the accounts person decides; a debit note is NEVER auto-approved',
+  },
+  // CR-01 OI-13-A14 (OB-763 B): one till on one day — it lays out the likely causes of a cash over/short from the records
+  // (M14 day close) and drafts a note for the manager. It lists records, not people. Writing off a shortage is never
+  // auto-approved, and it never changes a cash balance. Read, explain and draft tools only.
+  A14: {
+    agentId: 'A14',
+    name: 'Cash-office variance explainer',
+    allowedTools: ['read_till_close', 'read_cash_movements', 'read_sales_by_tender', 'read_settlement', 'explain_cash_variance', 'draft_variance_note'],
+    approver: 'manager',
+    readOnly: false,
+    requiresEvidence: true,
+    customerFacing: false,
+    purpose: 'lay out the likely causes of a till\'s cash over/short from the records — records, not people — and DRAFT a note for the manager; writing off a shortage is NEVER auto-approved and it never changes a cash balance',
   },
 };
 

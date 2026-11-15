@@ -231,6 +231,9 @@ export const TO_ACT_WORDS: Readonly<Record<string, { readonly en: string; readon
   barcode: { en: 'A catalogue person adds the missing barcode to the product.', ta: 'பட்டியல் ஊழியர் பொருளுக்கு விடுபட்ட பார்கோடைச் சேர்ப்பார்.' },
   merge: { en: 'A catalogue steward checks the two products and merges them if they are the same.', ta: 'பட்டியல் பொறுப்பாளர் இரண்டு பொருட்களையும் சரிபார்த்து, ஒன்றே என்றால் இணைப்பார்.' },
   publish_mrp: { en: 'A catalogue person adds the missing MRP and publishes the product.', ta: 'பட்டியல் ஊழியர் விடுபட்ட MRP-ஐச் சேர்த்துப் பொருளை வெளியிடுவார்.' },
+  // CR-01 OI-13 (OB-763 B): A12 — the accounts person settles the bill; A14 — the manager signs the over/short off.
+  supplier_bill: { en: 'The accounts person settles the bill — matches it again once the supplier corrects it, or raises the supplier\'s debit note. Nothing is paid or claimed automatically.', ta: 'கணக்காளர் பில்லைத் தீர்ப்பார் — விநியோகஸ்தர் சரிசெய்த பின் மீண்டும் பொருத்துவார், அல்லது விநியோகஸ்தரின் டெபிட் நோட்டை எழுப்புவார். எதுவும் தானாகச் செலுத்தப்படவோ கோரப்படவோ மாட்டாது.' },
+  over_short: { en: 'The manager checks the till and signs the over or short off — never the person who counted. Nothing is written off automatically.', ta: 'மேலாளர் கவுண்டரைச் சரிபார்த்து கூடுதல் அல்லது குறைவை ஒப்புக்கொள்வார் — எண்ணியவர் ஒருபோதும் அல்ல. எதுவும் தானாகத் தள்ளுபடி செய்யப்படாது.' },
   customer_confirms: { en: 'The customer confirms any change to their cart in the app.', ta: 'வாடிக்கையாளர் தமது கூடையில் எந்த மாற்றத்தையும் செயலியில் உறுதிசெய்வார்.' },
   nothing: { en: 'Nothing to do in the system — it only points something out for a person to check.', ta: 'அமைப்பில் செய்ய எதுவும் இல்லை — ஒருவர் சரிபார்க்க ஒன்றைச் சுட்டிக்காட்டுகிறது மட்டுமே.' },
   general: { en: 'A person acts on it through its own screen, with its own checks and approvals.', ta: 'ஒருவர் அதன் சொந்தத் திரையில், அதன் சொந்தச் சரிபார்ப்புகள் மற்றும் அனுமதிகளுடன் செயல்படுவார்.' },
@@ -244,6 +247,8 @@ export function toActKey(wouldRequire: string): keyof typeof TO_ACT_WORDS {
     [/customer confirms/i, 'customer_confirms'],
     [/campaign/i, 'campaign'],
     [/\/v1\/prices\/changes[\s\S]*\/v1\/warehouse\/transfers/, 'markdown_or_transfer'],
+    [/\/v1\/purchase\/suppliers\/[^/\s]+\/debit-notes\b|\/v1\/purchase\/invoices\/[^/\s]+\/match\b/, 'supplier_bill'],
+    [/\/v1\/shifts\/[^/\s]+\/over-short\/review\b/, 'over_short'],
     [/\/v1\/purchase\/orders\b/, 'purchase_order'],
     [/\/v1\/warehouse\/transfers\b/, 'transfer'],
     [/\/v1\/prices\/changes\b/, 'price_change'],
