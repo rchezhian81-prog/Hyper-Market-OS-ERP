@@ -96,6 +96,17 @@
     <pre id="scLines" hidden></pre>
     <p class="help"><span data-t="about">About this PC (its tenant id and release):</span> <a href="http://127.0.0.1:8091/about/" target="_blank" rel="noopener">http://127.0.0.1:8091/about/</a></p>
   </section>
+  <section id="licence" hidden>
+    <h2 data-t="licH">The licence</h2>
+    <p class="help" data-t="licP">This copy of SRE Retail OS needs a licence from the seller, made for this shop's tenant id. Send the seller the licence request, then load the licence file the seller sends back.</p>
+    <div class="banner" id="licStanding"></div>
+    <dl><dt data-t="tenant">Shop's tenant id</dt><dd id="licTenant"></dd></dl>
+    <p></p><div class="actions"><button class="secondary" id="licRequest" type="button" data-t="licReq">Save the licence request</button></div>
+    <label for="licFile" data-t="licFileL">The licence file from the seller</label><input id="licFile" type="file" accept=".json,application/json">
+    <p></p><div class="actions"><button class="primary" id="licBtn" type="button" data-t="licBtn">Load the licence</button></div>
+    <div class="banner" id="licAnswer" hidden></div>
+    <p class="help" data-t="licLater">No licence yet? The shop can trade now: load it later from the Office pages, About, Licence. The till always sells; every record can always be viewed and exported.</p>
+  </section>
 </main>
 <script>
 (() => {
@@ -112,7 +123,11 @@
     mgrH: '4. கணக்காளர்', mgrP: 'யாரும் தனியாக கடையை அமைக்கக்கூடாது: நீங்கள் தயார் செய்வீர்கள், கடையின் கணக்காளர் ஒப்புதல் தருவார். அவரது பணியாளர் எண் accountant-01. அவர் தன் PIN-ஐ தட்டச்சு செய்யும்போது வேறு பக்கம் பாருங்கள்.',
     goH: '5. அமை', goP: 'இது இந்த கணினியை அமைக்கும், உங்கள் இருவரையும் பதிவு செய்யும், PIN-களை அமைக்கும், கடையைச் செயல்படுத்தும்: நீங்கள் தயார் செய்து, கணக்காளர் ஒப்புதல் தருவார். சில நிமிடங்கள் ஆகும்.',
     goBtn: 'இந்தக் கடையை அமை', progH: 'அமைக்கிறது…',
-    scH: 'மேசைக் கணினித் திரையில் குறுக்குவழிகள்', scP: 'தினசரி பயன்பாட்டுக்கு வேண்டியவற்றைத் தேர்ந்தெடுக்கவும். மற்றவற்றைப் பிறகு சேர்க்கலாம்.', scTill: 'பணப்பெட்டி — விற்பனைத் திரை', scOffice: 'அலுவலகம் — அலுவலகப் பக்கங்கள்', scImport: 'இறக்குமதி & ஏற்றுமதி — பழைய அமைப்பின் கோப்புகள் உள்ளே, Excel வெளியே', scBtn: 'திரையில் வை', about: 'இந்தக் கணினி பற்றி (டெனன்ட் எண், வெளியீடு):',
+    scH: 'மேசைக் கணினித் திரையில் குறுக்குவழிகள்', scP: 'தினசரி பயன்பாட்டுக்கு வேண்டியவற்றைத் தேர்ந்தெடுக்கவும். மற்றவற்றைப் பிறகு சேர்க்கலாம்.', scTill: 'பணப்பெட்டி — விற்பனைத் திரை', scOffice: 'அலுவலகம் — அலுவலகப் பக்கங்கள்', scImport: 'இறக்குமதி & ஏற்றுமதி — பழைய அமைப்பின் கோப்புகள் உள்ளே, Excel வெளியே', scBtn: 'திரையில் வை',
+    licH: 'உரிமம்', licP: 'இந்த SRE Retail OS நகலுக்கு, இந்தக் கடையின் டெனன்ட் எண்ணுக்காக விற்பனையாளர் உருவாக்கிய உரிமம் தேவை. உரிமக் கோரிக்கையை விற்பனையாளருக்கு அனுப்பி, அவர் திருப்பி அனுப்பும் உரிமக் கோப்பை ஏற்றவும்.',
+    licReq: 'உரிமக் கோரிக்கையைச் சேமி', licFileL: 'விற்பனையாளரிடமிருந்து வந்த உரிமக் கோப்பு', licBtn: 'உரிமத்தை ஏற்று',
+    licLater: 'இன்னும் உரிமம் இல்லையா? கடை இப்போதே வியாபாரம் செய்யலாம்: பின்னர் அலுவலகப் பக்கங்கள், பற்றி, உரிமம் என்பதில் ஏற்றவும். பணப்பெட்டி எப்போதும் விற்கும்; எல்லாப் பதிவுகளையும் எப்போதும் பார்க்கவும் ஏற்றுமதி செய்யவும் முடியும்.',
+    about: 'இந்தக் கணினி பற்றி (டெனன்ட் எண், வெளியீடு):',
   };
   const EN = {};
   document.querySelectorAll('[data-t]').forEach((el) => { EN[el.dataset.t] = el.textContent; });
@@ -154,7 +169,7 @@
         $('result').hidden = false;
         $('result').className = `banner ${p.ok ? 'ok' : 'bad'}`;
         $('result').textContent = p.ok ? 'Done. This PC is ready. / முடிந்தது. இந்த கணினி தயார்.' : 'Not finished. Send a photo of this screen. / முடியவில்லை. இந்தத் திரையின் புகைப்படத்தை அனுப்பவும்.';
-        if (p.ok) $('shortcuts').hidden = false;
+        if (p.ok) { $('shortcuts').hidden = false; await licence(); }
         return;
       }
       await new Promise((r) => setTimeout(r, 1500));
@@ -172,6 +187,37 @@
     ['ownerPin', 'ownerPin2', 'mgrPin', 'mgrPin2'].forEach((id) => { $(id).value = ''; });
     if (started.status !== 202) { showProblems(started.body.problems || {}); if (started.body.error) refuse(started.body.error); $('goBtn').disabled = false; return; }
     await follow();
+  };
+  // CR-01 step 5 (OI-10): the licence, once this PC is set up (its tenant id exists only then).
+  let request = null;
+  const licence = async () => {
+    const r = await call('GET', 'licence');
+    if (r.status !== 200) return;
+    const v = r.body;
+    if (!v.keyBuiltIn) return;
+    request = v.request || null;
+    $('licTenant').textContent = v.tenantId || '—';
+    $('licStanding').className = `banner ${v.state === 'valid' || v.state === 'owner' ? 'ok' : 'bad'}`;
+    $('licStanding').textContent = `${v.en} / ${v.ta}`;
+    $('licence').hidden = false;
+  };
+  $('licRequest').onclick = () => {
+    if (!request) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(request, null, 2)], { type: 'application/json' }));
+    a.download = `licence-request-${String(request.tenantId || '').slice(0, 8)}.json`;
+    document.body.append(a); a.click(); a.remove();
+  };
+  $('licBtn').onclick = async () => {
+    const f = $('licFile').files[0];
+    if (!f) return;
+    $('licBtn').disabled = true;
+    const r = await call('POST', 'licence', { licence: await f.text() });
+    $('licAnswer').hidden = false;
+    $('licAnswer').className = `banner ${r.body.ok ? 'ok' : 'bad'}`;
+    $('licAnswer').textContent = `${r.body.en || r.body.error || 'Not loaded.'}${r.body.detail ? ` (${r.body.detail})` : ''}${r.body.ta ? ` / ${r.body.ta}` : ''}`;
+    $('licBtn').disabled = false;
+    if (r.body.ok) await licence();
   };
   $('scBtn').onclick = async () => {
     $('scBtn').disabled = true;

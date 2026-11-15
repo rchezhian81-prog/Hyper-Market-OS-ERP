@@ -2,7 +2,12 @@
 // CR-01 step 2b (OI-02) — drive the first-run screens on a clean Windows machine, through the same door the browser uses.
 // Run by the `store-pc-first-run` job in .github/workflows/ci.yml from the built release folder:
 //
-//   <release>\runtime\node\node.exe tests\windows\first-run-screens.drive.mjs <release folder> <data drive, e.g. D:>
+//   <release>\runtime\node\node.exe tests\windows\first-run-screens.drive.mjs <release folder> <data drive, e.g. D:> [<test seller key folder>]
+//
+// CR-01 step 5 (OI-10): with a test seller key folder (tests/windows/licence-test-key.mjs; the release built with its public
+// half), the last page's licence step is driven too: no licence yet (the setup period), the request names this shop's
+// tenant id and GSTIN, a COPY (another tenant id) and an EDITED licence are refused by name, the right one is loaded, and
+// `store-computer licence` then says VALID.
 //
 // It starts the screens' server as SRE-Setup.exe does (--shortcut, --log: no browser of its own), reads the one-time key
 // from the "Finish SRE setup" shortcut it writes (the owner's PC, 2026-11-09: the browser it opened itself never
@@ -16,8 +21,12 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { urlInShortcut } from '../../scripts/lib/setup-handoff.mjs';
+import * as nodeFs from 'node:fs';
+import * as nodePath from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { issueCommand, KEY_FILE } from '../../scripts/lib/licence-desk.mjs';
 
-const [release, drive] = process.argv.slice(2);
+const [release, drive, licenceKeyDir] = process.argv.slice(2);
 const node = process.execPath;
 const port = 8099;
 const say = (l) => { process.stdout.write(`${l}\n`); };
@@ -93,6 +102,38 @@ const logged = existsSync(log) ? readFileSync(log, 'utf8') : '';
 if (!logged.includes('[screens] The setup screens are open on this PC only')) fail('the screens\' server kept nothing in the setup log');
 if (logged.includes(key)) fail('the one-time key was written into the setup log');
 say('The screens\' words are in the setup log, without the key.');
+
+// CR-01 step 5 (OI-10): the licence on the last page — checked offline with the public key this test build carries.
+if (licenceKeyDir !== undefined) {
+  const lic = (await call('GET', 'licence')).body;
+  say(`Licence before: ${lic.state} — ${lic.en}`);
+  if (lic.state !== 'no_licence' || lic.keyBuiltIn !== true) fail('a new shop with a seller key in its release did not start in its setup period');
+  if (lic.request?.tenantId !== tenant || lic.request?.gstin !== answers.gstin || lic.request?.shopName !== answers.shopName) fail('the licence request does not name this shop (tenant id, name, GSTIN)');
+  const out = join(tmpdir(), `sre-licences-${Date.now()}`);
+  const issue = async (over) => {
+    const dir = join(out, String(Math.random()).slice(2));
+    const code = await issueCommand({ fs: nodeFs, path: nodePath, env: process.env, platform: process.platform, now: () => new Date(), say, ask: async () => process.env.LICENCE_TEST_PASSPHRASE ?? '' },
+      { key: join(licenceKeyDir, KEY_FILE), tenant, shop: answers.shopName, gstin: answers.gstin, tills: '2', stores: '1', modules: 'all', expires: '2099-12-31', out: dir, ...over });
+    if (code !== 0) fail('the owner\'s tool did not issue the test licence');
+    return readFileSync(join(dir, nodeFs.readdirSync(dir)[0]), 'utf8');
+  };
+  const copy = await call('POST', 'licence', { licence: await issue({ tenant: '7d1e9a44-2c3b-4e5f-8a90-b1c2d3e4f5a6' }) });
+  if (copy.status !== 422 || copy.body.refusedBecause !== 'another_shop') fail(`a licence for another shop was not refused as a copy (${copy.status} ${copy.body.refusedBecause})`);
+  say(`A copied licence is refused: ${copy.body.en}`);
+  const right = await issue({});
+  const edited = await call('POST', 'licence', { licence: right.replace('"tills": 2', '"tills": 20') });
+  if (edited.status !== 422 || edited.body.refusedBecause !== 'not_signed_by_the_seller') fail('an edited licence was not refused');
+  say(`An edited licence is refused: ${edited.body.en}`);
+  const loaded = await call('POST', 'licence', { licence: right });
+  if (loaded.status !== 200 || loaded.body.ok !== true) fail(`the right licence was not loaded (${loaded.body.en})`);
+  say(loaded.body.en);
+  const after = (await call('GET', 'licence')).body;
+  if (after.state !== 'valid') fail(`after loading, the licence is ${after.state}, not valid`);
+  const cli = spawnSync(node, [join(release, 'scripts', 'store-computer.mjs'), 'licence'], { cwd: release, env: process.env, encoding: 'utf8' });
+  say(String(cli.stdout).trim());
+  if (cli.status !== 0 || !/Licence: VALID/.test(String(cli.stdout))) fail('store-computer licence does not say VALID');
+  say('The licence step: the setup period first, a copy and an edit refused by name, the right licence loaded and VALID.');
+}
 say('PASS — the first-run screens set this PC up: settings, till, services, the two people, their own PINs, and the shop, prepared by the owner and approved by the accountant.');
 server.kill();
 process.exit(0);

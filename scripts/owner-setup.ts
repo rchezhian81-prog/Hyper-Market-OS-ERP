@@ -4,6 +4,7 @@
 //
 //   shop               the company, its legal name and GSTIN, and the store, active
 //   store-settings     the store's settings (the day's end, the tolerances), a new version each time
+//   store-rules        the store's working rules (the closing checklist from a text file, near-expiry days, the limits)
 //   bill-prefix        a till's bill-number prefix
 //   grant              a role for a person (or the store-edge sign-in) at the store: one person asks, a second approves
 //   publish-catalogue  the signed price list for the store
@@ -82,6 +83,7 @@ async function main(): Promise<void> {
     confirm: async () => (await ask('Type YES and press Enter to do this (anything else stops it): ', false))?.trim().toUpperCase() === 'YES',
     askPin: (userId) => ask(`  ${userId}'s till PIN: `, true),
     verifyPin: pinVerifier({ tillEnv, settings, readFile: readIfThere }),
+    readText: (file) => readIfThere(resolve(file)),
     say: out,
   });
   process.exit(outcome.exitCode);

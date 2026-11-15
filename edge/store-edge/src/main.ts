@@ -113,7 +113,7 @@ import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { openOfficeGate } from './office-sign-in';
 import { createHeadOfficeLink, headOfficeLinkSettingsFrom } from './head-office-link'; // OB-388 · ADR-0029
-import { tillPinKey } from '../../../packages/identity/src/till-pin';
+import { issueTillCredential, tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
 import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
@@ -136,7 +136,7 @@ import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
 import {
   readTillCashRecord, foldTillCash, decideCashMovement, decideShiftClose, shiftFigures, tillCashEventFactory, TILL_CASH_WORDS,
-  type TillCashRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
+  type TillCashRecord, type TillShiftCloseRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
@@ -148,9 +148,13 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { releaseFrom, type AboutFacts } from './about-page'; // CR-01 step 2d (OI-03)
+import * as licenceFs from 'node:fs'; // CR-01 step 5 (OI-10): the licence folder, read and appended synchronously (small files)
+import * as licencePath from 'node:path';
+import { appendHistory, licenceNow, loadLicence, readHistory, requestFor, sellerKeys, LICENCE_DIR } from '../../../scripts/lib/store-licence.mjs';
 import { UPDATE_LOG, UPDATE_PROGRESS_FILE, UPDATE_REQUEST_FILE, UPDATER_MARK_FILE, readUpdateCheck, readUpdateProgress } from './update-page'; // CR-01 step 3c/3d (OI-05)
 import { PRIVILEGE_LOG, privilegeSealKey, type PrivilegeDeps, type RelayAnswer } from './office-privilege'; // CR-01 step 4a (OI-06 · ADR-0033)
 import { randomUUID as newPrivilegeRequestId } from 'node:crypto';
+import { appendTillCredential } from './till-pin-command'; // CR-01 step 4b-2 (OB-734)
 import { rename, writeFile } from 'node:fs/promises';
 // OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
 import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
@@ -726,11 +730,17 @@ export async function startEdge(
     try { return [JSON.parse(r.record) as unknown]; } catch { return []; }
   });
   let returnsNow: readonly unknown[] = parsedReturns(await readLog(returnsLog.path));
+  // D-2 (OB-773 · P-08): the shift closes on this box's own till-cash log, re-read with the sales — so the cash office's
+  // over/short desk can show a drawer that closed short even when head office's worklist cannot be read.
+  const tillClosesOf = (all: Awaited<ReturnType<typeof readLog>>): TillShiftCloseRecord[] => parsedReturns(all)
+    .flatMap((raw) => { const read = readTillCashRecord(raw); return read !== undefined && read.kind === 'close' ? [read] : []; });
+  let tillClosesNow: readonly TillShiftCloseRecord[] = tillClosesOf(await readLog(tillCashLog.path));
   const reread = async (): Promise<void> => {
     const all = await readLog(log.path);
     recordsNow = readSales(all.filter((r) => r.ok).map((r) => (r.ok ? r.record : '')));
     recordsNow = { sales: recordsNow.sales, unreadable: all.filter((r) => !r.ok).length };
     returnsNow = parsedReturns(await readLog(returnsLog.path));
+    tillClosesNow = tillClosesOf(await readLog(tillCashLog.path));
   };
 
   const signer = hmacSigner(settings['PACK_SIGNING_KEY']!);
@@ -2245,6 +2255,7 @@ export async function startEdge(
       pack,
       sales: recordsNow.sales,
       returns: returnsNow,
+      tillCloses: tillClosesNow, // D-2: the box's own shift closes, for the over/short desk
       unreadableRecords: recordsNow.unreadable,
       outbox,
       now,
@@ -2308,7 +2319,27 @@ export async function startEdge(
   // folder (update-request.json) for the updater (step 3d), which alone may stop and replace the services.
   const updateLog = screenPort === undefined ? null : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: UPDATE_LOG });
   const updateCheckFile = settings['EDGE_STORE_COMPUTER_STATUS_FILE'] === undefined ? undefined : join(dirname(settings['EDGE_STORE_COMPUTER_STATUS_FILE']), 'update-check.json');
+  // CR-01 step 5 (OI-10 · OB-710 · OB-750): the shop's licence — its folder in this box's data folder, checked OFFLINE with
+  // the seller's PUBLIC key the release carries (licence-signing.pub beside release.json). Read per request; never by a sale.
+  const licenceIo = { fs: licenceFs, path: licencePath };
+  const licenceKeys = sellerKeys(licenceIo, dirname(resolve(appsDirForAbout)));
+  const licenceShop = (): { tenantId?: string; gstin?: string; shopName?: string } => {
+    let kept: { gstin?: unknown; shopName?: unknown } = {};
+    try { kept = JSON.parse(readFileSync(join(settings['EDGE_DATA_DIR']!, LICENCE_DIR, 'licence-request.json'), 'utf8')) as typeof kept; } catch { /* the setup screens left none */ }
+    return {
+      ...(settings['EDGE_TENANT_ID'] === undefined ? {} : { tenantId: settings['EDGE_TENANT_ID'] }),
+      ...(typeof kept.gstin === 'string' ? { gstin: kept.gstin } : {}),
+      ...(typeof kept.shopName === 'string' ? { shopName: kept.shopName } : {}),
+    };
+  };
+  const licenceStandingNow = () => licenceNow(licenceIo, settings['EDGE_DATA_DIR']!, { keys: licenceKeys, shop: licenceShop(), now: () => new Date() });
+  if (screenPort !== undefined && settings['EDGE_DATA_DIR'] !== undefined) {
+    const n = licenceStandingNow();
+    say(`licence: ${n.standing.state} — ${n.standing.en}${licenceKeys.length === 0 ? ' (this release carries no seller key)' : ''}`);
+  }
   const updateDeps = updateLog === null ? undefined : {
+    // OB-750: in reduced mode no new version is installed until a licence is loaded; the till keeps selling.
+    licenceAllowsUpdates: () => settings['EDGE_DATA_DIR'] === undefined || licenceStandingNow().standing.updates,
     check: () => readUpdateCheck((() => { try { return updateCheckFile === undefined ? undefined : readFileSync(updateCheckFile, 'utf8'); } catch { return undefined; } })()),
     // OB-718: every till whose float is issued and not closed — from this box's own till-cash log, never the screen's word.
     openShifts: async () => {
@@ -2367,6 +2398,14 @@ export async function startEdge(
     record: async (entry: Record<string, unknown>) => { await privilegeLog.append(JSON.stringify(entry)); },
     now: () => new Date().toISOString(),
     newRequestId: () => newPrivilegeRequestId(),
+    // CR-01 step 4b-2 (OB-734): a PIN set or cancelled on the office screens goes into the SAME till-credentials file the
+    // tills and the office sign-in read — appended, never edited; only the PIN's fingerprint, made with the pack key.
+    writeTillPin: async (userId: string, pin: string | null, by: string) => {
+      const issuedAt = new Date().toISOString();
+      appendTillCredential(credentialsFile, pin === null
+        ? { userId, revoked: true, issuedAt, issuedBy: by }
+        : issueTillCredential({ userId, pin, key: tillPinKey(settings['PACK_SIGNING_KEY']!), issuedAt, issuedBy: by }));
+    },
   };
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(privilegeDeps === undefined ? {} : { privilege: privilegeDeps }),
@@ -2387,6 +2426,25 @@ export async function startEdge(
       },
     }),
     handheldSeal: () => sealRelay.current(),
+    // CR-01 step 5 (OI-10): the Licence screen — only with the office PIN on (the owner's own PIN loads a licence).
+    ...(officeGate === null || settings['EDGE_DATA_DIR'] === undefined ? {} : {
+      licence: {
+        deps: {
+          now: () => { const n = licenceStandingNow(); return { ...n, tenantId: settings['EDGE_TENANT_ID'], history: readHistory(licenceIo, settings['EDGE_DATA_DIR']!) }; },
+          verifyPin: async (userId: string, pin: string, authority: string) => {
+            if (staffSignIn === null) return { ok: false as const, laneMessage: 'This store computer checks no PINs (it serves no till).' };
+            const who = await staffSignIn.verifyPerson({ staffId: userId, pin, laneId: OFFICE_LANE, authority, lacking: 'no_approval_authority' });
+            return who.ok ? { ok: true as const } : { ok: false as const, laneMessage: who.laneMessage };
+          },
+          load: (text: string, by: string) => loadLicence(licenceIo, settings['EDGE_DATA_DIR']!, { text, keys: licenceKeys, shop: licenceShop(), by, via: 'licence_screen', now: () => new Date() }),
+          record: (entry: Record<string, unknown>) => { appendHistory(licenceIo, settings['EDGE_DATA_DIR']!, entry); },
+          request: () => {
+            const shop = licenceShop();
+            return shop.tenantId === undefined ? undefined : requestFor({ tenantId: shop.tenantId, ...(shop.shopName === undefined ? {} : { shopName: shop.shopName }), ...(shop.gstin === undefined ? {} : { gstin: shop.gstin }), ...(aboutFacts.release === undefined ? {} : { release: aboutFacts.release }) }, () => new Date());
+          },
+        },
+      },
+    }),
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     ...(headOfficeLinkSetting.on ? {
       headOffice: (origin: string) => createHeadOfficeLink({

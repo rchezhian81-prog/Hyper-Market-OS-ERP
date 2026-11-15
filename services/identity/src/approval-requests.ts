@@ -20,6 +20,7 @@
 // Value-limit routing (OB-290) and escalation by age (OB-292) are wired through `authorityOf` and `escalations` — the
 // owner's money limits and waits, held on the server (`authority-limits.ts`, `approval-escalation.ts`).
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange } from '../../kernel/src/index';
@@ -51,6 +52,23 @@ export interface ApprovalKind {
    * request. Anybody else's request of the kind is decided exactly as before. Absent: no such second approver.
    */
   readonly whenTheOwnerAsks?: { readonly checkerPermission: string; readonly checkerRole: string; readonly anyAmount?: true };
+  /**
+   * OB-773 (3 B) — the owner's answer to Q1 (15 Nov 2026, in writing, "B"): an approved request of this kind ALSO stands as
+   * the second person's approval of these kinds, for exactly the act it approved — and ONLY while head office is making
+   * that change (`whileMakingACatalogueChange`), only when its proposer is not its approver, and only when the approver
+   * holds the stood-in kind's own checker permission. The ordinary direct path is unchanged. See `takeApproval`.
+   */
+  readonly standsInFor?: readonly string[];
+}
+
+/**
+ * OB-773 (3 B): the approved `catalogue_change` request head office is making RIGHT NOW (set only by
+ * services/api/src/catalogue-change-proposals.ts around its call of the ordinary route) — never from a request or a body.
+ */
+const makingCatalogueChange = new AsyncLocalStorage<string>();
+/** Run `fn` while head office makes the approved catalogue change `requestId` (OB-773 · 3 B). */
+export function whileMakingACatalogueChange<T>(requestId: string, fn: () => Promise<T>): Promise<T> {
+  return makingCatalogueChange.run(requestId, fn);
 }
 
 /** OB-613: the role whose holder raised a request decides whether `whenTheOwnerAsks` applies. */
@@ -242,6 +260,14 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'access_change', label: 'Change a person\'s access (joining, moving or leaving)',
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
   },
+  // CR-01 step 4c-1 · ADR-0034 · OB-740 "B": what a ROLE may do. A store manager asks and the owner approves
+  // (`identity.role.grant` — the owner's alone); when the owner asks, a store manager approves. The owner is always one of
+  // the two, and never approves his own. The apply route judges both again on the roles held at that moment.
+  role_permission_change: {
+    kind: 'role_permission_change', label: 'Change what a role may do (switch one permission on or off)',
+    makerPermission: 'identity.role.adjust', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+    whenTheOwnerAsks: { checkerPermission: 'identity.role.adjust', checkerRole: 'store_manager' },
+  },
   // Branches (PA-04 · M01-FR-04 "every transition except reopening needs the owner's approval; the person executing is
   // never the person approving"): the manager or owner who carries out the opening/closing asks; the OWNER approves
   // (`branch.transition.approve` — the owner's alone, like every other domain's approve authority).
@@ -382,6 +408,11 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   catalogue_change: {
     kind: 'catalogue_change', label: 'A store manager\'s change to an item, a barcode or a GST rate (the owner approves; head office then makes it)',
     makerPermission: 'catalogue.change.propose', checkerPermission: 'catalogue.pack.publish', validForMinutes: 24 * 60,
+    // OB-773 (owner's Q1 answer "B", 15 Nov 2026): the manager is the one asking; the owner who approves holds Finance's
+    // approval authority (`catalogue.tax.approve`); so the maker and the checker are two different people — what OB-347
+    // (a published item's HSN), M03 §28 (a change to an existing GST rate) and OB-503 (an item made age-limited or tobacco)
+    // protect. His approval therefore also stands as that second approval, narrowly (see `standsInFor`, `takeApproval`).
+    standsInFor: ['hsn_class_change', 'tax_rate_change', 'regulated_product_publish'],
   },
   // ── OB-288 till side — end
   // ── OB-288 commercial desks (M22 · M24 · M27) — begin
@@ -810,6 +841,24 @@ export async function takeApproval(input: {
   if (s === undefined) return refuse('approval_unknown', 'Head office has no such approval request.');
   const r = s.request;
   if (s.usedBy !== undefined) return refuse('approval_already_used', `That approval was already used (${s.usedBy}); one approval allows one action.`);
+  // OB-773 (3 B): an approved store-manager catalogue change stands as Finance's (or the second person's) approval of the
+  // exact act it approved — only while head office is making THAT change, with the approver making it, the proposer a
+  // different person, and the approver holding the stood-in kind's own checker permission. Anything else: as before.
+  const standsIn = r.kind !== input.kind && (APPROVAL_KINDS[r.kind]?.standsInFor ?? []).includes(input.kind);
+  if (standsIn) {
+    const d = s.decision;
+    const making = makingCatalogueChange.getStore() === r.requestId;
+    const exact = r.details['actionFingerprint'] === fingerprintOf(input.details) && input.valueMinor === null;
+    const twoPeople = d !== undefined && d.decision === 'approved' && d.decidedBy === input.maker && r.requestedBy !== d.decidedBy;
+    const notExpired = d !== undefined && (d.expiresAt === null || Date.parse(d.expiresAt) > Date.parse(input.now));
+    const standInChecker = APPROVAL_KINDS[input.kind]?.checkerPermission;
+    const holdsBoth = d !== undefined && standInChecker !== undefined && (await input.checkerHolds(d.decidedBy, standInChecker))
+      && (await input.checkerHolds(d.decidedBy, APPROVAL_KINDS[r.kind]!.checkerPermission));
+    if (!making || !exact || !twoPeople || !notExpired || !holdsBoth) {
+      return refuse('approval_does_not_match', `That approval is for "${r.summary}", asked by ${r.requestedBy}; it stands for this only while head office makes exactly that change, approved by a different person who holds the authority to approve this (OB-773).`);
+    }
+    return d!;
+  }
   if (r.kind !== input.kind || r.subjectRef !== input.subjectRef || r.requestedBy !== input.maker
     || r.valueMinor !== input.valueMinor || r.fingerprint !== fingerprintOf(input.details)) {
     return refuse('approval_does_not_match', `That approval is for "${r.summary}", asked by ${r.requestedBy} — not exactly this. A change to the details or the amount needs a new approval.`);

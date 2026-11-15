@@ -47,6 +47,8 @@
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
       storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
       ageJustNow: 'just now', ageMinutes: '{n} minute(s) old', ageHours: '{n} hour(s) old', ageDays: '{n} day(s) old',
+      sampleNotSent: 'Head office has not sent this page\'s part of the store setup to the store computer, so the figures here are a sample — not your shop\'s. Its buttons are switched off, because nothing can be saved from a sample.',
+      sampleOffBox: 'This page was not opened from the store computer, so the figures here are a sample — not your shop\'s. Its buttons are switched off, because nothing can be saved from a sample.',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -68,6 +70,8 @@
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
       storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
       ageJustNow: 'இப்போதுதான்', ageMinutes: '{n} நிமிடம் பழையது', ageHours: '{n} மணி நேரம் பழையது', ageDays: '{n} நாள் பழையது',
+      sampleNotSent: 'இந்தப் பக்கத்துக்கான கடை அமைப்புப் பகுதியைத் தலைமை அலுவலகம் கடைக் கணினிக்கு அனுப்பவில்லை, எனவே இங்குள்ள எண்கள் மாதிரி — உங்கள் கடையுடையவை அல்ல. இதன் பொத்தான்கள் அணைக்கப்பட்டுள்ளன: மாதிரியிலிருந்து எதையும் சேமிக்க முடியாது.',
+      sampleOffBox: 'இந்தப் பக்கம் கடைக் கணினியிலிருந்து திறக்கப்படவில்லை, எனவே இங்குள்ள எண்கள் மாதிரி — உங்கள் கடையுடையவை அல்ல. இதன் பொத்தான்கள் அணைக்கப்பட்டுள்ளன: மாதிரியிலிருந்து எதையும் சேமிக்க முடியாது.',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -240,6 +244,47 @@
     const age = n < 1 ? t('ageJustNow') : n < 60 ? t('ageMinutes').replace('{n}', String(n))
       : n < 60 * 24 ? t('ageHours').replace('{n}', String(Math.floor(n / 60))) : t('ageDays').replace('{n}', String(Math.floor(n / (60 * 24))));
     setText(strip, t('storeCopy').replace('{at}', String(copy.shownAt ?? '')).replace('{age}', age));
+  }
+
+  // ── D-11 · D-10 (OB-773 · P-08): a page showing SAMPLE figures offers no action, and says one true thing ─────────
+  // Every office page falls back to clearly-marked sample figures (`#sample`) when the store computer did not give it
+  // its section. A sample must never carry a real action: so while the strip shows, every button in the page's `main`
+  // is switched off — except the ones that only change what is LOOKED at (a filter, a column sort, a tab, "back to the
+  // list", or a control the page marks `data-sample-ok`) — and the line under the strip says why, in words. And it says
+  // ONE thing: a box-served page (the box injects `window.storeCopy`) says head office has not sent this page's part of
+  // the setup; the "as head office last sent it … just now" freshness line is hidden, because the figures shown are not
+  // head office's at all. When live figures arrive and the page hides the strip, the buttons come back.
+  const SAMPLE_KEEP = '.filter, .sre-sort, [role="tab"], #back, #back-to-items, [data-sample-ok]';
+  const sampleShowing = () => { const s = byId('sample'); return !!s && !s.hidden; };
+  function paintSample() {
+    const on = sampleShowing();
+    let why = byId('sre-sample-why');
+    if (on) {
+      if (!why) {
+        why = document.createElement('p');
+        why.id = 'sre-sample-why';
+        why.className = 'sample sre-sample-why';
+        why.setAttribute('role', 'status');
+        byId('sample').after(why);
+      }
+      if (why.hidden) why.hidden = false;
+      setText(why, window.storeCopy !== undefined ? t('sampleNotSent') : t('sampleOffBox'));
+      const copy = byId('store-copy');
+      if (copy && !copy.hidden) copy.hidden = true;
+    } else if (why && !why.hidden) {
+      why.hidden = true;
+      paintStoreCopy();
+    }
+    const main = document.querySelector('main');
+    if (!main) return;
+    for (const b of main.querySelectorAll('button, input[type="submit"], input[type="button"]')) {
+      if (on && !b.matches(SAMPLE_KEEP)) {
+        if (!b.disabled) { b.disabled = true; b.dataset.sreSampleOff = '1'; }
+      } else if (b.dataset.sreSampleOff === '1') {
+        b.disabled = false;
+        delete b.dataset.sreSampleOff;
+      }
+    }
   }
 
   // ── The header line in the reader's language (U0 · G1 of the UI/UX gap audit, 1 Nov 2026 · §1 rule 6) ───────────
@@ -2573,7 +2618,7 @@
   // a register that is still on the page is redrawn in the new language; one its page has since replaced is let go
   function repaintTables() { for (const table of [...liveTables]) { if (table.connected()) table.repaint(); else liveTables.delete(table); } }
 
-  function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); repaintAdapters(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintHeading(); paintWhoAmI(); paintStale(); paintStoreCopy(); paintSample(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); repaintAdapters(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   new MutationObserver(repaintTables).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
@@ -2581,6 +2626,14 @@
   // the page paints its rows, switches its sections and rewrites its labels in its own time — follow it
   const mainEl = document.querySelector('main');
   if (mainEl) new MutationObserver(scheduleAnatomy).observe(mainEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  // D-11: the sample rule follows the page — its strip shown or hidden, its buttons drawn, enabled or redrawn
+  const sampleEl = byId('sample');
+  if (sampleEl) {
+    let sampleQueued = false;
+    const scheduleSample = () => { if (sampleQueued) return; sampleQueued = true; queueMicrotask(() => { sampleQueued = false; paintSample(); }); };
+    new MutationObserver(scheduleSample).observe(sampleEl, { attributes: true, attributeFilter: ['hidden'] });
+    if (mainEl) new MutationObserver(scheduleSample).observe(mainEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+  }
   const tabsEl = byId('tabs');
   if (tabsEl) new MutationObserver(scheduleAnatomy).observe(tabsEl, { childList: true, subtree: true });
   openAskedTab();

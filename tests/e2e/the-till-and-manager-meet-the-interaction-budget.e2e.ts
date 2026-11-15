@@ -131,6 +131,17 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.operator() === 'u-lanecash');
     expect(taps.reset(), 'sign in for the shift').toBeLessThanOrEqual(3);
 
+    // The opening float, once a shift (counted on its own in u4: 8) — cash is refused until one is out (pilot audit D-5).
+    await page.click('#more');
+    await page.click('#pay-kinds button:text-is("Take float (open the till)")');
+    await page.waitForSelector('#sheet:not([hidden])');
+    for (const d of '2000') await page.click(`#keypad button:text-is("${d}")`);
+    await page.click('#sheet-ok');
+    await page.waitForSelector('#sheet:not([hidden]) #consequence:not([hidden])');
+    await page.click('#sheet-ok');
+    await page.waitForSelector('#refusal:not([hidden])');
+    await page.click('#refusal-ok');
+
     // Scan an item — one act, no target to find. The catalogue the box trusted prices it.
     await taps.scan('8901234567890');
     await page.waitForSelector('#lines tr');

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1738 | 1000 | 1000 | 196 | 452 |
+| 13 | 1744 | 1005 | 1005 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -48,10 +48,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/approvals/rules/:rule/rollback` | `approvals.rules.propose` | core | yes |
 | GET | `/v1/idempotency-conflicts` | `platform.health.read` | core | — |
 | GET | `/v1/identity/access-review` | `identity.access.review` | core | — |
+| POST | `/v1/identity/box/access-changes` | `identity.grants.sync` | core | yes |
+| POST | `/v1/identity/box/access-changes/:approvalId/decide` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/grants` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/grants/:grantId/approve` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/grants/:grantId/reject` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/people` | `identity.people.sync` | core | yes |
+| POST | `/v1/identity/box/till-pins` | `identity.people.sync` | core | yes |
 | GET | `/v1/identity/box/users-view` | `identity.grants.sync` | core | — |
 | POST | `/v1/identity/chartered-accountant/grants/:changeId` | `identity.ca.grant.request` | core | yes |
 | GET | `/v1/identity/department-scopes` | `identity.role.read` | core | — |
@@ -91,6 +94,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/identity/people` | `platform.person.read` | core | — |
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
 | GET | `/v1/identity/permission-matrix` | `identity.access.review` | core | — |
+| GET | `/v1/identity/role-permissions` | `identity.role.adjust` | core | — |
+| POST | `/v1/identity/role-permissions/:requestId` | `identity.role.adjust` | core | yes |
+| POST | `/v1/identity/role-permissions/check` | `identity.role.adjust` | core | yes |
 | GET | `/v1/identity/role-scopes` | `identity.role.read` | core | — |
 | POST | `/v1/identity/role-scopes/:userId/:roleId/:dimension` | `identity.role.request` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |

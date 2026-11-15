@@ -19,7 +19,7 @@ export function wireUsers(win: Record<string, unknown>, viewerIdentity: (raw: un
   // CR-01 step 4a (ADR-0033): served by the store PC with the head-office link off — give and approve go through its own
   // doors, the person's PIN asked again for each act.
   const doc = win['document'] as PinDoc | undefined;
-  const askKey = { give: 'pinAskGive', approve: 'pinAskApprove', reject: 'pinAskReject', add: 'pinAskAdd' } as const;
+  const askKey = { give: 'pinAskGive', approve: 'pinAskApprove', reject: 'pinAskReject', add: 'pinAskAdd', takeBack: 'pinAskTakeBack', pinSet: 'pinAskSet', pinCancel: 'pinAskCancel', pinCurrent: 'pinAskCurrent', newPin: 'pinAskNew', newPinAgain: 'pinAskNewAgain' } as const;
   const office = doc === undefined ? undefined : officePrivilegeFrom(win['sreOfficePrivilege'], (what) => askOfficePin(doc, {
     ask: usersWords('en', askKey[what]), askTa: usersWords('ta', askKey[what]),
     ok: `${usersWords('en', 'pinOk')} · ${usersWords('ta', 'pinOk')}`, cancel: `${usersWords('en', 'pinCancel')} · ${usersWords('ta', 'pinCancel')}`,

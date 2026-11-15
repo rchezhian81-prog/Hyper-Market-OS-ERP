@@ -83,6 +83,8 @@ const WORDS = {
   en: {
     // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the session's own words are the detail).
     app_version_too_old: 'Update this handheld',
+    // OB-773 (pilot audit B-3): a Warehouse user may not receive a delivery (OB-623) — said before any scan.
+    not_your_kind_of_stock_movement: 'Not yours to receive',
     noBoxLink: 'not connected to a store computer', checkingBox: 'checking the store computer…',
     boxNotAnswering: 'store computer not answering', boxOnline: 'store computer online',
     noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
@@ -184,6 +186,7 @@ const WORDS = {
   },
   ta: {
     app_version_too_old: 'இந்தக் கருவியைப் புதுப்பிக்கவும்',
+    not_your_kind_of_stock_movement: 'நீங்கள் பெற முடியாது',
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
     boxNotAnswering: 'கடை கணினி பதிலளிக்கவில்லை', boxOnline: 'கடை கணினி இணைப்பில்',
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
@@ -943,6 +946,10 @@ function renderDeliveries() {
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 el('receive').addEventListener('click', async () => {
+  // OB-773 (pilot audit B-3): a person who may not receive a delivery (a Warehouse user, OB-623) is told so HERE, before the
+  // scan panel opens — who can receive, and that nothing was recorded — instead of scanning goods head office will refuse.
+  const notYours = real !== undefined && typeof real.receivingRefusal === 'function' ? real.receivingRefusal() : undefined;
+  if (notYours !== undefined) { feltResult(notYours); return; }
   // Wave 3 · SF-07 part 3: the probe reading, when the goods are chilled or frozen — checked BEFORE the scan, so a word never
   // travels. Empty = not taken (head office then holds a cold-chain item for a second person's check).
   const code = await awaitScan(t('scanBarcode'));

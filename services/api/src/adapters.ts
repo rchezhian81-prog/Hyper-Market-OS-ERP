@@ -235,6 +235,7 @@ import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
+import { applyRoleAdjustments, ROLE_PERMISSION_ADJUSTED, type RolePermissionAdjustment } from '../../identity/src/role-adjustments';
 import type { OpsIncidentDeps, IncidentFact } from '../../platform/src/ops-incidents';
 import type { OutboundWebhookDeps, OutboundFact, OutboundTransport } from '../../platform/src/outbound-webhooks';
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
@@ -489,6 +490,26 @@ export async function effectiveGrants(store: EventStore, tenantId: string): Prom
 }
 
 /**
+ * CR-01 step 4c-1 · ADR-0034 · OB-730 "A": the roles as THIS shop has them NOW — the built-in roles with every
+ * `RolePermissionAdjusted` on the identity ledger applied in order. Every reader of authority goes through this ONE fold
+ * (a guardrail holds it: tests/guardrails/cr01-step4c1-every-access-decision-reads-the-adjusted-roles.test.ts), read on
+ * every request like the grants, so a change two people approved applies from the very next request.
+ */
+export async function effectiveRoleCatalogue(store: EventStore, tenantId: string): Promise<readonly Role[]> {
+  return applyRoleAdjustments(ROLE_CATALOGUE, await roleAdjustmentsOf(store, tenantId));
+}
+
+/** Every recorded change to what a role may do, oldest first. */
+export async function roleAdjustmentsOf(store: EventStore, tenantId: string): Promise<readonly RolePermissionAdjustment[]> {
+  return allOf<RolePermissionAdjustment>(store, tenantId, STREAM.identity, ROLE_PERMISSION_ADJUSTED);
+}
+
+/** The permissions a set of roles carries, in this shop now. */
+export async function permissionsOfRoles(store: EventStore, tenantId: string, roleIds: ReadonlySet<string>): Promise<readonly string[]> {
+  return [...new Set((await effectiveRoleCatalogue(store, tenantId)).filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+}
+
+/**
  * PA-12 round 10: every role a user holds at `at` — their effective grants plus any emergency grant still live (not
  * revoked, not expired). Read so a machine-only role is never mixed with a person's (identity/machine-identities.ts).
  */
@@ -572,7 +593,8 @@ export function accessLifecycleAdapter(input: {
 }): Omit<AccessLifecycleDeps, 'revocations' | 'recordAudit'> {
   return {
     now: input.now,
-    roles: () => input.roleCatalogue,
+    // ADR-0034: the catalogue passed in is the BUILT-IN list; the shop's recorded adjustments are applied on top, always.
+    roles: async (tenantId) => applyRoleAdjustments(input.roleCatalogue, await roleAdjustmentsOf(input.store, tenantId)),
     currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
     // OB-95: a live emergency grant counts as held when a joiner/mover change is judged.
     emergencyRolesOf: (tenantId, userId) => liveEmergencyRoles(input.store, tenantId, userId, input.now()),
@@ -580,7 +602,8 @@ export function accessLifecycleAdapter(input: {
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     permissionsOf: async (tenantId, userId) => {
       const held = (await effectiveGrants(input.store, tenantId)).filter((a) => a.userId === userId);
-      return [...new Set(held.flatMap((a) => input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
+      const roles = applyRoleAdjustments(input.roleCatalogue, await roleAdjustmentsOf(input.store, tenantId));
+      return [...new Set(held.flatMap((a) => roles.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
     },
     recordChange: async (tenantId, change: LifecycleChange) => {
       const at = input.now();
@@ -3543,7 +3566,7 @@ export function returnsAdapter(input: {
     canApproveRefund: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.return.approve'));
+      return (await effectiveRoleCatalogue(input.store, tenantId)).some((r) => roleIds.has(r.id) && r.permissions.includes('pos.return.approve'));
     },
 
     // Synced refunds that reconciled with a §28 breach (M13-FR-01), folded from the tenant-wide returns
@@ -4061,7 +4084,7 @@ export function dayCloseAdapter(input: {
     canApproveDayReopen: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('till.dayclose.approve'));
+      return (await effectiveRoleCatalogue(input.store, tenantId)).some((r) => roleIds.has(r.id) && r.permissions.includes('till.dayclose.approve'));
     },
   };
 }
@@ -5340,7 +5363,7 @@ export function delegationAdapter(input: {
     branchScopeOfUser: async (tenantId, userId, permission) => {
       const grants = await effectiveGrants(input.store, tenantId);
       if (!grants.some((g) => g.userId === userId)) return undefined;
-      return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+      return new AccessControl((await effectiveRoleCatalogue(input.store, tenantId)), grants).branchScopeOf(userId, permission);
     },
     // Folded latest-per-delegationId by append order — a revocation (a re-record with revokedOn) supersedes.
     delegations: async (tenantId) => {
@@ -5374,7 +5397,7 @@ export async function permissionsHeldBy(store: EventStore, tenantId: string, use
   const grants = await effectiveGrants(store, tenantId);
   const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
   if (roleIds.size === 0) return undefined;
-  return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+  return [...new Set((await effectiveRoleCatalogue(store, tenantId)).filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
 }
 
 /**
@@ -5656,14 +5679,14 @@ export function approvalDecisionAdapter(input: {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       if (roleIds.size === 0) return undefined;
-      return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+      return [...new Set((await effectiveRoleCatalogue(input.store, tenantId)).filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
     },
     // WHERE the decider holds the authority (Wave 2b · PA-03 / PA-01): the branches of the grants that carry it — a
     // manager of br-1 deciding br-2's refund is flagged, not applied. `undefined` when they hold no grant at all.
     branchScopeOfUser: async (tenantId, userId, permission) => {
       const grants = await effectiveGrants(input.store, tenantId);
       if (!grants.some((g) => g.userId === userId)) return undefined;
-      return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+      return new AccessControl((await effectiveRoleCatalogue(input.store, tenantId)), grants).branchScopeOf(userId, permission);
     },
   };
 }
@@ -5684,7 +5707,7 @@ export function emergencyAccessAdapter(input: {
     // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     // OB-95: the catalogue, so an emergency grant never puts the IT/platform role beside a business role.
-    roles: () => ROLE_CATALOGUE,
+    roles: (tenantId) => effectiveRoleCatalogue(input.store, tenantId),
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     grants: (tenantId) => foldGrants(tenantId),
@@ -6167,7 +6190,7 @@ export function lpActivityAdapter(input: {
     mayApproveOverride: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.override.approve'));
+      return (await effectiveRoleCatalogue(input.store, tenantId)).some((r) => roleIds.has(r.id) && r.permissions.includes('pos.override.approve'));
     },
     refundsOn: async (tenantId, day) => {
       const { from, to } = await dayRange(tenantId, day);
@@ -8236,9 +8259,10 @@ const ALERTS_STREAM = streamName(STREAM.platform, 'alerts');
  */
 async function builtInAuthorityOf(store: EventStore, tenantId: string, userId: string): Promise<{ owner: boolean; platformAdministration: boolean }> {
   const mine = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId);
+  const roles = await effectiveRoleCatalogue(store, tenantId);
   return {
     owner: mine.some((g) => g.roleId === OWNER_ROLE_ID),
-    platformAdministration: mine.some((g) => { const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId); return role !== undefined && isPlatformAdministrationRole(role); }),
+    platformAdministration: mine.some((g) => { const role = roles.find((r) => r.id === g.roleId); return role !== undefined && isPlatformAdministrationRole(role); }),
   };
 }
 
@@ -10104,7 +10128,7 @@ export function serviceCaseAdapter(input: {
     canApproveCompensation: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('service.compensation.approve'));
+      return (await effectiveRoleCatalogue(input.store, tenantId)).some((r) => roleIds.has(r.id) && r.permissions.includes('service.compensation.approve'));
     },
 
     // AI drafts and their decisions (P-05) — both on the drafts stream, filtered by case.
@@ -11244,7 +11268,8 @@ export function identityAdapter(input: {
 
   return {
     now: input.now,
-    roles: () => input.roleCatalogue,
+    // ADR-0034: the catalogue passed in is the BUILT-IN list; the shop's recorded adjustments are applied on top, always.
+    roles: async (tenantId) => applyRoleAdjustments(input.roleCatalogue, await roleAdjustmentsOf(input.store, tenantId)),
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
 
     // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
@@ -11254,8 +11279,9 @@ export function identityAdapter(input: {
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {
       const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
+      const roles = applyRoleAdjustments(input.roleCatalogue, await roleAdjustmentsOf(input.store, tenantId));
       const codes = held.flatMap((a) =>
-        input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []);
+        roles.find((r) => r.id === a.roleId)?.permissions ?? []);
       return [...new Set(codes)].sort();
     },
 
@@ -12651,7 +12677,7 @@ export function migrationAdapter(input: {
     // catalogue, never from what the relay says about them (the same read canApproveRefund does).
     holdsPermission: async (tenantId, userId, permission) => {
       const roleIds = new Set((await grants(tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
+      return (await effectiveRoleCatalogue(input.store, tenantId)).some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
     },
   };
 }
@@ -12955,7 +12981,7 @@ export function observedHealthAdapter(input: {
       const emergency = (await allOf<EmergencyGrant>(input.store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded'))
         .reduce((m, g) => m.set(g.grantId, g), new Map<string, EmergencyGrant>());
       for (const g of emergency.values()) if ((g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(now)) grants.push({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope });
-      return combinedDuties(grants, ROLE_CATALOGUE);
+      return combinedDuties(grants, (await effectiveRoleCatalogue(input.store, tenantId)));
     },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     // Round 31 · OB-114: the built-in rules go to whoever holds the owner role now (read from the grants, never written in code).
@@ -12971,8 +12997,8 @@ export function observedHealthAdapter(input: {
     builtInRuleAuthorityOf: (tenantId, userId) => builtInAuthorityOf(input.store, tenantId, userId),
     // Round 36 · verifier r35 NEW-1: the person an owner's redirect of a built-in rule names still receives it only while they
     // hold a role that may see alerts (platform.health.read) — else it goes to every owner (said on the page).
-    mayReceiveAlerts: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId
-      && (ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions.includes('platform.health.read') ?? false)),
+    mayReceiveAlerts: async (tenantId, userId) => { const roles = await effectiveRoleCatalogue(input.store, tenantId); return (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId
+      && (roles.find((r) => r.id === g.roleId)?.permissions.includes('platform.health.read') ?? false)); },
     // Round 33 · OB-120: the rules' write guard — read before the rules in force, passed back on the save.
     alertRulesGuardVersion: (tenantId) => input.store.guardVersion(tenantId, ALERT_RULES_GUARD),
     defineAlertRules: async (tenantId, rules, opts) => {
@@ -13042,7 +13068,7 @@ export function storeSettingsAdapter(input: { readonly store: EventStore }): {
 export async function branchScopeHeldBy(store: EventStore, tenantId: string, userId: string, permission: string): Promise<readonly string[] | 'all' | undefined> {
   const grants = await effectiveGrants(store, tenantId);
   if (!grants.some((g) => g.userId === userId)) return undefined;
-  return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+  return new AccessControl((await effectiveRoleCatalogue(store, tenantId)), grants).branchScopeOf(userId, permission);
 }
 
 /**
@@ -14229,7 +14255,7 @@ export function heldStockDecisionsAdapter(input: { readonly store: EventStore; r
     permissionsOf: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+      return [...new Set((await effectiveRoleCatalogue(input.store, tenantId)).filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
     },
     batchBlocks: async (tenantId) => (await blocks.blocks(tenantId)).map((x) => ({ productId: x.productId, batchId: x.batchId, kind: x.kind, reason: x.reason })),
     unitCostAt: (tenantId, locationId, productId) => writeOffs.unitCostAt!(tenantId, locationId, productId),

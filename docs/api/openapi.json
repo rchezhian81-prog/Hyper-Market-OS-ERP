@@ -50237,6 +50237,173 @@
         }
       }
     },
+    "/v1/identity/box/access-changes": {
+      "post": {
+        "operationId": "postIdentityBoxAccessChanges",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxAccessChangesRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/box/access-changes/{approvalId}/decide": {
+      "post": {
+        "operationId": "postIdentityBoxAccessChangesByApprovalIdDecide",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "approvalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideReply200"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxAccessChangesByApprovalIdDecideReply2XX"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/identity/box/grants": {
       "post": {
         "operationId": "postIdentityBoxGrants",
@@ -50522,6 +50689,79 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostIdentityBoxPeopleReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.people.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/box/till-pins": {
+      "post": {
+        "operationId": "postIdentityBoxTillPins",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.people.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxTillPinsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxTillPinsReply"
                 }
               }
             }
@@ -53529,6 +53769,213 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/role-permissions": {
+      "get": {
+        "operationId": "getIdentityRolePermissions",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIdentityRolePermissionsReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/role-permissions/check": {
+      "post": {
+        "operationId": "postIdentityRolePermissionsCheck",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityRolePermissionsCheckRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityRolePermissionsCheckReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/role-permissions/{requestId}": {
+      "post": {
+        "operationId": "postIdentityRolePermissionsByRequestId",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.role.adjust",
+        "x-entitlement": null,
+        "x-reauth": {
+          "withinSeconds": 300,
+          "amr": [
+            "mfa"
+          ]
+        },
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityRolePermissionsByRequestIdRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "201": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityRolePermissionsByRequestIdReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.role.adjust\", or a recent re-authentication is needed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -120621,7 +121068,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "name": {
@@ -120953,7 +121402,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "name": {
@@ -120965,6 +121416,7 @@
                 "approver": {
                   "type": "string",
                   "enum": [
+                    "accountant",
                     "agent_supervisor",
                     "buyer",
                     "customer",
@@ -121262,7 +121714,9 @@
                         "A07",
                         "A08",
                         "A09",
-                        "A10"
+                        "A10",
+                        "A12",
+                        "A14"
                       ]
                     },
                     "summary": {
@@ -121433,6 +121887,15 @@
                         }
                       ]
                     },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProposalReason"
+                      }
+                    },
+                    "draftText": {
+                      "type": "string"
+                    },
                     "committed": {
                       "type": "boolean",
                       "const": false
@@ -121504,7 +121967,9 @@
                         "A07",
                         "A08",
                         "A09",
-                        "A10"
+                        "A10",
+                        "A12",
+                        "A14"
                       ]
                     },
                     "at": {
@@ -122068,7 +122533,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122120,7 +122587,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122200,7 +122669,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -122724,7 +123195,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 },
                 "summary": {
@@ -122894,6 +123367,15 @@
                       "additionalProperties": true
                     }
                   ]
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalReason"
+                  }
+                },
+                "draftText": {
+                  "type": "string"
                 },
                 "committed": {
                   "type": "boolean",
@@ -143618,6 +144100,150 @@
         ],
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/access-review.ts"
+      },
+      "GetIdentityRolePermissionsReply": {
+        "type": "object",
+        "required": [
+          "asAt",
+          "roles",
+          "ownerReserved",
+          "lockedPermissions",
+          "history",
+          "howAChangeIsMade"
+        ],
+        "properties": {
+          "asAt": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "locked",
+                "permissions",
+                "added",
+                "removed",
+                "roleId",
+                "name"
+              ],
+              "properties": {
+                "locked": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "reason",
+                        "words"
+                      ],
+                      "properties": {
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "controls_roles_approvals_or_ai",
+                            "it_and_business_kept_apart",
+                            "machine_role",
+                            "outside_party_role",
+                            "owner_reserved",
+                            "owner_role_never_reduced",
+                            "posh_committee",
+                            "security_reviewer"
+                          ]
+                        },
+                        "words": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "permissions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "added": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "removed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "nameTa": {
+                  "type": "string"
+                },
+                "roleId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "ownerReserved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lockedPermissions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "match",
+                "reason",
+                "words"
+              ],
+              "properties": {
+                "match": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "controls_roles_approvals_or_ai",
+                    "it_and_business_kept_apart",
+                    "machine_role",
+                    "outside_party_role",
+                    "owner_reserved",
+                    "owner_role_never_reduced",
+                    "posh_committee",
+                    "security_reviewer"
+                  ]
+                },
+                "words": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RolePermissionAdjustment"
+            }
+          },
+          "howAChangeIsMade": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
       },
       "GetIdentityRoleScopesReply": {
         "type": "object",
@@ -173564,6 +174190,7 @@
                   "purpose": {
                     "type": "string",
                     "enum": [
+                      "cash_variance_review",
                       "customer_service",
                       "customer_shopping",
                       "data_quality",
@@ -173573,6 +174200,7 @@
                       "owner_brief",
                       "purchase_question",
                       "stock_question",
+                      "supplier_bill_review",
                       "workforce"
                     ]
                   },
@@ -174157,7 +174785,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "summary": {
@@ -174280,7 +174910,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -206431,6 +207063,277 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/finance/src/workforce-enablement.ts"
       },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideReply200": {
+        "type": "object",
+        "required": [
+          "approvalId",
+          "decided",
+          "applied",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "decided": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideReply2XX": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId",
+              "approvalId",
+              "decided",
+              "applied",
+              "event",
+              "userId",
+              "result"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              },
+              "tillPinToCancel": {
+                "type": "string"
+              },
+              "personEnded": {
+                "type": "boolean"
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "decided": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "boolean"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "leaver",
+                  "mover"
+                ]
+              },
+              "userId": {
+                "type": "string"
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesByApprovalIdDecideRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesReply": {
+        "type": "object",
+        "required": [
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxAccessChangesRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
       "PostIdentityBoxGrantsByGrantIdApproveReply": {
         "type": "object",
         "required": [
@@ -206496,10 +207399,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -206585,10 +207491,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -206674,10 +207583,13 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -206779,10 +207691,122 @@
           "kind": {
             "type": "string",
             "enum": [
+              "access_change_decision",
+              "access_change_request",
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
-              "role_request"
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxTillPinsReply": {
+        "type": "object",
+        "required": [
+          "userId",
+          "action",
+          "recorded",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "own",
+              "set"
+            ]
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxTillPinsRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_request",
+              "till_pin_change"
             ]
           },
           "requestId": {
@@ -209695,6 +210719,279 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/identity/src/people.ts"
+      },
+      "PostIdentityRolePermissionsByRequestIdReply": {
+        "type": "object",
+        "required": [
+          "requestedBy",
+          "approvedBy",
+          "affectedPeople",
+          "appliesAtHeadOffice",
+          "onTheTills",
+          "roleId",
+          "permission",
+          "change",
+          "requestId"
+        ],
+        "properties": {
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "affectedPeople": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appliesAtHeadOffice": {
+            "type": "string"
+          },
+          "onTheTills": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsByRequestIdRequest": {
+        "type": "object",
+        "required": [
+          "change",
+          "permission",
+          "reason",
+          "roleId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "permission": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsCheckReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "allowed",
+              "affectedPeople",
+              "approvedBy",
+              "roleId",
+              "permission",
+              "change"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "boolean"
+              },
+              "affectedPeople": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "userId",
+                    "branchScope"
+                  ],
+                  "properties": {
+                    "userId": {
+                      "type": "string"
+                    },
+                    "branchScope": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "const": "all"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "approvedBy": {
+                "type": "string"
+              },
+              "roleId": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "allowed",
+              "refusal",
+              "affectedPeople",
+              "roleId",
+              "permission",
+              "change"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "boolean"
+              },
+              "refusal": {
+                "type": "object",
+                "required": [
+                  "whatHappened",
+                  "code"
+                ],
+                "properties": {
+                  "whatHappened": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "controls_roles_approvals_or_ai",
+                      "it_and_business_kept_apart",
+                      "machine_role",
+                      "outside_party_role",
+                      "owner_reserved",
+                      "owner_role_never_reduced",
+                      "posh_committee",
+                      "security_reviewer"
+                    ]
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "affectedPeople": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "userId",
+                    "branchScope"
+                  ],
+                  "properties": {
+                    "userId": {
+                      "type": "string"
+                    },
+                    "branchScope": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "const": "all"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "roleId": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
+      },
+      "PostIdentityRolePermissionsCheckRequest": {
+        "type": "object",
+        "required": [
+          "change",
+          "permission",
+          "roleId"
+        ],
+        "properties": {
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "permission": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/role-adjustments.ts"
       },
       "PostIdentityRoleScopesByUserIdByRoleIdByDimensionReply": {
         "$ref": "#/components/schemas/RoleScopeRecord",
@@ -262487,7 +263784,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 }
               },
@@ -262525,7 +263824,9 @@
                     "A07",
                     "A08",
                     "A09",
-                    "A10"
+                    "A10",
+                    "A12",
+                    "A14"
                   ]
                 }
               },
@@ -262563,7 +263864,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -262581,7 +263884,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           }
@@ -262658,7 +263963,9 @@
                 "A07",
                 "A08",
                 "A09",
-                "A10"
+                "A10",
+                "A12",
+                "A14"
               ]
             }
           },
@@ -268012,7 +269319,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "name": {
@@ -268027,6 +269336,7 @@
           "approver": {
             "type": "string",
             "enum": [
+              "accountant",
               "agent_supervisor",
               "buyer",
               "customer",
@@ -268075,7 +269385,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "ceilingMinor": {
@@ -268151,7 +269463,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "summary": {
@@ -270125,7 +271439,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "at": {
@@ -270244,7 +271560,9 @@
                   "A07",
                   "A08",
                   "A09",
-                  "A10"
+                  "A10",
+                  "A12",
+                  "A14"
                 ]
               },
               "ordinaryRoute": {
@@ -270315,7 +271633,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "tool": {
@@ -275157,7 +276477,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "kind": {
@@ -287521,7 +288843,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "setVersion": {
@@ -296780,7 +298104,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "reason": {
@@ -300992,7 +302318,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "requestedBy": {
@@ -301119,6 +302447,7 @@
                   "purpose": {
                     "type": "string",
                     "enum": [
+                      "cash_variance_review",
                       "customer_service",
                       "customer_shopping",
                       "data_quality",
@@ -301128,6 +302457,7 @@
                       "owner_brief",
                       "purchase_question",
                       "stock_question",
+                      "supplier_bill_review",
                       "workforce"
                     ]
                   },
@@ -308959,7 +310289,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "summary": {
@@ -309133,6 +310465,15 @@
               }
             ]
           },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalReason"
+            }
+          },
+          "draftText": {
+            "type": "string"
+          },
           "committed": {
             "type": "boolean",
             "const": false
@@ -309167,7 +310508,9 @@
               "A07",
               "A08",
               "A09",
-              "A10"
+              "A10",
+              "A12",
+              "A14"
             ]
           },
           "decision": {
@@ -309192,6 +310535,39 @@
           "committedAnything": {
             "type": "boolean",
             "const": false
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProposalReason": {
+        "type": "object",
+        "required": [
+          "code",
+          "values",
+          "sentence"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "sentence": {
+            "type": "string"
+          },
+          "recordRef": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -315566,6 +316942,54 @@
             "type": "string"
           },
           "setAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RolePermissionAdjustment": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "roleId",
+          "permission",
+          "change",
+          "reason",
+          "requestedBy",
+          "approvedBy",
+          "approvalId",
+          "at"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "at": {
             "type": "string"
           }
         },

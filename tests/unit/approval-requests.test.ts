@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  approvalRequestRoutes, takeApproval, fingerprintOf, statusOf, namedSecondPersonRefusal, APPROVAL_KINDS, actionDetails, approvalNamedIn, NO_APPROVALS,
+  approvalRequestRoutes, takeApproval, fingerprintOf, statusOf, namedSecondPersonRefusal, APPROVAL_KINDS, actionDetails, approvalNamedIn, NO_APPROVALS, whileMakingACatalogueChange,
   type ApprovalDecision, type ApprovalRequest, type ApprovalState,
 } from '../../services/identity/src/approval-requests';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
@@ -248,6 +248,38 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(55); // OB-773: catalogue_change · W5 OB-681: ca_role_grant · W3 OB-679: customer_debit_note · OB-678: customer_credit_note · Round 4d: concession_invoice · Round 4a: cess_rate_change · R11-A OB-602: quotation_below_floor_owner_quoted · R10-A OB-542: quotation_floor_not_known_owner_quoted · OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · and the earlier kinds listed in the history of this line
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(56); // OB-773 (3 B): catalogue_change · CR-01 4c-1 · ADR-0034: role_permission_change · W5 OB-681: ca_role_grant · W3 OB-679: customer_debit_note · OB-678: customer_credit_note · Round 4d: concession_invoice · Round 4a: cess_rate_change · R11-A OB-602: quotation_below_floor_owner_quoted · R10-A OB-542: quotation_floor_not_known_owner_quoted · OB-503: regulated_product_publish · R9-A OB-532: quotation_floor_not_known · R7 OB-512: mrp_replacement · and the earlier kinds listed in the history of this line
+  });
+});
+
+describe('OB-773 (3 B): an approved store-manager catalogue change stands as Finance\'s approval — narrowly', () => {
+  const act = actionDetails({ product: { name: 'Salt', taxClass: '25010090' } }, { productId: 'SALT' });
+  const state = (over: Partial<ApprovalRequest> = {}, decidedBy = 'u-owner'): ApprovalState => ({
+    request: {
+      requestId: 'areq-cc', kind: 'catalogue_change', subjectRef: 'product:SALT', valueMinor: null, fingerprint: 'x',
+      details: { change: 'product', actionFingerprint: fingerprintOf(act) }, summary: 'Item change: Salt', reason: 'r', requestedBy: 'u-mgr', requestedAt: NOW, ...over,
+    },
+    decision: { requestId: 'areq-cc', decision: 'approved', decidedBy, reason: 'ok', decidedAt: NOW, expiresAt: '2026-10-08T10:00:00.000Z' },
+  });
+  const owner = ['catalogue.pack.publish', 'catalogue.tax.approve'];
+  const take = (s: ApprovalState, holds: readonly string[] = owner, details: unknown = act, maker = 'u-owner') => takeApproval({
+    state: s, kind: 'hsn_class_change', subjectRef: 'product:SALT', details, valueMinor: null, maker, usedBy: 'hsn-class:SALT', now: NOW,
+    checkerHolds: (_u, p) => holds.includes(p),
+  });
+  const making = <T,>(fn: () => Promise<T>) => whileMakingACatalogueChange('areq-cc', fn);
+
+  it('stands while head office makes that very change, approved by a different person who holds Finance\'s authority', async () => {
+    expect((await making(() => take(state()))).decidedBy).toBe('u-owner');
+    expect(APPROVAL_KINDS['catalogue_change']!.standsInFor).toEqual(['hsn_class_change', 'tax_rate_change', 'regulated_product_publish']);
+  });
+  it('is refused outside the making (a direct save naming it), for another act, when the approver lacks Finance\'s permission, or when one person asked and approved', async () => {
+    await expect(take(state())).rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
+    await expect(making(() => take(state(), owner, actionDetails({ product: { name: 'Salt', taxClass: '99' } }, { productId: 'SALT' })))).rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
+    await expect(making(() => take(state(), ['catalogue.pack.publish']))).rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
+    await expect(making(() => take(state({ requestedBy: 'u-owner' })))).rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
+    await expect(making(() => take(state(), owner, act, 'u-someone-else'))).rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
+    // A kind it does not stand for (an MRP replacement) is judged exactly as before: not this approval.
+    await expect(making(() => takeApproval({ state: state(), kind: 'mrp_replacement', subjectRef: 'product:SALT', details: act, valueMinor: null, maker: 'u-owner', usedBy: 'x', now: NOW, checkerHolds: () => true })))
+      .rejects.toMatchObject({ body: { code: 'approval_does_not_match' } });
   });
 });

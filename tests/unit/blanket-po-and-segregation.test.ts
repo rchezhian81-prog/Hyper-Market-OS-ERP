@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  agreementProblems, blanketDrawdown, judgeCallOff, segregationConflict, firstSegregationConflict, ordersAPaymentPays,
+  agreementProblems, blanketDrawdown, judgeCallOff, segregationConflict, firstSegregationConflict, ordersAPaymentPays, ordersOfAPayment,
   type BlanketAgreement, type BlanketRelease, type PurchaseActors,
 } from '../../packages/purchasing/src/index';
 
@@ -91,5 +91,24 @@ describe('separation of duties across one purchase (M06-FR-02 · §28)', () => {
     expect(ordersAPaymentPays({ openingMinor: 0, bills, paidBeforeMinor: 899 })).toEqual(['po-4']); // i-3 has no order
     expect(ordersAPaymentPays({ openingMinor: 1_000, bills, paidBeforeMinor: 1_400 })).toEqual(['po-1', 'po-2', 'po-4']); // only 400 past the opening: i-1 still part-open
     expect(ordersAPaymentPays({ openingMinor: 0, bills, paidBeforeMinor: 1_100 })).toEqual([]);
+  });
+
+  it('OB-773: a payment that names its bills pays THOSE bills\' orders; on account, more than named, or an unknown bill → every open bill too', () => {
+    const bills = [
+      { invoiceId: 'i-A', poId: 'po-A', payableMinor: 500, at: '2026-10-01' },
+      { invoiceId: 'i-B', poId: 'po-B', payableMinor: 300, at: '2026-10-02' },
+      { invoiceId: 'i-N', poId: null, payableMinor: 100, at: '2026-10-03' },
+    ];
+    const base = { openingMinor: 0, bills, paidBeforeMinor: 0 };
+    // The pilot bug: paying po-B's bill was checked against po-A (the oldest open bill) too.
+    expect(ordersOfAPayment({ ...base, settles: ['i-B'], amountMinor: 300 })).toEqual(['po-B']);
+    expect(ordersOfAPayment({ ...base, settles: ['i-A', 'i-B'], amountMinor: 800 })).toEqual(['po-A', 'po-B']);
+    expect(ordersOfAPayment({ ...base, settles: ['i-N'], amountMinor: 100 })).toEqual([]); // a bill with no order constrains nothing
+    // The conservative rest: named nothing (on account) → every open bill.
+    expect(ordersOfAPayment({ ...base, settles: [], amountMinor: 100 })).toEqual(['po-A', 'po-B']);
+    // Paid more than the bills named → the excess is on account, so every open bill counts as well.
+    expect(ordersOfAPayment({ ...base, settles: ['i-B'], amountMinor: 301 })).toEqual(['po-B', 'po-A']);
+    // A named bill head office does not hold as matched → no evidence; read as on account.
+    expect(ordersOfAPayment({ ...base, settles: ['i-B', 'i-ghost'], amountMinor: 300 })).toEqual(['po-A', 'po-B']);
   });
 });

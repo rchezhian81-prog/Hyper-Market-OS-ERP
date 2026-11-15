@@ -11,6 +11,20 @@ them at boot, restarts them if they stop, and each runs under its own account th
 | `SRE-API` | the office API (runs the database migrations at each start) | `NT SERVICE\SRE-API` | 127.0.0.1:8081 | `SRE-Database` |
 | `SRE-Till` | the till's store edge: screens and save socket | `NT SERVICE\SRE-Till` | 127.0.0.1:8091 and :8090 | nothing (P-01) |
 
+## Typing a `store-computer` command on the installed store PC (read this first)
+
+On a PC set up by `SRE-Setup.exe`, `store-computer` is **not** a command PowerShell knows by name (owner's photo, 15 Nov
+2026: "The term 'store-computer' is not recognized"). It is a program inside the install folder. Open PowerShell **as
+administrator**, then type these two lines — the second with the step you want after `store-computer.mjs`:
+
+```powershell
+cd "C:\Program Files\SRE Retail OS"
+.\runtime\node\node.exe .\scripts\store-computer.mjs services-status
+```
+
+Everywhere below that says `store-computer <step>`, type `.\runtime\node\node.exe .\scripts\store-computer.mjs <step>`
+in that folder. (On a developer's copy with pnpm it is `pnpm run store-computer -- <step>`.)
+
 ## Install (once, as an administrator, on Windows 10 or 11)
 
 The copy must be prepared and the till installed in the data folder first:
@@ -155,11 +169,12 @@ every till closed — the till pauses for a few minutes in steps 3 and 4. **Need
 passphrase, and a previous release on the PC (one is kept by itself at every update; before the first update there is
 none, and the drill says so).
 
-1. See what it will do (changes nothing): `store-computer drill --by "Your Name" --to E:\sre-real`
+1. In PowerShell as administrator, in `C:\Program Files\SRE Retail OS` (see *Typing a `store-computer` command* above), see
+   what it will do (changes nothing): `.\runtime\node\node.exe .\scripts\store-computer.mjs drill --by "Your Name" --to E:\sre-real`
 2. Run it: the same command with `--run` at the end. Type the backup passphrase when asked.
 3. It backs up and restores into a scratch database and reconciles (you see each time), then says **STARTED** — steps 3
    and 4 run by themselves.
-4. After 10–15 minutes: `store-computer drill-result`. It says **G9 PASSED** or **G9 NOT PASSED**, each step with its time
+4. After 10–15 minutes: `.\runtime\node\node.exe .\scripts\store-computer.mjs drill-result`. It says **G9 PASSED** or **G9 NOT PASSED**, each step with its time
    against its target (database back within 4 hours, service back within 30 minutes).
 5. Keep the record with the workbook: `<data>\records\g9-drill-<time>.json` (a read-only copy is on the backup drive).
 6. **QG-08 evidence.** When every step worked, the drill also writes `<data>\records\qg08-rollback-<time>.json`, and
@@ -181,14 +196,16 @@ keeps its own key copy on the backup drive — so if the old paper is ever found
 **Who:** the owner, at the store PC's own keyboard (never by remote, never in a chat). **Needs:** the backup drive plugged
 in, a pen and a sheet of paper.
 
-1. Open PowerShell **as administrator** and type: `store-computer new-backup-passphrase --by "Your Name"`
+1. Open PowerShell **as administrator** and type `cd "C:\Program Files\SRE Retail OS"`, then:
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs new-backup-passphrase --by "Your Name"`
 2. It explains what will happen, then asks you to type **REPLACE** (nothing shows as you type) and press Enter.
 3. Choose the new passphrase — a short sentence you will remember, at least the length it says — and type it twice.
    Nothing shows as you type.
 4. It says **DONE — new backup key …** and the name the old key is kept under. **Now write the new passphrase on paper
    and lock it away with the BitLocker key.** Never photograph it, never type it into a message.
 5. Make one backup and prove it opens with the new passphrase:
-   `store-computer backup --to E:\sre-real`, then `store-computer restore-check --from E:\sre-real\<the new manifest>`
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs backup --to E:\sre-real`, then
+   `.\runtime\node\node.exe .\scripts\store-computer.mjs restore-check --from E:\sre-real\<the new manifest>`
    (type the NEW passphrase). It must say `restored_and_reconciled`.
 6. **Send:** a photo of the window after step 5 (it never shows a passphrase).
 

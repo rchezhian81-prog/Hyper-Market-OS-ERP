@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 
 /**
@@ -121,6 +121,7 @@ describe.skipIf(!HAVE_BROWSER)('the cashier splits a bill across points, store c
       return w.posSession !== undefined && w.posSession.hasCatalogue();
     }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
 
     await nameMember(page);
     await scanDal(page);
@@ -194,6 +195,7 @@ describe.skipIf(!HAVE_BROWSER)('the cashier splits a bill across points, store c
       return w.posSession !== undefined && w.posSession.hasCatalogue();
     }, undefined, { timeout: 15_000 });
     await signInThroughScreen(page);
+    await takeFloatOnPage(page); // pilot audit D-5: cash is refused until a float is out
     await nameMember(page);
     await scanDal(page);
     await page.click('#tender');

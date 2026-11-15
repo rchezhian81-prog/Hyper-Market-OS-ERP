@@ -214,6 +214,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       ca_role_grant: { en: APPROVALS_COPY.en.kindCaRoleGrant, ta: APPROVALS_COPY.ta.kindCaRoleGrant },
       // OB-773: a store manager's item, barcode or GST change — the owner approves; head office then makes it.
       catalogue_change: { en: APPROVALS_COPY.en.kindCatalogueChange, ta: APPROVALS_COPY.ta.kindCatalogueChange },
+      // CR-01 step 4c-1 · ADR-0034: what a role may do — a store manager asks and the owner approves, or the other way round.
+      role_permission_change: { en: APPROVALS_COPY.en.kindRolePermissionChange, ta: APPROVALS_COPY.ta.kindRolePermissionChange },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

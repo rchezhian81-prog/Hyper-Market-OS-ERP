@@ -422,13 +422,6 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
               : `Pay at most the balance of ${Math.max(0, balanceToPayMinor)} (what the advances have not covered). Nothing was recorded.`,
           });
         }
-        // OB-288 P3 (M06-FR-02 · §28 "cannot receive, match and pay same transaction"): neither the person recording this
-        // payment nor its approver may have raised, received or matched an order whose bill it pays — refused by name, before
-        // the approval is spent.
-        if (deps.segregation !== undefined) {
-          const conflict = firstSegregationConflict(await deps.segregation.ordersPaidBy(t, supplierId), 'payment', [ctx.userId, approvedBy]);
-          if (conflict !== undefined) throw segregationRefusal(conflict);
-        }
         // U7 · OB-724: the bills this payment settles, when named — each must be this supplier's own bill on the account;
         // refused before the approval is spent, so nothing is recorded and the approval stays usable.
         const settles = Array.isArray(b['settles']) ? [...new Set((b['settles'] as unknown[]).filter(isStr).map((x) => x.trim()))] : [];
@@ -439,6 +432,16 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
             whatHappened: strangers.length > 0 ? `Bill ${strangers.join(', ')} is not a bill of supplier ${supplierId} on the account.` : 'The bills a payment settles are a list of bill numbers.',
             wasItSaved: 'not_saved', nextSafeAction: 'Pick the bills from this supplier\'s list. Nothing was recorded and the approval was not used.',
           });
+        }
+        // OB-288 P3 (M06-FR-02 · §28 "cannot receive, match and pay same transaction"): neither the person recording this
+        // payment nor its approver may have raised, received or matched an order whose bill it pays — refused by name, before
+        // the approval is spent. OB-773 (audit B-1): "whose bill it pays" means the bills this payment SETTLES when it names
+        // them — not every bill still open — or with only two people able to pay, every payment would be refused because one
+        // of them matched SOME other bill of the supplier. A payment that names no bill (paid on account) cannot say which
+        // bills it pays, so it is still checked against every bill still open (the stricter reading; never looser).
+        if (deps.segregation !== undefined) {
+          const conflict = firstSegregationConflict(await deps.segregation.ordersPaidBy(t, supplierId, { settles, amountMinor: b['amountMinor'] }), 'payment', [ctx.userId, approvedBy]);
+          if (conflict !== undefined) throw segregationRefusal(conflict);
         }
         // R3 · A24: the TDS this payment carries. A payee flagged "TDS applicable" with no section (or a section not on the
         // list) is refused here — before the approval is spent, so nothing is recorded and the approval stays usable.

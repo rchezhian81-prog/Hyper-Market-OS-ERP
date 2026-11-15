@@ -12,6 +12,7 @@
 import type { Role } from '../../../packages/rbac/src/rbac';
 import { PLATFORM_ADMIN_ROLE_ID } from '../../identity/src/separation-of-duties';
 import type { RoleAwaitingOwnerApproval, WaitingPermission } from '../../identity/src/roles-awaiting-approval';
+import type { LockReason, RoleAdjustmentPolicy } from '../../identity/src/role-adjustments';
 
 /**
  * Which role carries the owner's authority.
@@ -92,6 +93,8 @@ const BASE_ROLES: readonly Role[] = [
     name: 'Owner', nameTa: 'உரிமையாளர்',
     permissions: [
       'identity.self.read', 'identity.role.read', 'identity.role.request', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
+      // CR-01 step 4c-1 · OB-740 "B": the owner asks for, or approves, a change to what a role may do (ADR-0034).
+      'identity.role.adjust',
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',
@@ -511,6 +514,9 @@ const BASE_ROLES: readonly Role[] = [
       // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
       'concession.tag.record',
       'identity.self.read', 'identity.role.request', 'org.branch.read', 'payroll.ess.self',
+      // CR-01 step 4c-1 · OB-740 "B": a store manager asks for a change to what a role may do (the owner approves), or
+      // approves one the owner asked for (ADR-0034).
+      'identity.role.adjust',
       'catalogue.pack.read',
       'catalogue.merge.propose',
       'catalogue.category.propose',
@@ -1368,3 +1374,42 @@ export const ROLE_CATALOGUE: readonly Role[] = Object.freeze([
  */
 export const ROLES_AWAITING_OWNER_APPROVAL: readonly RoleAwaitingOwnerApproval[] = Object.freeze([]);
 // ── Round 4c · OB-615 → OB-622 / OB-623 / OB-571 — end
+
+// ── CR-01 step 4c-1 · ADR-0034 · OB-730 "A" · OB-740 "B" · OB-741 "A" — begin
+/**
+ * What can never be changed from a screen, and who takes part in a change to what a role may do. Written here, beside the
+ * roles, so the one place the authority model is written down also says what a screen may not touch. Head office refuses
+ * every item (services/identity/src/role-adjustments.ts) — the screen hiding them is only a courtesy.
+ */
+export const ROLE_ADJUSTMENT_POLICY: RoleAdjustmentPolicy = Object.freeze({
+  ownerRoleId: OWNER_ROLE_ID,
+  platformAdminRoleId: PLATFORM_ADMIN_ROLE_ID,
+  checkerRoleWhenOwnerAsks: STORE_MANAGER_ROLE_ID,
+  lockedRoles: Object.freeze({
+    // a. the machines (OB-36: each holds exactly the routes it calls)
+    [STORE_COMPUTER_ROLE_ID]: 'machine_role', [PROVIDER_RELAY_ROLE_ID]: 'machine_role', [BACKUP_JOB_ROLE_ID]: 'machine_role',
+    [FLOOR_DEVICE_GATEWAY_ROLE_ID]: 'machine_role', [FINDINGS_PUSH_ROLE_ID]: 'machine_role', [QG10_EVIDENCE_PUSH_ROLE_ID]: 'machine_role',
+    // b. outside parties — not staff
+    customer: 'outside_party_role', supplier: 'outside_party_role', b2b_customer: 'outside_party_role', concessionaire: 'outside_party_role',
+    // c. the POSH Internal Committee (R2 C20)
+    [INTERNAL_COMMITTEE_ROLE_ID]: 'posh_committee',
+    // d. the security reviewer — "nothing else" (OB-406)
+    [SECURITY_REVIEWER_ROLE_ID]: 'security_reviewer',
+  } satisfies Record<string, LockReason>),
+  lockedPermissions: Object.freeze([
+    // c. the committee's own area, never added to anybody else nor taken from the committee
+    { match: 'posh.', reason: 'posh_committee' },
+    // f. who may change roles, who may approve, and what AI may do on its own and how it is stopped (hard rule 5, OI-12)
+    { match: 'identity.role.', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'identity.ca.grant.request', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'approvals.', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'ai.agent.enable', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'ai.killswitch.set', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'ai.budget.set', reason: 'controls_roles_approvals_or_ai' },
+    { match: 'ai.model.approve', reason: 'controls_roles_approvals_or_ai' },
+    // CR-01 step 6b (OI-12): proposing, confirming, reading and stopping the owner's auto-approve rules — what an AI agent's
+    // draft may commit on its own (hard rule 5).
+    { match: 'ai.autoapprove.', reason: 'controls_roles_approvals_or_ai' },
+  ] as const),
+});
+// ── CR-01 step 4c-1 — end

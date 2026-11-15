@@ -63,7 +63,8 @@ describe.each(backings)('the owner sets the shop up and the accountant approves 
 describe('the Windows guide gives Part 17 with the logins the store PC really has', () => {
   it('owner-01 asks, accountant-01 approves — no "setup person" login', () => {
     const guide = readFileSync('docs/runbooks/store-computer-owner-guide-windows.md', 'utf8');
-    expect(guide).toContain('pnpm run store-computer -- shop --as owner-01 --approver accountant-01 --company');
+    // OB-773: from Part 17 on the guide gives the installed-PC form (`store-computer` is not on that PC's PATH).
+    expect(guide).toContain('.\\runtime\\node\\node.exe .\\scripts\\store-computer.mjs shop --as owner-01 --approver accountant-01 --company');
     expect(guide).not.toContain('<setup-person-login>');
   });
 });

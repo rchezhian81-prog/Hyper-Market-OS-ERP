@@ -25,9 +25,12 @@ function money(minor, currency) {
   return sym + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** A quantity in minor units (×100) → a plain number for a person. */
-function qty(minor) {
-  return (minor / 100).toLocaleString('en-IN');
+// OB-773 (pilot audit B-2): quantities are NOT divided here. Head office keeps each line in its own unit's smallest steps
+// (OB-31: a count for pieces, grams for kg) and the tested session says them for a person ("10 units", "2.5 kg").
+/** The session's words for a quantity; an older session without them gets the plain count of pieces. */
+function qtyWords(r, which) {
+  const said = r[`${which}Quantity`];
+  return typeof said === 'string' ? said : `${Number(r[`${which}Minor`] ?? 0).toLocaleString('en-IN')} ${t('unitsWord')}`;
 }
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). It renders
@@ -62,7 +65,7 @@ function sampleSession() {
         status: { tone: 'ok', icon: '✓', label: l === 'ta' ? 'ஆர்டர் செய்தபடி பெறப்பட்டது' : 'Received as ordered', announcement: 'received clean', needsAttention: false },
         grnId: 'sample', number: 'GRN-SAMPLE', poId: 'PO-1', warehouseId: 'W1', receivedBy: '—', receivedAt: '',
         needsApproval: false, discrepancyValueMinor: 0, currency: 'INR',
-        sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [], returnLines: [], costNotKnown: [], valueIncomplete: false,
+        sellableMinor: 100, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [], returnLines: [], costNotKnown: [], valueIncomplete: false,
       }],
       count: 1, needingApprovalCount: 0, nobodyNamed: false, canRecordReturn: false, awaitingReturn: [],
     }),
@@ -157,9 +160,9 @@ function receiptNode(r) {
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
   fact(`${t('warehouseLabel')}: ${r.warehouseId}`);
   fact(`${t('receivedByLabel')}: ${r.receivedBy}`);
-  fact(`${t('sellableLabel')}: ${qty(r.sellableMinor)} ${t('unitsWord')}`);
-  if (r.quarantinedMinor > 0) fact(`${t('quarantinedLabel')}: ${qty(r.quarantinedMinor)} ${t('unitsWord')}`);
-  if (r.rejectedMinor > 0) fact(`${t('rejectedLabel')}: ${qty(r.rejectedMinor)} ${t('unitsWord')}`);
+  fact(`${t('sellableLabel')}: ${qtyWords(r, 'sellable')}`);
+  if (r.quarantinedMinor > 0) fact(`${t('quarantinedLabel')}: ${qtyWords(r, 'quarantined')}`);
+  if (r.rejectedMinor > 0) fact(`${t('rejectedLabel')}: ${qtyWords(r, 'rejected')}`);
   // OB-509: a line booked with its cost NOT KNOWN says so until its supplier bill is matched — never a ₹0 figure.
   for (const c of r.costNotKnown ?? []) {
     const s = document.createElement('span'); s.className = 'cost-not-known'; s.dataset.productId = c.productId;

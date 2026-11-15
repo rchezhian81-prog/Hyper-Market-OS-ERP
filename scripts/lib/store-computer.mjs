@@ -57,6 +57,7 @@ import { databaseProblem, dbSpawn, readServicesMarker } from './store-computer-d
 import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mjs';
 import { applyUpdate } from './store-pc-updater.mjs';
 import { drillResult } from './store-pc-drill.mjs';
+import { licenceCommand } from './store-computer-licence.mjs';
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1316,6 +1317,9 @@ export const USAGE = [
   '  update-key [--remove]                    keep (or forget) a read-only download key — needed only if the project',
   '                                           is made private (OB-721); pasted with nothing shown, never said again',
   '  drill-result                             the newest rollback drill (G9) record, in plain words (CR-01 3e)',
+  '  licence [--load <licence file>] [--request [--out <folder>]]',
+  '                                           the shop\'s licence: its standing; load one the seller sent; or write the',
+  '                                           licence request to send the seller (CR-01 step 5, OI-10)',
   '  apply-update                             what the task "SRE\\Software update" runs: acts ONLY on the owner\'s request',
   '                                           from the Software update page; puts the old version back if anything fails',
   '  import                                   open the "Import from the old system" page (sign in with your staff ID and PIN)',
@@ -1338,6 +1342,14 @@ export const USAGE = [
   '  store-settings --as <login> --store <code> --cutoff HH:MM --stale-after-minutes N --count-approval-rupees R',
   '                 --handover-tolerance-rupees R --cash-variance-rupees R',
   '                                           the store\'s settings (a new version each time)',
+  '  store-rules --as <login> --store <code> --checklist <text file> --near-expiry-days N --approval-limit-rupees R',
+  '              --margin-floor-percent P --reports-late-after-minutes N --reports-old-after-minutes N --return-window-days N',
+  '              --refund-approval-rupees R --no-receipt-cap-rupees R --desk-authority-rupees R --compensation-cap-rupees R',
+  '              --journal-takings X --journal-tax X --journal-refunds X --dormant-after-days N --ai-old-after-minutes N',
+  '              --refill-below-percent P --shelf-count-old-after-minutes N --refill-role <role> --write-off-second-person-rupees R',
+  '                                           the store\'s working rules: the closing checklist (one item per line in the',
+  '                                           file; MUST: first = the day cannot close without it), near-expiry days, the',
+  '                                           limits (D-3) — a new version each time; the same values again record nothing',
   '  bill-prefix --as <login> --store <code> --till <lane> --prefix <prefix> [--reason "<why>"]',
   '                                           the till\'s bill-number prefix',
   '  grant --as <login> --approver <second login> --person <login> --role <role> --store <code> --reason "<why>"',
@@ -1347,9 +1359,14 @@ export const USAGE = [
 ];
 
 /** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
-export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue']);
+export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'store-rules', 'bill-prefix', 'grant', 'publish-catalogue']);
 /** Their flags, as typed (each takes a value), handed on as they are. */
-export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
+export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role',
+  // D-3: store-rules
+  '--checklist', '--near-expiry-days', '--approval-limit-rupees', '--margin-floor-percent', '--reports-late-after-minutes', '--reports-old-after-minutes',
+  '--return-window-days', '--refund-approval-rupees', '--no-receipt-cap-rupees', '--desk-authority-rupees', '--compensation-cap-rupees',
+  '--journal-takings', '--journal-tax', '--journal-refunds', '--dormant-after-days', '--ai-old-after-minutes',
+  '--refill-below-percent', '--shelf-count-old-after-minutes', '--refill-role', '--write-off-second-person-rupees']);
 
 /**
  * An owner setup command (OB-257), run as the people who do it: this copy's settings and the till's are handed to the
@@ -1366,7 +1383,8 @@ export async function ownerSetup(deps, step, cl) {
   if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the setup tool could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
   const p = pathFor(deps.platform);
   const pass = [];
-  for (const [flag, value] of Object.entries(cl.setup)) pass.push(flag, value);
+  // D-3: a file the owner names (store-rules' checklist) is found from the folder he typed it in, whatever folder the tool runs in.
+  for (const [flag, value] of Object.entries(cl.setup)) pass.push(flag, flag === '--checklist' ? p.resolve(value) : value);
   if (cl.as !== undefined) pass.push('--as', cl.as);
   const tillEnv = deps.fs.existsSync(L.tillEnv) ? ['--till-settings', L.tillEnv] : [];
   const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'owner-setup.js'), step, ...pass, '--settings', L.settings, ...tillEnv], { cwd: deps.repoRoot, env, stdio: 'inherit' });
@@ -1480,7 +1498,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, load: undefined, request: false, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1503,6 +1521,8 @@ export function parseCommandLine(argv) {
     else if (a === '--every') out.every = value();
     else if (a === '--off') out.off = true;
     else if (a === '--remove') out.remove = true;
+    else if (a === '--load') out.load = value();
+    else if (a === '--request') out.request = true;
     else if (a === '--quiet') out.quiet = true;
     else if (a === '--dir') out.dir = value();
     else if (a === '--as') out.as = value();
@@ -1554,6 +1574,7 @@ export async function main(argv, given) {
     case 'new-backup-passphrase': return replaceBackupPassphrase(deps, { by: cl.by });
     case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out, continue: cl.continue });
     case 'drill-result': return drillResult(deps, resolveLayout(deps));
+    case 'licence': return licenceCommand(deps, { load: cl.load, request: cl.request, out: cl.out });
     case 'schedule-backup': return scheduleBackup(deps, { to: cl.to, every: cl.every });
     case 'unschedule-backup': return unscheduleBackup(deps);
     case 'backup-status': return backupStatus(deps);
@@ -1577,6 +1598,7 @@ export async function main(argv, given) {
     // OB-257: head office's own jobs on this computer, each by the people whose act it is.
     case 'shop': return ownerSetup(deps, 'shop', cl);
     case 'store-settings': return ownerSetup(deps, 'store-settings', cl);
+    case 'store-rules': return ownerSetup(deps, 'store-rules', cl);
     case 'bill-prefix': return ownerSetup(deps, 'bill-prefix', cl);
     case 'grant': return ownerSetup(deps, 'grant', cl);
     case 'publish-catalogue': return ownerSetup(deps, 'publish-catalogue', cl);

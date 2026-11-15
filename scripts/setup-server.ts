@@ -23,7 +23,9 @@ import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { heldFetch } from './lib/held-fetch.mjs';
 import { argValue, loggedSay, removeHandoff, screensUrl, writeHandoff } from './lib/setup-handoff.mjs';
-import { createSetupDoor, install, type InstallSteps, type Progress, type SetupState } from './lib/setup-app';
+import { createSetupDoor, install, type InstallSteps, type Progress, type SetupLicence, type SetupState } from './lib/setup-app';
+import * as nodePath from 'node:path';
+import { LICENCE_DIR, licenceNow, loadLicence, requestFor, sellerKeys } from './lib/store-licence.mjs';
 import { buildPersonToken, demoTenantIds, parseEnvText, tokenPolicyFromEnv } from './lib/operator-env';
 import { pinVerifier } from './lib/owner-setup-pins';
 import { databaseUrlFromTheHost } from './lib/database-url-from-the-host';
@@ -188,11 +190,63 @@ const markDone = (p: Progress): void => {
   setTimeout(() => { process.exit(p.ok ? 0 : 1); }, 10 * 60_000);
 };
 setTimeout(() => { if (!stopping) process.exit(0); }, 2 * 3600_000).unref();
+// CR-01 step 5 (OI-10 · OB-710): the licence on the last page — this PC's licence folder (in the till's data folder), the
+// seller's PUBLIC key this release carries, checked offline. The shop's name and GSTIN from this install are kept beside it
+// (licence-request.json — names only) so the Licence screen and the request say them, and a licence naming another GSTIN
+// is refused as a copy.
+const licenceIo = { fs: nodeFs, path: nodePath };
+const licenceKeys = sellerKeys(licenceIo, ROOT);
+const edgeDataNow = (): string | undefined => {
+  const s = settingsNow();
+  const d = s?.tillEnv?.['EDGE_DATA_DIR'];
+  return d === undefined || d.trim() === '' ? undefined : nodePath.resolve(d.trim());
+};
+const shopNow = (): { tenantId?: string; shopName?: string; gstin?: string } => {
+  const s = settingsNow();
+  const dir = edgeDataNow();
+  let kept: { shopName?: unknown; gstin?: unknown } = {};
+  try { if (dir !== undefined) kept = JSON.parse(readFileSync(join(dir, LICENCE_DIR, 'licence-request.json'), 'utf8')) as typeof kept; } catch { /* none yet */ }
+  return {
+    ...(s?.settings['EDGE_TENANT_ID'] === undefined ? {} : { tenantId: s.settings['EDGE_TENANT_ID'] }),
+    ...(typeof kept.shopName === 'string' ? { shopName: kept.shopName } : {}),
+    ...(typeof kept.gstin === 'string' ? { gstin: kept.gstin } : {}),
+  };
+};
+const rememberShop = (shopName: string, gstin: string): void => {
+  const dir = edgeDataNow();
+  const shop = shopNow();
+  if (dir === undefined || shop.tenantId === undefined) return;
+  try {
+    nodeFs.mkdirSync(join(dir, LICENCE_DIR), { recursive: true });
+    nodeFs.writeFileSync(join(dir, LICENCE_DIR, 'licence-request.json'), `${JSON.stringify(requestFor({ tenantId: shop.tenantId, shopName, gstin, ...(state().release === undefined ? {} : { release: state().release! }) }, () => new Date()), null, 2)}\n`, 'utf8');
+  } catch { out('The licence request could not be written; it can be made later with: store-computer licence --request'); }
+};
+const licence: SetupLicence = {
+  view: () => {
+    const dir = edgeDataNow();
+    const shop = shopNow();
+    if (dir === undefined) return { state: 'not_in_force', en: 'This PC is not set up yet.', ta: 'இந்தக் கணினி இன்னும் அமைக்கப்படவில்லை.', keyBuiltIn: licenceKeys.length > 0 };
+    const n = licenceNow(licenceIo, dir, { keys: licenceKeys, shop, now: () => new Date() });
+    return {
+      state: n.standing.state, en: n.standing.en, ta: n.standing.ta, keyBuiltIn: n.keyBuiltIn,
+      ...(shop.tenantId === undefined ? {} : { tenantId: shop.tenantId, request: requestFor({ tenantId: shop.tenantId, ...(shop.shopName === undefined ? {} : { shopName: shop.shopName }), ...(shop.gstin === undefined ? {} : { gstin: shop.gstin }), ...(state().release === undefined ? {} : { release: state().release! }) }, () => new Date()) }),
+    };
+  },
+  load: (text) => {
+    const dir = edgeDataNow();
+    if (dir === undefined) return { ok: false, refusedBecause: 'not_set_up', en: 'This PC is not set up yet.', ta: 'இந்தக் கணினி இன்னும் அமைக்கப்படவில்லை.' };
+    const r = loadLicence(licenceIo, dir, { text, keys: licenceKeys, shop: shopNow(), by: 'the person running SRE-Setup.exe', via: 'setup_screens', now: () => new Date() });
+    out(r.ok ? r.en : `Licence not loaded: ${r.en}${r.detail === undefined ? '' : ` (${r.detail})`}`);
+    return r;
+  },
+};
+
 const handle = createSetupDoor({
+  licence,
   key,
   page: readFileSync(join(ROOT, 'scripts', 'setup-page', 'index.html'), 'utf8'),
   state,
-  install: async (a, p) => { const ok = await install(a, steps, p); markDone(p); return ok; },
+  install: async (a, p) => { const ok = await install(a, steps, p); if (ok) rememberShop(a.shopName, a.gstin); markDone(p); return ok; },
   shortcuts: async (chosen) => {
     const lines: string[] = [];
     const code = await runTool(['shortcuts', '--only', chosen.join(',')], (l) => { lines.push(l); });

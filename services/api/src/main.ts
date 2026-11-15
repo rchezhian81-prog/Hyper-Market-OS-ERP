@@ -36,6 +36,7 @@ import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } fro
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
+import { billMismatchDrafts, tillVarianceDrafts } from './ai-explainers'; // CR-01 OI-13 (OB-763 B): A12 and A14
 import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
@@ -196,7 +197,9 @@ import { sessionChannelsOf } from './session-channels';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
-import { accessLifecycleRoutes } from '../../identity/src/access-lifecycle';
+import { accessLifecycleRoutes, type AccessLifecycleDeps } from '../../identity/src/access-lifecycle';
+import { roleAdjustmentRoutes } from '../../identity/src/role-adjustments'; // CR-01 step 4c-1
+import { roleAdjustmentAdapter } from './role-adjustment-adapters'; // CR-01 step 4c-1
 import { platformRoutes, inMemorySettings, emptyExportBundle } from '../../platform/src/index';
 import { billingRoutes } from '../../platform/src/billing-routes';
 import { operationalHealthRoutes } from '../../platform/src/operational-health';
@@ -347,7 +350,7 @@ import { foodSafetyRoutes } from '../../platform/src/food-safety';
 import { wasteAnalyticsRoutes } from '../../inventory/src/waste-analytics';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, b2bCustomerGstinAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, cashDepositAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, customer360Adapter, b2bTransferNotesAdapter, registeredStores, knownStockPlace,
+  STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, b2bCustomerGstinAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, cashDepositAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, effectiveRoleCatalogue, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, customer360Adapter, b2bTransferNotesAdapter, registeredStores, knownStockPlace,
 } from './adapters';
 import { ROLE_CATALOGUE, ROLES_AWAITING_OWNER_APPROVAL, OWNER_ROLE_ID, isPlatformAdministrationRole } from './roles';
 // Round 6 (EA-01): only a store computer's own grant lets it report its store's sync and unsent facts.
@@ -786,6 +789,10 @@ export function buildSurface(deps: {
       // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
       // that a human sees. A05 flags only; a service agent replies (hard rule #5).
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+      // CR-01 OI-13 (OB-763 B): A12 reads the recorded three-way-match verdicts and the bills (M07); A14 the till closes, the
+      // over/short sign-offs and the till's own sales and refunds (M14). Both read-only, both ₹0, both draft-only.
+      billMismatches: (t) => billMismatchDrafts(store, t, now()),
+      tillVariances: (t) => tillVarianceDrafts(store, t, now()),
   });
   // The identity routes' deps — shared by the person's own routes and the store PC's privilege relay (CR-01 step 4a).
   const identityDeps: IdentityDeps = {
@@ -799,13 +806,32 @@ export function buildSurface(deps: {
     // OB-615: the four roadmap §28 roles, shown to the owner and given to nobody until he approves them.
     rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL,
   };
+  // Joiner/mover/leaver deps — shared by the person's own route and the store PC's take-back relay (CR-01 step 4b-2).
+  const lifecycleDepsWith = (recordAudit: IdentityDeps['recordAudit']): AccessLifecycleDeps => (store === undefined
+    ? { now, roles: empty([]), currentGrants: empty([]), permissionsOf: empty([]), recordChange: () => {} }
+    : {
+      ...accessLifecycleAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE }),
+      ...(recordAudit === undefined ? {} : { recordAudit }),
+      approvals: approvalRequestsAdapter({ store, now }),
+      rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL, // OB-615
+      ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
+      // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
+      ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
+    });
   const surface: Route[] = [
     ...identityRoutes(identityDeps),
     // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the store PC's office screens, sealed there with the
     // dedicated privilege-seal key and relayed under the box's store token — the SAME person routes run as that person.
     ...boxPrivilegeRoutes({
       // With no ledger (the documented surface only) nothing is a store computer, so every relay is refused.
-      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : { ...boxPrivilegeAdapter({ store, now }), people: peopleAdapter({ store, now }) /* CR-01 step 4b-1 · OB-733 */ }),
+      ...(store === undefined ? { now, spendRequestId: async () => 'used' as const, rolesHeldBy: empty([]) } : {
+        ...boxPrivilegeAdapter({ store, now }), people: peopleAdapter({ store, now }), // CR-01 step 4b-1 · OB-733
+        // CR-01 step 4b-2 · OB-735: taking a role back from the store PC — the person's own approval and lifecycle routes.
+        takeBack: {
+          routes: (recordAudit) => [...approvalRequestRoutes(approvalRequestsAdapter({ store, now })), ...accessLifecycleRoutes(lifecycleDepsWith(recordAudit))],
+          allRequests: (t: string) => approvalRequestsAdapter({ store, now }).allRequests(t),
+        },
+      }),
       identity: identityDeps,
       ...(privilegeKey === undefined ? {} : { privilegeSealKey: privilegeKey }),
     }),
@@ -826,22 +852,16 @@ export function buildSurface(deps: {
     // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member (that role only), a second person
     // confirms through the maker-checker engine, the change is audited, and the owner never holds the role.
     ...(store === undefined ? [] : committeeMembershipRoutes({ ...committeeMembershipAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
+    // CR-01 step 4c-1 · ADR-0034 · OB-730 "A" · OB-740 "B" · OB-741 "A": what a ROLE may do, switched on or off one permission
+    // at a time by two people (the owner always one of them), recorded as an adjustment to the built-in role, audited and
+    // alerted; the never-from-a-screen list is refused here.
+    ...(store === undefined ? [] : roleAdjustmentRoutes({ ...roleAdjustmentAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // OB-681 (owner, 3 Nov 2026): the owner asks, the IT custodian (the named security reviewer) approves — the CA role only.
     ...(store === undefined ? [] : caRoleGrantRoutes({ ...caRoleGrantAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
-    ...accessLifecycleRoutes(store === undefined
-      ? { now, roles: empty([]), currentGrants: empty([]), permissionsOf: empty([]), recordChange: () => {} }
-      : {
-        ...accessLifecycleAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE }),
-        recordAudit: auditTrail?.recordAudit,
-        approvals: approvalRequestsAdapter({ store, now }),
-        rolesAwaitingOwnerApproval: ROLES_AWAITING_OWNER_APPROVAL, // OB-615
-        ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
-        // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
-        ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
-      }),
+    ...accessLifecycleRoutes(lifecycleDepsWith(auditTrail?.recordAudit)),
     // People's sign-ins (OB-15-c · M02-FR-01): the platform administrator gives a named person — never a shared account,
     // never somebody already holding authority — a sign-in at the identity server; the one-time password is shown once.
     ...peopleRoutes(store === undefined
@@ -1362,18 +1382,18 @@ export function buildSurface(deps: {
       }),
       // Verifier r23 NEW-3 · OB-91: who may clear a suspicious bill count — through which roles this person manages alerts,
       // and whether each is the platform/IT administration function (refused by name, whatever its scope).
-      alertAuthorityOf: async (t, u) => (await effectiveGrants(store, t)).filter((g) => g.userId === u).flatMap((g) => {
-        const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId);
+      alertAuthorityOf: async (t, u) => { const roles = await effectiveRoleCatalogue(store, t); return (await effectiveGrants(store, t)).filter((g) => g.userId === u).flatMap((g) => {
+        const role = roles.find((r) => r.id === g.roleId);
         return role === undefined || !role.permissions.includes('platform.alert.manage') ? []
           : [{ roleId: g.roleId, allStores: g.branchScope === 'all', platformAdministration: isPlatformAdministrationRole(role) }];
-      }),
+      }); },
       // Round 26 · OB-97: who may do the "store computer replaced" act (all stores, a business role — never IT), and the
       // maker-checker engine the owner approves it on.
-      replacementAuthorityOf: async (t, u) => (await effectiveGrants(store, t)).filter((g) => g.userId === u).flatMap((g) => {
-        const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId);
+      replacementAuthorityOf: async (t, u) => { const roles = await effectiveRoleCatalogue(store, t); return (await effectiveGrants(store, t)).filter((g) => g.userId === u).flatMap((g) => {
+        const role = roles.find((r) => r.id === g.roleId);
         return role === undefined || !role.permissions.includes('store.computer.replace') ? []
           : [{ roleId: g.roleId, allStores: g.branchScope === 'all', platformAdministration: isPlatformAdministrationRole(role) }];
-      }),
+      }); },
       approvals: approvalRequestsAdapter({ store, now }),
     }),
     ...posRoutes(store === undefined ? {

@@ -67,6 +67,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'manufacture_date_required',
   // OB-521 (R8-A): new work refused on a withdrawn or too-old build (the work in hand is finished)
   'app_version_too_old',
+  // OB-773 · OB-623: the person signed in may not receive a delivery (a Warehouse user) — refused before any scan
+  'not_your_kind_of_stock_movement',
   // put-away (packages/warehouse) + this session's own checks
   'moved', 'duplicate_ignored', 'wrong_sku', 'unknown_bin', 'bin_full',
   'insufficient_goods_in', 'insufficient_in_bin', 'not_pickable_state',
@@ -109,6 +111,8 @@ export interface FeedbackSignal {
 
 /** OB-521: the signal code for new work refused on a withdrawn or too-old build (words in web/app.js). */
 export const APP_VERSION_TOO_OLD = 'app_version_too_old';
+/** OB-773 (pilot audit B-3): the person signed in may not receive a delivery — head office's own refusal code (OB-623). */
+export const NOT_YOURS_TO_RECEIVE = 'not_your_kind_of_stock_movement';
 
 function signalFor(feedback: ScanFeedback, code: string, detail: string, resolutionRequired = false): FeedbackSignal {
   const shape = feedback === 'accept'
@@ -502,6 +506,20 @@ export interface WarehouseAssignment {
   readonly productNames?: Readonly<Record<string, string>>;
   /** The Tamil names, where head office recorded one; otherwise the English name is shown in Tamil too. */
   readonly productNamesTa?: Readonly<Record<string, string>>;
+  /**
+   * OB-773 (pilot audit B-3): whether the person signed in on this phone may receive a delivery, as the store computer
+   * judged it from the store setup's roles by head office's own rule (OB-623, `@sre/rbac` movement-jobs) — with the words to
+   * say when not. `allowed: false` refuses "Receive a delivery" BEFORE any scan, so nothing is queued that head office
+   * would refuse. Absent = not told (an older store computer): the scan goes on and head office decides, as before.
+   */
+  readonly receiving?: PhoneReceiving;
+}
+
+/** OB-773: may the person signed in receive a delivery — and, when not, why in English and Tamil. */
+export interface PhoneReceiving {
+  readonly allowed: boolean;
+  readonly en?: string;
+  readonly ta?: string;
 }
 
 /**
@@ -596,6 +614,19 @@ export class WarehouseSession {
   }
 
   /** OB-521: the refusal signal, or undefined when new work may start (or this piece is already in hand). */
+  /**
+   * OB-773 (pilot audit B-3): the refusal when the person signed in may not receive a delivery (a Warehouse user — OB-623),
+   * or undefined when they may (or the store computer did not say). The screen asks this when "Receive a delivery" is
+   * pressed, BEFORE the scan panel opens; `receive` and `completeReceiving` refuse with it too, queueing nothing.
+   */
+  receivingRefusal(): FeedbackSignal | undefined {
+    const r = this.assignment.receiving;
+    if (r === undefined || r.allowed !== false) return undefined;
+    const en = typeof r.en === 'string' && r.en.trim() !== '' ? r.en
+      : 'You cannot receive a delivery on this phone. A delivery is received by the Receiver / QC or the store manager. Nothing was scanned or recorded.';
+    return { ...signalFor('reject', NOT_YOURS_TO_RECEIVE, en), ...(typeof r.ta === 'string' && r.ta.trim() !== '' ? { detailTa: r.ta } : {}) };
+  }
+
   private newWorkRefusal(inHand: () => boolean): FeedbackSignal | undefined {
     if (this.newWorkBar === null || inHand()) return undefined;
     return { ...signalFor('reject', APP_VERSION_TOO_OLD, this.newWorkBar.en), detailTa: this.newWorkBar.ta };
@@ -828,6 +859,9 @@ export class WarehouseSession {
    */
   receive(input: ReceiveInput, approval?: ReceiveApproval): ReceiveActionResult {
     // OB-521: the first scan of a delivery STARTS receiving it; the rest of a delivery already begun here is finished.
+    // OB-773: not this person's work (OB-623) — refused before anything is checked or queued.
+    const notYours = this.receivingRefusal();
+    if (notYours !== undefined) return { result: { commandId: input.commandId, outcome: NOT_YOURS_TO_RECEIVE, accepted: false, quantityMinor: 0, detail: notYours.detail }, signal: notYours };
     const barred = this.newWorkRefusal(() => this.receiptScansOf(input.grnId.trim()).length > 0);
     if (barred !== undefined) return { result: { commandId: input.commandId, outcome: 'app_version_too_old', accepted: false, quantityMinor: 0, detail: barred.detail }, signal: barred };
     const declared = input.declaredUnitCostMinor === undefined ? undefined : money(input.declaredUnitCostMinor, this.currency);
@@ -947,6 +981,8 @@ export class WarehouseSession {
     const scans = this.receiptScansOf(grnId);
     const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject'): CompleteReceivingResult =>
       ({ accepted: false, grnId, scanCount: scans.length, signal: signalFor(feedback, code, detail) });
+    const notYours = this.receivingRefusal(); // OB-773
+    if (notYours !== undefined) return { accepted: false, grnId, scanCount: scans.length, signal: notYours };
     if (this.outbox.find(`recv-done:${grnId}`) !== undefined) return refused('duplicate_ignored', `delivery ${grnId} was already sent as one receipt — nothing changed`, 'warn');
     if (scans.length === 0) return refused('nothing_received', `nothing has been received on this handheld for delivery ${grnId} — scan the delivery in first`);
     const at = input.at ?? this.at();

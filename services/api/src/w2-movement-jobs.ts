@@ -24,27 +24,14 @@
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
-import { effectiveGrants } from './adapters';
-import { ROLE_CATALOGUE, RECEIVER_QC_ROLE_ID, WAREHOUSE_USER_ROLE_ID } from './roles';
+import { effectiveGrants, effectiveRoleCatalogue } from './adapters';
+import type { Role } from '../../../packages/rbac/src/rbac';
+import { ROLE_CATALOGUE } from './roles';
+import { MOVE_WORD, JOB_WORDS, movementReachOfRoles, type MovementJob, type MovementReach } from '../../../packages/rbac/src/movement-jobs';
 
-export const MOVE_WORD = 'inventory.movement.append';
-
-/** The kinds of stock work a narrowed role may do. */
-export type MovementJob = 'count' | 'receive' | 'move_in_store' | 'transfer';
-
-/** Each kind in the words a person reads. */
-export const JOB_WORDS: Readonly<Record<MovementJob, string>> = Object.freeze({
-  count: 'enter a count',
-  receive: 'book a delivery at the receiving door and record or complete a goods receipt',
-  move_in_store: 'put away, move between bins, pick and put back, issue stock to the floor and take its returns back',
-  transfer: 'send and receive a transfer',
-});
-
-/** OB-623: the roles narrowed, and the kinds each may post. Every other role holding the word is not narrowed. */
-export const NARROWED_MOVEMENT_ROLES: Readonly<Record<string, readonly MovementJob[]>> = Object.freeze({
-  [RECEIVER_QC_ROLE_ID]: Object.freeze(['count', 'receive'] as const),
-  [WAREHOUSE_USER_ROLE_ID]: Object.freeze(['count', 'move_in_store', 'transfer'] as const),
-});
+// OB-773 (pilot audit B-3): the rule itself lives in @sre/rbac, so the store computer tells the warehouse handheld — before
+// the first scan — exactly what head office would refuse after it. Re-exported here under the names head office uses.
+export { MOVE_WORD, JOB_WORDS, NARROWED_MOVEMENT_ROLES, type MovementJob, type MovementReach } from '../../../packages/rbac/src/movement-jobs';
 
 /** What a request is: its kind of work (null = not a narrowed role's work at all) and what to call it. */
 export interface MovementKind {
@@ -136,27 +123,20 @@ export const RELAYED_MOVEMENT_KINDS: Readonly<Record<string, { readonly person: 
   'POST /v1/inventory/write-off/:writeOffId/synced': { person: 'raisedBy', classify: fixed(null, 'a stock loss') },
 });
 
-/** How a person holds the stock-movement word: not at all, without limit, or only through the narrowed roles. */
-export type MovementReach =
-  | { readonly kind: 'none' }
-  | { readonly kind: 'any' }
-  | { readonly kind: 'narrowed'; readonly roles: readonly string[]; readonly jobs: readonly MovementJob[] };
-
 /** Judge a person's reach from their grants (the branch's when one is named). Pure, so it is tested on its own. */
 export function movementReachOf(
   grants: readonly { readonly userId: string; readonly roleId: string; readonly branchScope: readonly string[] | 'all' }[],
   userId: string, branchId: string | null,
+  /** The shop's roles now (`effectiveRoleCatalogue`, ADR-0034) — never the built-in list. */
+  catalogue: readonly Role[],
 ): MovementReach {
-  const roles = new Set<string>();
+  const held: { roleId: string; permissions: readonly string[] }[] = [];
   for (const g of grants) {
     if (g.userId !== userId) continue;
     if (branchId !== null && g.branchScope !== 'all' && !g.branchScope.includes(branchId)) continue;
-    if ((ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions ?? []).includes(MOVE_WORD)) roles.add(g.roleId);
+    held.push({ roleId: g.roleId, permissions: catalogue.find((r) => r.id === g.roleId)?.permissions ?? [] });
   }
-  if (roles.size === 0) return { kind: 'none' };
-  if ([...roles].some((r) => NARROWED_MOVEMENT_ROLES[r] === undefined)) return { kind: 'any' };
-  const jobs = [...new Set([...roles].flatMap((r) => NARROWED_MOVEMENT_ROLES[r] ?? []))];
-  return { kind: 'narrowed', roles: [...roles].sort(), jobs };
+  return movementReachOfRoles(held);
 }
 
 /** The refusal, in plain words: who, what their role may do, what this was, and what to do next. Undefined = go on. */
@@ -187,7 +167,7 @@ export function movementJobsSurface(surface: Route[], input: { readonly store?: 
   // A bare composition (no store: the API-surface document, a stub) judges over a store that holds no grants — nobody narrowed.
   const store = input.store ?? new InMemoryEventStore();
   const reach = async (ctx: RequestContext, userId: string): Promise<MovementReach> =>
-    movementReachOf(await effectiveGrants(store, ctx.tenantId), userId, ctx.branchId ?? null);
+    movementReachOf(await effectiveGrants(store, ctx.tenantId), userId, ctx.branchId ?? null, await effectiveRoleCatalogue(store, ctx.tenantId));
   for (let i = 0; i < surface.length; i += 1) {
     const route = surface[i]!;
     const key = keyOf(route);

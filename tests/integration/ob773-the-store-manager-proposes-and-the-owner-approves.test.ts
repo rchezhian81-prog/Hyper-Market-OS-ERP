@@ -158,8 +158,8 @@ describe('OB-773: the store manager proposes a catalogue change; it is made only
     expect((await inbox('u-mgr')).mine.find((r) => r.requestId === badId)).toMatchObject({ status: 'used', catalogueChange: { applied: false } });
   });
 
-  it('a GST rate and a new item with its HSN work end to end; a change that also needs Finance still waits for Finance (the route\'s own rule), and nothing changes', async () => {
-    const { T, h, propose, req, product } = await setUp();
+  it('a GST rate and a new item with its HSN work end to end; a published item\'s HSN and an existing rate are made too — the owner\'s approval stands as Finance\'s (OB-773 · 3 B)', async () => {
+    const { T, h, propose, req, product, trail } = await setUp();
     // A first GST rate for a new HSN class.
     const rate = await propose({ change: 'tax_rate', hsnCode: '04051000', effectiveFrom: '2026-12-01', rateBps: 1_200, reason: 'butter comes in from next month (synthetic)' });
     expect(rate.status, JSON.stringify(rate.body)).toBe(201);
@@ -179,15 +179,52 @@ describe('OB-773: the store manager proposes a catalogue change; it is made only
     expect(hsnOut.body, JSON.stringify(hsnOut.body)).toMatchObject({ catalogueChange: { applied: true } });
     expect((await product('BUTTER')).product['taxClass']).toBe('04051000');
 
-    // A published item's HSN, and a rate on a class that already has one, still need Finance (OB-347, M03 §28): approved by
-    // the owner, NOT made — said with the route's reason — and nothing changes.
+    // OB-773 (owner's Q1 answer "B"): a published item's HSN, and a rate on a class that already has one, need Finance's
+    // approval (OB-347, M03 §28). The manager asked and the owner — who holds Finance's approval authority — approved, so his
+    // approval stands as Finance's: the change IS made, and the change says which approval satisfied Finance, by whom, when.
     const sv = (await product('SALT')).version;
     const pub = await propose({ change: 'product', productId: 'SALT', product: { ...SALT, taxClass: '25010090' }, expectedVersion: sv, reason: 'reclassified (synthetic)' });
-    const pubOut = await decide(h, T, 'u-owner', (pub.body as { requestId: string }).requestId);
-    expect(pubOut.body).toMatchObject({ catalogueChange: { applied: false, code: 'tax_class_change_needs_finance_approval' } });
-    expect((await product('SALT')).product['taxClass']).toBe('25010020');
+    const pubId = (pub.body as { requestId: string }).requestId;
+    const pubOut = await decide(h, T, 'u-owner', pubId);
+    expect(pubOut.body, JSON.stringify(pubOut.body)).toMatchObject({ catalogueChange: { applied: true, financeApproval: { satisfiedBy: pubId, approvedBy: 'u-owner', approvedAt: expect.any(String), usedFor: expect.stringMatching(/^hsn-class:SALT:25010020->25010090$/), rule: expect.stringMatching(/OB-773 \(3 B\)/) } } });
+    expect((await product('SALT')).product['taxClass']).toBe('25010090');
+    expect((await trail('catalogue.product.tax_class.change')).at(-1)).toMatchObject({ actorId: 'u-owner', approvalId: pubId, after: { taxClass: '25010090', approvedBy: 'u-owner' } });
+    expect((await trail('catalogue.change.apply')).at(-1)).toMatchObject({ approvalId: pubId, after: { financeApprovalSatisfiedBy: pubId, financeApprovedBy: 'u-owner' } });
     const change = await propose({ change: 'tax_rate', hsnCode: '25010020', effectiveFrom: '2027-04-01', rateBps: 0, reason: 'salt exempted (synthetic)' });
-    expect((await decide(h, T, 'u-owner', (change.body as { requestId: string }).requestId)).body).toMatchObject({ catalogueChange: { applied: false, code: 'tax_change_needs_finance_approval' } });
+    const changeId = (change.body as { requestId: string }).requestId;
+    expect((await decide(h, T, 'u-owner', changeId)).body).toMatchObject({ catalogueChange: { applied: true, financeApproval: { satisfiedBy: changeId, usedFor: 'tax-rate:25010020:2027-04-01' } } });
+    expect((await req('GET', '/v1/catalogue/tax-classes/25010020/rates')).body).toMatchObject({ count: 2 });
+    expect((await trail('catalogue.tax_rate.change')).at(-1)).toMatchObject({ actorId: 'u-owner', after: { rateBps: '0', approvedBy: 'u-owner' } });
+    // A first rate needs no Finance approval, and none is said to have been given.
+    expect((rateOut.body as { catalogueChange: Record<string, unknown> }).catalogueChange['financeApproval']).toBeUndefined();
+  });
+
+  it('OB-773 (3 B): an item made age-limited needs a second person (OB-503) — the owner approving the manager\'s proposal is that person', async () => {
+    const { T, h, ok, req, propose, product } = await setUp();
+    await ok(req('POST', '/v1/catalogue/categories/restricted', { name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] }), 'category');
+    const drink = { sku: 'SKU-ENERGY', name: 'Synthetic energy drink 250ml', baseUom: 'ea', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'active', safety: { minimumAge: 18 } };
+    const sent = await propose({ change: 'product', productId: 'ENERGY', product: drink, expectedVersion: 0, reason: 'new line (synthetic)' });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    const id = (sent.body as { requestId: string }).requestId;
+    const out = await decide(h, T, 'u-owner', id);
+    expect(out.body, JSON.stringify(out.body)).toMatchObject({ catalogueChange: { applied: true, financeApproval: { satisfiedBy: id, usedFor: expect.stringMatching(/^regulated-product:ENERGY:/) } } });
+    expect((await product('ENERGY')).product).toMatchObject({ lifecycle: 'active', safety: { minimumAge: 18 } });
+  });
+
+  it('OB-773 (3 B) never weakens the direct path: the owner editing directly still needs a second person, and cannot name the manager\'s approval himself', async () => {
+    const { T, h, req, propose, product } = await setUp();
+    const direct = await req('POST', '/v1/catalogue/products/SALT/publish', { product: { ...SALT, taxClass: '25010090' } });
+    expect(codeOf(direct)).toBe('tax_class_change_needs_finance_approval');
+    expect(codeOf(await req('POST', '/v1/catalogue/tax-classes/25010020/rates/2027-04-01', { rateBps: 0 }))).toBe('tax_change_needs_finance_approval');
+    // A manager's proposal, still waiting: the owner naming it on a direct save is refused (it stands only while head office
+    // makes that very change on his approval).
+    const sv = (await product('SALT')).version;
+    const sent = await propose({ change: 'product', productId: 'SALT', product: { ...SALT, taxClass: '25010090' }, expectedVersion: sv, reason: 'reclassified (synthetic)' });
+    const id = (sent.body as { requestId: string }).requestId;
+    expect((await req('POST', '/v1/catalogue/products/SALT/publish', { product: { ...SALT, taxClass: '25010090' }, approvalId: id })).status).toBe(422);
+    // Approved, then named on a direct save: still refused (it was used to make the change, once).
+    expect((await decide(h, T, 'u-owner', id)).body).toMatchObject({ catalogueChange: { applied: true } });
+    expect((await req('POST', '/v1/catalogue/tax-classes/25010020/rates/2027-04-01', { rateBps: 0, approvalId: id })).status).toBe(422);
     expect((await req('GET', '/v1/catalogue/tax-classes/25010020/rates')).body).toMatchObject({ count: 1 });
   });
 

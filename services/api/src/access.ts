@@ -18,7 +18,8 @@ import { dutiesSetRefusal } from '../../identity/src/separation-of-duties';
 import { ownerAndCommitteeRefusal } from '../../identity/src/committee-membership';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { STREAM, effectiveGrants, streamName } from './adapters';
+import { STREAM, effectiveGrants, roleAdjustmentsOf, streamName } from './adapters';
+import { applyRoleAdjustments } from '../../identity/src/role-adjustments';
 import { emergencyAccessActive, type EmergencyGrant } from '../../../packages/identity/src/index';
 import { ROLE_CATALOGUE } from './roles';
 
@@ -42,7 +43,10 @@ export function tenantAccessResolver(
     // M02-FR-04 · SEC-03 · SEC-11 (round 6): an emergency grant the owner approved is REAL access — its role, inside its
     // own branch scope — for exactly as long as it is live. Read on every request against the clock, so it stops the
     // moment it expires or is revoked; never written into the role ledger, so it can never quietly become permanent.
-    return new AccessControl(roleCatalogue, [...grants, ...await liveEmergencyAssignments(store, tenantId, now())]);
+    // ADR-0034 · CR-01 step 4c-1: `roleCatalogue` is the BUILT-IN list; what two people changed for this shop is applied on
+    // top, read every request like the grants — so a change applies from the very next request.
+    const roles = applyRoleAdjustments(roleCatalogue, await roleAdjustmentsOf(store, tenantId));
+    return new AccessControl(roles, [...grants, ...await liveEmergencyAssignments(store, tenantId, now())]);
   };
 }
 

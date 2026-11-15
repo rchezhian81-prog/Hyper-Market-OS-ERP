@@ -20,6 +20,14 @@
 //      who approved. An item someone else saved after the manager opened it is NOT overwritten (hard rule 10): the change is
 //      not made and the reason says so.
 //   4. A refusal changes nothing; the engine keeps the owner's reason, and the audit trail records it.
+//   5. OB-773 (3 B — the owner's answer to Q1, 15 Nov 2026): where the ordinary route ALSO needs Finance's approval (a
+//      published item's HSN, OB-347; a change to an existing GST rate, M03 §28) or a second person's (an item made
+//      age-limited or tobacco, OB-503), the owner's approval of the manager's proposal stands as that approval — the manager
+//      asked, the owner who holds Finance's approval authority approved, so maker and checker are two different people,
+//      which is what those rules protect. Narrowly: only while head office makes that very change, only when the proposer
+//      is not the approver, and only when the approver holds the route's own checker permission (`catalogue.tax.approve`);
+//      otherwise the route refuses as before. The change records which approval satisfied it, by whom, when
+//      (`financeApproval`). The owner's direct edits are unchanged: they still need the second person.
 //
 // The owner keeps making these changes directly, as before. Publishing the store pack stays the owner's. No AI is involved
 // (hard rule 5). Synthetic data only in tests (tests/integration/ob773-*.test.ts, tests/e2e/ob773-*.e2e.ts).
@@ -29,7 +37,7 @@ import { InMemoryEventStore, type EventStore, type PersistedEvent } from '../../
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { ApiError, apiError, type Route, type RequestContext, type HandlerResult } from '../../kernel/src/index';
-import { APPROVAL_KINDS, openApproval, type ApprovalState } from '../../identity/src/approval-requests';
+import { APPROVAL_KINDS, actionDetails, fingerprintOf, openApproval, whileMakingACatalogueChange, type ApprovalState } from '../../identity/src/approval-requests';
 import { STREAM, streamName, approvalRequestsAdapter, productMasterAdapter, barcodeAdapter, taxClassAdapter } from './adapters';
 
 export const CATALOGUE_CHANGE_KIND = 'catalogue_change';
@@ -58,6 +66,12 @@ export interface CatalogueChangeOutcome {
   readonly approvalId: string;
   readonly route: string;
   readonly at: string;
+  /**
+   * OB-773 (3 B): when the ordinary route also needed Finance's (or a second person's) approval — a published item's HSN,
+   * a change to an existing GST rate, an item made age-limited or tobacco — THIS approval stood as it: by whom, when, and
+   * which approval the route recorded as spent.
+   */
+  readonly financeApproval?: { readonly satisfiedBy: string; readonly approvedBy: string; readonly approvedAt: string; readonly usedFor: string; readonly rule: string };
   /** Not applied: the route's (or head office's) code and words. */
   readonly code?: string;
   readonly reason?: string;
@@ -242,6 +256,9 @@ export function catalogueChangeSurface(surface: Route[], input: {
         change: p.change, ...p.params, ...p.body,
         ...(p.expectedVersion === undefined ? {} : { expectedVersion: p.expectedVersion }),
         changes, route: routeWords(p.change),
+        // OB-773 (3 B): the exact act as the ordinary route will read it (its body and the ids in its address) — what the
+        // owner's approval may also stand for as Finance's approval (`standsInFor`), and nothing else.
+        actionFingerprint: fingerprintOf(actionDetails(p.body, p.params)),
       };
       const asked = await engineAsk({
         ...ctx, body: { kind: CATALOGUE_CHANGE_KIND, subjectRef: p.subjectRef, details, valueMinor: null, summary, reason },
@@ -296,14 +313,14 @@ export function catalogueChangeSurface(surface: Route[], input: {
     if (change === 'unknown') return notMade('none', 'not_a_catalogue_change', 'The request does not say which catalogue change it is.');
     const target = CATALOGUE_CHANGE_ROUTES[change];
     const words = routeWords(change);
-    // The approval is spent ONCE, by the exact request the owner approved (its kind, subject, details and maker) — and only
-    // while the owner still holds the publish authority (the kind's checker).
+    // The approval must be exactly the request the owner approved (its kind, subject, details and maker), approved, unused and
+    // in time — and the owner must still hold the publish authority (the kind's checker). It is spent ONCE: by the ordinary
+    // route when that route also needs Finance's approval (OB-773 · 3 B), otherwise just after (`spendIfUnused`).
     try {
-      const opened = await openApproval(approvals, {
+      await openApproval(approvals, {
         tenantId: ctx.tenantId, approvalId: r.requestId, kind: CATALOGUE_CHANGE_KIND, subjectRef: r.subjectRef, details: r.details,
         valueMinor: null, maker: r.requestedBy, usedBy: `catalogue-change:${r.requestId}`, now: at,
       });
-      await opened.spend();
     } catch (err) {
       if (err instanceof ApiError) return notMade(words, err.body.code, err.body.whatHappened);
       throw err;
@@ -329,9 +346,18 @@ export function catalogueChangeSurface(surface: Route[], input: {
     } else {
       body = { rateBps: d['rateBps'] };
     }
-    // The owner's own act, in his own session, through the ordinary route and every check on it.
+    // The approval is offered to the route only where the route may need it as the second approval: a GST rate on a class
+    // that already has one (the FIRST rate of a class is setting it up, and needs none); an item's own route asks for it
+    // only when its HSN changes on sale or it newly becomes age-limited or tobacco. A barcode never needs one.
+    const offer = change === 'barcode' ? false : change === 'tax_rate' ? (await taxes.schedule(ctx.tenantId, params['hsnCode']!)).length > 0 : true;
+    // The owner's own act, in his own session, through the ordinary route and every check on it. The approval is named, so a
+    // route that also needs Finance's approval (or a second person's) may take THIS one as it — only while head office is
+    // making this very change (`whileMakingACatalogueChange`), and only on the engine's OB-773 terms (`takeApproval`).
     try {
-      const res = await route.handler({ ...ctx, params, query: {}, body, idempotencyKey: `catalogue-change-${digest(`${ctx.tenantId}-${r.requestId}`)}`, traceId: ctx.traceId });
+      const res = await whileMakingACatalogueChange(r.requestId, async () => route.handler({
+        ...ctx, params, query: {}, body: offer ? { ...body, approvalId: r.requestId } : body,
+        idempotencyKey: `catalogue-change-${digest(`${ctx.tenantId}-${r.requestId}`)}`, traceId: ctx.traceId,
+      }));
       if (res.status >= 300) {
         const e = (res.body as { error?: { code?: string; whatHappened?: string } } | undefined)?.error;
         return notMade(words, e?.code ?? `status_${res.status}`, e?.whatHappened ?? `${words} answered ${res.status}.`);
@@ -340,7 +366,25 @@ export function catalogueChangeSurface(surface: Route[], input: {
       if (err instanceof ApiError) return notMade(words, err.body.code, err.body.whatHappened);
       return notMade(words, 'route_failed', `${words} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return { ...base, applied: true, route: words, detail: `Made on ${ctx.userId}'s approval (${r.requestId}), as ${r.requestedBy} proposed it.` };
+    // OB-773 (3 B): did the route take this approval as Finance's (or the second person's)? Then that is said on the change.
+    const after = await approvals.approvalState(ctx.tenantId, r.requestId);
+    const usedFor = after?.usedBy;
+    const financeApproval = usedFor === undefined || state.decision === undefined ? undefined : {
+      satisfiedBy: r.requestId, approvedBy: state.decision.decidedBy, approvedAt: state.decision.decidedAt, usedFor,
+      rule: `OB-773 (3 B): ${r.requestedBy} asked and ${state.decision.decidedBy}, who holds Finance's approval authority, approved — two different people, so approval ${r.requestId} also stands as the second approval this change needs.`,
+    };
+    return {
+      ...base, applied: true, route: words, ...(financeApproval === undefined ? {} : { financeApproval }),
+      detail: `Made on ${ctx.userId}'s approval (${r.requestId}), as ${r.requestedBy} proposed it.${financeApproval === undefined ? '' : ` That approval also stood as the second (Finance) approval it needed (${usedFor}).`}`,
+    };
+  };
+
+  /** The approval is used once in every case: a change made, or one not made (it cannot be used for anything else later). */
+  const spendIfUnused = async (tenantId: string, requestId: string, applied: boolean): Promise<void> => {
+    const version = Number(await approvals.approvalVersion(tenantId, requestId));
+    const s = await approvals.approvalState(tenantId, requestId);
+    if (s === undefined || s.usedBy !== undefined) return;
+    await approvals.spendApproval(tenantId, requestId, `catalogue-change:${requestId}${applied ? '' : ':not-made'}`, version);
   };
 
   const outcomeOf = async (ctx: RequestContext, state: ApprovalState): Promise<CatalogueChangeOutcome> => {
@@ -355,6 +399,7 @@ export function catalogueChangeSurface(surface: Route[], input: {
       };
     }
     const outcome = await makeIt(ctx, state);
+    if (outcome.code !== 'approval_already_used') await spendIfUnused(ctx.tenantId, state.request.requestId, outcome.applied);
     const d = state.request.details as Record<string, unknown>;
     const changes = Array.isArray(d['changes']) ? d['changes'] as FieldChange[] : [];
     const stored = await store.append(ctx.tenantId, outcomesStream(), makeEvent({
@@ -369,7 +414,10 @@ export function catalogueChangeSurface(surface: Route[], input: {
         objectType: recorded.change === 'tax_rate' ? 'tax_class' : 'product', objectId: state.request.subjectRef.replace(/^(product|hsn):/, ''),
         at: recorded.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
         before: Object.fromEntries(changes.map((c) => [c.field, c.before])),
-        after: recorded.applied ? { ...Object.fromEntries(changes.map((c) => [c.field, c.after])), proposedBy: recorded.proposedBy, approvedBy: recorded.approvedBy } : { notMade: recorded.reason ?? '', proposedBy: recorded.proposedBy, approvedBy: recorded.approvedBy },
+        after: recorded.applied ? {
+          ...Object.fromEntries(changes.map((c) => [c.field, c.after])), proposedBy: recorded.proposedBy, approvedBy: recorded.approvedBy,
+          ...(recorded.financeApproval === undefined ? {} : { financeApprovalSatisfiedBy: recorded.financeApproval.satisfiedBy, financeApprovedBy: recorded.financeApproval.approvedBy, financeApprovedAt: recorded.financeApproval.approvedAt }),
+        } : { notMade: recorded.reason ?? '', proposedBy: recorded.proposedBy, approvedBy: recorded.approvedBy },
         reason: `${state.request.reason} (proposed by ${recorded.proposedBy}); approved by ${recorded.approvedBy}: ${state.decision?.reason ?? ''}`,
         approvalId: recorded.approvalId, correlationId: `catalogue-change:${recorded.requestId}`,
       });

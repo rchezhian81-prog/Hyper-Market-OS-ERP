@@ -179,4 +179,37 @@ describe.skipIf(!HAVE_BROWSER)('warehouse handheld delivery, end to end in a rea
       await teardown();
     }
   });
+
+  it('OB-773 · a Warehouse user pressing "Receive a delivery" is told who receives, before any scan — nothing queued; put-away still works', async () => {
+    // The store computer judged the person signed in (head office's OB-623 rule): a Warehouse user may not receive.
+    const words = {
+      en: 'You cannot receive a delivery: your role (Warehouse user) does not receive goods. A delivery is received by the Receiver / QC or the store manager — ask one of them to sign in on this phone. Nothing was scanned or recorded.',
+      ta: 'நீங்கள் வரவைப் பெற முடியாது: உங்கள் பங்கு (கிடங்கு பயனர்) சரக்கு பெறுவதில்லை.',
+    };
+    const { page, teardown } = await open({ ...assignment(), receiving: { allowed: false, ...words } });
+    try {
+      await page.click('#receive');
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      // The refusal comes INSTEAD of the scan panel: nothing can be scanned, so nothing waits at the store to be refused.
+      expect(await page.isHidden('#scan')).toBe(true);
+      const said = `${(await page.textContent('#banner-title')) ?? ''} ${(await page.textContent('#banner-text')) ?? ''}`;
+      expect(said).toContain('Not yours to receive');
+      expect(said).toContain('Receiver / QC or the store manager');
+      expect(said).toContain('Nothing was scanned or recorded');
+      expect(await unsent(page)).toBe(0);
+      // A scanner trigger now does nothing either (no scan panel is waiting).
+      await page.keyboard.type('890RICE');
+      await page.keyboard.press('Enter');
+      expect(await unsent(page)).toBe(0);
+      // The work that IS theirs stays: put away a good item into a pickable bin.
+      await page.click('#banner-ok');
+      await page.locator('.item', { hasText: 'p-good' }).click();
+      await page.click('#put-away');
+      await scan(page, 'BIN-A');
+      await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).warehouseOutbox?.unsentCount() ?? 0) >= 1, undefined, { timeout: 10_000 });
+      expect(await unsent(page)).toBe(1);
+    } finally {
+      await teardown();
+    }
+  });
 });
