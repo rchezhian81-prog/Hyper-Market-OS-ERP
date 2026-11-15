@@ -612,6 +612,55 @@ PIN. You never type anybody else's PIN.
    - **When it worked:** `done — store … settings saved as version 1.` and `DONE —`. Every later change is a new
      version; the older ones are kept.
 
+## Part 18b — The store's working rules: the closing checklist, near-expiry days and the limits (D-3)
+
+Until these are set, the office **Today** page's *Tasks*, *Checklist* and *Expiring soon* say **Not known**, and
+**Reports** and **Expiry** show sample data. Do this after Part 18 (head office sends the store's setup to the till only
+once the store has its settings). If your PC is already running, do it now — nothing else has to be done again.
+
+**STOP AND ASK.** Every value is your decision; nothing is filled in for you. The last column is only what the **demo
+shop** used (its seed, `db/seed/pilot/dataset.ts`) — a starting point to discuss, not a decision.
+
+| What you type | What it means | Where you see it | Demo shop |
+| --- | --- | --- | --- |
+| `--checklist` | your closing checklist, in a text file (step 1) | Today: Tasks, Checklist; the day close | 5 items, 2 MUST |
+| `--near-expiry-days` | how many days before its date a batch counts as "expiring soon" | Today: Expiring soon; Expiry | 30 |
+| `--approval-limit-rupees` | the largest refund or adjustment a manager approves alone | the manager's pages | 5000 |
+| `--margin-floor-percent` | a price under this margin needs the pricing approver | prices | 20 |
+| `--reports-late-after-minutes` / `--reports-old-after-minutes` | when a report's figures are called late, then old | Reports | 5 / 60 |
+| `--return-window-days` | how many days the shop takes goods back | service desk | 7 |
+| `--refund-approval-rupees` | a refund above this needs approval | till, service desk | 2000 |
+| `--no-receipt-cap-rupees` | the most refunded with no bill | till, service desk | 500 |
+| `--desk-authority-rupees` / `--compensation-cap-rupees` | what the service desk gives on its own / the most compensation | service desk | 50 / 500 |
+| `--journal-takings` / `--journal-tax` / `--journal-refunds` | the letters the day's accounts entries start with | Finance | TK / TX / RF |
+| `--dormant-after-days` | a sign-in unused this long is flagged | Admin | 60 |
+| `--ai-old-after-minutes` | the AI inbox's figures are old after this | AI inbox | 60 |
+| `--refill-below-percent` / `--shelf-count-old-after-minutes` / `--refill-role` | a shelf under this % full is a refill, from a count at most this old, for this role | shelf refills | 50 / 120 / store_manager |
+| `--write-off-second-person-rupees` | a write-off of this much or more needs a second person | Write-off | 500 |
+
+1. **The checklist file.** Open **Notepad**, write one checklist item per line, and save it in your Documents folder as
+   `closing-checklist.txt`. Start a line with `MUST:` when the day cannot close until it is done. For example:
+   ```text
+   MUST: Cash counted at every till
+   MUST: Back store and safe locked
+   Freezers checked
+   ```
+   Blank lines, and lines starting with `#`, are skipped. Tamil is fine. The file holds no secret.
+2. In PowerShell **as administrator**, type `cd "C:\Program Files\SRE Retail OS"`, then this as one line, with your values
+   (the line below carries the demo shop's figures — change every one you decided differently):
+   ```
+   .\runtime\node\node.exe .\scripts\store-computer.mjs store-rules --as owner-01 --store <store-code> --checklist "$HOME\Documents\closing-checklist.txt" --near-expiry-days 30 --approval-limit-rupees 5000 --margin-floor-percent 20 --reports-late-after-minutes 5 --reports-old-after-minutes 60 --return-window-days 7 --refund-approval-rupees 2000 --no-receipt-cap-rupees 500 --desk-authority-rupees 50 --compensation-cap-rupees 500 --journal-takings TK --journal-tax TX --journal-refunds RF --dormant-after-days 60 --ai-old-after-minutes 60 --refill-below-percent 50 --shelf-count-old-after-minutes 120 --refill-role store_manager --write-off-second-person-rupees 500
+   ```
+   (On a developer's copy with pnpm the line starts `pnpm run store-computer -- store-rules` instead.)
+   - It reads every value and every checklist item back to you in words. Type `YES`, then your PIN.
+   - A missing or mistyped value is refused **by name**, and nothing is saved.
+   - **When it worked:** `done — store … working rules saved as version 1.` and `DONE —`. Typing the same line again
+     says `already in force … nothing new recorded`. A change is a new version; the older ones are kept.
+3. **Check it in the shop** (within five minutes — the till takes the store's setup by itself): open the office
+   **Today** page. *Checklist* shows how many items are open and how many must be done before the day closes; *Expiring
+   soon* shows a number "within 30 days" (your number); **Reports** and **Expiry** no longer say *Sample data*.
+   - **Send:** a photo of the window after step 2, and one of the Today page.
+
 ## Part 19 — The till's bill prefix
 
 The till numbers its bills under a **bill prefix** head office issues (`in-store-install.md` Step 5b). In the mirror

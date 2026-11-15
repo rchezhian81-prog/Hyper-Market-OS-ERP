@@ -214,7 +214,7 @@ export async function writeParallelPolicy(input: ParallelPolicyInput): Promise<O
 // Pure: the HTTP client, the questions and the PIN check are injected (scripts/owner-setup.ts holds the real ones).
 
 /** The commands, as the owner types them after `store-computer`. */
-export const SETUP_STEPS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue'] as const);
+export const SETUP_STEPS = Object.freeze(['shop', 'store-settings', 'store-rules', 'bill-prefix', 'grant', 'publish-catalogue'] as const);
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 /** A request made as one person, after their PIN was checked at `signedInAt` (the token's step-up time). */
@@ -251,6 +251,8 @@ export interface SetupDeps {
   /** Ask THIS person for their own till PIN, hidden. Undefined when nothing was typed (or there is no keyboard). */
   readonly askPin: (userId: string) => Promise<string | undefined>;
   readonly verifyPin: (userId: string, pin: string) => PinVerdict;
+  /** D-3: read a file the owner named (store-rules' closing checklist) — its text, or undefined when it cannot be read. */
+  readonly readText?: (file: string) => string | undefined;
   /** Each line, as it is said (the questions come between them). */
   readonly say?: (line: string) => void;
 }
@@ -278,22 +280,63 @@ const CUTOFF_SHAPE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const RUPEES = /^\d{1,9}(\.\d{1,2})?$/;
 const WHOLE = /^\d{1,7}$/;
 const paise = (rupees: string): number => Math.round(Number(rupees) * 100);
+const PERCENT = /^\d{1,3}(\.\d{1,2})?$/;
+const bps = (pct: string): number => Math.round(Number(pct) * 100);
+const ROLE = /^[a-z][a-z_]{1,40}$/;
+const JOURNAL_PREFIX = /^[A-Za-z0-9-]{1,10}$/;
+
+/** A value written out with its keys in order — the same rules read the same however their keys were ordered. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (typeof v === 'object' && v !== null) return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+
+/** One item of the store's closing checklist, as the rules route takes it. */
+export interface ChecklistItem { readonly itemId: string; readonly description: string; readonly blocking: boolean }
+
+/**
+ * D-3: the closing checklist from a plain text file the owner writes in Notepad — one item per line; a line starting
+ * "MUST:" is one the day cannot close without; blank lines and lines starting "#" are skipped. The items are numbered
+ * close-1, close-2, … in the file's order (the demo seed's own ids). Pure.
+ */
+export function readChecklistText(text: string): { readonly items: readonly ChecklistItem[] } | { readonly problem: string } {
+  const items: ChecklistItem[] = [];
+  const seen = new Set<string>();
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    const must = /^must:/i.test(line);
+    const description = (must ? line.slice(5) : line).trim();
+    if (description === '') return { problem: `line ${i + 1} of the checklist file says MUST: but no item after it` };
+    const same = description.toLowerCase();
+    if (seen.has(same)) return { problem: `the checklist file lists "${description}" twice` };
+    seen.add(same);
+    items.push({ itemId: `close-${items.length + 1}`, description, blocking: must });
+  }
+  if (items.length === 0) return { problem: 'the checklist file has no items — write one item per line (start a line with MUST: when the day cannot close without it)' };
+  return { items };
+}
 const rupeesText = (v: string): string => `₹${Number(v).toFixed(2)}`;
 
 interface PlannedCall {
   readonly as: string;
-  readonly method: 'POST';
+  readonly method: 'GET' | 'POST';
   /** A path, or one made from the answers of the calls before it (e.g. the approval asked for one step earlier). */
   readonly path: string | ((answers: readonly unknown[]) => string);
-  readonly body: unknown | ((answers: readonly unknown[]) => unknown);
-  readonly key: string;
+  readonly body?: unknown | ((answers: readonly unknown[]) => unknown);
+  /** The request key (none on a read), or one made from the answers before it. */
+  readonly key?: string | ((answers: readonly unknown[]) => string);
   readonly ok: readonly number[];
+  /** D-3: when the answers so far show this call has nothing to do, what to say instead — and it is not made. */
+  readonly skip?: (answers: readonly unknown[]) => string | undefined;
   readonly said: (body: unknown) => string;
 }
 interface Planned { readonly actors: readonly string[]; readonly plan: readonly string[]; readonly calls: readonly PlannedCall[]; readonly done: string }
 
 /** Read the values for one step: every problem named at once, or the plan. */
-function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined>>, today: string, nowIso: string): { readonly problems: readonly string[] } | { readonly planned: Planned } {
+function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined>>, today: string, nowIso: string, readText?: (file: string) => string | undefined): { readonly problems: readonly string[] } | { readonly planned: Planned } {
   const problems: string[] = [];
   const need = (flag: string, shape: RegExp, words: string): string => {
     const value = (v[flag] ?? '').trim();
@@ -304,6 +347,12 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
   const named = (flag: string, min: number, words: string): string => {
     const value = (v[flag] ?? '').trim();
     if (value.length < min) problems.push(`--${flag} "<${words}>"`);
+    return value;
+  };
+  /** A percentage the owner types (e.g. 20 or 12.5), from 0 to 100 — sent as basis points. */
+  const percent = (flag: string): string => {
+    const value = need(flag, PERCENT, 'a percentage from 0 to 100, e.g. 20');
+    if (PERCENT.test(value) && Number(value) > 100) problems.push(`--${flag} must be a percentage from 0 to 100 (got "${value}")`);
     return value;
   };
   const as = need('as', LOGIN, 'your own login');
@@ -393,6 +442,102 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
         },
       };
     }
+    case 'store-rules': {
+      // D-3 (pilot-first audit, OB-739 · OB-740): the store's working rules (DF-3-b-1, POST /v1/stores/:storeId/rules) —
+      // every value the route needs, typed by the owner; none defaulted (the route defaults none either).
+      const store = need('store', CODE, "the store's code");
+      const file = (v['checklist'] ?? '').trim();
+      let checklist: readonly ChecklistItem[] = [];
+      if (file === '') problems.push('--checklist <the closing checklist: a text file, one item per line>');
+      else {
+        const text = readText?.(file);
+        if (text === undefined) problems.push(`--checklist: the file ${file} could not be read — check its name and where it is`);
+        else {
+          const read = readChecklistText(text);
+          if ('problem' in read) problems.push(`--checklist: ${read.problem}`);
+          else checklist = read.items;
+        }
+      }
+      const approvalLimit = need('approval-limit-rupees', RUPEES, 'rupees, e.g. 5000');
+      const marginFloor = percent('margin-floor-percent');
+      const nearExpiry = need('near-expiry-days', WHOLE, 'whole days, e.g. 30');
+      const lagging = need('reports-late-after-minutes', WHOLE, 'whole minutes, e.g. 5');
+      const staleReports = need('reports-old-after-minutes', WHOLE, 'whole minutes, e.g. 60');
+      const returnWindow = need('return-window-days', WHOLE, 'whole days, e.g. 7');
+      const refundApproval = need('refund-approval-rupees', RUPEES, 'rupees, e.g. 2000');
+      const noReceiptCap = need('no-receipt-cap-rupees', RUPEES, 'rupees, e.g. 500');
+      const deskAuthority = need('desk-authority-rupees', RUPEES, 'rupees, e.g. 50');
+      const compensationCap = need('compensation-cap-rupees', RUPEES, 'rupees, e.g. 500');
+      const takings = need('journal-takings', JOURNAL_PREFIX, 'up to 10 letters, digits or "-", e.g. TK');
+      const tax = need('journal-tax', JOURNAL_PREFIX, 'up to 10 letters, digits or "-", e.g. TX');
+      const refunds = need('journal-refunds', JOURNAL_PREFIX, 'up to 10 letters, digits or "-", e.g. RF');
+      const dormant = need('dormant-after-days', WHOLE, 'whole days, e.g. 60');
+      const aiStale = need('ai-old-after-minutes', WHOLE, 'whole minutes, e.g. 60');
+      const refillBelow = percent('refill-below-percent');
+      const shelfStale = need('shelf-count-old-after-minutes', WHOLE, 'whole minutes, e.g. 120');
+      const refillRole = need('refill-role', ROLE, 'a role, e.g. store_manager');
+      const writeOff = need('write-off-second-person-rupees', RUPEES, 'rupees, e.g. 500');
+      if (problems.length > 0) return { problems };
+      // The body in the route's own order (services/platform/src/store-packs.ts readStoreRules).
+      const body = {
+        approvalLimitMinor: paise(approvalLimit), marginFloorBps: bps(marginFloor), nearExpiryDays: Number(nearExpiry),
+        reporting: { laggingAfterMinutes: Number(lagging), staleAfterMinutes: Number(staleReports) },
+        service: {
+          returnWindowDays: Number(returnWindow), approvalThresholdMinor: paise(refundApproval), noReceiptCapMinor: paise(noReceiptCap),
+          agentAuthorityMinor: paise(deskAuthority), compensationCapMinor: paise(compensationCap),
+        },
+        journalPrefixes: { takings, tax, refunds }, dormantAfterDays: Number(dormant), aiStaleAfterMinutes: Number(aiStale),
+        merchandising: { refillAtBp: bps(refillBelow), countStaleAfterMinutes: Number(shelfStale), refillRole },
+        writeOffMaterialThresholdMinor: paise(writeOff),
+        checklist: checklist.map((c) => ({ ...c })),
+      };
+      const fields = Object.keys(body) as (keyof typeof body)[];
+      const held = (answers: readonly unknown[]): Record<string, unknown> | undefined => (answers[0] as { rules?: Record<string, unknown> } | undefined)?.rules;
+      const heldVersion = (answers: readonly unknown[]): number => Number(held(answers)?.['version'] ?? 0);
+      const blocking = checklist.filter((c) => c.blocking).length;
+      return {
+        planned: {
+          actors: [as],
+          plan: [
+            `1. Save store ${store}'s working rules as a NEW version (every older version is kept):`,
+            `   the closing checklist (${checklist.length} item${checklist.length === 1 ? '' : 's'}, ${blocking} that must be done before the day closes):`,
+            ...checklist.map((c) => `      ${c.blocking ? 'MUST — ' : ''}${c.description}`),
+            `   a batch is "expiring soon" ${nearExpiry} days before its date;`,
+            `   a manager approves up to ${rupeesText(approvalLimit)} alone; a price under ${marginFloor}% margin needs the pricing approver;`,
+            `   a report's figures are late after ${lagging} minute(s) and old after ${staleReports} minute(s);`,
+            `   a return within ${returnWindow} days; a refund over ${rupeesText(refundApproval)} needs approval; with no bill, at most ${rupeesText(noReceiptCap)};`,
+            `   the service desk gives up to ${rupeesText(deskAuthority)} on its own, and compensation of at most ${rupeesText(compensationCap)};`,
+            `   the day's accounts entries are numbered ${takings} (takings), ${tax} (tax) and ${refunds} (refunds);`,
+            `   a sign-in unused for ${dormant} days is flagged; the AI inbox's figures are old after ${aiStale} minute(s);`,
+            `   a shelf under ${refillBelow}% full is a refill for ${refillRole}, from a shelf count at most ${shelfStale} minute(s) old;`,
+            `   a write-off of ${rupeesText(writeOff)} or more needs a second person.`,
+            `   The till's office pages read these: Today's Tasks, Checklist and Expiring soon; Reports; Expiry; the service desk; prices.`,
+          ],
+          calls: [
+            {
+              // What head office holds now: the same rules again records nothing new, and a change names the version it replaces.
+              as, method: 'GET', path: `/v1/stores/${encodeURIComponent(store)}/rules`, ok: [200, 404],
+              said: (b) => {
+                const version = (b as { rules?: { version?: number } } | undefined)?.rules?.version;
+                return version === undefined ? `store ${store} has no working rules yet` : `store ${store}'s working rules are at version ${String(version)}`;
+              },
+            },
+            {
+              as, method: 'POST', path: `/v1/stores/${encodeURIComponent(store)}/rules`, body,
+              skip: (answers) => {
+                const now = held(answers);
+                if (now === undefined) return undefined;
+                return fields.every((f) => canonical(now[f]) === canonical(body[f])) ? `these rules are already in force as version ${heldVersion(answers)} — nothing new recorded` : undefined;
+              },
+              key: (answers) => `owner-setup-rules-${store}-v${heldVersion(answers)}-${placeKey([canonical(body)])}`,
+              ok: [200, 201],
+              said: (b) => `store ${store}'s working rules saved as version ${String((b as { rules?: { version?: number } } | undefined)?.rules?.version ?? '?')}`,
+            },
+          ],
+          done: `DONE — store ${store}'s working rules are saved at head office on this computer. The till takes them with the store's setup within five minutes. Done as ${as}.`,
+        },
+      };
+    }
     case 'bill-prefix': {
       const store = need('store', CODE, "the store's code");
       const till = need('till', CODE, "the till's lane, e.g. lane-1");
@@ -476,7 +621,7 @@ export async function runOwnerSetup(input: SetupInput, deps: SetupDeps): Promise
   const refused = targetRefusal(input.targetKind, input.tenantId, input.demoTenantIds, `owner-setup-${step}`);
   if (refused !== undefined) { say(refused); return { exitCode: 1, lines }; }
 
-  const read = planStep(step, input.values, input.today, input.now());
+  const read = planStep(step, input.values, input.today, input.now(), deps.readText);
   if ('problems' in read) { say(`REFUSED — ${step} needs: ${read.problems.join('; ')}. Nothing is filled in for you, and nothing was done.`); return { exitCode: 2, lines }; }
   const p = read.planned;
   if (deps.client === undefined) { say("REFUSED — this copy's API cannot be spoken to: its settings have no identity settings (IDP_SIGNING_KEY, IDP_ISSUER, IDP_AUDIENCE). Send me a photo of this screen."); return { exitCode: 2, lines }; }
@@ -497,8 +642,13 @@ export async function runOwnerSetup(input: SetupInput, deps: SetupDeps): Promise
   const answers: unknown[] = [];
   for (const call of p.calls) {
     const path = typeof call.path === 'function' ? call.path(answers) : call.path;
+    const skipped = call.skip?.(answers);
+    if (skipped !== undefined) { answers.push(undefined); say(`  done — ${skipped}.`); continue; }
     const body = typeof call.body === 'function' ? (call.body as (a: readonly unknown[]) => unknown)(answers) : call.body;
-    const res = await deps.client.request({ method: call.method, path, userId: call.as, tenantId: input.tenantId, body, idempotencyKey: call.key, signedInAt: signedIn.get(call.as)! });
+    const key = typeof call.key === 'function' ? call.key(answers) : call.key;
+    const res = await deps.client.request({
+      method: call.method, path, userId: call.as, tenantId: input.tenantId, ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }), signedInAt: signedIn.get(call.as)!,
+    });
     answers.push(res.body);
     if (!call.ok.includes(res.status)) {
       say(`NOT DONE — head office refused: ${errorOf(res.body, res.status)}`);

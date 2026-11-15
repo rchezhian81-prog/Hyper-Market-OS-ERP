@@ -1338,6 +1338,14 @@ export const USAGE = [
   '  store-settings --as <login> --store <code> --cutoff HH:MM --stale-after-minutes N --count-approval-rupees R',
   '                 --handover-tolerance-rupees R --cash-variance-rupees R',
   '                                           the store\'s settings (a new version each time)',
+  '  store-rules --as <login> --store <code> --checklist <text file> --near-expiry-days N --approval-limit-rupees R',
+  '              --margin-floor-percent P --reports-late-after-minutes N --reports-old-after-minutes N --return-window-days N',
+  '              --refund-approval-rupees R --no-receipt-cap-rupees R --desk-authority-rupees R --compensation-cap-rupees R',
+  '              --journal-takings X --journal-tax X --journal-refunds X --dormant-after-days N --ai-old-after-minutes N',
+  '              --refill-below-percent P --shelf-count-old-after-minutes N --refill-role <role> --write-off-second-person-rupees R',
+  '                                           the store\'s working rules: the closing checklist (one item per line in the',
+  '                                           file; MUST: first = the day cannot close without it), near-expiry days, the',
+  '                                           limits (D-3) — a new version each time; the same values again record nothing',
   '  bill-prefix --as <login> --store <code> --till <lane> --prefix <prefix> [--reason "<why>"]',
   '                                           the till\'s bill-number prefix',
   '  grant --as <login> --approver <second login> --person <login> --role <role> --store <code> --reason "<why>"',
@@ -1347,9 +1355,14 @@ export const USAGE = [
 ];
 
 /** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
-export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue']);
+export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'store-rules', 'bill-prefix', 'grant', 'publish-catalogue']);
 /** Their flags, as typed (each takes a value), handed on as they are. */
-export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
+export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role',
+  // D-3: store-rules
+  '--checklist', '--near-expiry-days', '--approval-limit-rupees', '--margin-floor-percent', '--reports-late-after-minutes', '--reports-old-after-minutes',
+  '--return-window-days', '--refund-approval-rupees', '--no-receipt-cap-rupees', '--desk-authority-rupees', '--compensation-cap-rupees',
+  '--journal-takings', '--journal-tax', '--journal-refunds', '--dormant-after-days', '--ai-old-after-minutes',
+  '--refill-below-percent', '--shelf-count-old-after-minutes', '--refill-role', '--write-off-second-person-rupees']);
 
 /**
  * An owner setup command (OB-257), run as the people who do it: this copy's settings and the till's are handed to the
@@ -1366,7 +1379,8 @@ export async function ownerSetup(deps, step, cl) {
   if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the setup tool could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
   const p = pathFor(deps.platform);
   const pass = [];
-  for (const [flag, value] of Object.entries(cl.setup)) pass.push(flag, value);
+  // D-3: a file the owner names (store-rules' checklist) is found from the folder he typed it in, whatever folder the tool runs in.
+  for (const [flag, value] of Object.entries(cl.setup)) pass.push(flag, flag === '--checklist' ? p.resolve(value) : value);
   if (cl.as !== undefined) pass.push('--as', cl.as);
   const tillEnv = deps.fs.existsSync(L.tillEnv) ? ['--till-settings', L.tillEnv] : [];
   const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'owner-setup.js'), step, ...pass, '--settings', L.settings, ...tillEnv], { cwd: deps.repoRoot, env, stdio: 'inherit' });
@@ -1577,6 +1591,7 @@ export async function main(argv, given) {
     // OB-257: head office's own jobs on this computer, each by the people whose act it is.
     case 'shop': return ownerSetup(deps, 'shop', cl);
     case 'store-settings': return ownerSetup(deps, 'store-settings', cl);
+    case 'store-rules': return ownerSetup(deps, 'store-rules', cl);
     case 'bill-prefix': return ownerSetup(deps, 'bill-prefix', cl);
     case 'grant': return ownerSetup(deps, 'grant', cl);
     case 'publish-catalogue': return ownerSetup(deps, 'publish-catalogue', cl);
