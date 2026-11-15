@@ -119,6 +119,8 @@ export interface PlacerDeps {
   readonly now: () => string;
   /** The finished API surface, read at the moment of placing (so every wrapper on a route still applies). */
   readonly routes: () => readonly Route[];
+  /** OB-770 B: units of the product at the store outside the batch, counted fresh just before a markdown is priced. Absent → no markdown is placed. */
+  readonly otherStockAtStore?: (tenantId: string, productId: string, batchId: string, storeId: string) => Promise<number>;
 }
 
 const inFlight = new Map<string, Promise<PlaceResult>>();
@@ -219,6 +221,15 @@ async function placeThroughRoute(deps: PlacerDeps, tenantId: string, decision: A
       const route = 'POST /v1/prices/changes';
       if (act.newPriceMinor === undefined || act.mrpMinor === undefined || act.costMinor === undefined) {
         return { placed: false, route, code: 'act_not_exact', reason: 'The draft does not carry the new price, the MRP and the cost, so the price change cannot be made exactly.' };
+      }
+      // OB-770 B (owner, 15 Nov 2026): counted AGAIN now — fresh stock may have arrived since the draft. Any other stock of the
+      // product at the store (or no count at all) and nothing is priced: a person decides.
+      if (deps.otherStockAtStore === undefined || act.storeId === undefined) {
+        return { placed: false, route, code: 'stock_not_checked', reason: 'The stock of this product at the store could not be counted just before pricing, so the rule did not change the price (OB-770 B).' };
+      }
+      const other = await deps.otherStockAtStore(tenantId, act.productId, act.batchId, act.storeId);
+      if (other > 0) {
+        return { placed: false, route, code: 'fresh_stock_at_store', reason: `${other} more of ${act.productId} is at ${act.storeId} outside batch ${act.batchId}; a markdown would cut that fresh stock too, so the rule did not change the price (OB-770 B).` };
       }
       const r = await call(deps, tenantId, 'POST', '/v1/prices/changes', {}, RULE_IDENTITY, {
         productId: act.productId, priceMinor: act.newPriceMinor, currency: 'INR', mrpMinor: act.mrpMinor, costMinor: act.costMinor,

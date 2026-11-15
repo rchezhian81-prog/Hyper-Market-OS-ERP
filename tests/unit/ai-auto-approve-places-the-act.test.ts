@@ -119,7 +119,7 @@ describe('the rule places a reorder through the ordinary purchase-order routes (
 describe('the markdown and the transfer go through their own ordinary routes (OB-762 A)', () => {
   it('a markdown is a price change at the ladder\'s new price, with the MRP and cost head office holds', async () => {
     const { routes, calls } = fakeRoutes();
-    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes })(T,
+    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes, otherStockAtStore: async () => 0 })(T,
       decided({ proposalId: 'inv-markdown:b-curd-1', kind: 'markdown_short_dated', approvedBy: 'rule:markdown_short_dated-v1', ruleId: 'markdown_short_dated-v1', measured: 2_500, limit: 3_000, measure: 'percent_bps', draftedBy: 'A03' }), markdown);
     expect(r.placed).toBe(true);
     expect(calls).toEqual([{ path: '/v1/prices/changes', userId: RULE_IDENTITY, params: {}, body: { productId: 'CURD', priceMinor: 3_000, currency: 'INR', mrpMinor: 4_500, costMinor: 2_600, storeId: 'br-1' } }]);
@@ -127,8 +127,20 @@ describe('the markdown and the transfer go through their own ordinary routes (OB
 
   it('the price guard\'s refusal (a second person needed) makes it wait, with that reason', async () => {
     const { routes } = fakeRoutes({ '/v1/prices/changes': { status: 422, code: 'price_change_needs_second_person', words: 'A cut of 25% is above the 10% one person may make.' } });
-    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes })(T, decided({ proposalId: 'inv-markdown:b-curd-1', kind: 'markdown_short_dated' }), markdown);
+    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes, otherStockAtStore: async () => 0 })(T, decided({ proposalId: 'inv-markdown:b-curd-1', kind: 'markdown_short_dated' }), markdown);
     expect(r).toMatchObject({ placed: false, code: 'price_change_needs_second_person' });
+  });
+
+  it('OB-770 B: stock is counted again just before pricing — any other stock at the store (or no count) and nothing is priced', async () => {
+    const { routes, calls } = fakeRoutes();
+    const md = decided({ proposalId: 'inv-markdown:b-curd-2', kind: 'markdown_short_dated' });
+    const seen: unknown[] = [];
+    const fresh = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes, otherStockAtStore: async (...a) => { seen.push(a); return 8; } })(T, md, markdown);
+    expect(fresh).toMatchObject({ placed: false, code: 'fresh_stock_at_store', reason: expect.stringMatching(/8 more/) });
+    expect(seen).toEqual([[T, 'CURD', 'b-curd-1', 'br-1']]);
+    const unchecked = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => routes })(T, md, markdown);
+    expect(unchecked).toMatchObject({ placed: false, code: 'stock_not_checked' });
+    expect(calls).toEqual([]);
   });
 
   it('a transfer is raised only — a person dispatches it, another receives it', async () => {
@@ -156,7 +168,7 @@ describe('the rule identity is fenced in', () => {
   it('a route that asks for a permission the rule does not hold is refused before it runs', async () => {
     const { routes, calls } = fakeRoutes();
     const swapped = routes.map((r) => (r.path === '/v1/prices/changes' ? { ...r, permission: 'refund.issue' as never } : r));
-    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => swapped })(T, decided({ proposalId: 'p-3', kind: 'markdown_short_dated' }), markdown);
+    const r = await autoApprovePlacer({ store: new InMemoryEventStore(), now: () => NOW, routes: () => swapped, otherStockAtStore: async () => 0 })(T, decided({ proposalId: 'p-3', kind: 'markdown_short_dated' }), markdown);
     expect(r).toMatchObject({ placed: false, code: 'rule_lacks_permission' });
     expect(calls).toEqual([]);
   });

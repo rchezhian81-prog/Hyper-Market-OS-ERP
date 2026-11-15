@@ -319,7 +319,7 @@ import { aiRoutes, type Proposal } from '../../ai/src/index';
 import { sweepDrafts } from '../../ai/src/auto-approve';
 import { autoApproveDeps } from './ai-auto-approve-store';
 import { autoApprovePlacer, ruleAwareAuthority } from './ai-auto-approve-executor';
-import { exactActsFor } from './ai-auto-approve-acts';
+import { exactActsFor, otherStockAtStoreFor } from './ai-auto-approve-acts';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
@@ -2339,7 +2339,7 @@ export function buildSurface(deps: {
       ...governedAiDeps!,
       // CR-01 OI-12: the owner-set rule decides each new draft right after the run (approved by rule, or waits for a person).
       // Step 6b (OB-760 A): a rule's approval places the act through its ordinary route on THIS surface, as the rule.
-      afterRun: (t: string, proposals: readonly Proposal[]) => sweepDrafts(autoApproveDeps({ store, now, openProposals: governedAiDeps!.openProposals, aiStopped: (tt, agent) => governedAiDeps!.killSwitchOn(tt, agent), place: autoApprovePlacer({ store, now, routes: () => surface }) }), t, proposals),
+      afterRun: (t: string, proposals: readonly Proposal[]) => sweepDrafts(autoApproveDeps({ store, now, openProposals: governedAiDeps!.openProposals, aiStopped: (tt, agent) => governedAiDeps!.killSwitchOn(tt, agent), place: autoApprovePlacer({ store, now, routes: () => surface, otherStockAtStore: otherStockAtStoreFor({ store, now }) }) }), t, proposals),
     }), modelProviderConfigured: () => deps.modelTransport !== undefined }),
     // Round 8 (roadmap §7 · P-05 · hard rule #5): the A05 case-reply, A09 campaign-message and A07 anomaly-summary DRAFTING
     // legs — each through the governed call above (admission, metering, hash-chained audit), each over evidence read here

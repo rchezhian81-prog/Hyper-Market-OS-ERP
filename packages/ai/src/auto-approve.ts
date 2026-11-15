@@ -96,6 +96,8 @@ export type DraftAct =
     /** CR-01 step 6b (OB-762): the price change the ladder gives, as `POST /v1/prices/changes` takes it. */
     readonly storeId?: string; readonly currentPriceMinor?: number; readonly newPriceMinor?: number;
     readonly mrpMinor?: number; readonly costMinor?: number; readonly surplusQty?: number; readonly basis?: string;
+    /** OB-770 B: units of the product at the store OUTSIDE this batch (fresh stock, other batches, on the van). Above 0 → a person decides. */
+    readonly otherStockAtStore?: number;
   }
   | {
     readonly kind: 'stock_transfer'; readonly productId: string; readonly fromLocationId: string; readonly toLocationId: string; readonly qty: number; readonly valueMinor: number;
@@ -401,6 +403,9 @@ function unusualBecause(act: DraftAct): string | undefined {
       if (!Number.isInteger(act.daysToExpiry) || act.daysToExpiry < 1) return 'the batch has already expired — that is a disposal, not a markdown';
       if (act.daysToExpiry > SHORT_DATED_DAYS) return `the batch expires in ${act.daysToExpiry} days — not short-dated (within ${SHORT_DATED_DAYS})`;
       if (!Number.isInteger(act.percentOffBps) || act.percentOffBps <= 0 || act.percentOffBps > 10_000) return 'the cut is not a percentage above nothing';
+      // OB-770 B (owner, 15 Nov 2026): a markdown changes the product's shelf price at the store, so a rule cuts it only when
+      // ALL of that product there is the short-dated batch — fresh stock is never sold cheap by a rule.
+      if (act.otherStockAtStore !== undefined && act.otherStockAtStore > 0) return `${act.otherStockAtStore} more of ${act.productId} is at the store outside batch ${act.batchId}, and a markdown would cut that fresh stock too (OB-770 B)`;
       return undefined;
     case 'stock_transfer':
       if (act.fromLocationId === act.toLocationId) return 'it moves stock to the place it is already in';

@@ -74,9 +74,14 @@ export function markdownActOf(input: {
   readonly productId: string; readonly batchId: string; readonly storeId?: string; readonly daysToExpiry: number;
   readonly onHand: number; readonly avgDailyDemand: number;
   readonly shelfPriceMinor?: number; readonly mrpMinor?: number; readonly costMinor?: number; readonly policy?: MarkdownPolicy;
+  /** OB-770 B: units of the product at the store outside this batch (fresh stock, other batches, on the van). Unknown → no act. */
+  readonly otherStockAtStore?: number;
 }): ActOrWhy {
   const { productId, batchId } = input;
   if (input.storeId === undefined) return none(`Batch ${batchId} is held at more than one store (or none), so no one shelf price can be cut — a person decides.`);
+  // OB-770 B: the price change applies to the product's whole shelf price at the store — a rule cuts only when ALL of it is this batch.
+  if (input.otherStockAtStore === undefined) return none(`How much ${productId} is at ${input.storeId} outside batch ${batchId} is not known — a person decides (OB-770 B).`);
+  if (input.otherStockAtStore > 0) return none(`${input.otherStockAtStore} more of ${productId} is at ${input.storeId} outside batch ${batchId} — a markdown would cut that fresh stock too, so a person decides (OB-770 B).`);
   if (input.shelfPriceMinor === undefined) return none(`${productId} has no shelf price at ${input.storeId}, so no markdown can be worked out — a person decides.`);
   if (input.mrpMinor === undefined) return none(`${productId} has no MRP on the product master — a person decides.`);
   if (input.costMinor === undefined) return none(`Head office holds no cost for ${productId} at ${input.storeId} — a person decides.`);
@@ -89,7 +94,7 @@ export function markdownActOf(input: {
   return {
     act: {
       kind: 'markdown_short_dated', productId, batchId, percentOffBps: m.markdownBps, daysToExpiry: input.daysToExpiry, storeId: input.storeId,
-      currentPriceMinor: input.shelfPriceMinor, newPriceMinor: m.newPriceMinor, mrpMinor: input.mrpMinor, costMinor: input.costMinor, surplusQty: m.surplusMinor,
+      currentPriceMinor: input.shelfPriceMinor, newPriceMinor: m.newPriceMinor, mrpMinor: input.mrpMinor, costMinor: input.costMinor, surplusQty: m.surplusMinor, otherStockAtStore: 0,
       basis: `D-4 expiry ladder: ${m.surplusMinor} of ${input.onHand} will not sell in ${input.daysToExpiry} day(s) at about ${input.avgDailyDemand} a day → ${m.markdownBps / 100}% off, ${rupees(input.shelfPriceMinor)} → ${rupees(m.newPriceMinor)} at ${input.storeId}.`,
     },
   };
@@ -132,6 +137,23 @@ export interface ExactActs {
 
 const once = <T>(f: () => Promise<T>): (() => Promise<T>) => { let p: Promise<T> | undefined; return () => (p ??= f()); };
 const DAY_MS = 86_400_000;
+
+/**
+ * OB-770 B: how much of a product is at a store OUTSIDE one batch — on hand at every place in the store (the stock ledger)
+ * less that batch's own on-hand there, plus what is on the van to the store. Read fresh each time it is asked (the placer
+ * asks again just before pricing). Never below 0.
+ */
+export function otherStockAtStoreFor(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, productId: string, batchId: string, storeId: string) => Promise<number> {
+  return async (tenantId, productId, batchId, storeId) => {
+    const of = branchOfLocationIn(await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId));
+    const inv = inventoryAdapter({ store: input.store, now: input.now });
+    const atStore = (loc: string): boolean => loc === storeId || of(loc) === storeId;
+    const onHand = (await inv.availability(tenantId)).filter((r) => r.productId === productId && atStore(r.locationId)).reduce((t, r) => t + r.onHandMinor, 0);
+    const inBatch = (await inv.batches!(tenantId, productId)).filter((b) => b.batchId === batchId && atStore(b.locationId)).reduce((t, b) => t + Math.max(0, b.onHandMinor), 0);
+    const onTheVan = (await inv.inTransit?.(tenantId, productId) ?? []).filter((t) => atStore(t.locationId)).reduce((t, x) => t + x.quantityMinor, 0);
+    return Math.max(0, onHand - inBatch) + onTheVan;
+  };
+}
 
 /** The records the pure functions need, read from head office's own ledger for one run. */
 export function exactActsFor(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string) => ExactActs {
@@ -198,8 +220,10 @@ export function exactActsFor(input: { readonly store: EventStore; readonly now: 
         const price = storeId === undefined ? undefined : await shelfPriceAt({ store, now: () => now }, tenantId, item.productId, storeId, now);
         const mrp = await mrpOf(item.productId);
         const cost = at === undefined ? undefined : await unitCostAt(at, item.productId) ?? (storeId === undefined ? undefined : await unitCostAt(storeId, item.productId));
+        const other = storeId === undefined ? undefined : await otherStockAtStoreFor({ store, now: () => now })(tenantId, item.productId, item.batchId, storeId);
         return markdownActOf({
           productId: item.productId, batchId: item.batchId, daysToExpiry: item.daysToExpiry, onHand: item.qty, avgDailyDemand: rate,
+          ...(other === undefined ? {} : { otherStockAtStore: other }),
           ...(storeId === undefined ? {} : { storeId }), ...(price === undefined ? {} : { shelfPriceMinor: price }),
           ...(mrp === undefined ? {} : { mrpMinor: mrp }), ...(cost === undefined ? {} : { costMinor: cost }),
         });

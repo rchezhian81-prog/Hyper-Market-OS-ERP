@@ -38,7 +38,7 @@ import { aiIncidentRoutes } from '../../ai/src/ai-incidents';
 import { modelRegistryRoutes } from '../../ai/src/model-registry';
 import { autoApproveRoutes } from '../../ai/src/auto-approve';
 import { autoApprovePlacer } from './ai-auto-approve-executor';
-import { withAct, type ExactActs } from './ai-auto-approve-acts';
+import { withAct, otherStockAtStoreFor, type ExactActs } from './ai-auto-approve-acts';
 import { autoApproveDeps } from './ai-auto-approve-store';
 import { evaluationRoutes } from '../../ai/src/evaluations';
 import { aiControlRoutes } from '../../ai/src/control';
@@ -809,7 +809,7 @@ export function aiGovernanceSurface(surface: Route[], input: {
     ...modelRegistryRoutes({ registry, evaluationRuns: evaluations.runs, now }),
     // CR-01 OI-12: owner-set auto-approve limits — two people set a limit, one stops it all, the rule decides drafts.
     // Step 6b (OB-760 A): a rule's approval places the act through its ordinary route, found on THIS surface when it places.
-    ...autoApproveRoutes(autoApproveDeps({ store, now, openProposals: ai.openProposals, aiStopped: (t, agent) => ai.killSwitchOn(t, agent), place: autoApprovePlacer({ store, now, routes: () => surface }) })),
+    ...autoApproveRoutes(autoApproveDeps({ store, now, openProposals: ai.openProposals, aiStopped: (t, agent) => ai.killSwitchOn(t, agent), place: autoApprovePlacer({ store, now, routes: () => surface, otherStockAtStore: otherStockAtStoreFor({ store, now }) }) })),
     ...evaluationRoutes({ gateway, evaluations, now }),
     ...aiControlRoutes({
       masterOn, enabledAgents: ai.enabledAgents, budget: ai.budget, governance, incidents, registry, evaluations,

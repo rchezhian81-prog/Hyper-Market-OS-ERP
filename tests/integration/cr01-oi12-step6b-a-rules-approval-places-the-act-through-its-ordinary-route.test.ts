@@ -136,6 +136,14 @@ describe('CR-01 OI-12 step 6b: a rule\'s approval places the act through its ord
     expect((await send('POST', '/v1/ai/proposals/a03-step6b-curd/outcome', MANAGER, { decision: 'rejected', reason: 'too deep for this curd' })).status).toBeLessThan(300);
   });
 
+  it('OB-770 B: with fresh stock of the product at the store, the rule never cuts its price — counted again just before pricing', async () => {
+    await ok(send('POST', '/v1/inventory/movements', OWNER, { movementId: `m-s1-milk-${T}`, productId: 'p-milk', locationId: 'S1', kind: 'received', quantityMinor: 12, uom: 'ea', occurredAt: new Date(Date.now() - 3_600_000).toISOString(), enteredBy: OWNER, unitCostMinor: 2_000 }), 'fresh milk at S1');
+    await raise('a03-step6b-milk', 'A03', { kind: 'markdown_short_dated', productId: 'p-milk', batchId: 'b-milk-old', percentOffBps: 1_000, daysToExpiry: 5, storeId: 'S1', currentPriceMinor: 3_000, newPriceMinor: 2_700, mrpMinor: 3_200, costMinor: 2_000, surplusQty: 4, otherStockAtStore: 0 });
+    const d = (await sweep()).find((x) => x.proposalId === 'a03-step6b-milk')!;
+    expect(d).toMatchObject({ outcome: 'waits_for_a_person', because: 'refused_by_route', refusedBy: { code: 'fresh_stock_at_store' } });
+    expect(d.detail).toMatch(/12 more of p-milk is at S1/);
+  });
+
   it('a transfer inside its limit is raised by the rule — a person dispatches it, another receives it', async () => {
     await raise('a03-step6b-soap-move', 'A03', { kind: 'stock_transfer', productId: 'p-soap', fromLocationId: 'WH', toLocationId: 'S1', qty: 24, valueMinor: 72_000, uom: 'ea' });
     const d = (await sweep()).find((x) => x.proposalId === 'a03-step6b-soap-move')!;

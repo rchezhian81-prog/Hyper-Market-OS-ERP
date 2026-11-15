@@ -121127,6 +121127,9 @@
                             },
                             "basis": {
                               "type": "string"
+                            },
+                            "otherStockAtStore": {
+                              "type": "number"
                             }
                           },
                           "additionalProperties": true
@@ -122586,6 +122589,9 @@
                         },
                         "basis": {
                           "type": "string"
+                        },
+                        "otherStockAtStore": {
+                          "type": "number"
                         }
                       },
                       "additionalProperties": true
@@ -308475,6 +308481,9 @@
                   },
                   "basis": {
                     "type": "string"
+                  },
+                  "otherStockAtStore": {
+                    "type": "number"
                   }
                 },
                 "additionalProperties": true

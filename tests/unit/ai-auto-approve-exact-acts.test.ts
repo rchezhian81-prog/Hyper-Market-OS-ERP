@@ -46,15 +46,20 @@ describe('A02 reorder — up to the max level, at the last price (OB-761 A)', ()
 });
 
 describe('A03 markdown — the D-4 ladder, only for the surplus (OB-762 A)', () => {
-  const md = { productId: 'CURD', batchId: 'b-curd-1', storeId: 'br-1', shelfPriceMinor: 4_000, mrpMinor: 4_500, costMinor: 2_600 };
+  const md = { productId: 'CURD', batchId: 'b-curd-1', storeId: 'br-1', shelfPriceMinor: 4_000, mrpMinor: 4_500, costMinor: 2_600, otherStockAtStore: 0 };
   it('cuts by the ladder for the days left when a surplus will not sell in time', () => {
     const r = markdownActOf({ ...md, daysToExpiry: 3, onHand: 24, avgDailyDemand: 4 });
     expect(r.act).toEqual({
       kind: 'markdown_short_dated', productId: 'CURD', batchId: 'b-curd-1', percentOffBps: 2_500, daysToExpiry: 3, storeId: 'br-1',
-      currentPriceMinor: 4_000, newPriceMinor: 3_000, mrpMinor: 4_500, costMinor: 2_600, surplusQty: 12,
+      currentPriceMinor: 4_000, newPriceMinor: 3_000, mrpMinor: 4_500, costMinor: 2_600, surplusQty: 12, otherStockAtStore: 0,
       basis: expect.stringMatching(/12 of 24.*25%/),
     });
     expect(markdownActOf({ ...md, daysToExpiry: 1, onHand: 24, avgDailyDemand: 4 }).act).toMatchObject({ percentOffBps: 5_000, newPriceMinor: 2_000 });
+  });
+
+  it('OB-770 B: no act while ANY other stock of the product is at the store (fresh stock is never cut by a rule), or when that is not known', () => {
+    expect(markdownActOf({ ...md, otherStockAtStore: 6, daysToExpiry: 3, onHand: 24, avgDailyDemand: 4 })).toMatchObject({ why: expect.stringMatching(/6 more .*fresh stock/i) });
+    expect(markdownActOf({ ...md, otherStockAtStore: undefined, daysToExpiry: 3, onHand: 24, avgDailyDemand: 4 })).toMatchObject({ why: expect.stringMatching(/not known/i) });
   });
 
   it('no act when it will sell in time, or the price, MRP or cost is not on record', () => {
