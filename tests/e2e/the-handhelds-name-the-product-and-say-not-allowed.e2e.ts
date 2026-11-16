@@ -145,6 +145,9 @@ describe.skipIf(!HAVE_BROWSER)('Round B: the handhelds name the product, read it
     });
     await page.clock.runFor(10_500); // the slow timer's first pass hands the work over — and the box answers 403
     await page.waitForSelector('#not-allowed:not([hidden])', { timeout: 10_000 });
+    // The banner can first show from the badge's own 403 (no reason yet); the hand-over's 403 then adds the store
+    // computer's reason. Wait for that answer rather than racing the two under a loaded runner.
+    await page.waitForFunction((reason) => ((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('not-allowed').textContent ?? '').includes(reason), REASON, { timeout: 10_000 });
     expect(await page.textContent('#not-allowed')).toContain('You are not allowed to send this work from this handheld');
     expect(await page.textContent('#not-allowed')).toContain(REASON);
     expect(await page.textContent('#box-text')).toBe('store computer says: not allowed');
