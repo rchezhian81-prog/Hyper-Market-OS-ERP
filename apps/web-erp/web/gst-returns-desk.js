@@ -33,6 +33,9 @@ function choice(id, wordKey, options) {
   return node('label', { htmlFor: id }, node('span', { w: wordKey }), select);
 }
 const val = (id) => el(id)?.value ?? '';
+/** D-051: a month picker (YYYY-MM) read as head office's MMYYYY; what cannot be read is passed on for the session to refuse. */
+const monthVal = (id) => { const v = val(id); return window.sreGstJobs?.mmyyyyOf(v) ?? v; };
+const monthBox = (mmyyyy) => window.sreGstJobs?.monthInputOf(mmyyyy) ?? mmyyyy;
 function said(id, out, okText) {
   const p = el(id);
   if (p === null) return;
@@ -87,7 +90,7 @@ function hsnTable(rows) {
 function buildG1() {
   const box = el('d-g1');
   const f = node('form', { id: 'g1-form' },
-    field('g1-month', 'month', { inputMode: 'numeric', maxLength: 6, value: lastMonth() }),
+    field('g1-month', 'month', { type: 'month', value: monthBox(lastMonth()) }),
     field('g1-gstin', 'gstin', { maxLength: 15 }),
     field('g1-turnover', 'turnover', { inputMode: 'decimal' }),
     node('button', { type: 'button', id: 'g1-return', class: 'quiet', w: 'showReturn' }),
@@ -102,11 +105,11 @@ function buildG1() {
     if (out.result === 'ok') { g1Last = { kind, v: out.value }; el('g1-said').textContent = ''; el('g1-said').className = 'said'; } else { g1Last = null; said('g1-said', out, ''); }
     paintG1Out();
   }));
-  show(el('g1-return'), 'return', () => desk.session.gstr1Return(val('g1-month')));
-  show(el('g1-t12'), 'table12', () => desk.session.table12(val('g1-month')));
-  show(el('g1-t12s'), 'fromSales', () => desk.session.table12FromSales(val('g1-month'), val('g1-turnover')));
+  show(el('g1-return'), 'return', () => desk.session.gstr1Return(monthVal('g1-month')));
+  show(el('g1-t12'), 'table12', () => desk.session.table12(monthVal('g1-month')));
+  show(el('g1-t12s'), 'fromSales', () => desk.session.table12FromSales(monthVal('g1-month'), val('g1-turnover')));
   el('g1-file').addEventListener('click', () => void busy(el('g1-file'), async () => {
-    const out = await desk.session.gstnFile(val('g1-month'), val('g1-gstin'));
+    const out = await desk.session.gstnFile(monthVal('g1-month'), val('g1-gstin'));
     if (out.result !== 'ok') { said('g1-said', out, ''); return; }
     // The file head office made, saved as it gave it — the person uploads it on the portal (nothing is filed here).
     const url = URL.createObjectURL(new Blob([out.value.text], { type: 'application/json' }));
@@ -231,7 +234,7 @@ function paintRegister() {
   if ((v.exceptions ?? []).length > 0) out.append(node('p', { class: 'said tone-error', text: `${v.exceptions.length} ${w('exceptions')}: ${v.exceptions.map((x) => x.detail).join('; ')}` }));
 }
 async function loadRegister() {
-  const out = await desk.session.rcmRegister(val('rcm-month'));
+  const out = await desk.session.rcmRegister(monthVal('rcm-month'));
   rcmReg = out.result === 'ok' ? out.value : null;
   if (out.result !== 'ok') said('rcm-said', out, '');
   paintRegister();
@@ -257,11 +260,11 @@ function buildRcm() {
     f.addEventListener('submit', (e) => { e.preventDefault(); void busy(el('rcm-buy'), async () => {
       const out = await desk.session.recordRcmPurchase({ supplierId: val('rcm-supplier'), supplyDate: val('rcm-date'), taxable: val('rcm-taxable'), placeOfSupply: val('rcm-place'), description: val('rcm-desc'), headCode: val('rcm-head') });
       said('rcm-said', out, `${w('purchaseSaved')}: ${out.result === 'ok' ? `${out.value.purchase?.purchaseId} — ${out.value.decision?.detail ?? ''}` : ''}`);
-      if (out.result === 'ok' && val('rcm-month') !== '') await loadRegister();
+      if (out.result === 'ok' && monthVal('rcm-month') !== '') await loadRegister();
     }); });
     kids.push(node('h3', { w: 'purchaseH' }), f);
   }
-  const reg = node('form', { id: 'rcm-reg-form' }, field('rcm-month', 'month', { inputMode: 'numeric', maxLength: 6, value: lastMonth() }), node('button', { type: 'submit', id: 'rcm-show', class: 'quiet', w: 'showRegister' }));
+  const reg = node('form', { id: 'rcm-reg-form' }, field('rcm-month', 'month', { type: 'month', value: monthBox(lastMonth()) }), node('button', { type: 'submit', id: 'rcm-show', class: 'quiet', w: 'showRegister' }));
   reg.addEventListener('submit', (e) => { e.preventDefault(); void busy(el('rcm-show'), loadRegister); });
   kids.push(node('h3', { w: 'registerH' }), reg, node('div', { id: 'rcm-reg' }));
   box.replaceChildren(...kids);

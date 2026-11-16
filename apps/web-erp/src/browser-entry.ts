@@ -283,6 +283,8 @@ import {
 } from './suppliers-session';
 import { createSupplierBillsSession, browserHeadOfficeCall, type SupplierBillsSession } from './supplier-bills-session';
 import { createOpenToBuySession, type OpenToBuySession } from './open-to-buy-session';
+import { createPaymentFactsReader, type PaymentFactsReader } from './payment-approval-facts'; // D-049
+import { GST_JOBS, GST_JOB_WORDS, partsHiddenFor, gstJobOf, mmyyyyOf, monthInputOf } from './gst-jobs'; // D-051
 import { createOrdersToIssueSession, ORDERS_TO_ISSUE_WORDS, type OrdersToIssueSession } from './orders-to-issue-session'; // D-042
 import {
   createIndentsSession,
@@ -592,6 +594,8 @@ export interface ReportingData {
   readonly unitsByCategory?: Readonly<Record<string, number>>;
   readonly unitsWithNoCategory?: number;
   readonly categoryNames?: Readonly<Record<string, string>>;
+  /** D-057: per department — items, weighed grams, the money its lines took. */
+  readonly salesByCategory?: Readonly<Record<string, { readonly items: number; readonly grams: number; readonly takenMinor: number; readonly linesWithNoMoney: number }>>;
 }
 
 /**
@@ -5373,6 +5377,11 @@ export function officeQuantityLabel(quantityMinor: number, uom: string): string 
 interface ManagerWindow {
   /** OB-606: the shop's day for every page — today, this month, a shown date — at the shop's clock, never the device's. */
   sreShopDay?: ShopDay;
+  /** D-051: the GST page's jobs and its month pickers (gst-jobs.ts). */
+  sreGstJobs?: {
+    readonly jobs: typeof GST_JOBS; readonly words: typeof GST_JOB_WORDS; readonly partsHiddenFor: typeof partsHiddenFor;
+    readonly jobOf: typeof gstJobOf; readonly mmyyyyOf: typeof mmyyyyOf; readonly monthInputOf: typeof monthInputOf;
+  };
   /** D-054: the store computer's longest gap between two pulls, in minutes. */
   sreStorePull?: { readonly maxMinutes: number };
   /** OB-31 (screen audit 31 Oct 2026): a held quantity as a person reads it — 2500 of a kg product is "2.500 kg", never "2500 kg". */
@@ -5792,6 +5801,8 @@ interface ManagerWindow {
   /** D-042: purchase orders waiting for their second person, on the Approvals page. */
   ordersToIssue?: OrdersToIssueSession;
   ordersToIssueWords?: typeof ORDERS_TO_ISSUE_WORDS;
+  /** D-049: a supplier payment's supplier name and bill match results, read for the Approvals page. */
+  paymentApprovalFacts?: PaymentFactsReader;
   /** The shell reads the live inbox through this and re-presents it — a GET read; decisions go through the session. */
   approvals?: {
     refresh(): Promise<ApprovalInboxView | null>;
@@ -6033,7 +6044,12 @@ export function readReceivingAids(data: ManagerData | undefined): Pick<ManagerCo
         const r = l as Record<string, unknown>;
         return isStr(r['productId']) && Number.isInteger(r['dueMinor']) && (r['dueMinor'] as number) >= 0 ? [{ productId: r['productId'], dueMinor: r['dueMinor'] as number }] : [];
       });
-      orders.push({ poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '', due });
+      orders.push({
+        poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '',
+        ...(isStr(o['deliverToLocationId']) ? { deliverToLocationId: o['deliverToLocationId'] } : {}), // D-017
+        ...(isStr(o['supplierName']) ? { supplierName: o['supplierName'] } : {}), // D-033
+        due,
+      });
     }
     out.openDeliveries = orders;
   }
@@ -6832,6 +6848,7 @@ export function reportingPortsFromData(data: ReportingData | undefined): Reporti
     // NOT defaulted to `{}`. An empty name map and no name map read the same to a lookup, but the
     // report needs to know the difference: with no map it shows department ids and says so.
     categoryNames: () => data?.categoryNames,
+    salesByCategory: () => data?.salesByCategory,
   };
 }
 
@@ -6868,6 +6885,8 @@ const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   // OB-606: one shop's day for every page in this bundle (each page's own script reads its dates from it).
   browserWindow.sreShopDay = shopDay();
+  // D-051 (fix batch 5): the GST page by job, and its month pickers read as head office's MMYYYY.
+  browserWindow.sreGstJobs = Object.freeze({ jobs: GST_JOBS, words: GST_JOB_WORDS, partsHiddenFor, jobOf: gstJobOf, mmyyyyOf, monthInputOf });
   // D-054: how soon a store computer that is online takes a pack just sent — the store computer's own loop timing.
   browserWindow.sreStorePull = Object.freeze({ maxMinutes: storePullMaxMinutes() });
   // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
@@ -7489,6 +7508,9 @@ if (browserWindow !== undefined) {
       readBoxProductNames,
     );
   }
+  // D-049 (fix batch 5): a supplier payment on Approvals shows the supplier by name and the bills it pays with their match
+  // result, read from head office's account of the supplier as the person signed in. Read only.
+  if (typeof approvalsData?.userId === 'string' && approvalsData.userId.trim() !== '') browserWindow.paymentApprovalFacts = createPaymentFactsReader();
   // The Workforce guidance inbox (A10): boots from the box's policy (who + what they hold), then the shell
   // refreshes the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. A10
   // flags; a manager acts (assign or complete the task the ordinary way), and setting guidance aside is a HUMAN

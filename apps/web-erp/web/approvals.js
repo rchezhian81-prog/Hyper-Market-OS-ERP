@@ -85,6 +85,24 @@ function fact(label, value) {
   return s;
 }
 
+const paymentReads = new Map();
+/** D-049: the supplier and the bills a payment pays, read live; the lines arrive when head office answers. */
+function paymentFactsNode(r) {
+  const reader = window.paymentApprovalFacts;
+  const box = document.createElement('ul'); box.className = 'pay-facts'; box.setAttribute('aria-label', reader.words[lang]?.bills ?? reader.words.en.bills);
+  const say = (lines) => box.replaceChildren(...lines.map((l) => { const li = document.createElement('li'); li.textContent = l.text; if (l.warn) li.className = 'warn'; return li; }));
+  say([{ text: reader.words[lang].reading, warn: false }]);
+  // One read per payment while the page is open — a repaint (the language toggle, the inbox refresh) reuses it.
+  const key = `${r.requestId}`;
+  if (!paymentReads.has(key)) paymentReads.set(key, reader.read(r.payment.supplierId, r.payment.settles));
+  void paymentReads.get(key).then((out) => {
+    const w = reader.words[lang];
+    if (out.result === 'ok') say(reader.lines(lang, out.value, r.payment.supplierId, r.payment.method));
+    else say([{ text: out.result === 'lost_link' ? w.unreachable : w.notReadable, warn: true }]);
+  });
+  return box;
+}
+
 /** One request — the action in plain words, the summary, the facts, and exactly what will happen. */
 function requestNode(r, waitingForMe) {
   const li = document.createElement('li');
@@ -106,6 +124,8 @@ function requestNode(r, waitingForMe) {
   if (r.subjectRef) facts.append(fact(t('aboutLabel'), r.subjectRef));
 
   li.append(head, summary, statusNode(r.status), facts);
+  // D-049 (fix batch 5): a supplier payment shows the supplier by name and each bill it pays with head office's match result.
+  if (r.payment && window.paymentApprovalFacts) li.append(paymentFactsNode(r));
   // OB-420: who alone may decide it (a floor-device review: the named security reviewer), or that nobody can yet.
   if (r.whoDecides) { const who = statusNode(r.whoDecides); who.classList.add('who-decides'); li.append(who); }
 

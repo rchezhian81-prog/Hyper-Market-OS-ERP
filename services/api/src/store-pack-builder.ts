@@ -47,6 +47,7 @@ import {
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
   issuedReceiptSeries, bankedReceiptCounts, complianceAdapter, replenishmentParametersAdapter,
+  foldSupplierRecords, // Fix batch 5 · D-033: the supplier's name beside each open delivery
 } from './adapters';
 import { parametersAt } from '../../inventory/src/replenishment-parameters'; // OB-630
 import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
@@ -367,6 +368,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   const receipts = await goodsReceiptAdapter({ store, now }).all(tenantId);
   const asns = new Map<string, Awaited<ReturnType<typeof deliveryAsnOf>>>();
   for (const d of openDeliveriesFor(orders, storeId, branchOf)) asns.set(d.poId, await deliveryAsnOf(store, tenantId, d.poId));
+  const supplierRecords = await foldSupplierRecords(store, tenantId);
   const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
     const po = orders.find((o) => o.poId === d.poId)!;
     const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
@@ -378,6 +380,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const grnId = `grn-${d.poId}-${n}`;
     return {
       poId: d.poId, number: d.number, supplierId: d.supplierId, deliverToLocationId: d.deliverToLocationId, grnId,
+      // Fix batch 5 · D-033: the supplier's NAME on the handheld and on Receive, never only its code (absent = no master record).
+      ...(supplierRecords.get(d.supplierId)?.name === undefined ? {} : { supplierName: supplierRecords.get(d.supplierId)!.name }),
       ordered: d.lines.filter((l) => l.openQty > 0).map((l) => ({
         // already in smallest steps on the order (OB-31) — passed through, never scaled twice
         productId: l.productId, quantityMinor: l.openQty,

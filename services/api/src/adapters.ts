@@ -8946,7 +8946,7 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
 }
 
 /** The supplier master's latest version per supplier — append-only versions, the highest applies. */
-async function foldSupplierRecords(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, SupplierRecord>> {
+export async function foldSupplierRecords(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, SupplierRecord>> {
   const byId = new Map<string, SupplierRecord>();
   for (const r of await allOf<SupplierRecord>(store, tenantId, SUPPLIERS_STREAM, 'SupplierRecorded')) {
     const cur = byId.get(r.supplierId);

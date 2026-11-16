@@ -90,6 +90,7 @@ const WORDS = {
     noCloud: 'store computer cannot reach head office', cloudLoginRefused: 'store computer\'s head office login needs renewing', cloudNotSetUp: 'no head office link set up',
     cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
+    goodsInAsAt: 'This list is as the store computer last heard from head office: {at}.', refreshList: 'Refresh the list',
     goodsIn: 'Waiting to be put away', noWork: 'No warehouse work has been given to this handheld yet.',
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
     sample: 'Sample assignment — this is not real work.',
@@ -195,6 +196,7 @@ const WORDS = {
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudLoginRefused: 'கடை கணினியின் தலைமை அலுவலக உள்நுழைவைப் புதுப்பிக்க வேண்டும்', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
     cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த கருவிக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
+    goodsInAsAt: 'இந்தப் பட்டியல் தலைமை அலுவலகத்திடமிருந்து கடை கணினி கடைசியாகப் பெற்றபடி: {at}.', refreshList: 'பட்டியலைப் புதுப்பிக்கவும்',
     goodsIn: 'அடுக்க வைக்கக் காத்திருப்பவை', noWork: 'இந்த கருவிக்கு இதுவரை கிடங்கு வேலை தரப்படவில்லை.',
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
@@ -360,7 +362,8 @@ function sayAmount(node, quantityMinor, uom, tail = '') {
 /** UI-2: the header — the job in words, then the worker's code and the assignment, each named. */
 function paintHeader() {
   el('who').firstChild.textContent = `${t('screenTitle')} `; // the space keeps the heading two phrases to a screen reader
-  const parts = [data && data.workerId ? `${t('staffWord')} ${data.workerId}` : null, data && data.assignmentId ? `${t('jobWord')} ${data.assignmentId}` : null].filter((x) => x !== null);
+  // Fix batch 5 · D-033: the person's code only — the assignment's internal id ("Job warehouse-…") said nothing to them.
+  const parts = [data && data.workerId ? `${t('staffWord')} ${data.workerId}` : null].filter((x) => x !== null);
   el('assignment').textContent = parts.join(' · ');
 }
 
@@ -608,6 +611,14 @@ function render() {
 
   say(el('goods-in-heading'), t('goodsIn'), 'layers');
   el('goods-in-heading').dataset.count = String(items.length);
+  // Fix batch 5 · D-033: say how old the list is, and let the person read it again (a reload keeps the chosen delivery, and
+  // the work on this handheld is on its durable queue, so nothing is lost).
+  const asAt = data && typeof data.goodsInAsAt === 'string' ? new Date(data.goodsInAsAt) : null;
+  el('goods-in-asat').hidden = asAt === null || Number.isNaN(asAt.getTime());
+  if (!el('goods-in-asat').hidden) {
+    el('goods-in-asat').textContent = t('goodsInAsAt').replace('{at}', new Intl.DateTimeFormat(lang === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }).format(asAt));
+  }
+  say(el('goods-in-refresh'), t('refreshList'), 'refresh-cw');
   say(el('receive'), t('receive'), 'truck');
   renderDeliveries();
   renderTemp();
@@ -939,8 +950,9 @@ function renderDeliveries() {
     row.href = `?delivery=${encodeURIComponent(d.poId)}`;
     const current = data.poId === d.poId;
     row.setAttribute('aria-current', current ? 'true' : 'false');
-    const units = d.ordered.reduce((n, o) => n + o.quantityMinor, 0);
-    row.textContent = `${d.number} · ${d.supplierId} · ${d.ordered.length} × ${units} — ${current ? t('receivingThis') : t('chooseThis')}`;
+    // Fix batch 5 · D-033: the order number and the supplier's NAME only (its code only when head office holds no name);
+    // the "4 × 40" figure (lines × units) read as a multiplication and is gone.
+    row.textContent = `${d.number} · ${typeof d.supplierName === 'string' && d.supplierName !== '' ? d.supplierName : d.supplierId} — ${current ? t('receivingThis') : t('chooseThis')}`;
     return row;
   }));
   // D-031 (fix batch 3): any delivery waiting and none chosen — even ONE — the receiver says which order is at the door
@@ -957,6 +969,8 @@ function renderDeliveries() {
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
+// Fix batch 5 · D-033: read the put-away list again from the store computer (the queue of work done here is kept on the device).
+el('goods-in-refresh').addEventListener('click', () => { window.location.reload(); });
 el('receive').addEventListener('click', async () => {
   // OB-773 (pilot audit B-3): a person who may not receive a delivery (a Warehouse user, OB-623) is told so HERE, before the
   // scan panel opens — who can receive, and that nothing was recorded — instead of scanning goods head office will refuse.
@@ -1320,7 +1334,7 @@ function renderDsd() {
   if (!open) {
     const c = dsd.choices();
     const buttons = [
-      ...c.orders.map((o) => ({ key: `po:${o.poId}`, text: `${o.number} · ${o.supplierId}`, choice: { poId: o.poId } })),
+      ...c.orders.map((o) => ({ key: `po:${o.poId}`, text: `${o.number} · ${typeof o.supplierName === 'string' && o.supplierName !== '' ? o.supplierName : o.supplierId}`, choice: { poId: o.poId } })),
       ...c.routes.map((r) => ({ key: `route:${r.routeId}`, text: `${dt('route')} ${r.routeId} · ${r.supplierId}`, choice: { routeId: r.routeId, supplierId: r.supplierId } })),
     ];
     el('dsd-choose-hint').textContent = buttons.length === 0 ? dt('nothingToChoose') : t('chooseDelivery');

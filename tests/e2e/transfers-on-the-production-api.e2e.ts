@@ -104,7 +104,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       // He sent it, so he cannot also count it in (§28) — head office's words; nothing is received.
       for (const [i, q] of ['10', '4'].entries()) await s.page.locator(`#d-receive-lines input.arrived[data-index="${i}"]`).fill(q);
       await s.page.click('#d-receive');
-      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR} dispatched transfer t-1 and cannot also count it in at br-1 \\(§28\\)`));
+      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR} dispatched transfer t-1 and cannot also count it in at br-1 — the receiving count must be a different person`)); // D-048: no requirement code
       await s.page.click('#d-close');
       // More than the back store holds: refused by head office, nothing moves.
       await look(s.page, 't-2');
@@ -136,7 +136,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       await s.page.locator('#d-short input.found').fill('1');
       await s.page.fill('#d-note', 'searched the van and the floor');
       await s.page.click('#d-resolve');
-      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR2} counted transfer t-1 and cannot also resolve its shortfall \\(§28\\)`));
+      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR2} counted transfer t-1 and cannot also resolve its shortfall`)); // D-048: no requirement code
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     expect(await transfer('t-1')).toMatchObject({ state: 'received', receivedBy: MGR2 });

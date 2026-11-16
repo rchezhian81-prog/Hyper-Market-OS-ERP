@@ -2170,18 +2170,26 @@ export function buildSurface(deps: {
               },
             };
           })(),
-          // EA-07: the day's figures from the SAME governed producer as the sales-by-day report, stamped with its source
-          // freshness; head office has no cost of goods or banked cash for the day, so those are said "not available".
+          // EA-07: the day's figures from the SAME governed producers as the owner's dashboard (sales by day, margin),
+          // stamped with the sales source's freshness; head office has no banked cash for the day, so that is "not available".
           calendar: shopCalendar,
           dayFigures: async (tenantId, tradingDay) => {
             const day = await producers!.produce(tenantId, 'sales_by_day', { tradingDay, scope: 'all' });
             const taken = day.figures.find((f) => f.name === 'Taken');
             const bills = day.figures.find((f) => f.name === 'Bills');
+            // D-056: the brief's sales and margin are the SAME governed figures as the owner's dashboard (the margin
+            // report: net of GST, at the average buying cost) — "not available" only when that report itself cannot say.
+            const margin = await producers!.produce(tenantId, 'margin', { tradingDay, scope: 'all' });
+            const net = margin.figures.find((f) => f.name === 'Taken net of GST');
+            const kept = margin.figures.find((f) => f.name === 'Margin');
+            const bps = margin.figures.find((f) => f.name === 'Margin (basis points of net)');
             const asAt = taken?.asAt ?? null;
             return {
               tradingDay,
               ...(taken?.valueMinor === undefined ? {} : { grossTakenMinor: taken.valueMinor }),
               ...(bills?.valueMinor === undefined ? {} : { basketCount: bills.valueMinor }),
+              ...(net?.valueMinor === undefined ? {} : { netSalesMinor: net.valueMinor }),
+              ...(kept?.valueMinor === undefined || bps?.valueMinor === undefined ? {} : { marginMinor: kept.valueMinor, marginBps: bps.valueMinor }),
               ...(asAt === null ? {} : { dataAgeMinutes: Math.max(0, Math.round((Date.parse(now()) - Date.parse(asAt)) / 60_000)) }),
             };
           },

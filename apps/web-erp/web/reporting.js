@@ -312,7 +312,7 @@ const shopTime = (at) => (at ? window.sreShopDay?.dateTimeOf(at) || at : '');
 const fillIn = (text, values) => Object.entries(values).reduce((w, [k, v]) => w.split(`{${k}}`).join(String(v)), text);
 function coversLine() {
   const d = window.reportingData ?? {};
-  return fillIn(t('covers'), { store: d.branchId || d.storeId || t('notToldStore'), day: d.tradingDay || t('notToldStore'), time: shopTime(d.now) || t('notToldStore') });
+  return fillIn(t('covers'), { store: d.storeName || d.branchId || d.storeId || t('notToldStore'), day: d.tradingDay || t('notToldStore'), time: shopTime(d.now) || t('notToldStore') });
 }
 
 /**
@@ -326,10 +326,12 @@ const CHARTS = {
   tender_mix: { kind: 'bars', key: 'key', value: 'totalMinor', money: true },
   units_by_category: { kind: 'bars', key: 'department', value: 'units', money: false },
 };
+// D-057: a department report that carries the money its lines took is drawn in rupees, largest first.
+const DEPARTMENT_MONEY = { kind: 'bars', key: 'department', value: 'takenMinor', money: true };
 function renderReportChart(outcome) {
   const host = el('report-chart');
   host.replaceChildren();
-  const how = CHARTS[outcome.report.id];
+  const how = outcome.report.id === 'units_by_category' && outcome.rows.some((r) => r.takenMinor !== undefined) ? DEPARTMENT_MONEY : CHARTS[outcome.report.id];
   if (how === undefined || window.sreCharts === undefined) return;
   const number = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
   const rows = (how.oldestFirst ? [...outcome.rows].sort((a, b) => String(a[how.key]).localeCompare(String(b[how.key]))) : outcome.rows).map((r) => {
@@ -373,7 +375,12 @@ function renderReport(outcome) {
     const numeric = (k) => outcome.rows.every((r) => r[k] === undefined || r[k] === null || r[k] === '' || Number.isFinite(Number(r[k])));
     o.table(el('report-rows'), {
       id: 'report', label: t('rowsLabel'), pageSize: 25, rows: outcome.rows,
-      columns: keys.map((k) => ({ key: k, label: k, sort: numeric(k) ? 'number' : 'text', align: numeric(k) ? 'end' : undefined, value: (r) => (r[k] === undefined ? '' : r[k]) })),
+      // D-057: a column holding money (…Minor) is shown in rupees, sorted by its number; known columns read as words.
+      columns: keys.map((k) => ({
+        key: k, label: columnLabel(k), sort: numeric(k) ? 'number' : 'text', align: numeric(k) || /Minor$/.test(k) ? 'end' : undefined,
+        value: (r) => (r[k] === undefined ? '' : r[k]),
+        ...(/Minor$/.test(k) ? { render: (r) => (r[k] === undefined || r[k] === '' || !Number.isFinite(Number(r[k])) ? (r[k] ?? '') : inr(Number(r[k]))) } : {}),
+      })),
     });
     return;
   }
@@ -404,6 +411,13 @@ function renderReport(outcome) {
   }
   el('report-rows').replaceChildren(table);
 }
+
+/** D-057: the column headings a person reads (English and Tamil); any other key is shown as the report names it. */
+const COLUMN_WORDS = {
+  department: { en: 'Department', ta: 'துறை' }, takenMinor: { en: 'Taken', ta: 'வசூல்' }, items: { en: 'Items', ta: 'பொருட்கள்' },
+  weighed: { en: 'Weighed', ta: 'எடை' }, units: { en: 'Items sold', ta: 'விற்ற பொருட்கள்' }, totalMinor: { en: 'Taken', ta: 'வசூல்' },
+};
+function columnLabel(k) { return COLUMN_WORDS[k]?.[lang] ?? COLUMN_WORDS[k]?.en ?? k; }
 
 function figureBox(f) {
   const box = document.createElement('div');

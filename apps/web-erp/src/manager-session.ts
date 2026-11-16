@@ -449,7 +449,25 @@ export interface OpenDelivery {
   readonly poId: string;
   readonly number: string;
   readonly supplierId: string;
+  /** Fix batch 5 · D-033: the supplier's name (absent = head office holds no master record for it). */
+  readonly supplierName?: string;
+  /** Fix batch 5 · D-017: the place the order says the goods are delivered to (absent = the store computer was not told). */
+  readonly deliverToLocationId?: string;
   readonly due: readonly { readonly productId: string; readonly dueMinor: number }[];
+}
+
+/** Fix batch 5 · D-017: a place a delivery can be booked into — this store's shelves or the back store. */
+export interface ReceivePlace {
+  readonly locationId: string;
+  readonly kind: 'store' | 'back_store';
+}
+
+/** Fix batch 5 · D-017: the place chosen on Receive is not one of this store's places. Nothing was saved. */
+export class ReceivePlaceRefusedError extends Error {
+  constructor(readonly locationId: string, readonly places: readonly string[]) {
+    super(`${locationId} is not a place of this store (${places.join(', ')})`);
+    this.name = 'ReceivePlaceRefusedError';
+  }
 }
 
 /** Fix batch 4b · D-029: an order's lines as the Receive form starts them — the item's name and what is still due. */
@@ -484,6 +502,11 @@ export interface ReceiveInput {
   readonly lines: readonly ReceiptLineInput[];
   /** OB-172: the receiving checklist the manager did at the door (needed for chilled, frozen or raw-meat goods). */
   readonly checklist?: DockChecklistAnswer;
+  /**
+   * Fix batch 5 · D-017: where the goods are booked in — this store or its back store. Absent = the place the chosen order
+   * names, else the back store (as before).
+   */
+  readonly locationId?: string;
 }
 
 /**
@@ -614,6 +637,10 @@ export interface ManagerSession {
   productName(productId: string): string;
   /** Fix batch 4b · D-029: which of these products are BATCH-TRACKED (they need a batch and an expiry). */
   batchTrackedAmong(productIds: readonly string[]): readonly string[];
+  /** Fix batch 5 · D-017: the places a delivery can be booked into (this store first), each once. */
+  receivePlaces(): readonly ReceivePlace[];
+  /** Fix batch 5 · D-017: where a delivery against this order is booked by default — the place the order names, if it is one of ours. */
+  defaultReceivePlace(poId: string | null): string;
   /** Capture a blind count and queue it for head office to reconcile (M09-FR-04). Nothing here reveals — or computes — the expected. */
   countStock(input: CountInput): CountAttempt;
   /** Everything standing between this store and a closed day — enumerated, never just counted. */
@@ -880,8 +907,16 @@ export function createManagerSession(
     productName: (productId) => config.productNames?.[productId] ?? productId,
     batchTrackedAmong: (productIds) => (config.batchTrackedProductIds === undefined ? [] : [...new Set(productIds)].filter((p) => config.batchTrackedProductIds!.includes(p)).sort()),
 
+    receivePlaces: () => receivePlacesOf(config),
+    defaultReceivePlace: (poId) => defaultReceivePlaceOf(config, poId),
+
     receive: (rawInput) => {
       if (config.manager === null) throw new NobodyNamedError('book a delivery in');
+      // Fix batch 5 · D-017: book the goods where they are — the place chosen, else the place the order names — and only
+      // ever at one of this store's own places (head office checks the order's store again).
+      const placeIds = receivePlacesOf(config).map((p) => p.locationId);
+      const bookAt = rawInput.locationId ?? defaultReceivePlaceOf(config, rawInput.poId);
+      if (!placeIds.includes(bookAt)) throw new ReceivePlaceRefusedError(bookAt, placeIds);
       // Fix batch 4b · D-029 (offline): every line read the one way — an expiry with no batch printed is its own dated batch;
       // an expiry that is not a date, more damaged than arrived, or a batch-tracked item without batch and expiry is refused.
       const problems = receiptLineProblems(rawInput.lines, config.batchTrackedProductIds);
@@ -918,7 +953,7 @@ export function createManagerSession(
           id: input.grnId,
           number: input.number,
           poId: input.poId,
-          warehouseId: config.warehouseId,
+          warehouseId: bookAt,
           receivedBy: config.manager.userId,
           receivedAt: input.receivedAt,
           lines: input.lines,
@@ -1043,4 +1078,19 @@ export function createManagerSession(
     exceptions: () => ports.openExceptions(config.tradingDay),
     tasks: () => ports.tasks(config.tradingDay),
   };
+}
+
+/** Fix batch 5 · D-017: this store's places a delivery can be booked into — the store's own shelves first, then the back store. */
+function receivePlacesOf(config: { readonly storeId: string; readonly warehouseId: string }): readonly ReceivePlace[] {
+  const places: ReceivePlace[] = [{ locationId: config.storeId, kind: 'store' }];
+  if (config.warehouseId !== config.storeId) places.push({ locationId: config.warehouseId, kind: 'back_store' });
+  return places;
+}
+
+/** Fix batch 5 · D-017: the place the chosen order names when it is one of this store's, else the back store (as before). */
+function defaultReceivePlaceOf(
+  config: { readonly storeId: string; readonly warehouseId: string; readonly openDeliveries?: readonly OpenDelivery[] }, poId: string | null,
+): string {
+  const named = poId === null ? undefined : config.openDeliveries?.find((d) => d.poId === poId)?.deliverToLocationId;
+  return named !== undefined && receivePlacesOf(config).some((p) => p.locationId === named) ? named : config.warehouseId;
 }

@@ -24,7 +24,7 @@ const WORDS = {
   en: {
     hoTitle: 'This month\'s GST, from head office',
     hoLead: 'GSTR-3B is worked out from the till\'s banked sales less returns — never typed in. Once GSTR-1 is filed it is locked to it; a sale that reaches head office later is corrected by an amendment in the next month.',
-    controlsHeading: 'Controls', periodLabel: 'Month (MMYYYY)', show: 'Show',
+    controlsHeading: 'Controls', periodLabel: 'Month', show: 'Show',
     rcm: 'Reverse charge', guard: '30-day e-invoice guard', window: 'Warning before the 3-year bar',
     on: 'ON', off: 'SWITCHED OFF', notSet: 'NOT SET', days: 'days', ownerDecision: 'owner\'s decision',
     basis_provisional_gstr1_not_filed: 'Provisional — GSTR-1 for this month is not filed yet',
@@ -44,13 +44,13 @@ const WORDS = {
     findingsNote: 'Head office\'s findings are in English.', m_month_not_filed: 'GSTR-1 not filed and locked', m_gstr3b_not_recorded_filed: 'GSTR-3B not recorded as filed', m_gstr1_not_filed_and_locked: 'GSTR-1 not filed and locked',
     annualHeading: 'Annual return', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'complete — all twelve months filed', incomplete: 'INCOMPLETE — months missing', openDiffs: 'difference(s) without a reason', noOpen: 'every difference has a reason',
     locked: 'Locked', amended: 'Amendment recorded — declared in', refused: 'Not done', unreachable: 'Head office could not be reached. Nothing was changed — try again.',
-    cannotRead: 'This could not be read from head office. Nothing here is current.', badPeriod: 'Write the month as MMYYYY, e.g. 052026.',
-    periodHelp: 'Six digits: the month, then the year — for example 052026.',
+    cannotRead: 'This could not be read from head office. Nothing here is current.', badPeriod: 'Pick a month.',
+    periodHelp: 'Pick the month from the calendar.',
   },
   ta: {
     hoTitle: 'இந்த மாத GST, தலைமை அலுவலகத்திலிருந்து',
     hoLead: 'GSTR-3B கல்லாவில் வங்கியில் செலுத்திய விற்பனையிலிருந்து திருப்பியவை கழித்துக் கணக்கிடப்படுகிறது — தட்டச்சு செய்யப்படுவதில்லை. GSTR-1 தாக்கல் ஆனதும் அதனுடன் பூட்டப்படும்; பின்னர் வரும் விற்பனை அடுத்த மாதத் திருத்தமாகச் சரிசெய்யப்படும்.',
-    controlsHeading: 'கட்டுப்பாடுகள்', periodLabel: 'மாதம் (MMYYYY)', show: 'காட்டு',
+    controlsHeading: 'கட்டுப்பாடுகள்', periodLabel: 'மாதம்', show: 'காட்டு',
     rcm: 'தலைகீழ் வரி (RCM)', guard: '30 நாள் மின்-விலைப்பட்டியல் காவல்', window: '3 ஆண்டு தடைக்கு முன் எச்சரிக்கை',
     on: 'இயக்கத்தில்', off: 'நிறுத்தப்பட்டுள்ளது', notSet: 'அமைக்கப்படவில்லை', days: 'நாள்', ownerDecision: 'உரிமையாளர் முடிவு',
     basis_provisional_gstr1_not_filed: 'தற்காலிகம் — இந்த மாத GSTR-1 இன்னும் தாக்கல் ஆகவில்லை',
@@ -70,8 +70,8 @@ const WORDS = {
     findingsNote: 'தலைமை அலுவலகத்தின் கண்டுபிடிப்புகள் ஆங்கிலத்தில் உள்ளன.', m_month_not_filed: 'GSTR-1 தாக்கல் செய்து பூட்டப்படவில்லை', m_gstr3b_not_recorded_filed: 'GSTR-3B தாக்கல் செய்ததாகப் பதிவாகவில்லை', m_gstr1_not_filed_and_locked: 'GSTR-1 தாக்கல் செய்து பூட்டப்படவில்லை',
     annualHeading: 'ஆண்டு வருமானம்', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'முழுமை — பன்னிரண்டு மாதமும் தாக்கல்', incomplete: 'முழுமையில்லை — மாதங்கள் விடுபட்டுள்ளன', openDiffs: 'காரணமில்லாத வேறுபாடு(கள்)', noOpen: 'ஒவ்வொரு வேறுபாட்டிற்கும் காரணம் உள்ளது',
     locked: 'பூட்டப்பட்டது', amended: 'திருத்தம் பதிவானது — அறிவிக்கப்படும் மாதம்', refused: 'செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் மாறவில்லை — மீண்டும் முயலவும்.',
-    cannotRead: 'இதைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', badPeriod: 'மாதத்தை MMYYYY ஆக எழுதுங்கள், எ.கா. 052026.',
-    periodHelp: 'ஆறு இலக்கங்கள்: மாதம், பிறகு ஆண்டு — எ.கா. 052026.',
+    cannotRead: 'இதைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', badPeriod: 'ஒரு மாதத்தைத் தேர்ந்தெடுக்கவும்.',
+    periodHelp: 'நாட்காட்டியிலிருந்து மாதத்தைத் தேர்ந்தெடுக்கவும்.',
   },
 };
 const t = (key) => WORDS[lang]?.[key] ?? WORDS.en[key] ?? key;
@@ -333,10 +333,13 @@ async function refresh() {
   paint();
 }
 
-el('period').value = period;
+// D-051: the box is the browser's month picker (YYYY-MM); head office speaks MMYYYY.
+const months = window.sreGstJobs;
+el('period').value = months ? months.monthInputOf(period) : period;
 el('pick').addEventListener('submit', (event) => {
   event.preventDefault();
-  const v = el('period').value.trim();
+  const typed = el('period').value.trim();
+  const v = months ? (months.mmyyyyOf(typed) ?? '') : typed;
   if (!/^(0[1-9]|1[0-2])\d{4}$/.test(v)) {
     // OB-205: said beside the field too — what is wrong and how to write it — and the field is marked.
     el('period').setAttribute('aria-invalid', 'true');

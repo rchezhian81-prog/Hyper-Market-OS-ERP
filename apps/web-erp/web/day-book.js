@@ -161,6 +161,28 @@ function paint() {
   el('covered').textContent = view.posted ? `${t('coveredLabel')}: ${view.covered}` : '';
   el('open-count').textContent = view.openCount === 0 ? '' : `${view.openCount} ${t('openLabel')}`;
 
+  // D-050 (fix batch 5): the account names not set up — plainly, with the link; and the day as the tills sent it, before posting.
+  el('map-missing').hidden = !(permitted && view.mapMissing);
+  el('map-missing-text').textContent = t('mapMissing');
+  // A view without the tills' figures (head office cannot say, or an older store computer) shows no tills section.
+  const tills = view.tillsSent ?? null;
+  el('tills').hidden = !(permitted && tills !== null);
+  el('tills-heading').textContent = t('tillsHeading');
+  el('tills-lead').textContent = t('tillsLead');
+  if (tills !== null) {
+    const line = (text, cls) => { const li = document.createElement('li'); li.className = `row${cls ? ` ${cls}` : ''}`; li.textContent = text; return li; };
+    el('tills-rows').replaceChildren(...(tills.none ? [line(t('tillsNone'))] : [
+      line(tills.sales, 'tills-sales'),
+      ...(tills.takings.length === 0 ? [] : [line(`${t('tillsTakings')} — ${tills.takings.join(' · ')}`, 'tills-takings')]),
+      line(tills.returns, 'tills-returns'),
+      ...(tills.refunds.length === 0 ? [] : [line(`${t('tillsRefunds')} — ${tills.refunds.join(' · ')}`, 'tills-refunds')]),
+    ]));
+    el('tills-waiting').textContent = tills.none ? '' : tills.waiting;
+  } else {
+    el('tills-rows').replaceChildren();
+    el('tills-waiting').textContent = '';
+  }
+
   el('journals-heading').hidden = view.journals.length === 0;
   el('journals-heading').textContent = t('journalsHeading');
   el('journals').replaceChildren(...view.journals.map((j) => journalNode(j)));

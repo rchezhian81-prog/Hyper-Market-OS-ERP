@@ -38,7 +38,7 @@ export interface LoggedSale {
   readonly netMinor?: number;
   readonly taxMinor?: number;
   readonly currency?: string;
-  readonly lines?: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom?: string }[];
+  readonly lines?: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom?: string; readonly lineTotalMinor?: number }[];
   readonly tenders?: readonly { readonly kind?: string; readonly amount?: { readonly minor?: number } }[];
 }
 

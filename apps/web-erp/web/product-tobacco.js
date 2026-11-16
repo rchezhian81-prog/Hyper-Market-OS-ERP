@@ -42,7 +42,9 @@ function confirmForm(p) {
 function paint() {
   if (api === null || session === null) return;
   const sec = $('tobacco');
-  sec.hidden = !session.may.read;
+  // D-058: the tobacco health warning belongs on a TOBACCO product's page only — never beside a biscuit.
+  const isTobacco = read !== null && openedProduct !== '' && read.products.some((p) => p.productId === openedProduct);
+  sec.hidden = !session.may.read || !isTobacco;
   if (sec.hidden) return;
   for (const [id, k] of [['tobacco-h', 'h'], ['tobacco-lead', 'lead'], ['pictures-h', 'picturesH'], ['picture-form-h', 'recordH'], ['picture-note', 'recordNote'],
     ['l-tw-id', 'imageId'], ['l-tw-notified', 'notifiedOn'], ['l-tw-from', 'effectiveFrom'], ['l-tw-ref', 'reference'], ['l-tw-evidence', 'evidenceRef'], ['tw-record', 'record'], ['tobacco-products-h', 'productsH']]) $(id).textContent = t(k);
@@ -69,6 +71,10 @@ function paint() {
     return li;
   })));
 }
+
+/** D-058: the product the details page has open (its 'sre:product-opened' event). */
+let openedProduct = '';
+document.addEventListener('sre:product-opened', (e) => { openedProduct = String(e.detail?.productId ?? ''); paint(); });
 
 async function load() {
   const out = await session.read();

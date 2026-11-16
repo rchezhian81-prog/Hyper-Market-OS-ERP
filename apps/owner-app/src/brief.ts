@@ -254,11 +254,13 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
       : kpis.basketCount === 0
         ? `${plural(takings.bills)} today, ${rupees(takings.takenMinor)} taken — margin not known: ` +
           `the store computer has no cost for products on ${unc!.bills === 1 ? 'this bill' : 'these bills'}.${refundNote}${staleNote}`
-        : `${plural(kpis.basketCount)} today, ` +
-          `${rupees(kpis.grossSalesMinor)} taken, ` +
-          `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
-          `average basket ${rupees(takings.averageBasketMinor ?? 0)}.` +
-          (unc === undefined ? '' : ` Also ${plural(unc.bills)} (${rupees(unc.takenMinor)}) whose margin is not known — products with no cost.`) +
+        // D-055: the sentence leads with the SAME totals as the tiles (every bill, after refunds); the margin is the costed
+        // bills' — said in a few words, the full caveat lives on the margin tile.
+        : `${plural(takings.bills)} today, ` +
+          `${rupees(takings.takenMinor)} taken, ` +
+          `average basket ${rupees(takings.averageBasketMinor ?? 0)}, ` +
+          `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%)` +
+          (unc === undefined ? '.' : ` on the ${plural(kpis.basketCount)} with a cost.`) +
           refundNote + staleNote;
   // U3 (OB-699): the same summary in Tamil — the frame is the product's word; every figure is the same figure.
   const refundNoteTa = refunds === undefined ? '' : ` இன்றைய திருப்பங்கள்: ${rupees(refunds.refundedMinor)} — திருப்பங்களுக்குப் பிறகு ${rupees(takings.takenMinor)} வசூல்.`;
@@ -268,11 +270,11 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
       : kpis.basketCount === 0
         ? `இன்று ${takings.bills} பில்கள், ${rupees(takings.takenMinor)} வசூல் — லாபம் தெரியவில்லை: ` +
           `${unc!.bills === 1 ? 'இந்தப் பில்லில்' : 'இந்தப் பில்களில்'} உள்ள பொருட்களுக்கு கடைக் கணினியில் வாங்கிய விலை இல்லை.${refundNoteTa}${staleNoteTa}`
-        : `இன்று ${kpis.basketCount} பில்கள், ` +
-          `${rupees(kpis.grossSalesMinor)} வசூல், ` +
-          `லாபம் ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
-          `சராசரி பில் ${rupees(takings.averageBasketMinor ?? 0)}.` +
-          (unc === undefined ? '' : ` மேலும் ${unc.bills} பில்கள் (${rupees(unc.takenMinor)}) — லாபம் தெரியாதவை, வாங்கிய விலை இல்லாத பொருட்கள்.`) +
+        : `இன்று ${takings.bills} பில்கள், ` +
+          `${rupees(takings.takenMinor)} வசூல், ` +
+          `சராசரி பில் ${rupees(takings.averageBasketMinor ?? 0)}, ` +
+          `லாபம் ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%)` +
+          (unc === undefined ? '.' : ` — வாங்கிய விலை உள்ள ${kpis.basketCount} பில்களில்.`) +
           refundNoteTa + staleNoteTa;
 
   return {

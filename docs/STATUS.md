@@ -18,6 +18,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 5 of THE PLAN (16 November 2026) · warehouse, accountant, owner screens · OB-822 – OB-825
+- **Merged before this:** batches 4a (#944) and 4b (#945).
+- **Done (on its PR):**
+  - **Warehouse:** a delivery is booked where the order says (D-017). The handheld shows order number, supplier name and a refreshable list (D-033). Indents are shown by name (D-035, part). "Start a transfer" (D-036).
+  - **Accountant:** a payment is checked when it is asked for, and codes are gone from messages (D-048). Approvals show supplier, bills and match results (D-049). Day book shows what the tills sent (D-050). The GST page is split by job, with a month picker (D-051).
+  - **Owner:** people are shown by name and machine roles are hidden (D-053). Today and the brief use one set of figures (D-055, D-056). Department sales are in rupees and kg (D-057, part). Product details shows only what the category needs (D-058).
+- **Decided under OB-801:** OB-823, OB-824, OB-825. **Asked:** OB-822 (refill approval steps).
+- **Open:** margin per department (D-057). Fewer refill steps (D-035, waits for OB-822). D-014, D-022, D-023, D-025 (Annoys). D-003, D-013, D-021, D-034, D-046, D-052 (wait for the owner's answers).
+- **Next:** the remaining Annoys rows; then the full Bpal load with the owner.
+
 ## Fix batch 4b of THE PLAN (16 November 2026) · D-018, D-024, D-026, D-029, D-038 – D-041, D-054 · OB-817 – OB-821
 - **Done (on its PR, after #944):**
   - Receive picks the order from a list. Each line takes arrived, damaged, batch and expiry; damaged units are kept apart; received food reaches the expiry list (D-029).
@@ -39,7 +49,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Head office never lets a sent MRP raise its own recorded ceiling (OB-816, decided under OB-801). The Bpal load and the demo seed now record each item's MRP before pricing it.
 - **Know:** an item already on a running box with no MRP on its product record needs a second person for every price change until its MRP is added on Product details.
 - **Next:** batch 4b. D-029 (receive with batch, expiry, short/damaged, order picked from a list), D-038 to D-041 (reorder and raising orders), D-018, D-026, D-054 (names, not codes; this store by default), D-024 (dates). Then D-003, D-013, D-021, D-046, D-052 after the owner's answers.
-- **Owner decisions still open:** OB-804, OB-805, OB-806, OB-807, OB-808, OB-809, OB-811, OB-813, OB-814, OB-821.
+- **Owner decisions still open:** OB-804, OB-805, OB-806, OB-807, OB-808, OB-809, OB-811, OB-813, OB-814, OB-821, OB-822.
 
 ## End of 15 November 2026 — where THE PLAN stands (evening summary)
 - **Merged to main tonight (every required check green):** #941 the Bpal import takes every department + the owner's one-page export sheet (`docs/runbooks/bpal-full-load-export-sheet.md`); #942 the evening check compares the whole store, per department, loose goods by weight; #939 (which carried #935–#938) — the store PC's office pages read and save as the person signed in by PIN (audit C-1), till fixes (void reason, refunds in kg, cashier's name), plain words (stock in its unit, rupees, plain reasons, quieter clock), short "Daily work" menus, the day close names its day and waits for the closing checklist (tickable on Checklists).

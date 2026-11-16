@@ -75,7 +75,11 @@ describe('U7 · the supplier payment session — the bills a payment settles', (
     const base = { supplierId: 'sup-1', amountRupees: '500', paidOn: '2026-11-12', method: 'bank_transfer', reference: 'NEFT-1' };
     expect(paymentBody(base)).toEqual({ amountMinor: 50_000, paidOn: '2026-11-12', method: 'bank_transfer', reference: 'NEFT-1' });
     expect(paymentBody({ ...base, settles: 'inv-a, inv-b' })).toMatchObject({ settles: ['inv-a', 'inv-b'] });
-    const { fetch, sent } = fakeFetch(201, { requestId: 'rq-1' });
+    const { fetch: post, sent } = fakeFetch(201, { requestId: 'rq-1' });
+    // D-048: the ask reads the supplier first; this one has a checked bank account, so the approval is asked for.
+    const fetch = (async (url: string, init?: RequestInit) => ((init?.method ?? 'GET') === 'GET'
+      ? new Response(JSON.stringify({ supplier: { name: 'Demo Foods' }, blocked: false, bank: { accountRef: 'xx' }, duplicateBankAccount: false }), { status: 200 })
+      : post(url, init))) as unknown as typeof globalThis.fetch;
     const s = createSupplierPaymentSession({ viewer: { userId: 'u-pay', permissions: ['purchase.supplier.pay'] }, fetch, newKey: () => 'k', newId: () => 'pay-1' });
     expect((await s.ask({ ...base, settles: 'inv-a' })).result).toBe('ok');
     expect(sent[0]!.body).toMatchObject({ kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', details: { settles: ['inv-a'], reference: 'NEFT-1', supplierId: 'sup-1', paymentId: 'pay-1' } });

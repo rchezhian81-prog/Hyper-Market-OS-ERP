@@ -111,6 +111,16 @@
       <section id="view-record" aria-labelledby="record-h" hidden>
         <h3 id="record-h">Record</h3>
         <p class="lead" id="record-lead"></p>
+        <fieldset id="mrp-box">
+          <legend id="mrp-h">MRP</legend>
+          <!-- D-058: the price this store's tills charge today, at the top beside the MRP. -->
+          <p class="lead" id="price-now" hidden></p>
+          <ul class="rows" id="mrp-list"></ul>
+          <div class="row">
+            <label for="m-from"><span id="l-m-from">New MRP from (date)</span><input id="m-from" type="date" /></label>
+            <label for="m-rupees"><span id="l-m-rupees">New MRP (₹)</span><input id="m-rupees" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+        </fieldset>
         <form id="record-form" class="row">
           <label for="r-name"><span id="l-r-name">Name</span><input id="r-name" autocomplete="off" /></label>
           <label for="r-sku"><span id="l-r-sku">SKU</span><input id="r-sku" autocomplete="off" /></label>
@@ -125,14 +135,6 @@
           </label>
         </form>
         <div id="attrs" class="row"></div>
-        <fieldset id="mrp-box">
-          <legend id="mrp-h">MRP</legend>
-          <ul class="rows" id="mrp-list"></ul>
-          <div class="row">
-            <label for="m-from"><span id="l-m-from">New MRP from (date)</span><input id="m-from" type="date" /></label>
-            <label for="m-rupees"><span id="l-m-rupees">New MRP (₹)</span><input id="m-rupees" inputmode="decimal" autocomplete="off" /></label>
-          </div>
-        </fieldset>
         <fieldset>
           <legend id="safety-h">Safety and label</legend>
           <div class="row">
@@ -149,7 +151,7 @@
             <label for="s-minage"><span id="l-s-minage">Minimum age to buy it (years — leave empty if none)</span><input id="s-minage" inputmode="numeric" autocomplete="off" /></label>
           </div>
         </fieldset>
-        <fieldset>
+        <fieldset id="nutrition-box">
           <legend id="nutrition-h">Nutrition (per 100 g or 100 ml)</legend>
           <p class="muted" id="nutrition-lead"></p>
           <div class="row" id="nutrition"></div>

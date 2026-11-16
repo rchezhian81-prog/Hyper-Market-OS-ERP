@@ -27,6 +27,11 @@ let roles = { live: [], waiting: [] }; let holders = null; let pending = null; l
 // U3 (OB-699): a role's name is the product's own word — head office carries it in both languages; the Tamil is shown on a Tamil screen.
 const roleWord = (r) => (lang === 'ta' && typeof r?.nameTa === 'string' && r.nameTa !== '' ? r.nameTa : r?.name);
 const roleName = (id) => roleWord(roles.live.find((r) => r.id === id) ?? roles.waiting.find((r) => r.id === id)) ?? id;
+// D-053: a person by their NAME (the store's signed directory, else head office's people list), with the sign-in id small.
+const personName = (id) => { const n = window.sreOffice?.nameOf?.('person', id); return typeof n === 'string' && n !== '' ? n : id; };
+const personWords = (id) => { const n = personName(id); return n === id ? id : `${n} (${id})`; };
+// D-053: machine roles (the store computer, "… (machine)") are never offered to a person, and a machine is not listed as staff.
+const isMachine = (roleId) => { const r = roles.live.find((x) => x.id === roleId); return api?.isMachineRole?.(r ?? { id: roleId, name: '' }) === true; };
 
 function paintPending() {
   const ul = $('pending-rows'); ul.replaceChildren();
@@ -35,7 +40,7 @@ function paintPending() {
   for (const p of pending) {
     const li = document.createElement('li'); li.className = 'tone-degraded'; li.dataset.grant = p.grantId;
     const head = document.createElement('div'); head.className = 'head';
-    head.append(text('h4', `${p.userId} — ${roleName(p.roleId)}`), text('span', `${t('where')}: ${scopeWords(p.branchScope)}`, 'meta'));
+    head.append(text('h4', `${personWords(p.userId)} — ${roleName(p.roleId)}`), text('span', `${t('where')}: ${scopeWords(p.branchScope)}`, 'meta'));
     li.append(head, text('p', `${t('askedBy')} ${p.requestedBy} · ${p.reason}`, 'meta'));
     if (p.mine) li.append(text('p', t('yourOwn'), 'meta'));
     else if (may.decide) {
@@ -56,8 +61,9 @@ function paintHolders() {
   if (holders === null) return;
   if (holders.length === 0) { ul.append(text('li', t('nobodyHolds'), 'meta')); return; }
   for (const h of holders) {
+    if (h.grants.length > 0 && h.grants.every((g) => isMachine(g.roleId))) continue; // D-053: a machine is not staff
     const li = document.createElement('li'); li.dataset.person = h.userId;
-    li.append(text('h4', h.userId));
+    li.append(text('h4', personWords(h.userId)));
     const status = text('p', '', 'status'); status.setAttribute('role', 'status');
     const why = field(t('reason'), `tb-${h.userId}`);
     for (const g of h.grants) {
@@ -143,7 +149,7 @@ function paintRoleChoices() {
   for (const id of ['g-role', 'l-role']) {
     const sel = $(id); const was = sel.value; sel.replaceChildren(text('option', '—'));
     sel.firstChild.value = '';
-    for (const r of roles.live) { const o = text('option', roleWord(r)); o.value = r.id; sel.append(o); }
+    for (const r of roles.live) { if (api?.isMachineRole?.(r) === true) continue; const o = text('option', roleWord(r)); o.value = r.id; sel.append(o); }
     sel.value = was;
   }
   const dim = $('l-dimension'); const was = dim.value; dim.replaceChildren();
@@ -201,7 +207,8 @@ $('add-form').addEventListener('submit', async (e) => {
   $('add-status').textContent = t('reading');
   const out = await session.addPerson({ userId: $('a-staff').value, displayName: $('a-name').value });
   $('add-status').textContent = out.result === 'ok' ? t('added') : api.outcomeWords(lang, out);
-  if (out.result === 'ok') { $('g-person').value = out.value.userId; $('a-staff').value = ''; $('a-name').value = ''; void loadHolders(); }
+  // D-053: "Add a person" carries on — the new person is filled in for the role to give and for their till PIN.
+  if (out.result === 'ok') { $('g-person').value = out.value.userId; $('p-staff').value = out.value.userId; $('a-staff').value = ''; $('a-name').value = ''; void loadHolders(); }
 });
 // CR-01 step 4b-2 (OB-734 · OB-739): till PINs — the asker's PIN, then the person types their new PIN twice (hidden).
 const pinAct = async (action) => {
@@ -229,6 +236,20 @@ $('signin-form').addEventListener('submit', async (e) => {
   paintSignIns();
 });
 $('handed').addEventListener('click', () => { signIns?.handedOver(); paintSignIns(); });
+
+// D-053: the store box is a "Choose…" list of stores by name (several may be chosen; "all" may still be typed), starting
+// on this store; the person boxes pick a colleague by name. The typed id stays the fallback (never a dead end).
+function mountPickers() {
+  const o = window.sreOffice;
+  if (!o || typeof o.pickable !== 'function') { document.addEventListener('sre:chrome', mountPickers, { once: true }); return; }
+  o.pickable('g-stores', 'store', { en: 'Choose the store', ta: 'கடையைத் தேர்வு செய்யவும்' }, {
+    append: (input, id) => { const have = input.value.split(',').map((x) => x.trim()).filter((x) => x !== '' && x.toLowerCase() !== 'all'); if (!have.includes(id)) have.push(id); input.value = have.join(', '); },
+  });
+  for (const [id, title] of [['g-person', { en: 'Choose the person', ta: 'நபரைத் தேர்வு செய்யவும்' }], ['l-person', { en: 'Choose the person', ta: 'நபரைத் தேர்வு செய்யவும்' }], ['p-staff', { en: 'Choose the person', ta: 'நபரைத் தேர்வு செய்யவும்' }]]) o.pickable(id, 'person', title);
+  const here = window.sreDirectory?.store?.id;
+  if (typeof here === 'string' && here !== '' && $('g-stores').value.trim() === '') $('g-stores').value = here;
+}
+mountPickers();
 
 paint();
 if (session === null || !may.named) $('page-status').textContent = t('nobody');

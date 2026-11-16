@@ -37,7 +37,7 @@ const sale = (saleId: string, productId: string, qty: number, lineTotalMinor: nu
 });
 
 async function showMay(page: Page): Promise<void> {
-  await page.fill('#period', '052026');
+  await page.fill('#period', '2026-05'); // D-051: the month picker
   await page.click('#show');
   await page.waitForFunction(() => (globalThis as unknown as { document: Doc }).document.querySelector('[data-figure="31a-taxable"]')?.textContent === '₹300.00', undefined, { timeout: 15_000 });
 }

@@ -31,7 +31,7 @@ export const USERS_COPY = {
     mineH: 'My changes', mineLead: 'Take-backs and limits you asked for. Once the owner approves one on the Approvals page, apply it here.',
     waitingH: 'Roles waiting for the owner\'s approval', waitingLead: 'Written from the roadmap, not live yet. Nobody can be given one until the owner reads these permissions and approves them in writing.',
     limitH: 'Limit a role', limitLead: 'Narrow a person\'s role to some departments, suppliers, categories or locations. Asked here, approved by the owner, then applied.',
-    person: 'Person (their sign-in id)', role: 'Role', stores: 'Stores (ids, comma between; or "all")', reason: 'Why',
+    person: 'Person (their sign-in id)', role: 'Role', stores: 'Stores (choose, or type "all")', reason: 'Why',
     give: 'Ask for this role', approve: 'Approve', reject: 'Reject', takeBack: 'Take back', leaver: 'They have left',
     apply: 'Apply now', reload: 'Read again from head office', limit: 'Ask to limit',
     dimension: 'Limit to', values: 'Which (ids, comma between; or "all" to lift the limit)',
@@ -58,7 +58,7 @@ export const USERS_COPY = {
     pinAskGive: 'Type your own PIN again to ask for this role.', pinAskApprove: 'Type your own PIN again to approve this role.',
     pinAskReject: 'Type your own PIN again to reject this request.', pinAskAdd: 'Type your own PIN again to add this person.',
     addH: 'Add a person on this store PC', addLead: 'A new member of staff, for this store PC and its tills only (no office or phone login). Adding the name gives them nothing: then ask for a role for them (a second person approves) and set their till PIN.',
-    addName: 'Their full name', addStaffId: 'Their staff id (a–z, 0–9, . _ -)', addBtn: 'Add this person', added: 'Added — for this store PC only. Now ask for a role for them.',
+    addName: 'Their full name', addStaffId: 'Their staff id (a–z, 0–9, . _ -)', addBtn: 'Add this person', added: 'Added — for this store PC only. Next: give them a role below, then set their till PIN.',
     needName: 'Type the person\'s full name.', needStaffId: 'Type their staff id: 3 to 64 of a–z, 0–9, . _ -',
     storePcOnly: 'On this store PC, each with your own PIN: add a person, ask for a role, approve or reject, take a role back or record a leaver (a second person approves), and set, change or cancel a till PIN. Limiting a role needs the head-office link.',
     takeBacksH: 'Take-backs waiting for a second person', takeBacksLead: 'A role taken back, or a person who left. When a second person approves with their PIN, it is done at once; a leaver\'s till PIN stops working.',
@@ -82,7 +82,7 @@ export const USERS_COPY = {
     mineH: 'என் மாற்றங்கள்', mineLead: 'நீங்கள் கேட்ட திரும்பப் பெறுதல்களும் வரம்புகளும். உரிமையாளர் ஒப்புதல்கள் பக்கத்தில் அனுமதித்ததும், இங்கே செயல்படுத்துங்கள்.',
     waitingH: 'உரிமையாளரின் ஒப்புதலுக்காகக் காத்திருக்கும் பங்குகள்', waitingLead: 'திட்ட வரைவிலிருந்து எழுதப்பட்டவை, இன்னும் நடைமுறையில் இல்லை. உரிமையாளர் இந்த அனுமதிகளைப் படித்து எழுத்தில் ஒப்புதல் தரும் வரை யாருக்கும் வழங்க முடியாது.',
     limitH: 'ஒரு பங்கை வரம்பிடு', limitLead: 'ஒருவரின் பங்கைச் சில துறைகள், சப்ளையர்கள், வகைகள் அல்லது இடங்களுக்குக் குறுக்குங்கள். இங்கே கேட்கப்பட்டு, உரிமையாளர் அனுமதித்து, பின் செயல்படுத்தப்படும்.',
-    person: 'நபர் (அவரது உள்நுழைவு அடையாளம்)', role: 'பங்கு', stores: 'கடைகள் (அடையாளங்கள், காற்புள்ளியுடன்; அல்லது "all")', reason: 'ஏன்',
+    person: 'நபர் (அவரது உள்நுழைவு அடையாளம்)', role: 'பங்கு', stores: 'கடைகள் (தேர்வு செய்யவும், அல்லது "all" என்று எழுதவும்)', reason: 'ஏன்',
     give: 'இந்தப் பங்கைக் கேள்', approve: 'அனுமதி', reject: 'மறு', takeBack: 'திரும்பப் பெறு', leaver: 'அவர் வெளியேறிவிட்டார்',
     apply: 'இப்போது செயல்படுத்து', reload: 'தலைமை அலுவலகத்திலிருந்து மீண்டும் படி', limit: 'வரம்பிடக் கேள்',
     dimension: 'வரம்பு', values: 'எவை (அடையாளங்கள், காற்புள்ளியுடன்; வரம்பை நீக்க "all")',
@@ -109,7 +109,7 @@ export const USERS_COPY = {
     pinAskGive: 'இந்தப் பங்கைக் கேட்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskApprove: 'இந்தப் பங்கை அனுமதிக்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
     pinAskReject: 'இந்தக் கோரிக்கையை மறுக்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.', pinAskAdd: 'இந்த நபரைச் சேர்க்க உங்கள் சொந்த PIN-ஐ மீண்டும் உள்ளிடுங்கள்.',
     addH: 'இந்தக் கடைக் கணினியில் ஒரு நபரைச் சேர்', addLead: 'புதிய பணியாளர், இந்தக் கடைக் கணினிக்கும் அதன் கவுண்டர்களுக்கும் மட்டும் (அலுவலக அல்லது கைபேசி உள்நுழைவு இல்லை). பெயரைச் சேர்ப்பது அவருக்கு எதையும் தராது: பிறகு அவருக்குப் பங்கு கேளுங்கள் (இரண்டாவது நபர் அனுமதிப்பார்), அவரது PIN-ஐ அமையுங்கள்.',
-    addName: 'அவரது முழுப் பெயர்', addStaffId: 'அவரது பணியாளர் எண் (a–z, 0–9, . _ -)', addBtn: 'இந்த நபரைச் சேர்', added: 'சேர்க்கப்பட்டார் — இந்தக் கடைக் கணினிக்கு மட்டும். இப்போது அவருக்குப் பங்கு கேளுங்கள்.',
+    addName: 'அவரது முழுப் பெயர்', addStaffId: 'அவரது பணியாளர் எண் (a–z, 0–9, . _ -)', addBtn: 'இந்த நபரைச் சேர்', added: 'சேர்க்கப்பட்டார் — இந்தக் கடைக் கணினிக்கு மட்டும். அடுத்து: கீழே அவருக்குப் பங்கு கொடுங்கள், பிறகு அவரது கல்லா PIN-ஐ அமைக்கவும்.',
     needName: 'நபரின் முழுப் பெயரைத் தட்டச்சு செய்யுங்கள்.', needStaffId: 'அவரது பணியாளர் எண்ணைத் தட்டச்சு செய்யுங்கள்: a–z, 0–9, . _ - இல் 3 முதல் 64',
     storePcOnly: 'இந்தக் கடைக் கணினியில், ஒவ்வொன்றும் உங்கள் PIN-உடன்: நபரைச் சேர்த்தல், பங்கு கேட்டல், அனுமதித்தல் அல்லது மறுத்தல், பங்கைத் திரும்பப் பெறுதல் அல்லது வெளியேறியவரைப் பதிதல் (இரண்டாவது நபர் அனுமதிப்பார்), PIN அமைத்தல், மாற்றுதல், ரத்து செய்தல். பங்கை வரம்பிட தலைமை அலுவலக இணைப்பு தேவை.',
     takeBacksH: 'இரண்டாவது நபருக்காகக் காத்திருக்கும் திரும்பப் பெறுதல்கள்', takeBacksLead: 'திரும்பப் பெறப்படும் பங்கு, அல்லது வெளியேறிய நபர். இரண்டாவது நபர் தன் PIN-உடன் அனுமதித்ததும் உடனே நடக்கும்; வெளியேறியவரின் PIN வேலை செய்யாது.',
@@ -147,6 +147,15 @@ export interface WaitingRole extends RoleRow {
   readonly questions: readonly string[];
 }
 export type Scope = readonly string[] | 'all';
+
+/**
+ * D-053: a role a MACHINE holds, never a person — the store computer, and every role the role catalogue names
+ * "… (machine)" (the message relay, the backup job, the floor-device gateway, the CI push, the release evidence). They
+ * are left out of the roles a person can be given here; head office still refuses a person one (machine-identities).
+ */
+export function isMachineRole(r: { readonly id: string; readonly name: string }): boolean {
+  return r.id === 'store_computer' || /\(machine\)\s*$/i.test(r.name);
+}
 export interface Grant { readonly userId: string; readonly roleId: string; readonly branchScope: Scope }
 export interface Holder { readonly userId: string; readonly grants: readonly Grant[] }
 export interface PendingGrant extends Grant { readonly grantId: string; readonly requestedBy: string; readonly requestedAt: string; readonly reason: string; readonly mine: boolean }

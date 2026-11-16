@@ -242,6 +242,8 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(w['barcodes']).toEqual([{ barcode: '8901', productId: 'soap', level: 'unit' }]);
     const open = w['openDeliveries'] as { poId: string; grnId: string; ordered: { productId: string; quantityMinor: number; unitCostMinor: number }[] }[];
     expect(open.map((d) => d.poId)).toEqual(['po-s1']); // S2's order is not this store's
+    // Fix batch 5 · D-033: the supplier's NAME from head office's supplier master travels with the order (and where it goes, D-017).
+    expect(open[0]).toMatchObject({ supplierId: 'sup-1', supplierName: 'Synthetic supplier sup-1', deliverToLocationId: 'WH' });
     // OB-31: the order holds 25 kg of rice as 25 000 grams — passed to the phone as it is (never scaled twice), costed per kg
     expect(open[0]!.ordered).toEqual([
       { productId: 'rice', quantityMinor: 25_000, unitCostMinor: 5_000, currency: 'INR' },

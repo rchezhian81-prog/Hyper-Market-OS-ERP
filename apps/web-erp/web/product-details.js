@@ -63,6 +63,7 @@ const WORDS = {
     mrpH: 'MRP', mrpFrom: 'New MRP from (date)', mrpRupees: 'New MRP (₹)', noMrp: 'No MRP on record yet.', mrpLine: 'from',
     safetyH: 'Safety and label', ingredients: 'Ingredients', allergens: 'Allergens it contains (comma between)', none: 'Contains none of the allergens (declared)',
     origin: 'Country of origin', storage: 'Storage conditions', net: 'Net quantity as printed', packer: 'Packer or importer', care: 'Consumer care contact', packedBySre: 'SRE packs or labels it',
+    priceNow: 'Price at this store\'s tills today:', priceNone: 'No price at this store\'s tills today.', priceUnread: 'The price at the tills could not be read from head office.',
     nutritionH: 'Nutrition (per 100 g or 100 ml)', nutritionLead: 'Needed before publishing only for food SRE packs or labels itself (OB-307); recorded when known otherwise. Leave every box empty for no panel; write 0 for a nutrient there is none of.',
     basis: 'Per', per100g: '100 g', per100ml: '100 ml', serving: 'Serving size (g or ml, if printed)',
     why: 'Why (kept with the version)', save: 'Save as a new version', ask: 'Ask for approval',
@@ -104,6 +105,7 @@ const WORDS = {
     mrpH: 'MRP', mrpFrom: 'புதிய MRP தொடங்கும் தேதி', mrpRupees: 'புதிய MRP (₹)', noMrp: 'இன்னும் MRP பதிவில் இல்லை.', mrpLine: 'முதல்',
     safetyH: 'பாதுகாப்பும் லேபிளும்', ingredients: 'உட்பொருட்கள்', allergens: 'இதில் உள்ள ஒவ்வாமைப் பொருட்கள் (காற்புள்ளியால் பிரிக்கவும்)', none: 'எந்த ஒவ்வாமைப் பொருளும் இல்லை (அறிவிக்கப்பட்டது)',
     origin: 'பிறப்பிட நாடு', storage: 'சேமிப்பு நிலைகள்', net: 'அச்சிட்ட நிகர அளவு', packer: 'பொதி செய்தவர் அல்லது இறக்குமதியாளர்', care: 'வாடிக்கையாளர் தொடர்பு', packedBySre: 'SRE பொதி செய்கிறது அல்லது லேபிள் இடுகிறது',
+    priceNow: 'இன்று இந்தக் கடையின் கல்லாவில் விலை:', priceNone: 'இன்று இந்தக் கடையின் கல்லாவில் விலை இல்லை.', priceUnread: 'கல்லா விலையைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை.',
     nutritionH: 'ஊட்டச்சத்து (100 கி அல்லது 100 மி.லி-க்கு)', nutritionLead: 'SRE தானே பொதி செய்யும் அல்லது லேபிள் இடும் உணவுக்கு மட்டுமே வெளியிடும் முன் தேவை (OB-307); மற்றவற்றுக்குத் தெரிந்தால் பதியப்படும். அட்டவணை இல்லையெனில் எல்லாப் பெட்டிகளையும் காலியாக விடுங்கள்; இல்லாத சத்துக்கு 0 எழுதுங்கள்.',
     basis: 'அளவு', per100g: '100 கி', per100ml: '100 மி.லி', serving: 'ஒரு பரிமாறல் (கி அல்லது மி.லி, அச்சிட்டிருந்தால்)',
     why: 'ஏன் (பதிப்புடன் வைக்கப்படும்)', save: 'புதிய பதிப்பாகச் சேமி', ask: 'ஒப்புதல் கேள்',
@@ -288,8 +290,40 @@ function fillRecord() {
   $('n-basis').value = n.basis ?? 'per_100g';
   for (const [key] of [...NUTRIENTS, ['servingSize']]) $(`n-${key}`).value = n[key] === undefined ? '' : String(n[key]);
   setShopDate('m-from', ''); $('m-rupees').value = ''; $('r-why').value = ''; $('s-why').value = '';
+  paintSections();
   if (!safetyConflict) { $('safety-status').className = 'status'; $('safety-status').textContent = held === null && mayChange ? t('safetyFirst') : ''; }
   paintAttributes();
+}
+
+/**
+ * D-058: only the sections the item's category needs. A FOOD category (its `regulated` kinds name 'food') shows the
+ * ingredients, allergens and nutrition boxes; any other category hides them — unless something is already recorded there,
+ * which is never hidden. What head office requires before publishing is unchanged (it still says what is missing).
+ */
+function paintSections() {
+  const c = categories.find((x) => x.categoryId === $('r-category').value);
+  const food = Array.isArray(c?.regulated) && c.regulated.includes('food');
+  const filled = (ids) => ids.some((id) => { const e = $(id); return e !== null && (e.type === 'checkbox' ? e.checked : e.value.trim() !== ''); });
+  const nutritionIds = NUTRIENTS.map(([key]) => `n-${key}`).concat(['n-servingSize']);
+  $('nutrition-box').hidden = !food && !filled(nutritionIds);
+  for (const id of ['s-ingredients', 's-allergens', 's-none']) $(id).closest('label').hidden = !food && !filled([id]);
+}
+
+/** D-058: the price this store's tills charge today, read from head office's price list for the box's own store. */
+let priceNow = null; // null: not read · { minor } · { none: true } · { failed: true }
+async function readPriceNow() {
+  priceNow = null;
+  const storeId = typeof who?.storeId === 'string' ? who.storeId : '';
+  if (productId === '' || storeId === '') { paintPriceNow(); return; }
+  const out = await call('GET', `/v1/prices/list/${encodeURIComponent(productId)}/resolve?at=${encodeURIComponent(new Date().toISOString())}&storeId=${encodeURIComponent(storeId)}`);
+  priceNow = out.ok && Number.isInteger(out.body?.priceMinor) ? { minor: out.body.priceMinor } : out.status === 404 ? { none: true } : { failed: true };
+  paintPriceNow();
+}
+function paintPriceNow() {
+  const p = $('price-now');
+  p.hidden = priceNow === null;
+  if (priceNow === null) return;
+  p.textContent = priceNow.minor !== undefined ? `${t('priceNow')} ₹${(priceNow.minor / 100).toFixed(2)}` : priceNow.none ? t('priceNone') : t('priceUnread');
 }
 
 function paintMrp() {
@@ -503,6 +537,9 @@ async function load() {
   else if (!mayEdit) { r.className = 'status'; r.textContent = t('readOnly'); } else { r.className = 'status'; r.textContent = ''; }
   paint();
   fillRecord();
+  // D-058: the tobacco section shows only on a tobacco product's page (product-tobacco.js listens).
+  document.dispatchEvent(new CustomEvent('sre:product-opened', { detail: { productId } }));
+  void readPriceNow();
 }
 
 function showTab(which) {
@@ -614,7 +651,7 @@ async function askApproval() {
 }
 
 $('ask').addEventListener('submit', (e) => { e.preventDefault(); void load(); });
-$('r-category').addEventListener('change', paintAttributes);
+$('r-category').addEventListener('change', () => { paintAttributes(); paintSections(); });
 $('save').addEventListener('click', () => { void saveRecord(); });
 $('ask-approval').addEventListener('click', () => { void askApproval(); });
 $('ask-safety-approval').addEventListener('click', async () => {

@@ -826,6 +826,20 @@ describe('a sale in the log becomes a reporting fact, correctly', () => {
     expect(reportingPayload(input({ pack: fullPack({ reportingPolicy: notKnown('never sent') }) }))).toBeNull();
   });
 
+  it('D-057: each department carries the money its lines took and the kg of what was weighed — a weighed line is never "1 item"', () => {
+    const bill = sale({ total: 145_00 + 68_00, lines: [
+      { productId: 'p1', quantityMinor: 1, uom: 'ea', lineTotalMinor: 145_00 },
+      { productId: 'p2', quantityMinor: 850, uom: 'kg', lineTotalMinor: 68_00 },
+    ] });
+    const older = sale({ id: 'S-2', lines: [{ productId: 'p1', quantityMinor: 2, uom: 'ea' }] }); // a till that wrote no line money
+    expect(reportingPayload(input({ sales: [bill] }))!['salesByCategory']).toEqual({
+      grocery: { items: 1, grams: 0, takenMinor: 145_00, linesWithNoMoney: 0 },
+      produce: { items: 0, grams: 850, takenMinor: 68_00, linesWithNoMoney: 0 },
+    });
+    expect((reportingPayload(input({ sales: [bill, older] }))!['salesByCategory'] as Record<string, unknown>)['grocery'])
+      .toEqual({ items: 3, grams: 0, takenMinor: 145_00, linesWithNoMoney: 1 });
+  });
+
   it('names no user rather than inventing one', () => {
     // The audit record of an export names who took the data; a default there is a name nobody holds.
     const anonymous = reportingPayload(input({

@@ -38,7 +38,7 @@ export type DeskWhy =
 export const GST_DESK_COPY = {
   en: {
     g1H: 'GSTR-1 for the month', g1Lead: 'Head office\'s GSTR-1 for the month: the full return, Table 12 (HSN summary) and Table 12 worked out from the till\'s own sales. The GSTN file is the file you upload on the GST portal yourself — nothing is filed from this page.',
-    month: 'Month (MMYYYY)', gstin: 'The shop\'s GSTIN', turnover: 'Annual turnover (₹) — sets the HSN digits', showReturn: 'Show the return', showT12: 'Show Table 12', showT12Sales: 'Table 12 from the till\'s sales', download: 'Download the GSTN file',
+    month: 'Month', gstin: 'The shop\'s GSTIN', turnover: 'Annual turnover (₹) — sets the HSN digits', showReturn: 'Show the return', showT12: 'Show Table 12', showT12Sales: 'Table 12 from the till\'s sales', download: 'Download the GSTN file',
     fileNote: 'Upload this file on the GST portal yourself. Check it in the GSTN offline tool before the first live filing (OB-433). Once a second person has approved the return and you have uploaded it, record the portal\'s ARN on the return in the list above (OB-683). Nothing was filed.',
     b2b: 'B2B invoices', b2c: 'B2C by rate', hsnRows: 'HSN rows', notes: 'credit / debit notes', taxable: 'taxable', tax: 'tax', documents: 'documents',
     unmapped: 'sold items with no HSN or rate — NOT on the return until mapped', soldLines: 'sold lines', returnedLines: 'returned lines', net: 'net of returns',
@@ -71,7 +71,7 @@ export const GST_DESK_COPY = {
     sourceRef: 'What it is for (invoice, line or free-sample record)', igst: 'IGST (₹)', cgst: 'CGST (₹)', sgst: 'SGST (₹)', cess: 'Cess (₹)', recordReversal: 'Record the reversal', reversalSaved: 'Reversal recorded', reversalsH: 'Reversals this month', noReversals: 'No reversal this month.',
     saved: 'Saved.', reading: 'Asking head office…',
     nobody: 'Nobody is signed in on this screen.', notAllowed: 'Your role cannot do this — head office would refuse it.',
-    badPeriod: 'Write the month as MMYYYY, e.g. 052026.', badFy: 'Write the year as YYYY-YY, e.g. 2026-27.', badGstin: 'Write the shop\'s 15-character GSTIN.',
+    badPeriod: 'Pick a month.', badFy: 'Write the year as YYYY-YY, e.g. 2026-27.', badGstin: 'Write the shop\'s 15-character GSTIN.',
     badTurnover: 'Write the annual turnover in rupees.', badDays: 'Write a whole number of days, from 1 to 1095.', needReason: 'Write the reason first.',
     badHeadCode: 'A head code is capital letters and digits.', badRate: 'Write the rate as a percentage, e.g. 5 or 18.', needName: 'Write the name.', needCitation: 'Write the notification it is notified under.',
     needSupplier: 'Write the supplier as in the supplier master.', badDate: 'Choose the date.', badAmount: 'Write an amount in rupees above zero.', needDescription: 'Write what was bought.',
@@ -82,7 +82,7 @@ export const GST_DESK_COPY = {
   },
   ta: {
     g1H: 'மாதத்தின் GSTR-1', g1Lead: 'தலைமை அலுவலகத்தின் மாத GSTR-1: முழு வருமானம், அட்டவணை 12 (HSN சுருக்கம்), கல்லாவின் சொந்த விற்பனையிலிருந்து கணக்கிட்ட அட்டவணை 12. GSTN கோப்பை நீங்களே GST போர்ட்டலில் பதிவேற்றுகிறீர்கள் — இந்தப் பக்கத்திலிருந்து எதுவும் தாக்கல் செய்யப்படாது.',
-    month: 'மாதம் (MMYYYY)', gstin: 'கடையின் GSTIN', turnover: 'ஆண்டு விற்றுமுதல் (₹) — HSN இலக்கங்களை முடிவு செய்கிறது', showReturn: 'வருமானத்தைக் காட்டு', showT12: 'அட்டவணை 12-ஐக் காட்டு', showT12Sales: 'கல்லா விற்பனையிலிருந்து அட்டவணை 12', download: 'GSTN கோப்பைப் பதிவிறக்கு',
+    month: 'மாதம்', gstin: 'கடையின் GSTIN', turnover: 'ஆண்டு விற்றுமுதல் (₹) — HSN இலக்கங்களை முடிவு செய்கிறது', showReturn: 'வருமானத்தைக் காட்டு', showT12: 'அட்டவணை 12-ஐக் காட்டு', showT12Sales: 'கல்லா விற்பனையிலிருந்து அட்டவணை 12', download: 'GSTN கோப்பைப் பதிவிறக்கு',
     fileNote: 'இந்தக் கோப்பை நீங்களே GST போர்ட்டலில் பதிவேற்றுங்கள். முதல் நேரடித் தாக்கலுக்கு முன் GSTN ஆஃப்லைன் கருவியில் சரிபார்க்கவும் (OB-433). இரண்டாவது நபர் ஒப்புதல் அளித்து நீங்கள் பதிவேற்றிய பின், மேலே உள்ள பட்டியலில் அந்த வருமானத்தில் போர்ட்டலின் ARN-ஐப் பதிவு செய்யுங்கள் (OB-683). எதுவும் தாக்கல் செய்யப்படவில்லை.',
     b2b: 'B2B விலைப்பட்டியல்கள்', b2c: 'வீதப்படி B2C', hsnRows: 'HSN வரிசைகள்', notes: 'வரவு / பற்று குறிப்புகள்', taxable: 'வரிக்குரியது', tax: 'வரி', documents: 'ஆவணங்கள்',
     unmapped: 'HSN அல்லது வீதம் இல்லாத விற்ற பொருட்கள் — பொருத்தும் வரை வருமானத்தில் இல்லை', soldLines: 'விற்ற வரிகள்', returnedLines: 'திருப்பிய வரிகள்', net: 'திருப்பியவை கழித்து',
@@ -115,7 +115,7 @@ export const GST_DESK_COPY = {
     sourceRef: 'எதற்காக (விலைப்பட்டியல், வரி அல்லது இலவச மாதிரிப் பதிவு)', igst: 'IGST (₹)', cgst: 'CGST (₹)', sgst: 'SGST (₹)', cess: 'செஸ் (₹)', recordReversal: 'திருப்பத்தைப் பதிவு செய்', reversalSaved: 'திருப்பம் பதிவானது', reversalsH: 'இந்த மாதத் திருப்பங்கள்', noReversals: 'இந்த மாதம் திருப்பம் இல்லை.',
     saved: 'சேமிக்கப்பட்டது.', reading: 'தலைமை அலுவலகத்திடம் கேட்கிறது…',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', notAllowed: 'உங்கள் பங்கு இதைச் செய்ய முடியாது — தலைமை அலுவலகம் மறுக்கும்.',
-    badPeriod: 'மாதத்தை MMYYYY ஆக எழுதுங்கள், எ.கா. 052026.', badFy: 'ஆண்டை YYYY-YY ஆக எழுதுங்கள், எ.கா. 2026-27.', badGstin: 'கடையின் 15 எழுத்து GSTIN-ஐ எழுதுங்கள்.',
+    badPeriod: 'ஒரு மாதத்தைத் தேர்ந்தெடுக்கவும்.', badFy: 'ஆண்டை YYYY-YY ஆக எழுதுங்கள், எ.கா. 2026-27.', badGstin: 'கடையின் 15 எழுத்து GSTIN-ஐ எழுதுங்கள்.',
     badTurnover: 'ஆண்டு விற்றுமுதலை ரூபாயில் எழுதுங்கள்.', badDays: '1 முதல் 1095 வரை முழு எண்ணிக்கையில் நாட்களை எழுதுங்கள்.', needReason: 'முதலில் காரணத்தை எழுதுங்கள்.',
     badHeadCode: 'தலைப்புக் குறியீடு பெரிய எழுத்துகளும் இலக்கங்களும்.', badRate: 'வீதத்தைச் சதவீதமாக எழுதுங்கள், எ.கா. 5 அல்லது 18.', needName: 'பெயரை எழுதுங்கள்.', needCitation: 'அறிவிப்பை எழுதுங்கள்.',
     needSupplier: 'விநியோகஸ்தர் பட்டியலில் உள்ளபடி விநியோகஸ்தரை எழுதுங்கள்.', badDate: 'தேதியைத் தேர்ந்தெடுங்கள்.', badAmount: 'பூஜ்யத்திற்கு மேற்பட்ட தொகையை ரூபாயில் எழுதுங்கள்.', needDescription: 'என்ன வாங்கப்பட்டது என்று எழுதுங்கள்.',

@@ -133806,6 +133806,8 @@
           "covered",
           "exceptions",
           "open",
+          "tillsSent",
+          "postingMapDefined",
           "asAt"
         ],
         "properties": {
@@ -134013,6 +134015,12 @@
           },
           "open": {
             "type": "number"
+          },
+          "tillsSent": {
+            "$ref": "#/components/schemas/TillsSent"
+          },
+          "postingMapDefined": {
+            "type": "boolean"
           },
           "asAt": {
             "type": "string"
@@ -329159,6 +329167,92 @@
           },
           "receivedAt": {
             "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "TillsSent": {
+        "type": "object",
+        "required": [
+          "sales",
+          "takings",
+          "returns",
+          "refunds",
+          "notYetPosted"
+        ],
+        "properties": {
+          "sales": {
+            "type": "object",
+            "required": [
+              "count",
+              "totalMinor"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "totalMinor": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "takings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "amountMinor"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "amountMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "returns": {
+            "type": "object",
+            "required": [
+              "count",
+              "refundsMinor"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "refundsMinor": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "refunds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "amountMinor"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "amountMinor": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "notYetPosted": {
+            "type": "number"
           }
         },
         "additionalProperties": true

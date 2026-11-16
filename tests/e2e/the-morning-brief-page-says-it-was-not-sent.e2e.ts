@@ -64,7 +64,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Mornin
       await page.locator('#brief-section:not([hidden])').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#sent-v')).toBe('Not sent');
       expect(await page.getAttribute('#sent-detail', 'data-sending')).toBe('switched_off');
-      expect(await page.textContent('#sent-detail')).toMatch(/Prepared, NOT sent: sending is switched off \(OB-222\)/);
+      expect(await page.textContent('#sent-detail')).toMatch(/Prepared, NOT sent: sending is switched off\. Nothing was sent\./);
+      expect(await page.textContent("main")).not.toMatch(/OB-\d+/); // D-056: no decision codes on the screen
       expect(await page.locator('#lines li').count()).toBeGreaterThan(0);
       expect(await page.textContent('#lines')).toMatch(/1,234/);
       await page.click('#lang');
