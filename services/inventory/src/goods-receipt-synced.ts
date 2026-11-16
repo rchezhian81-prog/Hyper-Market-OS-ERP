@@ -24,7 +24,7 @@ import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationIsItsOwnBranch } from './location-scope';
 import { apiError } from '../../kernel/src/index';
 import {
-  captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
+  captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError, isCalendarDate,
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
@@ -60,7 +60,7 @@ interface RelayedReceipt {
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
-  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number; readonly manufacturedOn?: string }[];
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number; readonly manufacturedOn?: string; readonly expiry?: string; readonly damagedMinor?: number }[];
   readonly storeId: string | null;
   readonly source: string;
 }
@@ -83,7 +83,15 @@ function readRelayedReceipt(body: unknown): RelayedReceipt | undefined {
     // B4 · OB-504: the manufacture date the manager typed off the pack — text (judged by the capture engine), or absent.
     const manufacturedOn = l['manufacturedOn'];
     if (!(manufacturedOn === undefined || manufacturedOn === null || typeof manufacturedOn === 'string')) return undefined;
+    // Fix batch 4b · D-029: the batch's expiry date typed off the pack — a real YYYY-MM-DD, or absent; and how many of the line
+    // arrived damaged — a whole number no more than arrived, or absent. Anything else is not a delivery this route can read.
+    const expiry = l['expiry'];
+    if (!(expiry === undefined || expiry === null || (typeof expiry === 'string' && (expiry.trim() === '' || isCalendarDate(expiry.trim()))))) return undefined;
+    const damagedMinor = l['damagedMinor'];
+    if (!(damagedMinor === undefined || damagedMinor === null || (typeof damagedMinor === 'number' && Number.isInteger(damagedMinor) && damagedMinor >= 0 && damagedMinor <= (l['quantityMinor'] as number)))) return undefined;
     lines.push({
+      ...(typeof expiry === 'string' && expiry.trim() !== '' ? { expiry: expiry.trim() } : {}),
+      ...(typeof damagedMinor === 'number' && damagedMinor > 0 ? { damagedMinor } : {}),
       ...(typeof manufacturedOn === 'string' && manufacturedOn.trim() !== '' ? { manufacturedOn: manufacturedOn.trim() } : {}),
       productId: l['productId'], quantityMinor: l['quantityMinor'], uom: normaliseUom(l['uom'] as string) ?? l['uom'], batchId: isStr(batchId) ? batchId : null, // OB-31: one spelling
       ...(temperatureC === undefined ? {} : { temperatureC }),
@@ -159,18 +167,31 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // booked (the goods are in the building, P-01) and FLAGGED `receiving_checklist_missing`, never silently passed.
         const checklist = await receivingChecklistGate(deps, ctx.tenantId, grnId, master.rules, r.lines.map((l) => l.productId), flags, 'flag');
 
-        const aligned: readonly CapturedLine[] = alignToOrder(r.lines.map((l, i): CapturedLine => ({
+        // Fix batch 4b · D-029: a line with some units DAMAGED becomes two captured lines of the same batch — the good ones and
+        // the damaged ones (quarantined by the capture engine, never sellable) — exactly as the handheld captures a good and a
+        // damaged count of one product; the order's figure is then apportioned across them once (alignToOrder).
+        const split = r.lines.flatMap((l) => {
+          const damaged = l.damagedMinor ?? 0;
+          const good = l.quantityMinor - damaged;
+          return [
+            ...(good > 0 ? [{ l, counted: good, condition: 'good' as const }] : []),
+            ...(damaged > 0 ? [{ l, counted: damaged, condition: 'damaged' as const }] : []),
+          ];
+        });
+        const aligned: readonly CapturedLine[] = alignToOrder(split.map(({ l, counted, condition }, i): CapturedLine => ({
           lineId: `${grnId}:${i + 1}`,
           productId: l.productId,
           // The manager's screen names no ordered figure: the order's stands in (alignToOrder), else counted (as-is).
-          orderedMinor: l.quantityMinor,
-          countedMinor: l.quantityMinor,
+          orderedMinor: counted,
+          countedMinor: counted,
           uom: l.uom,
           batchId: l.batchId,
+          // Fix batch 4b · D-029: the batch's expiry, as typed off the pack — onto the GRN and the `received` movement (expiry list).
+          ...(l.expiry === undefined ? {} : { expiry: l.expiry }),
           // The screen types no cost: what it is booked at is head office's (below), never the body's.
           unitCost: { minor: 0, currency: 'INR' },
-          // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6b).
-          condition: 'good',
+          // As the manager found them: good, or damaged (D-029) — damaged goes to quarantine, never on sale.
+          condition,
           // Wave 3 · SF-07 part 2: the reading the manager probed, judged against the product master's limits; absent → held.
           ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
           // B4 · OB-504: the batch's month and year of manufacture, as typed off the pack (a packed product needs one).

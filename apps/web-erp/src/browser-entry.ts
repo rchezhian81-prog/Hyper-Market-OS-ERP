@@ -48,7 +48,9 @@ import {
   type ApprovalRegister,
   type BoxCloseOutcome,
   type DecisionReasonCode,
+  type ManagerConfig,
   type ManagerPorts,
+  type OpenDelivery,
   type ManagerSession,
   type Register,
   type RegisterItem,
@@ -449,6 +451,11 @@ export interface ManagerData {
   readonly receivingChecklist?: unknown;
   /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
   readonly packedProductIds?: unknown;
+  /** Fix batch 4b · D-029: the deliveries this store waits for, the items' names and the batch-tracked products (absent = not told). */
+  readonly openDeliveries?: unknown;
+  readonly deliveriesAsAt?: unknown;
+  readonly productNames?: unknown;
+  readonly batchTrackedProductIds?: unknown;
   /**
    * Fix batch 3 (D-012 · D-011 · M14-FR-04): the day the STORE COMPUTER closes if asked now (its most recently ended
    * trading day), the running day and when it can be closed (after the store's cutoff), and the store rules' closing-
@@ -5992,6 +5999,8 @@ export function bootManager(config?: {
       })(),
       // B4 · OB-504: read strictly — only a list of product ids counts as being told.
       ...(Array.isArray(data?.packedProductIds) ? { packedProductIds: (data.packedProductIds as unknown[]).filter((p): p is string => typeof p === 'string') } : {}),
+      // Fix batch 4b · D-029: read strictly — what is not a whole delivery, name or id is left out, never guessed.
+      ...readReceivingAids(data),
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
@@ -6001,6 +6010,33 @@ export function bootManager(config?: {
     // on the device before the screen says so, and is still there after a reload or a restart of the browser.
     config?.outbox ?? openManagerOutbox(storeId, config?.storage),
   );
+}
+
+/** Fix batch 4b · D-029: the Receive form's open orders, item names and batch-tracked list, read strictly from the payload. */
+export function readReceivingAids(data: ManagerData | undefined): Pick<ManagerConfig, 'openDeliveries' | 'deliveriesAsAt' | 'productNames' | 'batchTrackedProductIds'> {
+  const out: { -readonly [K in 'openDeliveries' | 'deliveriesAsAt' | 'productNames' | 'batchTrackedProductIds']?: ManagerConfig[K] } = {};
+  const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  if (Array.isArray(data?.openDeliveries)) {
+    const orders: OpenDelivery[] = [];
+    for (const d of data.openDeliveries as unknown[]) {
+      if (d === null || typeof d !== 'object') continue;
+      const o = d as Record<string, unknown>;
+      if (!isStr(o['poId']) || !isStr(o['number']) || !Array.isArray(o['due'])) continue;
+      const due = (o['due'] as unknown[]).flatMap((l) => {
+        if (l === null || typeof l !== 'object') return [];
+        const r = l as Record<string, unknown>;
+        return isStr(r['productId']) && Number.isInteger(r['dueMinor']) && (r['dueMinor'] as number) >= 0 ? [{ productId: r['productId'], dueMinor: r['dueMinor'] as number }] : [];
+      });
+      orders.push({ poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '', due });
+    }
+    out.openDeliveries = orders;
+  }
+  if (isStr(data?.deliveriesAsAt)) out.deliveriesAsAt = data.deliveriesAsAt;
+  if (data?.productNames !== null && typeof data?.productNames === 'object') {
+    out.productNames = Object.fromEntries(Object.entries(data.productNames as Record<string, unknown>).filter((e): e is [string, string] => isStr(e[1])));
+  }
+  if (Array.isArray(data?.batchTrackedProductIds)) out.batchTrackedProductIds = (data.batchTrackedProductIds as unknown[]).filter(isStr);
+  return out;
 }
 
 /** The slice of a browser's storage the device queue needs, so a test can hand in a Map-backed one. */

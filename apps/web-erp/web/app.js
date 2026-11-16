@@ -80,6 +80,19 @@ const WORDS = {
     needMfg: 'Write the month of manufacture as year-month, for example 2026-09 (or a full date, 2026-09-14).',
     mfgRequired: 'This is a packed product: type the month and year of manufacture printed on the pack before adding it.',
     mfgWord: 'made',
+    // Fix batch 4b · D-029: receive against a chosen order; per line what arrived, damaged, the batch and the expiry date.
+    orderLabel: 'Which order is this delivery?', orderPick: '— choose the order —', orderNone: 'No order — delivered without one',
+    orderOther: 'An order not listed — type its number', orderItems: '{n} item(s) due',
+    orderAsAt: 'Orders as head office last sent them ({at}). An order issued after that is not listed: choose "An order not listed".',
+    chooseOrder: 'Choose the order this delivery is against first (or "No order").',
+    linesFromOrder: 'The order\'s items are filled in with what is due. Change "Arrived" where fewer came, and write any damaged, the batch and the expiry date.',
+    dueWord: 'due', receivedLabel: 'Arrived', damagedLabel: 'Damaged', batchLabel: 'Batch number', expiryLabel: 'Expiry (best before)',
+    mfgShort: 'Month of manufacture', tempShort: 'Temperature °C',
+    shortBy: 'Short by {n}', moreBy: '{n} more than due', damagedWord: 'damaged', batchWord: 'batch', expWord: 'expires',
+    lineProblems: 'Nothing was saved. Check these lines:',
+    lp_expiry_not_a_date: 'the expiry is not a real date', lp_damaged_not_whole: 'damaged must be a whole number',
+    lp_damaged_more_than_arrived: 'more damaged than arrived', lp_batch_and_expiry_needed: 'this item needs its batch number and expiry date',
+    needArrived: 'Arrived must be a whole number, 0 or more.',
     saveDelivery: 'Save the delivery', remove: 'Remove',
     needNumber: 'Give the delivery note a number first.', needLines: 'Add at least one item first.',
     needItem: 'Type an item code and how many.',
@@ -171,6 +184,18 @@ const WORDS = {
     needMfg: 'தயாரிப்பு மாதத்தை ஆண்டு-மாதம் என எழுதவும், உதாரணமாக 2026-09 (அல்லது முழுத் தேதி, 2026-09-14).',
     mfgRequired: 'இது பொதி செய்த பொருள்: சேர்ப்பதற்கு முன் பொதியில் அச்சிட்ட தயாரிப்பு மாதத்தையும் ஆண்டையும் தட்டச்சு செய்யவும்.',
     mfgWord: 'தயாரிப்பு',
+    orderLabel: 'இந்த டெலிவரி எந்த ஆர்டருக்கு?', orderPick: '— ஆர்டரைத் தேர்ந்தெடுங்கள் —', orderNone: 'ஆர்டர் இல்லை — ஆர்டர் இல்லாமல் வந்தது',
+    orderOther: 'பட்டியலில் இல்லாத ஆர்டர் — அதன் எண்ணைத் தட்டச்சு செய்யவும்', orderItems: '{n} பொருள்(கள்) வர வேண்டியவை',
+    orderAsAt: 'தலைமை அலுவலகம் கடைசியாக அனுப்பிய ஆர்டர்கள் ({at}). அதன் பிறகு வழங்கிய ஆர்டர் பட்டியலில் இல்லை: "பட்டியலில் இல்லாத ஆர்டர்" என்பதைத் தேர்ந்தெடுங்கள்.',
+    chooseOrder: 'முதலில் இந்த டெலிவரி எந்த ஆர்டருக்கு என்று தேர்ந்தெடுங்கள் (அல்லது "ஆர்டர் இல்லை").',
+    linesFromOrder: 'ஆர்டரின் பொருட்கள் வர வேண்டிய அளவுடன் நிரப்பப்பட்டுள்ளன. குறைவாக வந்தால் "வந்தது" என்பதை மாற்றி, சேதமானவை, பேட்ச் எண், காலாவதி தேதியை எழுதவும்.',
+    dueWord: 'வர வேண்டியது', receivedLabel: 'வந்தது', damagedLabel: 'சேதமானவை', batchLabel: 'பேட்ச் எண்', expiryLabel: 'காலாவதி தேதி',
+    mfgShort: 'தயாரிப்பு மாதம்', tempShort: 'வெப்பநிலை °C',
+    shortBy: '{n} குறைவு', moreBy: 'வர வேண்டியதை விட {n} அதிகம்', damagedWord: 'சேதம்', batchWord: 'பேட்ச்', expWord: 'காலாவதி',
+    lineProblems: 'எதுவும் சேமிக்கப்படவில்லை. இந்த வரிகளைச் சரிபார்க்கவும்:',
+    lp_expiry_not_a_date: 'காலாவதி தேதி சரியான தேதி அல்ல', lp_damaged_not_whole: 'சேதமானவை முழு எண்ணாக இருக்க வேண்டும்',
+    lp_damaged_more_than_arrived: 'வந்ததை விட அதிகம் சேதம்', lp_batch_and_expiry_needed: 'இந்தப் பொருளுக்கு பேட்ச் எண்ணும் காலாவதி தேதியும் தேவை',
+    needArrived: '"வந்தது" 0 அல்லது அதற்கு மேற்பட்ட முழு எண்ணாக இருக்க வேண்டும்.',
     noItemsYet: 'இன்னும் எந்தப் பொருளும் சேர்க்கப்படவில்லை.', saveDelivery: 'டெலிவரியைச் சேமி',
     remove: 'நீக்கு', needNumber: 'முதலில் டெலிவரி நோட்டு எண்ணைக் கொடுக்கவும்.',
     needLines: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needItem: 'பொருள் குறியீடும் எண்ணிக்கையும் தேவை.',
@@ -1132,22 +1157,137 @@ function renderChecklist() {
 function renderLines() {
   renderChecklist();
   el('receive-empty').hidden = receiptLines.length > 0;
+  const nameOf = (id) => (session && typeof session.productName === 'function' ? session.productName(id) : id);
+  const packedIds = session && typeof session.packedAmong === 'function' ? session.packedAmong(receiptLines.map((l) => l.productId)) : [];
+  const coldIds = coldOnDelivery();
   el('receive-lines').replaceChildren(...receiptLines.map((line, index) => {
     const row = document.createElement('div');
     row.className = 'line-row';
+    row.dataset.productId = line.productId;
     const name = document.createElement('span');
-    name.textContent = line.productId;
+    name.textContent = nameOf(line.productId);
     const qty = document.createElement('span');
     qty.className = 'q';
-    qty.textContent = [String(line.quantityMinor), line.temperatureC === undefined ? '' : `${line.temperatureC} °C`, line.manufacturedOn === undefined ? '' : `${t('mfgWord')} ${line.manufacturedOn}`].filter((x) => x !== '').join(' · ');
+    qty.textContent = [
+      line.dueMinor === undefined ? String(line.quantityMinor) : `${line.quantityMinor} / ${line.dueMinor} ${t('dueWord')}`,
+      line.temperatureC === undefined ? '' : `${line.temperatureC} °C`,
+      line.manufacturedOn === undefined ? '' : `${t('mfgWord')} ${line.manufacturedOn}`,
+      line.damagedMinor ? `${line.damagedMinor} ${t('damagedWord')}` : '',
+      line.batchId ? `${t('batchWord')} ${line.batchId}` : '',
+      line.expiry ? `${t('expWord')} ${line.expiry}` : '',
+    ].filter((x) => x !== '').join(' · ');
     const remove = document.createElement('button'); remove.classList.add('sre-btn');
     remove.type = 'button';
     remove.textContent = '×';
-    remove.setAttribute('aria-label', `${t('remove')} ${line.productId}`);
+    remove.setAttribute('aria-label', `${t('remove')} ${nameOf(line.productId)}`);
     remove.addEventListener('click', () => { receiptLines.splice(index, 1); renderLines(); });
     row.append(name, qty, remove);
+    // Fix batch 4b · D-029: what arrived, how many damaged, the batch and the expiry date — on the line itself, so an order's
+    // lines (filled in from the order) are completed in place. The session judges them again when the delivery is saved.
+    const edit = document.createElement('div');
+    edit.className = 'line-edit';
+    const box = (cls, labelKey, type, value, onChange, attrs) => {
+      const label = document.createElement('label');
+      const span = document.createElement('span'); span.textContent = t(labelKey);
+      const input = document.createElement('input');
+      input.type = type; input.className = cls; input.dataset.index = String(index); input.value = value ?? '';
+      for (const [k, v] of Object.entries(attrs ?? {})) input.setAttribute(k, v);
+      input.addEventListener('change', () => { onChange(input.value.trim()); renderLines(); });
+      label.append(span, input);
+      return label;
+    };
+    edit.append(
+      box('arrived', 'receivedLabel', 'number', String(line.quantityMinor), (v) => {
+        const n = Number(v);
+        if (v === '' || !Number.isInteger(n) || n < 0) { tell(t('read'), t('needArrived')); return; }
+        line.quantityMinor = n;
+      }, { min: '0', step: '1', inputmode: 'numeric' }),
+      box('damaged', 'damagedLabel', 'number', line.damagedMinor ? String(line.damagedMinor) : '', (v) => {
+        if (v === '') { delete line.damagedMinor; return; }
+        line.damagedMinor = Number(v);
+      }, { min: '0', step: '1', inputmode: 'numeric' }),
+      box('batch', 'batchLabel', 'text', line.batchId ?? '', (v) => { if (v === '') delete line.batchId; else line.batchId = v; }, { autocomplete: 'off' }),
+      box('expiry', 'expiryLabel', 'date', line.expiry ?? '', (v) => { if (v === '') delete line.expiry; else line.expiry = v; }),
+      ...(packedIds.includes(line.productId) ? [box('mfg', 'mfgShort', 'month', line.manufacturedOn ?? '', (v) => {
+        if (v === '') delete line.manufacturedOn; else line.manufacturedOn = v;
+      })] : []),
+      ...(coldIds.includes(line.productId) ? [box('temp', 'tempShort', 'text', line.temperatureC === undefined ? '' : String(line.temperatureC), (v) => {
+        const text = v.replace(',', '.');
+        if (text === '') { delete line.temperatureC; return; }
+        const c = Number(text);
+        if (!/^-?\d+(\.\d+)?$/.test(text) || c < -60 || c > 60) { tell(t('read'), t('needTemp')); return; }
+        line.temperatureC = c;
+      }, { inputmode: 'decimal', autocomplete: 'off' })] : []),
+    );
+    row.append(edit);
+    // Short, or more than due, against what the order still had due (head office works the same out from its own order).
+    if (line.dueMinor !== undefined && line.quantityMinor !== line.dueMinor) {
+      const note = document.createElement('span');
+      note.className = 'short';
+      note.textContent = line.quantityMinor < line.dueMinor
+        ? fill(t('shortBy'), { n: String(line.dueMinor - line.quantityMinor) })
+        : fill(t('moreBy'), { n: String(line.quantityMinor - line.dueMinor) });
+      row.append(note);
+    }
     return row;
   }));
+}
+
+// ── Fix batch 4b · D-029: the order is CHOSEN from the ones this store waits for (offline, from the store computer) ──
+function openDeliveriesNow() {
+  return session && typeof session.openDeliveries === 'function' ? session.openDeliveries() : { known: false };
+}
+function renderOrderChoice() {
+  const open = openDeliveriesNow();
+  const sel = el('grn-order');
+  el('grn-order-field').hidden = !open.known;
+  el('grn-po-field').hidden = open.known && sel.value !== 'other';
+  if (!open.known) return;
+  const current = sel.value;
+  const opt = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; return o; };
+  sel.replaceChildren(
+    opt('', t('orderPick')),
+    ...open.orders.map((d) => opt(`po:${d.poId}`, `${d.number} · ${d.supplierId} · ${fill(t('orderItems'), { n: String(d.due.filter((l) => l.dueMinor > 0).length) })}`)),
+    opt('none', t('orderNone')),
+    opt('other', t('orderOther')),
+  );
+  sel.value = [...sel.options].some((o) => o.value === current) ? current : '';
+  el('grn-order-label').textContent = t('orderLabel');
+  let at = '';
+  if (open.asAt) {
+    // In the SHOP's zone (the one the store computer told the page, else the shop default) — never this device's own (OB-606).
+    let zone = 'Asia/Kolkata';
+    try { if (typeof window.shopTimeZone === 'string' && window.shopTimeZone !== '') { new Intl.DateTimeFormat('en-CA', { timeZone: window.shopTimeZone }); zone = window.shopTimeZone; } } catch { /* an unknown zone: the shop default */ }
+    const d = new Date(open.asAt);
+    at = Number.isNaN(d.getTime()) ? open.asAt : new Intl.DateTimeFormat(lang === 'ta' ? 'ta-IN' : 'en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(d);
+  }
+  el('grn-order-hint').textContent = at === '' ? '' : fill(t('orderAsAt'), { at });
+}
+el('grn-order').addEventListener('change', () => {
+  const v = el('grn-order').value;
+  el('grn-po-field').hidden = v !== 'other';
+  // Lines filled in from a previously chosen order go; lines added by hand stay.
+  receiptLines = receiptLines.filter((l) => l.dueMinor === undefined);
+  if (v.startsWith('po:')) {
+    const poId = v.slice(3);
+    el('grn-po').value = poId;
+    receiptLines = [...session.dueLinesOf(poId).map((l) => ({ productId: l.productId, dueMinor: l.dueMinor, quantityMinor: l.dueMinor, uom: 'ea' })), ...receiptLines];
+    el('grn-order-hint').textContent = t('linesFromOrder');
+  } else {
+    el('grn-po').value = '';
+  }
+  renderLines();
+});
+/** The order the delivery is against: the chosen one, none, or the typed number when the list is not known or the order is not on it. */
+function chosenPo() {
+  const open = openDeliveriesNow();
+  const v = el('grn-order').value;
+  if (!open.known || v === 'other') { const typed = el('grn-po').value.trim(); return { ok: true, poId: typed === '' ? null : typed }; }
+  if (v.startsWith('po:')) return { ok: true, poId: v.slice(3) };
+  if (v === 'none') return { ok: true, poId: null };
+  // Nothing chosen: a number typed by hand still counts (never a dead end); otherwise ask.
+  const typed = el('grn-po').value.trim();
+  return typed === '' ? { ok: false } : { ok: true, poId: typed };
 }
 
 el('add-line').addEventListener('click', () => {
@@ -1188,8 +1328,11 @@ el('add-line').addEventListener('click', () => {
 el('save-receipt').addEventListener('click', () => {
   const number = el('grn-number').value.trim();
   if (number === '') { tell(t('read'), t('needNumber')); return; }
-  if (receiptLines.length === 0) { tell(t('read'), t('needLines')); return; }
-  const po = el('grn-po').value.trim();
+  const chosen = chosenPo();
+  if (!chosen.ok) { tell(t('read'), t('chooseOrder')); return; }
+  // Fix batch 4b · D-029: a line where nothing arrived is not booked in (the order still has it due); the due figure stays here.
+  const toSave = receiptLines.filter((l) => l.quantityMinor > 0).map((l) => { const line = { ...l }; delete line.dueMinor; return line; });
+  if (toSave.length === 0) { tell(t('read'), t('needLines')); return; }
 
   // OB-172: the checklist travels inside the delivery. A cold-chain delivery is not saved without every check ticked.
   const setup = receivingSetup();
@@ -1213,9 +1356,9 @@ el('save-receipt').addEventListener('click', () => {
     const received = session.receive({
       grnId: `grn-${stamp}`,
       number,
-      poId: po === '' ? null : po,
+      poId: chosen.poId,
       receivedAt: new Date().toISOString(),
-      lines: receiptLines,
+      lines: toSave,
       ...(checklist === undefined ? {} : { checklist }),
     });
     // An unmatched delivery is SAID, not filed quietly. Nobody can check an invoice against a
@@ -1231,8 +1374,16 @@ el('save-receipt').addEventListener('click', () => {
     el('receive-checklist-action').value = '';
     el('grn-number').value = '';
     el('grn-po').value = '';
+    el('grn-order').value = '';
+    renderOrderChoice();
     renderLines();
   } catch (e) {
+    // Fix batch 4b · D-029: the lines that are wrong, by name, in the manager's language — nothing was saved.
+    if (e && e.name === 'ReceiptLinesRefusedError' && Array.isArray(e.problems)) {
+      const nameOf = (id) => (typeof session.productName === 'function' ? session.productName(id) : id);
+      tell(t('read'), `${t('lineProblems')} ${e.problems.map((p) => `${nameOf(p.productId)}: ${t(`lp_${p.kind}`) ?? p.kind}`).join('; ')}`);
+      return;
+    }
     // B4 · OB-504: a packed product with no month of manufacture is refused in the manager's language, not the error's.
     tell(t('read'), e && e.name === 'ManufactureDateRequiredError' ? `${t('mfgRequired')} (${(e.productIds ?? []).join(', ')})` : String(e && e.message ? e.message : e));
   }
@@ -1592,6 +1743,7 @@ function paintChrome() {
   el('receive-lead').textContent = t('receiveLead');
   el('grn-number-label').textContent = t('deliveryNote');
   el('grn-po-label').textContent = t('poNumber');
+  renderOrderChoice(); // D-029: the order list, in this language
   el('grn-product-label').textContent = t('itemCode');
   el('grn-qty-label').textContent = t('howMany');
   el('grn-temp-label').textContent = t('tempLabel');

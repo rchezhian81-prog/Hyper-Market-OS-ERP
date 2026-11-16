@@ -982,6 +982,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   Object.assign(payload, receivingChecklistFor(input));
   // B4 · OB-504: which products are PACKED — the Receive form refuses a packed line with no month of manufacture, offline.
   Object.assign(payload, packedProductIdsFor(input));
+  // Fix batch 4b · D-029: the Receive form's aids, offline — the orders this store waits for (each with what is still due),
+  // the items' names, and the batch-tracked products (a line of one needs a batch and an expiry).
+  Object.assign(payload, receivingAidsFor(input));
   // OB-288 lane 2 · §31.1: this box's clock against head office's, in words (P-08). Absent when the box has no clock check.
   if (input.clock !== undefined) payload['clock'] = input.clock;
   // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
@@ -1404,6 +1407,28 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     // Round B (screen gap audit 31 Oct 2026): the names, so the handheld shows a person a product and not a code.
     ...warehouseProductNames(input),
   };
+}
+
+/**
+ * Fix batch 4b · D-029: what the manager's Receive form needs to receive against an order without typing it — the store's open
+ * deliveries as head office last told this box (the same list the handheld chooses from, OB-37 / D-031), each line with what
+ * is still due; when the box took that list; the items' names; and the batch-tracked products. Absent stays absent.
+ */
+export function receivingAidsFor(input: ScreenInput): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (input.pack.warehouse.known && input.pack.warehouse.value.openDeliveries !== undefined) {
+    out['openDeliveries'] = input.pack.warehouse.value.openDeliveries.map((d) => ({
+      poId: d.poId, number: d.number, supplierId: d.supplierId,
+      due: d.ordered.map((o) => ({ productId: o.productId, dueMinor: o.quantityMinor })),
+    }));
+    if (input.pack.receivedAt !== null) out['deliveriesAsAt'] = input.pack.receivedAt;
+  }
+  const names = warehouseProductNames(input)['productNames'];
+  if (names !== undefined) out['productNames'] = names;
+  // Batch-tracked is marked only in the catalogue head office SIGNED (the pack file carries no such mark), so the list is
+  // served from that alone; without it the form asks for nothing extra and head office still refuses such a line by name.
+  if (input.cataloguePack !== undefined) Object.assign(out, batchTrackedProductIdsFor(input));
+  return out;
 }
 
 /** The products' names (and Tamil names, where recorded) from the store pack; nothing when the pack holds no products. */

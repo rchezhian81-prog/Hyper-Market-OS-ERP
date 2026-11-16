@@ -220644,6 +220644,12 @@
                     }
                   ]
                 },
+                "damagedMinor": {
+                  "type": "integer"
+                },
+                "expiry": {
+                  "type": "string"
+                },
                 "manufacturedOn": {
                   "type": "string"
                 },

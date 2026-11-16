@@ -175,6 +175,11 @@
       }
       .line-row .q { font-variant-numeric: tabular-nums; font-weight: 700; }
       .line-row button { min-height: 44px; min-width: 44px; }
+      /* Fix batch 4b · D-029: each delivery line's received / damaged / batch / expiry boxes, big enough for a thumb. */
+      .line-row .line-edit { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+      .line-row .line-edit label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+      .line-row .line-edit input { min-height: 44px; font-size: 17px; min-width: 0; }
+      .line-row .short { grid-column: 1 / -1; color: var(--warn); font-weight: 700; }
       /* OB-172: the receiving checklist — one Pass / Fail pair per check, big enough for a thumb at the back door. */
       .rc { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 12px 0; }
       .rc legend { font-weight: 700; padding: 0 6px; }
@@ -439,7 +444,13 @@
           <label for="grn-number" id="grn-number-label">Delivery note number</label>
           <input id="grn-number" type="text" autocomplete="off" />
         </div>
-        <div class="field">
+        <!-- Fix batch 4b · D-029: the order is CHOSEN from the ones this store is waiting for; its lines fill in with what is due. -->
+        <div class="field" id="grn-order-field" hidden>
+          <label for="grn-order" id="grn-order-label">Which order is this delivery?</label>
+          <select id="grn-order" aria-describedby="grn-order-hint"></select>
+          <p class="hint" id="grn-order-hint"></p>
+        </div>
+        <div class="field" id="grn-po-field">
           <label for="grn-po" id="grn-po-label">Purchase order number (leave empty if there is none)</label>
           <input id="grn-po" type="text" autocomplete="off" />
         </div>
