@@ -479,9 +479,63 @@ const asWaitingList = (b: unknown): WaitingForBillList => {
   return { receipts, count: typeof body.count === 'number' ? body.count : receipts.length, asAt: typeof body.asAt === 'string' ? body.asAt : '' };
 };
 
+/**
+ * D-045 (fix batch 3): a bill on head office's supplier-invoice register still waiting to be checked against its order —
+ * never checked, or checked and held back (`GET /v1/purchase/invoices`, read with `purchase.commitment.read`, a word the
+ * accountant already holds). The page lists these for a person who may match bills but not hand them in.
+ */
+export interface BillToCheck {
+  readonly invoiceId: string;
+  readonly supplierId: string;
+  readonly poId: string | null;
+  readonly totalMinor: number;
+  readonly state: 'not_checked' | 'held_back';
+}
+
+/** Head office's invoice register → the bills still waiting for a check, in head office's order (exceptions first). Pure. */
+export function billsToCheckOf(body: unknown): readonly BillToCheck[] {
+  const rows = Array.isArray((body as { invoices?: unknown } | null)?.invoices) ? (body as { invoices: { invoice?: Record<string, unknown>; match?: { blocked?: unknown } | null }[] }).invoices : [];
+  return rows.flatMap((r) => {
+    const i = r.invoice;
+    if (i === undefined || typeof i['invoiceId'] !== 'string') return [];
+    const state = r.match === null || r.match === undefined ? 'not_checked' : r.match.blocked === true ? 'held_back' : null;
+    if (state === null) return [];
+    return [{ invoiceId: i['invoiceId'], supplierId: String(i['supplierId'] ?? ''), poId: typeof i['poId'] === 'string' ? i['poId'] : null, totalMinor: Number(i['totalMinor'] ?? 0), state }];
+  });
+}
+
+/**
+ * D-043 (fix batch 3): a paper bill's lines filled from its purchase order — each product's quantity RECEIVED so far and the
+ * agreed price, so only what the paper shows differently (and its GST) is typed. Lines this cannot fill exactly — a weighed
+ * product, a price per case, nothing received yet — are left for the person (named in `left`), never guessed. Pure.
+ */
+export function typedLinesFromOrder(order: unknown): { readonly lines: readonly TypedLine[]; readonly left: readonly string[] } {
+  const o = (order ?? {}) as { lines?: unknown; receivedByProduct?: unknown };
+  const received = (o.receivedByProduct ?? {}) as Record<string, unknown>;
+  const lines: TypedLine[] = []; const left: string[] = []; const seen = new Set<string>();
+  for (const l of Array.isArray(o.lines) ? o.lines as Record<string, unknown>[] : []) {
+    const productId = String(l['productId'] ?? '');
+    if (productId === '' || seen.has(productId)) continue;
+    seen.add(productId);
+    const cost = (l['unitCost'] ?? {}) as { minor?: unknown; per?: unknown };
+    const uom = typeof l['uom'] === 'string' ? l['uom'].toLowerCase() : 'ea';
+    const qty = received[productId];
+    if (typeof cost.minor !== 'number' || (cost.per !== undefined && cost.per !== 1) || !['ea', 'pcs', 'nos', 'each'].includes(uom) || typeof qty !== 'number' || !Number.isInteger(qty) || qty <= 0) { left.push(productId); continue; }
+    const rupeesText = (minor: number): string => (minor / 100).toFixed(2);
+    lines.push({ productId, quantity: String(qty), unitPrice: rupeesText(cost.minor), amount: rupeesText(cost.minor * qty) });
+  }
+  return { lines, left };
+}
+
 export interface SupplierBillsSession {
   /** Whether the signed-in person may hand in, confirm and type bills (`purchase.invoice.capture`). */
   readonly mayCapture: boolean;
+  /** D-045: whether they may read head office's supplier-invoice register (`purchase.commitment.read`). */
+  readonly mayReadBills: boolean;
+  /** D-045: the bills on head office's register still waiting to be checked against their order. */
+  billsToCheck(): Promise<Answer<readonly BillToCheck[]>>;
+  /** D-043: a paper bill's lines filled from its purchase order (`typedLinesFromOrder`). */
+  linesFromOrder(poId: string): Promise<Answer<ReturnType<typeof typedLinesFromOrder>>>;
   /** Whether they may run the three-way match (`purchase.invoice.match`). */
   readonly mayMatch: boolean;
   register(): Promise<Answer<BillRegister>>;
@@ -508,6 +562,9 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
   return {
     mayCapture: may.has('purchase.invoice.capture'),
     mayMatch: may.has('purchase.invoice.match'),
+    mayReadBills: may.has('purchase.commitment.read'),
+    billsToCheck: async () => answerOf(await call({ method: 'GET', path: '/v1/purchase/invoices' }), billsToCheckOf),
+    linesFromOrder: async (poId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/orders/${encodeURIComponent(poId.trim())}` }), (b) => typedLinesFromOrder((b as { order?: unknown } | null)?.order)),
     register: async () => answerOf(await call({ method: 'GET', path: '/v1/purchase/invoice-documents' }), (b) => b as BillRegister),
     handIn: async (file, named) => {
       const read = readPickedFile(file, named);

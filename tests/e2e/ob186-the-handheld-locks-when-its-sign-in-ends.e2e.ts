@@ -127,6 +127,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-186: the handheld locks to the sign-in page w
     await page.waitForSelector('#scan:not([hidden])');
     await page.keyboard.type('890ICE');
     await page.keyboard.press('Enter');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');

@@ -1360,6 +1360,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
       ...(d.asn === undefined ? {} : { asn: d.asn }), // OB-288 P3: the ASN the phone receives against, offline
     })) }),
+    // D-031 (fix batch 3, P-08): when the box took this list from head office — an order issued later is not on it yet.
+    ...(w.openDeliveries === undefined || input.pack.receivedAt === null ? {} : { deliveriesAsAt: input.pack.receivedAt }),
     // R3 D-11: the vendors' route sheets for this store, so the door check-in can be made against a route offline as well as
     // against an order (each sheet names the place it is for). Absent stays absent: the phone then offers orders only.
     ...(w.dsdRoutes === undefined ? {} : { dsdRoutes: w.dsdRoutes.map((r) => ({
@@ -1866,6 +1868,13 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
     payload['costsMinor'] = costs;
   }
 
+  // D-005 (fix batch 3, P-08): the products head office keeps as on sale that the tills were NOT given — no price in the
+  // till pack (head office leaves an item out when it has no approved price for this store, e.g. one refused by the margin
+  // floor), no GST rate, or one the box itself keeps off the lane — each with its reason, so Products never says "On sale"
+  // for an item the till will refuse. Only when the box holds a till catalogue to judge against; absent when nothing is out.
+  const notOnTills = notOnTheTills(input);
+  if (notOnTills.length > 0) payload['notOnTills'] = notOnTills;
+
   // The shelf map, served as its parts rather than as a built map — the screen builds its own so
   // that anything assigned on it is kept while the person carries on working.
   if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
@@ -1875,6 +1884,29 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   }
 
   return payload;
+}
+
+/** D-005: why an item on sale in head office's product master is not on the tills. */
+export type NotOnTheTillsWhy = 'no_price' | 'no_tax_class' | 'kept_off_the_lane';
+
+/**
+ * D-005 (fix batch 3): every product the master lists as on sale (active or clearance) that the till catalogue this box sells
+ * from does not carry — and every one it carries but keeps off the lane (`unsellableProducts`, the till payload's own list) —
+ * with the reason. A product with no GST rate on the master is out for that; any other is out for want of a price (the till
+ * pack carries a product only with a price for this store that day). Empty when the box holds no till catalogue.
+ */
+export function notOnTheTills(input: ScreenInput): readonly { readonly productId: string; readonly why: NotOnTheTillsWhy; readonly detail?: string }[] {
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined || !input.pack.productMaster.known) return [];
+  const onTill = new Set(till.products.map((p) => p.productId));
+  const keptOff = new Map(unsellableProducts(input.pack, input.cataloguePack).filter((r) => NOT_SHIPPED_TO_THE_LANE.has(r.why)).map((r) => [r.productId, r.detail] as const));
+  const out: { productId: string; why: NotOnTheTillsWhy; detail?: string }[] = [];
+  for (const m of input.pack.productMaster.value) {
+    if (!LANE_SELLS.has(m.lifecycle)) continue;
+    if (!onTill.has(m.productId)) out.push({ productId: m.productId, why: m.taxClass === null || m.taxClass === '' ? 'no_tax_class' : 'no_price' });
+    else if (keptOff.has(m.productId)) out.push({ productId: m.productId, why: 'kept_off_the_lane', detail: keptOff.get(m.productId)! });
+  }
+  return out;
 }
 
 /**

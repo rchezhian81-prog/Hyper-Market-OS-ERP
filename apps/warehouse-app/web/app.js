@@ -97,6 +97,9 @@ const WORDS = {
     receive: 'Receive a delivery', putAway: 'Put away', waitsForBin: 'scan the bin', waitsForBox: 'needs the store computer',
     deliveries: 'Deliveries waiting for this store', chooseDelivery: 'Choose the delivery at the door first',
     receivingThis: 'receiving now', chooseThis: 'receive this one',
+    // D-031 / D-032 (fix batch 3): the order is chosen before the first scan, even when only one is waiting; a scan asks how many.
+    deliveriesAsOf: 'Orders as head office last sent them to the store computer, at',
+    recvHowMany: 'How many of this item?', recvHowManyHint: 'Key the number in this delivery (1 if only one). OK records them.',
     doneReceiving: 'Delivery complete — send the receipt',
     tempLabel: 'Arrival temperature (chilled or frozen goods)', tempNotTaken: 'not taken',
     tempTitle: 'Arrival temperature, °C', tempHint: 'Probe the goods and key the reading, for example 3.5 or -18. It goes with every scan until you change it.', tempNone: 'No reading',
@@ -198,6 +201,8 @@ const WORDS = {
     receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு', waitsForBin: 'இடத்தை ஸ்கேன் செய்', waitsForBox: 'கடை கணினி தேவை',
     deliveries: 'இந்தக் கடைக்கு வர வேண்டிய சரக்குகள்', chooseDelivery: 'முதலில் வாசலில் உள்ள சரக்கைத் தேர்ந்தெடுக்கவும்',
     receivingThis: 'இப்போது பெறப்படுகிறது', chooseThis: 'இதைப் பெறு',
+    deliveriesAsOf: 'தலைமை அலுவலகம் கடைக் கணினிக்குக் கடைசியாக அனுப்பிய ஆர்டர்கள், நேரம்',
+    recvHowMany: 'இந்தப் பொருள் எத்தனை?', recvHowManyHint: 'இந்தச் சரக்கில் உள்ள எண்ணிக்கையை உள்ளிடவும் (ஒன்று மட்டும் என்றால் 1). சரி அழுத்தினால் பதிவாகும்.',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
     tempLabel: 'வந்தபோது வெப்பநிலை (குளிர்/உறைந்த பொருட்கள்)', tempNotTaken: 'எடுக்கப்படவில்லை',
     tempTitle: 'வந்தபோது வெப்பநிலை, °C', tempHint: 'பொருளை அளந்து அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும்.', tempNone: 'அளவு இல்லை',
@@ -938,10 +943,17 @@ function renderDeliveries() {
     row.textContent = `${d.number} · ${d.supplierId} · ${d.ordered.length} × ${units} — ${current ? t('receivingThis') : t('chooseThis')}`;
     return row;
   }));
-  // Several waiting and none chosen: nothing is received under a made-up delivery.
-  const mustChoose = list.length > 1 && !(data && data.grnId);
+  // D-031 (fix batch 3): any delivery waiting and none chosen — even ONE — the receiver says which order is at the door
+  // before the first scan, so a scan is never booked against an order that is not the one being unloaded.
+  const mustChoose = list.length > 0 && !(data && data.grnId);
   el('receive').disabled = mustChoose;
   el('receive').title = mustChoose ? t('chooseDelivery') : '';
+  el('deliveries-choose').hidden = !mustChoose;
+  el('deliveries-choose').textContent = mustChoose ? t('chooseDelivery') : '';
+  // P-08: how fresh this list is — an order issued after it shows once the store computer next hears from head office.
+  const asAt = data && typeof data.deliveriesAsAt === 'string' ? data.deliveriesAsAt : null;
+  el('deliveries-asof').hidden = list.length === 0 || asAt === null;
+  if (asAt !== null) el('deliveries-asof').textContent = `${t('deliveriesAsOf')} ${shopWhen(asAt)}`;
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
@@ -954,8 +966,14 @@ el('receive').addEventListener('click', async () => {
   // travels. Empty = not taken (head office then holds a cold-chain item for a second person's check).
   const code = await awaitScan(t('scanBarcode'));
   if (code === null || real === undefined) return;
+  // D-032 (fix batch 3): after the scan, how many — a keypad, 1 already keyed — so 44 packs are one scan and "44", not 44
+  // scans. Cancel records nothing. The scan still travels as ONE record (its quantity on it), queued like every other.
+  // A code this handheld does not know is refused as it is (no number is asked for goods it cannot name).
+  const known = Array.isArray(data?.barcodes) ? data.barcodes.find((b) => b.barcode === code) : undefined;
+  const howMany = known === undefined ? 1 : await awaitQty(`${t('recvHowMany')} — ${nameOf(known.productId)}`, t('recvHowManyHint'), '1');
+  if (howMany === null || !Number.isInteger(howMany) || howMany < 1) return;
   const out = real.receive({
-    commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po',
+    commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: howMany, source: 'po',
     ...(arrivalTempC === null ? {} : { temperatureC: arrivalTempC }),
     ...(manufacturedOn === null ? {} : { manufacturedOn }),
   });

@@ -184,6 +184,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(await page.isDisabled('#receive')).toBe(false);
     await page.click('#receive');
     await scan(page, '890RICE');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
@@ -212,6 +213,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     // RECEIVE: the delivery barcode resolves to the ordered product → accepted → queued → handed to the box.
     await page.click('#receive');
     await scan(page, '890RICE');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
@@ -318,6 +320,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(await page.textContent('#recv-temp')).toContain('-18 °C');
     await page.click('#receive');
     await scan(page, '890RICE');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('Received');
     await page.click('#banner-ok');
@@ -330,5 +333,60 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.click('#recv-temp');
     await page.click('#temp-none');
     expect(await page.textContent('#recv-temp')).toContain('not taken');
+  }, 60_000);
+
+  it('D-031 / D-032 (fix batch 3): with ONE delivery waiting the phone still asks which order is at the door before the first scan, says how fresh the list is, and after a scan asks how many — 44 packs are one scan and "44"', async () => {
+    // As head office sends it with exactly one order waiting: the order preset on the section AND listed.
+    const pack = JSON.parse(PACK_JSON) as { warehouse: Record<string, unknown> };
+    const { grnId: _g, poId: _p, ordered: _o, ...rest } = pack.warehouse;
+    void _g; void _p; void _o;
+    const only = { poId: 'po-old', number: 'PO-0001', supplierId: 'sup-rice', deliverToLocationId: 'wh-1', grnId: 'grn-po-old-1', ordered: [{ productId: 'p-rice', quantityMinor: 100, unitCostMinor: 4000, currency: 'INR' }] };
+    pack.warehouse = { ...rest, grnId: only.grnId, poId: only.poId, ordered: only.ordered, openDeliveries: [only] };
+    const { edge, base } = await box(JSON.stringify(pack));
+    const page = await openHandheld(base);
+    await page.fill('#deviceId', 'hh-01');
+    await page.fill('#code', CODE);
+    await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
+    await ready(page);
+    // The one order is listed, but nothing can be scanned until the receiver says it IS the order at the door.
+    await page.waitForSelector('#deliveries-heading:not([hidden])');
+    expect(await page.locator('#deliveries a').count()).toBe(1);
+    expect(await page.isDisabled('#receive')).toBe(true);
+    expect(await page.textContent('#deliveries-choose')).toBe('Choose the delivery at the door first');
+    expect(await page.isVisible('#deliveries-choose')).toBe(true);
+    // How fresh the list is — an order issued after it is not on it yet (P-08).
+    expect(await page.textContent('#deliveries-asof')).toMatch(/^Orders as head office last sent them to the store computer, at \S/);
+    expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
+
+    await page.click('#deliveries a[href="?delivery=po-old"]');
+    await page.waitForFunction(() => new URLSearchParams((globalThis as unknown as { location: { search: string } }).location.search).get('delivery') === 'po-old', undefined, { timeout: 10_000 });
+    await ready(page);
+    expect(await page.isDisabled('#receive')).toBe(false);
+    expect(await page.isHidden('#deliveries-choose')).toBe(true);
+
+    // One scan, then the keypad: 1 is already keyed; the receiver keys 44 and presses OK.
+    await page.click('#receive');
+    await scan(page, '890RICE');
+    await page.waitForSelector('#qty:not([hidden])');
+    expect(await page.textContent('#qty-title')).toBe('How many of this item? — p-rice');
+    expect(await page.textContent('#qty-entry')).toBe('1');
+    await page.click('#qty-keypad button:has-text("C")');
+    await page.click('#qty-keypad button:has-text("4")');
+    await page.click('#qty-keypad button:has-text("4")');
+    await page.click('#qty-ok');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Received');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt');
+    // Cancel on the keypad records nothing.
+    await page.click('#receive');
+    await scan(page, '890RICE');
+    await page.waitForSelector('#qty:not([hidden])');
+    await page.click('#qty-cancel');
+    const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { payload: Record<string, unknown> });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-old-1', productId: 'p-rice', quantityMinor: 44 });
+    expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseOutbox!.unsentCount())).toBe(0);
   }, 60_000);
 });

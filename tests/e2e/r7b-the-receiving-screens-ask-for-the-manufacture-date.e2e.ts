@@ -151,6 +151,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-504: the receiving screens ask for the month 
     await page.waitForSelector('#scan:not([hidden])');
     await page.keyboard.type('890DET');
     await page.keyboard.press('Enter');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     await says(page, '#banner-title', 'Packed goods — enter the month of manufacture first');
     await page.click('#banner-ok');
@@ -166,6 +167,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-504: the receiving screens ask for the month 
     await page.waitForSelector('#scan:not([hidden])');
     await page.keyboard.type('890DET');
     await page.keyboard.press('Enter');
+    await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
     await page.waitForSelector('#banner:not([hidden])');
     await says(page, '#banner-title', 'Received');
     await page.click('#banner-ok');

@@ -122,6 +122,7 @@ describe.skipIf(!HAVE_BROWSER)('warehouse handheld delivery, end to end in a rea
       expect(await unsent(page)).toBe(0);
       await page.click('#receive');
       await scan(page, '890RICE'); // resolves to p-rice, which is on order → received
+      await page.click('#qty-ok'); // D-032: after the scan the quantity keypad asks how many (1 keyed)
       await page.waitForFunction(
         () => ((globalThis as unknown as BrowserGlobals).warehouseOutbox?.unsentCount() ?? 0) >= 1,
         undefined, { timeout: 10_000 },

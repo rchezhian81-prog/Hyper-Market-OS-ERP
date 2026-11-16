@@ -33,7 +33,11 @@ export const SUPPLIER_PAYMENT_COPY = {
     needPayment: 'Type the supplier, the amount in rupees, the day it was paid, how, and its reference.',
     nobody: 'Nobody is signed in on this screen.', cannotPay: 'Recording a supplier payment needs the permission to pay suppliers.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was asked or recorded.',
-    settles: 'Bills it settles (optional — bill numbers, separated by commas)', settlesShown: 'settles {bills}',
+    settles: 'Bills it settles — tick the supplier\'s matched bills not yet paid (optional)', settlesShown: 'settles {bills}',
+    // D-047 (fix batch 3): the supplier's matched, unpaid bills as tick boxes with the running total.
+    billsPick: 'Choose the supplier to see their matched bills not yet paid.', billsReading: 'Reading the supplier\'s bills from head office…',
+    billsNone: 'This supplier has no matched bill waiting to be paid.', billLine: '{bill} — {amount} may be paid',
+    billsTotal: 'Ticked: {n} bill(s), {total} in all', billsNoneTicked: 'No bill ticked.',
     confirmTitle: '{amount} paid to {supplier} will be recorded', confirmDetail: 'Paid on {day} by {method}, reference {ref}. What the shop owes the supplier falls by this amount, and the bank statement line with this reference is matched to it on Bank reconciliation. A payment is kept for good; a mistake is corrected by a new entry.',
     confirmAuthority: 'You may pay suppliers; {approver} approved this exact payment.', confirmLabel: 'Record the payment', notConfirmed: 'Not confirmed — nothing was recorded.',
   },
@@ -47,7 +51,10 @@ export const SUPPLIER_PAYMENT_COPY = {
     needPayment: 'சப்ளையர், ரூபாயில் தொகை, செலுத்திய நாள், எப்படி, அதன் குறிப்பு ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotPay: 'சப்ளையர் செலுத்தலைப் பதிய சப்ளையர்களுக்குச் செலுத்தும் அனுமதி தேவை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் கேட்கப்படவில்லை, பதியப்படவில்லை.',
-    settles: 'இது தீர்க்கும் பில்கள் (விருப்பம் — பில் எண்கள், காற்புள்ளியால் பிரிக்கவும்)', settlesShown: '{bills} பில்களைத் தீர்க்கிறது',
+    settles: 'இது தீர்க்கும் பில்கள் — சப்ளையரின் பொருத்தப்பட்ட, இன்னும் செலுத்தாத பில்களைத் தேர்வு செய்யவும் (விருப்பம்)', settlesShown: '{bills} பில்களைத் தீர்க்கிறது',
+    billsPick: 'பொருத்தப்பட்ட, இன்னும் செலுத்தாத பில்களைக் காண சப்ளையரைத் தேர்ந்தெடுக்கவும்.', billsReading: 'சப்ளையரின் பில்களைத் தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
+    billsNone: 'இந்தச் சப்ளையருக்குச் செலுத்தக் காத்திருக்கும் பொருத்தப்பட்ட பில் எதுவும் இல்லை.', billLine: '{bill} — {amount} செலுத்தலாம்',
+    billsTotal: 'தேர்வு: {n} பில்(கள்), மொத்தம் {total}', billsNoneTicked: 'எந்த பில்லும் தேர்வு செய்யப்படவில்லை.',
     confirmTitle: '{supplier}க்குச் செலுத்திய {amount} பதியப்படும்', confirmDetail: '{day} அன்று {method} மூலம் செலுத்தப்பட்டது, குறிப்பு {ref}. கடை சப்ளையருக்குச் செலுத்த வேண்டியது இந்தத் தொகையால் குறையும்; இந்தக் குறிப்புள்ள வங்கி அறிக்கை வரி வங்கி சரிக்கட்டல் பக்கத்தில் இதனுடன் பொருத்தப்படும். செலுத்தல் நிரந்தரமாக வைக்கப்படும்; தவறு புதிய பதிவால் திருத்தப்படும்.',
     confirmAuthority: 'நீங்கள் சப்ளையர்களுக்குச் செலுத்தலாம்; இந்தச் செலுத்தலுக்கு {approver} ஒப்புதல் அளித்தார்.', confirmLabel: 'செலுத்தலைப் பதி', notConfirmed: 'உறுதிப்படுத்தவில்லை — எதுவும் பதியப்படவில்லை.',
   },
@@ -68,6 +75,22 @@ export interface PaymentForm {
 
 /** The bill numbers a person typed, trimmed, without blanks or repeats, in the order typed. Pure. */
 export const billsOf = (typed: string | undefined): readonly string[] => [...new Set((typed ?? '').split(/[,\s]+/).map((x) => x.trim()).filter((x) => x !== ''))];
+/** D-047: one of the supplier's bills a payment may settle — matched, agreed, not named by any payment recorded yet. */
+export interface OpenBill { readonly invoiceId: string; readonly poId: string | null; readonly payableMinor: number }
+
+/**
+ * D-047 (fix batch 3): the supplier's bills a payment may tick — from head office's own statement of the account
+ * (`GET /v1/purchase/suppliers/:supplierId/account`): matched and agreed (not held back), something payable, and not named
+ * as settled by a payment already recorded. Pure.
+ */
+export function openBillsOf(account: unknown): readonly OpenBill[] {
+  const a = (account ?? {}) as { invoices?: unknown; payments?: unknown };
+  const settled = new Set((Array.isArray(a.payments) ? a.payments as { settles?: unknown }[] : []).flatMap((p) => (Array.isArray(p.settles) ? p.settles.map(String) : [])));
+  return (Array.isArray(a.invoices) ? a.invoices as Record<string, unknown>[] : [])
+    .filter((i) => i['matched'] === true && i['blocked'] !== true && typeof i['payableMinor'] === 'number' && i['payableMinor'] > 0 && !settled.has(String(i['invoiceId'])))
+    .map((i) => ({ invoiceId: String(i['invoiceId']), poId: typeof i['poId'] === 'string' ? i['poId'] : null, payableMinor: i['payableMinor'] as number }));
+}
+
 export interface PaymentAsk { readonly requestId: string; readonly kind: string; readonly subjectRef: string; readonly status: string; readonly details: Record<string, unknown>; readonly valueMinor: number | null; readonly decidedBy?: string }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -90,6 +113,8 @@ export interface SupplierPaymentSession {
   ask(f: PaymentForm): Done<{ readonly requestId: string; readonly paymentId: string }>;
   myAsks(): Done<readonly PaymentAsk[]>;
   record(ask: PaymentAsk): Done<{ readonly alreadyRecorded: boolean; readonly owedMinor?: number }>;
+  /** D-047: the supplier's matched bills not yet paid (`openBillsOf`); a supplier head office has no record of has none. */
+  openBills(supplierId: string): Done<readonly OpenBill[]>;
 }
 
 export function createSupplierPaymentSession(input: {
@@ -131,6 +156,13 @@ export function createSupplierPaymentSession(input: {
       const supplierId = String(ask.details['supplierId'] ?? ''); const paymentId = String(ask.details['paymentId'] ?? '');
       const body = Object.fromEntries(Object.entries(ask.details).filter(([k]) => k !== 'supplierId' && k !== 'paymentId'));
       return call('POST', `/v1/purchase/suppliers/${enc(supplierId)}/payments/${enc(paymentId)}`, { ...body, approvalId: ask.requestId });
+    },
+    openBills: async (supplierId) => {
+      const g = gate(); if (g) return g;
+      if (supplierId.trim() === '') return { result: 'ok', value: [] };
+      const out = await call<unknown>('GET', `/v1/purchase/suppliers/${enc(supplierId)}/account`);
+      if (out.result === 'refused' && out.status === 404) return { result: 'ok', value: [] };
+      return out.result === 'ok' ? { result: 'ok', value: openBillsOf(out.value) } : out;
     },
   };
 }

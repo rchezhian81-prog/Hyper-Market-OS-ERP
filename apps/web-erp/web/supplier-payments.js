@@ -3,7 +3,8 @@
 // from this page. Ask → a different person approves on their Approvals page → record here, naming that approval; what is
 // recorded is exactly what was approved. Nothing is read on open. No prompt/confirm/alert.
 // U7 · OB-724: the same section is on the Suppliers page AND the Supplier bills page; the supplier is picked by name, the day
-// is the shop's dd/mm/yyyy field, the bills it settles may be named, and recording asks the shared confirm sheet first.
+// is the shop's dd/mm/yyyy field, the bills it settles are ticked from the supplier's matched, unpaid bills (D-047), and
+// recording asks the shared confirm sheet first.
 
 const $ = (id) => document.getElementById(id);
 const api = window.supplierPayments ?? null;
@@ -39,6 +40,7 @@ function paint() {
   const sel = $('pay-method'); const keep = sel.value;
   sel.replaceChildren(...api.methods.map((m) => node('option', { value: m, textContent: w(`m_${m}`) })));
   if (keep !== '') sel.value = keep;
+  if ($('pay-bills-list') !== null) drawBills();
   const list = $('pay-asks'); list.replaceChildren();
   if (asks === null) return;
   if (asks.length === 0) { list.append(node('li', { textContent: w('noAsks') })); return; }
@@ -65,6 +67,47 @@ function paint() {
   }
 }
 
+// ── D-047 (fix batch 3): the bills it settles — the chosen supplier's matched, unpaid bills as tick boxes, with the total ──
+let openBills = null; // null: no supplier chosen yet; [] none waiting
+let billsFor = '';
+let billsWhy = ''; // a refusal's words, when head office would not say
+let autoAmount = null; // the amount this section put in the box from the ticks (a typed amount is never overwritten)
+const ticked = () => [...document.querySelectorAll('#pay-bills-list input[type="checkbox"]:checked')].map((b) => b.value);
+function drawTotal() {
+  const ids = new Set(ticked());
+  const total = (openBills ?? []).filter((b) => ids.has(b.invoiceId)).reduce((s, b) => s + b.payableMinor, 0);
+  $('pay-bills-total').textContent = openBills === null || openBills.length === 0 ? '' : ids.size === 0 ? w('billsNoneTicked') : w('billsTotal', { n: ids.size, total: api.rupees(total) });
+  $('pay-bills-total').dataset.totalMinor = String(total);
+  const box = $('pay-amount');
+  if (ids.size > 0 && (box.value.trim() === '' || box.value === autoAmount)) { autoAmount = (total / 100).toFixed(2); box.value = autoAmount; }
+}
+function drawBills() {
+  const keep = new Set(ticked());
+  const note = $('pay-bills-note');
+  note.textContent = billsWhy !== '' ? billsWhy : openBills === null ? w('billsPick') : openBills.length === 0 ? w('billsNone') : '';
+  $('pay-bills-list').replaceChildren(...(openBills ?? []).map((b) => {
+    const box = node('input', { type: 'checkbox', value: b.invoiceId, checked: keep.has(b.invoiceId) });
+    box.dataset.amountMinor = String(b.payableMinor);
+    box.addEventListener('change', drawTotal);
+    const label = node('label', { className: 'inline' }, box, node('span', { textContent: w('billLine', { bill: b.invoiceId, amount: api.rupees(b.payableMinor) }) }));
+    label.dataset.bill = b.invoiceId;
+    return label;
+  }));
+  drawTotal();
+}
+async function loadBills() {
+  const supplierId = $('pay-supplier').value.trim();
+  if (supplierId === billsFor) return;
+  billsFor = supplierId; openBills = supplierId === '' ? null : []; billsWhy = '';
+  $('pay-bills-list').replaceChildren();
+  if (supplierId === '') { drawBills(); return; }
+  $('pay-bills-note').textContent = w('billsReading');
+  const out = await session.openBills(supplierId);
+  if (billsFor !== supplierId) return; // another supplier was chosen meanwhile
+  if (out.result !== 'ok') { openBills = []; billsWhy = api.outcomeWords(lang(), out); } else openBills = out.value;
+  drawBills();
+}
+
 async function loadAsks() {
   const out = await session.myAsks();
   if (out.result !== 'ok') { asks = null; paint(); say('pay-status', api.outcomeWords(lang(), out), 'err'); return; }
@@ -85,11 +128,15 @@ if (api !== null && may.pay) {
   $('pay-ask').addEventListener('click', async () => {
     const b = $('pay-ask'); b.disabled = true;
     try {
-      const out = await session.ask({ supplierId: $('pay-supplier').value, amountRupees: $('pay-amount').value, paidOn: paidOnValue(), method: $('pay-method').value, reference: $('pay-ref').value, settles: $('pay-settles')?.value ?? '' });
+      const out = await session.ask({ supplierId: $('pay-supplier').value, amountRupees: $('pay-amount').value, paidOn: paidOnValue(), method: $('pay-method').value, reference: $('pay-ref').value, settles: ticked().join(',') });
       if (out.result !== 'ok') { say('pay-status', api.outcomeWords(lang(), out), 'err'); return; }
       say('pay-status', w('asked'), 'ok');
       await loadAsks();
     } finally { b.disabled = false; }
   });
   $('pay-asks-show').addEventListener('click', () => { void loadAsks(); });
+  // D-047: the supplier chosen (picked by name, or its code typed) → its matched bills not yet paid, as tick boxes.
+  let typing = null;
+  $('pay-supplier').addEventListener('change', () => { void loadBills(); });
+  $('pay-supplier').addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(() => { void loadBills(); }, 400); });
 }

@@ -320,7 +320,8 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     await enrolPhone(edge, enrolCode);
 
     // ═══ 2. Receiving against the PO on the warehouse phone, with a quality check; a damaged line is an exception ══════════
-    let phone = await openPhone(edge, RECEIVER);
+    // D-031 (fix batch 3): the receiver chooses which order is at the door, even when only one is listed.
+    let phone = await openPhone(edge, RECEIVER, PO);
     expect(phone.data).toMatchObject({ poId: PO, workerId: RECEIVER, storeId: BACK });
     const grnId = phone.data.grnId!;
     const scan = (commandId: string, barcode: string, qty: number, over: Record<string, unknown> = {}) =>

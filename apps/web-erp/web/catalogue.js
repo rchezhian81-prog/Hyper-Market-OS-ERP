@@ -75,6 +75,10 @@ const WORDS = {
     done: 'done', ofWord: 'of', required: 'needed before it can be sold', niceToHave: 'worth adding',
     stillNeeded: 'Still needed', cannotScore: 'This item cannot be checked',
     onSale: 'On sale', notOnSale: 'Not on sale', recallBlocked: 'Stopped — recall',
+    // D-005 (fix batch 3): an item the tills were not given — said in red with the reason, never "On sale".
+    notOnTills_no_price: 'Not on the tills — no price', notOnTills_no_tax_class: 'Not on the tills — no GST rate', notOnTills_kept_off_the_lane: 'Not on the tills',
+    notOnTillsWhy_no_price: 'head office sent the tills no price for it for this store today (a price refused by the margin floor waits for its approval) — the till says "not in the price list"',
+    notOnTillsWhy_no_tax_class: 'it has no GST rate, so head office left it out of the till pack',
     discontinued: 'Discontinued', draft: 'Not finished', noPrice: 'No price set',
     priceNotRead: 'price: open the item to read it from head office', pricesReading: 'Reading the prices already set from head office…',
     showPrice: 'Show the price', noBarcode: 'no barcode', cashierLead: 'Name, price and barcode of every item. Costs and suppliers are not shown on this screen.',
@@ -153,6 +157,9 @@ const WORDS = {
     done: 'முடிந்தது', ofWord: '/', required: 'விற்பதற்கு முன் தேவை', niceToHave: 'சேர்ப்பது நல்லது',
     stillNeeded: 'இன்னும் தேவை', cannotScore: 'இந்தப் பொருளைச் சரிபார்க்க முடியவில்லை',
     onSale: 'விற்பனையில்', notOnSale: 'விற்பனையில் இல்லை', recallBlocked: 'நிறுத்தப்பட்டது — ரீகால்',
+    notOnTills_no_price: 'கவுண்டர்களில் இல்லை — விலை இல்லை', notOnTills_no_tax_class: 'கவுண்டர்களில் இல்லை — GST விகிதம் இல்லை', notOnTills_kept_off_the_lane: 'கவுண்டர்களில் இல்லை',
+    notOnTillsWhy_no_price: 'இன்று இந்தக் கடைக்கு அதன் விலையைத் தலைமை அலுவலகம் கவுண்டர்களுக்கு அனுப்பவில்லை (லாப வரம்பால் மறுக்கப்பட்ட விலை அனுமதிக்காகக் காத்திருக்கிறது) — கவுண்டர் "விலைப் பட்டியலில் இல்லை" என்கிறது',
+    notOnTillsWhy_no_tax_class: 'அதற்கு GST விகிதம் இல்லை, எனவே தலைமை அலுவலகம் அதைக் கவுண்டர் தொகுப்பில் சேர்க்கவில்லை',
     discontinued: 'நிறுத்தப்பட்டது', draft: 'முடிக்கப்படவில்லை', noPrice: 'விலை நிர்ணயிக்கப்படவில்லை',
     priceNotRead: 'விலை: தலைமை அலுவலகத்திலிருந்து படிக்கப் பொருளைத் திறக்கவும்', pricesReading: 'ஏற்கனவே நிர்ணயித்த விலைகளைத் தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
     showPrice: 'விலையைக் காட்டு', noBarcode: 'பார்கோடு இல்லை', cashierLead: 'ஒவ்வொரு பொருளின் பெயர், விலை, பார்கோடு. அடக்க விலையும் விநியோகஸ்தர்களும் இந்தத் திரையில் காட்டப்படாது.',
@@ -505,6 +512,8 @@ const SELLABLE_WORDS = {
 };
 
 let openProduct = null;
+// D-005: the items the store computer says the tills were not given (productId → why), from the page's data.
+const notOnTills = new Map((Array.isArray(window.catalogueData?.notOnTills) ? window.catalogueData.notOnTills : []).map((x) => [x.productId, x]));
 
 // OB-569: the cashier's view — name, price and barcode only (the store computer sent nothing else; nothing here edits).
 const cashierView = window.catalogueCashierView ?? null;
@@ -620,6 +629,17 @@ function itemRow(view) {
   sub.textContent = `${view.product.sku} · ${t(SELLABLE_WORDS[view.sellable] ?? 'notOnSale')}`
     + ` · ${priceWords(view)}`;
   what.append(name, sub);
+  // D-005 (fix batch 3): the store computer says this item is NOT on the tills — said instead of "On sale", in red, with why.
+  const out = notOnTills.get(view.product.productId);
+  if (out !== undefined && view.sellable === 'sellable') {
+    row.classList.add('stopped', 'not-on-tills');
+    row.dataset.notOnTills = out.why;
+    sub.textContent = `${view.product.sku} · ${priceWords(view)}`;
+    const warn = document.createElement('small');
+    warn.className = 'not-on-tills';
+    warn.textContent = `${t(`notOnTills_${out.why}`)} — ${out.detail ?? t(`notOnTillsWhy_${out.why}`)}`;
+    what.append(warn);
+  }
 
   const pct = document.createElement('span');
   pct.className = 'pct';
