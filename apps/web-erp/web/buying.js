@@ -77,6 +77,8 @@ const WORDS = {
     needPoLine: 'Add at least one item first.', needPoFields: 'Fill in the item, how many, and the price.',
     orderRaised: 'Order raised', whoApprovesPo: 'Who approved this order?',
     orderProposed: 'Order proposed — waiting for a second person to approve it',
+    bigPo: 'Not raised yet — this order is worth {total} before GST, more than {limit} (the owner\'s limit, OB-821). Check the quantities and prices; to raise it anyway, press "Yes, raise this order".',
+    raiseBig: 'Yes, raise this order',
     sampleData: 'Sample data — this is not your shop.',
     notConnected: 'This screen has not been given anything by the store box yet.',
     remove: 'Remove', lineTotal: 'Line total', whatIsWrong: 'What is wrong',
@@ -144,6 +146,8 @@ const WORDS = {
     needPoLine: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needPoFields: 'பொருள், எண்ணிக்கை, விலை — எல்லாவற்றையும் நிரப்பவும்.',
     orderRaised: 'ஆர்டர் தயாரிக்கப்பட்டது', whoApprovesPo: 'இந்த ஆர்டரை யார் ஒப்புதல் அளித்தார்?',
     orderProposed: 'ஆர்டர் முன்மொழியப்பட்டது — வேறு ஒருவர் ஒப்புதல் அளிக்கக் காத்திருக்கிறது',
+    bigPo: 'இன்னும் ஆர்டர் செய்யப்படவில்லை — இந்த ஆர்டரின் மதிப்பு GST க்கு முன் {total}, இது {limit} ஐ விட அதிகம் (உரிமையாளரின் வரம்பு, OB-821). அளவுகளையும் விலைகளையும் சரிபாருங்கள்; இருந்தும் ஆர்டர் செய்ய "ஆம், இந்த ஆர்டரைச் செய்" அழுத்தவும்.',
+    raiseBig: 'ஆம், இந்த ஆர்டரைச் செய்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     notConnected: 'கடை கணினியிடமிருந்து இந்தத் திரைக்கு இன்னும் எதுவும் வரவில்லை.',
     remove: 'நீக்கு', lineTotal: 'வரி மொத்தம்', whatIsWrong: 'என்ன தவறு',
@@ -629,8 +633,15 @@ function matchTable(lines) {
 // ── Raising a purchase order ────────────────────────────────────────────────
 
 let poLines = [];
+// OB-821 B: an order over the owner's limit (₹1,00,000 before GST) is asked about again; this holds the total the person
+// was warned about, so a second press raises exactly that order and any change to the lines asks again.
+let poBigAsked = null;
+const orderLimit = window.buyingOrderLimit ?? null;
+const poBeforeGstMinor = () => poLines.reduce((sum, l) => sum + (typeof session.lineValueMinor === 'function' ? session.lineValueMinor(l.productId, l.orderedQty, l.unitCostMinor) : l.unitCostMinor * l.orderedQty), 0);
+function resetBigPo() { poBigAsked = null; el('raise-po').textContent = t('raiseIt'); }
 
 function renderPoLines() {
+  if (poBigAsked !== null && poBigAsked !== poBeforeGstMinor()) resetBigPo();
   if (poLines.length === 0) {
     const none = document.createElement('p');
     none.className = 'empty';
@@ -741,6 +752,14 @@ el('add-po-line').addEventListener('click', () => {
 
 el('raise-po').addEventListener('click', async () => {
   if (poLines.length === 0) { tell(t('read'), t('needPoLine')); return; }
+  // OB-821 B (D-039): over the owner's limit before GST — say so with the figures, save nothing, and ask again.
+  const before = poBeforeGstMinor();
+  if (orderLimit !== null && orderLimit.over(before) && poBigAsked !== before) {
+    poBigAsked = before;
+    el('raise-po').textContent = t('raiseBig');
+    tell(t('read'), t('bigPo').replace('{total}', inr(before)).replace('{limit}', inr(orderLimit.limitMinor)));
+    return;
+  }
 
   // Raising an order PROPOSES it to head office in the buyer's OWN name (§28). It does NOT ask the buyer
   // to type an "approved by" name here — issuing is a separate second person's act, which head office
@@ -759,6 +778,7 @@ el('raise-po').addEventListener('click', async () => {
     if (out.budget?.overBudget) tell(`${t('proposedOver')} ${inr(out.budget.overByMinor)}`, `${poId} · ${inr(out.totalMinor)} — ${t('escalates')}`);
     else tell(t('orderProposed'), `${poId} · ${inr(out.totalMinor)}`, true);
     poLines = [];
+    resetBigPo();
     renderPoLines();
   } else {
     // A blocked supplier, a lost link, or a box not connected to head office — said plainly, never swallowed.
@@ -1257,21 +1277,36 @@ el('reorder-raise').addEventListener('click', async () => {
   rpSay('reorder-raise-status', await rp.session.raise(rpProposal, ticked), 'raisedNow');
 });
 // D-040: one PROPOSED order per usual supplier, at the last agreed price, through the same path as "Raise an order".
+// OB-821 B: true after the first press held orders over the owner's limit — the next press proposes exactly those.
+let usualBigAsked = false;
+el('reorder-proposal').addEventListener('change', () => { if (usualBigAsked) { usualBigAsked = false; el('reorder-usual').textContent = rt('usual'); } });
 el('reorder-usual').addEventListener('click', async () => {
   const status = el('reorder-usual-status');
   const ticked = [...el('reorder-proposal').querySelectorAll('tr[data-product]')].filter((tr) => tr.querySelector('input.tick')?.checked === true)
     .map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.qty')?.value ?? '' }));
-  const out = await rp.session.orderFromUsualSuppliers(rpProposal, ticked, (input) => session.proposeToCloud(input));
+  const confirmed = usualBigAsked;
+  usualBigAsked = false;
+  el('reorder-usual').textContent = rt('usual');
+  const out = await rp.session.orderFromUsualSuppliers(rpProposal, ticked, (input) => session.proposeToCloud(input), confirmed);
   if (out.result !== 'ok') { status.className = 'otb-status err'; status.textContent = rp.outcomeWords(lang, out, ''); return; }
-  const { proposed, failed, leftOut } = out.value;
+  const { proposed, failed, leftOut, held } = out.value;
   const parts = [textCell('p', proposed.length === 0 ? rt('usualNone') : rt('usualDone').replace('{n}', String(proposed.length)))];
+  // OB-821 B: the orders over the owner's limit are named, not proposed; the button now raises exactly those.
+  if (held.length > 0) {
+    const limit = window.buyingOrderLimit?.limitMinor;
+    const warn = textCell('p', `${rt('bigOrder').replace('{n}', String(held.length)).replace('{limit}', limit === undefined ? '' : inr(limit))} ${held.map((h) => rt('bigOrderRow').replace('{supplier}', nameOfThing('supplier', h.supplierId)).replace('{total}', inr(h.totalMinor))).join(' · ')}`, 'exception');
+    warn.id = 'reorder-usual-big';
+    parts.push(warn);
+    usualBigAsked = true;
+    el('reorder-usual').textContent = rt('raiseBigOrders');
+  }
   for (const p of proposed) {
     const line = textCell('p', `${nameOfThing('supplier', p.supplierId)} · ${p.poId} · ${inr(p.totalMinor)}${p.overBudget ? ` — ${t('escalates')}` : ''}`);
     line.dataset.po = p.poId; parts.push(line);
   }
   for (const f of failed) parts.push(textCell('p', `${rt('usualFailed')} ${nameOfThing('supplier', f.supplierId)}: ${f.reason}`, 'exception'));
   if (leftOut.length > 0) parts.push(textCell('p', `${rt('usualLeft')} ${leftOut.map((l) => `${nameOfThing('product', l.productId)} (${rt(`lo_${l.why}`)})`).join(' · ')}`, 'exception'));
-  status.className = `otb-status ${proposed.length > 0 && failed.length === 0 ? 'good' : 'err'}`;
+  status.className = `otb-status ${proposed.length > 0 && failed.length === 0 && held.length === 0 ? 'good' : 'err'}`;
   status.replaceChildren(...parts);
 });
 el('dr-raise').addEventListener('click', async () => {

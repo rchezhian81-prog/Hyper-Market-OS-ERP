@@ -13,9 +13,10 @@
 // A product whose unit this screen was not told is refused by name, never guessed. Nothing is read on open.
 
 import { makeCaller, outcomeIn, newId, type Outcome } from './r4-insight-call';
-import { quantityLabel, toDecimalString, normaliseUom, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
+import { quantityLabel, toDecimalString, normaliseUom, typedQuantityMinor, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { suggestedSettingsFromSales, bigChanges, type SuggestionResult, type CurrentFigures, type SalesWindow } from '../../../packages/replenishment/src/suggested-settings';
-import { usualSupplierPlan, type LeftOutWhy } from '../../../packages/purchasing/src/usual-supplier';
+import { usualSupplierPlan, type LeftOutWhy, type PlannedOrder } from '../../../packages/purchasing/src/usual-supplier';
+import { orderNeedsSecondLook } from '../../../packages/purchasing/src/order-value-warning';
 
 export type Lang = 'en' | 'ta';
 
@@ -50,6 +51,8 @@ export const REPLENISHMENT_COPY = {
     bigJumpRow: '{item}: {field} from {from} to {to}', saveAnyway: 'Yes, save these figures',
     usual: 'Order these from the usual supplier',
     usualDone: 'Proposed {n} order(s), one per supplier, at the last agreed price. A second person issues each order (Approvals).',
+    bigOrder: 'Not raised yet — {n} order(s) are worth more than {limit} before GST (the owner\'s limit, OB-821). Check the quantities; to raise them anyway, press again.',
+    bigOrderRow: '{supplier}: {total} before GST', raiseBigOrders: 'Yes, raise this order',
     usualNone: 'No order was proposed.', usualLeft: 'Left out — order these on "Raise an order":',
     lo_no_earlier_order: 'no earlier issued order, so no usual supplier or agreed price', lo_price_not_per_unit: 'the last price was per case and does not divide into a price per item', lo_quantity_not_whole: 'the quantity is not a whole number of the item\'s steps',
     usualFailed: 'Not proposed for', ordersUnreadable: 'Head office\'s earlier orders could not be read, so no usual supplier is known — nothing was proposed.',
@@ -84,6 +87,8 @@ export const REPLENISHMENT_COPY = {
     bigJumpRow: '{item}: {field} {from} இலிருந்து {to}', saveAnyway: 'ஆம், இந்த எண்களைச் சேமி',
     usual: 'இவற்றை வழக்கமான சப்ளையரிடம் ஆணையிடு',
     usualDone: '{n} ஆர்டர்(கள்) முன்மொழியப்பட்டன, ஒவ்வொரு சப்ளையருக்கும் ஒன்று, கடைசியாக ஒப்புக்கொண்ட விலையில். ஒவ்வொரு ஆர்டரையும் இரண்டாவது நபர் வெளியிடுவார் (ஒப்புதல்கள்).',
+    bigOrder: 'இன்னும் ஆர்டர் செய்யப்படவில்லை — {n} ஆர்டர்(கள்) GST க்கு முன் {limit} ஐ விட அதிக மதிப்புடையவை (உரிமையாளரின் வரம்பு, OB-821). அளவுகளைச் சரிபாருங்கள்; இருந்தும் ஆர்டர் செய்ய, மீண்டும் அழுத்தவும்.',
+    bigOrderRow: '{supplier}: GST க்கு முன் {total}', raiseBigOrders: 'ஆம், இந்த ஆர்டரைச் செய்',
     usualNone: 'எந்த ஆர்டரும் முன்மொழியப்படவில்லை.', usualLeft: 'விடுபட்டவை — இவற்றை "ஆர்டர் தயாரி" பக்கத்தில் ஆணையிடுங்கள்:',
     lo_no_earlier_order: 'முன்பு வெளியிட்ட ஆர்டர் இல்லை, எனவே வழக்கமான சப்ளையர் அல்லது ஒப்புக்கொண்ட விலை இல்லை', lo_price_not_per_unit: 'கடைசி விலை பெட்டிக்கானது, ஒரு பொருளுக்கான விலையாகப் பிரியவில்லை', lo_quantity_not_whole: 'அளவு பொருளின் முழு அலகுகளில் இல்லை',
     usualFailed: 'முன்மொழியப்படவில்லை:', ordersUnreadable: 'தலைமை அலுவலகத்தின் முந்தைய ஆர்டர்களைப் படிக்க முடியவில்லை, எனவே வழக்கமான சப்ளையர் தெரியவில்லை — எதுவும் முன்மொழியப்படவில்லை.',
@@ -171,8 +176,9 @@ export interface ReplenishmentSession {
   suggestFromSales(storeId: string): Done<SuggestionResult>;
   /** D-038: save the ticked suggestions (each a new version at head office); D-039: big changes need `confirmed`. */
   saveSuggested(storeId: string, rows: readonly SuggestedRow[], reason: string, confirmed: boolean): Done<SaveSuggestedResult>;
-  /** D-040: one PROPOSED order per usual supplier for the ticked lines, through `propose` (the Raise-an-order path). */
-  orderFromUsualSuppliers(proposal: StoredProposal | null, ticked: readonly { readonly productId: string; readonly qtyText: string }[], propose: ProposeOrder): Done<UsualOrdersResult>;
+  /** D-040: one PROPOSED order per usual supplier for the ticked lines, through `propose` (the Raise-an-order path).
+   *  OB-821 B: an order over ₹1,00,000 before GST is held and named; with `confirmed`, the held orders are proposed. */
+  orderFromUsualSuppliers(proposal: StoredProposal | null, ticked: readonly { readonly productId: string; readonly qtyText: string }[], propose: ProposeOrder, confirmed?: boolean): Done<UsualOrdersResult>;
 }
 
 export interface FigureJump { readonly productId: string; readonly field: string; readonly from: number; readonly to: number }
@@ -191,6 +197,8 @@ export interface UsualOrdersResult {
   readonly proposed: readonly { readonly poId: string; readonly supplierId: string; readonly totalMinor: number; readonly overBudget: boolean; readonly lines: number }[];
   readonly failed: readonly { readonly supplierId: string; readonly reason: string }[];
   readonly leftOut: readonly { readonly productId: string; readonly why: LeftOutWhy }[];
+  /** OB-821 B: orders worth more than ₹1,00,000 before GST — NOT proposed yet; proposed only when the person says yes again. */
+  readonly held: readonly { readonly supplierId: string; readonly totalMinor: number; readonly lines: number }[];
 }
 
 export function createReplenishmentSession(input: {
@@ -224,6 +232,23 @@ export function createReplenishmentSession(input: {
   const jumpsFor = (current: StoredParameters | undefined, productId: string, body: Record<string, unknown>): FigureJump[] =>
     bigChanges(current as unknown as Record<string, number | undefined> | undefined, Object.fromEntries(QTY_FIELDS.map((f) => [f, body[f]])))
       .map((j) => ({ productId: productId.trim(), ...j }));
+  // OB-821 B: an order's value before GST — each line at its agreed price in the item's own unit (grams × price per kg ÷ 1000).
+  const orderValueMinor = (o: PlannedOrder): number =>
+    o.lines.reduce((sum, l) => sum + valueAtUnitCost(l.orderedQty, normaliseUom(uomOf(l.productId) ?? '') ?? 'ea', l.unitCostMinor), 0);
+  // The large orders held after the first press, proposed only on "Yes, raise this order".
+  let heldBig: { readonly storeId: string; readonly orders: readonly PlannedOrder[] } | null = null;
+  const proposeAll = async (storeId: string, list: readonly PlannedOrder[], propose: ProposeOrder) => {
+    const proposed: { poId: string; supplierId: string; totalMinor: number; overBudget: boolean; lines: number }[] = [];
+    const failed: { supplierId: string; reason: string }[] = [];
+    // Each order is PROPOSED in the signed-in person's own name; a second person issues it (§28). Nothing issues here.
+    for (const o of list) {
+      const poId = idOf('PO').toUpperCase();
+      const out = await propose({ poId, supplierId: o.supplierId, deliverToLocationId: storeId, lines: o.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCostMinor: l.unitCostMinor })) });
+      if (out.proposed) proposed.push({ poId, supplierId: o.supplierId, totalMinor: out.totalMinor, overBudget: out.budget?.overBudget === true, lines: o.lines.length });
+      else failed.push({ supplierId: o.supplierId, reason: out.reason });
+    }
+    return { proposed, failed };
+  };
   return {
     may, uomOf,
     jumpsIn: (storeId, form) => {
@@ -268,8 +293,15 @@ export function createReplenishmentSession(input: {
       lastRead.delete(storeId.trim());
       return { result: 'ok', value: { saved, notSaved } };
     },
-    orderFromUsualSuppliers: async (proposal, ticked, propose) => {
+    orderFromUsualSuppliers: async (proposal, ticked, propose, confirmed = false) => {
       const no = gate('set'); if (no !== undefined) return no;
+      // OB-821 B: the second press — propose exactly the large orders that were held and named, nothing else again.
+      if (confirmed && heldBig !== null) {
+        const plan = heldBig; heldBig = null;
+        const { proposed, failed } = await proposeAll(plan.storeId, plan.orders, propose);
+        return { result: 'ok', value: { proposed, failed, leftOut: [], held: [] } };
+      }
+      heldBig = null;
       if (proposal === null) return { result: 'invalid', why: 'proposalFirst' };
       if (ticked.length === 0) return { result: 'invalid', why: 'needTick' };
       const wanted: { productId: string; quantity: number }[] = [];
@@ -290,16 +322,12 @@ export function createReplenishmentSession(input: {
       if (orders.result === 'lost_link') return orders;
       if (orders.result !== 'ok') return { result: 'invalid', why: 'ordersUnreadable' };
       const plan = usualSupplierPlan(orders.value, wanted);
-      const proposed: { poId: string; supplierId: string; totalMinor: number; overBudget: boolean; lines: number }[] = [];
-      const failed: { supplierId: string; reason: string }[] = [];
-      // Each order is PROPOSED in the signed-in person's own name; a second person issues it (§28). Nothing issues here.
-      for (const o of plan.orders) {
-        const poId = idOf('PO').toUpperCase();
-        const out = await propose({ poId, supplierId: o.supplierId, deliverToLocationId: proposal.storeId, lines: o.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCostMinor: l.unitCostMinor })) });
-        if (out.proposed) proposed.push({ poId, supplierId: o.supplierId, totalMinor: out.totalMinor, overBudget: out.budget?.overBudget === true, lines: o.lines.length });
-        else failed.push({ supplierId: o.supplierId, reason: out.reason });
-      }
-      return { result: 'ok', value: { proposed, failed, leftOut: plan.leftOut } };
+      // OB-821 B: an order worth more than ₹1,00,000 before GST is held back and named; the rest go ahead as before.
+      const big = plan.orders.filter((o) => orderNeedsSecondLook(orderValueMinor(o)));
+      const small = plan.orders.filter((o) => !big.includes(o));
+      const { proposed, failed } = await proposeAll(proposal.storeId, small, propose);
+      if (big.length > 0) heldBig = { storeId: proposal.storeId, orders: big };
+      return { result: 'ok', value: { proposed, failed, leftOut: plan.leftOut, held: big.map((o) => ({ supplierId: o.supplierId, totalMinor: orderValueMinor(o), lines: o.lines.length })) } };
     },
     parameters: async (storeId) => {
       const no = gate('read'); if (no !== undefined) return no;

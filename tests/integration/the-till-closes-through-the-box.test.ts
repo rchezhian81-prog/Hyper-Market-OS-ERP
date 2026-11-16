@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -228,6 +229,11 @@ describe('a shift on the served till: float → sales → pickup → blind count
     const port = edge.lane!.port;
     await edge.stop();
     stops.splice(0);
+    // Hold the stopped box's port with a socket that hangs up on every caller, so no other test's box (CI runs files in
+    // parallel) can take the freed port and answer for it — the till must meet a box that is down, not a different box.
+    const deadBox = createServer((socket) => socket.destroy());
+    await new Promise<void>((resolve, reject) => { deadBox.once('error', reject); deadBox.listen(port, '127.0.0.1', () => resolve()); });
+    stops.push(() => new Promise<void>((resolve) => deadBox.close(() => resolve())));
     const view = bootPos({ laneId: 'lane-1', cashierId: 'u-meena', cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
     const outcome = await view.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z' });
     expect(outcome).toMatchObject({ committed: false, refusedBecause: 'lane_unreachable' });

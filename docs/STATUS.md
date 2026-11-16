@@ -18,6 +18,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 7 of THE PLAN (16 November 2026) · the owner's answers OB-821 B and OB-822 B
+- **Owner answered (in writing, 16 Nov):**
+  - **OB-821 B:** warn above ₹1,00,000 per order.
+  - **OB-822 B:** keep the separate approval for a back-store refill.
+- **Done (on its PR, after #947):** an order worth more than ₹1,00,000 before GST is named and raised only on a second "Yes", on Raise an order and when ordering from the usual supplier (D-039 complete). OB-822 B needs no change.
+- **Owner decisions still open:** OB-804, OB-805, OB-806, OB-807, OB-808, OB-809, OB-811, OB-813, OB-814.
+
 ## Fix batch 6 of THE PLAN (16 November 2026) · D-014, D-022, D-023, D-025 · OB-826
 - **Done (on its PR, after #946):**
   - Approvals use names and plain words, with internal ids hidden.

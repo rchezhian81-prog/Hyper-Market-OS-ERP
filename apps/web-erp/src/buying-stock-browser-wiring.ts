@@ -8,6 +8,7 @@ import { createSupplierTermsSession, supplierTermsWords, supplierTermsOutcomeWor
 import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable, heldReorderSettingsOf } from './replenishment-session';
 import { shopMomentOf } from './findings-session';
 import { orderGstSummary, ratePercent, type OrderLineValue } from './order-gst';
+import { ORDER_WARN_ABOVE_MINOR, orderNeedsSecondLook } from '../../../packages/purchasing/src/order-value-warning';
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
@@ -51,6 +52,8 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
       ? (raw as { productTaxBps: Record<string, unknown> }).productTaxBps : {};
     const taxBpsOf = (productId: string): number | undefined => { const r = rates[productId]; return typeof r === 'number' && Number.isInteger(r) && r >= 0 ? r : undefined; };
     win['buyingOrderGst'] = { summary: (lines: readonly OrderLineValue[]) => orderGstSummary(lines, taxBpsOf), ratePercent };
+    // OB-821 B (D-039): the owner's limit — an order over ₹1,00,000 before GST is asked about again before it is raised.
+    win['buyingOrderLimit'] = { over: orderNeedsSecondLook, limitMinor: ORDER_WARN_ABOVE_MINOR };
     win['buyingOpenOrders'] ={ session: createOpenOrdersSession({ viewer: buyerOf(win['buyingData']) }), words: openOrdersWords, outcomeWords: openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice };
   }
   // M06-FR-03: supplier contracts (with the agreed lead time) on the Supplier scorecard page, rebate schemes on the Supplier
