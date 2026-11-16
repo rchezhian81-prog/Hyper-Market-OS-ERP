@@ -112,6 +112,12 @@ export interface ScreenInput {
   readonly unreadableRecords: number;
   /** The store's real outbox — the only honest source for "has everything reached the cloud?". */
   readonly outbox: SyncOutbox;
+  /**
+   * Fix batch 4a (D-060 · P-08 · one truth): EVERY item the day close counts as unsent — the sales outbox and every other
+   * queue on this box (returns, closing-checklist ticks, the day-close queue, till cash, device events, …), exactly the
+   * list the store computer counts when it refuses a close. Absent (a screen-only test box): the sales outbox alone.
+   */
+  readonly unsentForTheClose?: () => readonly { readonly id: string; readonly what: string }[];
   readonly now: string;
   readonly tradingDay: string;
   /**
@@ -851,7 +857,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   if (input.cardPayments !== undefined) payload['cardPayments'] = cardPaymentsList(input.cardPayments);
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.
-  payload['unsentItems'] = input.outbox.pending().map((item) => ({
+  // D-060: the SAME list the store computer counts when it refuses a close — a ticked checklist item waiting to reach
+  // head office is listed here too, so the screen never says "nothing is open" while the box refuses.
+  payload['unsentItems'] = input.unsentForTheClose !== undefined ? [...input.unsentForTheClose()] : input.outbox.pending().map((item) => ({
     id: item.key,
     what: item.event.type,
   }));

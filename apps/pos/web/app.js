@@ -229,6 +229,9 @@ const WORDS = {
     refundCanReturn: 'can return',
     refundHowMany: 'How many are coming back?',
     refundBadQty: 'That is more than can come back on this bill. Check the number.',
+    refundHowMuchWeighed: 'How much is coming back, in {unit}?',
+    refundKeyDecimal: 'Key it in {unit} with the point: 0.850 is 850 g. Can return: {left}.',
+    refundBadDecimal: 'Key the amount in {unit} with the point (for example 0.850), no more than can come back: {left}.',
     refundReason: 'Why is it coming back?',
     refundAmount: 'How much to refund?',
     refundMax: 'Most you can refund',
@@ -513,6 +516,9 @@ const WORDS = {
     refundCanReturn: 'திரும்ப முடியும்',
     refundHowMany: 'எத்தனை திரும்புகின்றன?',
     refundBadQty: 'இந்த பில்லில் திரும்ப முடிந்ததை விட அதிகம். எண்ணைச் சரிபார்க்கவும்.',
+    refundHowMuchWeighed: 'எவ்வளவு திரும்புகிறது, {unit}-இல்?',
+    refundKeyDecimal: '{unit}-இல் புள்ளியுடன் அழுத்தவும்: 0.850 என்பது 850 கிராம். திரும்ப முடியும்: {left}.',
+    refundBadDecimal: 'அளவை {unit}-இல் புள்ளியுடன் அழுத்தவும் (உதா. 0.850), திரும்ப முடிந்ததை விட அதிகமில்லாமல்: {left}.',
     refundReason: 'ஏன் திரும்புகிறது?',
     refundAmount: 'எவ்வளவு திரும்பத் தர வேண்டும்?',
     refundMax: 'திரும்பத் தரக்கூடிய அதிகபட்சம்',
@@ -1131,6 +1137,7 @@ function typeIntoEntry(key, literal = false) {
     ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
     : entryIsCode
       ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < (entryHasLetters ? BILL_CHARS : entryMaxDigits) ? current + key : current))
+    : key === '.' ? (current.includes('.') ? current : current + '.')
     : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
   entryValue = next;
   paintEntry();
@@ -1151,8 +1158,9 @@ window.addEventListener('keydown', onPinKey, true);
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false, replaceFirst = false, check = null, mustChoose = null }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false, commit = false, code = false, letters = false, consequence = null, barcode = false, staffLetters = false, replaceFirst = false, check = null, mustChoose = null, decimal = false }) {
   el('sheet-title').textContent = title;
+  paintKeypad(mode === 'number' && decimal === true);
   el('entry-hint').textContent = hint;
   // OB-698 (U1): `'confirm'` — no entry at all: what will happen, what it means and in whose name, then the verb or Go back.
   el('consequence').hidden = mode !== 'confirm';
@@ -1272,13 +1280,22 @@ function closeSheet(answer) {
 
 // The keypad, built once. `C` and `⌫` are as large as the digits, because correcting a mis-tap is
 // as frequent as tapping and a cramped backspace is how a wrong quantity gets committed.
-el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((key) => {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = key;
-  button.addEventListener('click', () => { typeIntoEntry(key); });
-  return button;
-}));
+// D-059: a weighed refund line is keyed in its own unit with a decimal point ("0.850" kg), so for that one question the
+// keypad's C becomes "." — ⌫ still corrects a mis-tap. Every other question keeps C.
+let keypadDecimal = null;
+function paintKeypad(decimal) {
+  if (keypadDecimal === decimal) return;
+  keypadDecimal = decimal;
+  el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', decimal ? '.' : 'C', '0', '⌫'].map((key) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = key;
+    if (key === '.') button.dataset.key = 'point';
+    button.addEventListener('click', () => { typeIntoEntry(key); });
+    return button;
+  }));
+}
+paintKeypad(false);
 
 // The letters pad for a bill number keyed by hand (A–Z and the "-" a bill number carries), and the switch between it and the
 // digits. Built once, the same full-size keys as the digits.
@@ -2810,6 +2827,21 @@ const CHANGE_AMOUNT = 'change_amount';
  */
 async function howManyBack(productId, line) {
   if (line.returnableMinor === 1) return 1;
+  // D-059: a weighed line (kg, L) is keyed in its own unit with a decimal point — "0.850" for 850 g — never as grams.
+  if (line.keyedWithDecimals === true && typeof session.keyedReturnMinor === 'function') {
+    const unit = line.uom;
+    const left = line.returnableText ?? String(line.returnableMinor);
+    const said = (key) => t(key).replaceAll('{unit}', unit).replaceAll('{left}', left);
+    const typed = await ask({
+      title: `${said('refundHowMuchWeighed')} — ${descOf(productId)}`, mode: 'number', initial: '0', decimal: true,
+      hint: said('refundKeyDecimal'),
+      check: (value) => (session.keyedReturnMinor(String(value), line) === undefined ? said('refundBadDecimal') : null),
+    });
+    if (typed === null) return null;
+    const minor = session.keyedReturnMinor(String(typed), line);
+    if (minor === undefined) { tell(t('read'), said('refundBadDecimal'), STOP); return null; }
+    return minor;
+  }
   const qtyAns = await ask({
     title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
     hint: `${t('refundCanReturn')}: ${line.returnableText ?? line.returnableMinor}`,

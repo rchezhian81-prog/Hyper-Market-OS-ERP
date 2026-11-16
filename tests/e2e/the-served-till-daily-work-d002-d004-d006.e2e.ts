@@ -160,10 +160,10 @@ describe.skipIf(!HAVE_BROWSER)('the served till: void needs a reason, a refund s
     expect(items).toContain('Biscuits — can return 3');
     expect(items.some((x) => /can return 850\b/.test(x))).toBe(false);
 
-    // The how-many question for the weighed line says kg too.
+    // The how-much question for the weighed line says kg too (D-059: it is keyed in kg, with the point).
     await page.click('#pay-kinds button:text-is("Tomato (loose) — can return 0.850 kg")');
-    await sheetTitled(page, 'How many are coming back? — Tomato (loose)');
-    expect(await page.textContent('#entry-hint')).toBe('can return: 0.850 kg');
+    await sheetTitled(page, 'How much is coming back, in kg? — Tomato (loose)');
+    expect(await page.textContent('#entry-hint')).toBe('Key it in kg with the point: 0.850 is 850 g. Can return: 0.850 kg.');
   });
 
   it('D-006: after a sale the bill reads "Till: Lane Cashier" — the name from the people register, not the login id', async () => {

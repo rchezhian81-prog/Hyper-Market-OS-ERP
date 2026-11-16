@@ -14,7 +14,7 @@
 // no-receipt cap, the no-receipt path is UNAVAILABLE (fail safe) rather than defaulted to a guess.
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { quantityLabel } from '../../../packages/contracts/src/quantity';
+import { normaliseUom, precisionOf, quantityLabel, typedQuantityMinor } from '../../../packages/contracts/src/quantity';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import {
   returnRegister, returnableLines, alreadyRefundedMinor,
@@ -131,11 +131,36 @@ export interface RefundViewDeps {
  */
 export interface ReturnableLineShown extends ReturnableLine {
   readonly returnableText: string;
+  /**
+   * D-059: the how-many keypad takes this line in its own unit WITH a decimal point — a weighed kg line is keyed "0.850"
+   * (kg), a litre line "1.250" (L) — never as grams. False for a counted line: whole items, as before.
+   */
+  readonly keyedWithDecimals: boolean;
 }
 
 /** "0.850 kg" for 850 g of a kg product, "1.250 L" for a litre product, "3" for a count — the same words as the bill line. */
 export function returnableWords(returnableMinor: number, uom: string): string {
   return quantityLabel(returnableMinor, uom);
+}
+
+/** D-059: does the how-many keypad for this unit take a decimal point? kg and L do (to the gram / millilitre); a count does not. */
+export function keyedWithDecimals(uom: string): boolean {
+  const u = normaliseUom(uom);
+  return u !== undefined && precisionOf(u) > 0;
+}
+
+/**
+ * D-059: what the cashier keyed on the how-many keypad ("0.850" for a weighed kg line, "2" for a count) as the integer the
+ * refund rules count (850 g, 2) — exactly, never rounded. `undefined` for anything that is not a positive amount the unit
+ * holds (a fourth decimal of a kg, a fraction of an item, nothing keyed) or that is more than can still come back.
+ */
+export function keyedReturnMinor(typed: string, line: Pick<ReturnableLine, 'uom' | 'returnableMinor'>): number | undefined {
+  const u = normaliseUom(line.uom);
+  const minor = u === undefined
+    ? (/^[0-9]+$/.test(typed.trim()) ? Number(typed.trim()) : undefined)
+    : typedQuantityMinor(typed, u);
+  if (minor === undefined || !Number.isSafeInteger(minor) || minor <= 0 || minor > line.returnableMinor) return undefined;
+  return minor;
 }
 
 /** The tested surface the refund screen binds to. */
@@ -170,7 +195,7 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
   const register = () => returnRegister(deps.priorReturns ?? []);
 
   const returnable = (sale: OriginalSale): readonly ReturnableLineShown[] => returnableLines(sale, register())
-    .map((l) => ({ ...l, returnableText: returnableWords(l.returnableMinor, l.uom) }));
+    .map((l) => ({ ...l, returnableText: returnableWords(l.returnableMinor, l.uom), keyedWithDecimals: keyedWithDecimals(l.uom) }));
 
   const maxRefundMinor = (sale: OriginalSale): number => Math.max(
     0, sale.totalMinor - alreadyRefundedMinor(sale.saleId, deps.priorRefunds ?? []),
