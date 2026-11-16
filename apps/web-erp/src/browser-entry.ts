@@ -65,7 +65,7 @@ import {
   createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
   type CataloguePorts, type CatalogueSession,
   type PromotionLaunchPort, type PromotionLaunchOutcome, type PromotionDefinitionPort,
-  type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome,
+  type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome, type HeadOfficeMrp,
 } from './catalogue-session';
 import { bootWarehouseSupervisor, type SupervisorData, type WarehouseSupervisorSession } from './warehouse-supervisor-session';
 import type { Category, ProductRecord } from '../../../packages/product/src/index';
@@ -6423,6 +6423,30 @@ export function openPriceChangePort(): PriceChangeCloudPort {
         return { saved: false, reason: refusal.whatHappened === '' ? 'head office did not change the price' : refusal.whatHappened, code: refusal.code };
       } catch {
         return lostLink;
+      }
+    },
+    // D-020: head office's OWN MRP for the day the price starts (the product master's, in force that day) — read live,
+    // under the person's own session, never the store computer's till-pack copy. Read only; nothing is changed.
+    readMrp: async (productId, storeId, on): Promise<HeadOfficeMrp> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { read: false, reason: 'no connection to head office' };
+      try {
+        const q = new URLSearchParams({ scope: 'store', scopeRef: storeId, on });
+        const res = await fetchFn(`/v1/prices/list/${encodeURIComponent(productId)}/basis?${q}`, {
+          method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
+        });
+        if (res.status < 200 || res.status >= 300) {
+          const refusal = await refusalOf(res);
+          return { read: false, reason: refusal.whatHappened === '' ? 'head office did not say the MRP' : refusal.whatHappened };
+        }
+        const body = (await res.json().catch(() => ({}))) as { mrpMinor?: unknown; mrpFrom?: unknown };
+        if (body.mrpMinor === null) return { read: true, mrpMinor: null, from: null };
+        if (typeof body.mrpMinor !== 'number' || !Number.isSafeInteger(body.mrpMinor) || body.mrpMinor <= 0) {
+          return { read: false, reason: 'head office’s answer did not carry an MRP' };
+        }
+        return { read: true, mrpMinor: body.mrpMinor, from: typeof body.mrpFrom === 'string' ? body.mrpFrom : null };
+      } catch {
+        return { read: false, reason: 'no connection to head office' };
       }
     },
   };

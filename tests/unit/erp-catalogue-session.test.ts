@@ -694,7 +694,7 @@ describe('a price change is recorded at head office, honestly (M05-FR-02)', () =
 
 describe('the refusal vocabularies are exhaustive at runtime', () => {
   it('lists every price-change refusal, so a screen can be checked against it', () => {
-    expect(PRICE_CHANGE_REFUSALS).toHaveLength(8);
+    expect(PRICE_CHANGE_REFUSALS).toHaveLength(9);
     expect(new Set(PRICE_CHANGE_REFUSALS).size).toBe(PRICE_CHANGE_REFUSALS.length);
   });
 

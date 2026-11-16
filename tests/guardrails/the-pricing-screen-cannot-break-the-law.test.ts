@@ -82,8 +82,14 @@ describe('nothing on this surface can authorise a price above MRP', () => {
   it('reads the MRP in force TODAY, not the newest one on the record', () => {
     // A future MRP increase must not raise today's ceiling before the pack it is printed on has
     // reached the shelf. The customer is holding the old pack.
-    const propose = code(MODEL).slice(code(MODEL).indexOf('proposePrice: (input)'));
-    expect(propose).toMatch(/filter\(\(m\) => m\.effectiveFrom <= config\.today\)/);
+    // D-020: the ceiling is read through one helper — head office's MRP for TODAY, else the pack's copy in force today —
+    // and every price check and every send asks it for today, whatever day the price starts.
+    const model = code(MODEL);
+    expect(model).toMatch(/const mrpToday = [\s\S]*?filter\(\(m\) => m\.effectiveFrom <= config\.today\)/);
+    const propose = model.slice(model.indexOf('proposePrice: (input)'));
+    expect(propose).toMatch(/ceilingFor\(input\.productId, config\.today, /);
+    expect(model).toMatch(/const ceiling = ceilingFor\(input\.productId, config\.today, input\.mrpGivenMinor\);\n {4}if \(ceiling\.mrp === undefined\) return \{ ok: false, missing: 'mrp' \};/);
+    expect(model).toMatch(/readMrpFromHeadOffice: async \(productId\) => \{\n {6}const on = config\.today;/);
   });
 });
 

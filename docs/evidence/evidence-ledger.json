@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2428,
+  "testFiles": 2431,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -444,7 +444,7 @@
         "unit": 20,
         "integration": 23,
         "realDb": 8,
-        "browser": 10,
+        "browser": 12,
         "connected": 3,
         "device": 0,
         "uat": 0
@@ -512,6 +512,8 @@
           "tests/e2e/catalogue-price-change-delivery.e2e.ts",
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
           "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/d019-d020-change-price-reads-head-offices-mrp-or-the-pack.e2e.ts",
+          "tests/e2e/d019-the-price-lists-page-takes-the-mrp-on-the-pack-with-a-second-person.e2e.ts",
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
           "tests/e2e/r4a-the-product-and-price-pages-work-through-the-store-computer.e2e.ts",
           "tests/e2e/the-qg02-screens-work-through-the-store-computer.e2e.ts",

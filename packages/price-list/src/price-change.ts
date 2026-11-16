@@ -59,6 +59,13 @@ export interface PriceChangeContext {
   readonly today: string;
   /** The legal ceiling for this product, or absent when the shop has not recorded one. */
   readonly mrp?: Money;
+  /**
+   * D-019: true when `mrp` is NOT on the shop's record but was typed with this price by the person setting it, read
+   * off the pack because head office holds none. The ceiling still holds exactly as for a recorded MRP — but nobody
+   * has checked that figure against the pack yet, so the price can only go through with a second person's approval
+   * (the approver sees the MRP in what they approve). Absent or false: the MRP is head office's own record.
+   */
+  readonly mrpTypedFromThePack?: boolean;
   readonly cost: CostRegister;
   /** Minimum gross margin in basis points. Per-tenant policy, never a constant here. */
   readonly marginFloorBps: number;
@@ -72,6 +79,7 @@ export type PriceChangeRefusal =
   | 'below_what_it_cost_us'
   | 'the_cost_is_not_known_so_the_margin_was_never_checked'
   | 'no_mrp_recorded'
+  | 'the_mrp_was_typed_from_the_pack'
   | 'approved_by_the_person_who_set_it'
   | 'starts_in_the_past'
   | 'same_as_the_price_already_running';
@@ -89,6 +97,7 @@ const REFUSALS: Readonly<Record<PriceChangeRefusal, PriceChangeRefusal>> = Objec
   below_what_it_cost_us: 'below_what_it_cost_us',
   the_cost_is_not_known_so_the_margin_was_never_checked: 'the_cost_is_not_known_so_the_margin_was_never_checked',
   no_mrp_recorded: 'no_mrp_recorded',
+  the_mrp_was_typed_from_the_pack: 'the_mrp_was_typed_from_the_pack',
   approved_by_the_person_who_set_it: 'approved_by_the_person_who_set_it',
   starts_in_the_past: 'starts_in_the_past',
   same_as_the_price_already_running: 'same_as_the_price_already_running',
@@ -129,6 +138,8 @@ const DETAIL: Readonly<Record<PriceChangeRefusal, string>> = Object.freeze({
     'the shop has no cost price for this item, so nobody can say what this price earns. Costing it at nothing would make any price look perfect, so this needs somebody to approve it with their eyes open.',
   no_mrp_recorded:
     'no MRP has been recorded for this item, so the legal ceiling cannot be checked. Add the MRP from the pack first.',
+  the_mrp_was_typed_from_the_pack:
+    'head office has no MRP for this item, so the MRP typed from the pack is the ceiling. Somebody else has to check it against the pack and approve this price.',
   approved_by_the_person_who_set_it:
     'the person who set this price cannot also approve it. Somebody else has to look at it.',
   starts_in_the_past:
@@ -220,7 +231,10 @@ export function proposePriceChange(
       setBy: request.setBy,
     });
     if (check.verdict === 'above_mrp') refusals.push('above_the_printed_mrp');
-    else refusals.push('the_cost_is_not_known_so_the_margin_was_never_checked');
+    else {
+      refusals.push('the_cost_is_not_known_so_the_margin_was_never_checked');
+      if (context.mrpTypedFromThePack === true) refusals.push('the_mrp_was_typed_from_the_pack');
+    }
     return {
       draft,
       replaces,
@@ -245,6 +259,9 @@ export function proposePriceChange(
   if (check.verdict === 'above_mrp') refusals.push('above_the_printed_mrp');
   if (check.verdict === 'below_cost') refusals.push('below_what_it_cost_us');
   if (check.verdict === 'below_floor') refusals.push('below_the_margin_floor');
+  // D-019: an MRP typed from the pack is the ceiling, but only a second person's check makes it one the shop relies on.
+  const typed = context.mrpTypedFromThePack === true && check.verdict !== 'above_mrp';
+  if (typed) refusals.push('the_mrp_was_typed_from_the_pack');
 
   const blocking = refusals.includes('above_the_printed_mrp')
     || refusals.includes('starts_in_the_past')
@@ -255,7 +272,7 @@ export function proposePriceChange(
     replaces,
     check,
     cleanToActivate: refusals.length === 0,
-    needsApproval: !blocking && check.requiresApproval,
+    needsApproval: !blocking && (check.requiresApproval || typed),
     refusals,
     detail: refusals.map((r) => DETAIL[r]),
   };
