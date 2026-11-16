@@ -131,7 +131,9 @@ export async function startOfficeShop(browser: Browser, options: {
     async stop() {
       globalThis.fetch = savedFetch;
       await edge.stop();
-      await rm(dir, { recursive: true, force: true });
+      // A last log write can land just as the folder is removed (ENOTEMPTY on a loaded runner, after every test had
+      // passed — #952's run); Node retries the removal on ENOTEMPTY/EBUSY when told to.
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },
   };
 }

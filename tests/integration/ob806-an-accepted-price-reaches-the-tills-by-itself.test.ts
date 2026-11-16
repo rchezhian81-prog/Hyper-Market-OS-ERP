@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { shopDateIn } from '../../packages/calendar/src/shop-clock';
 import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from '../support/api-harness';
 import { useBackings } from '../support/backings';
@@ -98,7 +99,7 @@ describe.each(useBackings())('OB-806 A — an accepted price reaches the tills b
 
   it('a store price for today saved on Price lists is sent too — the same rule as Change price', async () => {
     const { req, pack } = await shop();
-    const today = await req('POST', '/v1/prices/list/p-salt/entries/e-today', 'u-owner', { scope: 'store', scopeRef: 'store-1', priceMinor: 2_000, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: new Date().toISOString().slice(0, 10) });
+    const today = await req('POST', '/v1/prices/list/p-salt/entries/e-today', 'u-owner', { scope: 'store', scopeRef: 'store-1', priceMinor: 2_000, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: shopDateIn(new Date().toISOString()) }); // the shop's today, not the UTC date
     expect(today.status, JSON.stringify(today.body)).toBe(201);
     expect((today.body as { tills: { sent: boolean }[] }).tills[0]!.sent).toBe(true);
     expect(priceOf(await pack(), 'p-salt')).toBe(2_000);

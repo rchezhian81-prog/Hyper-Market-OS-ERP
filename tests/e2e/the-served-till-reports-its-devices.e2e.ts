@@ -55,7 +55,11 @@ describe.skipIf(!HAVE_BROWSER)('the served till reports its devices (D04-FR-05)'
     // A free port (round 4): the served till posts wherever the box that served it says its lane socket is (window.laneWriteBase).
     expect(edge.lane?.port).toBeGreaterThan(0);
     const base = `http://127.0.0.1:${edge.screens!.port}`;
-    const context = await browser.newContext();
+    // The manager's page registers the offline copy (sw.js), which answers a reload from its cached page whenever the
+    // network fetch fails — on a loaded runner that cached first page ("Till devices: Not known") came back after the
+    // reload, so the failed printer never showed (main's run after #951). This test is about the device report reaching
+    // Today, not the offline copy, so the copy is blocked and the reload always reads the box.
+    const context = await browser.newContext({ serviceWorkers: 'block' });
     stops.push(() => context.close());
 
     // The manager's Today, before any till has reported: not known — never "all fine".
