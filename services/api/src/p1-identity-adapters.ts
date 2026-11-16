@@ -54,6 +54,7 @@ import {
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { mrpOnRecordFor } from './w1-products-prices-adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 type Base = { readonly store: EventStore; readonly now: () => string; readonly settings: DurableTenantSettings };
@@ -337,6 +338,9 @@ export function p1IdentitySurface(surface: Route[], input: {
     ...pricingAdapter({ store, now }), ...audit, approvals,
     // The same composition as main.ts (M05: the floor is the store's own rules) — plus the owner's size rule.
     marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
+    // ...and the MRP ceiling is head office's own in force today (D-019): the lower of it and the one sent; none on record
+    // → the MRP sent (read off the pack) needs a second person's approval for exactly this change.
+    mrpOnRecordFor: mrpOnRecordFor({ store, now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),
     changeNeedsSecondPerson: async (tenantId, productId, priceMinor, storeIds) => {
       const entries = await payloads<PriceEntry>(store, tenantId, streamName(STREAM.pricing, 'list', productId), 'PriceListEntryPublished');
       const at = now();

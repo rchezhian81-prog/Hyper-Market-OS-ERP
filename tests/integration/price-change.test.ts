@@ -3,6 +3,7 @@ import { aBranch } from '../support/a-branch';
 import { storeRules } from '../support/store-rules';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
+import { mrpOnRecord } from '../support/mrp-on-record';
 
 // Governed price changes through the real API (M05-FR-02, §28). A price above the legal MRP is
 // rejected outright; a below-floor / below-cost price is blocked unless a SEPARATE person — who
@@ -36,6 +37,7 @@ async function cast(): Promise<ApiHarness> {
   await h.provisionRole(A, 'cash', 'cashier'); // neither
   await aBranch(h, A, 'owner-1'); // SF-01: the store a head-office price applies to
   await storeRules(h, A, 'owner-1', 'store-1', 2_000); // M05: the store's own 20% margin floor — what a price is judged by
+  await mrpOnRecord(h, A, 'owner-1', 'P1', 10_000); // the ₹100 MRP on the product master — the legal ceiling a price is judged by
   return h;
 }
 

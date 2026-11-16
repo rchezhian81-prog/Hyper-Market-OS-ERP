@@ -407,3 +407,21 @@ export function productsPricesSurface(surface: Route[], input: ProductsPricesInp
   auditTrailWraps(surface, base);
   priceListGuard(surface, base);
 }
+
+/**
+ * Head office's MRP for a product IN FORCE TODAY (the shop's today, on its calendar), read from the product master exactly
+ * as the price basis reads it — or undefined when the master holds none in force today. What `POST /v1/prices/changes`
+ * takes as the legal ceiling (the lower of it and the MRP sent), so no request can lift the ceiling by sending a higher one.
+ */
+export function mrpOnRecordFor(input: { readonly store: EventStore; readonly now: () => string; readonly calendar?: ShopCalendarOf }) {
+  const products = productMasterAdapter({ store: input.store, now: input.now });
+  const clock = shopClock(input.calendar);
+  return async (tenantId: string, productId: string): Promise<{ readonly mrpMinor: number; readonly from: string } | undefined> => {
+    const product = await products.product(tenantId, productId);
+    if (product === undefined) return undefined;
+    const today = await clock.today(tenantId, input.now());
+    const days = await Promise.all((product.mrpHistory ?? []).map(async (m) => ({ m, day: await shopDayOf(clock, tenantId, m.effectiveFrom) })));
+    const mrp = days.filter((x) => x.day <= today).map((x) => x.m).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)).at(-1);
+    return mrp === undefined ? undefined : { mrpMinor: Number(mrp.value.minor), from: mrp.effectiveFrom };
+  };
+}

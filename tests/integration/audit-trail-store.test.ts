@@ -4,6 +4,7 @@ import { storeRules } from '../support/store-rules';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { withApprovals } from '../support/refund-approval';
+import { mrpOnRecord } from '../support/mrp-on-record';
 
 // M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable, not just readable over a
 // supplied export. A sensitive action (slice 1: the credential lifecycle) seals a record into a
@@ -288,18 +289,23 @@ describe('the audit trail records a money action — a price change (M34 slice 4
     await h.provisionOwner(A, 'u-pricer'); // holds price.change.propose + audit.retention.read
     await aBranch(h, A, 'u-pricer'); // SF-01: the store the price applies to
     await storeRules(h, A, 'u-pricer', 'store-1', 2_000); // M05: the store's own margin floor
+    await mrpOnRecord(h, A, 'u-pricer', 'P1', 10_000); // the ₹100 MRP on the product master
 
     const r = await proposePrice(h, 'u-pricer', 8_000, 'kp1'); // within MRP, above the cost floor → allowed
     expect(r.status).toBe(201);
 
     const body = (await trail(h, 'u-pricer', { objectType: 'product', objectId: 'P1' })).body as { matches: Rec[]; total: number };
-    expect(body.total).toBe(1);
-    const rec = body.matches[0]!;
+    // The product's MRP was put on record first (its own sealed publish); the price change is the one price record.
+    const priced = body.matches.filter((m) => m.action === 'price.change');
+    expect(priced).toHaveLength(1);
+    const rec = priced[0]!;
     expect(rec).toMatchObject({ action: 'price.change', objectType: 'product', objectId: 'P1', actorId: 'u-pricer' });
-    expect(rec.after).toMatchObject({ priceMinor: '8000', currency: 'INR', verdict: 'ok' });
+    // D-019: which MRP was the ceiling, and where it came from — head office's own product master.
+    expect(rec.after).toMatchObject({ priceMinor: '8000', currency: 'INR', verdict: 'ok', mrpMinor: '10000', mrpSource: 'product_master' });
     // A price is a public shelf figure — but the record must never carry card/tender data (hard rule #3).
     expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender/i);
-    expect((await verify(h, 'u-pricer')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+    const everything = (await trail(h, 'u-pricer')).body as { total: number };
+    expect((await verify(h, 'u-pricer')).body).toMatchObject({ intact: true, recordsChecked: everything.total });
   });
 });
 

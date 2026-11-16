@@ -16,6 +16,7 @@ import { InMemoryConfigVersionStore, SqlConfigVersionStore } from '../../package
 import { DurableTenantSettings } from '../../packages/tenant/src/durable-settings';
 import { approvalAgeSweep } from '../../services/api/src/p1-identity-adapters';
 import { alertLifecycleAdapter } from '../../services/api/src/adapters';
+import { mrpOnRecord } from '../support/mrp-on-record';
 
 /**
  * **The owner's money limits, escalation waits and price-check size — on the real API, in memory AND on real PostgreSQL,
@@ -187,6 +188,7 @@ describe.each(backings)('the owner\'s approval rules on $name (OB-290/291/292)',
     await s.h().provisionOwner(T, 'u-owner2');
     await aBranch(s.h(), T, 'u-owner');
     await storeRules(s.h(), T, 'u-owner', 'store-1', 0);
+    await mrpOnRecord(s.h(), T, 'u-owner', 'P1', 50_000); // the ₹500 MRP on the product master
     const price = (priceMinor: number) => ({ productId: 'P1', priceMinor, mrpMinor: 50_000, costMinor: 1_000, marginFloorBps: 0, currency: 'INR' });
     expect((await req('POST', '/v1/prices/changes', 'u-owner', price(10_000))).status).toBe(201); // a first price is not a change
     expect((await req('POST', '/v1/prices/changes', 'u-owner', price(11_000))).status).toBe(201); // exactly 10%

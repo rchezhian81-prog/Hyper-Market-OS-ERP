@@ -40,7 +40,7 @@ describe.each(backings)('a relabel task goes to the floor champion, else the sto
     for (const [id, name] of [['D-dairy', 'Dairy'], ['D-grocery', 'Grocery']]) await ok(call('POST', `/v1/org/nodes/${id}`, 'u-it', { kind: 'department', name, parentId: 'br-1' }), id!);
     await ok(call('POST', '/v1/catalogue/tax-classes/04061000/rates/2017-07-01', 'u-owner', { rateBps: 500 }), 'tax');
     for (const [id, cat] of [['p-milk', 'dairy-cat'], ['p-salt', 'grocery-cat'], ['p-soap', 'home-cat']] as const) {
-      await ok(call('POST', `/v1/catalogue/products/${id}/publish`, 'u-owner', { product: { sku: `SKU-${id}`, name: id, baseUom: 'each', primaryCategoryId: cat, taxClass: '04061000', lifecycle: 'draft' }, categories: [{ categoryId: cat, name: cat, parentId: null }] }), `publish ${id}`);
+      await ok(call('POST', `/v1/catalogue/products/${id}/publish`, 'u-owner', { product: { sku: `SKU-${id}`, name: id, baseUom: 'each', primaryCategoryId: cat, taxClass: '04061000', lifecycle: 'draft', mrpHistory: [{ value: { minor: 5_000, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: cat, name: cat, parentId: null }] }), `publish ${id}`);
     }
     for (const [dept, cat] of [['D-dairy', 'dairy-cat'], ['D-grocery', 'grocery-cat']] as const) {
       const link = { categoryIds: [cat], reason: `${dept} counter` };

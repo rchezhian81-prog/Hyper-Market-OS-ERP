@@ -81,6 +81,9 @@ interface SeedRunner {
   post(what: string, path: string, body: unknown, idempotencyKey: string, as?: string): Promise<SeedResponse>;
 }
 
+/** The day the seeded MRPs take effect: before any trading day a seeded box will see. */
+const MRP_FROM = '2026-01-01';
+
 /** A short, stable digest of what a step publishes — the part of an idempotency key that changes when the data does. */
 function digestOf(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 12);
@@ -299,11 +302,15 @@ export async function applyPilotCatalogue(
           // UAT-06: the handling class and the product's own cold-chain limits (HA-3) — judged by the product master's engine.
           ...(product.handling === undefined ? {} : { handling: product.handling }),
           ...(product.coldChain === undefined ? {} : { coldChain: product.coldChain }),
+          // The MRP printed on the pack, on the product master — head office's own record of the legal ceiling, which the
+          // price change below is judged by (the lower of it and the one sent; with none on record a second person is needed).
+          mrpHistory: [{ value: { minor: product.price.mrpMinor, currency: product.price.currency }, effectiveFrom: MRP_FROM }],
         },
         categories: catalogue.categories,
       },
-      // An absent handling / cold chain leaves the digest (and so every earlier product's key) exactly as it was.
-      `seed-product-${product.productId}-${digestOf({ sku: product.sku, name: product.name, baseUom: product.baseUom, primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle, brand: product.brand, safety: product.safety, handling: product.handling, coldChain: product.coldChain })}`,
+      // An absent handling / cold chain leaves the digest (and so every earlier product's key) exactly as it was. The MRP
+      // is in the digest, so a box seeded before it was recorded publishes it as a new version (append-only).
+      `seed-product-${product.productId}-${digestOf({ sku: product.sku, name: product.name, baseUom: product.baseUom, primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle, brand: product.brand, safety: product.safety, handling: product.handling, coldChain: product.coldChain, mrp: product.price.mrpMinor })}`,
     );
   }
 
