@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startBoxPageShop, says, HAVE_BROWSER, type BoxPageShop } from './lib/r4c-box-page';
 import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched } from '../support/p3-purchase';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
+import { approvedRequestId } from '../support/approval-request';
 
 /**
  * **Fix batch 3 (bills and receiving) — the Supplier bills page, in a real browser on the real store computer, with head
@@ -48,6 +49,11 @@ describe.skipIf(!HAVE_BROWSER)('fix batch 3 — the accountant checks bills, a p
         await issuedOrder(call, 'po-b', dal);
         await received(call, 'grn-b', 'po-b', dal);
         await capturedAndMatched(call, 'inv-b', 'po-b', dal);
+        // D-048 (fix batch 5): a bank payment is asked for only to a supplier whose bank account was checked — sup-1's is.
+        const change = { newAccount: 'HDFC-0001-2345-6789', requestedVia: 'letter', calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1', requestedAt: '2026-09-30T08:00:00.000Z' };
+        const approvalId = await approvedRequestId(h, T, P3.OWNER, P3.MATCHER, { kind: 'supplier_bank_change', subjectRef: 'sup-1', details: { ...change, supplierId: 'sup-1' } });
+        const bank = await call('POST', '/v1/purchase/suppliers/sup-1/bank-details', P3.OWNER, { ...change, approvalId });
+        if (bank.status >= 300) throw new Error(`bank sup-1: ${bank.status} ${JSON.stringify(bank.body)}`);
         // po-c: issued and received; its paper bill has not been typed yet (D-043).
         const paper = [{ productId: 'rice', qty: 8, unitMinor: 5_000 }, { productId: 'dal', qty: 4, unitMinor: 10_000 }];
         await issuedOrder(call, 'po-c', paper);

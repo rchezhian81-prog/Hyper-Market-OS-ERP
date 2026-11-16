@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2453,
+  "testFiles": 2456,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -539,7 +539,7 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 23,
+        "unit": 24,
         "integration": 26,
         "realDb": 14,
         "browser": 13,
@@ -571,7 +571,8 @@
           "tests/unit/supplier-records-session.test.ts",
           "tests/unit/supplier-terms-session.test.ts",
           "tests/unit/the-qg02-screens-call-only-head-offices-own-routes.test.ts",
-          "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts"
+          "tests/unit/the-rebates-screen-calls-only-head-offices-own-routes.test.ts",
+          "tests/unit/u0-refusals-say-what-happened-and-what-to-do.test.ts"
         ],
         "integration": [
           "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
@@ -1463,7 +1464,7 @@
       "id": "M15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
+        "unit": 21,
         "integration": 18,
         "realDb": 6,
         "browser": 10,
@@ -1491,6 +1492,7 @@
           "tests/unit/settlement.test.ts",
           "tests/unit/stored-fraud-signals.test.ts",
           "tests/unit/the-lp-records-session-reads-signals-staff-and-bank.test.ts",
+          "tests/unit/u0-refusals-say-what-happened-and-what-to-do.test.ts",
           "tests/unit/w5-books-sessions-call-only-head-offices-own-routes.test.ts",
           "tests/unit/w5-store-ops-sections.test.ts"
         ],
@@ -2172,7 +2174,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 39,
-        "integration": 44,
+        "integration": 45,
         "realDb": 27,
         "browser": 15,
         "connected": 8,
@@ -2236,6 +2238,7 @@
           "tests/integration/day-close-reconcile-on-sync.test.ts",
           "tests/integration/department-sales-and-margin-tie-to-the-ledger.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/fix-batch5-the-day-book-shows-what-the-tills-sent.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",

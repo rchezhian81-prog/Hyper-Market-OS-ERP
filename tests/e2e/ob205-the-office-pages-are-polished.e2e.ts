@@ -329,14 +329,16 @@ describe.skipIf(!HAVE_BROWSER)('OB-205 · the office pages, polished inside the 
     const gst = await open('gst-returns.html', 1280, []);
     try {
       await gst.waitForSelector('#period-help');
-      expect(await gst.textContent('#period-help')).toBe('Six digits: the month, then the year — for example 052026.');
+      // D-051 (fix batch 5): the month is the browser's month picker — the help says so, and an empty month is named.
+      expect(await gst.textContent('#period-help')).toBe('Pick the month from the calendar.');
       expect(await gst.getAttribute('#period', 'aria-describedby')).toBe('period-help');
-      await gst.fill('#period', '13-26');
+      expect(await gst.getAttribute('#period', 'type')).toBe('month');
+      await gst.fill('#period', '');
       await gst.click('#show');
       expect(await gst.getAttribute('#period', 'aria-invalid')).toBe('true');
-      expect(await gst.textContent('#period-help')).toBe('Write the month as MMYYYY, e.g. 052026.');
+      expect(await gst.textContent('#period-help')).toBe('Pick a month.');
       await gst.click('#lang');
-      expect(await gst.textContent('#period-help')).toBe('மாதத்தை MMYYYY ஆக எழுதுங்கள், எ.கா. 052026.');
+      expect(await gst.textContent('#period-help')).toBe('ஒரு மாதத்தைத் தேர்ந்தெடுக்கவும்.');
     } finally {
       await gst.context().close();
     }

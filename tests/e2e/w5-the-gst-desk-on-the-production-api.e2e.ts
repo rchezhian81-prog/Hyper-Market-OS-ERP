@@ -84,7 +84,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
     try {
       await m.goto(`${shop.base}/gst-returns`, { waitUntil: 'load' });
       await m.locator('#prepare:not([hidden])').waitFor({ timeout: 15_000 });
-      await m.fill('#prepare-period', '052026');
+      await m.fill('#prepare-period', '2026-05'); // D-051: the month picker
       await m.click('#prepare-btn');
       await expect.poll(() => textOf(m, '#act-result'), { timeout: 15_000 }).toBe('Prepared — waiting for a second person to approve: 052026');
       // The maker cannot approve (and holds no approve role) — the button says why.
@@ -170,7 +170,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
     try {
       await page.goto(`${shop.base}/gst-returns`, { waitUntil: 'load' });
       await page.locator('#g1-form').waitFor({ timeout: 15_000 });
-      await page.fill('#g1-month', '052026');
+      await page.fill('#g1-month', '2026-05'); // D-051: the month picker
       // No turnover typed: refused on the page — never a default.
       await page.click('#g1-t12s');
       await expect.poll(() => textOf(page, '#g1-said'), { timeout: 15_000 }).toBe('Write the annual turnover in rupees.');
@@ -186,7 +186,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
       expect(download.suggestedFilename()).toBe(`GSTR1_${GSTIN}_052026.json`);
       await expect.poll(() => textOf(page, '#g1-said'), { timeout: 15_000 }).toContain('Nothing was filed.');
 
-      // The owner's warning window (OB-191: 180 days until he changes it, with a reason).
+      // The owner's warning window (OB-191: 180 days until he changes it, with a reason) — on the Yearly returns job (D-051).
+      await page.click('#job-yearly');
       await page.fill('#tb-days', '90');
       await page.click('#tb-save');
       await expect.poll(() => textOf(page, '#tb-said'), { timeout: 15_000 }).toBe('Write the reason first.');
@@ -195,7 +196,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
       await expect.poll(() => textOf(page, '#tb-said'), { timeout: 15_000 }).toBe('Warning window now: 90');
       await page.reload({ waitUntil: 'load' });
       await expect.poll(() => textOf(page, '#controls li[data-control="time-bar-warning-days"] .word'), { timeout: 15_000 }).toBe('90 days');
-      // The TDS switch is the owner's.
+      // The TDS switch is the owner's — on the TDS job (D-051).
+      await page.click('#job-tds');
       await page.locator('#tds-on').waitFor({ timeout: 15_000 });
     } finally { await ctx.close(); }
   }, 120_000);
@@ -219,6 +221,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('W5: the GS
       await expect.poll(() => textOf(page, '#rcm-said'), { timeout: 15_000 }).toBe('Head saved: GTA');
       await expect.poll(() => textOf(page, '#rcm-heads li[data-head="GTA"] .word'), { timeout: 15_000 }).toBe('GTA — Goods transport agency · 5%');
 
+      await page.click('#job-tds'); // D-051: TDS is its own job on the page
       await page.fill('#tds-sec', '194c');
       await page.fill('#tds-label', 'Payments to contractors');
       await page.fill('#tds-rate', '1');

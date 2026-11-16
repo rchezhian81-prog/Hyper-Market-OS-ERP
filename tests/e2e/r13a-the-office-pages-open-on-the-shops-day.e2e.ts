@@ -158,7 +158,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-606: the office pages open on the shop\'s day
         const gst = await open('gst-returns.html', at);
         try {
           const mmyyyy = `${day.lastMonth().slice(5, 7)}${day.lastMonth().slice(0, 4)}`;
-          await holds(gst.page, 'period', mmyyyy);
+          await holds(gst.page, 'period', day.lastMonth().slice(0, 7)); // D-051: the month picker holds YYYY-MM; head office is asked MMYYYY
           // And head office is asked for that month, not New York's last month.
           // (polled: the page now also reads the GSTR-1 list and the tax desk, so this read may land a moment later — W5)
           await expect.poll(() => gst.asked.some((u) => u.includes(`/v1/finance/gstr3b/${mmyyyy}`)), { timeout: 15_000 }).toBe(true);

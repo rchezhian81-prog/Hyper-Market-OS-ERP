@@ -167,14 +167,42 @@ async function prepare(event) {
   event.preventDefault();
   if (!real || typeof real.prepare !== 'function') return;
   el('prepare-btn').disabled = true;
-  const result = await real.prepare(el('prepare-period').value);
+  // D-051: the month picker holds YYYY-MM; head office speaks MMYYYY.
+  const picked = el('prepare-period').value;
+  const result = await real.prepare(window.sreGstJobs?.mmyyyyOf(picked) ?? picked);
   el('prepare-btn').disabled = false;
   tellResult(result);
   paint();
 }
 
+// D-051 (fix batch 5): one job at a time — the parts of the other jobs are out of sight (gst-jobs.ts).
+let job = 'monthly';
+try { job = window.sreGstJobs?.jobOf(window.localStorage.getItem('sre.gst.job')) ?? 'monthly'; } catch { job = 'monthly'; }
+function paintJobs() {
+  const jobs = window.sreGstJobs;
+  if (!jobs) { el('jobs').hidden = true; return; }
+  const words = jobs.words[lang] ?? jobs.words.en;
+  el('jobs').setAttribute('aria-label', words.jobsLabel);
+  for (const j of jobs.jobs) {
+    const b = el(`job-${j}`); if (!b) continue;
+    b.textContent = words[j]; b.setAttribute('aria-selected', String(j === job));
+  }
+  el('job-lead').textContent = words[`${job}Lead`];
+  const hidden = new Set(jobs.partsHiddenFor(job));
+  // Every part of every job (what monthly hides plus what yearly hides is all of them); hide the ones not in this job.
+  for (const id of new Set([...jobs.partsHiddenFor('monthly'), ...jobs.partsHiddenFor('yearly')])) el(id)?.classList.toggle('job-off', hidden.has(id));
+}
+for (const b of document.querySelectorAll('#jobs .job')) {
+  b.addEventListener('click', () => {
+    job = window.sreGstJobs?.jobOf(b.dataset.job) ?? 'monthly';
+    try { window.localStorage.setItem('sre.gst.job', job); } catch { /* a remembered tab is a convenience only */ }
+    paintJobs();
+  });
+}
+
 function paint() {
   const view = session.view(lang);
+  paintJobs();
 
   el('title').textContent = t('title');
   // OB-205: the page's one heading (the header line) speaks the reader's language too.
@@ -250,7 +278,7 @@ el('sample').textContent = t('sampleData');
 el('prepare').addEventListener('submit', (event) => { void prepare(event); });
 if (window.sreShopDay !== undefined && el('prepare-period').value === '') {
   const ym = window.sreShopDay.lastMonth(); // the shop's own calendar (OB-606), never this browser's zone
-  el('prepare-period').value = `${ym.slice(5, 7)}${ym.slice(0, 4)}`;
+  el('prepare-period').value = ym.slice(0, 7); // D-051: the month picker's YYYY-MM
 }
 paint();
 // W5: the filing list is read live from head office (the session asks; this file never fetches itself).

@@ -144,6 +144,30 @@ export const exceptionIdFor = (tradingDay: string, e: DayBookException): string 
   `${tradingDay}:${e.reason}:${e.kind ?? e.sourceKind}:${fingerprint(e.sourceIds)}`;
 
 /** Per posting kind, the sources the day's journals of that kind already cover. */
+/** D-050: a day's synced sales and returns as the tills sent them, totalled — and how many no journal covers yet. Pure. */
+export interface TillsSent {
+  readonly sales: { readonly count: number; readonly totalMinor: number };
+  readonly takings: readonly { readonly kind: string; readonly amountMinor: number }[];
+  readonly returns: { readonly count: number; readonly refundsMinor: number };
+  readonly refunds: readonly { readonly kind: string; readonly amountMinor: number }[];
+  /** Sales and returns no posted journal names yet. */
+  readonly notYetPosted: number;
+}
+export function tillsSentOn(sales: readonly DayBookSale[], returns: readonly DayBookReturn[], covered: ReadonlySet<string>): TillsSent {
+  const byKind = (pairs: readonly (readonly [string, number])[]): { kind: string; amountMinor: number }[] => {
+    const m = new Map<string, number>();
+    for (const [k, v] of pairs) m.set(k, (m.get(k) ?? 0) + v);
+    return [...m].sort(([a], [b]) => a.localeCompare(b)).map(([kind, amountMinor]) => ({ kind, amountMinor }));
+  };
+  return {
+    sales: { count: sales.length, totalMinor: sales.reduce((n, x) => n + x.totalMinor, 0) },
+    takings: byKind(sales.flatMap((x) => x.tenders.map((t) => [t.kind, t.amountMinor] as const))),
+    returns: { count: returns.length, refundsMinor: returns.reduce((n, r) => n + r.refundMinor, 0) },
+    refunds: byKind(returns.map((r) => [r.refundTender, r.refundMinor] as const)),
+    notYetPosted: sales.filter((x) => !covered.has(x.saleId)).length + returns.filter((r) => !covered.has(r.returnId)).length,
+  };
+}
+
 export function coveredByKind(journals: readonly DayBookJournal[]): ReadonlyMap<string, ReadonlySet<string>> {
   const out = new Map<string, Set<string>>();
   for (const j of journals) {
@@ -349,7 +373,10 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
       permission: 'finance.period.read',
       handler: async (ctx) => {
         const tradingDay = tradingDayOf(ctx);
-        const [journals, raised] = await Promise.all([deps.dayBookJournals(ctx.tenantId, tradingDay), deps.exceptionsOn(ctx.tenantId, tradingDay)]);
+        const [journals, raised, sales, returns, map] = await Promise.all([
+          deps.dayBookJournals(ctx.tenantId, tradingDay), deps.exceptionsOn(ctx.tenantId, tradingDay),
+          deps.salesOn(ctx.tenantId, tradingDay), deps.returnsOn(ctx.tenantId, tradingDay), deps.postingMap(ctx.tenantId),
+        ]);
         const covered = new Set(journals.flatMap((j) => j.dayBook.sourceIds));
         const accounts = new Map<string, { debitMinor: number; creditMinor: number }>();
         for (const j of journals) {
@@ -374,6 +401,11 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
             covered: covered.size,
             exceptions,
             open: exceptions.filter((e) => e.state === 'open').length,
+            // D-050 (fix batch 5): what the tills SENT for the day — read before posting so the accountant sees the day's
+            // sales, takings and refunds first. Facts as synced, never figures that look booked: nothing here is a journal.
+            tillsSent: tillsSentOn(sales, returns, covered),
+            // D-050: whether the ledger mapping exists yet — without it the day cannot post (the setup is done once).
+            postingMapDefined: map !== undefined,
             asAt: deps.now(),
           },
         };

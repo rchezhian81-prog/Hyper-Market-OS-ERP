@@ -141,6 +141,7 @@ export type CopyKey =
   | 'decideNotWaiting' | 'decideOwnRequest' | 'decideAlreadyDecided' | 'decideRefused' | 'decideRefusedNoWords' | 'decideLostLink'
   | 'deciderNamedReviewer' | 'deciderNoReviewer'
   | 'yesWord' | 'noWord'
+  | 'payBankTransfer' | 'payCheque' | 'payUpi' | 'payCash'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   // OB-773: a store manager's catalogue change — the before and after, and whether head office made it.
@@ -234,6 +235,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     deciderNamedReviewer: 'Only the named security reviewer, {who}, can decide this.',
     deciderNoReviewer: 'No security reviewer is named, so nobody can decide this yet. The owner names one on the Risk acceptance screen first.',
     yesWord: 'yes', noWord: 'no',
+    payBankTransfer: 'Bank transfer', payCheque: 'Cheque', payUpi: 'UPI', payCash: 'Cash', // D-049
     scrReady: 'Showing your approvals', scrEmpty: 'Nothing is waiting for you to approve.',
     stateNotPermitted: 'You do not have permission to use approvals.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -331,6 +333,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     deciderNamedReviewer: 'பெயரிடப்பட்ட பாதுகாப்புச் சரிபார்ப்பாளர் {who} மட்டுமே இதை முடிவு செய்ய முடியும்.',
     deciderNoReviewer: 'பாதுகாப்புச் சரிபார்ப்பாளர் யாரும் பெயரிடப்படவில்லை, எனவே இதை இப்போது யாரும் முடிவு செய்ய முடியாது. முதலில் உரிமையாளர் இடர் ஏற்புத் திரையில் ஒருவரைப் பெயரிட வேண்டும்.',
     yesWord: 'ஆம்', noWord: 'இல்லை',
+    payBankTransfer: 'வங்கிப் பரிமாற்றம்', payCheque: 'காசோலை', payUpi: 'UPI', payCash: 'ரொக்கம்',
     scrReady: 'உங்கள் அனுமதிகளைக் காட்டுகிறது', scrEmpty: 'நீங்கள் அனுமதிக்க எதுவும் காத்திருக்கவில்லை.',
     stateNotPermitted: 'அனுமதிகளைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -467,6 +470,8 @@ const LONG_CODE = /^[0-9a-f]{24,}$/i;
 const isMoneyKey = (key: string): boolean => /Minor$/.test(key) && !/(?:quantity|qty)Minor$/i.test(key);
 
 /** One detail value as plain words: money in rupees, long check codes shortened, yes/no, anything else as text. */
+const PAY_METHOD_COPY: Readonly<Record<string, CopyKey>> = { bank_transfer: 'payBankTransfer', cheque: 'payCheque', upi: 'payUpi', cash: 'payCash' };
+
 function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? t('yesWord') : t('noWord');
@@ -477,6 +482,8 @@ function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): st
     return String(value);
   }
   if (key === 'branchScope' && value === 'all') return t('allBranches');
+  // D-049: how a payment is made, in words — "Bank transfer", never `bank_transfer`.
+  if (key === 'method' && typeof value === 'string' && PAY_METHOD_COPY[value] !== undefined) return t(PAY_METHOD_COPY[value]);
   if (typeof value === 'string') return LONG_CODE.test(value) ? `${value.slice(0, 12)}…` : value;
   // A list of names (a display contract's places) reads as a list, never as code.
   if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value.length === 0 ? '—' : value.join(', ');
@@ -525,6 +532,8 @@ export interface PresentedRequest {
   readonly approvalStatus: ApprovalStatus;
   /** OB-420: who alone may decide it, in words — or that nobody can yet (never a request silently waiting on nobody). */
   readonly whoDecides: StatusPresentation | null;
+  /** D-049: a supplier payment's supplier and the bills it names — so the page can read their names and match results. */
+  readonly payment?: { readonly supplierId: string; readonly settles: readonly string[]; readonly method: string };
 }
 
 export interface ApprovalsView {
@@ -641,6 +650,9 @@ export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForRea
     status: presentRequestStatus(lang, r, waitingForReader),
     approvalStatus: r.status,
     whoDecides: presentDecider(lang, r),
+    ...(r.kind === 'supplier_payment' && typeof r.details['supplierId'] === 'string'
+      ? { payment: { supplierId: r.details['supplierId'], settles: Array.isArray(r.details['settles']) ? (r.details['settles'] as unknown[]).map(String) : [], method: typeof r.details['method'] === 'string' ? r.details['method'] : '' } }
+      : {}),
   };
 }
 

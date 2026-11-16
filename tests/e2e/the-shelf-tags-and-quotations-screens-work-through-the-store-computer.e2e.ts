@@ -331,7 +331,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.click('#l-add');
     await p.waitForSelector('#lines li[data-product="p-rice"]');
     await p.click('#q-make');
-    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — the owner is quoting it himself, so only the accountant may approve it \(OB-542\)/);
+    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — the owner is quoting it himself, so only the accountant may approve it/); // D-048: head office's words, without the requirement code
     await p.waitForSelector('#q-ask:not([hidden])');
     await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
     await p.click('#lang');
@@ -364,7 +364,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.click('#l-add');
     await p.waitForSelector('#lines li[data-product="p-dal"]');
     await p.click('#q-make');
-    await says(p, '#q-status', /^Head office refused: quoted below the product's floor price: Toor dal 500 g at 66\.00 \(floor 70\.00\) — the owner is quoting it himself, so only the accountant may approve it \(OB-602\)/);
+    await says(p, '#q-status', /^Head office refused: quoted below the product's floor price: Toor dal 500 g at 66\.00 \(floor 70\.00\) — the owner is quoting it himself, so only the accountant may approve it/); // D-048: head office's words, without the requirement code
     await p.waitForSelector('#q-ask:not([hidden])');
     await says(p, '#q-ask-text', /^Ask the accountant to approve this price$/);
     await p.click('#lang');
@@ -414,7 +414,7 @@ describe.skipIf(!HAVE_BROWSER)('the Shelf tags and Quotations pages through the 
     await p.click('#q-make');
     // R9-A · OB-532: head office never received the rice at a cost, so its floor is not known — only the OWNER may approve the
     // quotation. The page offers to ask the owner (not "a second person"), for exactly this quotation.
-    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — only the owner may approve quoting it \(OB-532\)/);
+    await says(p, '#q-status', /^Head office refused: head office does not know the lowest price of Ponni rice 25 kg \(never received at a cost\) — only the owner may approve quoting it/); // D-048: head office's words, without the requirement code
     await p.waitForSelector('#q-ask:not([hidden])');
     await says(p, '#q-ask-text', /^Ask the owner to approve this price$/);
     await p.click('#lang');
