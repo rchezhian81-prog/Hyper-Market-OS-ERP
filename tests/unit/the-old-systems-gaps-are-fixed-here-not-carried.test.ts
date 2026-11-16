@@ -50,12 +50,13 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     for (const it of r.filter((x) => !['90', '13'].includes(x.itemId))) expect([it.department, it.factsToRead]).toEqual(['packaged-groceries', ['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']]);
     // 13's HSN is not settled (two readings): its department — and so which label rule applies — waits for Finance.
     expect([byId(r, '13').department, byId(r, '13').factsToRead]).toEqual([undefined, []]);
-    // OB-800: the soap is personal care — its label facts are a gap there (OB-738 is packaged groceries' only).
-    expect(kinds(r, '90')).toEqual(['barcode', 'label', 'price']);
-    expect(byId(r, '90').factsToRead).toEqual([]);
+    // OB-811 B: the soap is personal care, a packed good — its label facts are listed to read, not a gap; it is asked only
+    // the four a packed non-food carries (never allergens).
+    expect(kinds(r, '90')).toEqual(['barcode', 'price']);
+    expect(byId(r, '90').factsToRead).toEqual(['country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
     // 12 (check digit), 15 and 16 (one shared barcode), 90 (none)
-    expect(importSummary(r).gaps).toEqual({ barcode: 4, tax: 3, price: 3, label: 1, setup: 0 });
-    expect(importSummary(r)).toMatchObject({ items: 7, ready: 1, factsToRead: 5 });
+    expect(importSummary(r).gaps).toEqual({ barcode: 4, tax: 3, price: 3, label: 0, setup: 0 });
+    expect(importSummary(r)).toMatchObject({ items: 7, ready: 1, factsToRead: 6 });
   });
 
   it('each fix closes its own gap; the latest fix of a kind applies; "not in this department" takes an item out of every count', () => {
@@ -76,7 +77,7 @@ describe('the old system\'s gaps are fixed here, never carried (OB-704)', () => 
     expect(byId(r, '15').factsToRead).toHaveLength(5);
     expect(byId(r, '11').factsToRead).toEqual([]);
     expect(byId(r, '16').factsToRead).toEqual([]); // out of the department: in no list
-    expect(importSummary(r)).toMatchObject({ ready: 4, excluded: 1, factsToRead: 2 }); // 14 and 15
+    expect(importSummary(r)).toMatchObject({ ready: 4, excluded: 1, factsToRead: 3 }); // 14, 15 and the soap (OB-811 B)
   });
 
   it('a fix that would carry a gap in is refused by name, never trimmed into something else', () => {

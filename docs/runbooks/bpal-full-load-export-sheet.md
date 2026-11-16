@@ -56,7 +56,7 @@ If a report also has a **date box** we have not listed (for example the EANCODE 
 |---|---|---|---|
 | 1 | Double-click **SRE Import** on the desktop (first time: owner guide Part 22). Sign in with your staff ID and till PIN. | You | `Signed in: owner-01` at the top. |
 | 2 | Choose **all** the files together (hold **Ctrl**, click each), type the backup check day (section 1), press **Read the files**. | You | `Read: … items, every department. Barcodes: 1 file(s) · HSN: 1 file(s) · prices: 5 file(s), … rows, from … to …`. A line **By department —** with each department and how many are ready or waiting. |
-| 3 | **Fix the gaps, best sellers first** (the list starts with them). Open an item, fix it, **Save this fix**. **Barcode or sold loose**: scan the pack — or, for loose goods, choose **By weight (kg)** or **By count**, the scale PLU if any, **Save: sold loose**. **Price**: MRP, selling, cost. **Label facts (needed first)**: every department except packaged groceries. **Leave it out of the load**: items no longer sold. | You or the store manager | `Saved for <item>.` The tile numbers go **down**. Tobacco, medicines and gold say **Set up on the Products page** — they never load from Bpal. |
+| 3 | **Fix the gaps, best sellers first** (the list starts with them). Open an item, fix it, **Save this fix**. **Barcode or sold loose**: scan the pack — or, for loose goods, choose **By weight (kg)** or **By count**, the scale PLU if any, **Save: sold loose**. **Price**: MRP, selling, cost. **Label facts (needed first)**: loose foods only — every packed good loads with its facts still to read (OB-811 B) and is listed on **Packed goods: facts still to read** until they are typed. **Leave it out of the load**: items no longer sold. | You or the store manager | `Saved for <item>.` The tile numbers go **down**. Tobacco, medicines and gold say **Set up on the Products page** — they never load from Bpal. |
 | 4 | **Finance marks the two-rate HSN codes.** The accountant signs in on the same page, opens the tile **GST rate (Finance)**, chooses the right HSN and slab for each item, writes why. Your staff or Bpal vendor makes the **same correction in Bpal** (OB-697). | Accountant (or you) | `Saved for <item>.` The **GST rate (Finance)** tile goes to **0**. Anyone else trying gets `only Finance`. |
 | 5 | **Load, by two people.** You: **Prepare a load** (your PIN). Store manager: reads the list, writes what he read, **Accept** (his PIN). You: **Load** (your PIN). | You + store manager | `Prepared … with … item(s) — Packaged groceries: … · Personal care: … ·` then `Accepted.` then `Loaded. Publish the price list to the till next`. **Download what was set aside** gives the list of what did not load and why. |
 | 6 | **Publish prices** (owner guide Part 24): `.\runtime\node\node.exe .\scripts\store-computer.mjs publish-catalogue --as owner-01 --store <store-code>`, type `YES`, then your PIN. | You | `done — the catalogue pack version … is published.` and `DONE —`. |
@@ -68,9 +68,10 @@ If a report also has a **date box** we have not listed (for example the EANCODE 
 
 ### 4. Questions for you — உங்களுக்கான கேள்விகள்
 
-- **Label facts outside packaged groceries.** Today only packaged groceries may load before their label facts are read
-  (OB-738, "sell at the till only"). Household, personal care, dairy and loose foods wait until their facts are typed.
-  Whether to change that is your decision — it is asked separately, with options.
+- **Label facts — decided (OB-811 B, 16 Nov 2026).** Every packed good (groceries, dairy and other packed foods,
+  personal care, household) loads before its label facts are read and sells **at the till only** — the customer holds
+  the printed pack. It is kept off online and scan-and-go and listed until the facts are typed. Loose foods still need
+  their allergens and origin before they load.
 - **The evening check** (owner guide Part 31) now compares the **whole store**: every department's totals (the same
   departments as this load, from the HSN code) and the whole store's total; loose goods to the gram. Export Bpal's
   item-wise report for **every department** — never one. Whether to allow a small kg rounding difference is asked

@@ -299,14 +299,14 @@ export function resolveImport(items: readonly OldItem[], fixes: readonly ImportF
     const lf = fixOf(it.itemId, 'label'); mark(lf);
     const facts: Partial<Record<LabelFact, string>> = {};
     for (const f of labelFixesOf(it.itemId)) for (const k of LABEL_FACTS) { const v = str(f.value[k]); if (v !== '') facts[k] = v; }
-    // Packaged groceries (OB-738): a fact not read yet is listed, not a gap. Every other department: a fact it needs is a
-    // gap (the full rule, M03-FR-03) — whether the allowance reaches them is the owner's decision, not this code's.
+    // Packed goods (OB-738 · OB-811 B): a fact the department needs and not read yet is listed, not a gap. Loose foods: a
+    // fact they need is a gap (the full rule, M03-FR-03) — there is no pack carrying it.
     let factsToRead: LabelFact[] = [];
     if (dept !== undefined && elsewhere === undefined) {
-      if (labelFactsMayFollowIn(dept)) factsToRead = LABEL_FACTS.filter((k) => (facts[k] ?? '') === '');
+      if (labelFactsMayFollowIn(dept)) factsToRead = labelFactsNeeded(dept).filter((k) => (facts[k] ?? '') === '');
       else {
         const missing = labelFactsNeeded(dept).filter((k) => (facts[k] ?? '') === '');
-        if (missing.length > 0) gaps.push({ kind: 'label', why: `${dept.name}: ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')} not read off the ${soldAs === 'pack' ? 'pack' : 'item or its supplier\'s sack'} yet — only packaged groceries may load before their label facts are read (OB-738); every other department needs them first` });
+        if (missing.length > 0) gaps.push({ kind: 'label', why: `${dept.name}: ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')} not read off the ${soldAs === 'pack' ? 'pack' : 'item or its supplier\'s sack'} yet — only packed goods may load before their label facts are read (OB-738 · OB-811 B); loose goods need them first` });
       }
     }
 

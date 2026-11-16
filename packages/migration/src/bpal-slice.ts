@@ -15,9 +15,9 @@
 //     pack barcode (loose goods, sold by weight or by count) is set aside with that reason — it is marked loose and loaded
 //     from the Import page (packages/migration/src/old-system-import.ts).
 //   • OB-695 — its MRP, selling price and cost are those of its NEWEST purchase row in the last 12 months.
-//   • OB-738 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only"): a label fact a packed food
-//     must carry (M03-FR-03) is never invented, and in the packaged-groceries department its absence no longer holds an
-//     item back (every other department keeps the full rule: set aside until the facts are read). Every item is written into
+//   • OB-738 (owner, 14 Nov 2026, "1A", replacing OB-696; option A "sell at the till only") and OB-811 B (16 Nov 2026): a
+//     label fact a packed good must carry (M03-FR-03) is never invented, and in every packed-goods department its absence
+//     no longer holds an item back (loose foods keep the full rule: set aside until the facts are read). Every item is written into
 //     products.csv with the facts staff have read into label-facts.csv (best sellers first) and the rest BLANK — never
 //     "none". The loader lets the blank ones follow; head office lists them until read, and the item sells at the till
 //     only (never online or by scan-and-go) meanwhile. label-facts.csv stays the staff's working sheet.
@@ -68,9 +68,9 @@ export function inPilotDepartment(hsn: string): boolean {
 // page does not take (tobacco 24: minimum age and pack size; medicines 30; gold, silver and jewellery 71: HUID / BIS):
 // they are never loaded from the old ERP — each stays on the list, with that reason, to be set up on the Products page.
 //
-// The OB-738 allowance (load with label facts blank, sell at the till only) is the packaged-groceries department's ONLY:
-// every other department keeps the full rule — an item missing a label fact its department needs waits, listed, until
-// the fact is read off the pack. Whether the allowance reaches other packed goods is the owner's decision, not ours.
+// The OB-738 allowance (load with label facts blank, sell at the till only) reaches EVERY packed-goods department since the
+// owner's OB-811 B (16 Nov 2026, in writing): packaged groceries, other packed foods, personal care, household goods. Loose
+// foods keep the full rule — an item missing a label fact its department needs waits, listed, until the fact is read.
 
 export type SoldAs = 'pack' | 'loose_kg' | 'loose_count';
 
@@ -124,8 +124,13 @@ export function setUpElsewhere(hsn: string): string | undefined {
   return undefined;
 }
 
-/** OB-738: the one department whose items load with label facts still to read (sell at the till only, listed until filled). */
-export const labelFactsMayFollowIn = (dept: StoreDepartment): boolean => dept.categoryId === PILOT_CATEGORY_ID;
+/**
+ * OB-738 · OB-811 B (owner, 16 Nov 2026, in writing): the departments whose items load with label facts still to read (sell
+ * at the till only, kept off online and scan-and-go, listed until filled) — every PACKED-goods department, read off this
+ * table's own `regulated` column (a department whose items are `packed`). Loose foods and loose goods have no pack, so they
+ * keep the full rule. The product engine's `LABEL_FACTS_MAY_FOLLOW_IN` is pinned equal to this by a test.
+ */
+export const labelFactsMayFollowIn = (dept: StoreDepartment): boolean => dept.regulated.includes('packed');
 
 /** The departments the given category ids name, in the table's order — what a load's slice.json lists. */
 export const departmentsNamed = (categoryIds: Iterable<string>): StoreDepartment[] => {
@@ -149,7 +154,7 @@ export type LabelFact = typeof LABEL_FACTS[number];
 /**
  * The label facts an item of this department must carry before it loads — the product engine's own rule (M03-FR-03,
  * `validateProduct`): a food needs its allergens and country of origin; a packed item its net quantity, packer, consumer
- * care and country of origin. Packaged groceries need all five too, but OB-738 lets theirs follow (`labelFactsMayFollowIn`).
+ * care and country of origin. In a packed-goods department OB-738 · OB-811 B let them follow (`labelFactsMayFollowIn`).
  */
 export function labelFactsNeeded(dept: StoreDepartment): readonly LabelFact[] {
   const food = dept.regulated.includes('food');
@@ -183,7 +188,7 @@ export interface BpalSliceOutput {
   readonly setAside: readonly SetAside[];
   readonly counts: {
     /** `items`: every item the reports name (OB-800: every department). `ready`: every item written into the four files.
-     *  `factsStillToRead`: those of them with a label fact blank (OB-738 — packaged groceries only). */
+     *  `factsStillToRead`: those of them with a label fact their department needs blank (OB-738 · OB-811 B — packed goods). */
     readonly items: number; readonly ready: number; readonly factsStillToRead: number;
     readonly setAside: number; readonly alreadyLoaded: number; readonly barcodes: number; readonly taxClasses: number;
     /** The ready items per department (category id → count); a department with none is left out. */
@@ -401,11 +406,12 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     priced.set(id, { mrp: p.mrp, sell: p.sell, cost: p.cost });
   }
 
-  // ── label facts (M03-FR-03): packaged groceries load with facts still to read (OB-738); every other department waits ──
+  // ── label facts (M03-FR-03): packed goods load with facts still to read (OB-738 · OB-811 B); loose foods wait ──
   const already = input.alreadyLoaded ?? new Set<string>();
   const facts: ReadonlyMap<string, Readonly<Partial<Record<LabelFact, string>>>> = input.labelFacts ?? new Map();
   const factOf = (id: string, k: LabelFact): string => (facts.get(id)?.[k] ?? '').trim();
-  const allRead = (id: string): boolean => LABEL_FACTS.every((k) => factOf(id, k) !== '');
+  /** Every fact this item's department needs is read (OB-811 B: a shampoo is never asked for allergens). */
+  const allRead = (id: string): boolean => labelFactsNeeded(dept.get(id)!.department).every((k) => factOf(id, k) !== '');
   const bySales = (a: string, b: string): number => (dept.get(b)!.sold - dept.get(a)!.sold) || a.localeCompare(b, 'en', { numeric: true });
   /** Every item not loaded yet that passed every other check — the staff's label-facts sheet lists all of them. */
   const waiting: string[] = [];
@@ -417,7 +423,7 @@ export function bpalToSlice(input: BpalSliceInput): BpalSliceOutput {
     const d = dept.get(id)!.department;
     const missing = labelFactsNeeded(d).filter((k) => factOf(id, k) === '');
     if (missing.length > 0 && !labelFactsMayFollowIn(d)) {
-      putAside(id, dept.get(id)!.name, `${d.name}: the label facts ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')} are not read off the pack yet — only packaged groceries may load before them (OB-738); fill label-facts.csv`);
+      putAside(id, dept.get(id)!.name, `${d.name}: the label facts ${missing.map((k) => k.replace(/_/g, ' ')).join(', ')} are not read yet — only packed goods may load before them (OB-738 · OB-811 B); fill label-facts.csv`);
       continue;
     }
     ready.push(id);
