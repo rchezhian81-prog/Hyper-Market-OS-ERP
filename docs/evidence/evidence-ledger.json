@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2431,
+  "testFiles": 2432,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -442,8 +442,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 23,
-        "realDb": 8,
+        "integration": 24,
+        "realDb": 9,
         "browser": 12,
         "connected": 3,
         "device": 0,
@@ -479,6 +479,7 @@
           "tests/integration/audit-trail-store.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/catalogue-pack-publish.test.ts",
+          "tests/integration/d019-a-sent-mrp-cannot-lift-head-offices-ceiling.test.ts",
           "tests/integration/migration-load.test.ts",
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
@@ -498,6 +499,7 @@
           "tests/integration/the-store-trades-a-day.test.ts"
         ],
         "realDb": [
+          "tests/integration/d019-a-sent-mrp-cannot-lift-head-offices-ceiling.test.ts",
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",

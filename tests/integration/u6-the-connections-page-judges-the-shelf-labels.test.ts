@@ -44,7 +44,7 @@ describe.each(backings)('U6: the Connections page judges the shelf labels — on
     await ok(call('POST', '/v1/org/nodes/B1', 'u-it', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1' }), 'branch');
     await storeRules(h, T, 'u-owner', 'B1', 0);
     await ok(call('POST', '/v1/catalogue/tax-classes/34011190/rates/2017-07-01', 'u-owner', { rateBps: 1_800 }), 'tax');
-    await ok(call('POST', '/v1/catalogue/products/p-soap/publish', 'u-owner', { product: { sku: 'SKU-SOAP', name: 'Soap 100g', baseUom: 'ea', primaryCategoryId: 'home', taxClass: '34011190', lifecycle: 'draft' }, categories: [{ categoryId: 'home', name: 'Home', parentId: null }] }), 'product');
+    await ok(call('POST', '/v1/catalogue/products/p-soap/publish', 'u-owner', { product: { sku: 'SKU-SOAP', name: 'Soap 100g', baseUom: 'ea', primaryCategoryId: 'home', taxClass: '34011190', lifecycle: 'draft', mrpHistory: [{ value: { minor: 6_000, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'home', name: 'Home', parentId: null }] }), 'product');
 
     // No label registered: no row — a connection that does not exist is not "healthy" (P-08).
     expect(await row()).toBeUndefined();

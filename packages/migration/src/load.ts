@@ -242,10 +242,14 @@ function engineCategoriesOf(bundle: ExtractBundle): readonly Category[] {
 }
 
 /** The product as the publish route will read it — one shape, used for the pre-check AND the step body. */
-function productRecordOf(p: ExtractProduct, tenantId: string, judged = false): ProductRecord {
+function productRecordOf(p: ExtractProduct, tenantId: string, judged = false, mrp?: { readonly currency: string; readonly from: string }): ProductRecord {
   return {
     productId: p.productId, tenantId, sku: p.sku, name: p.name, baseUom: p.baseUom,
     primaryCategoryId: p.primaryCategoryId, taxClass: p.taxClass, lifecycle: p.lifecycle,
+    // The MRP printed on the pack, from the old system's purchase report, on the product master from the count date — head
+    // office's own record of the legal ceiling the price below is judged by (D-019: with none on record, every migrated
+    // price would need a second person, and the item could not be repriced without one).
+    ...(mrp === undefined ? {} : { mrpHistory: [{ value: { minor: p.mrpMinor, currency: mrp.currency as 'INR' }, effectiveFrom: mrp.from }] }),
     ...(p.brand === undefined ? {} : { brand: p.brand }),
     ...(p.safety === undefined ? {} : { safety: p.safety }),
     // OB-738: judged here as head office will judge it once the load asks for the facts to follow. Never sent in the
@@ -504,7 +508,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     steps.push({
       group: 'product', what: `product ${p.productId}`,
       path: `/v1/catalogue/products/${encodeURIComponent(p.productId)}/publish`,
-      body: { product: publishBodyOf(productRecordOf(p, req.tenantId)), categories, ...(p.labelFactsFollow === true ? { labelFactsFollow: { loadId: req.loadId } } : {}) },
+      body: { product: publishBodyOf(productRecordOf(p, req.tenantId, false, { currency: req.currency, from: req.receivedOnDate })), categories, ...(p.labelFactsFollow === true ? { labelFactsFollow: { loadId: req.loadId } } : {}) },
       idempotencyKey: key(`product-${p.productId}`),
     });
   }

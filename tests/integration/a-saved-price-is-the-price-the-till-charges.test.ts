@@ -25,7 +25,7 @@ async function shop(): Promise<{ h: ApiHarness; req: (method: 'POST' | 'GET', pa
     h.request({ method, path, userId: 'u-owner', tenantId: A, ...(method === 'POST' ? { idempotencyKey: key } : {}), ...(body === undefined ? {} : { body }) });
   await aBranch(h, A, 'u-owner', 'store-1');
   await storeRules(h, A, 'u-owner', 'store-1', 0); // M05: the owner set no margin floor for this store (0 = none)
-  expect((await req('POST', '/v1/catalogue/products/p-salt/publish', { product: { sku: 'SKU-SALT', name: 'Tata Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' }, categories: [GROCERY] })).status).toBeLessThan(300);
+  expect((await req('POST', '/v1/catalogue/products/p-salt/publish', { product: { sku: 'SKU-SALT', name: 'Tata Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft', mrpHistory: [{ value: { minor: 2_500, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [GROCERY] })).status).toBeLessThan(300);
   expect((await req('POST', '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', { rateBps: 500 })).status).toBeLessThan(300);
   // the price that stands before the change: ₹20 at store-1, from today
   expect((await req('POST', '/v1/prices/list/p-salt/entries/e1', { scope: 'store', scopeRef: 'store-1', priceMinor: 2_000, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY })).status).toBe(201);

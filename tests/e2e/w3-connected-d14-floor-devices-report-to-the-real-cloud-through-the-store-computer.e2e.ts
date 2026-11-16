@@ -57,7 +57,7 @@ describe.skipIf(!CONNECTED)('D14 connected: shelf labels and floor devices on th
         await cloud.grant(CASH, 'cashier', undefined, [store]);
         await ok('POST', '/v1/platform/devices/lane-1/register', OWNER, { branchId: store, kind: 'pos_lane', label: 'Lane 1' });
         await ok('POST', '/v1/catalogue/tax-classes/34011190/rates/2017-07-01', OWNER, { rateBps: 1_800 });
-        await ok('POST', '/v1/catalogue/products/p-soap/publish', OWNER, { product: { sku: 'SKU-SOAP', name: 'Soap 100g', baseUom: 'ea', primaryCategoryId: 'home', taxClass: '34011190', lifecycle: 'draft' }, categories: [{ categoryId: 'home', name: 'Home', parentId: null }] });
+        await ok('POST', '/v1/catalogue/products/p-soap/publish', OWNER, { product: { sku: 'SKU-SOAP', name: 'Soap 100g', baseUom: 'ea', primaryCategoryId: 'home', taxClass: '34011190', lifecycle: 'draft', mrpHistory: [{ value: { minor: 6_000, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'home', name: 'Home', parentId: null }] });
         await ok('POST', '/v1/inventory/movements', OWNER, { movementId: 'soap-in', productId: 'p-soap', locationId: store, kind: 'received', quantityMinor: 40, uom: 'ea', occurredAt: minutesAgo(30), enteredBy: OWNER });
         await nameSecurityReviewer(ho, T, OWNER, REVIEWER);
         for (const key of ['esl', 'rfid', 'cctv']) {
