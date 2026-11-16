@@ -35,6 +35,8 @@ const isMachine = (roleId) => { const r = roles.live.find((x) => x.id === roleId
 
 function paintPending() {
   const ul = $('pending-rows'); ul.replaceChildren();
+  // OB-804 A: the owner always sees what waits; a store manager only when a role the owner asked for waits for them.
+  if (!may.read) $('pending').hidden = pending === null || pending.length === 0;
   if (pending === null) return;
   if (pending.length === 0) { ul.append(text('li', t('nothingPending'), 'meta')); return; }
   for (const p of pending) {
@@ -43,7 +45,8 @@ function paintPending() {
     head.append(text('h4', `${personWords(p.userId)} — ${roleName(p.roleId)}`), text('span', `${t('where')}: ${scopeWords(p.branchScope)}`, 'meta'));
     li.append(head, text('p', `${t('askedBy')} ${p.requestedBy} · ${p.reason}`, 'meta'));
     if (p.mine) li.append(text('p', t('yourOwn'), 'meta'));
-    else if (may.decide) {
+    // OB-804 A: head office says who may decide each — the owner, or a store manager for a role the owner asked for.
+    else if (p.youMayDecide) {
       const why = field(t('reason'), `why-${p.grantId}`);
       const acts = document.createElement('div'); acts.className = 'acts';
       const status = text('p', '', 'status'); status.setAttribute('role', 'status');
@@ -191,7 +194,7 @@ async function loadHolders() { $('holders-status').textContent = t('reading'); c
 async function loadPending() { $('pending-status').textContent = t('reading'); const out = await session.pending(); pending = out.result === 'ok' ? out.value : null; say('pending-status', out); paintPending(); }
 async function loadMine() { if (!may.ask || onStorePc) return; $('mine-status').textContent = t('reading'); const out = await session.mine(); mine = out.result === 'ok' ? out.value : null; say('mine-status', out); paintMine(); }
 async function loadTakeBacks() { if (!onStorePc || (!may.ask && !may.decide)) return; $('takebacks-status').textContent = t('reading'); const out = await session.takeBacks(); takeBacks = out.result === 'ok' ? out.value : null; say('takebacks-status', out); paintTakeBacks(); }
-async function loadAll() { await loadRoles(); paint(); await Promise.all([may.ask ? loadHolders() : Promise.resolve(), may.read ? loadPending() : Promise.resolve(), loadMine(), loadTakeBacks()]); }
+async function loadAll() { await loadRoles(); paint(); await Promise.all([may.ask ? loadHolders() : Promise.resolve(), may.read || may.ask ? loadPending() : Promise.resolve(), loadMine(), loadTakeBacks()]); }
 
 for (const [id, name] of [['reload', 'refresh-cw'], ['g-ask', 'user-round']]) { const i = icon(name); if (i !== null) $(id).prepend(i); }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
@@ -257,6 +260,7 @@ else {
   if (!may.read && !may.ask && signIns === null) $('page-status').textContent = t('cannotRead');
   // The owner (identity.role.read) sees what waits for a second person; whoever asks (identity.role.request) sees who holds
   // what and gives, takes back and limits.
+  // OB-804 A: a store manager (who asks) sees the section only when the owner's asks wait for them (see `paintPending`).
   if (may.read) $('pending').hidden = false;
   if (may.ask) { $('holders').hidden = false; $('give').hidden = false; $('limit').hidden = onStorePc; $('mine').hidden = onStorePc; $('add').hidden = !onStorePc; }
   $('store-pc-note').hidden = !onStorePc;

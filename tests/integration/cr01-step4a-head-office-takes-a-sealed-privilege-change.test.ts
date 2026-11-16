@@ -150,10 +150,11 @@ describe('CR-01 step 4a: the box-relay privilege routes accept only a fresh, sea
     expect(beyond.status).toBe(422);
     expect(codeOf(beyond)).toBe('escalates_beyond_the_approver');
 
-    // The manager (no identity.role.grant at head office) cannot approve through the store PC either.
-    const mgr = await relay(h, '/v1/identity/box/grants/g-6/approve', sealPrivilegeRecord(KEY, record('role_grant_approval', 'u-mgr', { grantId: 'g-6' })));
+    // The manager (no identity.role.grant at head office) approves only a role the OWNER asked for (OB-804 A) — never one
+    // he or another person asked for: his own ask g-7 is refused by name through the store PC, and nothing is granted.
+    const mgr = await relay(h, '/v1/identity/box/grants/g-7/approve', sealPrivilegeRecord(KEY, record('role_grant_approval', 'u-mgr', { grantId: 'g-7' })));
     expect(mgr.status).toBe(403);
-    expect(codeOf(mgr)).toBe('acting_person_lacks_authority');
+    expect(codeOf(mgr)).toBe('only_the_owners_ask_is_yours');
     // Asking for yourself through the store PC is refused as on the person's own route.
     const self = await relay(h, '/v1/identity/box/grants', sealPrivilegeRecord(KEY, record('role_request', 'u-mgr', ask('g-8', 'u-mgr'))));
     expect(codeOf(self)).toBe('granting_to_yourself');

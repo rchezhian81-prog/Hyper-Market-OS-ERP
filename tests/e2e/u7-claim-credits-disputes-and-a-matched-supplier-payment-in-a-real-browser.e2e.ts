@@ -135,9 +135,8 @@ describe.skipIf(!HAVE_BROWSER)('U7: draft credits, disputed claims and a supplie
       await page.waitForFunction('globalThis.sreOffice !== undefined');
       await page.fill('#pay-supplier', 'sup-1');
       await page.fill('#pay-amount', '500');
-      await page.fill('#pay-on', ddmm);
       await page.selectOption('#pay-method', 'bank_transfer');
-      await page.fill('#pay-ref', 'NEFT-77001');
+      // OB-807 A: asked on the amount, how and the bill — before paying, so no day and no UTR yet.
       await page.locator('#pay-bills-list input[value="inv-a"]').check(); // D-047: the bill it settles is ticked, not typed
       await page.click('#pay-ask');
       await says(page, '#pay-status', /^Asked\./);
@@ -146,8 +145,12 @@ describe.skipIf(!HAVE_BROWSER)('U7: draft credits, disputed claims and a supplie
       const ask = mine.mine.find((q) => q.kind === 'supplier_payment')!;
       expect((await shop.call('POST', `/v1/approvals/requests/${ask.requestId}/decide`, P3.PAY_APPROVER, { decision: 'approved', reason: 'checked' })).status).toBe(201);
       await page.click('#pay-asks-show');
-      await says(page, '#pay-asks', /approved — ready to record/);
+      await says(page, '#pay-asks', /Approved — record it when paid/);
       await says(page, '#pay-asks', /settles inv-a/);
+      // Paid now: the day and the bank reference are typed, then the approved line is recorded.
+      await says(page, '#pay-record-h', /^Approved — record it when paid$/);
+      await page.fill('#pay-on', ddmm);
+      await page.fill('#pay-ref', 'NEFT-77001');
       await askedThenConfirmed(page, async () => { await page.click('#pay-asks .pay-record'); }, /₹500\.00 paid to .*sup-1.* will be recorded/, sent);
       await says(page, '#pay-status', /^Recorded\./);
       expect(p.writes.filter((w) => /^POST \/v1\/purchase\/suppliers\/sup-1\/payments\//.test(w))).toHaveLength(1);

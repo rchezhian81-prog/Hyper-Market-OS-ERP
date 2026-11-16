@@ -41,7 +41,9 @@ describe('the acts: who may, what is sealed', () => {
     expect(PRIVILEGE_KINDS).toContain('role_grant_rejection');
     expect(PRIVILEGE_AUTHORITY.person_provision).toBe('identity.role.request');
     expect(PRIVILEGE_AUTHORITY.person_provision).toBe(STORE_PC_PERSON_AUTHORITY);
-    expect(PRIVILEGE_AUTHORITY.role_grant_rejection).toBe('identity.role.grant');
+    // OB-804 A: the PIN is checked holding the maker's word (the owner's and the store manager's); head office's own reject
+    // route then judges who may decide this request (the owner any; a store manager only the owner's asks).
+    expect(PRIVILEGE_AUTHORITY.role_grant_rejection).toBe('identity.role.request');
     expect(privilegeDoorOf('/office/privilege/grants/g-1/reject')).toEqual({ kind: 'role_grant_rejection', grantId: 'g-1' });
     expect(privilegeApiPath('role_grant_rejection', 'g 1')).toBe('/v1/identity/box/grants/g%201/reject');
     expect(usersViewApiPath('u mgr')).toBe('/v1/identity/box/users-view?for=u%20mgr');
@@ -61,7 +63,7 @@ describe('the acts: who may, what is sealed', () => {
     expect(records[0]).toMatchObject({ act: 'person_provision', outcome: 'sealed', forUserId: 'priya.k', displayName: 'Priya K' });
   });
 
-  it('rejecting: a reason is required (≤ 300 characters), the PIN checked holding identity.role.grant, the reason sealed', async () => {
+  it('rejecting: a reason is required (≤ 300 characters), the PIN checked holding identity.role.request (OB-804 A), the reason sealed', async () => {
     for (const request of [undefined, {}, { reason: '  ' }, { reason: 'x'.repeat(301) }]) {
       const { d, relayed, pinAsked } = box();
       const out = await privilegeAct(d, 'role_grant_rejection', { userId: 'u-owner' }, { pin: PIN, request, grantId: 'g-1' });
@@ -72,7 +74,7 @@ describe('the acts: who may, what is sealed', () => {
     const { d, relayed, pinAsked } = box({ relay: { status: 200, body: { state: 'rejected' } } });
     const out = await privilegeAct(d, 'role_grant_rejection', { userId: 'u-owner' }, { pin: PIN, request: { reason: ' not needed ' }, grantId: 'g-1' });
     expect(out.answer).toMatchObject({ ok: true, kind: 'role_grant_rejection', ...PRIVILEGE_WORDS.role_rejected });
-    expect(pinAsked).toEqual([{ userId: 'u-owner', authority: 'identity.role.grant' }]);
+    expect(pinAsked).toEqual([{ userId: 'u-owner', authority: 'identity.role.request' }]);
     expect(relayed[0]).toMatchObject({ path: '/v1/identity/box/grants/g-1/reject', body: { kind: 'role_grant_rejection', body: { grantId: 'g-1', reason: 'not needed' } } });
   });
 

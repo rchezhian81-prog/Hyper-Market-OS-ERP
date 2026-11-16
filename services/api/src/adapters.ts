@@ -371,7 +371,7 @@ export { aiAdapter, modelGatewayAdapter } from './ai-adapters';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID, OWNER_ROLE_ID, isPlatformAdministrationRole } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID, OWNER_ROLE_ID, OWNER_ASKED_GRANT_RULE, isPlatformAdministrationRole } from './roles';
 import { combinedDuties } from '../../identity/src/separation-of-duties';
 import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
@@ -11274,6 +11274,8 @@ export function identityAdapter(input: {
 
     // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    // OB-804 A: a store manager approves a role the owner asked to give (never the owner's own role or a locked one).
+    whenTheOwnerAsksForARole: OWNER_ASKED_GRANT_RULE,
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */

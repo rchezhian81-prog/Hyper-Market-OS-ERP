@@ -18,8 +18,8 @@ import { xlsx } from '../support/xlsx';
  * OB-800 (owner, 15 Nov 2026): NO pilot department — the whole store is loaded from the old ERP (Bpal) and run in parallel
  * with it. The store PC's Import page, end to end against the real API (in-memory store AND PostgreSQL), with items of
  * several departments: a packaged grocery (loads with its label facts still to read — OB-738), a banana sold LOOSE by
- * weight with the scale's PLU (marked by a person, loaded in kg), a shampoo (personal care: its label facts are needed
- * first — today's rule), cigarettes (never loaded from the old ERP: set up on the Products page), and one HSN the old ERP
+ * weight with the scale's PLU (marked by a person, loaded in kg), a shampoo (personal care, a packed good: since OB-811 B it
+ * loads with its label facts still to read, sells at the till only and is listed until they are filled), cigarettes (never loaded from the old ERP: set up on the Products page), and one HSN the old ERP
  * taxes at two rates (Finance decides, OB-697). Made-up data only.
  */
 
@@ -50,7 +50,7 @@ function personClient(get: () => ApiHarness): SetupClient {
 }
 
 describe.each(backings)('OB-800: the import page loads every department, loose goods included — on $name', ({ harness }) => {
-  it('read every department → loose banana marked in kg with its PLU → shampoo\'s facts first → Finance settles the two-rate HSN → two people load → each item in its department', async () => {
+  it('read every department → loose banana marked in kg with its PLU, its facts first → the shampoo loads with its facts to read (OB-811 B) → Finance settles the two-rate HSN → two people load → each item in its department', async () => {
     const h: ApiHarness = harness();
     const T = randomUUID();
     await h.seedOwner(T, OWNER);
@@ -96,12 +96,13 @@ describe.each(backings)('OB-800: the import page loads every department, loose g
       expect(gapsOf(v, '31')).toEqual([]);
       expect(gapsOf(v, '32')).toEqual(['barcode']);
       expect(item(v, '32').gaps[0]!.why).toContain('mark it "Sold loose"');
-      expect(gapsOf(v, '33')).toEqual(['label']);
+      expect(gapsOf(v, '33')).toEqual([]); // OB-811 B: a packed good's label facts are listed, not a gap
+      expect(item(v, '33').factsToRead).toEqual(['country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
       expect(gapsOf(v, '34')).toEqual(['setup']);
       expect(gapsOf(v, '35')).toEqual(['tax']);
       expect(gapsOf(v, '36')).toEqual(['tax']);
       expect(v.departmentNames['personal-care']).toBe('Personal care');
-      expect(v.summary.gaps).toEqual({ barcode: 1, tax: 2, price: 0, label: 1, setup: 1 });
+      expect(v.summary.gaps).toEqual({ barcode: 1, tax: 2, price: 0, label: 0, setup: 1 });
 
       // ── the banana is sold loose, by weight, with the scale's PLU — marked by whoever runs the load, not by Finance ──────
       const fixAs = (cookie: string, itemId: string, kind: string, value: unknown, reason = 'checked in the shop') => call(cookie, 'POST', `/api/imports/${id}/fix`, { itemId, kind, value, reason });
@@ -114,7 +115,6 @@ describe.each(backings)('OB-800: the import page loads every department, loose g
       v = await view();
       expect([item(v, '32').soldAs, item(v, '32').department, gapsOf(v, '32')]).toEqual(['loose_kg', 'loose-foods', ['label']]); // a loose food needs allergens and origin
       expect((await fixAs(manager, '32', 'label', { allergens: 'none', country_of_origin: 'India' }, 'loose fruit, grown in India')).status).toBe(201);
-      expect((await fixAs(manager, '33', 'label', { country_of_origin: 'India', net_quantity: '180 ml', packer: 'Test Care, Chennai', consumer_care: '1800 111 111' })).status).toBe(201);
       // ── Finance settles the two-rate HSN (OB-697 still asks for Bpal to be corrected too) ─────────────────────────
       expect((await fixAs(accountant, '36', 'tax', { hsn: '09023020', gstPercent: 5 }, 'checked with the CA')).status).toBe(201);
       v = await view();
@@ -144,11 +144,18 @@ describe.each(backings)('OB-800: the import page loads every department, loose g
       expect(banana.labelFactsFollow).toBeUndefined();
       const shampoo = await productOf('33');
       expect(shampoo.primaryCategoryId).toBe('personal-care');
-      expect(shampoo.labelFactsFollow).toBeUndefined();
-      expect(shampoo.safety).toMatchObject({ netQuantity: '180 ml', consumerCareContact: '1800 111 111' });
-      // OB-738's list holds the packaged groceries only.
-      const outstanding = ((await req('GET', '/v1/catalogue/label-facts-outstanding', undefined, OWNER)).body as { items: { productId: string }[] }).items.map((x) => x.productId).sort();
-      expect(outstanding).toEqual(['31', '35', '36']);
+      expect(shampoo.labelFactsFollow).toMatchObject({ decision: 'OB-738', loadId }); // OB-811 B: a packed good, its facts to read
+      // The list holds every packed good with facts still to read — each with the facts ITS department needs; the banana, a
+      // loose food, never (it carried its allergens and origin before it could load).
+      const outstandingNow = async () => ((await req('GET', '/v1/catalogue/label-facts-outstanding', undefined, OWNER)).body as { items: { productId: string; facts: string[] }[] }).items;
+      expect((await outstandingNow()).map((x) => x.productId).sort()).toEqual(['31', '33', '35', '36']);
+      expect((await outstandingNow()).find((x) => x.productId === '33')!.facts).toEqual(['country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
+      // The manager reads the shampoo's four facts off the pack: it leaves the list, its hold lifted (the full rule from now).
+      const version = ((await req('GET', '/v1/catalogue/products/33', undefined, OWNER)).body as { version: number }).version;
+      const filled = await req('POST', '/v1/catalogue/products/33/label-facts', { expectedVersion: version, facts: { countryOfOrigin: 'India', netQuantity: '180 ml', packerDetails: 'Test Care, Chennai', consumerCareContact: '1800 111 111' }, reason: 'read off the pack' }, MANAGER);
+      expect(filled.status, JSON.stringify(filled.body)).toBe(201);
+      expect((await productOf('33')).labelFactsFollow).toBeUndefined();
+      expect((await outstandingNow()).map((x) => x.productId).sort()).toEqual(['31', '35', '36']);
       // The load record names no pilot department (OB-800).
       const record = ((await req('GET', `/v1/migration/loads/${loadId}`, undefined, OWNER)).body as { record: { department?: unknown } }).record;
       expect(record.department).toBeUndefined();

@@ -24,7 +24,7 @@
 
 import { cell, moneyToMinor, percentToBps, inferBarcodeKind, list } from './load-csv';
 import { validateBundle, type BarcodeKind, type ExtractBundle, type ExtractProduct, type ExtractTaxRate } from './load';
-import { validateProduct, CategoryNotFoundError, LABEL_FACTS_MAY_FOLLOW_IN, missingLabelFacts, type Category, type LabelFactKey, type ProductRecord, type RegulatedKind } from '../../product/src/product';
+import { validateProduct, CategoryNotFoundError, labelFactsMayFollowInCategory, missingLabelFacts, type Category, type LabelFactKey, type ProductRecord, type RegulatedKind } from '../../product/src/product';
 import { simpleHasher, type Hasher } from './discovery';
 
 // ── The templates ────────────────────────────────────────────────────────────────────────────────────
@@ -369,10 +369,10 @@ export function stageSlice(input: {
       ...(ageText === undefined ? {} : { minimumAge: Number(ageText) }),
     };
     const brand = cell(r.row, 'brand');
-    // OB-738 (option A, 14 Nov 2026): in the packaged-groceries department an item whose label facts are not read yet is
-    // STAGED, its blank facts kept blank (never "none", never a guess) and listed as facts still to read; head office lets
-    // them follow, sells it at the till only and lists it until they are filled. Every other department: the full rule.
-    const follow = categoryId === LABEL_FACTS_MAY_FOLLOW_IN && missingLabelFacts({ safety }).length > 0;
+    // OB-738 (option A, 14 Nov 2026) · OB-811 B (16 Nov 2026): in a packed-goods department an item whose label facts are
+    // not read yet is STAGED, its blank facts kept blank (never "none", never a guess) and listed as facts still to read;
+    // head office lets them follow, sells it at the till only and lists it until they are filled. Loose goods: the full rule.
+    const follow = labelFactsMayFollowInCategory(categoryId) && missingLabelFacts({ safety, primaryCategoryId: categoryId }).length > 0;
     const product = {
       productId: id, sku, name: name!, baseUom: uom!, primaryCategoryId: categoryId!, taxClass: hsn!, lifecycle,
       ...(brand === undefined ? {} : { brand }),

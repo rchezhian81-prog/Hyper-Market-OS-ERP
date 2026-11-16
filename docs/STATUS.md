@@ -18,6 +18,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 10 of THE PLAN (16 November 2026) · the owner's answers OB-804 A, OB-807 A, OB-811 B — every open question answered
+- **Done (on its PR):**
+  - A store manager approves a role the owner asks to give, by PIN on the store PC (D-052, D-034).
+  - A supplier payment is approved on its amount and bills; the paid date and UTR are typed when it is recorded (D-046).
+  - Every packed good loads and sells at the till before its label facts are read. It is kept off online and scan-and-go and listed until filled; loose foods still wait (OB-811 B).
+- **With this, every daily-work defect is fixed or partly fixed, and no owner decision is open.** Still open, small:
+  - margin per department (D-057);
+  - clearance-suggestion rows show codes (D-025);
+  - every label task is "due now" after the first price load (D-026);
+  - a later-day price waits for the next pack (D-021);
+  - supplier advances still ask for the UTR up front.
+- **Next:** the full Bpal load with the owner, using docs/runbooks/bpal-full-load-export-sheet.md (backup check MG-02 first), then the parallel run.
+
 ## Fix batch 9 of THE PLAN (16 November 2026) · the owner's answers OB-829 A and OB-830 A
 - **Owner answered (in writing, 16 Nov):**
   - OB-829 A: store managers also read goods receipts.

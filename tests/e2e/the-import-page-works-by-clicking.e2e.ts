@@ -19,8 +19,8 @@ import { xlsx } from '../support/xlsx';
  * on their own "Facts still to read" tile, best sellers first; typed in (some now, the rest later) and saved, the item
  * leaves that list. No command is typed anywhere. OB-800 (owner, 15 Nov 2026, no pilot department): a banana sold loose
  * is marked "sold loose, by weight" with its scale PLU by clicking, then its food facts are typed, and it is ready — in
- * kg, in the loose-foods department; a shampoo (personal care) waits on its label facts, which a packaged grocery would
- * not. Made-up data.
+ * kg, in the loose-foods department, its food facts typed first; a shampoo (personal care) is a packed good, so since
+ * OB-811 B it is ready at once with its four facts on the "still to read" tile — never asked for allergens. Made-up data.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -119,7 +119,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     expect(errors).toEqual([]);
   });
 
-  it('OB-800: the whole store — a loose banana is marked "sold loose, by weight" with its PLU by clicking; a shampoo waits on its label facts', { timeout: 60_000 }, async () => {
+  it('OB-800 · OB-811 B: the whole store — a loose banana is marked "sold loose, by weight" and waits for its facts; a shampoo loads with its facts still to read', { timeout: 60_000 }, async () => {
     const page = await (await browser.newContext({ viewport: { width: 390, height: 860 } })).newPage(); // a phone-sized window too
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -134,14 +134,19 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await page.waitForSelector('#work:not([hidden])');
     expect(await page.textContent('#msg')).toContain('Read: 2 items, every department.');
     expect(await page.textContent('#by-department')).toContain('Packaged groceries: 0 ready, 0 loaded, 1 waiting');
-    expect(await page.textContent('#by-department')).toContain('Personal care: 0 ready, 0 loaded, 1 waiting');
-    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (0 ready item(s))');
+    expect(await page.textContent('#by-department')).toContain('Personal care: 1 ready, 0 loaded, 0 waiting');
+    expect(await page.textContent('#prepare-btn')).toBe('Prepare a load (1 ready item(s))');
 
-    // The shampoo: personal care keeps the full rule — its label facts are a gap, not "later".
+    // The shampoo (OB-811 B): a packed good — ready to load, its facts on the "still to read" tile; it sells at the till only
+    // until they are typed, and it is never asked for allergens.
+    const factsTile = page.locator('#tiles .tile', { hasText: 'Packed goods: facts still to read (not a blocker)' });
+    expect(await factsTile.locator('.v').textContent()).toBe('2'); // the shampoo, and the banana while it is still read as a pack
+    await factsTile.click();
     const shampoo = page.locator('details.item', { hasText: 'TEST SHAMPOO 180ML' });
-    expect(await shampoo.locator('.chip').first().textContent()).toBe('Label facts (needed first)');
+    expect(await shampoo.locator('.chip.later').textContent()).toBe('Facts still to read');
     await shampoo.locator('summary').click();
-    expect(await shampoo.locator('.gap .why').first().textContent()).toContain('only packaged groceries may load before their label facts are read');
+    expect(await shampoo.locator('.gap.later .why').textContent()).toBe('Facts still to read off the pack: country of origin, net quantity, packer, consumer care.');
+    await page.locator('#tiles .tile', { hasText: 'Need a fix' }).click();
 
     // The banana: no pack barcode; the page hints, a person decides — sold loose, by weight, with the scale's PLU.
     const banana = page.locator('details.item', { hasText: 'TEST BANANA' });
@@ -159,7 +164,7 @@ describe.skipIf(!existsSync(CHROMIUM))('the import page works by clicking (OB-70
     await bananaNow.getByLabel('Allergens (write "none" when the pack declares none)').fill('none');
     await bananaNow.getByLabel('Country of origin').fill('India');
     await bananaNow.locator('.gap', { hasText: 'Label facts (needed first):' }).getByRole('button', { name: 'Save this fix' }).click();
-    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('prepare-btn')?.textContent ?? '') === 'Prepare a load (1 ready item(s))');
+    await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('prepare-btn')?.textContent ?? '') === 'Prepare a load (2 ready item(s))');
     expect(await page.locator('#tiles .tile', { hasText: 'Sold loose (kg or count)' }).locator('.v').textContent()).toBe('1');
     expect(await page.textContent('#by-department')).toContain('Loose foods (by weight or by count): 1 ready');
     // No sideways scrolling on the phone-sized window.

@@ -13,6 +13,7 @@ import type { Role } from '../../../packages/rbac/src/rbac';
 import { PLATFORM_ADMIN_ROLE_ID } from '../../identity/src/separation-of-duties';
 import type { RoleAwaitingOwnerApproval, WaitingPermission } from '../../identity/src/roles-awaiting-approval';
 import type { LockReason, RoleAdjustmentPolicy } from '../../identity/src/role-adjustments';
+import type { OwnerAskedGrantRule } from '../../identity/src/index';
 
 /**
  * Which role carries the owner's authority.
@@ -1423,3 +1424,14 @@ export const ROLE_ADJUSTMENT_POLICY: RoleAdjustmentPolicy = Object.freeze({
   ] as const),
 });
 // ── CR-01 step 4c-1 — end
+
+/**
+ * OB-804 A (owner, 16 Nov 2026, in writing): a role the owner asks to give a person is approved by a store manager in their
+ * own session — the owner is always one of the two. A store manager never approves giving the owner's own role, the IT
+ * administrator's, the chartered accountant's (its own route, approved by the IT custodian), or any role ADR-0034 locks.
+ */
+export const OWNER_ASKED_GRANT_RULE: OwnerAskedGrantRule = Object.freeze({
+  ownerRoleId: OWNER_ROLE_ID,
+  checkerRoleId: STORE_MANAGER_ROLE_ID,
+  notApprovedByTheChecker: new Set<string>([PLATFORM_ADMIN_ROLE_ID, 'chartered_accountant', ...Object.keys(ROLE_ADJUSTMENT_POLICY.lockedRoles)]),
+});

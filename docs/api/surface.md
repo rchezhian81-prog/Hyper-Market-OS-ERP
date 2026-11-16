@@ -63,8 +63,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/department-scopes/:userId/:roleId` | `identity.role.request` | core | yes |
 | GET | `/v1/identity/grants` | `identity.role.request` | core | — |
 | POST | `/v1/identity/grants` | `identity.role.request` | core | yes |
-| POST | `/v1/identity/grants/:grantId/approve` | `identity.role.grant` | core | yes |
-| POST | `/v1/identity/grants/:grantId/reject` | `identity.role.grant` | core | yes |
+| POST | `/v1/identity/grants/:grantId/approve` | `identity.role.request` | core | yes |
+| POST | `/v1/identity/grants/:grantId/reject` | `identity.role.request` | core | yes |
 | GET | `/v1/identity/grants/pending` | `identity.role.read` | core | — |
 | POST | `/v1/identity/internal-committee/changes/:changeId` | `posh.committee.manage` | core | yes |
 | GET | `/v1/identity/me` | `identity.self.read` | core | — |

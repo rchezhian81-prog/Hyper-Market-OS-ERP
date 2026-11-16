@@ -7,10 +7,10 @@ import type { StoredCategory } from '../../services/catalogue/src/categories';
 import type { ApiError, RequestContext, Route } from '../../services/kernel/src/index';
 import type { AuditEntry } from '../../packages/audit/src/index';
 import {
-  LABEL_FACT_KEYS, LABEL_FACTS_MAY_FOLLOW_IN, labelFactsMayFollow, missingLabelFacts, outstandingLabelFacts, validateProduct,
+  LABEL_FACT_KEYS, LABEL_FACTS_MAY_FOLLOW_IN, labelFactsMayFollow, labelFactsNeededFor, missingLabelFacts, outstandingLabelFacts, validateProduct,
   type Category, type ProductRecord,
 } from '../../packages/product/src/index';
-import { LABEL_FACTS, PILOT_CATEGORY_ID } from '../../packages/migration/src/bpal-slice';
+import { LABEL_FACTS, PILOT_CATEGORY_ID, STORE_DEPARTMENTS, labelFactsMayFollowIn, labelFactsNeeded } from '../../packages/migration/src/bpal-slice';
 import { checkOnlineListing, type OnlineListingFacts, type OnlineShopDetails } from '../../packages/storefront/src/listing-duties';
 
 // OB-738 (owner, 14 Nov 2026, in writing "1A", replacing OB-696; recorded on its branch as OB-730) and option A of the same
@@ -24,7 +24,7 @@ const T = 'tenant-ob733-unit';
 const now = () => '2026-11-14T06:00:00.000Z';
 const cat = (categoryId: string, regulated: readonly string[]): StoredCategory =>
   ({ categoryId, name: categoryId, parentId: null, regulated, version: 1, definedBy: 'u-owner', approvedBy: 'u-owner', definedAt: now(), source: 'test' }) as unknown as StoredCategory;
-const CATS = [cat(LABEL_FACTS_MAY_FOLLOW_IN, ['food', 'packed']), cat('chilled-dairy', ['food', 'packed'])];
+const CATS = [cat(PILOT_CATEGORY_ID, ['food', 'packed']), cat('chilled-dairy', ['food', 'packed'])];
 const PERMS: Record<string, readonly string[]> = {
   'u-owner': ['catalogue.pack.publish', 'migration.load.record'],
   'u-publisher': ['catalogue.pack.publish'], // may publish, does not run the old-system load
@@ -60,7 +60,7 @@ function rig() {
   const safety = (id: string, body: Record<string, unknown>) => call('POST', '/v1/catalogue/products/:productId/safety', id, body);
   return { audit, publish, read, outstanding, fill, safety };
 }
-const oil = (safety: Record<string, unknown> = {}, categoryId = LABEL_FACTS_MAY_FOLLOW_IN) => ({
+const oil = (safety: Record<string, unknown> = {}, categoryId = PILOT_CATEGORY_ID) => ({
   sku: 'SKU-OIL', name: 'Test sunflower oil 1L', baseUom: 'pcs', primaryCategoryId: categoryId, taxClass: '15121110', lifecycle: 'active',
   ...(Object.keys(safety).length === 0 ? {} : { safety }),
 });
@@ -69,15 +69,18 @@ const ALL_FIVE = { allergens: [], countryOfOrigin: 'India', netQuantity: '1 L', 
 const code = (r: { body: Record<string, unknown> }) => (r.body['error'] as { code?: string } | undefined)?.code;
 
 describe('the product rule (packages/product): which items may have their label facts follow', () => {
-  const grocery: Category = { categoryId: LABEL_FACTS_MAY_FOLLOW_IN, name: 'Packaged groceries', parentId: null, regulated: ['food', 'packed'] };
+  const grocery: Category = { categoryId: PILOT_CATEGORY_ID, name: 'Packaged groceries', parentId: null, regulated: ['food', 'packed'] };
   const dairy: Category = { categoryId: 'chilled-dairy', name: 'Chilled dairy', parentId: null, regulated: ['food', 'packed'] };
   const record = (over: Partial<ProductRecord> = {}): ProductRecord => ({
-    productId: 'p1', tenantId: T, sku: 'P1', name: 'Test oil', baseUom: 'pcs', primaryCategoryId: LABEL_FACTS_MAY_FOLLOW_IN, taxClass: '15121110', lifecycle: 'active', ...over,
+    productId: 'p1', tenantId: T, sku: 'P1', name: 'Test oil', baseUom: 'pcs', primaryCategoryId: PILOT_CATEGORY_ID, taxClass: '15121110', lifecycle: 'active', ...over,
   });
   const MARK = { decision: 'OB-738', loadId: 'l1', markedBy: 'u-owner', markedAt: now() } as const;
 
-  it('pins its words to the import\'s: the one department is the pilot department, and the five facts are the same five', () => {
-    expect(LABEL_FACTS_MAY_FOLLOW_IN).toBe(PILOT_CATEGORY_ID);
+  it('pins its words to the import\'s: the departments are the load table\'s packed-goods ones (OB-811 B), each with the facts it needs, and the five facts are the same five', () => {
+    expect([...LABEL_FACTS_MAY_FOLLOW_IN]).toEqual(STORE_DEPARTMENTS.filter(labelFactsMayFollowIn).map((d) => d.categoryId));
+    expect(LABEL_FACTS_MAY_FOLLOW_IN).toContain(PILOT_CATEGORY_ID);
+    expect(LABEL_FACTS_MAY_FOLLOW_IN).not.toContain('loose-foods');
+    for (const d of STORE_DEPARTMENTS.filter(labelFactsMayFollowIn)) expect([...labelFactsNeededFor(d.categoryId)]).toEqual([...labelFactsNeeded(d)]);
     expect([...LABEL_FACT_KEYS]).toEqual([...LABEL_FACTS]);
   });
 
