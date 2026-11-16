@@ -241,8 +241,10 @@ describe.skipIf(!HAVE_BROWSER)('UI-3: the owner app and the reports read at a gl
       const { page: p, errors } = await open(OWNER, '/reporting/', width);
       await p.locator('#reports-list .row', { hasText: 'What is selling, by department' }).locator('button').click();
       await p.waitForSelector('figure[data-chart="units_by_category"]');
-      expect(await text(p, '#report-covers')).toMatch(new RegExp(`^Store store-1 · trading day ${TODAY} · read from the store computer at \\d{4}-`));
-      expect(await text(p, 'figure[data-chart="units_by_category"] tbody')).toContain('in no department6');
+      // D-057: the store by its NAME; each department in rupees (what the till charged on its lines), items beside it.
+      expect(await text(p, '#report-covers')).toMatch(new RegExp(`^Store Test Store · trading day ${TODAY} · read from the store computer at \\d{4}-`));
+      expect(await text(p, 'figure[data-chart="units_by_category"] tbody')).toContain('In no department₹896.00');
+      expect(await text(p, '#report-figures')).toMatch(/In no department — items\s*6/);
       // a figure's "as at" is the shop's clock, never the raw universal-time stamp
       expect(await text(p, '#report-figures')).not.toMatch(/\dT\d{2}:\d{2}.*Z/);
       await fits(p, 'main', `Reports at ${width}px`);

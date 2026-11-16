@@ -2135,6 +2135,8 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
   // history — "Sales by day: Taken ₹2,245" on a day the shop took ₹145, with nothing saying so.
   const today = salesOn(input.sales, input.tradingDay);
   payload['tradingDay'] = input.tradingDay;
+  // D-057: the report names the store as people say it, not by its code.
+  if (input.pack.policies.known && typeof input.pack.policies.value.branchName === 'string' && input.pack.policies.value.branchName !== '') payload['storeName'] = input.pack.policies.value.branchName;
   if (today.undated > 0) payload['undatedSales'] = today.undated;
 
   // A sale whose products have no cost price carries NO cogs rather than a zero — zero cost
@@ -2197,25 +2199,32 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
     bills: perDay.get(tradingDay)!.bills,
   }));
 
-  // What sold, by department, in UNITS.
-  //
-  // Units rather than money on purpose: the log records a quantity per line but **no money per
-  // line**, so revenue by department could only be reconstructed from list prices — and a bill
-  // with a promotion on it would then produce a department revenue that does not add up to the
-  // day's takings. A figure that nearly reconciles is worse than one that is honestly a count.
+  // What sold, by department: items, and — D-057 — the money each department's lines took and the weight of what was
+  // weighed. The till writes what it charged on every line (`lineTotalMinor`, after any discount), so the departments'
+  // money is what the bills took, never a list price. A line from an older till with no line money is counted, and the
+  // department's money is then said to be incomplete rather than quietly short.
   const categoryOf = new Map(products.map((p) => [p.productId, p.categoryId] as const));
   const unitsByCategory: Record<string, number> = {};
+  const salesByCategory: Record<string, { items: number; grams: number; takenMinor: number; linesWithNoMoney: number }> = {};
   let unitsWithNoCategory = 0;
+  const NO_DEPT = '';
   for (const sale of today.sales) {
     if (sale.lines === undefined) continue;
     for (const line of sale.lines) {
       const units = line.uom === 'ea' ? line.quantityMinor : 1;
       const category = categoryOf.get(line.productId);
+      const key = category ?? NO_DEPT;
+      const held = salesByCategory[key] ?? { items: 0, grams: 0, takenMinor: 0, linesWithNoMoney: 0 };
+      // D-057: a weighed line is its weight (kg and L are kept in grams / millilitres), never "1 item".
+      if (line.uom === 'kg' || line.uom === 'L') held.grams += line.quantityMinor; else held.items += line.uom === 'ea' || line.uom === undefined ? line.quantityMinor : 1;
+      if (typeof line.lineTotalMinor === 'number' && Number.isSafeInteger(line.lineTotalMinor)) held.takenMinor += line.lineTotalMinor; else held.linesWithNoMoney += 1;
+      salesByCategory[key] = held;
       if (category === undefined) { unitsWithNoCategory += units; continue; }
       unitsByCategory[category] = (unitsByCategory[category] ?? 0) + units;
     }
   }
   payload['unitsByCategory'] = unitsByCategory;
+  payload['salesByCategory'] = salesByCategory;
   // Counted, not folded into a department. A product the catalogue does not place is a catalogue
   // problem, and hiding it inside "Grocery" is how it stays one.
   if (unitsWithNoCategory > 0) payload['unitsWithNoCategory'] = unitsWithNoCategory;

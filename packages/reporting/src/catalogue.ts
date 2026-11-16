@@ -186,7 +186,8 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     answers: 'how many items each department sold today',
     nameTa: 'துறை வாரியாக என்ன விற்கிறது', answersTa: 'ஒவ்வொரு துறையும் இன்று எத்தனை பொருட்களை விற்றது',
     needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
-    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }]
+    // D-057: the store computer adds what each department's lines took, its items, and the weight of what was weighed.
+    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }, { name: 'takenMinor', type: 'money_minor' }, { name: 'items', type: 'integer' }, { name: 'weighed', type: 'text' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',

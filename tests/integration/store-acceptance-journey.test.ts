@@ -746,7 +746,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 0, refunds: 0, refundedMinor: 0, averageBasketMinor: Math.round((S1_TOTAL + S2_TOTAL + S3_TOTAL) / 3), tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
     expect(today12.kpis).toMatchObject({ grossSalesMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, cogsMinor: boxCogs, marginMinor: boxNet - boxCogs });
     const rupees = (minor: number): string => (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    expect(today12.headline).toContain(`3 bills today, ₹1,980.00 taken, margin ₹${rupees(boxNet - boxCogs)}`);
+    expect(today12.headline).toContain(`3 bills today, ₹1,980.00 taken, average basket ₹${rupees(Math.round((S1_TOTAL + S2_TOTAL + S3_TOTAL) / 3))}, margin ₹${rupees(boxNet - boxCogs)}`);
     expect(today12.headline).not.toMatch(/margin not known|No sales recorded/);
     expect(today12.freshness).toBeDefined();
     row('12b owner Today (box) shows the takings and the margin', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · costed at head office's average buying cost (OB-39 B) from the store setup: cost of goods ${boxCogs} (S-1 ${cogsExpected['S-1']}, S-2 ${cogsExpected['S-2']}, S-3 ${cogsExpected['S-3']}) · margin ${boxNet - boxCogs} on net ${boxNet} · margin unknown on ${today12.takings.marginUnknownBills} bills · freshness shown`);

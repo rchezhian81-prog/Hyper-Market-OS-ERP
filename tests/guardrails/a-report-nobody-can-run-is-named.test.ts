@@ -348,13 +348,20 @@ describe('a figure about today is about today', () => {
     expect(code(ENTRY), 'the day list is defaulted somewhere else').not.toMatch(/dayTotals: \(\) => data\?\.dayTotals \?\? \[\{/);
   });
 
-  it('reports what sells by department in UNITS, because the log has no money per line', () => {
+  it('reports what sells by department from what the till CHARGED on each line — never rebuilt from list prices', () => {
     // Rebuilding department revenue from list prices makes a bill with a promotion on it produce
     // a department total that does not add up to the day's takings. A figure that NEARLY
-    // reconciles is worse than one that is honestly a count.
+    // reconciles is worse than one that is honestly a count. D-057: the till writes what it charged
+    // on every line (`lineTotalMinor`), so the department's money is that — and a line with none
+    // makes the department's money "not complete", never short.
     const report = REPORTS.find((r) => r.id === 'units_by_category')!;
     expect(report.answers).toMatch(/how many items/);
-    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units']);
+    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units', 'takenMinor', 'items', 'weighed']);
+    const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf("const salesByCategory: Record<string"), code(SCREEN_DATA).indexOf("payload['salesByCategory'] = salesByCategory;"));
+    expect(builder).toMatch(/line\.lineTotalMinor/);
+    expect(builder).not.toMatch(/unitPriceMinor|unitPrice\b/);
+    expect(builder).toMatch(/linesWithNoMoney \+= 1/);
+    expect(code(MODEL)).toMatch(/money is not complete/);
     expect(report.needs).toContain('departments_on_the_catalogue');
     // An item the catalogue places nowhere is counted apart, never folded into a department.
     expect(code(MODEL)).toMatch(/Items in no department/);

@@ -592,6 +592,8 @@ export interface ReportingData {
   readonly unitsByCategory?: Readonly<Record<string, number>>;
   readonly unitsWithNoCategory?: number;
   readonly categoryNames?: Readonly<Record<string, string>>;
+  /** D-057: per department — items, weighed grams, the money its lines took. */
+  readonly salesByCategory?: Readonly<Record<string, { readonly items: number; readonly grams: number; readonly takenMinor: number; readonly linesWithNoMoney: number }>>;
 }
 
 /**
@@ -6832,6 +6834,7 @@ export function reportingPortsFromData(data: ReportingData | undefined): Reporti
     // NOT defaulted to `{}`. An empty name map and no name map read the same to a lookup, but the
     // report needs to know the difference: with no map it shows department ids and says so.
     categoryNames: () => data?.categoryNames,
+    salesByCategory: () => data?.salesByCategory,
   };
 }
 

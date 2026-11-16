@@ -63,7 +63,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a tobacco 
     const writes: string[] = []; const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/') && r.method() !== 'GET') writes.push(`${r.method()} ${u.pathname}`); });
-    await page.goto(`${shop.base}/product-details`, { waitUntil: 'load' });
+    // D-058: the tobacco section is on a TOBACCO product's page — the cigarettes are opened.
+    await page.goto(`${shop.base}/product-details?product=p-cig`, { waitUntil: 'load' });
     return { page, writes, errors, close: () => context.close() };
   };
 

@@ -181,7 +181,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     const brief = bootOwner(ownerData, forgetfulQueueStore())!.brief();
     expect(brief.takings).toMatchObject({ bills: 2, takenMinor: billA + SALT.price, marginUnknownBills: 1 });
     expect(brief.kpis).toMatchObject({ cogsMinor: costA, marginMinor: served.branches[0]!.sales[0]!.netMinor - costA });
-    expect(brief.headline).toMatch(/1 bill \(₹25\.00\) whose margin is not known — products with no cost/);
+    expect(brief.headline).toMatch(/^2 bills today, .* on the 1 bill with a cost\.$/); // D-055: the tiles' totals lead; the caveat is on the margin tile
 
     // ── Head office's profitability: the same averages; with salt sold and never costed, cost and profit are NOT AVAILABLE,
     //    naming salt — never costed at zero.

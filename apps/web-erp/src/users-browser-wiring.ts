@@ -3,7 +3,7 @@
 // viewer the front door injected (`window.usersData`, identity only); the Sign-ins part (OB-15-c) is the tested people
 // session over head office's people routes, for the platform administrator who gives sign-ins.
 
-import { createUsersSession, usersWords, usersOutcomeWords, LIMIT_DIMENSIONS, officePrivilegeFrom } from './users-session';
+import { createUsersSession, usersWords, usersOutcomeWords, LIMIT_DIMENSIONS, officePrivilegeFrom, isMachineRole } from './users-session';
 import { askOfficePin, type PinDoc } from './office-pin-prompt';
 import { createPeopleSession, handOverWords, PERSON_PROVISION_PERMISSION, type PeoplePort } from './people-session';
 
@@ -26,7 +26,7 @@ export function wireUsers(win: Record<string, unknown>, viewerIdentity: (raw: un
   }));
   win['users'] = {
     session: createUsersSession({ viewer, ...(office === undefined ? {} : { office }) }),
-    words: usersWords, outcomeWords: usersOutcomeWords, dimensions: LIMIT_DIMENSIONS,
+    words: usersWords, outcomeWords: usersOutcomeWords, dimensions: LIMIT_DIMENSIONS, isMachineRole,
     signIns, handOverWords: (lang: 'en' | 'ta', h: Parameters<typeof handOverWords>[2]) => (signIns === null ? '' : handOverWords(signIns, lang, h)),
   };
 }
