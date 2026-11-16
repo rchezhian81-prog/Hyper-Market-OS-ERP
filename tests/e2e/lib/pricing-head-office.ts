@@ -46,6 +46,9 @@ export interface PricingHeadOffice {
   readonly requests: Recorded[];
   /** Make the next governed action (change / launch) refuse with this, as the real route might at that moment. */
   forceRefusal?: { readonly code: string; readonly whatHappened: string };
+  /** D-020: head office's OWN MRP per product (the product master's, null = none) — what `GET …/basis` answers. A product
+   *  not listed is not answered (404), as before this route was read. */
+  mrpAtHeadOffice?: Record<string, { readonly mrpMinor: number | null; readonly from: string | null }>;
 }
 
 export const newHeadOffice = (catalogueData: Record<string, unknown>): PricingHeadOffice =>
@@ -111,6 +114,14 @@ async function route(ho: PricingHeadOffice, method: string, path: string, body: 
   if (method === 'GET' && path === '/v1/approvals/requests') {
     const mine = [...ho.approvals.values()].filter((s) => s.request.requestedBy === CALLER).map(view);
     return { status: 200, body: { waitingForMe: [], mine, asAt: NOW } };
+  }
+
+  const basis = /^\/v1\/prices\/list\/([^/]+)\/basis$/.exec(path);
+  if (method === 'GET' && basis !== null) {
+    const productId = decodeURIComponent(basis[1]!);
+    const held = ho.mrpAtHeadOffice?.[productId];
+    if (held === undefined) return undefined;
+    return { status: 200, body: { productId, mrpMinor: held.mrpMinor, mrpFrom: held.from, asAt: NOW } };
   }
 
   if (method === 'POST' && path === '/v1/prices/changes') {

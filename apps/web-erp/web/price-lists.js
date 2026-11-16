@@ -88,7 +88,9 @@ const WORDS = {
     kMrp: 'MRP that day', kCost: 'Buying cost', kFloor: 'Margin floor', kNow: 'Price for this scope now', kSize: 'A second person checks a move of more than',
     readBasis: 'Read head office\'s figures', save: 'Save the price', why: 'Why (for the approver, if one is needed)', ask: 'Ask for approval',
     notKnown: 'Not known', notSet: 'not set', none: 'none yet', size: '{pct}% or ₹{amt}', stores: 'Judged at: {list}.',
-    noMrp: 'Head office holds no MRP for this product on that day, so a price cannot be checked against it. Add the MRP on the Product details page first.',
+    noMrp: 'Head office holds no MRP for this product on that day. Type the MRP printed on the pack in the box that has appeared; a second person checks it against the pack before the price is saved.',
+    pMrp: 'MRP printed on the pack (₹) — head office has none', needMrp: 'Head office holds no MRP for this product on that day. Type the MRP printed on the pack first.',
+    mrpTyped: 'The MRP {mrp} was typed from the pack, because head office has none. A second person has to check it against the pack: write why and press “Ask for approval”; once they approve it, press “Save the price” again.',
     noCost: 'Head office knows no buying cost at {list} (nothing received at a cost yet), so the price cannot be checked against cost. It is not sent.',
     noFloor: 'No margin floor is set for {list} in the store rules, so the price cannot be checked against it. The owner sets it in Store setup first.',
     noStores: 'This scope reaches no store yet (a zone with no store in it).',
@@ -127,7 +129,9 @@ const WORDS = {
     kMrp: 'அன்றைய MRP', kCost: 'வாங்கும் விலை', kFloor: 'லாப வரம்பு', kNow: 'இந்த வரம்பின் இப்போதைய விலை', kSize: 'இதைவிட அதிக மாற்றத்தை இரண்டாம் நபர் சரிபார்ப்பார்',
     readBasis: 'தலைமை அலுவலக எண்களைப் படி', save: 'விலையைச் சேமி', why: 'ஏன் (ஒப்புதலாளருக்கு, தேவைப்பட்டால்)', ask: 'ஒப்புதல் கேள்',
     notKnown: 'தெரியவில்லை', notSet: 'அமைக்கப்படவில்லை', none: 'இன்னும் இல்லை', size: '{pct}% அல்லது ₹{amt}', stores: 'மதிப்பிடப்பட்ட கடைகள்: {list}.',
-    noMrp: 'அந்த நாளுக்கு இந்தப் பொருளுக்கு MRP தலைமை அலுவலகத்தில் இல்லை, எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. முதலில் பொருள் விவரங்கள் பக்கத்தில் MRP சேருங்கள்.',
+    noMrp: 'அந்த நாளுக்கு இந்தப் பொருளுக்கு MRP தலைமை அலுவலகத்தில் இல்லை. தோன்றியுள்ள பெட்டியில் பாக்கெட்டில் அச்சிடப்பட்ட MRP-ஐத் தட்டச்சு செய்யுங்கள்; விலை சேமிக்கப்படும் முன் இரண்டாம் நபர் அதைப் பாக்கெட்டுடன் சரிபார்ப்பார்.',
+    pMrp: 'பாக்கெட்டில் அச்சிடப்பட்ட MRP (₹) — தலைமை அலுவலகத்தில் இல்லை', needMrp: 'அந்த நாளுக்கு இந்தப் பொருளுக்கு MRP தலைமை அலுவலகத்தில் இல்லை. முதலில் பாக்கெட்டில் அச்சிடப்பட்ட MRP-ஐத் தட்டச்சு செய்யுங்கள்.',
+    mrpTyped: 'தலைமை அலுவலகத்தில் MRP இல்லாததால் {mrp} பாக்கெட்டிலிருந்து தட்டச்சு செய்யப்பட்டது. இரண்டாம் நபர் அதைப் பாக்கெட்டுடன் சரிபார்க்க வேண்டும்: ஏன் என்று எழுதி “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் ஒப்புக்கொண்டதும் மீண்டும் “விலையைச் சேமி” அழுத்துங்கள்.',
     noCost: '{list}-இல் வாங்கும் விலை தலைமை அலுவலகத்திற்குத் தெரியாது (இன்னும் விலையுடன் எதுவும் பெறப்படவில்லை), எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. அனுப்பப்படவில்லை.',
     noFloor: 'கடை விதிகளில் {list}-க்கு லாப வரம்பு அமைக்கப்படவில்லை, எனவே விலையை அதனுடன் சரிபார்க்க முடியாது. உரிமையாளர் முதலில் கடை அமைப்பில் அதை அமைக்கிறார்.',
     noStores: 'இந்த வரம்பு இன்னும் எந்தக் கடையையும் அடையவில்லை (கடை இல்லாத மண்டலம்).',
@@ -228,6 +232,8 @@ let zones = null;
 let stores = [];
 
 const formKey = () => JSON.stringify(['p-product', 'p-scope', 'p-ref', 'p-from', 'p-to', 'p-price'].map((id) => $(id).value.trim()));
+/** D-019: the MRP typed from the pack, in paise — only while head office holds none (the box is showing). */
+const typedMrp = () => { const v = Math.round(Number($('p-mrp').value.trim()) * 100); return $('p-mrp-wrap').hidden || !(Number.isSafeInteger(v) && v > 0) ? undefined : v; };
 const scopeWords = (s) => t(s);
 
 function paintBasis() {
@@ -247,6 +253,8 @@ function paintBasis() {
     if (b.floorNotSetAt.length > 0) notes.push(fill(t('noFloor'), { list: b.floorNotSetAt.join(', ') }));
   }
   $('basis-say').textContent = notes.join(' ');
+  // D-019: head office holds no MRP that day — the MRP printed on the pack goes in this box, and a second person checks it.
+  $('p-mrp-wrap').hidden = !(b !== null && b.mrpMinor === null);
 }
 
 function paintHistory() {
@@ -358,7 +366,7 @@ function paint() {
   document.title = `SRE ${t('title')}`;
   for (const [id, k] of [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['k-same', 'kSame'], ['k-pending', 'kPending'], ['k-zoned', 'kZoned'],
     ['tab-prices', 'tabPrices'], ['tab-zones', 'tabZones'], ['tab-channels', 'tabChannels'], ['tab-pack', 'tabPack'], ['pack-h', 'tabPack'], ['pack-lead', 'packLead'], ['l-pk-store', 'pkStore'], ['l-pk-asof', 'pkAsOf'], ['pk-preview', 'pkPreview'], ['pk-publish', 'pkPublish'], ['l-pk-ack', 'pkAck'], ['prices-h', 'tabPrices'], ['prices-lead', 'pricesLead'],
-    ['l-p-product', 'product'], ['l-p-scope', 'scope'], ['o-store', 'store'], ['o-zone', 'zone'], ['o-channel', 'channel'], ['o-customer', 'customer'], ['l-p-ref', 'ref'], ['l-p-from', 'from'], ['l-p-to', 'to'], ['l-p-price', 'price'],
+    ['l-p-product', 'product'], ['l-p-scope', 'scope'], ['o-store', 'store'], ['o-zone', 'zone'], ['o-channel', 'channel'], ['o-customer', 'customer'], ['l-p-ref', 'ref'], ['l-p-from', 'from'], ['l-p-to', 'to'], ['l-p-price', 'price'], ['l-p-mrp', 'pMrp'],
     ['k-mrp', 'kMrp'], ['k-cost', 'kCost'], ['k-floor', 'kFloor'], ['k-now', 'kNow'], ['k-size', 'kSize'], ['read-basis', 'readBasis'], ['save', 'save'], ['l-p-why', 'why'], ['ask', 'ask'],
     ['history-h', 'historyH'], 
     ['zones-h', 'tabZones'], ['zones-lead', 'zonesLead'],  ['l-z-store', 'zStore'], ['l-z-zone', 'zZone'], ['z-save', 'zSave'],
@@ -412,7 +420,7 @@ async function readBasis() {
 }
 
 $('p-scope').addEventListener('change', () => { paintRefs(); repaintPickers(); });
-for (const id of ['p-product', 'p-scope', 'p-ref', 'p-from', 'p-to', 'p-price']) $(id).addEventListener('change', () => { if (formKey() !== basisFor) { entryId = null; pending = null; $('ask').hidden = true; } });
+for (const id of ['p-product', 'p-scope', 'p-ref', 'p-from', 'p-to', 'p-price', 'p-mrp']) $(id).addEventListener('change', () => { if (formKey() !== basisFor) { entryId = null; pending = null; $('ask').hidden = true; } });
 $('p-product').addEventListener('change', () => { void loadHistory(); });
 $('read-basis').addEventListener('click', () => { void readBasis(); });
 $('save').addEventListener('click', async () => {
@@ -421,19 +429,28 @@ $('save').addEventListener('click', async () => {
   const from = dateOf('p-from'); const to = dateOf('p-to'); const price = $('p-price').value.trim();
   if (id === '' || ref === '' || from === '' || price === '') { tell(st, false, t('needAll')); return; }
   if (basis === null || basisFor !== formKey()) { if (!(await readBasis())) return; }
-  if (basis.mrpMinor === null) { tell(st, false, t('noMrp')); return; }
+  const typed = basis.mrpMinor === null ? typedMrp() : undefined;
+  if (basis.mrpMinor === null && typed === undefined) { tell(st, false, t('needMrp')); return; }
   if (basis.costMinor === null || basis.costNotKnownAt.length > 0) { tell(st, false, fill(t('noCost'), { list: basis.costNotKnownAt.join(', ') })); return; }
   if (basis.marginFloorBps === null || basis.floorNotSetAt.length > 0) { tell(st, false, fill(t('noFloor'), { list: basis.floorNotSetAt.join(', ') })); return; }
   const priceMinor = Math.round(Number(price) * 100);
   if (entryId === null) entryId = `e-${from}-${scope}-${ref}-${Date.now().toString(36)}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 100);
   const body = {
-    scope, scopeRef: ref, priceMinor: Number.isFinite(priceMinor) ? priceMinor : price, mrpMinor: basis.mrpMinor, costMinor: basis.costMinor,
+    scope, scopeRef: ref, priceMinor: Number.isFinite(priceMinor) ? priceMinor : price, mrpMinor: basis.mrpMinor ?? typed, costMinor: basis.costMinor,
     marginFloorBps: basis.marginFloorBps, currency: 'INR', effectiveFrom: from, ...(to === '' ? {} : { effectiveTo: to }),
   };
   const subjectRef = `${id}/${entryId}`;
   const details = { ...body, productId: id, entryId };
   const found = await ownApproval(subjectRef, details, body.priceMinor);
   if (found.waiting === true) { tell(st, false, t('waiting')); return; }
+  // D-019: a price checked against an MRP typed from the pack is never saved on one person's word — the approval is for
+  // exactly this entry, MRP included, and the approver is asked to check the MRP on the pack.
+  if (typed !== undefined && found.approvalId === undefined) {
+    pending = { subjectRef, details, valueMinor: body.priceMinor, typedMrp: typed };
+    $('ask').hidden = false;
+    tell(st, false, found.rejected !== undefined ? fill(t('rejected'), { why: found.rejected }) : fill(t('mrpTyped'), { mrp: rupees(typed) }));
+    return;
+  }
   const out = await call('POST', `/v1/prices/list/${encodeURIComponent(id)}/entries/${encodeURIComponent(entryId)}`, { ...body, ...(found.approvalId === undefined ? {} : { approvalId: found.approvalId }) });
   const code = out.body?.error?.code;
   if (!out.ok && (code === 'price_below_cost' || code === 'price_below_floor' || code === 'price_change_needs_second_person')) {
@@ -452,7 +469,7 @@ $('ask').addEventListener('click', async () => {
   const why = $('p-why').value.trim();
   if (why === '') { tell(st, false, t('needWhy')); return; }
   if (pending === null) return;
-  const out = await call('POST', '/v1/approvals/requests', { kind: 'price_list_entry', subjectRef: pending.subjectRef, details: pending.details, valueMinor: pending.valueMinor, summary: `Price ${rupees(pending.valueMinor)} for ${pending.details.productId} (${pending.details.scope} ${pending.details.scopeRef}) from ${pending.details.effectiveFrom}`, reason: why });
+  const out = await call('POST', '/v1/approvals/requests', { kind: 'price_list_entry', subjectRef: pending.subjectRef, details: pending.details, valueMinor: pending.valueMinor, summary: `Price ${rupees(pending.valueMinor)} for ${pending.details.productId} (${pending.details.scope} ${pending.details.scopeRef}) from ${pending.details.effectiveFrom}${pending.typedMrp === undefined ? '' : ` — head office has no MRP, so ${rupees(pending.typedMrp)} was typed from the pack: check the MRP on the pack before approving`}`, reason: why });
   if (out.ok) { $('ask').hidden = true; tell(st, true, t('asked')); } else say(st, out, '');
 });
 $('z-save').addEventListener('click', async () => {
