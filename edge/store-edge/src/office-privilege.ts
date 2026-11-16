@@ -31,7 +31,11 @@ export const PRIVILEGE_PATHS = Object.freeze({
   people: '/office/privilege/people', grants: '/office/privilege/grants', view: '/office/privilege/users-view',
   /** CR-01 step 4b-2. */
   accessChanges: '/office/privilege/access-changes', tillPins: '/office/privilege/till-pins',
+  /** CR-01 step 4c-2 (ADR-0034 · OB-740 "B"): ask to switch one permission of a role on or off. */
+  rolePermissions: '/office/privilege/role-permissions',
 });
+/** Decide a role change: /office/privilege/role-permissions/<approvalId>/decide (CR-01 step 4c-2). */
+export const PRIVILEGE_ROLE_DECIDE_PATH = /^\/office\/privilege\/role-permissions\/([A-Za-z0-9._:-]{1,128})\/decide$/;
 /** Decide a take-back: /office/privilege/access-changes/<approvalId>/decide (CR-01 step 4b-2). */
 export const PRIVILEGE_DECIDE_PATH = /^\/office\/privilege\/access-changes\/([A-Za-z0-9._:-]{1,128})\/decide$/;
 /** Approve a pending request: /office/privilege/grants/<grantId>/approve. */
@@ -56,6 +60,10 @@ export const PRIVILEGE_AUTHORITY: Readonly<Record<PrivilegeKind, string>> = Obje
   access_change_decision: 'identity.role.grant',
   // Somebody else's PIN: the maker's word (and head office refuses reaching above yourself, OB-739). Your own: see `pinAuthority`.
   till_pin_change: 'identity.role.request',
+  // CR-01 step 4c-2 (OB-740 "B"): both people — the owner and a store manager — act under the role-change word; head office's
+  // approval engine then judges which of them may approve this one (the owner always one of the two, never his own).
+  role_permission_request: 'identity.role.adjust',
+  role_permission_decision: 'identity.role.adjust',
 });
 /** Changing your OWN till PIN needs only that you are you — your current PIN, as at the office sign-in. */
 export const OWN_PIN_AUTHORITY = 'identity.self.read';
@@ -68,6 +76,8 @@ export function privilegeApiPath(kind: PrivilegeKind, grantId?: string): string 
   if (kind === 'access_change_request') return '/v1/identity/box/access-changes';
   if (kind === 'access_change_decision') return `/v1/identity/box/access-changes/${encodeURIComponent(grantId ?? '')}/decide`;
   if (kind === 'till_pin_change') return '/v1/identity/box/till-pins';
+  if (kind === 'role_permission_request') return '/v1/identity/box/role-permissions';
+  if (kind === 'role_permission_decision') return `/v1/identity/box/role-permissions/${encodeURIComponent(grantId ?? '')}/decide`;
   return `/v1/identity/box/grants/${encodeURIComponent(grantId ?? '')}/approve`;
 }
 
@@ -80,6 +90,9 @@ export function privilegeDoorOf(path: string): { readonly kind: PrivilegeKind; r
   if (path === PRIVILEGE_PATHS.grants) return { kind: 'role_request' };
   if (path === PRIVILEGE_PATHS.accessChanges) return { kind: 'access_change_request' };
   if (path === PRIVILEGE_PATHS.tillPins) return { kind: 'till_pin_change' };
+  if (path === PRIVILEGE_PATHS.rolePermissions) return { kind: 'role_permission_request' };
+  const rd = PRIVILEGE_ROLE_DECIDE_PATH.exec(path);
+  if (rd !== null) return { kind: 'role_permission_decision', grantId: rd[1]! };
   const d = PRIVILEGE_DECIDE_PATH.exec(path);
   if (d !== null) return { kind: 'access_change_decision', grantId: d[1]! };
   const m = PRIVILEGE_APPROVE_PATH.exec(path);
@@ -97,7 +110,8 @@ export type PrivilegeRefusal = 'not_signed_in' | 'not_readable' | 'pin_not_confi
 
 /** What the person reads, in both languages. "Nothing changed" is said wherever it is true. */
 export const PRIVILEGE_WORDS: Readonly<Record<PrivilegeRefusal | 'role_requested' | 'role_granted' | 'person_added' | 'role_rejected'
-  | 'take_back_asked' | 'take_back_done' | 'take_back_rejected' | 'take_back_not_applied' | 'pin_set' | 'pin_cancelled' | 'pin_changed_own', { readonly en: string; readonly ta: string }>> = Object.freeze({
+  | 'take_back_asked' | 'take_back_done' | 'take_back_rejected' | 'take_back_not_applied' | 'pin_set' | 'pin_cancelled' | 'pin_changed_own'
+  | 'role_change_asked' | 'role_change_done' | 'role_change_rejected' | 'role_change_not_applied', { readonly en: string; readonly ta: string }>> = Object.freeze({
   not_signed_in: { en: 'Your office sign-in has ended. Sign in again with your own PIN. Nothing changed.', ta: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. உங்கள் PIN-உடன் மீண்டும் உள்நுழையுங்கள். எதுவும் மாற்றப்படவில்லை.' },
   not_readable: { en: 'Type your PIN, and fill in every box (who, which role, where — or the name and staff id, or the reason). Nothing changed.', ta: 'உங்கள் PIN-ஐ உள்ளிட்டு, எல்லாப் பெட்டிகளையும் நிரப்புங்கள் (யார், எந்தப் பணி, எங்கே — அல்லது பெயர், பணியாளர் எண், அல்லது காரணம்). எதுவும் மாற்றப்படவில்லை.' },
   pin_not_confirmed: { en: 'Your PIN was not confirmed, or your role does not include this. Nothing changed.', ta: 'உங்கள் PIN உறுதிசெய்யப்படவில்லை, அல்லது உங்கள் பணிக்கு இது இல்லை. எதுவும் மாற்றப்படவில்லை.' },
@@ -118,6 +132,11 @@ export const PRIVILEGE_WORDS: Readonly<Record<PrivilegeRefusal | 'role_requested
   pin_set: { en: 'The new till PIN is set. It works at the tills and the office screens now; the old one has stopped. The owner is told.', ta: 'புதிய PIN அமைக்கப்பட்டது. இது இப்போது கவுண்டர்களிலும் அலுவலகத் திரைகளிலும் வேலை செய்யும்; பழையது நின்றுவிட்டது. உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
   pin_cancelled: { en: 'The till PIN is cancelled. They cannot sign in at a till or the office screens until a new one is set. The owner is told.', ta: 'PIN ரத்து செய்யப்பட்டது. புதியது அமைக்கப்படும் வரை அவர் கவுண்டரிலோ அலுவலகத் திரைகளிலோ உள்நுழைய முடியாது. உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
   pin_changed_own: { en: 'Your till PIN is changed. Use the new one from now on.', ta: 'உங்கள் PIN மாற்றப்பட்டது. இனி புதியதைப் பயன்படுத்துங்கள்.' },
+  // CR-01 step 4c-2 (ADR-0034 · OB-740 "B").
+  role_change_asked: { en: 'Asked. A second person must approve it on the Approvals page, with their PIN — the owner is always one of the two. Nobody\'s access has changed yet. The owner is told.', ta: 'கேட்கப்பட்டது. இரண்டாவது நபர் ஒப்புதல்கள் பக்கத்தில் தன் PIN-உடன் ஒப்புதல் தர வேண்டும் — உரிமையாளர் எப்போதும் இருவரில் ஒருவர். இன்னும் யாருடைய அணுகலும் மாறவில்லை. உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
+  role_change_done: { en: 'Approved and done: the role is changed at head office now; it reaches the tills and screens on the store computer\'s next pull. The owner is told.', ta: 'ஒப்புதல் அளிக்கப்பட்டு முடிந்தது: தலைமை அலுவலகத்தில் பணி இப்போது மாற்றப்பட்டது; கடைக் கணினியின் அடுத்த இழுப்பில் கவுண்டர்களுக்கும் திரைகளுக்கும் வரும். உரிமையாளருக்குத் தெரிவிக்கப்படும்.' },
+  role_change_rejected: { en: 'Rejected: nobody\'s access changed. The request stays on record.', ta: 'மறுக்கப்பட்டது: யாருடைய அணுகலும் மாறவில்லை. கோரிக்கை பதிவில் இருக்கும்.' },
+  role_change_not_applied: { en: 'Approved, but the office service did not apply it — read its words below. Nobody\'s access changed yet.', ta: 'ஒப்புதல் அளிக்கப்பட்டது, ஆனால் அலுவலகச் சேவை அதைச் செயல்படுத்தவில்லை — கீழே அதன் சொற்களைப் படியுங்கள். இன்னும் யாருடைய அணுகலும் மாறவில்லை.' },
 });
 
 /** Head office's answer to one relay, or no answer at all. */
@@ -164,6 +183,17 @@ function takeBackBody(raw: unknown): Record<string, unknown> | undefined {
   return { requestId, event, userId: userId.trim(), reason: reason.trim(), grants: g };
 }
 
+/** A role change as the page sends it: exactly { requestId, roleId, permission, change, reason } — anything else is not read. */
+function roleChangeBody(raw: unknown): Record<string, unknown> | undefined {
+  if (!isObj(raw)) return undefined;
+  const { requestId, roleId, permission, change, reason } = raw;
+  if (typeof requestId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(requestId)) return undefined;
+  if (typeof roleId !== 'string' || !/^[a-z0-9_]{1,64}$/.test(roleId.trim())) return undefined;
+  if (typeof permission !== 'string' || !/^[a-z0-9_.]{1,128}$/.test(permission.trim())) return undefined;
+  if ((change !== 'add' && change !== 'remove') || typeof reason !== 'string' || reason.trim() === '' || reason.length > REJECT_REASON_MAX) return undefined;
+  return { requestId, roleId: roleId.trim(), permission: permission.trim(), change, reason: reason.trim() };
+}
+
 /** A till PIN act as sealed: { userId, action } only — the new PIN is NEVER in it. Your own PIN names you. */
 function pinBody(raw: unknown, actingUserId: string): Record<string, unknown> | undefined {
   if (!isObj(raw) || (raw['action'] !== 'set' && raw['action'] !== 'cancel' && raw['action'] !== 'own')) return undefined;
@@ -201,7 +231,8 @@ export async function privilegeAct(
         ? (isObj(input.request) && typeof input.request['userId'] === 'string' && typeof input.request['displayName'] === 'string'
           ? { userId: input.request['userId'].trim().toLowerCase(), displayName: input.request['displayName'].trim() } : undefined)
         : kind === 'access_change_request' ? takeBackBody(input.request)
-          : kind === 'access_change_decision'
+          : kind === 'role_permission_request' ? roleChangeBody(input.request)
+          : kind === 'access_change_decision' || kind === 'role_permission_decision'
             ? (grantId === undefined || reason === '' || reason.length > REJECT_REASON_MAX || !isObj(input.request) || (input.request['decision'] !== 'approved' && input.request['decision'] !== 'rejected')
               ? undefined : { approvalId: grantId, decision: input.request['decision'], reason })
             // A till PIN act is sealed as { userId, action } ONLY — the new PIN never leaves this box.
@@ -229,7 +260,8 @@ export async function privilegeAct(
       ...(kind === 'role_grant_approval' || kind === 'role_grant_rejection' ? { grantId: body['grantId'] }
         : kind === 'person_provision' ? { forUserId: body['userId'], displayName: body['displayName'] }
           : kind === 'access_change_request' ? { forUserId: body['userId'], event: body['event'] }
-            : kind === 'access_change_decision' ? { approvalId: body['approvalId'], decision: body['decision'] }
+            : kind === 'access_change_decision' || kind === 'role_permission_decision' ? { approvalId: body['approvalId'], decision: body['decision'] }
+              : kind === 'role_permission_request' ? { roleId: body['roleId'], permission: body['permission'], change: body['change'] }
               : kind === 'till_pin_change' ? { forUserId: body['userId'], pinAction: body['action'] }
                 : { grantId: body['grantId'], roleId: body['roleId'], forUserId: body['userId'] }) });
   } catch {
@@ -265,6 +297,16 @@ export async function privilegeAct(
   if (kind === 'access_change_decision' && body['decision'] === 'approved' && result['applied'] !== true) {
     const said = isObj(result['result']) && Array.isArray(result['result']['blockers']) ? (result['result']['blockers'] as unknown[]).map(String).join('; ') : '';
     return { status: 200, answer: { ok: true, kind, requestId: record.requestId, en: `${PRIVILEGE_WORDS.take_back_not_applied.en}${said === '' ? '' : ` ${said}`}`, ta: PRIVILEGE_WORDS.take_back_not_applied.ta, result: answer.body } };
+  }
+  if (kind === 'role_permission_decision' && body['decision'] === 'approved' && result['applied'] !== true) {
+    const r = isObj(result['result']) && isObj(result['result']['error']) ? result['result']['error'] : {};
+    const said = typeof r['whatHappened'] === 'string' ? ` ${r['whatHappened']}` : '';
+    return { status: 200, answer: { ok: true, kind, requestId: record.requestId, en: `${PRIVILEGE_WORDS.role_change_not_applied.en}${said}`, ta: PRIVILEGE_WORDS.role_change_not_applied.ta, result: answer.body } };
+  }
+  if (kind === 'role_permission_request' || kind === 'role_permission_decision') {
+    const w = kind === 'role_permission_request' ? PRIVILEGE_WORDS.role_change_asked
+      : body['decision'] === 'approved' ? PRIVILEGE_WORDS.role_change_done : PRIVILEGE_WORDS.role_change_rejected;
+    return { status: 200, answer: { ok: true, kind, requestId: record.requestId, ...w, result: answer.body } };
   }
   if (kind === 'access_change_request' || kind === 'access_change_decision' || kind === 'till_pin_change') {
     const w = kind === 'access_change_request' ? PRIVILEGE_WORDS.take_back_asked

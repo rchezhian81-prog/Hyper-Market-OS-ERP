@@ -406,8 +406,8 @@ describe('deciding — only with a reason, only what is waiting for me, and the 
     const rejected = await sess.decide('areq-bank', 'rejected', 'call the supplier first');
     expect(rejected).toEqual({ kind: 'decided', decision: 'rejected' });
     expect(s.sent).toEqual([
-      { requestId: 'areq-1', decision: 'approved', reason: 'checked against the supplier letter' },
-      { requestId: 'areq-bank', decision: 'rejected', reason: 'call the supplier first' },
+      { requestId: 'areq-1', decision: 'approved', reason: 'checked against the supplier letter', kind: 'data_import_commit' }, // CR-01 4c-2: the kind travels with it
+      { requestId: 'areq-bank', decision: 'rejected', reason: 'call the supplier first', kind: 'supplier_bank_change' },
     ]);
     expect(sess.presentDecideOutcome('en', approved).label).toBe('Approved. The person who asked can now go ahead — once.');
     expect(sess.presentDecideOutcome('en', approved).tone).toBe('ok');

@@ -133,7 +133,7 @@ import { wireBankReconciliation } from './bank-reconciliation-browser-wiring'; /
 import { wirePayablesReceivables } from './payables-receivables-browser-wiring'; // U6 · M23-FR-01
 import { wireKeys } from './keys-browser-wiring'; // U6 · §27 Admin/Security keys · M32-FR-03
 import { wireEsl } from './esl-browser-wiring'; // U6 · §27 label/ESL: the Electronic shelf labels page
-import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
+import { wireUsers, roleAwareDecide } from './users-browser-wiring'; // Round 4c · Users & roles; CR-01 step 4c-2
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
@@ -7541,9 +7541,11 @@ if (browserWindow !== undefined) {
   // D-014 (fix batch 6): the items and places named, read once by the page (`loadNames`) and used on every repaint.
   let approvalProductNames: ReadonlyMap<string, string> = new Map();
   const approvalNames = (): ApprovalNames => approvalNamesOf(approvalProductNames, (globalThis as { sreDirectory?: unknown }).sreDirectory);
+  // CR-01 step 4c-2: on the store PC a role change is decided through the store computer's door, the approver's PIN again.
+  const approvalDecide = roleAwareDecide(browserWindow as unknown as Record<string, unknown>, postApprovalDecision);
   const approvals = approvalsData === undefined ? null : createApprovalsSession(
     { userId: approvalsData.userId === undefined ? null : approvalsData.userId },
-    approvalsPortsFromData(approvalsData, undefined, postApprovalDecision, approvalNames),
+    approvalsPortsFromData(approvalsData, undefined, approvalDecide, approvalNames),
   );
   if (approvals !== null) {
     browserWindow.approvalsSession = approvals;
@@ -7551,7 +7553,7 @@ if (browserWindow !== undefined) {
       refresh: fetchApprovalInboxOrNull,
       present: (inbox) => createApprovalsSession(
         { userId: approvalsData?.userId === undefined ? null : approvalsData.userId },
-        approvalsPortsFromData(approvalsData, inbox, postApprovalDecision, approvalNames),
+        approvalsPortsFromData(approvalsData, inbox, approvalDecide, approvalNames),
       ),
       loadNames: async () => { approvalProductNames = await readApprovalProductNames(); },
     };

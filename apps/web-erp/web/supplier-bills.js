@@ -74,6 +74,7 @@ const WORDS = {
     // who checks bills but does not hand them in (the accountant).
     toCheckH: 'Bills waiting to be checked against the order', toCheckCount: 'Waiting to be checked', checkThis: 'Check against the order',
     notChecked: 'not checked yet', heldBack: 'checked — held back, do not pay yet', toCheckNone: 'No bill is waiting to be checked against its order.',
+    mayViewOnly: 'View only: you can see the supplier bills and how each one matched its order and delivery. Handing in, typing, checking, holding and paying bills are done by people with those rights.',
     mayCheckOnly: 'Handing in and typing bills is done by a person with that right. Here you check the bills on head office\'s register against their order, and below you match deliveries to their bill.',
     // D-043 (fix batch 3): a paper bill typed with no file; its lines filled from the order.
     typePaper: 'Type a paper bill (no file needed)', paperH: 'Paper bill — typed, no file',
@@ -133,6 +134,7 @@ const WORDS = {
     typedAs: 'தட்டச்சு செய்து பதிவேட்டில் சேர்த்த எண்', typedBy: 'தட்டச்சு செய்தவர்',
     toCheckH: 'ஆர்டருடன் சரிபார்க்கக் காத்திருக்கும் பில்கள்', toCheckCount: 'சரிபார்க்கக் காத்திருப்பவை', checkThis: 'ஆர்டருடன் சரிபார்',
     notChecked: 'இன்னும் சரிபார்க்கப்படவில்லை', heldBack: 'சரிபார்க்கப்பட்டது — நிறுத்தி வைக்கப்பட்டது, இன்னும் செலுத்த வேண்டாம்', toCheckNone: 'ஆர்டருடன் சரிபார்க்கக் காத்திருக்கும் பில் எதுவும் இல்லை.',
+    mayViewOnly: 'பார்வைக்கு மட்டும்: சப்ளையர் பில்களையும் ஒவ்வொன்றும் அதன் ஆர்டர், டெலிவரியுடன் எப்படிப் பொருந்தியது என்பதையும் பார்க்கலாம். பில்களைக் கொடுப்பது, தட்டச்சு செய்வது, சரிபார்ப்பது, நிறுத்திவைப்பது, பணம் செலுத்துவது அந்த உரிமை உள்ளவர்களின் வேலை.',
     mayCheckOnly: 'பில்களைக் கொடுப்பதும் தட்டச்சு செய்வதும் அந்த உரிமை உள்ள ஒருவரின் வேலை. இங்கே தலைமை அலுவலகப் பதிவேட்டில் உள்ள பில்களை அவற்றின் ஆர்டருடன் சரிபார்க்கிறீர்கள்; கீழே டெலிவரிகளை அவற்றின் பில்லுடன் பொருத்துகிறீர்கள்.',
     typePaper: 'காகித பில்லைத் தட்டச்சு செய் (கோப்பு தேவையில்லை)', paperH: 'காகித பில் — தட்டச்சு, கோப்பு இல்லை',
     typeLedePaper: 'தாளில் உள்ளபடி பில்லைத் தட்டச்சு செய்யுங்கள் — ஸ்கேனோ புகைப்படமோ தேவையில்லை. ஆர்டரிலிருந்து வரிகளை நிரப்பி, தாளில் வேறுபடுவதை மட்டும் மாற்றி அதன் GST ஐச் சேர்க்கவும்; ஒவ்வொரு வரியும் பெருக்கலில் சரியா, வரிகளும் கட்டணங்களும் சேர்ந்து மொத்தத்துடன் பொருந்துகிறதா என்று தலைமை அலுவலகம் சரிபார்க்கும்.',
@@ -188,7 +190,8 @@ async function refresh() {
   if (!session.mayCapture) {
     // D-045 (fix batch 3): a person who checks bills (the accountant) sees the bills on head office's register still waiting
     // to be checked against their order — the invoice register (`purchase.commitment.read`), not the capture register.
-    if (!(session.mayMatch && session.mayReadBills)) { $('register-status').textContent = t('mayNotCapture'); return; }
+    // OB-827 A: a person who may only SEE bills (`purchase.invoice.read`) gets the same list, view only.
+    if (!((session.mayMatch || session.mayView) && session.mayReadBills)) { $('register-status').textContent = t('mayNotCapture'); return; }
     $('register-status').textContent = t('reading');
     const answer = await session.billsToCheck();
     if (!answer.ok) { say($('register-status'), answer, ''); return; }
@@ -774,11 +777,11 @@ function paint() {
   if (shownMatch !== null && !$('other-part').hidden) drawOtherCharges(shownMatch);
   $('match-h').textContent = t('matchH'); $('match-lede').textContent = t('matchLede'); $('run-match').textContent = t('runMatch');
   $('cnk-h').textContent = t('cnkH'); $('cnk-lede').textContent = t('cnkLede');
-  const checkOnly = session !== null && !session.mayCapture && session.mayMatch && session.mayReadBills;
+  const checkOnly = session !== null && !session.mayCapture && (session.mayMatch || session.mayView) && session.mayReadBills;
   if (session !== null && !session.mayCapture && !checkOnly) $('register-status').textContent = t('mayNotCapture');
   if (checkOnly) {
     $('register-h').textContent = t('toCheckH'); $('l-waiting').textContent = t('toCheckCount');
-    $('check-only').textContent = t('mayCheckOnly');
+    $('check-only').textContent = t(session.mayMatch ? 'mayCheckOnly' : 'mayViewOnly');
     if (toCheck !== null && toCheck.length === 0) $('register-status').textContent = t('toCheckNone');
   }
   if (session !== null && !session.mayMatch) $('cnk-status').textContent = t('cnkMayNot');
@@ -810,7 +813,7 @@ if (who === null || session === null) {
   if (registerSection !== null) {
     // D-045 (fix batch 3): a person who checks bills sees this section as the bills waiting to be checked against their
     // order (head office's invoice register); the scan-reading summary is not theirs. Anyone else: not drawn at all.
-    if (session.mayMatch && session.mayReadBills) {
+    if ((session.mayMatch || session.mayView) && session.mayReadBills) {
       $('check-only').hidden = false;
       $('engine').closest('div').hidden = true;
       registerSection.parentNode.insertBefore(registerSection, $('cnk-section'));
