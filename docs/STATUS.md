@@ -18,6 +18,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 9 of THE PLAN (16 November 2026) · the owner's answers OB-829 A and OB-830 A
+- **Owner answered (in writing, 16 Nov):**
+  - OB-829 A: store managers also read goods receipts.
+  - OB-830 A: owner, store manager and accountant hold the new view-only "See supplier bills".
+- **Done (on its PR):** the two permissions are added to those built-in roles. Nobody gains a new action: they already match bills, and managers already review deliveries.
+- **For the owner after the update:** with a store manager, give Purchase user and Purchase approver "Goods receipt review" and "See supplier bills" on Users & roles. The manager asks, and the owner approves on Approvals, both by PIN.
+- **Owner decisions still open:** OB-804, OB-807, OB-811.
+
 ## Fix batch 8 of THE PLAN (16 November 2026) · the owner's answers · CR-01 step 4c-2
 - **Owner answered (in writing, 16 Nov):** OB-805 A, OB-806 A, OB-808 A, OB-809 A, OB-813 A, OB-814 A, OB-827 A, OB-828 A. OB-813 and OB-814 were already built.
 - **Done (on its PR):**

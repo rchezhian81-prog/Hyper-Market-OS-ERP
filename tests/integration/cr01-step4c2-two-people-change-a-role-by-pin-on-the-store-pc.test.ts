@@ -101,6 +101,26 @@ describe.each(useBackings({ privilegeSealSecret: PRIVILEGE_SECRET }))('CR-01 ste
     expect(await warehouseMay(h)).toBe(false);
   });
 
+  it('OB-829 A and OB-830 A: the manager asks, the owner approves — purchase people get goods receipts and supplier bills (view only)', async () => {
+    const h = await shop(harness());
+    await h.provisionRole(T, 'u-buy', 'purchase_user', ['S1']);
+    await h.provisionRole(T, 'u-buy2', 'purchase_approver', ['S1']);
+    const may = async (userId: string, permission: string): Promise<boolean> =>
+      (await tenantAccessResolver(h.store, ROLE_CATALOGUE)(T)).can({ userId, permission, branchId: 'S1' });
+    for (const [userId, roleId] of [['u-buy', 'purchase_user'], ['u-buy2', 'purchase_approver']] as const) {
+      for (const permission of ['inventory.goodsreceipt.read', 'purchase.invoice.read']) {
+        expect(await may(userId, permission)).toBe(false);
+        const asked = await ask(h, 'u-mgr', { roleId, permission, change: 'add' });
+        expect(asked.status, JSON.stringify(asked.body)).toBe(201);
+        const ok = await decide(h, 'u-owner', (asked.body as { requestId: string }).requestId, 'approved');
+        expect(ok.body, JSON.stringify(ok.body)).toMatchObject({ applied: true, roleId, permission, change: 'add' });
+        expect(await may(userId, permission)).toBe(true);
+      }
+      // View only: seeing the bills never lets them match one.
+      expect(await may(userId, 'purchase.invoice.match')).toBe(false);
+    }
+  });
+
   it('a rejection changes nothing; a never-list permission is refused before anything is asked', async () => {
     const h = await shop(harness());
     const asked = await ask(h, 'u-mgr', INDENTS);

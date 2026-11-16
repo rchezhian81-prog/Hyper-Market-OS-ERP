@@ -95,6 +95,8 @@ const BASE_ROLES: readonly Role[] = [
       'identity.self.read', 'identity.role.read', 'identity.role.request', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
       // CR-01 step 4c-1 · OB-740 "B": the owner asks for, or approves, a change to what a role may do (ADR-0034).
       'identity.role.adjust',
+      // OB-830 A (owner, 16 Nov 2026, in writing): see supplier bills, view only — the owner already matches bills.
+      'purchase.invoice.read',
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',
@@ -514,6 +516,9 @@ const BASE_ROLES: readonly Role[] = [
     // Everything needed to run the shop, and **nothing that closes a month or grants a role**.
     // Separation of duties is not a policy document; it is which codes are absent from this list.
     permissions: [
+      // OB-829 A and OB-830 A (owner, 16 Nov 2026, in writing): read goods receipts, and see supplier bills view only — so
+      // the manager can be one of the two people who give these to the purchase roles (ADR-0034: both must hold it).
+      'inventory.goodsreceipt.read', 'purchase.invoice.read',
       // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
       'concession.tag.record',
       'identity.self.read', 'identity.role.request', 'org.branch.read', 'payroll.ess.self',
@@ -862,6 +867,8 @@ const BASE_ROLES: readonly Role[] = [
     // finance service and this list is what makes it reachable rather than theoretical.
     permissions: [
       'identity.self.read', 'payroll.ess.self',
+      // OB-830 A (owner, 16 Nov 2026, in writing): see supplier bills, view only — the accountant already matches bills.
+      'purchase.invoice.read',
       // CR-01 OI-12 (OB-712; the second person per OB-659): the accountant confirms or refuses an auto-approve limit the
       // owner asked for. Asks for none and stops nothing.
       'ai.autoapprove.read', 'ai.autoapprove.confirm',
