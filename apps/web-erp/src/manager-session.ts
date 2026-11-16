@@ -43,7 +43,8 @@ import type {
   RefusalReason,
 } from '../../../packages/approvals/src/approvals';
 import {
-  commitReceipt, linesMissingManufactureDate,
+  commitReceipt, linesMissingManufactureDate, receiptLineProblems, datedBatchId,
+  type ReceiptLineProblem,
   type CommittedReceipt,
   type ReceiptLineInput,
 } from '../../../packages/receiving/src/receiving';
@@ -430,6 +431,40 @@ export interface ManagerConfig {
    * one with no month and year of manufacture is refused here, offline. Absent = not told (head office still refuses it).
    */
   readonly packedProductIds?: readonly string[];
+  /**
+   * Fix batch 4b · D-029: the deliveries this store is waiting for (each purchase order with what is still due), as head office
+   * last told the store computer — the Receive form offers them to choose from, offline. Absent = not told (type the order).
+   */
+  readonly openDeliveries?: readonly OpenDelivery[];
+  /** When the store computer took that list from head office (an order issued since is not on it yet). */
+  readonly deliveriesAsAt?: string;
+  /** The items' names the store computer holds, so the form names each line instead of showing its code. */
+  readonly productNames?: Readonly<Record<string, string>>;
+  /** Fix batch 4b · D-029: the BATCH-TRACKED products by head office's catalogue — a line of one needs a batch and an expiry. */
+  readonly batchTrackedProductIds?: readonly string[];
+}
+
+/** Fix batch 4b · D-029: one purchase order this store is waiting for, with each item still due. */
+export interface OpenDelivery {
+  readonly poId: string;
+  readonly number: string;
+  readonly supplierId: string;
+  readonly due: readonly { readonly productId: string; readonly dueMinor: number }[];
+}
+
+/** Fix batch 4b · D-029: an order's lines as the Receive form starts them — the item's name and what is still due. */
+export interface DueLine {
+  readonly productId: string;
+  readonly name: string;
+  readonly dueMinor: number;
+}
+
+/** Fix batch 4b · D-029: a delivery line is wrong (an expiry that is not a date, more damaged than arrived, a batch-tracked item with no batch or expiry). Nothing was saved. */
+export class ReceiptLinesRefusedError extends Error {
+  constructor(readonly problems: readonly ReceiptLineProblem[]) {
+    super(problems.map((p) => `${p.productId}: ${p.kind}`).join('; '));
+    this.name = 'ReceiptLinesRefusedError';
+  }
 }
 
 /** B4 · OB-504: a delivery line of a packed product carries no month and year of manufacture — refused, nothing saved. */
@@ -571,6 +606,14 @@ export interface ManagerSession {
   coldChainAmong(productIds: readonly string[]): readonly string[];
   /** B4 · OB-504: which of these products are PACKED by head office's list (they need a month and year of manufacture). */
   packedAmong(productIds: readonly string[]): readonly string[];
+  /** Fix batch 4b · D-029: the purchase orders this store is waiting for, to choose from (absent = the store computer was not told). */
+  openDeliveries(): { readonly known: true; readonly orders: readonly OpenDelivery[]; readonly asAt?: string } | { readonly known: false };
+  /** Fix batch 4b · D-029: a chosen order's lines, each by name with what is still due (nothing already received in full). */
+  dueLinesOf(poId: string): readonly DueLine[];
+  /** The item's name the store computer holds, else its code. */
+  productName(productId: string): string;
+  /** Fix batch 4b · D-029: which of these products are BATCH-TRACKED (they need a batch and an expiry). */
+  batchTrackedAmong(productIds: readonly string[]): readonly string[];
   /** Capture a blind count and queue it for head office to reconcile (M09-FR-04). Nothing here reveals — or computes — the expected. */
   countStock(input: CountInput): CountAttempt;
   /** Everything standing between this store and a closed day — enumerated, never just counted. */
@@ -826,8 +869,38 @@ export function createManagerSession(
     coldChainAmong: (productIds) => coldChainAmong(config.receivingChecklist, productIds),
     packedAmong: (productIds) => (config.packedProductIds === undefined ? [] : [...new Set(productIds)].filter((p) => config.packedProductIds!.includes(p)).sort()),
 
-    receive: (input) => {
+    openDeliveries: () => (config.openDeliveries === undefined ? { known: false } : {
+      known: true, orders: config.openDeliveries, ...(config.deliveriesAsAt === undefined ? {} : { asAt: config.deliveriesAsAt }),
+    }),
+    dueLinesOf: (poId) => {
+      const order = config.openDeliveries?.find((d) => d.poId === poId);
+      if (order === undefined) return [];
+      return order.due.filter((l) => l.dueMinor > 0).map((l) => ({ productId: l.productId, name: config.productNames?.[l.productId] ?? l.productId, dueMinor: l.dueMinor }));
+    },
+    productName: (productId) => config.productNames?.[productId] ?? productId,
+    batchTrackedAmong: (productIds) => (config.batchTrackedProductIds === undefined ? [] : [...new Set(productIds)].filter((p) => config.batchTrackedProductIds!.includes(p)).sort()),
+
+    receive: (rawInput) => {
       if (config.manager === null) throw new NobodyNamedError('book a delivery in');
+      // Fix batch 4b · D-029 (offline): every line read the one way — an expiry with no batch printed is its own dated batch;
+      // an expiry that is not a date, more damaged than arrived, or a batch-tracked item without batch and expiry is refused.
+      const problems = receiptLineProblems(rawInput.lines, config.batchTrackedProductIds);
+      if (problems.length > 0) throw new ReceiptLinesRefusedError(problems);
+      const input: ReceiveInput = {
+        ...rawInput,
+        lines: rawInput.lines.map((l) => {
+          const expiry = l.expiry?.trim() ?? '';
+          const batchId = datedBatchId(l.batchId, expiry === '' ? undefined : expiry);
+          const rest: ReceiptLineInput = { ...l };
+          delete (rest as { expiry?: string }).expiry;
+          delete (rest as { damagedMinor?: number }).damagedMinor;
+          return {
+            ...rest, batchId,
+            ...(expiry === '' ? {} : { expiry }),
+            ...(l.damagedMinor === undefined || l.damagedMinor <= 0 ? {} : { damagedMinor: l.damagedMinor }),
+          };
+        }),
+      };
       // B4 · OB-504 (offline): a packed product's batch is not booked in without its month and year of manufacture.
       const missing = linesMissingManufactureDate(config.packedProductIds, input.lines);
       if (missing.length > 0) throw new ManufactureDateRequiredError(missing);

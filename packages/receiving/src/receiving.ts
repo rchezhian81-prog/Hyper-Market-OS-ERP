@@ -22,6 +22,63 @@ export interface ReceiptLineInput {
   readonly temperatureC?: number;
   /** B4 · OB-504: the batch's month and year (or date) of manufacture as printed on the pack — required for a packed product. */
   readonly manufacturedOn?: string;
+  /**
+   * Fix batch 4b · D-029 (M07-FR-02 · M10): the batch's expiry (best-before) date as printed on the pack, YYYY-MM-DD. It travels
+   * to head office on the line and onto the `received` movement, so the batch appears on the expiry list.
+   */
+  readonly expiry?: string;
+  /**
+   * Fix batch 4b · D-029 (M07-FR-03): how many of `quantityMinor` arrived DAMAGED. Head office books them as a separate
+   * damaged line (quarantined, never sellable); this screen's own ledger raises only the good ones. 0 / absent = none.
+   * A SHORT delivery needs no box: it is what arrived against what the order still had due, worked out by head office.
+   */
+  readonly damagedMinor?: number;
+}
+
+/** YYYY-MM-DD that is a real calendar date. */
+export function isCalendarDate(text: string): boolean {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(text)) return false;
+  const d = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
+}
+
+/**
+ * Fix batch 4b · D-029: a line with an expiry date but no batch number printed is kept as its own batch, named by that date
+ * ("EXP-2026-12-31"), so two deliveries of one item with different dates never fold into one batch with one date.
+ */
+export function datedBatchId(batchId: string | null | undefined, expiry: string | undefined): string | null {
+  const typed = typeof batchId === 'string' ? batchId.trim() : '';
+  if (typed !== '') return typed;
+  return expiry === undefined || expiry.trim() === '' ? null : `EXP-${expiry.trim()}`;
+}
+
+export type ReceiptLineProblem =
+  | { readonly kind: 'expiry_not_a_date'; readonly productId: string }
+  | { readonly kind: 'damaged_not_whole'; readonly productId: string }
+  | { readonly kind: 'damaged_more_than_arrived'; readonly productId: string }
+  | { readonly kind: 'batch_and_expiry_needed'; readonly productId: string };
+
+/**
+ * Fix batch 4b · D-029: what is wrong with a delivery's lines before anything is saved — offline, the same everywhere: an
+ * expiry that is not a real date, a damaged count that is not a whole number or is more than arrived, and a BATCH-TRACKED
+ * product (head office's catalogue, as the store computer holds it) with no batch or no expiry (head office refuses it too).
+ */
+export function receiptLineProblems(
+  lines: readonly Pick<ReceiptLineInput, 'productId' | 'quantityMinor' | 'batchId' | 'expiry' | 'damagedMinor'>[],
+  batchTrackedProductIds?: readonly string[],
+): readonly ReceiptLineProblem[] {
+  const tracked = new Set(batchTrackedProductIds ?? []);
+  const out: ReceiptLineProblem[] = [];
+  for (const l of lines) {
+    const expiry = l.expiry?.trim() ?? '';
+    if (expiry !== '' && !isCalendarDate(expiry)) out.push({ kind: 'expiry_not_a_date', productId: l.productId });
+    if (l.damagedMinor !== undefined) {
+      if (!Number.isInteger(l.damagedMinor) || l.damagedMinor < 0) out.push({ kind: 'damaged_not_whole', productId: l.productId });
+      else if (l.damagedMinor > l.quantityMinor) out.push({ kind: 'damaged_more_than_arrived', productId: l.productId });
+    }
+    if (tracked.has(l.productId) && ((l.batchId ?? '').trim() === '' || expiry === '')) out.push({ kind: 'batch_and_expiry_needed', productId: l.productId });
+  }
+  return out;
 }
 
 /** B4 · OB-504: the lines of PACKED products (by the store pack's list) with no readable manufacture date — refused offline. */
@@ -82,6 +139,8 @@ export function commitReceipt(
   }
 
   for (const line of input.lines) {
+    // Fix batch 4b · D-029: a line that arrived wholly damaged raises no stock here (head office quarantines it).
+    if (Math.abs(line.quantityMinor) - Math.max(0, line.damagedMinor ?? 0) <= 0) continue;
     stockLedger.append(
       makeEvent({
         id: `${input.id}:move:${line.productId}`,
@@ -91,7 +150,8 @@ export function commitReceipt(
         source: input.warehouseId,
         payload: {
           productId: line.productId,
-          deltaMinor: Math.abs(line.quantityMinor), // inbound: stock increases
+          // inbound: stock increases — by the GOOD ones only; damaged units are quarantined at head office (D-029)
+          deltaMinor: Math.max(0, Math.abs(line.quantityMinor) - Math.max(0, line.damagedMinor ?? 0)),
           uom: line.uom,
           batchId: line.batchId ?? null,
         },
@@ -123,6 +183,9 @@ export function commitReceipt(
           ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
           // B4 · OB-504: the batch's month and year of manufacture travels with the line; head office refuses a packed one without.
           ...(l.manufacturedOn === undefined || l.manufacturedOn.trim() === '' ? {} : { manufacturedOn: l.manufacturedOn.trim() }),
+          // Fix batch 4b · D-029: the batch's expiry date and how many arrived damaged travel with the line.
+          ...(l.expiry === undefined || l.expiry.trim() === '' ? {} : { expiry: l.expiry.trim() }),
+          ...(l.damagedMinor === undefined || l.damagedMinor <= 0 ? {} : { damagedMinor: l.damagedMinor }),
         })),
         storeId: input.storeId ?? null,
         source: input.source ?? 'receiving',

@@ -3272,6 +3272,12 @@
                     "batchId"
                   ],
                   "properties": {
+                    "damagedMinor": {
+                      "type": "number"
+                    },
+                    "expiry": {
+                      "type": "string"
+                    },
                     "manufacturedOn": {
                       "type": "string"
                     },
