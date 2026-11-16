@@ -83,6 +83,11 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
   };
 
   it('the store setup carries the weighted average per whole unit (none for a product never bought at a cost); the box Today and head office profitability cost at it; an uncosted product reads "margin not known"', async () => {
+    // The shop here runs on UTC with a 00:00 cutoff, and the sales are timed a minute or two after the start: a run that
+    // begins in the last five minutes before UTC midnight would sell on one day and read the owner's Today on the next (CI,
+    // 15 Nov 2026, 23:52 UTC). Such a run first waits for the new day, as the hourly tests wait out the end of an hour.
+    const intoDay = Date.now() % 86_400_000;
+    if (intoDay > 86_400_000 - 5 * 60_000) await new Promise((r) => setTimeout(r, 86_400_000 - intoDay + 1_000));
     const today = new Date().toISOString().slice(0, 10);
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     await cloud.grant(CASHIER, 'cashier');
@@ -206,5 +211,5 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     expect((await edge.refreshStorePack!()).status).toMatch(/updated|renewed/);
     const pack2 = (await call('GET', `/v1/store-packs/${STORE}`, BOX)).body as { sections?: { products?: { productId: string; unitCostMinor?: number }[] } };
     expect(pack2.sections?.products?.find((p) => p.productId === SALT.productId)?.unitCostMinor).toBe(saltAvg);
-  }, 180_000);
+  }, 600_000); // up to five minutes of waiting for the new UTC day, then the journey
 });
