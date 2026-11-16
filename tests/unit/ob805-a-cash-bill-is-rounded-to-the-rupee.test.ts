@@ -170,7 +170,7 @@ describe('the drawer, the day book and the refund carry it', () => {
     expect(Math.min(ceiling, returnedValueAtOriginalPrices(sale, [{ productId: 'P1', quantityMinor: 1 }]))).toBe(30_300);
     const ledger = new Ledger(new InMemoryLedgerStore());
     expect(() => commitReturn({
-      id: 'RT-1', number: 'RT-1', originalSaleId: 'S-1', processedAt: AT, reasonCode: 'damaged',
+      id: 'RT-1', number: 'RT-1', originalSaleId: 'S-1', laneId: 'lane-1', processedBy: 'c1', processedAt: AT, reasonCode: 'damaged',
       lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, originalQtyMinor: 1, disposition: 'resell' }],
       refund: money(30_350, 'INR'), refundTender: 'cash', maxRefund: money(ceiling, 'INR'), approvalThresholdMinor: 1_000_000,
     }, ledger, new SyncOutbox())).toThrow(ExcessRefundError);
