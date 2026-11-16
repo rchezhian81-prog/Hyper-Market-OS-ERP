@@ -61,7 +61,7 @@ import { relabelTaskRoutes, relabelTasksFor, raiseRelabelTasks, type RelabelTask
 import { facilitiesAssetsAdapter, facilitiesMonitoringAdapter, facilitiesAdapter, writeOffAdapter, planogramStoreAdapter, heldVersionsAdapter } from './adapters';
 import type { SignedPack } from '../../catalogue/src/index';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
-import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
+import { shopDateIn, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 export interface LpWorkforceInput {
@@ -517,8 +517,10 @@ function relabelOnPriceChange(surface: Route[], input: Base): void {
     const res = await inner(ctx);
     const b = res.body as { productId?: unknown; scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; effectiveFrom?: unknown; entryId?: unknown } | null;
     if (res.status < 300 && b?.scope === 'store' && typeof b.scopeRef === 'string' && typeof b.productId === 'string' && Number.isInteger(b.priceMinor) && typeof b.effectiveFrom === 'string') {
-      const from = Date.parse(b.effectiveFrom);
-      const dueAt = Number.isNaN(from) ? input.now() : new Date(Math.max(from, Date.parse(input.now()))).toISOString();
+      // The entry starts at the start of the SHOP's day, never midnight UTC (05:30 in Tamil Nadu): read as UTC, a price for
+      // today was "not yet in force" for the shop's first five and a half hours, so its label task did not fall due and an
+      // older task was not shown as replaced (found when CI ran just after the shop's midnight).
+      const dueAt = shopDayStartsAt(b.effectiveFrom, input.now());
       const raised = await raiseRelabelTasks(deps, ctx.tenantId, await relabelTasksFor(deps, ctx.tenantId, { productId: b.productId, priceMinor: b.priceMinor as number, storeIds: [b.scopeRef], dueAt, because: 'price_list_entry', sourceRef: `price-list:${b.productId}:${String(b.entryId)}` }));
       return { ...res, body: { ...(res.body as Record<string, unknown>), relabelTasks: raised.length } };
     }
@@ -641,4 +643,21 @@ export function lpWorkforceSurface(surface: Route[], raw: LpWorkforceInput): voi
   duplicateBankWithEmployees(surface, input);
   couponIndex(surface, input);
   pointsAttribution(surface, input);
+}
+
+/** When a dated entry starts on the shop's clock: now, if its day has begun; else the first instant of that shop day. */
+export function shopDayStartsAt(effectiveFrom: string, nowIso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+    const from = Date.parse(effectiveFrom);
+    return Number.isNaN(from) ? nowIso : new Date(Math.max(from, Date.parse(nowIso))).toISOString();
+  }
+  if (effectiveFrom <= shopDateIn(nowIso)) return nowIso;
+  // The shop day's first instant: the earliest moment whose shop date is that day (found to the millisecond).
+  let lo = Date.parse(`${effectiveFrom}T00:00:00.000Z`) - 15 * 3_600_000; // before it, in any zone
+  let hi = lo + 30 * 3_600_000; // after it, in any zone
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (shopDateIn(new Date(mid).toISOString()) >= effectiveFrom) hi = mid; else lo = mid;
+  }
+  return new Date(hi).toISOString();
 }
