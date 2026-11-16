@@ -162,6 +162,12 @@
       section.desk ul.list li form { grid-template-columns:repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
       section.desk .word { font-weight:700; }
     </style>
+    <style>
+      /* D-051: a part of another job is out of sight (the page's own hidden flags stay as they are). */
+      .job-off { display: none !important; }
+      .jobs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+      .jobs .job[aria-selected="true"] { font-weight: 700; outline: 2px solid currentColor; }
+    </style>
   </head>
   <body>
     <p class="stale" id="stale" hidden></p>
@@ -179,6 +185,14 @@
         <p class="lead" id="lead"></p>
       </div>
 
+      <!-- D-051 (fix batch 5): one job at a time — the month's GST, the yearly returns, or TDS (gst-jobs.ts). -->
+      <div class="jobs" id="jobs" role="tablist" aria-label="Which job">
+        <button class="job sre-btn" type="button" role="tab" id="job-monthly" data-job="monthly" aria-selected="true">Monthly GST</button>
+        <button class="job sre-btn" type="button" role="tab" id="job-yearly" data-job="yearly" aria-selected="false">Yearly returns</button>
+        <button class="job sre-btn" type="button" role="tab" id="job-tds" data-job="tds" aria-selected="false">TDS</button>
+      </div>
+      <p class="lead" id="job-lead"></p>
+
       <div class="summary" id="summary" role="status" aria-live="polite">
         <span class="count attention" id="attention-count"></span>
         <button class="filter" id="filter" type="button" aria-pressed="false"></button>
@@ -191,7 +205,7 @@
       <form class="pick" id="prepare" hidden>
         <div class="field">
           <label for="prepare-period" id="prepare-label">Period</label>
-          <input id="prepare-period" name="prepare-period" inputmode="numeric" autocomplete="off" maxlength="6" />
+          <input id="prepare-period" name="prepare-period" type="month" autocomplete="off" />
         </div>
         <button class="do-btn sre-btn sre-btn-primary" id="prepare-btn" type="submit">Prepare for approval</button>
       </form>
@@ -225,7 +239,7 @@
         <form class="pick" id="pick">
           <div class="field">
             <label for="period" id="period-label"></label>
-            <input id="period" name="period" inputmode="numeric" autocomplete="off" maxlength="6" aria-describedby="period-help" />
+            <input id="period" name="period" type="month" autocomplete="off" aria-describedby="period-help" />
             <p class="help" id="period-help"></p>
           </div>
           <button class="act sre-btn" id="show" type="submit"></button>
@@ -243,7 +257,10 @@
         <h3 id="cal-heading"></h3>
         <p class="cal-summary" id="cal-summary"></p>
         <ul class="rows" id="calendar" aria-label="GST filing calendar"></ul>
+      </section>
 
+      <!-- D-051: the yearly returns (GSTR-9 / 9C), read with the month above by gst-returns-ho.js. -->
+      <section class="ho" id="ho-yearly" aria-labelledby="annual-heading">
         <h3 id="annual-heading"></h3>
         <ul class="rows" id="annual" aria-label="Annual return"></ul>
       </section>

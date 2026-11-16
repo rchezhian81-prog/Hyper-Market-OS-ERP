@@ -253,7 +253,8 @@ describe('M15-FR-03 · OB-301 · the related-party check', () => {
 
 describe('M23-FR-01 · §28 · a supplier payment — asked, approved by another, recorded exactly as approved', () => {
   it('asks with the record route\'s own details (the engine\'s fingerprint) and records them, naming the approval', async () => {
-    const ho = headOffice((url, method) => (method === 'GET' ? { status: 200, body: { mine: [
+    // D-048: the ask reads the supplier first (held? a checked bank account? a shared one?) — this one may be paid.
+    const ho = headOffice((url, method) => (method === 'GET' && url === '/v1/purchase/suppliers/sup-1' ? { status: 200, body: { supplier: { name: 'Demo Foods' }, blocked: false, bank: { accountRef: 'xx-1234' }, duplicateBankAccount: false } } : method === 'GET' ? { status: 200, body: { mine: [
       { requestId: 'areq-1', kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', status: 'approved', valueMinor: 250_000, details: { amountMinor: 250_000, paidOn: '2026-09-05', method: 'bank_transfer', reference: 'UTR1', supplierId: 'sup-1', paymentId: 'pay-1' } },
       { requestId: 'areq-2', kind: 'supplier_payment', subjectRef: 'advance:adv-1', status: 'approved', valueMinor: 1, details: {} },
       { requestId: 'areq-3', kind: 'stock_write_off', subjectRef: 'x/y', status: 'approved', valueMinor: 1, details: {} },
@@ -261,12 +262,13 @@ describe('M23-FR-01 · §28 · a supplier payment — asked, approved by another
     const s = createSupplierPaymentSession({ viewer: { userId: 'u-acct', permissions: ['purchase.supplier.pay'] }, fetch: ho.fetch, newId: () => 'pay-1' });
     const asked = await s.ask({ supplierId: ' sup-1 ', amountRupees: '2,500', paidOn: '2026-09-05', method: 'bank_transfer', reference: ' UTR1 ' });
     expect(asked).toEqual({ result: 'ok', value: { requestId: 'areq-1', paymentId: 'pay-1' } });
-    const ask = ho.calls[0]!.body as { kind: string; subjectRef: string; details: Record<string, unknown>; valueMinor: number };
+    expect(`${ho.calls[0]!.method} ${ho.calls[0]!.url}`).toBe('GET /v1/purchase/suppliers/sup-1');
+    const ask = ho.calls[1]!.body as { kind: string; subjectRef: string; details: Record<string, unknown>; valueMinor: number };
     expect(ask).toMatchObject({ kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', valueMinor: 250_000 });
     const mine = await s.myAsks();
     expect(mine.result === 'ok' ? mine.value.map((a) => a.requestId) : []).toEqual(['areq-1']);
     await s.record((mine as { value: readonly Parameters<typeof s.record>[0][] }).value[0]!);
-    const rec = ho.calls[2]!;
+    const rec = ho.calls[3]!;
     expect(`${rec.method} ${rec.url}`).toBe('POST /v1/purchase/suppliers/sup-1/payments/pay-1');
     expect(rec.body).toEqual({ amountMinor: 250_000, paidOn: '2026-09-05', method: 'bank_transfer', reference: 'UTR1', approvalId: 'areq-1' });
     // The details asked for are exactly what head office fingerprints on the record route.

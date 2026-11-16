@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { refusalWords, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid, langOfWords } from '../../apps/web-erp/src/refusal-words';
+import { refusalWords, whatHappenedWords, nextSafeActionWords, causeOf, headOfficeSaid, langOfWords, withoutRequirementCodes } from '../../apps/web-erp/src/refusal-words';
 import { outcomeIn } from '../../apps/web-erp/src/r4-insight-call';
 import { createCountPlansSession } from '../../apps/web-erp/src/count-plans-session';
 import { createTransfersSession } from '../../apps/web-erp/src/transfers-session';
@@ -18,8 +18,20 @@ const IDS = { plan: () => 'cp-1', count: (p: string, x: string) => `${p}-${x}-k`
 describe('the shared refusal words', () => {
   it('keeps head office\'s own sentence, adds "nothing was changed" and the next safe action', () => {
     const out = { status: 422, code: 'self_approval', whatHappened: 'u-mgr counted P1 and cannot approve their own variance (§28).' };
-    expect(refusalWords('en', out)).toBe('Head office refused: u-mgr counted P1 and cannot approve their own variance (§28). Nothing was changed. Check what you typed and try again.');
-    expect(refusalWords('ta', out)).toBe('தலைமை அலுவலகம் மறுத்தது: u-mgr counted P1 and cannot approve their own variance (§28). எதுவும் மாற்றப்படவில்லை. தட்டச்சு செய்ததைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.');
+    // D-048 (fix batch 5): head office's sentence is kept word for word — without the requirement code it carries.
+    expect(refusalWords('en', out)).toBe('Head office refused: u-mgr counted P1 and cannot approve their own variance. Nothing was changed. Check what you typed and try again.');
+    expect(refusalWords('ta', out)).toBe('தலைமை அலுவலகம் மறுத்தது: u-mgr counted P1 and cannot approve their own variance. எதுவும் மாற்றப்படவில்லை. தட்டச்சு செய்ததைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.');
+  });
+
+  it('D-048: drops the requirement codes head office writes for auditors, never the words around them', () => {
+    expect(withoutRequirementCodes('Supplier sup-1 has no independently verified bank account on record, so a bank transfer to them cannot be recorded (M06-FR-01: an unverified bank change blocks payment).'))
+      .toBe('Supplier sup-1 has no independently verified bank account on record, so a bank transfer to them cannot be recorded.');
+    expect(withoutRequirementCodes('Another holder shares supplier sup-1\'s bank account (M15-FR-03) — payment is blocked.')).toBe('Another holder shares supplier sup-1\'s bank account — payment is blocked.');
+    expect(withoutRequirementCodes('Needs a second person (M15-FR-03 · §28).')).toBe('Needs a second person.');
+    expect(withoutRequirementCodes('Set by the owner — OB-341.')).toBe('Set by the owner.');
+    // A bracket that is not a code stays exactly as written.
+    expect(withoutRequirementCodes('2.500 kg (rounded) at ₹45.00 (per kg).')).toBe('2.500 kg (rounded) at ₹45.00 (per kg).');
+    expect(refusalWords('en', { status: 409, code: 'no_verified_bank_account', whatHappened: 'Supplier sup-1 is under a hold (M06-FR-01) — nothing may be paid.' })).not.toMatch(/M06|FR-|§/);
   });
 
   it('a raw code or a bare status becomes plain words for its cause, in both languages', () => {

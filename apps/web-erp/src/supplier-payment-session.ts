@@ -40,6 +40,10 @@ export const SUPPLIER_PAYMENT_COPY = {
     billsTotal: 'Ticked: {n} bill(s), {total} in all', billsNoneTicked: 'No bill ticked.',
     confirmTitle: '{amount} paid to {supplier} will be recorded', confirmDetail: 'Paid on {day} by {method}, reference {ref}. What the shop owes the supplier falls by this amount, and the bank statement line with this reference is matched to it on Bank reconciliation. A payment is kept for good; a mistake is corrected by a new entry.',
     confirmAuthority: 'You may pay suppliers; {approver} approved this exact payment.', confirmLabel: 'Record the payment', notConfirmed: 'Not confirmed — nothing was recorded.',
+    // D-048 (fix batch 5): the supplier's own state, checked when the payment is ASKED for — before anyone approves it.
+    supplierHeld: 'This supplier is on hold, so nothing may be paid to them until the hold is lifted on the Suppliers page. Nothing was asked.',
+    noVerifiedBank: 'This supplier has no checked bank account on record, so a bank transfer, cheque or UPI payment to them cannot be recorded yet. First have their bank account checked on the Suppliers page (a call back on a number already held, approved by a second person). Nothing was asked.',
+    sharedBank: 'Another supplier or staff member has the same bank account, so payment is stopped until a person has reviewed it on the Fraud signals page. Nothing was asked.',
   },
   ta: {
     payH: 'சப்ளையருக்குச் செலுத்தியதைப் பதி', payLede: 'இது சப்ளையருக்குப் பணம் செலுத்தப்பட்டதைப் பதிவு செய்கிறது — எந்தப் பணத்தையும் அனுப்பாது. செலுத்தலுக்கு இரண்டாவது நபர் தேவை: இங்கே கேளுங்கள், சப்ளையர்களுக்குச் செலுத்த அனுமதி உள்ள வேறொருவர் தமது ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் அளிக்கிறார், பின்னர் இங்கே பதியுங்கள். ஒப்புதல் அளிக்கப்பட்டதே சரியாகப் பதியப்படும்.',
@@ -57,6 +61,9 @@ export const SUPPLIER_PAYMENT_COPY = {
     billsTotal: 'தேர்வு: {n} பில்(கள்), மொத்தம் {total}', billsNoneTicked: 'எந்த பில்லும் தேர்வு செய்யப்படவில்லை.',
     confirmTitle: '{supplier}க்குச் செலுத்திய {amount} பதியப்படும்', confirmDetail: '{day} அன்று {method} மூலம் செலுத்தப்பட்டது, குறிப்பு {ref}. கடை சப்ளையருக்குச் செலுத்த வேண்டியது இந்தத் தொகையால் குறையும்; இந்தக் குறிப்புள்ள வங்கி அறிக்கை வரி வங்கி சரிக்கட்டல் பக்கத்தில் இதனுடன் பொருத்தப்படும். செலுத்தல் நிரந்தரமாக வைக்கப்படும்; தவறு புதிய பதிவால் திருத்தப்படும்.',
     confirmAuthority: 'நீங்கள் சப்ளையர்களுக்குச் செலுத்தலாம்; இந்தச் செலுத்தலுக்கு {approver} ஒப்புதல் அளித்தார்.', confirmLabel: 'செலுத்தலைப் பதி', notConfirmed: 'உறுதிப்படுத்தவில்லை — எதுவும் பதியப்படவில்லை.',
+    supplierHeld: 'இந்தச் சப்ளையர் நிறுத்திவைப்பில் உள்ளார்; சப்ளையர்கள் பக்கத்தில் நிறுத்திவைப்பு நீக்கப்படும் வரை அவருக்கு எதுவும் செலுத்த முடியாது. எதுவும் கேட்கப்படவில்லை.',
+    noVerifiedBank: 'இந்தச் சப்ளையருக்குச் சரிபார்க்கப்பட்ட வங்கிக் கணக்கு பதிவில் இல்லை; எனவே வங்கிப் பரிமாற்றம், காசோலை அல்லது UPI செலுத்தலை இன்னும் பதிய முடியாது. முதலில் சப்ளையர்கள் பக்கத்தில் அவரது வங்கிக் கணக்கைச் சரிபார்க்கவும் (ஏற்கனவே உள்ள எண்ணுக்குத் திரும்ப அழைத்து, இரண்டாவது நபரின் ஒப்புதலுடன்). எதுவும் கேட்கப்படவில்லை.',
+    sharedBank: 'வேறொரு சப்ளையர் அல்லது பணியாளருக்கும் இதே வங்கிக் கணக்கு உள்ளது; மோசடி அறிகுறிகள் பக்கத்தில் ஒருவர் சரிபார்க்கும் வரை செலுத்தல் நிறுத்தப்பட்டுள்ளது. எதுவும் கேட்கப்படவில்லை.',
   },
 } as const;
 
@@ -105,7 +112,42 @@ export function paymentBody(f: PaymentForm): Record<string, unknown> | null {
   return { amountMinor, paidOn: f.paidOn.trim(), method: f.method, reference: f.reference.trim(), ...(settles.length === 0 ? {} : { settles }) };
 }
 
-type Why = 'nobody' | 'cannotPay' | 'needPayment';
+type Why = 'nobody' | 'cannotPay' | 'needPayment' | PayBlock;
+
+/** D-048: why head office would refuse to record a payment to this supplier — the same three checks its record route runs. */
+export type PayBlock = 'supplierHeld' | 'noVerifiedBank' | 'sharedBank';
+
+/** The supplier as head office's `GET /v1/purchase/suppliers/:supplierId` reads it — only what a payment needs. */
+export interface SupplierPayState { readonly name: string | null; readonly blocked: boolean; readonly bankVerified: boolean; readonly sharedBank: boolean }
+
+/** Read the supplier answer into what a payment needs. Pure. */
+export function supplierPayStateOf(body: unknown): SupplierPayState {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const rec = (b['supplier'] ?? null) as Record<string, unknown> | null;
+  const name = rec !== null && typeof rec['name'] === 'string' && rec['name'].trim() !== '' ? rec['name'].trim() : null;
+  return { name, blocked: b['blocked'] === true, bankVerified: b['bank'] !== null && b['bank'] !== undefined, sharedBank: b['duplicateBankAccount'] === true };
+}
+
+/**
+ * D-048: the checks head office's record route runs on the supplier (a hold; a bank, cheque or UPI payment with no checked
+ * account; an account another holder shares), run here when the payment is ASKED for — so nobody approves a payment that
+ * could never be recorded. The same rules, never new ones: cash needs no bank account, exactly as on the route. Pure.
+ */
+export function payBlockOf(state: SupplierPayState, method: string): PayBlock | null {
+  if (state.blocked) return 'supplierHeld';
+  if (method !== 'cash' && !state.bankVerified) return 'noVerifiedBank';
+  if (state.sharedBank) return 'sharedBank';
+  return null;
+}
+
+/** D-049: the payment as the approver reads it — the supplier's name, the way it is paid in words, the bills it settles. Pure. */
+export function paymentSummary(input: { readonly supplierId: string; readonly supplierName: string | null; readonly body: Record<string, unknown> }): string {
+  const b = input.body;
+  const how = supplierPaymentWords('en', `m_${String(b['method'])}`);
+  const who = input.supplierName === null ? input.supplierId : `${input.supplierName} (${input.supplierId})`;
+  const settles = Array.isArray(b['settles']) && b['settles'].length > 0 ? `, settles bill(s) ${(b['settles'] as unknown[]).map(String).join(', ')}` : '';
+  return `Payment to ${who}: ${rupees(b['amountMinor'] as number)} by ${how} on ${String(b['paidOn'])}, ref ${String(b['reference'])}${settles}`;
+}
 type Done<T> = Promise<Outcome<T, Why>>;
 
 export interface SupplierPaymentSession {
@@ -135,12 +177,18 @@ export function createSupplierPaymentSession(input: {
       const g = gate(); if (g) return g;
       const body = paymentBody(f); if (body === null) return no('needPayment');
       const supplierId = f.supplierId.trim();
+      // D-048: the supplier is checked BEFORE the approval is asked for. Head office runs the same checks again on record.
+      // Not found or not readable by this person: the ask goes on as before, and head office still refuses on record.
+      const read = await call<unknown>('GET', `/v1/purchase/suppliers/${enc(supplierId)}`);
+      if (read.result === 'lost_link') return read;
+      const state = read.result === 'ok' ? supplierPayStateOf(read.value) : null;
+      if (state !== null) { const block = payBlockOf(state, String(body['method'])); if (block !== null) return no(block); }
       const paymentId = idOf('pay');
       // The engine fingerprints the record route's details: its body plus the path ids (`actionDetails`).
       const out = await call<{ requestId: string }>('POST', '/v1/approvals/requests', {
         kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, details: { ...body, supplierId, paymentId }, valueMinor: body['amountMinor'],
-        summary: `Payment to supplier ${supplierId}: ${rupees(body['amountMinor'] as number)} by ${String(body['method'])} on ${String(body['paidOn'])}, ref ${String(body['reference'])}`,
-        reason: `Recording a payment made to supplier ${supplierId}`,
+        summary: paymentSummary({ supplierId, supplierName: state?.name ?? null, body }),
+        reason: `Recording a payment made to ${state?.name ?? `supplier ${supplierId}`}`,
       });
       return out.result === 'ok' ? { result: 'ok', value: { requestId: out.value.requestId, paymentId } } : out;
     },

@@ -180,7 +180,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Count 
       await s.page.fill('#d-reason', 'aisle 4 done');
       await s.page.click('#d-approve');
       await confirmIt(s.page); // U1 · OB-698
-      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR2} counted P1, P2 and cannot approve their own variance \\(§28\\)\\.`));
+      await says(s.page, 'd-status', new RegExp(`^Head office refused: ${MGR2} counted P1, P2 and cannot approve their own variance\\.`));
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     expect((await viewAtHeadOffice(planId)).plan.state).toBe('counting');

@@ -82,6 +82,17 @@
         <span class="count attention" id="open-count"></span>
       </div>
 
+      <!-- D-050 (fix batch 5): the account names not set up yet — said plainly, with where in the menu they are set up (the menu is the one way between screens). -->
+      <p class="result tone-error" id="map-missing" hidden role="status"><span id="map-missing-text"></span></p>
+
+      <!-- D-050: the day as the tills sent it — read BEFORE posting; facts, not entries in the books. -->
+      <section class="evidence" id="tills" hidden aria-labelledby="tills-heading">
+        <h3 id="tills-heading"></h3>
+        <p class="muted" id="tills-lead"></p>
+        <ul class="rows" id="tills-rows" aria-label="What the tills sent for the day"></ul>
+        <p class="muted" id="tills-waiting"></p>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
 
       <h3 id="journals-heading" hidden></h3>

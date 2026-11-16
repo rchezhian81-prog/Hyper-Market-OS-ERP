@@ -84,6 +84,19 @@ export interface DayBookReadData {
   readonly exceptions: readonly DayBookExceptionView[];
   readonly open: number;
   readonly asAt: string;
+  /** D-050: the day's sales, takings and refunds as the tills sent them — facts, not journals. Absent from an older head office. */
+  readonly tillsSent?: TillsSentView;
+  /** D-050: whether the shop's account names (the posting map) are set up. Absent from an older head office. */
+  readonly postingMapDefined?: boolean;
+}
+
+/** D-050: what the tills sent for the day, totalled by head office (`tillsSentOn`). */
+export interface TillsSentView {
+  readonly sales: { readonly count: number; readonly totalMinor: number };
+  readonly takings: readonly { readonly kind: string; readonly amountMinor: number }[];
+  readonly returns: { readonly count: number; readonly refundsMinor: number };
+  readonly refunds: readonly { readonly kind: string; readonly amountMinor: number }[];
+  readonly notYetPosted: number;
 }
 
 /** `POST /v1/finance/day-book/:tradingDay/post` — what the posting did (201 when a journal was appended, 200 when nothing new). */
@@ -141,7 +154,9 @@ export type CopyKey =
   | 'postDone' | 'postNothing' | 'postNoMap' | 'postRefused' | 'postLostLink' | 'postLate' | 'postCounted'
   | 'confirmTitle' | 'confirmTitleNoFigure' | 'confirmDetail' | 'confirmAuthority' | 'confirmLabel'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'tillsHeading' | 'tillsLead' | 'tillsSales' | 'tillsTakings' | 'tillsReturns' | 'tillsRefunds' | 'tillsWaiting' | 'tillsAllPosted' | 'tillsNone'
+  | 'tenderCash' | 'tenderCard' | 'tenderUpi' | 'tenderOther' | 'mapMissing';
 
 export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -171,6 +186,12 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to see the day book.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    // D-050 (fix batch 5): the day as the tills sent it, before posting.
+    tillsHeading: 'What the tills sent for this day', tillsLead: 'Read before posting — these are the bills as the tills sent them, not yet entries in the books.',
+    tillsSales: 'Sales: {count} bill(s), {total}', tillsTakings: 'Takings', tillsReturns: 'Returns: {count}, {total} given back', tillsRefunds: 'Refunds',
+    tillsWaiting: '{n} bill(s) or return(s) not yet in the books.', tillsAllPosted: 'Every bill and return of this day is in the books.', tillsNone: 'The tills sent no sale or return for this day.',
+    tenderCash: 'Cash', tenderCard: 'Card', tenderUpi: 'UPI', tenderOther: 'Other',
+    mapMissing: 'The day cannot be posted yet: the shop\'s account names have not been set up. The accountant does this once — in the menu, Cash, accounts & GST → Accounts and Tally names — and then every day posts.',
   },
   ta: {
     title: 'நாள் புத்தகம்', langName: 'English',
@@ -199,6 +220,11 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'நாள் புத்தகத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    tillsHeading: 'இந்த நாளுக்குக் கல்லாக்கள் அனுப்பியவை', tillsLead: 'பதிவு செய்யும் முன் படியுங்கள் — இவை கல்லாக்கள் அனுப்பிய பில்கள், இன்னும் புத்தகங்களில் பதிவுகள் அல்ல.',
+    tillsSales: 'விற்பனை: {count} பில்(கள்), {total}', tillsTakings: 'வசூல்', tillsReturns: 'திருப்பங்கள்: {count}, {total} திருப்பிக் கொடுக்கப்பட்டது', tillsRefunds: 'திருப்பிச் செலுத்தல்',
+    tillsWaiting: '{n} பில்(கள்) அல்லது திருப்பம்(கள்) இன்னும் புத்தகங்களில் இல்லை.', tillsAllPosted: 'இந்த நாளின் ஒவ்வொரு பில்லும் திருப்பமும் புத்தகங்களில் உள்ளன.', tillsNone: 'இந்த நாளுக்குக் கல்லாக்கள் எந்த விற்பனையையும் திருப்பத்தையும் அனுப்பவில்லை.',
+    tenderCash: 'ரொக்கம்', tenderCard: 'அட்டை', tenderUpi: 'UPI', tenderOther: 'மற்றவை',
+    mapMissing: 'இந்த நாளை இன்னும் பதிவு செய்ய முடியாது: கடையின் கணக்குப் பெயர்கள் அமைக்கப்படவில்லை. கணக்காளர் இதை ஒருமுறை செய்வார் — மெனுவில், பணம், கணக்குகள், ஜிஎஸ்டி → கணக்குகளும் டேலி பெயர்களும் — பிறகு ஒவ்வொரு நாளும் பதிவாகும்.',
   },
 };
 
@@ -274,6 +300,46 @@ export interface DayBookView {
   readonly nobodyNamed: boolean;
   /** Whether to offer the post action — this user holds `finance.journal.post`. */
   readonly mayPost: boolean;
+  /** D-050: the day as the tills sent it, in words, or null when head office did not say. */
+  readonly tillsSent: PresentedTillsSent | null;
+  /** D-050: true when head office says the account names are not set up — the page says so plainly, with a link. */
+  readonly mapMissing: boolean;
+}
+
+/** D-050: the tills' day in lines a person reads before posting. */
+export interface PresentedTillsSent {
+  readonly sales: string;
+  readonly takings: readonly string[];
+  readonly returns: string;
+  readonly refunds: readonly string[];
+  readonly waiting: string;
+  /** True when every bill and return is in the books (nothing to post). */
+  readonly allPosted: boolean;
+  readonly none: boolean;
+}
+
+const TENDER_COPY: Readonly<Record<string, CopyKey>> = { cash: 'tenderCash', card: 'tenderCard', upi: 'tenderUpi' };
+/** D-050: a tender kind in words — cash, card and UPI by name, anything else spelt out from its own name. Pure. */
+export function tenderWords(lang: Lang, kind: string): string {
+  const key = TENDER_COPY[kind];
+  if (key !== undefined) return translator(DAY_BOOK_COPY, lang)(key);
+  const spelt = kind.replace(/[_:]+/g, ' ').trim();
+  return spelt === '' ? translator(DAY_BOOK_COPY, lang)('tenderOther') : spelt.charAt(0).toUpperCase() + spelt.slice(1);
+}
+
+/** D-050: the tills' day as lines. Pure. */
+export function presentTillsSent(lang: Lang, s: TillsSentView): PresentedTillsSent {
+  const t = translator(DAY_BOOK_COPY, lang);
+  const fill = (k: CopyKey, f: Readonly<Record<string, string | number>>): string => t(k).replace(/\{(\w+)\}/g, (_, x: string) => String(f[x] ?? `{${x}}`));
+  return {
+    sales: fill('tillsSales', { count: s.sales.count, total: rupees(s.sales.totalMinor) }),
+    takings: s.takings.map((x) => `${tenderWords(lang, x.kind)}: ${rupees(x.amountMinor)}`),
+    returns: fill('tillsReturns', { count: s.returns.count, total: rupees(s.returns.refundsMinor) }),
+    refunds: s.refunds.map((x) => `${tenderWords(lang, x.kind)}: ${rupees(x.amountMinor)}`),
+    waiting: s.notYetPosted > 0 ? fill('tillsWaiting', { n: s.notYetPosted }) : t('tillsAllPosted'),
+    allPosted: s.notYetPosted === 0,
+    none: s.sales.count === 0 && s.returns.count === 0,
+  };
 }
 
 export interface DayBookSession {
@@ -293,7 +359,7 @@ const rupees = (minor: number): string => {
 
 const EMPTY_VIEW = (screenState: StatusPresentation, tradingDay: string | null, nobodyNamed: boolean, mayPost: boolean): DayBookView => ({
   screenState, tradingDay, posted: false, journals: [], accounts: [], exceptions: [], openCount: 0, resolvedCount: 0, covered: 0,
-  salesTotal: null, returnsTotal: null, nobodyNamed, mayPost,
+  salesTotal: null, returnsTotal: null, nobodyNamed, mayPost, tillsSent: null, mapMissing: false,
 });
 
 export function createDayBookSession(config: DayBookConfig, ports: DayBookPorts): DayBookSession {
@@ -366,6 +432,8 @@ export function createDayBookSession(config: DayBookConfig, ports: DayBookPorts)
         covered: data.covered,
         salesTotal: total('sale'), returnsTotal: total('sale_return'),
         nobodyNamed, mayPost,
+        tillsSent: data.tillsSent === undefined ? null : presentTillsSent(lang, data.tillsSent),
+        mapMissing: data.postingMapDefined === false,
       };
     },
 

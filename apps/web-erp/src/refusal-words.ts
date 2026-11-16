@@ -42,8 +42,24 @@ export function causeOf(out: RefusalShape): RefusalCause {
 }
 
 /** A sentence head office really wrote, as opposed to nothing, a bare "status 404" or the stand-in "Head office answered 404." (U1). */
+/** A requirement or decision code as head office writes it inside a sentence: M06-FR-01, M15, §28, ADR-0024, OB-341, QG-07, WF-03, API-03, AVR-09, PRV. */
+const CODE = String.raw`(?:M\d{2}(?:-FR-\d{2})?|§\s?\d+(?:\.\d+)*|ADR-\d{4}|OB-\d+|QG-\d{2}|WF-\d{2}|API-\d{2}|AVR-\d{2}|SF-\d{2}|GT-\d{2}|PRV)`;
+/** A bracket that starts with codes — "(M06-FR-01: an unverified bank change blocks payment)", "(§28)", "(M15-FR-03 · §28)". */
+const CODE_BRACKET = new RegExp(String.raw`\s*\(\s*${CODE}(?:\s*[·,;/&]\s*${CODE})*\s*(?::[^()]*)?\)`, 'g');
+/** A code standing alone, between dashes or at the end of a clause — " — M06-FR-01." */
+const CODE_DASHED = new RegExp(String.raw`\s*[—–-]\s*${CODE}(?:\s*[·,;/&]\s*${CODE})*(?=\s*(?:[.;,]|$))`, 'g');
+
+/**
+ * D-048 (fix batch 5): head office's sentence without the requirement codes it carries for engineers and auditors — a
+ * member of staff reads "Supplier X has no independently verified bank account on record, so a bank transfer to them
+ * cannot be recorded.", never "(M06-FR-01: an unverified bank change blocks payment)". The words themselves are unchanged. Pure.
+ */
+export function withoutRequirementCodes(text: string): string {
+  return text.replace(CODE_BRACKET, '').replace(CODE_DASHED, '').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
+
 export function headOfficeSaid(out: RefusalShape): string | null {
-  const said = (out.whatHappened ?? '').trim();
+  const said = withoutRequirementCodes((out.whatHappened ?? '').trim());
   if (said === '' || /^status \d{3}$/i.test(said) || /^Head office answered \d{3}\.?$/i.test(said) || said === (out.code ?? '')) return null;
   return said;
 }
