@@ -343,7 +343,7 @@ export function createImportApp(deps: ImportAppDeps): (req: IncomingMessage, res
         return { csv: { name: `${importId}-gaps.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'gap', 'what_to_do'], live.flatMap((r) => r.gaps.map((g) => [r.itemId, r.name, String(r.sold), g.kind, g.why])))) } };
       }
       if (what === 'facts-to-read.csv') {
-        // OB-738: every packaged grocery, loaded or not, with label facts still to read — best sellers first.
+        // OB-738 · OB-811 B: every packed good, loaded or not, with label facts still to read — best sellers first.
         return { csv: { name: `${importId}-facts-to-read.csv`, text: forExcel(csv(['item_code', 'description', 'sold_qty', 'status', 'facts_still_to_read', ...LABEL_FACTS],
           st.resolved.filter((r) => !r.excluded && r.factsToRead.length > 0).map((r) => [r.itemId, r.name, String(r.sold), r.loaded ? 'on sale at the till' : 'not loaded yet', r.factsToRead.map((k) => k.replace(/_/g, ' ')).join('; '), ...LABEL_FACTS.map((k) => r.facts[k] ?? '')]))) } };
       }

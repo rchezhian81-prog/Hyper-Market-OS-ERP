@@ -49,7 +49,7 @@ const PACKED = { country_of_origin: 'India', net_quantity: '180 ml', packer: 'Te
 describe('OB-800: the department table — from the HSN and how an item is sold, never a guess per item', () => {
   it('packaged groceries keep OB-694\'s HSN rule; dairy, ice cream, personal care and household each have their own department', () => {
     expect(departmentOf('10063020')?.categoryId).toBe('packaged-groceries');
-    expect(departmentOf('10063020')?.categoryId).toBe(LABEL_FACTS_MAY_FOLLOW_IN);
+    expect(LABEL_FACTS_MAY_FOLLOW_IN).toContain(departmentOf('10063020')?.categoryId);
     expect(departmentOf('04012000')?.categoryId).toBe('other-packaged-foods');
     expect(departmentOf('21050000')?.categoryId).toBe('other-packaged-foods');
     expect(departmentOf('33051090')?.categoryId).toBe('personal-care');
@@ -88,16 +88,17 @@ describe('OB-800: the Import page\'s rules take every department, every item kin
     expect(analyseOldSystem({ eanRows: EAN, hsnRows: HSN, purchaseRows: BUYS, today: TODAY }).counts).toMatchObject({ hsnItems: 7, items: 8 });
   });
 
-  it('with no fix: each item is in its department; packaged groceries alone load before their label facts (OB-738)', () => {
+  it('with no fix: each item is in its department; every PACKED good loads before its label facts (OB-738 · OB-811 B)', () => {
     const r = resolveImport(items(), []);
-    expect(r.filter(isReady).map((x) => x.itemId)).toEqual(['21']); // the rice: facts still to read, not a gap
-    expect(byId(r, '21').factsToRead).toHaveLength(5);
-    expect(kinds(r, '24')).toEqual(['label']); // shampoo: personal care keeps the full rule
-    expect(byId(r, '24').gaps[0]!.why).toContain('only packaged groceries may load before their label facts are read');
-    expect(byId(r, '24').factsToRead).toEqual([]);
-    expect(kinds(r, '25')).toEqual(['label']); // milk: a packed food outside packaged groceries
+    // The rice, the shampoo and the milk: facts still to read, not a gap — each listed with the facts ITS department needs.
+    expect(r.filter(isReady).map((x) => x.itemId)).toEqual(['25', '24', '21']);
+    expect(byId(r, '21').factsToRead).toEqual(['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
+    expect(byId(r, '25').factsToRead).toEqual(['allergens', 'country_of_origin', 'net_quantity', 'packer', 'consumer_care']);
+    expect(byId(r, '24').factsToRead).toEqual(['country_of_origin', 'net_quantity', 'packer', 'consumer_care']); // a shampoo is never asked for allergens
+    expect(kinds(r, '24')).toEqual([]);
+    expect(kinds(r, '25')).toEqual([]);
     expect(kinds(r, '26')).toEqual(['setup']); // cigarettes
-    expect(kinds(r, '27')).toEqual(['label', 'price']); // detergent: selling above MRP is still refused
+    expect(kinds(r, '27')).toEqual(['price']); // detergent: its facts may follow, but selling above MRP is still refused
     expect(byId(r, '27').gaps.find((g) => g.kind === 'price')!.why).toContain('above its MRP');
     expect([byId(r, '24').department, byId(r, '25').department, byId(r, '27').department]).toEqual(['personal-care', 'other-packaged-foods', 'household-general']);
     // The banana and the coconut have no pack barcode: a gap — with the hint, never a decision.
@@ -107,8 +108,11 @@ describe('OB-800: the Import page\'s rules take every department, every item kin
     expect(banana).toContain('123 may be the scale\'s PLU code');
     expect(byId(r, '22').soldAs).toBe('pack');
     expect(byId(r, '23').gaps.find((g) => g.kind === 'barcode')!.why).toContain('the old ERP has no barcode for it');
-    expect(importSummary(r).gaps).toEqual({ barcode: 2, tax: 1, price: 1, label: 3, setup: 1 });
-    expect(importSummary(r).byDepartment).toMatchObject({ 'packaged-groceries': { ready: 1, loaded: 0, waiting: 2 }, 'personal-care': { ready: 0, waiting: 1 }, 'not-known-yet': { waiting: 1 } });
+    expect(importSummary(r).gaps).toEqual({ barcode: 2, tax: 1, price: 1, label: 0, setup: 1 });
+    // Rice, shampoo, milk and detergent — and the banana and coconut, which also wait on their barcode — listed until read.
+    expect(r.filter((x) => x.factsToRead.length > 0).map((x) => x.itemId).sort()).toEqual(['21', '22', '23', '24', '25', '27']);
+    expect(importSummary(r).factsToRead).toBe(6);
+    expect(importSummary(r).byDepartment).toMatchObject({ 'packaged-groceries': { ready: 1, loaded: 0, waiting: 2 }, 'personal-care': { ready: 1, waiting: 0 }, 'other-packaged-foods': { ready: 1, waiting: 0 }, 'household-general': { ready: 0, waiting: 2 }, 'not-known-yet': { waiting: 1 } });
   });
 
   it('sold loose: marked by a person (kg with the scale\'s PLU, or by count) — then in loose foods, in kg or pieces, needing only a food\'s facts', () => {
@@ -143,7 +147,7 @@ describe('OB-800: the Import page\'s rules take every department, every item kin
 
   it('every other check stays: Finance settles an item with no HSN line, and a two-rate HSN still goes to Finance (OB-697)', () => {
     const settled = resolveImport(items(), [fix('28', 'tax', { hsn: '96031000', gstPercent: 12 }, 'accountant-01')]);
-    expect([byId(settled, '28').department, kinds(settled, '28')]).toEqual(['household-general', ['label']]);
+    expect([byId(settled, '28').department, kinds(settled, '28'), byId(settled, '28').factsToRead]).toEqual(['household-general', [], ['country_of_origin', 'net_quantity', 'packer', 'consumer_care']]);
     const twoRates = resolveImport(items(), [fix('28', 'tax', { hsn: '34022010', gstPercent: 5 }, 'accountant-01')]);
     expect(byId(twoRates, '28').gaps.find((g) => g.kind === 'tax')!.why).toContain('HSN 34022010 carries 5% and 18% across items');
     expect(byId(twoRates, '27').gaps.find((g) => g.kind === 'tax')!.why).toContain('one HSN, one rate');
@@ -178,13 +182,19 @@ describe('OB-800: the Import page\'s rules take every department, every item kin
     expect(p('24').safety).toMatchObject({ countryOfOrigin: 'India', netQuantity: '180 ml', consumerCareContact: '1800 111 111' });
   });
 
-  it('belt and braces: if a non-grocery item reached the loader with a blank label fact, the loader quarantines it in words — today\'s rule holds', () => {
-    const ready = resolveImport(items(), [fix('24', 'label', PACKED)]).filter(isReady);
+  it('a loose food still waits for its allergens and origin (OB-811 B leaves it out); belt and braces: one that reached the loader blank is quarantined in words', () => {
+    const noFacts = resolveImport(items(), [fix('22', 'loose', { soldBy: 'kg', plu: '00123' })]);
+    expect([byId(noFacts, '22').department, kinds(noFacts, '22'), byId(noFacts, '22').factsToRead]).toEqual(['loose-foods', ['label'], []]);
+    expect(byId(noFacts, '22').gaps[0]!.why).toContain('only packed goods may load before their label facts are read (OB-738 · OB-811 B)');
+    const ready = resolveImport(items(), [fix('22', 'loose', { soldBy: 'kg', plu: '00123' }), fix('22', 'label', { allergens: 'none', country_of_origin: 'India' })]).filter(isReady);
     const files = sliceFilesFor(ready, TODAY);
-    const blanked = { ...files, 'products.csv': files['products.csv'].replace('Test Care, Chennai', '') };
+    const blanked = { ...files, 'products.csv': files['products.csv'].replace(/^(22,.*),India,/m, '$1,,') };
+    expect(blanked['products.csv']).not.toBe(files['products.csv']);
     const staged = stageSlice({ departments: sliceDepartmentsFor(ready), files: blanked });
-    expect(staged.exceptions.map((e) => [e.file, e.sourceKey, e.code])).toEqual([['products.csv', '24', 'product_rules'], ['prices.csv', '24', 'depends_on_a_quarantined_row'], ['barcodes.csv', '8901234567906', 'depends_on_a_quarantined_row']]);
-    expect(staged.exceptions[0]!.reason).toContain('no packer or importer details');
+    expect(staged.exceptions.map((e) => [e.file, e.sourceKey, e.code])).toEqual([['products.csv', '22', 'product_rules'], ['prices.csv', '22', 'depends_on_a_quarantined_row'], ['barcodes.csv', '00123', 'depends_on_a_quarantined_row']]);
+    expect(staged.exceptions[0]!.reason).toContain('country of origin');
+    // A packed good with a blank fact is staged with its mark, never quarantined (OB-811 B).
+    expect(staged.bundle.products.filter((x) => x.labelFactsFollow === true).map((x) => x.productId).sort()).toEqual(['21', '24', '25']);
     // A product row naming a department the load does not list is quarantined, said, never loaded.
     const outside = stageSlice({ departments: [storeDepartment('personal-care')!].map((d) => ({ ...d, regulated: [...d.regulated] })), files });
     expect(outside.exceptions.find((e) => e.sourceKey === '21')).toMatchObject({ code: 'outside_the_department' });
@@ -207,26 +217,27 @@ describe('OB-800: the Import page\'s rules take every department, every item kin
 });
 
 describe('OB-800: the command-line converter takes the whole store too', () => {
-  it('barcoded items of every department are written; non-grocery items wait for their facts in label-facts.csv; loose, tobacco and no-HSN items are set aside with the reason', () => {
+  it('barcoded items of every department are written, packed goods with their facts still to read (OB-811 B); loose, tobacco and no-HSN items are set aside with the reason', () => {
     const run = (facts?: ReturnType<typeof labelFactsFrom>) => bpalToSlice({ eanRows: EAN, hsnRows: HSN, purchaseRows: BUYS, ratesFrom: TODAY, today: TODAY, ...(facts === undefined ? {} : { labelFacts: facts }) });
     const first = run();
     const reason = (id: string) => first.setAside.find((s) => s.itemId === id)?.reason ?? '';
-    expect(readCsv(first.files['products.csv']).map((p) => p['item_code'])).toEqual(['21']);
-    expect(reason('24')).toContain('Personal care: the label facts country of origin, net quantity, packer, consumer care are not read off the pack yet');
-    expect(reason('25')).toContain('only packaged groceries may load before them (OB-738)');
+    // The rice, the shampoo and the milk load with their facts still to read; nothing is set aside for a label fact.
+    expect(readCsv(first.files['products.csv']).map((p) => [p['item_code'], p['category']])).toEqual([['25', 'other-packaged-foods'], ['24', 'personal-care'], ['21', 'packaged-groceries']]);
+    expect(first.setAside.filter((s) => s.reason.includes('label facts'))).toEqual([]);
     expect(reason('22')).toContain('if it is sold loose (by weight or by count), mark it so on the Import page');
     expect(reason('26')).toContain('tobacco');
     expect(reason('27')).toContain('above the MRP');
     expect(reason('28')).toContain('not in the HSN report');
-    expect(first.counts).toMatchObject({ items: 8, ready: 1, factsStillToRead: 1, byDepartment: { 'packaged-groceries': 1 } });
-    // The staff's sheet lists the shampoo and the milk too, with their department, so their facts can be read and given back.
+    expect(first.counts).toMatchObject({ items: 8, ready: 3, factsStillToRead: 3, byDepartment: { 'packaged-groceries': 1, 'other-packaged-foods': 1, 'personal-care': 1 } });
+    // The staff's sheet still lists them all, with their department, so their facts can be read and given back.
     const sheet = readCsv(first.labelFactsSheet);
-    expect(sheet.map((r) => [r['item_code'], r['department']])).toEqual([['25', 'Dairy, chilled, frozen and other packed foods'], ['24', 'Personal care'], ['21', 'Packaged groceries']]);
+    expect(sheet.map((r) => [r['item_code'], r['department'], r['all_facts_read']])).toEqual([['25', 'Dairy, chilled, frozen and other packed foods', 'no'], ['24', 'Personal care', 'no'], ['21', 'Packaged groceries', 'no']]);
+    // The shampoo's four facts read: all ITS department needs — no allergens asked of a shampoo.
     const second = run(labelFactsFrom([{ item_code: '24', ...PACKED }]));
-    expect(readCsv(second.files['products.csv']).map((p) => [p['item_code'], p['category']])).toEqual([['24', 'personal-care'], ['21', 'packaged-groceries']]);
-    expect(second.departments.map((d) => d.categoryId)).toEqual(['packaged-groceries', 'personal-care']);
+    expect(readCsv(second.labelFactsSheet).find((r) => r['item_code'] === '24')!['all_facts_read']).toBe('yes');
+    expect(second.counts.factsStillToRead).toBe(2);
     const staged = stageSlice({ departments: second.departments.map((d) => ({ ...d, regulated: [...d.regulated] })), files: second.files });
     expect(staged.exceptions).toEqual([]);
-    expect(staged.bundle.products.map((p) => [p.productId, p.labelFactsFollow === true])).toEqual([['24', false], ['21', true]]);
+    expect(staged.bundle.products.map((p) => [p.productId, p.labelFactsFollow === true])).toEqual([['25', true], ['24', false], ['21', true]]);
   });
 });

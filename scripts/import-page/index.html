@@ -127,8 +127,8 @@ const $ = (id) => document.getElementById(id);
 const PAGE = 40;
 const LABELS = { allergens: 'Allergens (write "none" when the pack declares none)', country_of_origin: 'Country of origin', net_quantity: 'Net quantity (e.g. 500 g)', packer: 'Packer / manufacturer / importer, and town', consumer_care: 'Consumer care phone or email' };
 const GAP_NAMES = { barcode: 'Barcode or sold loose', tax: 'GST rate (Finance)', price: 'Price', label: 'Label facts (needed first)', setup: 'Set up on the Products page' };
-// OB-738: a PACKAGED GROCERY's label facts never hold it back. They are read off the pack later, best sellers first, and listed until done.
-const FACTS_NOTE = 'Packaged groceries only — not a blocker: the item loads and sells at the till. It is not sold online or by scan-and-go until all five facts are read off the pack. Allergens: write "none" only when the pack says so — blank means not read yet, never "none". Every other department needs its label facts before it loads.';
+// OB-738 · OB-811 B: a PACKED good's label facts never hold it back. They are read off the pack later, best sellers first, and listed until done.
+const FACTS_NOTE = 'Packed goods — not a blocker: the item loads and sells at the till, where the customer holds the printed pack. It is not sold online or by scan-and-go until its facts are read off the pack. Allergens (foods only): write "none" only when the pack says so — blank means not read yet, never "none". Loose foods need their facts before they load.';
 const SOLD = { pack: 'Sold as a pack (barcode)', loose_kg: 'Sold loose by weight (kg)', loose_count: 'Sold loose by count (pieces, no barcode)' };
 const deptName = (it) => (it.department ? (current.departmentNames[it.department] || it.department) : 'Department not known until the HSN is settled');
 const SLABS = [0, 0.25, 3, 5, 12, 18, 28, 40];
@@ -210,7 +210,7 @@ function drawTiles() {
   tile('gap:any', 'Need a fix', s.items - s.ready - s.loaded - s.excluded, 'bad');
   for (const k of ['barcode', 'tax', 'price', 'label', 'setup']) tile(`gap:${k}`, GAP_NAMES[k], s.gaps[k], s.gaps[k] > 0 ? 'bad' : 'good');
   tile('ready', 'Ready to load', s.ready, 'good');
-  tile('facts', 'Packaged groceries: facts still to read (not a blocker)', s.factsToRead, s.factsToRead > 0 ? 'later' : 'good');
+  tile('facts', 'Packed goods: facts still to read (not a blocker)', s.factsToRead, s.factsToRead > 0 ? 'later' : 'good');
   tile('loose', 'Sold loose (kg or count)', s.loose);
   tile('loaded', 'Loaded', s.loaded, 'good');
   tile('excluded', 'Left out of the load', s.excluded);
@@ -296,7 +296,7 @@ function gapForm(it, g) {
     if (!current.finance) box.append(looseForm(it));
     return box;
   } else if (g.kind === 'label') {
-    // Every department but packaged groceries (OB-738): the label facts it needs are read off the pack BEFORE it loads.
+    // Loose foods (OB-738 · OB-811 B leave them out — no pack): the label facts they need are read BEFORE they load.
     const inputs = {};
     for (const k of Object.keys(LABELS)) { const [l, i] = field(LABELS[k], it.facts[k] || ''); inputs[k] = i; row.append(l); }
     const [rl, r] = field('Why', 'read off the pack'); row.append(rl);

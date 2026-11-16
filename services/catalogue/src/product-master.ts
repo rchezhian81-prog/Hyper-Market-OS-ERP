@@ -21,7 +21,7 @@ import { ConcurrencyConflictError } from '../../../packages/persistence/src/even
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding, checkVariant, dualMrpConflict, dualMrpMessage,
-  LABEL_FACT_KEYS, LABEL_FACT_FIELD, LABEL_FACTS_MAY_FOLLOW_IN, labelFactRecorded, missingLabelFacts, outstandingLabelFacts,
+  LABEL_FACT_KEYS, LABEL_FACT_FIELD, labelFactsMayFollowInCategory, labelFactRecorded, missingLabelFacts, outstandingLabelFacts,
   type ProductRecord, type ProductLifecycle, type HandlingClass, type LabelFactsFollow,
 } from '../../../packages/product/src/index';
 import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
@@ -583,8 +583,8 @@ async function settleLabelFactsFollow(deps: ProductMasterDeps, ctx: RequestConte
     if (current !== undefined && current.lifecycle !== 'draft') {
       throw refuseFollow(422, 'label_facts_follow_only_on_first_load', `"${bare.name}" is already published, so its label facts cannot be set to follow now (OB-738 covers an item's first load from the old system only).`, 'Record its label facts with the safety save. Nothing was saved.');
     }
-    if (bare.primaryCategoryId !== LABEL_FACTS_MAY_FOLLOW_IN) {
-      throw refuseFollow(422, 'label_facts_follow_not_this_department', `Only the packaged-groceries department's items may be loaded before their label facts are read (OB-738); "${bare.name}" is in "${bare.primaryCategoryId ?? 'no category'}".`, 'Read its label facts off the pack and publish it with them. Nothing was saved.');
+    if (!labelFactsMayFollowInCategory(bare.primaryCategoryId)) {
+      throw refuseFollow(422, 'label_facts_follow_not_this_department', `Only packed goods may be loaded before their label facts are read (OB-738 · OB-811 B) — loose foods and loose goods have no pack to carry them; "${bare.name}" is in "${bare.primaryCategoryId ?? 'no category'}".`, 'Read its label facts and publish it with them. Nothing was saved.');
     }
     const perms = (await deps.categoryRegister.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? [];
     if (!perms.includes('migration.load.record')) {
