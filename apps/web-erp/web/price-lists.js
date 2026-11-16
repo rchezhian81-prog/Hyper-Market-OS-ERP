@@ -74,6 +74,9 @@ const WORDS = {
     lead: 'Prices set ahead and for a scope: one store from a date, a price zone, a channel or one customer. Head office judges each on its own MRP, buying cost and margin floor, and a big move or a loss needs a second person.',
     kSame: 'One price everywhere?', kPending: 'Switch requests waiting', kZoned: 'Stores in a price zone', yes: 'Yes — every channel charges the shelf price', no: 'No — {list} on',
     tabPrices: 'Dated prices', tabZones: 'Price zones', tabChannels: 'Channel prices', tabPack: 'Send to the tills',
+    // D-023 (fix batch 6): one everyday price screen; zones, channels and customers are the advanced part
+    advanced: 'Zones, channels and customers (advanced)', refStore: 'Store',
+    dailyNote: 'For an everyday price change use Products → Change a price. This page is for a dated price at this store (with an end date if it ends), and for sending prices to the tills. Price zones, channel prices and one customer\'s price are under "Zones, channels and customers (advanced)".',
     packLead: 'Head office signs one pack of products and prices for a store; the store computer pulls it and the tills sell from it with no network. Look first at what would go and what is left out, then send it. Drafts, products with no price or no tax rate are never sent.',
     pkStore: 'Store', pkAsOf: 'Prices as of (date)', pkPreview: 'See what would go', pkPublish: 'Send to the tills', pkAck: 'Products you checked are leaving the tills (only if head office asks)',
     pkGoes: '{n} product(s) would go to the tills of {store} as of {day}.', pkLeft: 'Left out: {id} — {why}', pkNoneLeft: 'Nothing is left out.',
@@ -115,6 +118,8 @@ const WORDS = {
     lead: 'முன்கூட்டியும் ஒரு வரம்புக்கும் அமைக்கப்படும் விலைகள்: ஒரு தேதியிலிருந்து ஒரு கடை, ஒரு விலை மண்டலம், ஒரு வழி அல்லது ஒரு வாடிக்கையாளர். தலைமை அலுவலகம் ஒவ்வொன்றையும் அதன் MRP, வாங்கும் விலை, லாப வரம்பு கொண்டு மதிப்பிடுகிறது; பெரிய மாற்றம் அல்லது நஷ்டத்திற்கு இரண்டாம் நபர் தேவை.',
     kSame: 'எல்லா இடத்திலும் ஒரே விலையா?', kPending: 'காத்திருக்கும் மாற்றக் கோரிக்கைகள்', kZoned: 'விலை மண்டலத்தில் உள்ள கடைகள்', yes: 'ஆம் — ஒவ்வொரு வழியும் அலமாரி விலையை வசூலிக்கிறது', no: 'இல்லை — {list} இயக்கத்தில்',
     tabPrices: 'தேதியிட்ட விலைகள்', tabZones: 'விலை மண்டலங்கள்', tabChannels: 'வழி விலைகள்', tabPack: 'கவுண்டர்களுக்கு அனுப்பு',
+    advanced: 'மண்டலங்கள், வழிகள், வாடிக்கையாளர்கள் (மேம்பட்டது)', refStore: 'கடை',
+    dailyNote: 'தினசரி விலை மாற்றத்திற்கு பொருட்கள் → விலையை மாற்று என்பதைப் பயன்படுத்துங்கள். இந்தப் பக்கம் இந்தக் கடையின் தேதியிட்ட விலைக்கும் (முடிவுத் தேதியுடன்), கவுண்டர்களுக்கு விலைகளை அனுப்புவதற்கும் உரியது. விலை மண்டலங்கள், வழி விலைகள், ஒரு வாடிக்கையாளரின் விலை ஆகியவை "மண்டலங்கள், வழிகள், வாடிக்கையாளர்கள் (மேம்பட்டது)" கீழ் உள்ளன.',
     packLead: 'தலைமை அலுவலகம் ஒரு கடைக்கான பொருட்களும் விலைகளும் அடங்கிய ஒரு பொதியில் கையொப்பமிடுகிறது; கடைக் கணினி அதை எடுத்துக்கொள்கிறது, கவுண்டர்கள் இணையம் இல்லாமலே அதிலிருந்து விற்கின்றன. முதலில் எது செல்லும், எது விடுபடும் என்று பாருங்கள், பிறகு அனுப்புங்கள். வரைவுகள், விலையோ வரி விகிதமோ இல்லாத பொருட்கள் ஒருபோதும் அனுப்பப்படாது.',
     pkStore: 'கடை', pkAsOf: 'விலைகள் இந்தத் தேதியின்படி', pkPreview: 'எது செல்லும் என்று பார்', pkPublish: 'கவுண்டர்களுக்கு அனுப்பு', pkAck: 'கவுண்டர்களிலிருந்து நீங்குவதாக நீங்கள் சரிபார்த்த பொருட்கள் (தலைமை அலுவலகம் கேட்டால் மட்டும்)',
     pkGoes: '{day} தேதியின்படி {store} கவுண்டர்களுக்கு {n} பொருள்(கள்) செல்லும்.', pkLeft: 'விடுபட்டது: {id} — {why}', pkNoneLeft: 'எதுவும் விடுபடவில்லை.',
@@ -361,6 +366,27 @@ function paintChannels() {
   const zv = $('v-zoned'); zv.textContent = zones === null ? t('notKnown') : String(zones.length); zv.classList.toggle('unknown', zones === null);
 }
 
+// D-023 (fix batch 6): the everyday page is one store's dated price; zones, channels and one customer's price stay reachable
+// under "advanced" (remembered in this browser only — a convenience). Nothing is removed: every route and form is still here.
+const ADVANCED_KEY = 'sre.price-lists.advanced';
+let advanced = (() => { try { return window.localStorage.getItem(ADVANCED_KEY) === 'yes'; } catch { return false; } })();
+function thisStore() {
+  const here = typeof window.sreOffice?.me === 'function' ? window.sreOffice.me().storeId : null;
+  if (typeof here === 'string' && here !== '') return here;
+  return stores.length === 1 ? stores[0] : null;
+}
+function paintAdvanced() {
+  $('advanced').checked = advanced;
+  for (const v of ['zones', 'channels']) $(`tab-${v}`).hidden = !advanced;
+  if (!advanced && (tab === 'zones' || tab === 'channels')) tab = 'prices';
+  $('p-scope-wrap').hidden = !advanced;
+  for (const id of ['o-zone', 'o-channel', 'o-customer']) $(id).hidden = !advanced;
+  if (!advanced && $('p-scope').value !== 'store') { $('p-scope').value = 'store'; $('p-ref').value = ''; paintRefs(); }
+  // the store box starts on this store (still changeable to another of the shop's stores)
+  if ($('p-scope').value === 'store' && $('p-ref').value.trim() === '') { const s = thisStore(); if (s !== null) $('p-ref').value = s; }
+  $('l-p-ref').textContent = advanced ? t('ref') : t('refStore');
+}
+
 function paint() {
   repaintShopDates();
   document.title = `SRE ${t('title')}`;
@@ -378,6 +404,9 @@ function paint() {
   $('ask').hidden = pending === null || !mayPropose;
   $('pk-publish').disabled = !mayPublishPack; $('pk-ack').disabled = !mayPublishPack; whyDisabled($('pk-publish'), mayPublishPack ? '' : 'role');
   $('pk-note').textContent = mayPublishPack ? '' : t('pkNoRight');
+  $('l-advanced').textContent = t('advanced');
+  $('daily-note').textContent = t('dailyNote');
+  paintAdvanced();
   for (const v of ['prices', 'zones', 'channels', 'pack']) {
     $(`view-${v}`).hidden = tab !== v;
     if (v === tab) $(`tab-${v}`).setAttribute('aria-current', 'page'); else $(`tab-${v}`).removeAttribute('aria-current');
@@ -491,6 +520,11 @@ $('d-run').addEventListener('click', async () => {
   $('differences').replaceChildren(...(lines.length === 0 ? [t('noDiff')] : lines).map((l) => Object.assign(document.createElement('li'), { textContent: l })));
 });
 for (const v of ['prices', 'zones', 'channels', 'pack']) $(`tab-${v}`).addEventListener('click', () => { tab = v; paint(); });
+$('advanced').addEventListener('change', () => {
+  advanced = $('advanced').checked;
+  try { window.localStorage.setItem(ADVANCED_KEY, advanced ? 'yes' : 'no'); } catch { /* a convenience only */ }
+  paint();
+});
 
 // ── W4 · Send to the tills: preview head office's pack for a store, then send it (its own permission; head office's step-up) ──
 // U2c: the pack's day on the shared dd/mm field (the last native date on this page); ISO goes to head office as before.
@@ -542,6 +576,7 @@ if (named && mayRead) {
     if (n.ok) stores = (n.body?.nodes ?? []).filter((x) => x.kind === 'branch' && x.status !== 'closed').map((x) => x.nodeId).sort();
     defaultPackStore();
     paintRefs();
+    paintAdvanced(); // D-023: the store box starts on this store once the shop's stores are known
   });
   void loadChannels();
   void loadHistory();

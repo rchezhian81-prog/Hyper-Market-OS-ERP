@@ -401,6 +401,8 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     await page.click('#save');
     await says(page, 'price-status', new RegExp(`Saved with the approval of ${OWNER}\\.$`));
 
+    // D-023 (fix batch 6): channel prices and zones are the advanced part of the page — one tick away
+    await page.check('#advanced');
     await page.click('#tab-channels');
     const app = page.locator('#switches li[data-subject="channel:app"]');
     await app.locator('input').fill('app-only offer trial (synthetic)');
@@ -412,6 +414,7 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     expect(errors).toEqual([]);
 
     const o = await open(OWNER, '/price-lists/');
+    await o.page.check('#advanced');
     await o.page.click('#tab-channels');
     const pending = o.page.locator('#pending li[data-request]');
     await pending.locator('input').fill('trial approved (synthetic)');

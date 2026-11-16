@@ -121,7 +121,8 @@ function requestNode(r, waitingForMe) {
   facts.append(fact(t('whyLabel'), r.reason));
   if (r.when) facts.append(fact(t('whenLabel'), r.when));
   if (r.amount !== null) facts.append(fact(t('amountLabel'), r.amount));
-  if (r.subjectRef) facts.append(fact(t('aboutLabel'), r.subjectRef));
+  // D-014: what it is about, by name — never a bare record id
+  if (r.about) facts.append(fact(t('aboutLabel'), r.about));
 
   li.append(head, summary, statusNode(r.status), facts);
   // D-049 (fix batch 5): a supplier payment shows the supplier by name and each bill it pays with head office's match result.
@@ -272,7 +273,8 @@ paint();
 async function refresh() {
   const api = window.approvals;
   if (!api || typeof api.refresh !== 'function') return;
-  const inbox = await api.refresh();
+  // D-014: the items' names are read alongside the inbox, so the codes a request carries are shown by name
+  const [inbox] = await Promise.all([api.refresh(), typeof api.loadNames === 'function' ? api.loadNames().catch(() => {}) : Promise.resolve()]);
   if (inbox) { inboxRead = 'read'; session = api.present(inbox); } else if (inboxRead !== 'read') inboxRead = 'unread';
   paint();
 }

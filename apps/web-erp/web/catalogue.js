@@ -1148,6 +1148,7 @@ el('save-price').addEventListener('click', () => {
         el('save-price').hidden = true;
         el('price-approval').hidden = true;
         priceAskedFor = null;
+        readHistoryAgain(proposal.draft.productId);
       }
       return;
     }
@@ -1160,6 +1161,7 @@ el('save-price').addEventListener('click', () => {
       if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
       tell(t('priceSaved'), `${inr(proposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
       el('save-price').hidden = true;
+      readHistoryAgain(proposal.draft.productId);
       return;
     }
 
@@ -1182,6 +1184,14 @@ const pair = (k) => ({ en: WORDS.en[k] ?? k, ta: WORDS.ta[k] ?? WORDS.en[k] ?? k
 const tables = {};
 function register(host, spec) { if (!window.sreOffice) return null; const have = tables[spec.id]; if (have && have.connected()) return have; tables[spec.id] = window.sreOffice.table(host, spec); return tables[spec.id]; }
 
+/** D-022 (fix batch 6): after a price is saved, read head office's record of this item again so the new price shows. */
+function readHistoryAgain(productId) {
+  if (prices === null || typeof prices.forget !== 'function') { renderHistory(productId); return; }
+  prices.forget(productId);
+  readPrices(productId);
+  renderHistory(productId);
+}
+
 function renderHistory(productId) {
   el('history-title').textContent = t('historyTitle');
   const reg = register(el('price-history'), {
@@ -1190,7 +1200,8 @@ function renderHistory(productId) {
       { key: 'from', label: pair('from'), value: (e) => e.effectiveFrom },
       { key: 'price', label: pair('price'), value: (e) => inr(e.price.minor), align: 'end' },
       { key: 'status', label: pair('status'), value: (e) => e.status.replace(/_/g, ' '), render: (e) => window.sreOffice.recordChip(e.status, e.status.replace(/_/g, ' ')) },
-      { key: 'version', label: pair('version'), value: (e) => e.version, sort: 'number', align: 'end' },
+      // D-022: identical entries are one row naming all their versions ("1, 2"), never two rows saying the same thing
+      { key: 'version', label: pair('version'), value: (e) => e.version, render: (e) => (Array.isArray(e.versions) ? e.versions.join(', ') : String(e.version)), sort: 'number', align: 'end' },
     ],
     rowKey: (e) => `${e.effectiveFrom}|${e.version}`, rowData: (e) => ({ status: e.status, version: String(e.version) }),
     empty: { title: pair('noHistory') },
@@ -1203,7 +1214,7 @@ function renderHistory(productId) {
     else reg.setState('offline', { detail: prices.why(productId) ?? t('pricesReading') });
     return;
   }
-  reg.setRows(session.historyFor(productId));
+  reg.setRows(typeof session.historyRowsFor === 'function' ? session.historyRowsFor(productId) : session.historyFor(productId));
 }
 
 // ── Where things sit (M04-FR-02) ────────────────────────────────────────────

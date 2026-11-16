@@ -98,6 +98,8 @@ export interface ApprovalsPorts {
   mayUse(): boolean;
   /** Record a decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. Only on a click. */
   decide(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string }): Promise<DecideResult>;
+  /** D-014: the names the page has read for items and places (none → the codes are shown as they are). */
+  names?(): ApprovalNames;
 }
 
 export interface ApprovalsConfig {
@@ -142,6 +144,12 @@ export type CopyKey =
   | 'deciderNamedReviewer' | 'deciderNoReviewer'
   | 'yesWord' | 'noWord'
   | 'payBankTransfer' | 'payCheque' | 'payUpi' | 'payCash'
+  // D-014 (fix batch 6): plain labels and words — no field names, no internal ids
+  | 'detailBasisContract' | 'detailDepositMinor' | 'detailRevenueShareBps' | 'detailRentMinor' | 'detailConcessionaireId'
+  | 'detailInsuranceUntil' | 'detailLicenceUntil' | 'detailName'
+  | 'basisFixedRent' | 'basisRevenueShare' | 'basisHigherOfBoth'
+  | 'refundCancellation' | 'refundSubstitution' | 'refundShortPick' | 'refundGoodwill' | 'refundReturn'
+  | 'unitEach' | 'unitKg' | 'unitG' | 'unitL' | 'unitMl' | 'evidencePhoto' | 'evidenceAttached'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   // OB-773: a store manager's catalogue change — the before and after, and whether head office made it.
@@ -236,6 +244,11 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     deciderNoReviewer: 'No security reviewer is named, so nobody can decide this yet. The owner names one on the Risk acceptance screen first.',
     yesWord: 'yes', noWord: 'no',
     payBankTransfer: 'Bank transfer', payCheque: 'Cheque', payUpi: 'UPI', payCash: 'Cash', // D-049
+    detailBasisContract: 'Basis', detailDepositMinor: 'Deposit', detailRevenueShareBps: 'Share of sales', detailRentMinor: 'Rent',
+    detailConcessionaireId: 'Concessionaire', detailInsuranceUntil: 'Insurance until', detailLicenceUntil: 'Licence until', detailName: 'Name',
+    basisFixedRent: 'Fixed rent', basisRevenueShare: 'Share of sales', basisHigherOfBoth: 'The higher of rent and share of sales',
+    refundCancellation: 'Order cancelled', refundSubstitution: 'Item substituted', refundShortPick: 'Short picked', refundGoodwill: 'Goodwill', refundReturn: 'Returned',
+    unitEach: 'each (pieces)', unitKg: 'kg', unitG: 'g', unitL: 'litre', unitMl: 'ml', evidencePhoto: 'Photo attached', evidenceAttached: 'Attached',
     scrReady: 'Showing your approvals', scrEmpty: 'Nothing is waiting for you to approve.',
     stateNotPermitted: 'You do not have permission to use approvals.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -334,6 +347,11 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     deciderNoReviewer: 'பாதுகாப்புச் சரிபார்ப்பாளர் யாரும் பெயரிடப்படவில்லை, எனவே இதை இப்போது யாரும் முடிவு செய்ய முடியாது. முதலில் உரிமையாளர் இடர் ஏற்புத் திரையில் ஒருவரைப் பெயரிட வேண்டும்.',
     yesWord: 'ஆம்', noWord: 'இல்லை',
     payBankTransfer: 'வங்கிப் பரிமாற்றம்', payCheque: 'காசோலை', payUpi: 'UPI', payCash: 'ரொக்கம்',
+    detailBasisContract: 'அடிப்படை', detailDepositMinor: 'வைப்புத் தொகை', detailRevenueShareBps: 'விற்பனைப் பங்கு', detailRentMinor: 'வாடகை',
+    detailConcessionaireId: 'கூட்டாளர்', detailInsuranceUntil: 'காப்பீடு வரை', detailLicenceUntil: 'உரிமம் வரை', detailName: 'பெயர்',
+    basisFixedRent: 'நிலையான வாடகை', basisRevenueShare: 'விற்பனைப் பங்கு', basisHigherOfBoth: 'வாடகை அல்லது விற்பனைப் பங்கு — எது அதிகமோ அது',
+    refundCancellation: 'ஆர்டர் ரத்து', refundSubstitution: 'மாற்றுப் பொருள்', refundShortPick: 'குறைவாக எடுக்கப்பட்டது', refundGoodwill: 'நல்லெண்ணம்', refundReturn: 'திருப்பி அளிக்கப்பட்டது',
+    unitEach: 'தனித்தனி (எண்ணிக்கை)', unitKg: 'கிலோ', unitG: 'கிராம்', unitL: 'லிட்டர்', unitMl: 'மி.லி', evidencePhoto: 'புகைப்படம் இணைக்கப்பட்டுள்ளது', evidenceAttached: 'இணைக்கப்பட்டுள்ளது',
     scrReady: 'உங்கள் அனுமதிகளைக் காட்டுகிறது', scrEmpty: 'நீங்கள் அனுமதிக்க எதுவும் காத்திருக்கவில்லை.',
     stateNotPermitted: 'அனுமதிகளைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -442,7 +460,61 @@ const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   maxMinutes: 'detailMaxMinutes', grantId: 'detailGrantId', event: 'detailEvent', grants: 'detailGrants',
   ownedOpenItems: 'detailOwnedOpenItems', requestId: 'detailRequestId',
   prefix: 'detailPrefix', fromComputer: 'detailFromComputer', toComputer: 'detailToComputer',
+  depositMinor: 'detailDepositMinor', revenueShareBps: 'detailRevenueShareBps', rentMinor: 'detailRentMinor', concessionaireId: 'detailConcessionaireId',
+  insuranceUntil: 'detailInsuranceUntil', licenceUntil: 'detailLicenceUntil', name: 'detailName',
 };
+
+/**
+ * D-014 (fix batch 6): the names the page could read for the codes a request carries — the store computer's own signed
+ * catalogue for items, its signed directory for places and the store. A code nobody can name is shown as it is, never a guess.
+ */
+export interface ApprovalNames {
+  product(id: string): string | undefined;
+  place(id: string): string | undefined;
+}
+const NO_NAMES: ApprovalNames = { product: () => undefined, place: () => undefined };
+
+/** The detail keys that hold a place (a store, a back store, a shelf) — read by name. */
+const PLACE_KEYS: ReadonlySet<string> = new Set(['locationId', 'storeId', 'warehouseId', 'branchId', 'fromLocationId', 'toLocationId', 'deliverToLocationId']);
+/** Internal record ids a person approving never needs to read — the request's own words already say what it is. */
+const HIDDEN_KEYS: ReadonlySet<string> = new Set(['writeOffId', 'movementId']);
+const CONTRACT_KINDS: ReadonlySet<string> = new Set(['concession_contract', 'concession_deposit_forfeit', 'concession_invoice']);
+const CONTRACT_BASIS: Readonly<Record<string, CopyKey>> = { fixed_rent: 'basisFixedRent', revenue_share: 'basisRevenueShare', higher_of_both: 'basisHigherOfBoth' };
+const REFUND_BASIS: Readonly<Record<string, CopyKey>> = { cancellation: 'refundCancellation', substitution: 'refundSubstitution', short_pick: 'refundShortPick', goodwill: 'refundGoodwill', return: 'refundReturn' };
+const UNIT_WORDS: Readonly<Record<string, CopyKey>> = { ea: 'unitEach', each: 'unitEach', pcs: 'unitEach', kg: 'unitKg', g: 'unitG', l: 'unitL', ml: 'unitMl' };
+/** Looks like a record id (`wo-uat06-demo-oil-leak`, `prod-oil`), not words a person wrote. */
+const ID_LIKE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
+const looksLikeId = (v: string): boolean => ID_LIKE.test(v) && /[-_:./0-9]/.test(v);
+
+/**
+ * One detail line in plain words (D-014): a line, `null` when it is an internal id nobody needs to read, or `undefined`
+ * when the key is not one of these and the ordinary line is used.
+ */
+function plainDetail(t: (k: CopyKey) => string, kind: string, key: string, value: unknown, names: ApprovalNames): PresentedDetail | null | undefined {
+  if (HIDDEN_KEYS.has(key)) return null;
+  // a concession contract's own id is made by head office; the person reads the concessionaire, the dates and the terms
+  if (key === 'contractId' && CONTRACT_KINDS.has(kind)) return null;
+  if (key === 'productId' && typeof value === 'string') return { key, label: t('detailProductId'), value: names.product(value) ?? value };
+  if (PLACE_KEYS.has(key) && typeof value === 'string') {
+    const known = DETAIL_COPY[key];
+    // a branch is the store; any other place key reads as its words without "id" ("From location", never "From location id")
+    const label = known !== undefined ? t(known) : key === 'branchId' ? t('detailStoreId') : key === 'warehouseId' ? t('detailLocationId') : spellOut(key.replace(/Id$/, ''));
+    return { key, label, value: names.place(value) ?? value };
+  }
+  if (key === 'locationIds' && Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+    return { key, label: t('detailLocationIds'), value: value.length === 0 ? '—' : (value as string[]).map((v) => names.place(v) ?? v).join(', ') };
+  }
+  if (key === 'uom' && typeof value === 'string') { const w = UNIT_WORDS[value.toLowerCase()]; return { key, label: t('detailUom'), value: w === undefined ? value : t(w) }; }
+  if (key === 'evidenceRef' && typeof value === 'string') return { key, label: t('detailEvidenceRef'), value: t(/photo|image|img|jpe?g|png/i.test(value) ? 'evidencePhoto' : 'evidenceAttached') };
+  if (key === 'basis' && typeof value === 'string') {
+    if (CONTRACT_KINDS.has(kind)) { const w = CONTRACT_BASIS[value]; return { key, label: t('detailBasisContract'), value: w === undefined ? spellOut(value) : t(w) }; }
+    const w = REFUND_BASIS[value];
+    // "Reason for the refund" only for a refund's reason; any other basis (a rebate's) is just its basis, in words
+    if (w === undefined && kind !== 'order_refund') return { key, label: t('detailBasisContract'), value: spellOut(value) };
+    return { key, label: t('detailBasis'), value: w === undefined ? spellOut(value) : t(w) };
+  }
+  return undefined;
+}
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────
 
@@ -519,6 +591,8 @@ export interface PresentedRequest {
   readonly label: string;
   readonly summary: string;
   readonly subjectRef: string;
+  /** D-014: what it is about, in words — the item or place by name, or null when it is only a record id. */
+  readonly about: string | null;
   readonly requestedBy: string;
   readonly reason: string;
   readonly requestedAt: string;
@@ -626,14 +700,30 @@ function catalogueChangeLines(t: (k: CopyKey) => string, d: Readonly<Record<stri
   return [...subject, ...lines];
 }
 
+/**
+ * D-014: what the request is about, as a person reads it — the item or place by name; nothing when it is only a record id
+ * (`wo-uat06-demo-oil-leak`) or a code the details already name. Words someone wrote are kept as they are.
+ */
+function aboutOf(r: ApprovalRequestView, details: readonly PresentedDetail[], names: ApprovalNames): string | null {
+  const ref = r.subjectRef.trim();
+  if (ref === '') return null;
+  const named = names.product(ref) ?? names.place(ref);
+  if (named !== undefined) return details.some((d) => d.value === named) ? null : named;
+  if (Object.values(r.details).some((v) => v === ref)) return null;
+  return looksLikeId(ref) ? null : ref;
+}
+
 /** One request presented for reading — label, amount, details as key: value lines, and its status chip. */
-export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForReader = false): PresentedRequest {
+export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForReader = false, names: ApprovalNames = NO_NAMES): PresentedRequest {
   const t = translator(APPROVALS_COPY, lang);
   const kindKey = KIND_COPY[r.kind];
   const details: PresentedDetail[] = r.kind === 'catalogue_change' && Array.isArray(r.details['changes']) ? catalogueChangeLines(t, r.details)
-    : Object.keys(r.details).map((key) => {
+    : Object.keys(r.details).flatMap((key): PresentedDetail[] => {
+      const plain = plainDetail(t, r.kind, key, r.details[key], names);
+      if (plain === null) return [];
+      if (plain !== undefined) return [plain];
       const known = DETAIL_COPY[key];
-      return { key, label: known === undefined ? spellOut(key) : t(known), value: detailValue(t, key, r.details[key]) };
+      return [{ key, label: known === undefined ? spellOut(key) : t(known), value: detailValue(t, key, r.details[key]) }];
     });
   return {
     requestId: r.requestId,
@@ -641,6 +731,7 @@ export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForRea
     label: kindKey === undefined ? (r.label.trim() === '' ? spellOut(r.kind) : r.label) : t(kindKey),
     summary: r.summary,
     subjectRef: r.subjectRef,
+    about: aboutOf(r, details, names),
     requestedBy: r.requestedBy,
     reason: r.reason,
     requestedAt: r.requestedAt,
@@ -679,8 +770,9 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
         .slice()
         .sort((a, b) => (b.valueMinor ?? 0) - (a.valueMinor ?? 0) || a.requestedAt.localeCompare(b.requestedAt));
       const mineRows = inbox.mine.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
-      const waiting = waitingRows.map((r) => presentRequest(lang, r, true));
-      const mine = mineRows.map((r) => presentRequest(lang, r, false));
+      const names = ports.names?.() ?? NO_NAMES;
+      const waiting = waitingRows.map((r) => presentRequest(lang, r, true, names));
+      const mine = mineRows.map((r) => presentRequest(lang, r, false, names));
       const state = waiting.length === 0 ? 'empty' : 'ready';
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),

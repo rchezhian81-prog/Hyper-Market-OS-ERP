@@ -43,7 +43,7 @@ import {
   type SellRefusal, type ValidationResult,
 } from '../../../packages/product/src/index';
 import {
-  activatePriceChange, priceHistory, proposePriceChange, resolvePrice, rollBackPrice,
+  activatePriceChange, priceHistory, priceHistoryRows, type PriceHistoryRow, proposePriceChange, resolvePrice, rollBackPrice,
   type CostRegister, type PriceChangeOutcome, type PriceEntry, type PriceProposal, type PriceScope,
 } from '../../../packages/price-list/src/index';
 import {
@@ -722,6 +722,9 @@ export interface CatalogueSession {
   /** Who changed this product's price, from what, to what, and when (M05-FR-01). */
   historyFor(productId: string): readonly PriceEntry[];
 
+  /** D-022: the same history as a person reads it — identical entries are one row naming all their versions. */
+  historyRowsFor(productId: string): readonly PriceHistoryRow[];
+
   /** What a promotion would do to margin before anybody launches it (M05-FR-04). */
   simulate(input: Parameters<typeof simulatePromotion>[0]): SimulationResult;
 
@@ -1146,6 +1149,8 @@ export function createCatalogueSession(
     rollBack: (entry) => rollBackPrice(entry, config.today),
 
     historyFor: (productId) => priceHistory(ports.priceEntries(), productId),
+
+    historyRowsFor: (productId) => priceHistoryRows(ports.priceEntries(), productId),
 
     simulate: (input) => simulatePromotion(input),
 
