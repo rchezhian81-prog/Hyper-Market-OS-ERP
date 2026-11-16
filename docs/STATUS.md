@@ -18,6 +18,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 6 of THE PLAN (16 November 2026) · D-014, D-022, D-023, D-025 · OB-826
+- **Done (on its PR, after #946):**
+  - Approvals use names and plain words, with internal ids hidden.
+  - Price history refreshes after saving.
+  - One everyday price-list screen; zones, channels and customers are under "advanced".
+  - "Work out a markdown" is filled in from the near-expiry row.
+- **With this, every daily-work defect that does not wait on an owner answer is fixed or partly fixed.** Still open:
+  - Waiting on the owner: D-003, D-013, D-021, D-034, D-046, D-052.
+  - Margin per department: D-057.
+  - Fewer refill steps: D-035.
+  - Clearance rows still show codes: D-025.
+  - Every label task is "due now" after the first price load: D-026.
+- **Next:** the full Bpal load with the owner (step 4 of THE PLAN), using docs/runbooks/bpal-full-load-export-sheet.md and the MG-02 backup check.
+
 ## Fix batch 5 of THE PLAN (16 November 2026) · warehouse, accountant, owner screens · OB-822 – OB-825
 - **Merged before this:** batches 4a (#944) and 4b (#945).
 - **Done (on its PR):**
