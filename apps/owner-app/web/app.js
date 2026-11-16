@@ -65,7 +65,7 @@ const WORDS = {
     asAt: 'as at', offline: 'No signal on this phone. Every figure here is what it last received — see the time above.',
     notKnownNoData: 'Not known — no figures from this shop have reached this phone yet.',
     noBillsYet: 'no bills yet today', noCostToday: 'no cost on today\'s bills',
-    leftOut: 'bills with no cost are left out', refundLine: 'refund', noCostLine: 'no cost',
+    leftOut: 'bills with no cost are left out of the margin', leftOutOne: 'bill with no cost is left out of the margin', refundLine: 'refund', noCostLine: 'no cost',
     unlisted: 'more counted in this figure that the store computer did not list — the lines above do not add up to it.',
     nothingReached: 'nothing has reached this phone', howTheDayGoes: 'How the day is going',
     hourTitle: 'Bills by the hour, today', hourHeading: 'Hour', takenHeading: 'Taken',
@@ -116,7 +116,7 @@ const WORDS = {
     asAt: 'இந்த நேரத்தில்', offline: 'இந்த ஃபோனில் சிக்னல் இல்லை. இங்குள்ள ஒவ்வொரு எண்ணும் கடைசியாகக் கிடைத்தது — மேலே உள்ள நேரத்தைப் பாருங்கள்.',
     notKnownNoData: 'தெரியவில்லை — இந்தக் கடையின் எந்த எண்ணும் இன்னும் இந்த ஃபோனுக்கு வரவில்லை.',
     noBillsYet: 'இன்று இன்னும் பில் இல்லை', noCostToday: 'இன்றைய பில்களுக்குச் செலவு இல்லை',
-    leftOut: 'செலவு இல்லாத பில்கள் சேர்க்கப்படவில்லை', refundLine: 'திருப்பித் தந்தது', noCostLine: 'செலவு இல்லை',
+    leftOut: 'செலவு இல்லாத பில்கள் லாபத்தில் சேர்க்கப்படவில்லை', leftOutOne: 'செலவு இல்லாத பில் லாபத்தில் சேர்க்கப்படவில்லை', refundLine: 'திருப்பித் தந்தது', noCostLine: 'செலவு இல்லை',
     unlisted: 'இந்த எண்ணில் சேர்ந்தவை, ஆனால் கடை கணினி பட்டியலிடாதவை — மேலே உள்ள வரிகள் இதற்குக் கூடாது.',
     nothingReached: 'இந்த ஃபோனுக்கு எதுவும் வரவில்லை', howTheDayGoes: 'இன்றைய நாள் எப்படிப் போகிறது',
     hourTitle: 'இன்று மணி வாரியாகப் பில்கள்', hourHeading: 'மணி', takenHeading: 'வசூல்',
@@ -194,7 +194,7 @@ const KPI_TILES = [
   { kpi: 'grossSales', label: 'sales', cls: 'lead', from: (k, tk) => ({ value: inr(tk ? tk.takenMinor : k.grossSalesMinor) }) },
   { kpi: 'margin', label: 'margin', cls: '', from: (k, tk) => (tk && tk.marginUnknownBills > 0 && k.basketCount === 0
     ? { value: null, why: t('noCostToday') }
-    : { value: inr(k.marginMinor), why: tk && tk.marginUnknownBills > 0 ? `${tk.marginUnknownBills} ${t('leftOut')}` : '' }) },
+    : { value: inr(k.marginMinor), why: tk && tk.marginUnknownBills > 0 ? `${tk.marginUnknownBills} ${t(tk.marginUnknownBills === 1 ? 'leftOutOne' : 'leftOut')}` : '' }) },
   { kpi: 'baskets', label: 'bills', cls: '', from: (k, tk) => ({ value: String(tk ? tk.bills : k.basketCount) }) },
   // OB-640 (owner, 1 Nov 2026): the takings ÷ EVERY bill, as the model works it out; an average of no bills is not known.
   { kpi: 'averageBasket', label: 'averageBasket', cls: 'basket', from: (k, tk) => (tk === undefined

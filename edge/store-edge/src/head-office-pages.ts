@@ -289,6 +289,8 @@ export const HEAD_OFFICE_PAGE_BUILDERS = Object.freeze({
   'floor-devices': findingsPagePayload,
   // U6: the shelf labels of the box's own store.
   esl: findingsPagePayload,
+  // D-058: Product details shows the price this store's tills charge at the top, so it needs the box's own store.
+  'product-details': findingsPagePayload,
 }) as Readonly<Record<HeadOfficePageScreen, (input: PackBranchSource) => Record<string, unknown>>>;
 
 /** A same-origin call meant for head office's API (`/v1/…`), which the store computer itself never answers. */

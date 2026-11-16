@@ -104,6 +104,25 @@ export interface ReportingPorts {
   unitsWithNoCategory(): number;
   /** Department id → the name a person would recognise. Absent means the box was never told. */
   categoryNames(): Readonly<Record<string, string>> | undefined;
+  /**
+   * D-057: per department id ('' = in no department) — items counted, grams weighed (kg and L lines), and the money its
+   * lines took (what the till charged on each line). Absent on an older store computer: the report is then units only.
+   */
+  salesByCategory?(): Readonly<Record<string, DepartmentSales>> | undefined;
+}
+
+/** D-057: one department's day — items, weighed grams, the money its lines took. */
+export interface DepartmentSales {
+  readonly items: number;
+  readonly grams: number;
+  readonly takenMinor: number;
+  /** Lines from a till that wrote no line money: the department's money is then incomplete, and says so. */
+  readonly linesWithNoMoney: number;
+}
+
+/** 2500 → "2.500 kg". */
+export function kgWords(grams: number): string {
+  return `${Math.trunc(grams / 1000)}.${String(grams % 1000).padStart(3, '0')} kg`;
 }
 
 /** What one trading day took, as this box recorded it. */
@@ -432,6 +451,27 @@ export function createReportingSession(
         const units = ports.unitsByCategory();
         const names = ports.categoryNames();
         const unplaced = ports.unitsWithNoCategory();
+        // D-057: with the store computer's line money, each department says what it took (₹), how many items and how many
+        // kg — largest money first; a weighed line is its weight, never "1 item".
+        const sales = ports.salesByCategory?.();
+        if (sales !== undefined) {
+          const name = (id: string): string => (id === '' ? 'In no department' : names?.[id] ?? id);
+          const byMoney = Object.entries(sales).sort((a, b) => b[1].takenMinor - a[1].takenMinor || a[0].localeCompare(b[0]));
+          const incomplete = (d: DepartmentSales): string | undefined =>
+            d.linesWithNoMoney === 0 ? undefined : `${d.linesWithNoMoney} line(s) came from a till that did not write what it charged, so this department's money is not complete`;
+          return {
+            figures: [
+              ...byMoney.map(([id, d]) => at(`${name(id)} — taken`, incomplete(d) === undefined ? d.takenMinor : undefined, 'minor_currency', incomplete(d))),
+              ...byMoney.filter(([, d]) => d.items > 0).map(([id, d]) => at(`${name(id)} — items`, d.items, 'count')),
+            ],
+            rows: byMoney.map(([id, d]) => ({
+              department: name(id),
+              takenMinor: incomplete(d) === undefined ? String(d.takenMinor) : 'not complete',
+              items: String(d.items),
+              weighed: d.grams === 0 ? '' : kgWords(d.grams),
+            })),
+          };
+        }
         const ordered = Object.entries(units).sort((a, b) => b[1] - a[1]);
         return {
           figures: [

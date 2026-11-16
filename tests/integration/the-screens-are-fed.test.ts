@@ -2044,9 +2044,17 @@ describe('the reporting screen, fed by the box', () => {
     const outcome = reporting.run('units_by_category');
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    // Named, not shown as an id, because the box carried the department names too.
-    expect(outcome.result.figures[0]?.name).toBe('Grocery');
-    expect(outcome.result.figures[0]?.valueMinor).toBe(1);
+    // Named, not shown as an id, because the box carried the department names too. D-057: items and rupees per department;
+    // this fixture's line is an older till's, with no line money — so the department's money says "not complete", never short.
+    expect(outcome.result.figures.find((f) => f.name === 'Grocery — items')?.valueMinor).toBe(1);
+    const taken = outcome.result.figures.find((f) => f.name === 'Grocery — taken');
+    expect(taken?.valueMinor).toBeUndefined();
+    expect(taken?.notAvailableBecause).toMatch(/not complete/);
+    // A line that carries what the till charged gives the department its rupees.
+    const priced: LoggedSale = { ...SALE, lines: [{ productId: (SALE.lines ?? [])[0]!.productId, quantityMinor: 1, uom: 'ea', lineTotalMinor: 14_500 }] };
+    const paid = bootReporting((await payloadFromScreen(await serve(snapshotOf({ sales: [priced] })), 'reporting'))! as never)!.run('units_by_category');
+    if (!paid.ok) throw new Error('refused');
+    expect(paid.result.figures.find((f) => f.name === 'Grocery — taken')?.valueMinor).toBe(14_500);
   });
 
   it('counts an item the catalogue places in no department apart, never inside one', async () => {
@@ -2056,8 +2064,8 @@ describe('the reporting screen, fed by the box', () => {
     expect(payload['unitsWithNoCategory']).toBe(2);
     const outcome = bootReporting(payload as never)!.run('units_by_category');
     if (!outcome.ok) return;
-    expect(outcome.result.figures.find((f) => f.name === 'Items in no department')?.valueMinor).toBe(2);
-    expect(outcome.result.figures.find((f) => f.name === 'Grocery')?.valueMinor).toBe(1);
+    expect(outcome.result.figures.find((f) => f.name === 'In no department — items')?.valueMinor).toBe(2);
+    expect(outcome.result.figures.find((f) => f.name === 'Grocery — items')?.valueMinor).toBe(1);
   });
 
   it('serves the screen nothing at all without the tenant’s own freshness thresholds', async () => {

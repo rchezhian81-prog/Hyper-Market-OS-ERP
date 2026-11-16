@@ -29,7 +29,9 @@ describe('the owner\'s Today shows takings it cannot cost', () => {
 
   it('costed and uncosted together: the margin is over the costed bills, and the rest is said beside it', () => {
     const b = buildBrief(base({ sales: [costed('s1')], uncosted: { bills: 1, takenMinor: 4_000, tenderMix: { cash: 4_000 } } }));
-    expect(b.headline).toMatch(/^1 bill today, ₹105\.00 taken, margin ₹30\.00 .* Also 1 bill \(₹40\.00\) whose margin is not known — products with no cost\.$/);
+    // D-055: the sentence leads with the tiles' totals (2 bills, ₹145.00); the margin is the costed bill's, said in few words.
+    expect(b.headline).toBe('2 bills today, ₹145.00 taken, average basket ₹72.50, margin ₹30.00 (30.0%) on the 1 bill with a cost.');
+    expect(b.headline).not.toMatch(/whose margin is not known/);
     expect(b.takings).toEqual({ bills: 2, takenMinor: 14_500, marginUnknownBills: 1, refunds: 0, refundedMinor: 0, averageBasketMinor: 7_250, tenderMix: { cash: 14_500 } });
   });
 
