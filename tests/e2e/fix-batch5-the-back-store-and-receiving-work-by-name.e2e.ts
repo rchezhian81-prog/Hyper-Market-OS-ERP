@@ -172,7 +172,8 @@ describe.skipIf(!HAVE_BROWSER)('Fix batch 5: receiving and the back store work b
     await says(page, '#goods-in-refresh', 'Refresh the list');
     // The button reads the list again from the store computer (a reload: the work done here is on the device's queue).
     await page.evaluate(() => { (globalThis as unknown as Record<string, unknown>)['beforeRefresh'] = true; });
-    await page.click('#goods-in-refresh');
+    // Wait for the reload itself, then for the fresh page, rather than polling across the navigation under load.
+    await Promise.all([page.waitForEvent('load', { timeout: 30_000 }), page.click('#goods-in-refresh')]);
     await page.waitForFunction(() => (globalThis as unknown as Record<string, unknown>)['beforeRefresh'] === undefined && (globalThis as unknown as Record<string, unknown>)['warehouseSession'] !== undefined, undefined, { timeout: 15_000 });
     await page.waitForSelector('#goods-in-asat:not([hidden])', { timeout: 15_000 });
     await says(page, '#goods-in-heading', 'Waiting to be put away');
