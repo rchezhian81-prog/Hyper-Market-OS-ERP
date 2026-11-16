@@ -51452,7 +51452,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "identity.role.grant",
+        "x-permission": "identity.role.request",
         "x-entitlement": null,
         "x-reauth": {
           "withinSeconds": 300,
@@ -51512,7 +51512,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"identity.role.grant\", or a recent re-authentication is needed.",
+            "description": "Not \"identity.role.request\", or a recent re-authentication is needed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -51544,7 +51544,7 @@
             "bearer": []
           }
         ],
-        "x-permission": "identity.role.grant",
+        "x-permission": "identity.role.request",
         "x-entitlement": null,
         "x-idempotent": true,
         "parameters": [
@@ -51596,7 +51596,7 @@
             "$ref": "#/components/responses/Unauthorised"
           },
           "403": {
-            "description": "Not \"identity.role.grant\".",
+            "description": "Not \"identity.role.request\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -144020,7 +144020,70 @@
           "requests": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/GrantRequestRecord"
+              "type": "object",
+              "required": [
+                "youMayDecide",
+                "state",
+                "grantId",
+                "userId",
+                "roleId",
+                "branchScope",
+                "requestedBy",
+                "requestedAt",
+                "reason"
+              ],
+              "properties": {
+                "youMayDecide": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "granted",
+                    "pending",
+                    "rejected"
+                  ]
+                },
+                "decidedBy": {
+                  "type": "string"
+                },
+                "decidedAt": {
+                  "type": "string"
+                },
+                "grantId": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": "string"
+                },
+                "roleId": {
+                  "type": "string"
+                },
+                "branchScope": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "const": "all"
+                    }
+                  ]
+                },
+                "requestedBy": {
+                  "type": "string"
+                },
+                "requestedAt": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -144035,7 +144098,8 @@
           "grants",
           "count",
           "roles",
-          "awaitingOwnerApproval"
+          "awaitingOwnerApproval",
+          "pendingForYou"
         ],
         "properties": {
           "asAt": {
@@ -144088,6 +144152,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RoleAwaitingOwnerApproval"
+            }
+          },
+          "pendingForYou": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantRequestRecord"
             }
           }
         },

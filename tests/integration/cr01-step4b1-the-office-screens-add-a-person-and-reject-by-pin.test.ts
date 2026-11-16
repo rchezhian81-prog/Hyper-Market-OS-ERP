@@ -150,10 +150,12 @@ describe('the office screens on the store PC add a person, reject a request, and
     const noReason = await post(url, '/office/privilege/grants/g-box-r/reject', owner, { pin: pinOf('u-owner') });
     expect(noReason.status).toBe(400);
     expect(await noReason.json()).toMatchObject({ refusedBecause: 'not_readable' });
-    // The manager does not hold the checker's word: his PIN is not confirmed for it.
+    // The manager may not decide his own ask (OB-804 A: a store manager decides only a role the owner asked for) — head office
+    // refuses it by name, and the request still waits.
     const byMgr = await post(url, '/office/privilege/grants/g-box-r/reject', mgr, { pin: pinOf('u-mgr'), request: { reason: 'no' } });
     expect(byMgr.status).toBe(403);
-    expect(ho.seen.length).toBe(seenBefore);
+    expect(await byMgr.json()).toMatchObject({ ok: false, refusedBecause: 'head_office_refused', code: 'only_the_owners_ask_is_yours' });
+    expect(ho.seen.length).toBe(seenBefore + 1);
 
     const r = await post(url, '/office/privilege/grants/g-box-r/reject', owner, { pin: pinOf('u-owner'), request: { reason: 'enough cashiers now' } });
     const body = await r.json() as Record<string, unknown>;
@@ -161,7 +163,7 @@ describe('the office screens on the store PC add a person, reject a request, and
     expect(body).toMatchObject({ ok: true, kind: 'role_grant_rejection', result: { state: 'rejected', rejectedBy: 'u-owner' } });
     const pending = await ho.h.request({ method: 'GET', path: '/v1/identity/grants/pending', userId: 'u-owner', tenantId: T });
     expect(JSON.stringify(pending.body)).not.toContain('g-box-r');
-    expect((await logged(dir)).filter((x) => x['act'] === 'role_grant_rejection').map((x) => x['outcome'])).toEqual(['refused:not_readable', 'refused:pin_not_confirmed', 'sealed', 'accepted']);
+    expect((await logged(dir)).filter((x) => x['act'] === 'role_grant_rejection').map((x) => x['outcome'])).toEqual(['refused:not_readable', 'sealed', 'refused:head_office_refused', 'sealed', 'accepted']);
     expect(ho.seen.join('\n')).not.toContain(pinOf('u-owner'));
   });
 
@@ -176,7 +178,8 @@ describe('the office screens on the store PC add a person, reject a request, and
     expect(asMgr.status, JSON.stringify(m)).toBe(200);
     expect(m).toMatchObject({ ok: true, for: 'u-mgr', mayAsk: true, mayRead: false, storeId: 'S1' });
     expect((m['grants'] as { userId: string }[]).map((g) => g.userId)).toContain('u-mgr');
-    expect(m['pending']).toBeUndefined();
+    // OB-804 A: only the owner's asks he may decide — his own ask is not among them.
+    expect(m['pending']).toEqual([]);
 
     const owner = await signIn(url, 'u-owner');
     const o = await (await fetch(`${url}/office/privilege/users-view`, { headers: { cookie: owner } })).json() as Record<string, unknown>;

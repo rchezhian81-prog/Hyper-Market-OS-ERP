@@ -177,6 +177,13 @@ export interface IdentityDeps {
    * with a person's roles. Optional on a bare stub (then the rule cannot be judged and is not claimed).
    */
   readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /**
+   * OB-804 A (owner, 16 Nov 2026, in writing): a role the OWNER asks to give a person is approved by a store manager, in
+   * their own session — the owner is always one of the two, and nobody approves their own request. Who counts as the owner
+   * and the checker, and the roles a store manager never approves (the owner's own role, the platform administrator's, and
+   * every role ADR-0034 locks). Absent: only a holder of `identity.role.grant` decides, as before.
+   */
+  readonly whenTheOwnerAsksForARole?: OwnerAskedGrantRule;
   /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
   readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
@@ -214,7 +221,74 @@ const noRevocationStore = () => apiError(503, {
   nextSafeAction: 'Wire the identity ledger (production always does). Nothing was revoked.',
 });
 
+/** The authority that may approve or reject any role grant request (the owner's; §28 — never their own). */
+export const ROLE_GRANT_PERMISSION = 'identity.role.grant';
+/** The authority both people act under on the grant decision routes; the handler then judges who may decide (OB-804 A). */
+export const ROLE_GRANT_DECISION_ROUTE_PERMISSION = 'identity.role.request';
+
+/** OB-804 A: who asks as the owner, who approves then, and the roles that checker never approves. */
+export interface OwnerAskedGrantRule {
+  readonly ownerRoleId: string;
+  readonly checkerRoleId: string;
+  readonly notApprovedByTheChecker: ReadonlySet<string>;
+}
+
+/** Why this person may not decide this role grant request, or undefined when they may (OB-804 A · §28). */
+export function grantDeciderRefusal(input: {
+  readonly deciderPermissions: readonly string[];
+  readonly deciderRoles: readonly string[];
+  readonly askerRoles: readonly string[];
+  readonly roleId: string;
+  readonly requestedBy: string;
+  readonly rule: OwnerAskedGrantRule | undefined;
+}): { readonly code: string; readonly whatHappened: string; readonly nextSafeAction: string } | undefined {
+  if (input.deciderPermissions.includes(ROLE_GRANT_PERMISSION)) return undefined;
+  const nothing = 'Nobody\'s access changed.';
+  const rule = input.rule;
+  if (rule === undefined || !input.deciderRoles.includes(rule.checkerRoleId)) {
+    return { code: 'not_yours_to_decide', whatHappened: 'Only the owner approves or rejects a role — and a store manager a role the owner asked for (owner decision OB-804 A).', nextSafeAction: `The owner decides it. ${nothing}` };
+  }
+  if (!input.askerRoles.includes(rule.ownerRoleId)) {
+    return { code: 'only_the_owners_ask_is_yours', whatHappened: `${input.requestedBy} asked for this role, not the owner. A store manager approves only a role the owner asked for (owner decision OB-804 A); this one the owner decides.`, nextSafeAction: `The owner approves or rejects it. ${nothing}` };
+  }
+  if (input.roleId === rule.ownerRoleId || rule.notApprovedByTheChecker.has(input.roleId)) {
+    return { code: 'role_not_approved_by_a_store_manager', whatHappened: `A store manager never approves giving the role "${input.roleId}": it is the owner's own role, the IT administrator's, or a locked role (a machine's, an outside party's, the committee's or the security reviewer's — ADR-0034).`, nextSafeAction: `Reject it; the owner arranges it another way. ${nothing}` };
+  }
+  return undefined;
+}
+
+/** OB-804 A: why this person may not decide this request, judged on the roles held now — undefined when they may. */
+export async function grantDecisionRefusalFor(
+  deps: Pick<IdentityDeps, 'permissionsOf' | 'rolesHeldBy' | 'whenTheOwnerAsksForARole'>, tenantId: string, deciderId: string,
+  pending: { readonly roleId: string; readonly requestedBy: string },
+): Promise<ReturnType<typeof grantDeciderRefusal>> {
+  const held = async (u: string): Promise<readonly string[]> => (deps.rolesHeldBy === undefined ? [] : await deps.rolesHeldBy(tenantId, u));
+  return grantDeciderRefusal({
+    deciderPermissions: await deps.permissionsOf(tenantId, deciderId), deciderRoles: await held(deciderId),
+    askerRoles: await held(pending.requestedBy), roleId: pending.roleId, requestedBy: pending.requestedBy, rule: deps.whenTheOwnerAsksForARole,
+  });
+}
+
+/** OB-804 A: the pending requests this person may decide — never their own; every other for the owner's authority. */
+export async function grantRequestsDecidableBy(
+  deps: Pick<IdentityDeps, 'permissionsOf' | 'rolesHeldBy' | 'whenTheOwnerAsksForARole'>, tenantId: string, userId: string,
+  requests: readonly GrantRequestRecord[],
+): Promise<readonly GrantRequestRecord[]> {
+  const out: GrantRequestRecord[] = [];
+  for (const g of requests) {
+    if (g.state !== 'pending' || g.requestedBy === userId) continue;
+    if (await grantDecisionRefusalFor(deps, tenantId, userId, g) === undefined) out.push(g);
+  }
+  return out;
+}
+
 export function identityRoutes(deps: IdentityDeps): readonly Route[] {
+  /** OB-804 A: refuse, by name, a person who may not decide this request; the owner's authority decides as before. */
+  const mayDecide = async (tenantId: string, deciderId: string, pending: { readonly roleId: string; readonly requestedBy: string }): Promise<void> => {
+    const refusal = await grantDecisionRefusalFor(deps, tenantId, deciderId, pending);
+    if (refusal !== undefined) throw apiError(403, { ...refusal, wasItSaved: 'not_saved' });
+  };
+  const decidableBy = (tenantId: string, userId: string, requests: readonly GrantRequestRecord[]) => grantRequestsDecidableBy(deps, tenantId, userId, requests);
   return [
     {
       api: 'API-01', method: 'GET', path: '/v1/identity/me',
@@ -334,13 +408,16 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
     {
       // THE CHECKER's act: approve a pending request under your own sign-in. The engine's §28 rules now run with the
       // REAL two people — the approver cannot be the requester, and cannot hand out a permission they do not hold.
+      // OB-804 A: gated on the word both people hold (`identity.role.request`); WHO may decide is judged here — the owner's
+      // authority (`identity.role.grant`) any request, a store manager only one the owner asked for (`grantDeciderRefusal`).
       api: 'API-01', method: 'POST', path: '/v1/identity/grants/:grantId/approve',
-      permission: 'identity.role.grant', idempotent: true,
+      permission: ROLE_GRANT_DECISION_ROUTE_PERMISSION, idempotent: true,
       reauth: { withinSeconds: 300, amr: ['mfa'] },
       handler: async (ctx) => {
         const grantId = (ctx.params['grantId'] ?? '').trim();
         const pending = (await deps.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
         if (pending === undefined) throw notFound(`grant request ${grantId}`);
+        await mayDecide(ctx.tenantId, ctx.userId, pending);
         if (pending.state === 'granted') {
           return { status: 201, body: { granted: `already granted, approved by ${pending.decidedBy ?? 'a second person'}`, alreadyGranted: true } };
         }
@@ -419,7 +496,7 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
     {
       // Refuse a pending request under your own sign-in, with a reason. A rejection is a fact that stays, not a deletion.
       api: 'API-01', method: 'POST', path: '/v1/identity/grants/:grantId/reject',
-      permission: 'identity.role.grant', idempotent: true,
+      permission: ROLE_GRANT_DECISION_ROUTE_PERMISSION, idempotent: true,
       handler: async (ctx) => {
         const grantId = (ctx.params['grantId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -428,6 +505,8 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         const pending = (await deps.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
         if (pending === undefined) throw notFound(`grant request ${grantId}`);
+        // OB-804 A: the same people who may approve it may turn it down (a store manager only the owner's asks).
+        await mayDecide(ctx.tenantId, ctx.userId, pending);
         if (pending.state !== 'pending') return { status: 200, body: { grantId, state: pending.state, alreadyDecided: true } };
         await deps.recordGrantRejection(ctx.tenantId, { grantId, rejectedBy: ctx.userId, reason: b['reason'] as string, at: deps.now() });
         return { status: 200, body: { grantId, state: 'rejected', rejectedBy: ctx.userId } };
@@ -447,14 +526,22 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         const grants = [...await deps.currentGrants(ctx.tenantId)]
           .map((g) => ({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope }))
           .sort((a, b) => a.userId.localeCompare(b.userId) || a.roleId.localeCompare(b.roleId));
-        return { status: 200, body: { asAt: deps.now(), grants, count: grants.length, roles: await deps.roles(ctx.tenantId), awaitingOwnerApproval: deps.rolesAwaitingOwnerApproval ?? [] } };
+        // OB-804 A: the role asks waiting that THIS person may decide (a store manager: the owner's asks) — so the person
+        // who asks for roles also sees what waits for them, without the owner's wider read of every request.
+        const pendingForYou = await decidableBy(ctx.tenantId, ctx.userId, await deps.grantRequests(ctx.tenantId));
+        return { status: 200, body: { asAt: deps.now(), grants, count: grants.length, roles: await deps.roles(ctx.tenantId), awaitingOwnerApproval: deps.rolesAwaitingOwnerApproval ?? [], pendingForYou } };
       },
     },
     {
       // What is waiting for a second person.
       api: 'API-01', method: 'GET', path: '/v1/identity/grants/pending',
       permission: 'identity.role.read',
-      handler: async (ctx) => ({ status: 200, body: { requests: (await deps.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending') } }),
+      handler: async (ctx) => {
+        const pending = (await deps.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending');
+        const mine = new Set((await decidableBy(ctx.tenantId, ctx.userId, pending)).map((g) => g.grantId));
+        // OB-804 A: each says whether the reader may decide it (never their own; a store manager only the owner's asks).
+        return { status: 200, body: { requests: pending.map((g) => ({ ...g, youMayDecide: mine.has(g.grantId) })) } };
+      },
     },
     {
       // Allocate the next gap-free document number for a type (M01-FR-02). Idempotent: a retry under

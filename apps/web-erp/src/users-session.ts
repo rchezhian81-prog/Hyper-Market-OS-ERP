@@ -26,7 +26,7 @@ export const USERS_COPY = {
     title: 'Users & roles',
     lead: 'Who may do what in the shop. A role is given and taken back by two people: one asks, the owner approves — never for themselves. Every change is recorded.',
     holdersH: 'Who holds which role', holdersLead: 'Every role a person holds now, and where. Take a role back here; the owner approves it.',
-    pendingH: 'Waiting for a second person', pendingLead: 'Roles somebody asked to give. The owner approves or rejects each one — never their own request.',
+    pendingH: 'Waiting for a second person', pendingLead: 'Roles somebody asked to give. The owner approves or rejects each one; a role the owner asked for, a store manager approves — never anyone\'s own request.',
     giveH: 'Give a role', giveLead: 'Ask for a role for a member of staff. It is given only when the owner approves it.',
     mineH: 'My changes', mineLead: 'Take-backs and limits you asked for. Once the owner approves one on the Approvals page, apply it here.',
     waitingH: 'Roles waiting for the owner\'s approval', waitingLead: 'Written from the roadmap, not live yet. Nobody can be given one until the owner reads these permissions and approves them in writing.',
@@ -43,10 +43,10 @@ export const USERS_COPY = {
     statusWaiting: 'waiting for the owner', statusApproved: 'approved — apply it now', statusRejected: 'rejected', statusExpired: 'approval ran out — ask again', statusUsed: 'done',
     kind_access_change: 'Take back a role / leaving', kind_department_scope_change: 'Limit to departments', kind_role_scope_change: 'Limit to suppliers, categories or locations',
     asked: 'Asked. The owner approves it on the Approvals page; then press “Apply now” here.',
-    given: 'Asked. It is given once the owner approves it.', approved: 'Approved — the role is given.', rejected: 'Rejected.', applied: 'Done — recorded.',
+    given: 'Asked. It is given once the owner approves it (a store manager approves what the owner asked for).', approved: 'Approved — the role is given.', rejected: 'Rejected.', applied: 'Done — recorded.',
     blocked: 'Head office did not apply it:',
     nobody: 'Nobody is signed in on this screen, so nothing can be done here.',
-    cannotRead: 'Your role cannot see who holds which role.', cannotAsk: 'Your role cannot ask for a role change.', cannotDecide: 'Only the owner approves a role.',
+    cannotRead: 'Your role cannot see who holds which role.', cannotAsk: 'Your role cannot ask for a role change.', cannotDecide: 'Only the owner approves a role — or a store manager, a role the owner asked for.',
     needPerson: 'Type the person\'s sign-in id.', needRole: 'Choose a role.', needStores: 'Name the stores, or type "all".', needReason: 'Say why.',
     yourself: 'Nobody asks for a change to their own access. Ask somebody else to do it.',
     waitingRole: 'That role waits for the owner\'s approval (OB-615) — nobody can be given it yet.',
@@ -77,7 +77,7 @@ export const USERS_COPY = {
     title: 'பயனர்களும் பங்குகளும்',
     lead: 'கடையில் யார் என்ன செய்யலாம். ஒரு பங்கு இருவரால் வழங்கப்பட்டு திரும்பப் பெறப்படுகிறது: ஒருவர் கேட்கிறார், உரிமையாளர் அனுமதிக்கிறார் — தனக்காக ஒருபோதும் இல்லை. ஒவ்வொரு மாற்றமும் பதிவு செய்யப்படுகிறது.',
     holdersH: 'யார் எந்தப் பங்கை வகிக்கிறார்', holdersLead: 'ஒவ்வொருவரும் இப்போது வகிக்கும் பங்குகள், எங்கே. இங்கே ஒரு பங்கைத் திரும்பப் பெறலாம்; உரிமையாளர் அனுமதிக்கிறார்.',
-    pendingH: 'இரண்டாவது நபருக்காகக் காத்திருப்பவை', pendingLead: 'யாரோ வழங்கக் கேட்ட பங்குகள். உரிமையாளர் ஒவ்வொன்றையும் அனுமதிக்கிறார் அல்லது மறுக்கிறார் — தன் சொந்தக் கோரிக்கையை ஒருபோதும் இல்லை.',
+    pendingH: 'இரண்டாவது நபருக்காகக் காத்திருப்பவை', pendingLead: 'யாரோ வழங்கக் கேட்ட பங்குகள். உரிமையாளர் ஒவ்வொன்றையும் அனுமதிக்கிறார் அல்லது மறுக்கிறார்; உரிமையாளர் கேட்ட பங்கை கடை மேலாளர் அனுமதிக்கிறார் — யாருடைய சொந்தக் கோரிக்கையையும் ஒருபோதும் இல்லை.',
     giveH: 'ஒரு பங்கை வழங்கு', giveLead: 'ஒரு பணியாளருக்கு ஒரு பங்கைக் கேளுங்கள். உரிமையாளர் அனுமதித்த பிறகே வழங்கப்படும்.',
     mineH: 'என் மாற்றங்கள்', mineLead: 'நீங்கள் கேட்ட திரும்பப் பெறுதல்களும் வரம்புகளும். உரிமையாளர் ஒப்புதல்கள் பக்கத்தில் அனுமதித்ததும், இங்கே செயல்படுத்துங்கள்.',
     waitingH: 'உரிமையாளரின் ஒப்புதலுக்காகக் காத்திருக்கும் பங்குகள்', waitingLead: 'திட்ட வரைவிலிருந்து எழுதப்பட்டவை, இன்னும் நடைமுறையில் இல்லை. உரிமையாளர் இந்த அனுமதிகளைப் படித்து எழுத்தில் ஒப்புதல் தரும் வரை யாருக்கும் வழங்க முடியாது.',
@@ -94,10 +94,10 @@ export const USERS_COPY = {
     statusWaiting: 'உரிமையாளருக்காகக் காத்திருக்கிறது', statusApproved: 'அனுமதிக்கப்பட்டது — இப்போது செயல்படுத்துங்கள்', statusRejected: 'மறுக்கப்பட்டது', statusExpired: 'அனுமதி காலாவதியானது — மீண்டும் கேளுங்கள்', statusUsed: 'முடிந்தது',
     kind_access_change: 'பங்கைத் திரும்பப் பெறுதல் / வெளியேறுதல்', kind_department_scope_change: 'துறைகளுக்கு வரம்பிடு', kind_role_scope_change: 'சப்ளையர்கள், வகைகள் அல்லது இடங்களுக்கு வரம்பிடு',
     asked: 'கேட்கப்பட்டது. உரிமையாளர் ஒப்புதல்கள் பக்கத்தில் அனுமதிப்பார்; பின் இங்கே “இப்போது செயல்படுத்து” அழுத்துங்கள்.',
-    given: 'கேட்கப்பட்டது. உரிமையாளர் அனுமதித்ததும் வழங்கப்படும்.', approved: 'அனுமதிக்கப்பட்டது — பங்கு வழங்கப்பட்டது.', rejected: 'மறுக்கப்பட்டது.', applied: 'முடிந்தது — பதிவு செய்யப்பட்டது.',
+    given: 'கேட்கப்பட்டது. உரிமையாளர் அனுமதித்ததும் வழங்கப்படும் (உரிமையாளர் கேட்டதை கடை மேலாளர் அனுமதிக்கிறார்).', approved: 'அனுமதிக்கப்பட்டது — பங்கு வழங்கப்பட்டது.', rejected: 'மறுக்கப்பட்டது.', applied: 'முடிந்தது — பதிவு செய்யப்பட்டது.',
     blocked: 'தலைமை அலுவலகம் இதைச் செயல்படுத்தவில்லை:',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை, எனவே இங்கே எதுவும் செய்ய முடியாது.',
-    cannotRead: 'யார் எந்தப் பங்கை வகிக்கிறார் என்று உங்கள் பங்கு பார்க்க முடியாது.', cannotAsk: 'உங்கள் பங்கு பங்கு மாற்றத்தைக் கேட்க முடியாது.', cannotDecide: 'உரிமையாளர் மட்டுமே ஒரு பங்கை அனுமதிக்கிறார்.',
+    cannotRead: 'யார் எந்தப் பங்கை வகிக்கிறார் என்று உங்கள் பங்கு பார்க்க முடியாது.', cannotAsk: 'உங்கள் பங்கு பங்கு மாற்றத்தைக் கேட்க முடியாது.', cannotDecide: 'உரிமையாளர் மட்டுமே ஒரு பங்கை அனுமதிக்கிறார் — அல்லது உரிமையாளர் கேட்ட பங்கை கடை மேலாளர்.',
     needPerson: 'நபரின் உள்நுழைவு அடையாளத்தைத் தட்டச்சு செய்யுங்கள்.', needRole: 'ஒரு பங்கைத் தேர்ந்தெடுங்கள்.', needStores: 'கடைகளைக் குறிப்பிடுங்கள், அல்லது "all" எனத் தட்டச்சு செய்யுங்கள்.', needReason: 'ஏன் என்று சொல்லுங்கள்.',
     yourself: 'யாரும் தன் சொந்த அணுகலுக்கு மாற்றம் கேட்பதில்லை. வேறொருவரிடம் கேளுங்கள்.',
     waitingRole: 'அந்தப் பங்கு உரிமையாளரின் ஒப்புதலுக்காகக் காத்திருக்கிறது (OB-615) — இன்னும் யாருக்கும் வழங்க முடியாது.',
@@ -158,7 +158,11 @@ export function isMachineRole(r: { readonly id: string; readonly name: string })
 }
 export interface Grant { readonly userId: string; readonly roleId: string; readonly branchScope: Scope }
 export interface Holder { readonly userId: string; readonly grants: readonly Grant[] }
-export interface PendingGrant extends Grant { readonly grantId: string; readonly requestedBy: string; readonly requestedAt: string; readonly reason: string; readonly mine: boolean }
+export interface PendingGrant extends Grant {
+  readonly grantId: string; readonly requestedBy: string; readonly requestedAt: string; readonly reason: string; readonly mine: boolean;
+  /** OB-804 A: head office says this reader may approve or reject it (the owner any but their own; a store manager the owner's asks). */
+  readonly youMayDecide: boolean;
+}
 export type RequestStatus = 'waiting' | 'approved' | 'rejected' | 'expired' | 'used';
 export const CHANGE_KINDS = ['access_change', 'department_scope_change', 'role_scope_change'] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number];
@@ -401,15 +405,24 @@ export function createUsersSession(input: {
       return { result: 'ok', value: [...by].sort(([a], [b]) => a.localeCompare(b)).map(([u, grants]) => ({ userId: u, grants })) };
     },
     pending: async () => {
-      const g = gate('read'); if (g) return g;
-      const out = onStorePc ? await officeView() as Outcome<{ pending?: unknown[] }, never> : await call<{ requests?: unknown[] }>('GET', '/v1/identity/grants/pending');
+      // OB-804 A: the owner reads every waiting ask; a store manager (who asks, but does not read them all) reads the
+      // owner's asks they may approve — `pendingForYou` on the grants read, or the store PC's view.
+      const g = !named ? no('nobody') : !may.read && !may.ask ? no('cannotRead') : undefined; if (g) return g;
+      const out = onStorePc ? await officeView() as Outcome<{ pending?: unknown[] }, never>
+        : may.read ? await call<{ requests?: unknown[] }>('GET', '/v1/identity/grants/pending')
+        : await call<{ pendingForYou?: unknown[] }>('GET', '/v1/identity/grants');
       if (out.result !== 'ok') return out;
-      const listed = 'pending' in out.value ? out.value.pending : (out.value as { requests?: unknown[] }).requests;
+      const v = out.value as { pending?: unknown[]; requests?: unknown[]; pendingForYou?: unknown[] };
+      const forYou = !onStorePc && !may.read;
+      const listed = v.pending ?? v.requests ?? v.pendingForYou;
       const rows = (listed ?? []).flatMap((r): PendingGrant[] => {
         if (!isObj(r) || !isStr(r['grantId']) || !isStr(r['userId']) || !isStr(r['roleId']) || !isStr(r['requestedBy'])) return [];
         const scope = scopeOf(r['branchScope']); if (scope === undefined) return [];
+        const mine = r['requestedBy'] === userId;
+        // Head office's word on who may decide; an older head office without it: the owner's authority, never one's own.
+        const youMayDecide = !mine && (forYou || (typeof r['youMayDecide'] === 'boolean' ? r['youMayDecide'] : may.decide));
         return [{ grantId: r['grantId'], userId: r['userId'], roleId: r['roleId'], branchScope: scope, requestedBy: r['requestedBy'],
-          requestedAt: isStr(r['requestedAt']) ? r['requestedAt'] : '', reason: isStr(r['reason']) ? r['reason'] : '', mine: r['requestedBy'] === userId }];
+          requestedAt: isStr(r['requestedAt']) ? r['requestedAt'] : '', reason: isStr(r['reason']) ? r['reason'] : '', mine, youMayDecide }];
       });
       return { result: 'ok', value: rows };
     },
@@ -448,7 +461,8 @@ export function createUsersSession(input: {
       return out.result === 'ok' ? { result: 'ok', value: { grantId } } : out;
     },
     decide: async (grantId, decision, reason) => {
-      const g = gate('decide'); if (g) return g;
+      // OB-804 A: the owner, or a store manager for the owner's asks — head office judges which; never one's own.
+      const g = !named ? no('nobody') : !may.decide && !may.ask ? no('cannotDecide') : undefined; if (g) return g;
       if (decision === 'reject' && reason.trim() === '') return no('needReason');
       if (input.office !== undefined) {
         const pin = await input.office.askPin(decision);
