@@ -164,7 +164,8 @@ function paint() {
   // D-050 (fix batch 5): the account names not set up — plainly, with the link; and the day as the tills sent it, before posting.
   el('map-missing').hidden = !(permitted && view.mapMissing);
   el('map-missing-text').textContent = t('mapMissing');
-  const tills = view.tillsSent;
+  // A view without the tills' figures (head office cannot say, or an older store computer) shows no tills section.
+  const tills = view.tillsSent ?? null;
   el('tills').hidden = !(permitted && tills !== null);
   el('tills-heading').textContent = t('tillsHeading');
   el('tills-lead').textContent = t('tillsLead');

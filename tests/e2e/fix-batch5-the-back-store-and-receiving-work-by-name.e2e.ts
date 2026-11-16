@@ -106,7 +106,9 @@ describe.skipIf(!HAVE_BROWSER)('Fix batch 5: receiving and the back store work b
   const bannerUp = (page: Page) => page.waitForFunction(() => !((globalThis as unknown as Win).document.querySelector('#banner')!).hidden);
 
   async function openAs(edge: EdgeProcess, path: string, ready: keyof Win): Promise<{ page: Page; errors: string[] }> {
-    const context = await browser.newContext();
+    // The offline cache worker would answer a reload itself, past the routes that sign the person in — block it, so the
+    // Refresh button's reload reaches the store computer as the person, as on the real handheld.
+    const context = await browser.newContext({ serviceWorkers: 'block' });
     stops.push(() => context.close());
     const page = await context.newPage();
     const errors: string[] = [];
