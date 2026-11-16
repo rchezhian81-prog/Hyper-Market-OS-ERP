@@ -10274,6 +10274,50 @@
         }
       }
     },
+    "/v1/catalogue/pack/not-sent": {
+      "get": {
+        "operationId": "getCataloguePackNotSent",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCataloguePackNotSentReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/pack/preview": {
       "get": {
         "operationId": "getCataloguePackPreview",
@@ -50714,6 +50758,173 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/identity/box/role-permissions": {
+      "post": {
+        "operationId": "postIdentityBoxRolePermissions",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxRolePermissionsRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxRolePermissionsReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/box/role-permissions/{approvalId}/decide": {
+      "post": {
+        "operationId": "postIdentityBoxRolePermissionsByApprovalIdDecide",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "identity.grants.sync",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "approvalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIdentityBoxRolePermissionsByApprovalIdDecideRequest"
+              }
+            }
+          }
+        },
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxRolePermissionsByApprovalIdDecideReply200"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"identity.grants.sync\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "2XX": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostIdentityBoxRolePermissionsByApprovalIdDecideReply2XX"
+                }
+              }
+            }
           }
         }
       }
@@ -126982,6 +127193,31 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/index.ts"
       },
+      "GetCataloguePackNotSentReply": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "notSent",
+          "count"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "notSent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotSentToTills"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/index.ts"
+      },
       "GetCataloguePackPreviewReply": {
         "type": "object",
         "required": [
@@ -161544,6 +161780,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "waitingForTills",
                 "replacedBy",
                 "assignee",
                 "assignedToMe",
@@ -161570,6 +161807,9 @@
                   ]
                 },
                 "dueNow": {
+                  "type": "boolean"
+                },
+                "waitingForTills": {
                   "type": "boolean"
                 },
                 "replacedBy": {
@@ -161743,6 +161983,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "waitingForTills",
                 "replacedBy",
                 "assignee",
                 "assignedToMe",
@@ -161769,6 +162010,9 @@
                   ]
                 },
                 "dueNow": {
+                  "type": "boolean"
+                },
+                "waitingForTills": {
                   "type": "boolean"
                 },
                 "replacedBy": {
@@ -207290,6 +207534,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207382,6 +207628,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207474,6 +207722,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207566,6 +207816,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207658,6 +207910,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207766,6 +208020,354 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxRolePermissionsByApprovalIdDecideReply200": {
+        "type": "object",
+        "required": [
+          "approvalId",
+          "decided",
+          "applied",
+          "roleId",
+          "permission",
+          "change",
+          "via",
+          "privilegeRequestId"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "decided": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ]
+          },
+          "via": {
+            "type": "string"
+          },
+          "privilegeRequestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxRolePermissionsByApprovalIdDecideReply2XX": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "approvalId",
+              "decided",
+              "applied",
+              "roleId",
+              "permission",
+              "change",
+              "result",
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "approvalId": {
+                "type": "string"
+              },
+              "decided": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "boolean"
+              },
+              "roleId": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": {
+                  "x-untyped": "unknown"
+                }
+              },
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxRolePermissionsByApprovalIdDecideRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
+              "role_request",
+              "till_pin_change"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "via": {
+            "x-unchecked": true,
+            "description": "Read and passed on as given; the handler does not check its type."
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxRolePermissionsReply": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "change",
+              "approvedBy",
+              "affectedPeople",
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "change": {
+                "type": "object",
+                "required": [
+                  "roleId",
+                  "permission",
+                  "change",
+                  "reason",
+                  "requestId"
+                ],
+                "properties": {
+                  "roleId": {
+                    "type": "string"
+                  },
+                  "permission": {
+                    "type": "string"
+                  },
+                  "change": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "approvedBy": {
+                "x-untyped": "unknown"
+              },
+              "affectedPeople": {
+                "x-untyped": "unknown"
+              },
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "via",
+              "privilegeRequestId"
+            ],
+            "properties": {
+              "via": {
+                "type": "string"
+              },
+              "privilegeRequestId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ],
+        "x-body-schema": "derived",
+        "x-derived-from": "services/identity/src/box-privilege.ts"
+      },
+      "PostIdentityBoxRolePermissionsRequest": {
+        "type": "object",
+        "required": [
+          "body",
+          "confirmedAt",
+          "kind",
+          "requestId",
+          "tenantId",
+          "userId",
+          "via"
+        ],
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "x-unchecked": true,
+                  "description": "Read and passed on as given; the handler does not check its type."
+                }
+              }
+            ]
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "deciderVerified": {
+            "type": "object",
+            "properties": {
+              "laneId": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              },
+              "via": {
+                "x-unchecked": true,
+                "description": "Read and passed on as given; the handler does not check its type."
+              }
+            },
+            "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "access_change_decision",
+              "access_change_request",
+              "person_provision",
+              "role_grant_approval",
+              "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -207875,6 +208477,8 @@
               "person_provision",
               "role_grant_approval",
               "role_grant_rejection",
+              "role_permission_decision",
+              "role_permission_request",
               "role_request",
               "till_pin_change"
             ]
@@ -221397,57 +222001,118 @@
         "x-derived-from": "services/inventory/src/index.ts"
       },
       "PostInventoryWriteOffByWriteOffIdReply": {
-        "type": "object",
-        "required": [
-          "id",
-          "lossType",
-          "qtyRemoved",
-          "valueMinor",
-          "requiredApproval",
-          "evidenceRef"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "lossType": {
-            "type": "string",
-            "enum": [
-              "damage",
-              "destruction",
-              "donation",
-              "expiry",
-              "wastage"
-            ]
-          },
-          "qtyRemoved": {
-            "type": "number"
-          },
-          "valueMinor": {
-            "type": "number"
-          },
-          "valueSource": {
-            "type": "string",
-            "enum": [
-              "cost_unknown",
-              "stock_cost"
-            ]
-          },
-          "requiredApproval": {
-            "type": "boolean"
-          },
-          "evidenceRef": {
-            "anyOf": [
-              {
-                "type": "null"
-              },
-              {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "lossType",
+              "qtyRemoved",
+              "valueMinor",
+              "requiredApproval",
+              "evidenceRef",
+              "alreadyRecorded"
+            ],
+            "properties": {
+              "id": {
                 "type": "string"
+              },
+              "lossType": {
+                "type": "string",
+                "enum": [
+                  "damage",
+                  "destruction",
+                  "donation",
+                  "expiry",
+                  "wastage"
+                ]
+              },
+              "qtyRemoved": {
+                "type": "number"
+              },
+              "valueMinor": {
+                "type": "number"
+              },
+              "valueSource": {
+                "type": "string",
+                "enum": [
+                  "cost_unknown",
+                  "stock_cost"
+                ]
+              },
+              "requiredApproval": {
+                "type": "boolean"
+              },
+              "evidenceRef": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "alreadyRecorded": {
+                "type": "boolean"
               }
-            ]
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "lossType",
+              "qtyRemoved",
+              "valueMinor",
+              "requiredApproval",
+              "evidenceRef"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "lossType": {
+                "type": "string",
+                "enum": [
+                  "damage",
+                  "destruction",
+                  "donation",
+                  "expiry",
+                  "wastage"
+                ]
+              },
+              "qtyRemoved": {
+                "type": "number"
+              },
+              "valueMinor": {
+                "type": "number"
+              },
+              "valueSource": {
+                "type": "string",
+                "enum": [
+                  "cost_unknown",
+                  "stock_cost"
+                ]
+              },
+              "requiredApproval": {
+                "type": "boolean"
+              },
+              "evidenceRef": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
           }
-        },
-        "additionalProperties": true,
+        ],
         "x-body-schema": "derived",
         "x-derived-from": "services/inventory/src/write-off.ts"
       },
@@ -243060,6 +243725,7 @@
       "PostPricesChangesReply201": {
         "type": "object",
         "required": [
+          "tills",
           "productId",
           "priceMinor",
           "verdict",
@@ -243069,6 +243735,19 @@
           "marginFloor"
         ],
         "properties": {
+          "tills": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TillDeliveryAnswer"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "productId": {
             "type": "string"
           },
@@ -243544,6 +244223,7 @@
       "PostPricesListByProductIdEntriesByEntryIdReply201": {
         "type": "object",
         "required": [
+          "tills",
           "entryId",
           "productId",
           "scope",
@@ -243557,6 +244237,19 @@
         "properties": {
           "batchId": {
             "type": "string"
+          },
+          "tills": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TillDeliveryAnswer"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "entryId": {
             "type": "string"
@@ -303178,6 +303871,48 @@
         },
         "additionalProperties": true
       },
+      "NotSentToTills": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "productId",
+          "priceMinor",
+          "reason",
+          "why",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "priceMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "needs_the_owner",
+              "refused",
+              "starts_later"
+            ]
+          },
+          "why": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "NotSoldProduct": {
         "type": "object",
         "required": [
@@ -328796,6 +329531,60 @@
           }
         },
         "additionalProperties": true
+      },
+      "TillDeliveryAnswer": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "storeId",
+              "sent",
+              "reason",
+              "why"
+            ],
+            "properties": {
+              "storeId": {
+                "type": "string"
+              },
+              "sent": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "storeId",
+              "sent",
+              "version",
+              "withinMinutes"
+            ],
+            "properties": {
+              "storeId": {
+                "type": "string"
+              },
+              "sent": {
+                "type": "boolean",
+                "const": true
+              },
+              "version": {
+                "type": "number"
+              },
+              "withinMinutes": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
       },
       "TillDeliveryGiven": {
         "type": "object",

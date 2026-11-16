@@ -36,18 +36,25 @@ const packPrice = async (req: Awaited<ReturnType<typeof shop>>['req']): Promise<
   const pack = (await req('GET', '/v1/catalogue/pack')).body as { snapshot: { version: number; products: { productId: string; unitPriceMinor: number }[] } };
   return { version: pack.snapshot.version, price: pack.snapshot.products.find((p) => p.productId === 'p-salt')?.unitPriceMinor };
 };
+/** The pack head office holds now — read only, nothing pressed. */
+const packNow = async (req: Awaited<ReturnType<typeof shop>>['req']): Promise<{ version: number; price: number | undefined }> => {
+  const pack = (await req('GET', '/v1/catalogue/pack')).body as { snapshot: { version: number; products: { productId: string; unitPriceMinor: number }[] } };
+  return { version: pack.snapshot.version, price: pack.snapshot.products.find((p) => p.productId === 'p-salt')?.unitPriceMinor };
+};
 const change = (priceMinor: number, over: Record<string, unknown> = {}) =>
   ({ productId: 'p-salt', priceMinor, mrpMinor: 2_500, costMinor: 1_000, currency: 'INR', marginFloorBps: 0, ...over });
 
 describe('SF-01 — a price saved on the screen reaches the till', () => {
   it('THE AUDIT\'S CASE: ₹20 → ₹18 saved; the next pack for the store carries ₹18, and a sale at ₹18 on it is clean', async () => {
     const { req } = await shop();
-    expect(await packPrice(req)).toEqual({ version: 1, price: 2_000 });
+    // OB-806 A: the accepted ₹20 store price was sent to the tills on its own — pack v1, nobody pressed "Send to the tills".
+    expect(await packNow(req)).toEqual({ version: 1, price: 2_000 });
 
     const saved = await req('POST', '/v1/prices/changes', change(1_800));
     expect(saved.status).toBe(201);
-    expect(saved.body).toMatchObject({ verdict: 'ok', operativeAt: ['store-1'], effectiveFrom: TODAY });
-    const next = await packPrice(req);
+    expect(saved.body).toMatchObject({ verdict: 'ok', operativeAt: ['store-1'], effectiveFrom: TODAY, tills: [{ storeId: 'store-1', sent: true, version: 2 }] });
+    // ...and the accepted ₹18 is in the next signed pack for the store at once (OB-806 A) — no manual send.
+    const next = await packNow(req);
     expect(next).toEqual({ version: 2, price: 1_800 });
 
     // a till on the new pack charges ₹18: no price finding; one still charging ₹20 on it is flagged

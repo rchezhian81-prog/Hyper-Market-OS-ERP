@@ -152,7 +152,9 @@ describe.skipIf(!HAVE_BROWSER)('D-019: the Price lists page takes the MRP printe
     // The owner checks the pack and approves, in his own session; Save sends exactly that entry naming him.
     expect((await decide(ho, TENANT, OWNER, waiting!.requestId, 'approved', 'checked the pack (synthetic)')).status).toBe(201);
     await page.click('#save');
-    await says(page, 'price-status', new RegExp(`Saved with the approval of ${OWNER}\\.$`));
+    // OB-806 A · P-08: the save also says what happened at the tills — here the store's pack could not go (this synthetic
+    // item has no GST rate, so the pack would be empty), and the page says so plainly instead of a silent "saved".
+    await says(page, 'price-status', new RegExp(`Saved with the approval of ${OWNER}\\. (The tills will have it within 5 minutes\\.|It has NOT reached the tills yet: .*)$`));
     const sent = entryPosts(posts);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toMatchObject({ priceMinor: 3_200, mrpMinor: 3_500, approvalId: waiting!.requestId });

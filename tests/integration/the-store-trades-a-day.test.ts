@@ -94,6 +94,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
 
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, idempotencyKey?: string): Promise<Reply> =>
     cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }) });
+  // OB-806 A: an accepted store price is sent to the tills on its own, so the version head office holds is read, never assumed.
+  const headOfficeVersion = async (): Promise<number> => ((await call('GET', '/v1/catalogue/pack', OWNER)).body as { snapshot: { version: number } }).snapshot.version;
 
   /** A pack FILE with policies only — no products: the shape the one-PC install starts with. The catalogue comes from head office. */
   async function startBox(token: string, dir?: string): Promise<EdgeProcess> {
@@ -154,11 +156,11 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
 
     // ── The pull: head office's signed pack, verified with the shared key, adopted, persisted.
     const pulled = await edge.refreshPack!();
-    expect(pulled).toMatchObject({ status: 'updated', heldVersion: 1 });
+    expect(pulled).toMatchObject({ status: 'updated', heldVersion: await headOfficeVersion() });
 
     // ── F13 FIXED: the SERVED till is built from the pulled pack — priced, taxed, barcoded as head office published it.
     const served = (await servedTillCatalogue(edge))!;
-    expect(served).toMatchObject({ source: 'head_office', version: 1, tenantId: cloud.tenantId });
+    expect(served).toMatchObject({ source: 'head_office', version: await headOfficeVersion(), tenantId: cloud.tenantId });
     expect(served.products.map((p) => ({ productId: p.productId, unitPriceMinor: p.unitPriceMinor, taxBps: p.taxBps, status: p.status, baseUom: p.baseUom })))
       .toEqual([{ productId: PRODUCT, unitPriceMinor: PRICE, taxBps: 500, status: 'active', baseUom: 'ea' }]);
     expect(served.barcodes).toEqual([{ code: BARCODE, productId: PRODUCT, kind: expect.any(String) }]);
@@ -188,7 +190,7 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     expect(onDisk[0]).toMatchObject({ id: 'S-1', number: receipt, cashierId: CASHIER, laneId: LANE, tradingDay, total: PRICE, netMinor: TAXABLE, taxMinor: GST });
     // Queued for head office as the cloud's contract, stamped by the BOX: the pulled pack's version and this shop as the stock location.
     expect(edge.outbox.unsentCount()).toBe(1);
-    expect(edge.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-1', packVersion: 1, locationId: STORE, cashierId: CASHIER, laneId: LANE, tradingDay, totalMinor: PRICE });
+    expect(edge.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-1', packVersion: await headOfficeVersion(), locationId: STORE, cashierId: CASHIER, laneId: LANE, tradingDay, totalMinor: PRICE });
     expect((await call('GET', '/v1/sales/S-1', OWNER)).status).toBe(404);
     expect(await onHandAt(STORE)).toBe(10);
 
@@ -253,8 +255,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     const dataDir = dirs[dirs.length - 1]!;
     await edges.splice(edges.indexOf(edge), 1)[0]!.stop();
     const rebooted = await startBox(cloud.token(BOX), dataDir);
-    expect(rebooted.node.pack()?.snapshot.version).toBe(1);
-    expect(await servedTillCatalogue(rebooted)).toMatchObject({ source: 'head_office', version: 1 });
+    expect(rebooted.node.pack()?.snapshot.version).toBe(await headOfficeVersion());
+    expect(await servedTillCatalogue(rebooted)).toMatchObject({ source: 'head_office', version: await headOfficeVersion() });
     expect(rebooted.outbox.unsentCount()).toBe(0);
     expect(await rebooted.syncOnce!()).toMatchObject({ sent: 0, dead: 0, remaining: 0 });
     expect(await onHandAt(STORE)).toBe(10);

@@ -108,6 +108,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
 
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, idempotencyKey?: string): Promise<Reply> =>
     cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }) });
+  // OB-806 A: an accepted store price is sent to the tills on its own, so the version head office holds is read, never assumed.
+  const headOfficeVersion = async (): Promise<number> => ((await call('GET', '/v1/catalogue/pack', OWNER)).body as { snapshot: { version: number } }).snapshot.version;
   const ok = async (p: Promise<Reply>, what: string): Promise<Reply> => {
     const r = await p;
     expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300);
@@ -180,7 +182,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
   it('sells, splits, earns, returns with approval, issues and spends store credit, survives a cut and a restart, closes the shift and the day — and every figure reconciles independently', async () => {
     // ── The box pulls the signed pack and the members' balances; the served till is built from the pack (offer included).
     let edge = await startBox();
-    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
+    const pulledVersion = await headOfficeVersion();
+    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: pulledVersion });
     expect(await edge.refreshLoyaltyWallets!()).toMatchObject({ status: 'updated' });
     const served = await servedCatalogue(edge);
     expect(served.promotions).toEqual([expect.objectContaining({ id: 'oil-10', percentBps: 1000 })]);
@@ -276,7 +279,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     // ── The box restarts with the cable still out: the pack, the sale and its place in the queue survive.
     await edges.splice(edges.indexOf(edge), 1)[0]!.stop();
     edge = await startBox(dataDir);
-    expect(edge.node.pack()?.snapshot.version).toBe(1);
+    expect(edge.node.pack()?.snapshot.version).toBe(pulledVersion); // the pack it held survives the restart
     expect(edge.outbox.unsentCount()).toBe(1);
     till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
     await signInTill(till, CASHIER);

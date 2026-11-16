@@ -18,6 +18,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 8 of THE PLAN (16 November 2026) · the owner's answers · CR-01 step 4c-2
+- **Owner answered (in writing, 16 Nov):** OB-805 A, OB-806 A, OB-808 A, OB-809 A, OB-813 A, OB-814 A, OB-827 A, OB-828 A. OB-813 and OB-814 were already built.
+- **Done (on its PR):**
+  - A cash bill is rounded DOWN to the rupee with a "Round off" line, never above MRP (D-003).
+  - Approving a write-off writes it off at once (D-013).
+  - An accepted price goes to the tills by itself; the label task waits for the till (D-021).
+  - CR-01 step 4c-2: two people change what a role may do, by PIN, on the store PC (Users & roles → "Change what a role may do"; approved on Approvals).
+  - A view-only Supplier bills page for the new `purchase.invoice.read`.
+- **For the owner after the update:** with a store manager, give Floor indents to Warehouse user and Receiver / QC (OB-809). The steps are on the owner's evening list.
+- **Asked:** OB-829 (Goods receipt review for purchase people) and OB-830 (where the new view-only permission starts), both security.
+- **Open:** a later-day price is not sent on its day by itself; it goes with the next pack (listed on Send to the tills).
+- **Owner decisions still open:** OB-804, OB-807, OB-811, OB-829, OB-830.
+
 ## Fix batch 7 of THE PLAN (16 November 2026) · the owner's answers OB-821 B and OB-822 B
 - **Owner answered (in writing, 16 Nov):**
   - **OB-821 B:** warn above ₹1,00,000 per order.

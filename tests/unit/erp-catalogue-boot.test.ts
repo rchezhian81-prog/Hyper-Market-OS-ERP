@@ -151,7 +151,8 @@ describe('the price change POSTs to head office and reports back honestly (M05-F
 
     const outcome = await openPriceChangePort().post(priceChange);
 
-    expect(outcome).toEqual({ saved: true, verdict: 'improves_margin', approvedBy: null });
+    // OB-806 A: `tills` is what head office said happened at the tills — null when its answer did not say.
+    expect(outcome).toEqual({ saved: true, verdict: 'improves_margin', approvedBy: null, tills: null });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('/v1/prices/changes');
     expect(calls[0]?.init.method).toBe('POST');
@@ -174,7 +175,7 @@ describe('the price change POSTs to head office and reports back honestly (M05-F
 
     const outcome = await openPriceChangePort().post({ ...priceChange, priceMinor: 90_00, approvalId: 'areq-3' });
 
-    expect(outcome).toEqual({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner' });
+    expect(outcome).toEqual({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner', tills: null });
     // The six figures and the approval's id: head office reads who approved it, and why, from its own records.
     expect(sent).toEqual({ ...priceChange, priceMinor: 90_00, approvalId: 'areq-3' });
     expect(sent).not.toHaveProperty('approval');

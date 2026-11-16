@@ -107,6 +107,26 @@
         </form>
         <p class="status" id="give-status" role="status" aria-live="polite"></p>
       </section>
+      <section id="role-change" hidden aria-labelledby="rc-h">
+        <h3 id="rc-h"></h3>
+        <p class="meta" id="rc-lead"></p>
+        <form class="row-form" id="rc-form">
+          <label for="rc-role"><span id="rc-role-l"></span><select id="rc-role"></select></label>
+          <label for="rc-change"><span id="rc-change-l"></span><select id="rc-change"><option value="add" id="rc-on"></option><option value="remove" id="rc-off"></option></select></label>
+          <label for="rc-perm"><span id="rc-perm-l"></span><select id="rc-perm"></select></label>
+          <label for="rc-reason"><span id="rc-reason-l"></span><input id="rc-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="rc-check" type="button" class="sre-btn sre-btn-quiet quiet"><span id="rc-check-text"></span></button>
+          <button id="rc-ask" type="submit" class="sre-btn"><span id="rc-ask-text"></span></button>
+        </form>
+        <p class="status" id="rc-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="rc-locked" hidden></p>
+        <h4 id="rc-holds-h"></h4>
+        <ul class="rows" id="rc-holds"></ul>
+        <h4 id="rc-mine-h"></h4>
+        <ul class="rows" id="rc-mine"></ul>
+        <h4 id="rc-history-h"></h4>
+        <ul class="rows" id="rc-history"></ul>
+      </section>
       <section id="limit" hidden aria-labelledby="limit-h">
         <h3 id="limit-h"></h3>
         <p class="meta" id="limit-lead"></p>
@@ -156,6 +176,7 @@
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./w5-platform.js" type="module"></script>
     <script src="./users.js" type="module"></script>
+    <script src="./users-role-change.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>

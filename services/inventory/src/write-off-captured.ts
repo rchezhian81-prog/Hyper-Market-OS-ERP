@@ -200,7 +200,11 @@ export function writeOffCaptureRoutes(deps: WriteOffCaptureDeps): readonly Route
         });
         const requestId = (asked.body as { requestId?: string }).requestId!;
         await deps.decideApprovalAs({ ...ctx, params: { requestId }, body: { decision: 'approved', reason } });
-        await deps.writeOffAs({ ...ctx, userId: r.loss.raisedBy, params: { writeOffId }, body: { ...body, approvalId: requestId } });
+        // OB-808 A: in the running system the approval itself writes the loss off, in the raiser's name; only when it has
+        // not (a bare composition) is the loss sent through the governed route here. Never twice — the id is used once.
+        if (!(await deps.writeOffExists(ctx.tenantId, writeOffId))) {
+          await deps.writeOffAs({ ...ctx, userId: r.loss.raisedBy, params: { writeOffId }, body: { ...body, approvalId: requestId } });
+        }
         const posted: CaptureRecord = { ...r, state: 'posted', at: deps.now(), decidedBy: ctx.userId, decisionReason: reason };
         await deps.recordCapture(ctx.tenantId, posted);
         await seal(ctx.tenantId, ctx.userId, 'stock.write_off.captured_approved', posted, reason);

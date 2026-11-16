@@ -66,7 +66,7 @@ import {
   type ProposePurchaseOrderPort, type ProposePurchaseOrderOutcome,
 } from './buying-session';
 import {
-  createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
+  createCatalogueSession, priceChangeRequestBody, promotionLaunchBody, tillDeliveriesOf,
   type CataloguePorts, type CatalogueSession,
   type PromotionLaunchPort, type PromotionLaunchOutcome, type PromotionDefinitionPort,
   type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome, type HeadOfficeMrp,
@@ -133,7 +133,7 @@ import { wireBankReconciliation } from './bank-reconciliation-browser-wiring'; /
 import { wirePayablesReceivables } from './payables-receivables-browser-wiring'; // U6 · M23-FR-01
 import { wireKeys } from './keys-browser-wiring'; // U6 · §27 Admin/Security keys · M32-FR-03
 import { wireEsl } from './esl-browser-wiring'; // U6 · §27 label/ESL: the Electronic shelf labels page
-import { wireUsers } from './users-browser-wiring'; // Round 4c · Users & roles
+import { wireUsers, roleAwareDecide } from './users-browser-wiring'; // Round 4c · Users & roles; CR-01 step 4c-2
 import { wireRound4c } from './r4c-browser-wiring'; // Round 4c · people and administration
 import { wireRound4d } from './r4d-browser-wiring'; // Round 4d · money, facilities and production
 import { wireWave3Catalogue } from './w3-catalogue-browser-wiring'; // W3 · catalogue and pricing
@@ -301,7 +301,7 @@ import {
 import {
   createApprovalsSession,
   type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus, type ApprovalNames,
-  type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
+  type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused, type StockChangeMade,
 } from './approvals-session';
 import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
 import { createTransfersSession, type TransfersSession } from './transfers-session';
@@ -3951,7 +3951,17 @@ function approvalRowOf(raw: unknown): ApprovalRequestView | null {
     ...(nonBlank(r['expiresAt']) || r['expiresAt'] === null ? { expiresAt: r['expiresAt'] as string | null } : {}),
     ...(nonBlank(r['usedBy']) ? { usedBy: r['usedBy'] } : {}),
     ...catalogueChangeOf(r['catalogueChange']),
+    ...stockChangeOf(r['stockChange']),
   };
+}
+
+/** OB-808 A: whether head office wrote off an approved loss at once (and its words when it could not) — read defensively. */
+function stockChangeOf(raw: unknown): { stockChange?: StockChangeMade } {
+  if (raw === null || typeof raw !== 'object') return {};
+  const c = raw as Record<string, unknown>;
+  if (typeof c['applied'] !== 'boolean' || (c['kind'] !== 'stock_write_off' && c['kind'] !== 'stock_adjustment_up')
+    || !nonBlank(c['productId']) || !nonBlank(c['locationId']) || typeof c['qty'] !== 'number' || !Number.isSafeInteger(c['qty']) || typeof c['uom'] !== 'string') return {};
+  return { stockChange: { applied: c['applied'], kind: c['kind'], productId: c['productId'], locationId: c['locationId'], qty: c['qty'], uom: c['uom'], ...(nonBlank(c['reason']) ? { reason: c['reason'] } : {}) } };
 }
 
 /** OB-773: whether head office made an approved catalogue change (and its words when it did not) — read defensively. */
@@ -4115,7 +4125,8 @@ async function postApprovalDecision(input: { readonly requestId: string; readonl
       const cc = body.catalogueChange;
       const made = cc !== undefined && typeof cc.applied === 'boolean'
         ? { catalogueChange: { applied: cc.applied, ...(nonBlank(cc.reason) ? { reason: cc.reason } : {}) } } : {};
-      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '', ...made };
+      // OB-808 A: an approved write-off is written off at once — what head office did, or why it could not.
+      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '', ...made, ...stockChangeOf((body as Record<string, unknown>)['stockChange']) };
     }
     return { result: 'refused', ...(await refusalOf(res)) };
   } catch {
@@ -6519,8 +6530,9 @@ export function openPriceChangePort(): PriceChangeCloudPort {
           body: JSON.stringify(priceChangeRequestBody(figures, approvalId)),
         });
         if (res.status >= 200 && res.status < 300) {
-          const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null };
-          if (typeof body.verdict === 'string') return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null };
+          const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null; tills?: unknown };
+          // OB-806 A: what happened at the tills, read strictly (null = head office did not say).
+          if (typeof body.verdict === 'string') return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null, tills: tillDeliveriesOf(body.tills) };
           return { saved: false, reason: 'head office did not change the price' };
         }
         // 422 (above MRP / below cost / below floor without a usable approval) or any other refusal — its own words.
@@ -7529,9 +7541,11 @@ if (browserWindow !== undefined) {
   // D-014 (fix batch 6): the items and places named, read once by the page (`loadNames`) and used on every repaint.
   let approvalProductNames: ReadonlyMap<string, string> = new Map();
   const approvalNames = (): ApprovalNames => approvalNamesOf(approvalProductNames, (globalThis as { sreDirectory?: unknown }).sreDirectory);
+  // CR-01 step 4c-2: on the store PC a role change is decided through the store computer's door, the approver's PIN again.
+  const approvalDecide = roleAwareDecide(browserWindow as unknown as Record<string, unknown>, postApprovalDecision);
   const approvals = approvalsData === undefined ? null : createApprovalsSession(
     { userId: approvalsData.userId === undefined ? null : approvalsData.userId },
-    approvalsPortsFromData(approvalsData, undefined, postApprovalDecision, approvalNames),
+    approvalsPortsFromData(approvalsData, undefined, approvalDecide, approvalNames),
   );
   if (approvals !== null) {
     browserWindow.approvalsSession = approvals;
@@ -7539,7 +7553,7 @@ if (browserWindow !== undefined) {
       refresh: fetchApprovalInboxOrNull,
       present: (inbox) => createApprovalsSession(
         { userId: approvalsData?.userId === undefined ? null : approvalsData.userId },
-        approvalsPortsFromData(approvalsData, inbox, postApprovalDecision, approvalNames),
+        approvalsPortsFromData(approvalsData, inbox, approvalDecide, approvalNames),
       ),
       loadNames: async () => { approvalProductNames = await readApprovalProductNames(); },
     };

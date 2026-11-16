@@ -154,7 +154,8 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     const edge = await startBox();
     // A free port (round 4): the served till posts wherever the box that served it says its lane socket is (window.laneWriteBase).
     expect(edge.lane?.port).toBeGreaterThan(0);
-    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
+    const headOffice = ((await call('GET', '/v1/catalogue/pack', OWNER)).body as { snapshot: { version: number } }).snapshot.version; // OB-806 A: read, never assumed
+    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: headOffice });
 
     const context = await browser.newContext();
     await pinThePageClock(context);
@@ -173,7 +174,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await open(base);
     // The shell boots from head office's catalogue — the pulled pack, not a file (F13).
     expect(await page.evaluate(() => { const c = (globalThis as unknown as PosWindow).posCatalogue!; return { version: c.version, source: c.source, products: c.products.map((p) => p.productId) }; }))
-      .toEqual({ version: 1, source: 'head_office', products: [PRODUCT] });
+      .toEqual({ version: headOffice, source: 'head_office', products: [PRODUCT] });
 
     await signInThroughScreen(page, CASHIER); // staff ID, then the till PIN — checked by the box (ADR-0020)
 
@@ -262,7 +263,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await edge.stop();
     stops.splice(0, 1); // the first entry was this box's stop; it has run
     const rebooted = await startBox(dataDir);
-    expect(rebooted.node.pack()?.snapshot.version).toBe(1);
+    expect(rebooted.node.pack()?.snapshot.version).toBe(headOffice);
     await open(`http://127.0.0.1:${rebooted.screens!.port}`);
     expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posCatalogue!.source)).toBe('head_office');
     expect(await rebooted.syncOnce!()).toMatchObject({ sent: 0, dead: 0, remaining: 0 });

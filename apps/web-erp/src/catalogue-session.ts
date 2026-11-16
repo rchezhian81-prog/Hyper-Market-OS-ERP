@@ -157,8 +157,59 @@ export interface PriceChangeBody {
 
 /** What head office said when asked to change a price — its own verdict, or the reason (and its code) it did not. */
 export type PriceChangeCloudOutcome =
-  | { readonly saved: true; readonly verdict: string; readonly approvedBy: string | null }
+  | { readonly saved: true; readonly verdict: string; readonly approvedBy: string | null; readonly tills?: readonly TillDeliveryView[] | null }
   | { readonly saved: false; readonly reason: string; readonly code?: string };
+
+/** OB-806 A: what head office said happened to an accepted price at each store's tills (the answer's `tills`). */
+export type TillDeliveryView =
+  | { readonly storeId: string; readonly sent: true; readonly version: number; readonly withinMinutes: number }
+  | { readonly storeId: string; readonly sent: false; readonly reason: string; readonly why: string };
+
+/** Read `tills` from head office's answer strictly — anything not readable is treated as "not said" (null). */
+export function tillDeliveriesOf(raw: unknown): readonly TillDeliveryView[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: TillDeliveryView[] = [];
+  for (const d of raw) {
+    if (d === null || typeof d !== 'object') return null;
+    const r = d as Record<string, unknown>;
+    if (typeof r['storeId'] !== 'string') return null;
+    if (r['sent'] === true && Number.isInteger(r['version'])) out.push({ storeId: r['storeId'], sent: true, version: r['version'] as number, withinMinutes: Number.isInteger(r['withinMinutes']) ? r['withinMinutes'] as number : 5 });
+    else if (r['sent'] === false) out.push({ storeId: r['storeId'], sent: false, reason: typeof r['reason'] === 'string' ? r['reason'] : 'failed', why: typeof r['why'] === 'string' ? r['why'] : '' });
+    else return null;
+  }
+  return out;
+}
+
+const TILLS_COPY = {
+  en: {
+    sent: 'Saved — the tills will have it within {m} minutes.',
+    notSent: 'Saved, but it has NOT reached the tills yet: {why} The tills keep charging the old price until it is sent — ask the owner to press “Send to the tills” on Price lists.',
+    startsLater: 'Saved. It starts on a later day, so it goes to the tills when the till pack is sent on or after that day.',
+    notSaid: 'Saved. It reaches the tills when the owner presses “Send to the tills” on Price lists.',
+  },
+  ta: {
+    sent: 'சேமிக்கப்பட்டது — {m} நிமிடங்களுக்குள் பில் இயந்திரங்களுக்குச் சென்றுவிடும்.',
+    notSent: 'சேமிக்கப்பட்டது, ஆனால் இன்னும் பில் இயந்திரங்களுக்குச் செல்லவில்லை: {why} அனுப்பும் வரை பழைய விலையே வசூலிக்கப்படும் — விலைப் பட்டியல்கள் பக்கத்தில் “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்த உரிமையாளரிடம் கேளுங்கள்.',
+    startsLater: 'சேமிக்கப்பட்டது. இது பின்னர் ஒரு நாளில் தொடங்குகிறது; அந்த நாளில் அல்லது அதற்குப் பிறகு பில் தொகுப்பு அனுப்பப்படும்போது பில் இயந்திரங்களுக்குச் செல்லும்.',
+    notSaid: 'சேமிக்கப்பட்டது. உரிமையாளர் விலைப் பட்டியல்கள் பக்கத்தில் “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்தும்போது பில் இயந்திரங்களுக்குச் செல்லும்.',
+  },
+} as const;
+
+/**
+ * OB-806 A · P-08: one plain sentence for what happened at the tills, and whether it is good news. "Sent" only when every
+ * store's tills were sent the price; any store not sent is said with head office's own reason — never a silent "saved".
+ */
+export function tillsSentence(lang: 'en' | 'ta', tills: readonly TillDeliveryView[] | null | undefined): { readonly text: string; readonly good: boolean } {
+  const w = TILLS_COPY[lang];
+  if (tills === null || tills === undefined || tills.length === 0) return { text: w.notSaid, good: true };
+  const missed = tills.filter((d): d is Extract<TillDeliveryView, { sent: false }> => !d.sent);
+  if (missed.length === 0) {
+    const m = Math.max(...tills.map((d) => (d.sent ? d.withinMinutes : 0)));
+    return { text: w.sent.replace('{m}', String(m)), good: true };
+  }
+  if (missed.every((d) => d.reason === 'starts_later')) return { text: w.startsLater, good: true };
+  return { text: w.notSent.replace('{why}', missed.filter((d) => d.reason !== 'starts_later').map((d) => d.why).join(' ')), good: false };
+}
 
 /** The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). Injected, so
  *  the model opens no socket itself; the cloud re-runs `checkPrice` (MRP ceiling, cost, margin floor) and checks
@@ -274,7 +325,7 @@ export type ApprovalAskOutcome =
 
 /** The outcome of pressing "Save it" / "Start this offer" for a change that needs a second person. */
 export type ApprovalUseOutcome =
-  | { readonly kind: 'done'; readonly verdict: string; readonly approvedBy: string | null }
+  | { readonly kind: 'done'; readonly verdict: string; readonly approvedBy: string | null; readonly tills?: readonly TillDeliveryView[] | null }
   | { readonly kind: 'not_connected' }
   | { readonly kind: 'cannot_check'; readonly missing: 'mrp' | 'cost' }
   | { readonly kind: 'not_asked' }
@@ -822,6 +873,8 @@ export interface CatalogueSession {
   presentAskOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalAskOutcome): StatusPresentation;
   /** A save's / launch's outcome in plain words, in the reader's language (`presentUseOutcome`). */
   presentUseOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalUseOutcome, figure?: string): StatusPresentation;
+  /** OB-806 A: what happened at the tills after a saved price, in one sentence (`tillsSentence`). */
+  tillsSentence(lang: Lang, tills: readonly TillDeliveryView[] | null | undefined): { readonly text: string; readonly good: boolean };
 
   /** The best price a basket would get under the approved rules — the same answer as the lane. */
   quote(lines: readonly BasketLine[], at: string): PromotionResult;
@@ -1254,7 +1307,7 @@ export function createCatalogueSession(
       const found = await findApproval(PRICE_APPROVAL_KIND, body.productId, priceChangeDetails(body), body.priceMinor);
       if (!('requestId' in found)) return found;
       const r = await port().post({ ...body, approvalId: found.requestId });
-      if (r.saved) return { kind: 'done', verdict: r.verdict, approvedBy: r.approvedBy };
+      if (r.saved) return { kind: 'done', verdict: r.verdict, approvedBy: r.approvedBy, ...(r.tills === undefined ? {} : { tills: r.tills }) };
       return useOutcomeOfRefusal(r.code, r.reason);
     },
 
@@ -1326,6 +1379,7 @@ export function createCatalogueSession(
 
     presentAskOutcome: (lang, subject, outcome) => presentAskOutcome(lang, subject, outcome),
     presentUseOutcome: (lang, subject, outcome, figure) => presentUseOutcome(lang, subject, outcome, figure),
+    tillsSentence: (lang, tills) => tillsSentence(lang, tills),
 
     // Only ACTIVE promotions, and `bestPrice` checks the window again itself. A draft or stopped
     // offer that quoted here would show a price no lane would ever charge.

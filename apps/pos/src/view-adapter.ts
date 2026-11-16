@@ -143,6 +143,11 @@ export interface PosView {
    */
   tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
   /**
+   * OB-805 A · D-003: the paise a cash payment of `cashDueMinor` leaves off — 0, or −1 … −99 (down only, never above the
+   * goods: OB-285). The customer is asked for `cashDueMinor` plus this; the bill shows it as "Round off".
+   */
+  cashRoundOffMinor(cashDueMinor: number): number;
+  /**
    * OB-256 — the MIRROR PILOT's payment: the customer paid on the old system, so the whole bill is recorded as
    * `paid_on_old_erp` (settled, no change, no card/UPI attempt) and committed to the local disk exactly as a cash sale is.
    * Refused before the disk unless this till is in the mirror pilot (`mirrorPilot`), and (OB-264) unless it carries the
@@ -453,16 +458,22 @@ export function createPosView(
       return presentSyncBadge({ connection: badge.connection, unsentCount: badge.unsentCount });
     },
 
+    cashRoundOffMinor(cashDueMinor: number): number {
+      return session.cashRoundOffFor(cashDueMinor);
+    },
+
     async tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string> {
       const payable = session.totals().payable;
-      const tenders: Tender[] = [{ kind: 'cash', amount: payable, status: 'settled' }];
+      // OB-805 A · D-003: the cash taken is the payable less its paise (down only — OB-285); the bill records the round off.
+      const taken = money(payable.minor + session.cashRoundOffFor(payable.minor), payable.currency);
+      const tenders: Tender[] = [{ kind: 'cash', amount: taken, status: 'settled' }];
       // Commits to the local DISK, then queues for sync — no network call (hard rule #1).
       //
       // The `await` is the receipt's guarantee, and it is structural rather than a convention: the
       // receipt number does not exist until the sale is on the disk, so there is nothing to print
       // early with. That is why `commit` is asynchronous — awaiting a local fsync is not awaiting
       // the network.
-      const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
+      const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders, { roundCash: true });
       return sale.number;
     },
 
@@ -508,7 +519,9 @@ export function createPosView(
         ...(part.machineRef === undefined || part.machineRef === '' ? {} : { machineRef: part.machineRef }),
         ...(part.kind === 'gift_card' && part.giftCardCode !== undefined ? { giftCard: { code: part.giftCardCode } } : {}),
       }));
-      const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
+      // OB-805 A: a cash part that finished the bill was taken less its paise (`cashRoundOffMinor` on what was left); the
+      // session books that shortfall — under ₹1, with cash among the tenders — as the bill's round off, never more.
+      const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders, { roundCash: tenders.some((t) => t.kind === 'cash') });
       return sale.number;
     },
 

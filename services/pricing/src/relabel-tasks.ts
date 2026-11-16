@@ -70,6 +70,12 @@ export interface RelabelTaskDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** D-026: the product names, so a task says "Biscuits 200 g", never only "prod-biscuit". Optional on a bare stub. */
   readonly productNames?: (tenantId: string) => Promise<ReadonlyMap<string, string>>;
+  /**
+   * OB-806 A · D-021: whether the store's tills have this price yet — the signed pack the store computer last said it holds
+   * carries exactly this price for this product. Until they do, the label task is NOT due (it says it waits for the tills),
+   * so the shelf never shows a price the till does not charge. Optional on a bare stub (then a task is due by its date alone).
+   */
+  readonly tillsHavePrice?: (tenantId: string, storeId: string, productId: string, priceMinor: number) => Promise<boolean>;
   readonly now: () => string;
 }
 
@@ -151,11 +157,15 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
       const mayClose = (t.assignee?.to === 'floor_champion' && t.assignee.employeeId === ctx.userId) || (managersHere ?? []).includes(ctx.userId);
       const doneHere = doneOf.get(t.taskId) ?? null;
       const newer = doneHere === null ? replacedBy(t, tasks, now) : undefined;
+      const dateReached = Date.parse(t.dueAt) <= Date.parse(now);
+      // OB-806 A: an open task in force is due only once the store's tills have the price (asked only where it matters).
+      const waitingForTills = doneHere === null && newer === undefined && dateReached && deps.tillsHavePrice !== undefined
+        && !(await deps.tillsHavePrice(ctx.tenantId, t.branchId, t.productId, t.priceMinor));
       rows.push({
         ...t, assignee: t.assignee ?? null, assignedToMe, mayClose: mayClose && newer === undefined,
         ...(storeManagers === null ? {} : { storeManagers }),
         ...(names.has(t.productId) ? { productName: names.get(t.productId)! } : {}),
-        done: doneHere, dueNow: Date.parse(t.dueAt) <= Date.parse(now),
+        done: doneHere, dueNow: dateReached && !waitingForTills, waitingForTills,
         replacedBy: newer === undefined ? null : { taskId: newer.taskId, priceMinor: newer.priceMinor, dueAt: newer.dueAt },
       });
     }

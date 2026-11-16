@@ -538,6 +538,11 @@ export interface SupplierBillsSession {
   linesFromOrder(poId: string): Promise<Answer<ReturnType<typeof typedLinesFromOrder>>>;
   /** Whether they may run the three-way match (`purchase.invoice.match`). */
   readonly mayMatch: boolean;
+  /**
+   * OB-827 A: whether they may SEE supplier bills, view only (`purchase.invoice.read`) — the bills on head office's register
+   * and each one's match result. Nothing is handed in, typed, checked, held or paid with it: those keep their own words.
+   */
+  readonly mayView: boolean;
   register(): Promise<Answer<BillRegister>>;
   handIn(file: PickedFile, named?: { readonly supplierId?: string; readonly poId?: string }): Promise<Answer<{ readonly document: BillDocument; readonly alreadyReceived: boolean }> | { readonly ok: false; readonly unreachable: false; readonly status: 0; readonly code: 'not_a_bill_file' | 'not_json'; readonly whatHappened: ''; readonly nextSafeAction: '' }>;
   confirm(doc: BillDocument, input: Parameters<typeof confirmBody>[1]): Promise<Answer<{ readonly document: BillDocument; readonly invoiceId: string }>>;
@@ -562,6 +567,7 @@ export function createSupplierBillsSession(call: HeadOfficeCall, viewer: { reado
   return {
     mayCapture: may.has('purchase.invoice.capture'),
     mayMatch: may.has('purchase.invoice.match'),
+    mayView: may.has('purchase.invoice.read'),
     mayReadBills: may.has('purchase.commitment.read'),
     billsToCheck: async () => answerOf(await call({ method: 'GET', path: '/v1/purchase/invoices' }), billsToCheckOf),
     linesFromOrder: async (poId) => answerOf(await call({ method: 'GET', path: `/v1/purchase/orders/${encodeURIComponent(poId.trim())}` }), (b) => typedLinesFromOrder((b as { order?: unknown } | null)?.order)),

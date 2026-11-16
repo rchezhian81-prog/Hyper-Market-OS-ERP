@@ -292,6 +292,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'findings.js': 'apps/web-erp/src/findings-session.ts',
     // Round 4c (people and administration): the eight new pages' words are in their tested session models.
     'users.js': 'apps/web-erp/src/users-session.ts',
+    // CR-01 step 4c-2 (ADR-0034): "Change what a role may do" — its words are in its tested session.
+    'users-role-change.js': 'apps/web-erp/src/role-change-session.ts',
     'audit-log.js': 'apps/web-erp/src/audit-log-session.ts',
     'staff.js': 'apps/web-erp/src/staff-session.ts',
     'settings.js': 'apps/web-erp/src/settings-session.ts',

@@ -61,9 +61,11 @@ describe('B13: the bill a sale prints goes through the receipt renderer', () => 
     expect(text).toMatch(/^Bill: R-0001/m);
     expect(text).toMatch(/^ {2}1\.234 kg x 80\.00 +98\.72$/m); // 1234 g at ₹80/kg
     expect(text).toMatch(/^ {2}500 g x 4\.00 +2000\.00$/m);
-    expect(text).toMatch(/^TOTAL +47098\.72$/m); // the lines add to the total (prices include GST)
+    // Paid in cash: the 72 paise come off as a printed round off (OB-805 A · OB-285, down only); the lines and GST stand.
+    expect(text).toMatch(/^Round off +-0\.72$/m);
+    expect(text).toMatch(/^TOTAL +47098\.00$/m); // the lines (47098.72) plus the round off
     expect(text).toMatch(/^Taxable value /m);
-    expect(text).toMatch(/^cash +47098\.72$/m);
+    expect(text).toMatch(/^cash +47098\.00$/m);
     expect(bill.paper).toBe('thermal-80'); // no template → the 80 mm default, no header or store name invented
     expect(text).not.toMatch(/SRE HYPER MARKET/);
   });

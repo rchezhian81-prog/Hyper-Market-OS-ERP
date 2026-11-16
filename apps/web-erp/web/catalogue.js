@@ -1143,7 +1143,14 @@ el('save-price').addEventListener('click', () => {
     // this page it says so, and nothing is saved: a name on this screen is not an approval.
     if (proposal.needsApproval) {
       const outcome = await session.savePriceWithApproval(priceInput(proposal));
-      tellApproval(outcome.kind, session.presentUseOutcome(lang, 'price', outcome, inr(proposal.draft.price.minor)), 'price');
+      const presented = session.presentUseOutcome(lang, 'price', outcome, inr(proposal.draft.price.minor));
+      if (outcome.kind === 'done') {
+        // OB-806 A: and what happened at the tills — sent, or not sent with why (never a silent "saved").
+        const tills = session.tillsSentence(lang, outcome.tills);
+        tell(t('priceSaved'), `${presented.label} ${tills.text}`, tills.good ? true : 'pending');
+      } else {
+        tellApproval(outcome.kind, presented, 'price');
+      }
       if (outcome.kind === 'done') {
         el('save-price').hidden = true;
         el('price-approval').hidden = true;
@@ -1159,7 +1166,9 @@ el('save-price').addEventListener('click', () => {
     if (session.canChangePriceInCloud) {
       const outcome = await session.changePriceInCloud(priceInput(proposal));
       if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
-      tell(t('priceSaved'), `${inr(proposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
+      // OB-806 A: "Saved — the tills will have it within 5 minutes", or not sent yet with head office's own reason.
+      const tills = session.tillsSentence(lang, outcome.tills);
+      tell(t('priceSaved'), `${inr(proposal.draft.price.minor)} — ${tills.text}`, tills.good ? true : 'pending');
       el('save-price').hidden = true;
       readHistoryAgain(proposal.draft.productId);
       return;

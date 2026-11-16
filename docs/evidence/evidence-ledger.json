@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2460,
+  "testFiles": 2473,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2174,7 +2174,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 39,
-        "integration": 45,
+        "integration": 46,
         "realDb": 27,
         "browser": 15,
         "connected": 8,
@@ -2242,6 +2242,7 @@
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/ob805-a-rounded-cash-bill-reaches-the-day-book.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/period-evidence.test.ts",
           "tests/integration/period-reopen.test.ts",
@@ -2639,8 +2640,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 10,
-        "integration": 13,
-        "realDb": 7,
+        "integration": 14,
+        "realDb": 8,
         "browser": 9,
         "connected": 3,
         "device": 0,
@@ -2665,6 +2666,7 @@
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/ob808-approving-a-write-off-writes-it-off-at-once.test.ts",
           "tests/integration/owner-dashboard-covers-every-domain.test.ts",
           "tests/integration/packaging.test.ts",
           "tests/integration/physical-to-system.test.ts",
@@ -2679,6 +2681,7 @@
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/ob808-approving-a-write-off-writes-it-off-at-once.test.ts",
           "tests/integration/owner-dashboard-covers-every-domain.test.ts",
           "tests/integration/physical-to-system.test.ts",
           "tests/integration/the-store-computer-carries-readings-losses-and-acknowledgements.test.ts"

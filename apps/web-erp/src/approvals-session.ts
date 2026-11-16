@@ -21,6 +21,7 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import { shopTimeOf, shopWallClockOf } from '../../../packages/calendar/src/shop-day';
+import { quantityLabel } from '../../../packages/contracts/src/quantity';
 
 // ── the shapes the routes hand over (shared with the import screen, which asks for approvals) ────────────────────
 
@@ -51,6 +52,24 @@ export interface ApprovalRequestView {
   readonly decider?: DeciderView;
   /** OB-773: a catalogue change the owner approved — whether head office made it, and if not, why. */
   readonly catalogueChange?: CatalogueChangeMade;
+  /** OB-808 A: an approved write-off or upward correction — whether head office made it at once, and if not, why. */
+  readonly stockChange?: StockChangeMade;
+}
+
+/**
+ * OB-808 A (D-013): approving a write-off writes it off at once, in the asker's name — what head office says it did. The
+ * item and place names are filled in by the screen (from the names it already reads) when it has them.
+ */
+export interface StockChangeMade {
+  readonly applied: boolean;
+  readonly kind: 'stock_write_off' | 'stock_adjustment_up';
+  readonly productId: string;
+  readonly locationId: string;
+  readonly qty: number;
+  readonly uom: string;
+  readonly reason?: string;
+  readonly productName?: string;
+  readonly placeName?: string;
 }
 
 /** OB-773: whether an approved catalogue change was made (head office's own words when it was not). */
@@ -89,7 +108,9 @@ export type AskResult = { readonly result: 'asked'; readonly request: ApprovalRe
 
 export type DecisionWord = 'approved' | 'rejected';
 /** A checker's decision as the server recorded it. */
-export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string; readonly catalogueChange?: CatalogueChangeMade } | Refused | LostLink;
+export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string; readonly catalogueChange?: CatalogueChangeMade; readonly stockChange?: StockChangeMade;
+  /** CR-01 step 4c-2: an approved change to what a role may do, applied at once on the store PC — whether it was. */
+  readonly roleChange?: CatalogueChangeMade } | Refused | LostLink;
 
 export interface ApprovalsPorts {
   /** The inbox the shell last read (live from head office, or the injected stand-in). */
@@ -97,7 +118,9 @@ export interface ApprovalsPorts {
   /** Whether this person may use approvals at all (`identity.self.read` — every signed-in member of the shop). */
   mayUse(): boolean;
   /** Record a decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. Only on a click. */
-  decide(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string }): Promise<DecideResult>;
+  decide(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string;
+    /** The request's kind — CR-01 step 4c-2: on the store PC a role change is decided through its PIN door. */
+    readonly kind?: string }): Promise<DecideResult>;
   /** D-014: the names the page has read for items and places (none → the codes are shown as they are). */
   names?(): ApprovalNames;
 }
@@ -153,7 +176,8 @@ export type CopyKey =
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   // OB-773: a store manager's catalogue change — the before and after, and whether head office made it.
-  | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade'
+  | 'decidedWrittenOff' | 'decidedCorrectedUp' | 'decidedStockNotMade' | 'statusWrittenOff' | 'statusCorrectedUp' | 'statusStockNotMade' | 'stockWhatOff' | 'stockWhatUp'
+  | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade' | 'decidedRoleChangeMade'
   | 'fieldName' | 'fieldSku' | 'fieldBaseUom' | 'fieldCategory' | 'fieldTaxClass' | 'fieldLifecycle' | 'fieldBrand' | 'fieldManufacturer'
   | 'fieldParent' | 'fieldMrp' | 'fieldAttributes' | 'fieldBarcodes' | 'fieldNewBarcode' | 'fieldGstRate' | 'fieldLabelFact';
 
@@ -258,6 +282,12 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     statusChangeMade: 'Approved by {who} and made — the change is in the catalogue.',
     statusChangeNotMade: 'Approved by {who}, but head office could NOT make it: {reason}',
     decidedChangeMade: 'Approved. Head office has made the change.',
+    decidedWrittenOff: 'Written off: {what}.', decidedCorrectedUp: 'Stock corrected up: {what}.',
+    decidedStockNotMade: 'Approved, but head office could NOT make it — nothing was written off: {reason}',
+    statusWrittenOff: 'Approved by {who} and written off: {what}.', statusCorrectedUp: 'Approved by {who} and corrected up: {what}.',
+    statusStockNotMade: 'Approved by {who}, but head office could NOT make it — nothing changed: {reason}',
+    stockWhatOff: '{qty} of {item} from {place}', stockWhatUp: '{qty} of {item} at {place}',
+    decidedRoleChangeMade: 'Approved and done: the role is changed at head office now; it reaches the tills and screens on the store computer\'s next pull.',
     decidedChangeNotMade: 'Approved, but head office could NOT make the change: {reason}',
     fieldName: 'Name', fieldSku: 'SKU', fieldBaseUom: 'Unit it is counted in', fieldCategory: 'Category', fieldTaxClass: 'Tax (HSN) class', fieldLifecycle: 'Lifecycle',
     fieldBrand: 'Brand', fieldManufacturer: 'Manufacturer', fieldParent: 'A variant of', fieldMrp: 'MRP', fieldAttributes: 'Attributes',
@@ -361,6 +391,12 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     statusChangeMade: '{who} ஒப்புக்கொண்டார், மாற்றம் செய்யப்பட்டது — அது பட்டியலில் உள்ளது.',
     statusChangeNotMade: '{who} ஒப்புக்கொண்டார், ஆனால் தலைமை அலுவலகத்தால் அதைச் செய்ய முடியவில்லை: {reason}',
     decidedChangeMade: 'ஒப்புக்கொள்ளப்பட்டது. தலைமை அலுவலகம் மாற்றத்தைச் செய்துவிட்டது.',
+    decidedWrittenOff: 'தள்ளுபடி செய்யப்பட்டது: {what}.', decidedCorrectedUp: 'இருப்பு உயர்த்தித் திருத்தப்பட்டது: {what}.',
+    decidedStockNotMade: 'அனுமதிக்கப்பட்டது, ஆனால் தலைமை அலுவலகத்தால் அதைச் செய்ய முடியவில்லை — எதுவும் தள்ளுபடி செய்யப்படவில்லை: {reason}',
+    statusWrittenOff: '{who} அனுமதித்தார், தள்ளுபடி செய்யப்பட்டது: {what}.', statusCorrectedUp: '{who} அனுமதித்தார், உயர்த்தித் திருத்தப்பட்டது: {what}.',
+    statusStockNotMade: '{who} அனுமதித்தார், ஆனால் தலைமை அலுவலகத்தால் அதைச் செய்ய முடியவில்லை — எதுவும் மாறவில்லை: {reason}',
+    stockWhatOff: '{place} இலிருந்து {item} — {qty}', stockWhatUp: '{place} இல் {item} — {qty}',
+    decidedRoleChangeMade: 'ஒப்புதல் அளிக்கப்பட்டு முடிந்தது: தலைமை அலுவலகத்தில் பணி இப்போது மாற்றப்பட்டது; கடைக் கணினியின் அடுத்த இழுப்பில் கவுண்டர்களுக்கும் திரைகளுக்கும் வரும்.',
     decidedChangeNotMade: 'ஒப்புக்கொள்ளப்பட்டது, ஆனால் தலைமை அலுவலகத்தால் மாற்றத்தைச் செய்ய முடியவில்லை: {reason}',
     fieldName: 'பெயர்', fieldSku: 'SKU', fieldBaseUom: 'எண்ணப்படும் அலகு', fieldCategory: 'வகை', fieldTaxClass: 'வரி (HSN) வகுப்பு', fieldLifecycle: 'வாழ்க்கைச் சுழற்சி',
     fieldBrand: 'பிராண்ட்', fieldManufacturer: 'உற்பத்தியாளர்', fieldParent: 'இதன் வகைமாறு', fieldMrp: 'MRP', fieldAttributes: 'பண்புகள்',
@@ -577,6 +613,13 @@ function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): st
   return text.length > 120 ? `${text.slice(0, 119)}…` : text;
 }
 
+/** OB-808 A: "6 pouch of Sunflower Oil 1 L from The back store" — the quantity in its unit, the item and place by name. */
+function stockWhat(t: (k: CopyKey) => string, c: StockChangeMade, names: ApprovalNames): string {
+  const item = c.productName ?? names.product(c.productId) ?? c.productId;
+  const place = c.placeName ?? names.place(c.locationId) ?? c.locationId;
+  return fill(t(c.kind === 'stock_write_off' ? 'stockWhatOff' : 'stockWhatUp'), { qty: quantityLabel(c.qty, c.uom), item, place });
+}
+
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
 
@@ -624,7 +667,7 @@ export interface ApprovalsView {
 
 /** The outcome of pressing Approve or Reject. */
 export type DecideOutcome =
-  | { readonly kind: 'decided'; readonly decision: DecisionWord; readonly catalogueChange?: CatalogueChangeMade }
+  | { readonly kind: 'decided'; readonly decision: DecisionWord; readonly catalogueChange?: CatalogueChangeMade; readonly stockChange?: StockChangeMade; readonly roleChange?: CatalogueChangeMade }
   | { readonly kind: 'needs_reason' }
   | { readonly kind: 'nobody_named' }
   | { readonly kind: 'not_permitted' }
@@ -643,9 +686,16 @@ export interface ApprovalsSession {
 }
 
 /** Where a request stands, in words — the shared chip both this page and the import screen show. */
-export function presentRequestStatus(lang: Lang, r: ApprovalRequestView, waitingForReader = false): StatusPresentation {
+export function presentRequestStatus(lang: Lang, r: ApprovalRequestView, waitingForReader = false, names: ApprovalNames = NO_NAMES): StatusPresentation {
   const t = translator(APPROVALS_COPY, lang);
   const who = r.decidedBy ?? '—';
+  // OB-808 A: an approved write-off says what head office did with it — written off at once, or why it could not be.
+  if (r.stockChange !== undefined && (r.status === 'used' || r.status === 'approved')) {
+    const c = r.stockChange;
+    return c.applied
+      ? presentStatus({ tone: 'ok', icon: '✓', label: fill(t(c.kind === 'stock_write_off' ? 'statusWrittenOff' : 'statusCorrectedUp'), { who, what: stockWhat(t, c, names) }), needsAttention: false })
+      : presentStatus({ tone: 'error', icon: '✕', label: fill(t('statusStockNotMade'), { who, reason: c.reason ?? '—' }), needsAttention: true });
+  }
   switch (r.status) {
     case 'waiting':
       return waitingForReader
@@ -738,7 +788,7 @@ export function presentRequest(lang: Lang, r: ApprovalRequestView, waitingForRea
     when: shopTime(r.requestedAt),
     amount: r.valueMinor === null ? null : rupees(r.valueMinor),
     details,
-    status: presentRequestStatus(lang, r, waitingForReader),
+    status: presentRequestStatus(lang, r, waitingForReader, names),
     approvalStatus: r.status,
     whoDecides: presentDecider(lang, r),
     ...(r.kind === 'supplier_payment' && typeof r.details['supplierId'] === 'string'
@@ -787,8 +837,18 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       const row = ports.inbox().waitingForMe.find((r) => r.requestId === requestId);
       if (row === undefined || row.status !== 'waiting') return { kind: 'not_waiting' };
       if (row.requestedBy === config.userId) return { kind: 'own_request' }; // §28 — never sent
-      const r = await ports.decide({ requestId, decision, reason: reason.trim() });
-      if (r.result === 'decided') return { kind: 'decided', decision: r.decision, ...(r.catalogueChange === undefined || r.decision !== 'approved' ? {} : { catalogueChange: r.catalogueChange }) };
+      const r = await ports.decide({ requestId, decision, reason: reason.trim(), kind: row.kind });
+      if (r.result === 'decided') {
+        const names = ports.names?.() ?? NO_NAMES;
+        const sc = r.stockChange;
+        return {
+          kind: 'decided', decision: r.decision,
+          ...(r.catalogueChange === undefined || r.decision !== 'approved' ? {} : { catalogueChange: r.catalogueChange }),
+          // OB-808 A: the item and place by name, read now from the names this page already holds.
+          ...(sc === undefined || r.decision !== 'approved' ? {} : { stockChange: { ...sc, productName: sc.productName ?? names.product(sc.productId) ?? sc.productId, placeName: sc.placeName ?? names.place(sc.locationId) ?? sc.locationId } }),
+          ...(r.roleChange === undefined || r.decision !== 'approved' ? {} : { roleChange: r.roleChange }),
+        };
+      }
       if (r.result === 'lost_link') return { kind: 'lost_link' };
       if (r.code === 'self_approval') return { kind: 'own_request' };
       return { kind: 'refused', code: r.code, whatHappened: r.whatHappened };
@@ -800,11 +860,24 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
       switch (o.kind) {
         case 'decided':
+          // CR-01 step 4c-2: an approved role change is applied at once on the store PC — said, and so is one that was not (P-08).
+          if (o.roleChange !== undefined) {
+            return o.roleChange.applied
+              ? presentStatus({ tone: 'ok', icon: '✓', label: t('decidedRoleChangeMade'), needsAttention: false })
+              : presentStatus({ tone: 'degraded', icon: '⚠', label: fill(t('decidedChangeNotMade'), { reason: o.roleChange.reason ?? '—' }), needsAttention: true });
+          }
           // OB-773: an approved catalogue change is made at once — said, and so is a change head office could not make (P-08).
           if (o.catalogueChange !== undefined) {
             return o.catalogueChange.applied
               ? presentStatus({ tone: 'ok', icon: '✓', label: t('decidedChangeMade'), needsAttention: false })
               : presentStatus({ tone: 'degraded', icon: '⚠', label: fill(t('decidedChangeNotMade'), { reason: o.catalogueChange.reason ?? '—' }), needsAttention: true });
+          }
+          // OB-808 A: an approved write-off is written off at once — said, and so is one head office could not make (P-08).
+          if (o.stockChange !== undefined) {
+            const c = o.stockChange;
+            return c.applied
+              ? presentStatus({ tone: 'ok', icon: '✓', label: fill(t(c.kind === 'stock_write_off' ? 'decidedWrittenOff' : 'decidedCorrectedUp'), { what: stockWhat(t, c, NO_NAMES) }), needsAttention: false })
+              : presentStatus({ tone: 'error', icon: '✕', label: fill(t('decidedStockNotMade'), { reason: c.reason ?? '—' }), needsAttention: true });
           }
           return presentStatus({ tone: 'ok', icon: '✓', label: t(o.decision === 'approved' ? 'decidedApproved' : 'decidedRejected'), needsAttention: false });
         case 'needs_reason': return err(t('decideNeedsReason'));
