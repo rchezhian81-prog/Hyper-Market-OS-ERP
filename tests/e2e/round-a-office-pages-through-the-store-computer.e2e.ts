@@ -153,7 +153,8 @@ describe.skipIf(!HAVE_BROWSER)('Round A — the office pages through the store c
     // The approvals tile: the store computer's own 0, plus the one waiting for the owner at head office.
     await page.waitForFunction(() => /1 waiting for you at head office/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('tiles').textContent ?? ''), undefined, { timeout: 15_000 });
     const approvalsTile = page.locator('#tiles .tile', { hasText: 'Approvals waiting' });
-    expect((await approvalsTile.locator('.n').textContent())?.trim()).toBe('1');
+    // D-010: the owner may issue the order the manager raised, so it counts here too — the category change plus the order.
+    expect((await approvalsTile.locator('.n').textContent())?.trim()).toBe('2');
     await says(page, '#attention', /approvals waiting for you at head office/);
     // The open order: head office's, waiting for its second person — not the stale pack's 0.
     const po = page.locator('li', { hasText: 'Purchase orders open' }).first();
