@@ -60,9 +60,10 @@ describe('D-048 · a payment head office could never record is refused when it i
     const s = createSupplierPaymentSession({ viewer: PAYER, fetch: ho.fetch, newId: () => 'pay-1' });
     expect(await s.ask(FORM)).toEqual({ result: 'ok', value: { requestId: 'rq-1', paymentId: 'pay-1' } });
     const asked = ho.calls[1]!.body as { summary: string; details: Record<string, unknown> };
-    expect(asked.summary).toBe('Payment to Sakthi Traders (sup-1): ₹500.00 by Bank transfer on 2026-11-12, ref NEFT-1, settles bill(s) inv-a');
-    // The details stay exactly the record route's body (the engine's fingerprint) — the name is only in the words.
-    expect(asked.details).toEqual({ amountMinor: 50_000, paidOn: '2026-11-12', method: 'bank_transfer', reference: 'NEFT-1', settles: ['inv-a'], supplierId: 'sup-1', paymentId: 'pay-1' });
+    // OB-807 A: asked before it is paid — the amount, how and the bills; the day and reference come when it is recorded.
+    expect(asked.summary).toBe('Payment to Sakthi Traders (sup-1): ₹500.00 by Bank transfer, settles bill(s) inv-a');
+    // The details stay exactly the record route's terms (the engine's fingerprint) — the name is only in the words.
+    expect(asked.details).toEqual({ amountMinor: 50_000, method: 'bank_transfer', settles: ['inv-a'], supplierId: 'sup-1', paymentId: 'pay-1' });
   });
 
   it('a supplier this person cannot read goes on to be asked (head office still refuses on record); no link asks nothing', async () => {

@@ -283,9 +283,7 @@
         <div class="grid">
           <div><label for="pay-supplier" id="l-pay-supplier"></label><input id="pay-supplier" type="text" autocomplete="off" /></div>
           <div><label for="pay-amount" id="l-pay-amount"></label><input id="pay-amount" type="text" inputmode="decimal" autocomplete="off" /></div>
-          <div><label for="pay-on" id="l-pay-on"></label><input id="pay-on" type="date" /></div>
           <div><label for="pay-method" id="l-pay-method"></label><select id="pay-method"></select></div>
-          <div><label for="pay-ref" id="l-pay-ref"></label><input id="pay-ref" type="text" autocomplete="off" /></div>
         </div>
         <!-- D-047: the chosen supplier's matched, unpaid bills as tick boxes, with the running total (supplier-payments.js). -->
         <fieldset id="pay-bills" class="pay-bills"><legend id="l-pay-settles"></legend>
@@ -298,6 +296,13 @@
         <h4 id="pay-asks-h"></h4>
         <button id="pay-asks-show" class="act" type="button"></button>
         <ul class="docs" id="pay-asks"></ul>
+        <!-- OB-807 A: the day it was paid and its reference are typed once the money has gone, then the approved line is recorded. -->
+        <h4 id="pay-record-h"></h4>
+        <p class="note" id="pay-record-lead"></p>
+        <div class="grid">
+          <div><label for="pay-on" id="l-pay-on"></label><input id="pay-on" type="date" /></div>
+          <div><label for="pay-ref" id="l-pay-ref"></label><input id="pay-ref" type="text" autocomplete="off" /></div>
+        </div>
       </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>

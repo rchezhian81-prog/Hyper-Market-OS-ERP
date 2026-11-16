@@ -8,7 +8,8 @@
 //      subject `<supplierId>/<paymentId>`, the payment's own details and amount);
 //   2. a DIFFERENT person who may pay suppliers approves it on their own Approvals page (never the asker);
 //   3. RECORD — the asker records the payment naming that approval; the details recorded are the APPROVED ones, never a form
-//      typed again. Head office refuses — nothing recorded — a held supplier, a bank payment with no verified account, a
+//      typed again — plus, OB-807 A (owner, 16 Nov 2026, in writing), the day it was paid and its reference (UTR, cheque or
+//      UPI number), which exist only once the money has gone, so they are typed when it is recorded, not when it is asked. Head office refuses — nothing recorded — a held supplier, a bank payment with no verified account, a
 //      shared account, a payment above the balance owed, or a person who raised, received or matched the order it pays.
 // Nothing is read on open.
 //
@@ -24,13 +25,17 @@ export const PAY_METHODS = ['bank_transfer', 'cheque', 'upi', 'cash'] as const;
 
 export const SUPPLIER_PAYMENT_COPY = {
   en: {
-    payH: 'Record a payment to a supplier', payLede: 'This records that money was paid to a supplier — it does not send any money. A payment needs a second person: ask here, someone else who may pay suppliers approves it on their Approvals page, then record it here. What is recorded is exactly what was approved.',
-    supplier: 'Supplier', amount: 'Amount paid (₹)', paidOn: 'Paid on', method: 'How it was paid', reference: 'Reference (UTR, cheque or receipt number)',
+    payH: 'Record a payment to a supplier', payLede: 'This records that money was paid to a supplier — it does not send any money. A payment needs a second person: ask here with the amount and the bills, someone else who may pay suppliers approves it on their Approvals page, then pay it and record it here with the day and the bank reference. What is recorded is exactly what was approved.',
+    supplier: 'Supplier', amount: 'Amount to pay (₹)', paidOn: 'Paid on', method: 'How it was paid', reference: 'Reference (UTR, cheque or receipt number)',
     m_bank_transfer: 'Bank transfer', m_cheque: 'Cheque', m_upi: 'UPI', m_cash: 'Cash',
     ask: 'Ask for approval', asked: 'Asked. Someone else who may pay suppliers approves it on their Approvals page; then record it below.',
-    myAsksH: 'Payments you asked to record', showAsks: 'Show them', noAsks: 'You have not asked to record any supplier payment.', st_waiting: 'waiting for approval', st_approved: 'approved — ready to record', st_rejected: 'rejected', st_expired: 'expired', st_used: 'recorded',
+    myAsksH: 'Payments you asked to record', showAsks: 'Show them', noAsks: 'You have not asked to record any supplier payment.', st_waiting: 'waiting for approval', st_approved: 'Approved — record it when paid', st_rejected: 'rejected', st_expired: 'expired', st_used: 'recorded',
     record: 'Record this payment', recorded: 'Recorded. Still owed to the supplier: {owed}.', already: 'Already recorded — nothing was written twice.',
-    needPayment: 'Type the supplier, the amount in rupees, the day it was paid, how, and its reference.',
+    needPayment: 'Type the supplier, the amount in rupees and how it will be paid.',
+    // OB-807 A: the day and the reference are typed when the approved payment is recorded.
+    recordH: 'Approved — record it when paid', recordLede: 'Once the money has gone, type the day it was paid and its reference (UTR, cheque or UPI number), then press "Record this payment" on the approved line.',
+    needPaid: 'Type the day it was paid and its reference (UTR, cheque or UPI number) before recording it.', paidInFuture: 'The day it was paid cannot be a day still to come.',
+    notYetPaid: 'not paid yet',
     nobody: 'Nobody is signed in on this screen.', cannotPay: 'Recording a supplier payment needs the permission to pay suppliers.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was asked or recorded.',
     settles: 'Bills it settles — tick the supplier\'s matched bills not yet paid (optional)', settlesShown: 'settles {bills}',
@@ -46,13 +51,16 @@ export const SUPPLIER_PAYMENT_COPY = {
     sharedBank: 'Another supplier or staff member has the same bank account, so payment is stopped until a person has reviewed it on the Fraud signals page. Nothing was asked.',
   },
   ta: {
-    payH: 'சப்ளையருக்குச் செலுத்தியதைப் பதி', payLede: 'இது சப்ளையருக்குப் பணம் செலுத்தப்பட்டதைப் பதிவு செய்கிறது — எந்தப் பணத்தையும் அனுப்பாது. செலுத்தலுக்கு இரண்டாவது நபர் தேவை: இங்கே கேளுங்கள், சப்ளையர்களுக்குச் செலுத்த அனுமதி உள்ள வேறொருவர் தமது ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் அளிக்கிறார், பின்னர் இங்கே பதியுங்கள். ஒப்புதல் அளிக்கப்பட்டதே சரியாகப் பதியப்படும்.',
-    supplier: 'சப்ளையர்', amount: 'செலுத்திய தொகை (₹)', paidOn: 'செலுத்திய நாள்', method: 'எப்படிச் செலுத்தப்பட்டது', reference: 'குறிப்பு (UTR, காசோலை அல்லது ரசீது எண்)',
+    payH: 'சப்ளையருக்குச் செலுத்தியதைப் பதி', payLede: 'இது சப்ளையருக்குப் பணம் செலுத்தப்பட்டதைப் பதிவு செய்கிறது — எந்தப் பணத்தையும் அனுப்பாது. செலுத்தலுக்கு இரண்டாவது நபர் தேவை: தொகை மற்றும் பில்களுடன் இங்கே கேளுங்கள், சப்ளையர்களுக்குச் செலுத்த அனுமதி உள்ள வேறொருவர் தமது ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் அளிக்கிறார், பின்னர் பணம் செலுத்தி, நாள் மற்றும் வங்கிக் குறிப்புடன் இங்கே பதியுங்கள். ஒப்புதல் அளிக்கப்பட்டதே சரியாகப் பதியப்படும்.',
+    supplier: 'சப்ளையர்', amount: 'செலுத்த வேண்டிய தொகை (₹)', paidOn: 'செலுத்திய நாள்', method: 'எப்படிச் செலுத்தப்பட்டது', reference: 'குறிப்பு (UTR, காசோலை அல்லது ரசீது எண்)',
     m_bank_transfer: 'வங்கிப் பரிமாற்றம்', m_cheque: 'காசோலை', m_upi: 'UPI', m_cash: 'ரொக்கம்',
     ask: 'ஒப்புதல் கேள்', asked: 'கேட்கப்பட்டது. சப்ளையர்களுக்குச் செலுத்த அனுமதி உள்ள வேறொருவர் தமது ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் அளிப்பார்; பின்னர் கீழே பதியுங்கள்.',
-    myAsksH: 'நீங்கள் பதியக் கேட்ட செலுத்தல்கள்', showAsks: 'அவற்றைக் காட்டு', noAsks: 'நீங்கள் எந்தச் சப்ளையர் செலுத்தலையும் பதியக் கேட்கவில்லை.', st_waiting: 'ஒப்புதலுக்குக் காத்திருக்கிறது', st_approved: 'ஒப்புதல் கிடைத்தது — பதியத் தயார்', st_rejected: 'நிராகரிக்கப்பட்டது', st_expired: 'காலாவதியானது', st_used: 'பதியப்பட்டது',
+    myAsksH: 'நீங்கள் பதியக் கேட்ட செலுத்தல்கள்', showAsks: 'அவற்றைக் காட்டு', noAsks: 'நீங்கள் எந்தச் சப்ளையர் செலுத்தலையும் பதியக் கேட்கவில்லை.', st_waiting: 'ஒப்புதலுக்குக் காத்திருக்கிறது', st_approved: 'ஒப்புதல் கிடைத்தது — செலுத்தியதும் பதியுங்கள்', st_rejected: 'நிராகரிக்கப்பட்டது', st_expired: 'காலாவதியானது', st_used: 'பதியப்பட்டது',
     record: 'இந்தச் செலுத்தலைப் பதி', recorded: 'பதியப்பட்டது. சப்ளையருக்கு இன்னும் செலுத்த வேண்டியது: {owed}.', already: 'ஏற்கனவே பதியப்பட்டது — இருமுறை எழுதப்படவில்லை.',
-    needPayment: 'சப்ளையர், ரூபாயில் தொகை, செலுத்திய நாள், எப்படி, அதன் குறிப்பு ஆகியவற்றைத் தட்டச்சு செய்யவும்.',
+    needPayment: 'சப்ளையர், ரூபாயில் தொகை, எப்படிச் செலுத்தப்படும் என்பதைத் தட்டச்சு செய்யவும்.',
+    recordH: 'ஒப்புதல் கிடைத்தது — செலுத்தியதும் பதியுங்கள்', recordLede: 'பணம் சென்றதும், செலுத்திய நாளையும் அதன் குறிப்பையும் (UTR, காசோலை அல்லது UPI எண்) தட்டச்சு செய்து, ஒப்புதல் பெற்ற வரியில் "இந்தச் செலுத்தலைப் பதி" அழுத்தவும்.',
+    needPaid: 'பதிவதற்கு முன் செலுத்திய நாளையும் அதன் குறிப்பையும் (UTR, காசோலை அல்லது UPI எண்) தட்டச்சு செய்யவும்.', paidInFuture: 'செலுத்திய நாள் இன்னும் வராத நாளாக இருக்க முடியாது.',
+    notYetPaid: 'இன்னும் செலுத்தவில்லை',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotPay: 'சப்ளையர் செலுத்தலைப் பதிய சப்ளையர்களுக்குச் செலுத்தும் அனுமதி தேவை.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் கேட்கப்படவில்லை, பதியப்படவில்லை.',
     settles: 'இது தீர்க்கும் பில்கள் — சப்ளையரின் பொருத்தப்பட்ட, இன்னும் செலுத்தாத பில்களைத் தேர்வு செய்யவும் (விருப்பம்)', settlesShown: '{bills} பில்களைத் தீர்க்கிறது',
@@ -75,7 +83,9 @@ export const supplierPaymentOutcomeWords = (lang: Lang, out: Outcome<unknown>): 
 export { rupees };
 
 export interface PaymentForm {
-  readonly supplierId: string; readonly amountRupees: string; readonly paidOn: string; readonly method: string; readonly reference: string;
+  readonly supplierId: string; readonly amountRupees: string; readonly method: string;
+  /** Ignored when asking (OB-807 A): the day and the reference are typed when the approved payment is recorded (`PaidDetails`). */
+  readonly paidOn?: string; readonly reference?: string;
   /** U7 · OB-724 — the bills it settles, as typed: bill numbers separated by commas (or spaces). Optional. */
   readonly settles?: string;
 }
@@ -104,15 +114,35 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** Advances are asked for on the Supplier bills page with this subject prefix; they are not payments recorded here. */
 const ADVANCE_PREFIX = 'advance:';
 
-/** The payment as head office's record route reads it (exactly what is asked for), or null when the form is not complete. Pure. */
+/**
+ * OB-807 A: the payment's TERMS as they are asked for and approved — the amount, how it is paid and the bills it settles —
+ * or null when the form is not complete. No paid day and no reference: they exist only once the money has gone. Pure.
+ */
 export function paymentBody(f: PaymentForm): Record<string, unknown> | null {
   const amountMinor = signedPaiseOf(f.amountRupees);
-  if (f.supplierId.trim() === '' || amountMinor === null || amountMinor <= 0 || !DAY.test(f.paidOn.trim()) || !(PAY_METHODS as readonly string[]).includes(f.method) || f.reference.trim() === '') return null;
+  if (f.supplierId.trim() === '' || amountMinor === null || amountMinor <= 0 || !(PAY_METHODS as readonly string[]).includes(f.method)) return null;
   const settles = billsOf(f.settles);
-  return { amountMinor, paidOn: f.paidOn.trim(), method: f.method, reference: f.reference.trim(), ...(settles.length === 0 ? {} : { settles }) };
+  return { amountMinor, method: f.method, ...(settles.length === 0 ? {} : { settles }) };
 }
 
-type Why = 'nobody' | 'cannotPay' | 'needPayment' | PayBlock;
+/** OB-807 A: what is typed when an approved payment is recorded — the day it was paid and its reference. */
+export interface PaidDetails { readonly paidOn: string; readonly reference: string }
+
+/**
+ * The body head office's record route reads, from the APPROVED request (never a form typed again) and the day and reference
+ * typed once the money has gone. An approval asked the older way already carries its day and reference: those are sent as
+ * approved, and anything typed is not used. 'needPaid' / 'paidInFuture' when the typed ones will not do. Pure.
+ */
+export function recordBodyOf(ask: PaymentAsk, paid: PaidDetails | undefined, today: string | undefined): Record<string, unknown> | 'needPaid' | 'paidInFuture' {
+  const approved = Object.fromEntries(Object.entries(ask.details).filter(([k]) => k !== 'supplierId' && k !== 'paymentId'));
+  if ('paidOn' in approved || 'reference' in approved) return approved;
+  const paidOn = (paid?.paidOn ?? '').trim(); const reference = (paid?.reference ?? '').trim();
+  if (!DAY.test(paidOn) || reference === '') return 'needPaid';
+  if (today !== undefined && DAY.test(today) && paidOn > today) return 'paidInFuture';
+  return { ...approved, paidOn, reference };
+}
+
+type Why = 'nobody' | 'cannotPay' | 'needPayment' | 'needPaid' | 'paidInFuture' | PayBlock;
 
 /** D-048: why head office would refuse to record a payment to this supplier — the same three checks its record route runs. */
 export type PayBlock = 'supplierHeld' | 'noVerifiedBank' | 'sharedBank';
@@ -146,7 +176,9 @@ export function paymentSummary(input: { readonly supplierId: string; readonly su
   const how = supplierPaymentWords('en', `m_${String(b['method'])}`);
   const who = input.supplierName === null ? input.supplierId : `${input.supplierName} (${input.supplierId})`;
   const settles = Array.isArray(b['settles']) && b['settles'].length > 0 ? `, settles bill(s) ${(b['settles'] as unknown[]).map(String).join(', ')}` : '';
-  return `Payment to ${who}: ${rupees(b['amountMinor'] as number)} by ${how} on ${String(b['paidOn'])}, ref ${String(b['reference'])}${settles}`;
+  // OB-807 A: asked before it is paid, so the day and reference are said only on an approval asked the older way.
+  const when = typeof b['paidOn'] === 'string' ? ` on ${b['paidOn']}, ref ${String(b['reference'])}` : '';
+  return `Payment to ${who}: ${rupees(b['amountMinor'] as number)} by ${how}${when}${settles}`;
 }
 type Done<T> = Promise<Outcome<T, Why>>;
 
@@ -154,7 +186,8 @@ export interface SupplierPaymentSession {
   readonly may: { readonly named: boolean; readonly pay: boolean };
   ask(f: PaymentForm): Done<{ readonly requestId: string; readonly paymentId: string }>;
   myAsks(): Done<readonly PaymentAsk[]>;
-  record(ask: PaymentAsk): Done<{ readonly alreadyRecorded: boolean; readonly owedMinor?: number }>;
+  /** OB-807 A: the approved payment, recorded with the day it was paid and its reference (typed now, after paying). */
+  record(ask: PaymentAsk, paid?: PaidDetails): Done<{ readonly alreadyRecorded: boolean; readonly owedMinor?: number }>;
   /** D-047: the supplier's matched bills not yet paid (`openBillsOf`); a supplier head office has no record of has none. */
   openBills(supplierId: string): Done<readonly OpenBill[]>;
 }
@@ -162,6 +195,8 @@ export interface SupplierPaymentSession {
 export function createSupplierPaymentSession(input: {
   readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
   readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newId?: (prefix: string) => string;
+  /** The shop's today (YYYY-MM-DD), so a paid day still to come is refused here as well as at head office. */
+  readonly today?: () => string;
 }): SupplierPaymentSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
@@ -198,11 +233,13 @@ export function createSupplierPaymentSession(input: {
       if (mine.result !== 'ok') return mine;
       return { result: 'ok', value: (mine.value.mine ?? []).filter((q) => q.kind === 'supplier_payment' && !q.subjectRef.startsWith(ADVANCE_PREFIX) && q.subjectRef.includes('/')) };
     },
-    // Exactly what was approved is recorded: the details come from the approved request, never from a form typed again.
-    record: async (ask) => {
+    // Exactly what was approved is recorded: the terms come from the approved request, never from a form typed again; the
+    // day and the reference are the ones typed now that it has been paid (OB-807 A).
+    record: async (ask, paid) => {
       const g = gate(); if (g) return g;
       const supplierId = String(ask.details['supplierId'] ?? ''); const paymentId = String(ask.details['paymentId'] ?? '');
-      const body = Object.fromEntries(Object.entries(ask.details).filter(([k]) => k !== 'supplierId' && k !== 'paymentId'));
+      const body = recordBodyOf(ask, paid, input.today?.());
+      if (typeof body === 'string') return no(body);
       return call('POST', `/v1/purchase/suppliers/${enc(supplierId)}/payments/${enc(paymentId)}`, { ...body, approvalId: ask.requestId });
     },
     openBills: async (supplierId) => {

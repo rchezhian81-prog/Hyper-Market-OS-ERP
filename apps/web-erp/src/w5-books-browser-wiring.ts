@@ -53,7 +53,7 @@ export function wireW5Books(win: Record<string, unknown>, viewerIdentity: (raw: 
   // U7 · OB-724: and on the Supplier bills page, where the bills a payment settles are read.
   const payViewer = win['suppliersData'] ?? win['supplierBillsData'];
   if (payViewer !== undefined) {
-    win['supplierPayments'] = { session: createSupplierPaymentSession({ viewer: viewerIdentity(payViewer) }), words: supplierPaymentWords, outcomeWords: supplierPaymentOutcomeWords, rupees, methods: PAY_METHODS, today: shopToday };
+    win['supplierPayments'] = { session: createSupplierPaymentSession({ viewer: viewerIdentity(payViewer), today: shopToday }), words: supplierPaymentWords, outcomeWords: supplierPaymentOutcomeWords, rupees, methods: PAY_METHODS, today: shopToday };
   }
   // M24-FR-02/03/04: Supplier submissions — a supplier's papers and statement, and portal probing.
   if (win['supplierSubmissionsData'] !== undefined) {

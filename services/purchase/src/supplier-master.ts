@@ -26,6 +26,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, documentsVerifiedByTheCaller } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { isPayable, detectDuplicateBankAccounts, holdersBlockedForDuplicate, type BankAccountHolder } from '../../../packages/bank-controls/src/index';
 import type { PartnerDocumentKind } from '../../../packages/supplier-portal/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -362,13 +363,30 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         const method = b['method'] as PaymentMethod;
         const regs = await accountRegisters(deps, t);
         const prior = (regs.payments ?? []).find((p) => p.paymentId === paymentId);
+        // OB-807 A: the paid date is typed when the payment is recorded — never a day still to come in the shop.
+        if (prior === undefined && (b['paidOn'] as string) > shopDateIn(deps.now())) {
+          throw apiError(422, {
+            code: 'paid_on_in_the_future',
+            whatHappened: `The payment is dated ${String(b['paidOn'])}, a day that has not come yet in the shop (today is ${shopDateIn(deps.now())}). A payment is recorded once the money has gone.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Record it with the day the money was actually paid. Nothing was recorded and the approval was not used.',
+          });
+        }
         if (prior !== undefined) return { status: 200, body: { payment: prior, alreadyRecorded: true, owedMinor: foldSupplierAccount({ ...regs, supplierId: prior.supplierId }).totals.owedMinor } };
         // The approver (ADR-0024 · §28 · M23-FR-01): an approval ANOTHER person holding `purchase.supplier.pay` GAVE in
         // their own session for exactly this payment (kind `supplier_payment`) — never the payer. A name typed into
         // `approvedBy` is refused by name; before, it was checked only for the role it named.
+        // OB-807 A (owner, 16 Nov 2026, in writing): a payment is APPROVED on its terms — the supplier, the amount, how it is
+        // paid and the bills it settles — and the paid date and the bank reference (UTR, cheque or UPI number) are added only
+        // when it is RECORDED, because they exist only after the money has gone. So the approval is matched on the terms
+        // alone (`paymentTerms`); an approval asked the older way, with the date and reference in it, still has to match
+        // them exactly. Nothing is loosened: amount, bills, supplier, method, maker, one use, expiry and the checker's
+        // authority are all judged exactly as before.
+        const askedWithDateAndReference = await approvalCarriesDateAndReference(deps.approvals, t, b['approvalId']);
         const opened = await approvalNamedIn(deps.approvals, {
           tenantId: t, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-          kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, details: actionDetails(ctx.body, { supplierId, paymentId }),
+          kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`,
+          details: askedWithDateAndReference ? actionDetails(ctx.body, { supplierId, paymentId }) : paymentTerms(ctx.body, { supplierId, paymentId }),
           valueMinor: b['amountMinor'], maker: ctx.userId, usedBy: `supplier-payment:${supplierId}/${paymentId}`, now: deps.now(),
         });
         if (opened === undefined) {
@@ -517,4 +535,19 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
       },
     },
   ];
+}
+
+/** OB-807 A: what a supplier payment is approved FOR — its terms, without the paid date and the reference (UTR, cheque or
+ *  UPI number), which exist only after the money has gone and are added when it is recorded. Pure. */
+export function paymentTerms(body: unknown, pathIds: Readonly<Record<string, string>>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(actionDetails(body, pathIds)).filter(([k]) => k !== 'paidOn' && k !== 'reference'));
+}
+
+/** Whether this approval was asked the older way (before OB-807 A), with the paid date and reference in it — then it is
+ *  matched on them exactly, as it always was. An approval head office does not know is left to the ordinary refusal. */
+async function approvalCarriesDateAndReference(port: ApprovalPort | undefined, tenantId: string, approvalId: unknown): Promise<boolean> {
+  if (port === undefined || typeof approvalId !== 'string' || approvalId.trim() === '') return false;
+  const state = await Promise.resolve(port.approvalState(tenantId, approvalId.trim()));
+  const details = state?.request.details ?? {};
+  return 'paidOn' in details || 'reference' in details;
 }
