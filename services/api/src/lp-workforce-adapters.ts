@@ -58,7 +58,8 @@ import { lossValueOf } from '../../inventory/src/write-off';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { latestPlanograms } from '../../inventory/src/planograms';
 import { relabelTaskRoutes, relabelTasksFor, raiseRelabelTasks, type RelabelTaskDeps, type RelabelTask, type RelabelDone } from '../../pricing/src/relabel-tasks';
-import { facilitiesAssetsAdapter, facilitiesMonitoringAdapter, facilitiesAdapter, writeOffAdapter, planogramStoreAdapter } from './adapters';
+import { facilitiesAssetsAdapter, facilitiesMonitoringAdapter, facilitiesAdapter, writeOffAdapter, planogramStoreAdapter, heldVersionsAdapter } from './adapters';
+import type { SignedPack } from '../../catalogue/src/index';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
 import { type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
@@ -486,6 +487,17 @@ export function relabelTaskAdapter(input: Base, surface: readonly Route[]): Rela
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
     // D-026: each task names its item, as head office's product master names it.
     productNames: async (t) => new Map((await productMasterAdapter({ store, now }).products(t)).filter((p) => typeof p.name === 'string' && p.name.trim() !== '').map((p) => [p.productId, p.name] as const)),
+    // OB-806 A · D-021: the tills have the price when the signed pack the store computer last said it holds was made for
+    // this store and carries exactly this price for this product. No report yet, or a pack without it → waiting for the tills.
+    tillsHavePrice: async (t, storeId, productId, priceMinor) => {
+      const held = (await heldVersionsAdapter({ store }).heldVersions(t, storeId))?.catalogueVersion ?? null;
+      if (held === null) return false;
+      const found = await store.findByIdempotencyKey(t, `catalogue-${t}-v${held}`);
+      const pack = found === undefined ? undefined : (found.event.payload as SignedPack);
+      if (pack === undefined) return false;
+      if (pack.snapshot.scope?.storeId !== undefined && pack.snapshot.scope.storeId !== storeId) return false;
+      return pack.snapshot.products.some((p) => p.productId === productId && p.unitPriceMinor === priceMinor);
+    },
   };
 }
 

@@ -43,7 +43,7 @@ import { accessReviewRoutes } from '../../identity/src/access-review';
 import { departmentScopeRoutes, departmentScopeFor, foldDepartmentScopes, type DepartmentScopeRecord } from '../../identity/src/department-scope';
 import { MACHINE_ROLE_IDS, isPlatformAdministrationRole } from '../../identity/src/separation-of-duties';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
-import { pricingRoutes } from '../../pricing/src/index';
+import { pricingRoutes, type PricingDeps } from '../../pricing/src/index';
 import { orgDepartmentRoutes, currentLinks, type DepartmentLinkRecord, type DepartmentSaleLine } from '../../platform/src/org-departments';
 import { governedFlagRoutes, governSetupWrite, governConfigRollback, type GovernedFlagChange } from '../../platform/src/governed-config';
 import {
@@ -231,6 +231,8 @@ export function p1IdentitySurface(surface: Route[], input: {
   readonly recordAudit?: Recorder;
   readonly applyDecision?: (tenantId: string, record: ApprovalDecisionRecord) => Promise<AppliedDecision>;
   readonly tillSealKey?: Buffer;
+  /** OB-806 A: an accepted price goes to the store's tills (main.ts's one composition over the catalogue pack publish). */
+  readonly toTheTills?: PricingDeps['toTheTills'];
 }): void {
   const { now, settings } = input;
   // A bare composition (no store: the API-surface document, a stub) still serves the same routes, over a store that keeps
@@ -341,6 +343,7 @@ export function p1IdentitySurface(surface: Route[], input: {
     // ...and the MRP ceiling is head office's own in force today (D-019): the lower of it and the one sent; none on record
     // → the MRP sent (read off the pack) needs a second person's approval for exactly this change.
     mrpOnRecordFor: mrpOnRecordFor({ store, now, ...(input.calendar === undefined ? {} : { calendar: input.calendar }) }),
+    ...(input.toTheTills === undefined ? {} : { toTheTills: input.toTheTills }), // OB-806 A
     changeNeedsSecondPerson: async (tenantId, productId, priceMinor, storeIds) => {
       const entries = await payloads<PriceEntry>(store, tenantId, streamName(STREAM.pricing, 'list', productId), 'PriceListEntryPublished');
       const at = now();

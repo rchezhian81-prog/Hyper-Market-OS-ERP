@@ -69,6 +69,107 @@ export interface CatalogueDeps {
    * force on the next publish.
    */
   readonly bulkPublishThreshold?: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** OB-806 A · P-08: where an accepted price that did not reach the tills is recorded, and read back until a pack goes. */
+  readonly notSent?: NotSentLog;
+}
+
+/** OB-806 A: one accepted price whose automatic sending to a store's tills did not go — and why, in words. */
+export interface NotSentToTills {
+  readonly storeId: string;
+  readonly productId: string;
+  readonly priceMinor: number;
+  readonly reason: TillNotSentReason;
+  readonly why: string;
+  readonly by: string;
+  readonly at: string;
+}
+
+export type TillNotSentReason = 'starts_later' | 'needs_the_owner' | 'refused' | 'failed';
+
+/** OB-806 A · P-08: the record of prices saved but not sent; a later pack that goes for the store settles them. */
+export interface NotSentLog {
+  readonly recordNotSent: (tenantId: string, entry: NotSentToTills) => Promise<void> | void;
+  /** A pack went for this store at this version: everything not sent before it is on its way now. */
+  readonly recordSent: (tenantId: string, storeId: string, version: number, at: string) => Promise<void> | void;
+  /** The prices not sent for a store since the last pack that went for it (oldest first). */
+  readonly since: (tenantId: string, storeId: string) => Promise<readonly NotSentToTills[]> | readonly NotSentToTills[];
+}
+
+/** One pack, built and judged, ready to sign — the ONE path both "Send to the tills" and the automatic send use. */
+export interface PreparedPublish {
+  readonly storeId: string | undefined;
+  readonly stepUp: ReturnType<typeof publishStepUpNeeded>;
+  readonly sign: (publishedBy: string, acknowledgedRemovals?: number) => ReturnType<typeof publishPack>;
+}
+
+export async function preparePublish(deps: CatalogueDeps, tenantId: string, options: { readonly storeId?: string; readonly asOf?: string }): Promise<PreparedPublish> {
+  const previous = await deps.currentPack(tenantId);
+  // A real adapter folds the master data; a test double ignores the options. The adapter decides whether a missing
+  // storeId is an error.
+  const snapshot = await deps.buildSnapshot(tenantId, options);
+  const approvals = await deps.approvalsSince(tenantId, previous?.snapshot.version ?? 0);
+  const stepUp = publishStepUpNeeded({
+    ...(previous === undefined ? {} : { previous: previous.snapshot }),
+    next: snapshot,
+    bulkThreshold: await deps.bulkPublishThreshold?.(tenantId),
+  });
+  return {
+    storeId: options.storeId,
+    stepUp,
+    sign: (publishedBy, acknowledgedRemovals) => publishPack({
+      snapshot,
+      ...(previous === undefined ? {} : { previous }),
+      approvals,
+      signer: deps.signer,
+      publishedBy,
+      publishedAt: deps.now(),
+      ...(acknowledgedRemovals === undefined ? {} : { acknowledgedRemovals }),
+    }),
+  };
+}
+
+/** What happened to an accepted price on its way to one store's tills (OB-806 A). */
+export type TillDelivery =
+  | { readonly storeId: string; readonly sent: true; readonly version: number; readonly withinMinutes: number }
+  | { readonly storeId: string; readonly sent: false; readonly reason: TillNotSentReason; readonly why: string };
+
+/**
+ * OB-806 A (owner, 16 Nov 2026, in writing): a price head office has ACCEPTED — the MRP ceiling, the margin floor and any
+ * second-person approval already passed; the caller calls this only after recording it — goes to the store's tills at once,
+ * through the very same signed, versioned, append-only pack publish as "Send to the tills" (`preparePublish`). It never signs
+ * past a check the button would ask for: a publish that needs the owner's fresh two-step sign-in (bulk or regulated), or that
+ * the pack's own checks refuse (shrink), is NOT sent — it is recorded as not sent, with why, and the owner's page shows it
+ * (P-08). A price that starts on a later day is not in today's pack: it is recorded as waiting for its day. No AI is involved.
+ */
+export async function sendAcceptedPriceToTills(deps: CatalogueDeps, tenantId: string, input: {
+  readonly storeId: string; readonly productId: string; readonly priceMinor: number; readonly by: string;
+  /** The shop's date the price starts (YYYY-MM-DD) and the shop's date today. */
+  readonly startsOn: string; readonly today: string;
+  /** How long the store computer takes, at most, to take a new pack (`packages/sync/src/pull-timing.ts`). */
+  readonly withinMinutes: number;
+}): Promise<TillDelivery> {
+  const notSent = async (reason: TillNotSentReason, why: string): Promise<TillDelivery> => {
+    try {
+      await deps.notSent?.recordNotSent(tenantId, { storeId: input.storeId, productId: input.productId, priceMinor: input.priceMinor, reason, why, by: input.by, at: deps.now() });
+    } catch { /* the answer below still says it was not sent — never silent */ }
+    return { storeId: input.storeId, sent: false, reason, why };
+  };
+  if (input.startsOn > input.today) {
+    return notSent('starts_later', `The price starts on ${input.startsOn}; today's pack cannot carry it yet. Send to the tills on or after that day.`);
+  }
+  try {
+    const prepared = await preparePublish(deps, tenantId, { storeId: input.storeId });
+    if (prepared.stepUp.needed) {
+      return notSent('needs_the_owner', `Sending now would also send other changes that need the owner's fresh two-step sign-in (${prepared.stepUp.because}), so it waits for the owner's "Send to the tills".`);
+    }
+    const result = prepared.sign(input.by);
+    if (!result.ok) return notSent('refused', result.detail);
+    await deps.storePack(tenantId, result.pack!);
+    await deps.notSent?.recordSent(tenantId, input.storeId, result.pack!.snapshot.version, deps.now());
+    return { storeId: input.storeId, sent: true, version: result.pack!.snapshot.version, withinMinutes: input.withinMinutes };
+  } catch (e) {
+    return notSent('failed', `The pack could not be built or stored (${e instanceof Error ? e.message : String(e)}).`);
+  }
 }
 
 /**
@@ -100,41 +201,35 @@ export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
       },
     },
     {
+      // OB-806 A · P-08: the accepted prices whose automatic sending to a store's tills did not go — since the last pack that
+      // went for that store. The owner's "Send to the tills" page shows them, so a price saved but not on the tills is never
+      // silent; pressing "Send to the tills" there sends them.
+      api: 'API-02', method: 'GET', path: '/v1/catalogue/pack/not-sent',
+      permission: 'catalogue.pack.read',
+      handler: async (ctx) => {
+        const storeId = typeof ctx.query['storeId'] === 'string' ? ctx.query['storeId'].trim() : '';
+        const notSent = deps.notSent === undefined || storeId === '' ? [] : await deps.notSent.since(ctx.tenantId, storeId);
+        return { status: 200, body: { storeId, notSent, count: notSent.length } };
+      },
+    },
+    {
       api: 'API-02', method: 'POST', path: '/v1/catalogue/pack',
       permission: 'catalogue.pack.publish', idempotent: true,
       handler: async (ctx) => {
-        const previous = await deps.currentPack(ctx.tenantId);
         const body = (ctx.body ?? {}) as { acknowledgedRemovals?: number; storeId?: string; asOf?: string };
-        // The pack is built FOR a store (prices resolve per store) as of a moment. A real adapter folds the
-        // master data; a test double ignores these. The adapter decides whether a missing storeId is an error.
-        const snapshot = await deps.buildSnapshot(ctx.tenantId, {
+        // The pack is built FOR a store (prices resolve per store) as of a moment — the ONE path the automatic send
+        // after an accepted price (OB-806 A) uses too.
+        const prepared = await preparePublish(deps, ctx.tenantId, {
           ...(typeof body.storeId === 'string' ? { storeId: body.storeId } : {}),
           ...(typeof body.asOf === 'string' ? { asOf: body.asOf } : {}),
         });
-        const approvals = await deps.approvalsSince(ctx.tenantId, previous?.snapshot.version ?? 0);
-
         // STEP-UP (ADR-0013 point 4 · SEC-03 · §28 · Stage E slice 1): a BULK publish (at or above the owner's
         // threshold of products added / changed / removed) or a SENSITIVE one (a regulated product added or
         // changed) needs a RECENT, MFA-backed re-authentication from the SIGNED token — checked here, at the
         // API boundary, before anything is signed or stored, so a direct call cannot skip the web-erp prompt.
         // A routine publish (a few ordinary lines) is not asked. The refusal says exactly why this one was.
-        const stepUp = publishStepUpNeeded({
-          ...(previous === undefined ? {} : { previous: previous.snapshot }),
-          next: snapshot,
-          bulkThreshold: await deps.bulkPublishThreshold?.(ctx.tenantId),
-        });
-        if (stepUp.needed) requireStepUp(ctx, PUBLISH_STEP_UP, Date.parse(deps.now()), stepUp.because);
-
-        const result = publishPack({
-          snapshot,
-          ...(previous === undefined ? {} : { previous }),
-          approvals,
-          signer: deps.signer,
-          publishedBy: ctx.userId,
-          publishedAt: deps.now(),
-          ...(body.acknowledgedRemovals === undefined
-            ? {} : { acknowledgedRemovals: body.acknowledgedRemovals }),
-        });
+        if (prepared.stepUp.needed) requireStepUp(ctx, PUBLISH_STEP_UP, Date.parse(deps.now()), prepared.stepUp.because);
+        const result = prepared.sign(ctx.userId, body.acknowledgedRemovals);
 
         if (!result.ok) {
           // A refusal here is not a server fault — it is the service declining to put something
@@ -154,6 +249,7 @@ export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
         }
 
         await deps.storePack(ctx.tenantId, result.pack!);
+        if (prepared.storeId !== undefined) await deps.notSent?.recordSent(ctx.tenantId, prepared.storeId, result.pack!.snapshot.version, deps.now());
         return { status: 201, body: { published: result.detail, version: result.pack!.snapshot.version } };
       },
     },

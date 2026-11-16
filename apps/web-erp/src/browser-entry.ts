@@ -66,7 +66,7 @@ import {
   type ProposePurchaseOrderPort, type ProposePurchaseOrderOutcome,
 } from './buying-session';
 import {
-  createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
+  createCatalogueSession, priceChangeRequestBody, promotionLaunchBody, tillDeliveriesOf,
   type CataloguePorts, type CatalogueSession,
   type PromotionLaunchPort, type PromotionLaunchOutcome, type PromotionDefinitionPort,
   type PriceChangeCloudPort, type PriceChangeCloudOutcome, type MrpReplacePort, type MrpReplaceOutcome, type HeadOfficeMrp,
@@ -6519,8 +6519,9 @@ export function openPriceChangePort(): PriceChangeCloudPort {
           body: JSON.stringify(priceChangeRequestBody(figures, approvalId)),
         });
         if (res.status >= 200 && res.status < 300) {
-          const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null };
-          if (typeof body.verdict === 'string') return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null };
+          const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null; tills?: unknown };
+          // OB-806 A: what happened at the tills, read strictly (null = head office did not say).
+          if (typeof body.verdict === 'string') return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null, tills: tillDeliveriesOf(body.tills) };
           return { saved: false, reason: 'head office did not change the price' };
         }
         // 422 (above MRP / below cost / below floor without a usable approval) or any other refusal — its own words.

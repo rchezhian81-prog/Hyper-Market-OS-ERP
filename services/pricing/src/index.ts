@@ -73,8 +73,30 @@ export interface PricingDeps {
    * first. Optional on a bare stub (then no size rule, as before).
    */
   readonly changeNeedsSecondPerson?: (tenantId: string, productId: string, priceMinor: number, storeIds: readonly string[]) => Promise<string | undefined>;
+  /**
+   * OB-806 A (owner, 16 Nov 2026): once a change is ACCEPTED and recorded, send it to each store's tills through the one
+   * signed pack publish (`services/catalogue` `sendAcceptedPriceToTills`). Called only after every rule above passed; what
+   * happened per store is said in the answer, never silently dropped (P-08). Optional on a bare stub (then nothing is sent
+   * and the answer says the price waits for "Send to the tills").
+   */
+  readonly toTheTills?: (tenantId: string, input: AcceptedPriceForTills) => Promise<readonly TillDeliveryAnswer[]>;
   readonly now: () => string;
 }
+
+/** OB-806 A: an accepted price, as handed to the tills' sending. */
+export interface AcceptedPriceForTills {
+  readonly productId: string;
+  readonly priceMinor: number;
+  readonly storeIds: readonly string[];
+  /** The shop's date the price starts (YYYY-MM-DD). */
+  readonly startsOn: string;
+  readonly by: string;
+}
+
+/** OB-806 A: what happened to it at one store (the catalogue service's `TillDelivery`, as the answer carries it). */
+export type TillDeliveryAnswer =
+  | { readonly storeId: string; readonly sent: true; readonly version: number; readonly withinMinutes: number }
+  | { readonly storeId: string; readonly sent: false; readonly reason: string; readonly why: string };
 
 interface Body {
   readonly productId?: string;
@@ -225,11 +247,16 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           ...(record.reason ? { reason: record.reason } : {}),
           correlationId: record.id,
         });
-        // `operativeAt` says where the price now applies (from today); the till charges it from the next published pack.
+        // `operativeAt` says where the price now applies (from today). OB-806 A: an accepted price goes to those stores' tills
+        // now, through the one signed pack publish — and the answer says, per store, whether it went (P-08).
+        const effectiveFrom = await shopClock(deps.calendar).dateOf(ctx.tenantId, record.at);
+        const tills = deps.toTheTills === undefined ? null
+          : await deps.toTheTills(ctx.tenantId, { productId: record.productId, priceMinor: record.priceMinor, storeIds, startsOn: effectiveFrom, by: ctx.userId });
         return {
           status: 201,
           body: {
-            productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: await shopClock(deps.calendar).dateOf(ctx.tenantId, record.at),
+            tills,
+            productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom,
             // Which floor it was judged by — the store's, said, with the figure the request sent beside it when it sent one.
             marginFloor: deps.marginFloorFor === undefined
               ? { appliedBps: marginFloorBps, source: 'request' }

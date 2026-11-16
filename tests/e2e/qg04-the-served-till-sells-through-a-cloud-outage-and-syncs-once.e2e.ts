@@ -135,7 +135,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('QG-04 — 
     const line = await startLine(cloud.baseUrl);
     stops.push(() => line.stop());
     const edge = await startBox(line.url);
-    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 }); // pulled while the line was up
+    const headOffice = ((await call('GET', '/v1/catalogue/pack')).body as { snapshot: { version: number } }).snapshot.version; // OB-806 A: read, never assumed
+    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: headOffice }); // pulled while the line was up
     expect(await onHand()).toBe(10);
 
     // ── 1 · The internet is CUT. The served till still signs in, scans and takes cash: the sale commits on the box.

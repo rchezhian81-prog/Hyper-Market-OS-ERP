@@ -10274,6 +10274,50 @@
         }
       }
     },
+    "/v1/catalogue/pack/not-sent": {
+      "get": {
+        "operationId": "getCataloguePackNotSent",
+        "tags": [
+          "API-02 Catalogue"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "catalogue.pack.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCataloguePackNotSentReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"catalogue.pack.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/catalogue/pack/preview": {
       "get": {
         "operationId": "getCataloguePackPreview",
@@ -126982,6 +127026,31 @@
         "x-body-schema": "derived",
         "x-derived-from": "services/catalogue/src/index.ts"
       },
+      "GetCataloguePackNotSentReply": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "notSent",
+          "count"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "notSent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotSentToTills"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/catalogue/src/index.ts"
+      },
       "GetCataloguePackPreviewReply": {
         "type": "object",
         "required": [
@@ -161544,6 +161613,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "waitingForTills",
                 "replacedBy",
                 "assignee",
                 "assignedToMe",
@@ -161570,6 +161640,9 @@
                   ]
                 },
                 "dueNow": {
+                  "type": "boolean"
+                },
+                "waitingForTills": {
                   "type": "boolean"
                 },
                 "replacedBy": {
@@ -161743,6 +161816,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "waitingForTills",
                 "replacedBy",
                 "assignee",
                 "assignedToMe",
@@ -161769,6 +161843,9 @@
                   ]
                 },
                 "dueNow": {
+                  "type": "boolean"
+                },
+                "waitingForTills": {
                   "type": "boolean"
                 },
                 "replacedBy": {
@@ -243060,6 +243137,7 @@
       "PostPricesChangesReply201": {
         "type": "object",
         "required": [
+          "tills",
           "productId",
           "priceMinor",
           "verdict",
@@ -243069,6 +243147,19 @@
           "marginFloor"
         ],
         "properties": {
+          "tills": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TillDeliveryAnswer"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "productId": {
             "type": "string"
           },
@@ -243544,6 +243635,7 @@
       "PostPricesListByProductIdEntriesByEntryIdReply201": {
         "type": "object",
         "required": [
+          "tills",
           "entryId",
           "productId",
           "scope",
@@ -243557,6 +243649,19 @@
         "properties": {
           "batchId": {
             "type": "string"
+          },
+          "tills": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TillDeliveryAnswer"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "entryId": {
             "type": "string"
@@ -303178,6 +303283,48 @@
         },
         "additionalProperties": true
       },
+      "NotSentToTills": {
+        "type": "object",
+        "required": [
+          "storeId",
+          "productId",
+          "priceMinor",
+          "reason",
+          "why",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "priceMinor": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "needs_the_owner",
+              "refused",
+              "starts_later"
+            ]
+          },
+          "why": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "NotSoldProduct": {
         "type": "object",
         "required": [
@@ -328796,6 +328943,60 @@
           }
         },
         "additionalProperties": true
+      },
+      "TillDeliveryAnswer": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "storeId",
+              "sent",
+              "reason",
+              "why"
+            ],
+            "properties": {
+              "storeId": {
+                "type": "string"
+              },
+              "sent": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "storeId",
+              "sent",
+              "version",
+              "withinMinutes"
+            ],
+            "properties": {
+              "storeId": {
+                "type": "string"
+              },
+              "sent": {
+                "type": "boolean",
+                "const": true
+              },
+              "version": {
+                "type": "number"
+              },
+              "withinMinutes": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
       },
       "TillDeliveryGiven": {
         "type": "object",

@@ -99,6 +99,11 @@ const WORDS = {
     noStores: 'This scope reaches no store yet (a zone with no store in it).',
     needAll: 'Choose the product, which price, who or where it is for, and the date, and write the price.', needBasis: 'Read head office\'s figures first.', needWhy: 'Write the reason first.',
     saved: 'Saved. {price} from {from} for {scope} {ref}.', savedWith: 'Saved with the approval of {by}.',
+    tillsSent: 'The tills will have it within {m} minutes.',
+    tillsNotSent: 'It has NOT reached the tills yet: {why} The tills keep charging the old price until it is sent — press “Send to the tills” below.',
+    tillsLater: 'It starts on a later day, so send it to the tills on or after that day.',
+    notSentHead: '{n} saved price(s) have not reached the tills of this store yet — press “Send to the tills” to send them:',
+    notSentLine: '{item} at {price} — {why}',
     needsApproval: 'This needs a second person: {why} Write why and press “Ask for approval”; once they approve it on their Approvals page, press “Save the price” again.',
     asked: 'Asked. It waits on the approver\'s Approvals page; nothing is saved until then.', waiting: 'Still waiting for the second person. Nothing was saved.', rejected: 'The second person rejected it: {why}',
     historyH: 'Every price on record for this product', cScope: 'Which price', cRef: 'For', cPrice: 'Price', cFrom: 'From', cTo: 'Until', cVer: 'Version', open: 'open-ended', noHistory: 'No price is on record for this product.',
@@ -142,6 +147,11 @@ const WORDS = {
     noStores: 'இந்த வரம்பு இன்னும் எந்தக் கடையையும் அடையவில்லை (கடை இல்லாத மண்டலம்).',
     needAll: 'பொருள், எந்த விலை, யாருக்கு அல்லது எங்கே, தேதி ஆகியவற்றைத் தேர்வு செய்து விலையை எழுதுங்கள்.', needBasis: 'முதலில் தலைமை அலுவலக எண்களைப் படியுங்கள்.', needWhy: 'முதலில் காரணத்தை எழுதுங்கள்.',
     saved: 'சேமிக்கப்பட்டது. {from} முதல் {scope} {ref}-க்கு {price}.', savedWith: '{by} அவர்களின் ஒப்புதலுடன் சேமிக்கப்பட்டது.',
+    tillsSent: '{m} நிமிடங்களுக்குள் பில் இயந்திரங்களுக்குச் சென்றுவிடும்.',
+    tillsNotSent: 'இது இன்னும் பில் இயந்திரங்களுக்குச் செல்லவில்லை: {why} அனுப்பும் வரை பழைய விலையே வசூலிக்கப்படும் — கீழே “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்தவும்.',
+    tillsLater: 'இது பின்னர் ஒரு நாளில் தொடங்குகிறது; அந்த நாளில் அல்லது அதற்குப் பிறகு பில் இயந்திரங்களுக்கு அனுப்பவும்.',
+    notSentHead: 'சேமிக்கப்பட்ட {n} விலை(கள்) இந்தக் கடையின் பில் இயந்திரங்களுக்கு இன்னும் செல்லவில்லை — அனுப்ப “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்தவும்:',
+    notSentLine: '{item} — {price} — {why}',
     needsApproval: 'இதற்கு இரண்டாம் நபர் தேவை: {why} ஏன் என்று எழுதி “ஒப்புதல் கேள்” அழுத்துங்கள்; அவர் தனது ஒப்புதல்கள் பக்கத்தில் ஒப்புக்கொண்டதும் மீண்டும் “விலையைச் சேமி” அழுத்துங்கள்.',
     asked: 'கேட்கப்பட்டது. ஒப்புதலாளரின் ஒப்புதல்கள் பக்கத்தில் காத்திருக்கிறது; அதுவரை எதுவும் சேமிக்கப்படாது.', waiting: 'இரண்டாம் நபர் இன்னும் முடிவு செய்யவில்லை. எதுவும் சேமிக்கப்படவில்லை.', rejected: 'இரண்டாம் நபர் நிராகரித்தார்: {why}',
     historyH: 'இந்தப் பொருளுக்குப் பதிவில் உள்ள ஒவ்வொரு விலையும்', cScope: 'எந்த விலை', cRef: 'யாருக்கு', cPrice: 'விலை', cFrom: 'முதல்', cTo: 'வரை', cVer: 'பதிப்பு', open: 'முடிவில்லை', noHistory: 'இந்தப் பொருளுக்கு எந்த விலையும் பதிவில் இல்லை.',
@@ -491,7 +501,10 @@ $('save').addEventListener('click', async () => {
   if (!out.ok) { say(st, out, ''); return; }
   pending = null; entryId = null; $('ask').hidden = true;
   await loadHistory(); basisFor = '';
-  tell($('price-status'), true, `${fill(t('saved'), { price: rupees(body.priceMinor), from, scope: scopeWords(scope), ref })}${found.decidedBy === undefined ? '' : ` ${fill(t('savedWith'), { by: found.decidedBy })}`}`);
+  // OB-806 A: an accepted store price goes to that store's tills at once — said, or said plainly that it did not and why.
+  const tills = tillsLine(out.body?.tills);
+  tell($('price-status'), tills.good, `${fill(t('saved'), { price: rupees(body.priceMinor), from, scope: scopeWords(scope), ref })}${found.decidedBy === undefined ? '' : ` ${fill(t('savedWith'), { by: found.decidedBy })}`}${tills.text === '' ? '' : ` ${tills.text}`}`);
+  void showNotSent();
 });
 $('ask').addEventListener('click', async () => {
   const st = $('price-status');
@@ -540,6 +553,26 @@ function defaultPackStore() {
   if (typeof here === 'string' && here !== '') box.value = here;
   else if (stores.length === 1) box.value = stores[0];
 }
+// OB-806 A: what head office said happened at the tills after an accepted price — one line, and whether it is good news.
+function tillsLine(tills) {
+  if (!Array.isArray(tills) || tills.length === 0) return { text: '', good: true };
+  const missed = tills.filter((d) => d && d.sent === false);
+  if (missed.length === 0) return { text: fill(t('tillsSent'), { m: Math.max(...tills.map((d) => (Number.isInteger(d?.withinMinutes) ? d.withinMinutes : 5))) }), good: true };
+  if (missed.every((d) => d.reason === 'starts_later')) return { text: t('tillsLater'), good: true };
+  return { text: fill(t('tillsNotSent'), { why: missed.filter((d) => d.reason !== 'starts_later').map((d) => String(d.why ?? '')).join(' ') }), good: false };
+}
+// OB-806 A · P-08: the saved prices that did not reach this store's tills (head office's record), until a pack goes.
+async function showNotSent() {
+  const { storeId } = packOf();
+  const head = $('pk-not-sent'); const rows = $('pk-not-sent-rows');
+  if (storeId === '') { head.hidden = true; rows.hidden = true; return; }
+  const out = await call('GET', `/v1/catalogue/pack/not-sent?${new URLSearchParams({ storeId })}`);
+  const list = out.ok && Array.isArray(out.body?.notSent) ? out.body.notSent : [];
+  head.hidden = list.length === 0; rows.hidden = list.length === 0;
+  head.textContent = list.length === 0 ? '' : fill(t('notSentHead'), { n: list.length });
+  rows.replaceChildren(...list.map((x) => Object.assign(document.createElement('li'), { className: 'row', textContent: fill(t('notSentLine'), { item: productName(x.productId), price: rupees(x.priceMinor), why: x.why }) })));
+}
+$('pk-store').addEventListener('change', () => { void showNotSent(); });
 $('pk-preview').addEventListener('click', async () => {
   const st = $('pk-status'); const { storeId, asOf } = packOf();
   if (storeId === '') { tell(st, false, t('pkNeedStore')); return; }
@@ -558,6 +591,7 @@ $('pk-publish').addEventListener('click', async () => {
   const out = await call('POST', '/v1/catalogue/pack', { storeId, asOf, ...(/^\d+$/.test(ack) && Number(ack) > 0 ? { acknowledgedRemovals: Number(ack) } : {}) });
   if (out.status === 403 && out.body?.error?.code === 'reauthentication_required') { tell(st, false, fill(t('pkStepUp'), { why: out.body.error.whatHappened })); return; }
   say(st, out, fill(t('pkSent'), { v: out.body?.version ?? '', m: window.sreStorePull?.maxMinutes ?? 5 }));
+  if (out.ok) void showNotSent(); // a pack that went settles the "not sent" list
 });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
@@ -566,7 +600,8 @@ if (named && !mayRead) tell($('page-status'), false, t('noRight'));
 if (named && mayRead) {
   setShopDate('p-from', today());
   $('pk-asof').value = today();
-  defaultPackStore(); document.addEventListener('sre:chrome', defaultPackStore, { once: true });
+  defaultPackStore(); document.addEventListener('sre:chrome', () => { defaultPackStore(); void showNotSent(); }, { once: true });
+  void showNotSent(); // OB-806 A · P-08: saved prices not on the tills yet are said on arrival
   if (!mayPropose) { $('page-status').className = 'status'; $('page-status').textContent = t('readOnly'); }
   const asked = new URLSearchParams(location.search).get('product');
   if (asked !== null && /^[A-Za-z0-9_.:-]{1,64}$/.test(asked)) $('p-product').value = asked;

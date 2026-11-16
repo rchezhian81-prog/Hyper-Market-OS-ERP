@@ -91,6 +91,8 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
 
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, idempotencyKey?: string): Promise<Reply> =>
     cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }) });
+  // OB-806 A: an accepted store price is sent to the tills on its own, so the version head office holds is read, never assumed.
+  const headOfficeVersion = async (): Promise<number> => ((await call('GET', '/v1/catalogue/pack', OWNER)).body as { snapshot: { version: number } }).snapshot.version;
   const ok = async (p: Promise<Reply>, expected: number): Promise<Record<string, unknown>> => {
     const r = await p;
     expect(r.status, JSON.stringify(r.body)).toBe(expected);
@@ -259,9 +261,9 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
 
     // ── 6. The till sells one of them — from the pulled head-office pack, through the real box, banked on the next pass.
     const edge = await startBox(cloud.token(BOX));
-    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
+    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: await headOfficeVersion() });
     const served = (await servedTillCatalogue(edge))!;
-    expect(served).toMatchObject({ source: 'head_office', version: 1 });
+    expect(served).toMatchObject({ source: 'head_office', version: await headOfficeVersion() });
     expect(served.products.map((p) => p.productId)).toEqual([PRODUCT]);
     const till = bootPos({ laneId: LANE, timeZone: 'UTC', catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
     await signInTill(till, CASHIER);
@@ -323,7 +325,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     const before = await onHandAt(STORE); // what the first case left on the shelf
     const sold = async (edge: EdgeProcess, laneId: string, saleId: string): Promise<string> => {
       const served = (await servedTillCatalogue(edge))!;
-      expect(served).toMatchObject({ source: 'head_office', version: 1 });
+      expect(served).toMatchObject({ source: 'head_office', version: await headOfficeVersion() });
       const till = bootPos({ laneId, timeZone: 'UTC', catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
       await signInTill(till, CASHIER);
       till.scanBarcode(BARCODE);
@@ -335,15 +337,16 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     // Two lanes, two boxes, one shelf — both pull the same pack from head office this morning.
     const laneA = await startBox(cloud.token(BOX), { laneId: 'lane-1' });
     const laneB = await startBox(cloud.token(BOX), { laneId: 'lane-2' });
-    expect(await laneA.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
-    expect(await laneB.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
+    const held = await headOfficeVersion();
+    expect(await laneA.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: held });
+    expect(await laneB.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: held });
     const laneBDir = dirs[dirs.length - 1]!;
 
     // Mid-day lane 2's line to head office is cut (the box comes back up with head office unreachable). It still trades: the
     // till is served from the pack the box restored from its own disk, and the sale is on that disk first.
     await stopBox(laneB);
     const cutOff = await startBox(cloud.token(BOX), { laneId: 'lane-2', dir: laneBDir, cloudUrl: 'http://127.0.0.1:9' });
-    expect(cutOff.node.pack()?.snapshot.version).toBe(1);
+    expect(cutOff.node.pack()?.snapshot.version).toBe(held); // the pack it pulled this morning, kept with the line cut
     await sold(laneA, 'lane-1', 'S-A1');
     const receiptB = await sold(cutOff, 'lane-2', 'S-B1');
     expect(cutOff.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-B1', laneId: 'lane-2', locationId: STORE, totalMinor: PRICE });
