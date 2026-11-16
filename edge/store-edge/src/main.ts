@@ -33,6 +33,7 @@
 
 import { loadConfig, STORE_EDGE_CONFIG } from '../../../services/kernel/src/index';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { STORE_PULL_BASE_MS, STORE_PULL_MAX_MS } from '../../../packages/sync/src/pull-timing';
 import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
@@ -337,9 +338,10 @@ function shopStateOf(pack: StorePack): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
 }
 
-const BASE_INTERVAL_MS = 15_000;
+// D-054: the two figures live in packages/sync/src/pull-timing.ts, so the office page that sends a pack says the same.
+const BASE_INTERVAL_MS = STORE_PULL_BASE_MS;
 /** Ceiling on the gap when nothing is getting through. Five minutes, not five hours. */
-const MAX_INTERVAL_MS = 300_000;
+const MAX_INTERVAL_MS = STORE_PULL_MAX_MS;
 
 /**
  * The store's trading-day cut-off, from the pack.

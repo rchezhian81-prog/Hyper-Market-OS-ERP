@@ -186,7 +186,11 @@ describe.skipIf(!existsSync(CHROMIUM))('Round A: five office pages show head off
       expect(await page.textContent('#store-copy')).toMatch(theCopy);
       const list = (await page.textContent('#item-list')) ?? '';
       expect(list).toContain('Toned milk 500 ml');
-      expect(list).toContain('price: open the item to read it from head office'); // never "No price set" before it is read
+      // D-018 (fix batch 4b): each row shows the price the tills charge (the store computer's own till catalogue) — never
+      // "No price set" before head office's history is read. On-hand comes from head office, so it shows only when online.
+      expect(list).toContain('₹28.00 on the tills');
+      expect(list).toContain('₹62.00 on the tills');
+      if (online) await waitText(page, '#item-list', 'in stock: 2.500 kg');
       expect(list).not.toContain('No price set');
       // Open "Change a price" for the rice: its prices are read from head office through the relay.
       await page.click('button.price-this[data-sku="RICE-LOOSE"]');

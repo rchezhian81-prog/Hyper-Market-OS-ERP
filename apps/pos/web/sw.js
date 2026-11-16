@@ -27,7 +27,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-pos-shell-777c87b269dc';
+const CACHE = 'sre-pos-shell-a166b75b5e04';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './fonts/plus-jakarta-sans-400.woff2', './fonts/plus-jakarta-sans-500.woff2', './fonts/plus-jakarta-sans-600.woff2', './fonts/plus-jakarta-sans-700.woff2', './fonts/plus-jakarta-sans-800.woff2', './fonts/anek-tamil-400.woff2', './fonts/anek-tamil-500.woff2', './fonts/anek-tamil-600.woff2', './fonts/anek-tamil-700.woff2', './sre-faces.js', './sre-icons.js', './sre-update.js', './app.js', './manifest.webmanifest', './customer-display.js'];

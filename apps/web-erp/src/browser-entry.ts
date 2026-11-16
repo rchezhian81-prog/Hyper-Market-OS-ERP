@@ -39,6 +39,8 @@ import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 // OB-606: every page's "today", month and shown dates at the SHOP's clock (the zone the store computer told the page).
 import { shopDay, servedShopZone, type ShopDay } from '../../../packages/calendar/src/shop-day';
+import { openCatalogueStock, type CatalogueStock } from './catalogue-stock';
+import { storePullMaxMinutes } from '../../../packages/sync/src/pull-timing';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -5371,6 +5373,8 @@ export function officeQuantityLabel(quantityMinor: number, uom: string): string 
 interface ManagerWindow {
   /** OB-606: the shop's day for every page — today, this month, a shown date — at the shop's clock, never the device's. */
   sreShopDay?: ShopDay;
+  /** D-054: the store computer's longest gap between two pulls, in minutes. */
+  sreStorePull?: { readonly maxMinutes: number };
   /** OB-31 (screen audit 31 Oct 2026): a held quantity as a person reads it — 2500 of a kg product is "2.500 kg", never "2500 kg". */
   sreQuantity?: { readonly label: typeof officeQuantityLabel };
   managerSession?: ManagerSession;
@@ -5411,6 +5415,8 @@ interface ManagerWindow {
   catalogueCashierView?: CashierProductView;
   /** Round A: the prices already set, read from head office item by item (absent when the box sent them). */
   cataloguePrices?: CataloguePriceRelay;
+  /** D-018: how many of each item we have, read once from head office for the Products list. */
+  catalogueStock?: CatalogueStock;
   catalogueOutbox?: SyncOutbox;
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
@@ -6862,6 +6868,8 @@ const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   // OB-606: one shop's day for every page in this bundle (each page's own script reads its dates from it).
   browserWindow.sreShopDay = shopDay();
+  // D-054: how soon a store computer that is online takes a pack just sent — the store computer's own loop timing.
+  browserWindow.sreStorePull = Object.freeze({ maxMinutes: storePullMaxMinutes() });
   // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
   browserWindow.sreQuantity = Object.freeze({ label: officeQuantityLabel });
   // UI-3: the one chart drawing (inline SVG, no library, no network) as `window.sreCharts` — design system §4.3.
@@ -6923,6 +6931,8 @@ if (browserWindow !== undefined) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData, priceRelay !== undefined);
     if (priceRelay !== undefined) browserWindow.cataloguePrices = priceRelay;
+    // D-018: the full Products list (not the cashier's) shows on-hand per row; read once, when the list first paints.
+    if (!cashierOnly) browserWindow.catalogueStock = openCatalogueStock();
     browserWindow.catalogueOutbox = catalogueOutbox;
   }
   // The merchandising screen (SP-8c-ii · F08 · §31): its count and its refill indent go onto the SAME durable device queue

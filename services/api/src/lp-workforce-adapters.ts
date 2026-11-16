@@ -484,6 +484,8 @@ export function relabelTaskAdapter(input: Base, surface: readonly Route[]): Rela
       .map((g) => g.userId))],
     recordObservationAs: handlerOf(surface, 'POST', '/v1/pricing/integrity/observations/:observationId'),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+    // D-026: each task names its item, as head office's product master names it.
+    productNames: async (t) => new Map((await productMasterAdapter({ store, now }).products(t)).filter((p) => typeof p.name === 'string' && p.name.trim() !== '').map((p) => [p.productId, p.name] as const)),
   };
 }
 

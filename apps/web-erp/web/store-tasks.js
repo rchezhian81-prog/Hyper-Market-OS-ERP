@@ -117,7 +117,17 @@ async function fillDefaults() {
   if ($('a-due').value === '' && typeof api.endOfTodayField === 'function') $('a-due').value = api.endOfTodayField();
   if ($('a-branch').value !== '') return;
   const mine = await session.myBranch();
-  if (mine.result === 'ok' && mine.value.branchId !== null && $('a-branch').value === '') $('a-branch').value = mine.value.branchId;
+  if (mine.result === 'ok' && mine.value.branchId !== null && $('a-branch').value === '') { $('a-branch').value = mine.value.branchId; nameTheStore(); return; }
+  // D-026 (fix batch 4b): on the store computer a PIN sign-in names no store of its own — the store is THIS store computer's
+  // (its signed store setup), the only one it serves. Still a default the manager can change; never a guessed store.
+  const here = typeof window.sreOffice?.me === 'function' ? window.sreOffice.me().storeId : null;
+  if (typeof here === 'string' && here !== '' && $('a-branch').value === '') { $('a-branch').value = here; nameTheStore(); }
+}
+/** D-026: the default store is shown by its name beside its code, as a picked one is. */
+function nameTheStore() {
+  const id = $('a-branch').value; const box = $('a-branch-name');
+  const name = typeof window.sreOffice?.nameOf === 'function' ? window.sreOffice.nameOf('store', id) : id;
+  if (box !== null) box.textContent = name !== id ? name : '';
 }
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 // U2: who does it and the store are picked by name from the store's own people (the pack) — the id is what is sent.
