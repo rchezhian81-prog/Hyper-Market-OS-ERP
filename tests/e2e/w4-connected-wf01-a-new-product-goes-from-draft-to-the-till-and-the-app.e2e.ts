@@ -245,10 +245,10 @@ describe.skipIf(!CONNECTED)('WF-01 connected: a new product goes from a real dra
     await send.page.fill('#pk-asof', `${today.slice(8, 10)}/${today.slice(5, 7)}/${today.slice(0, 4)}`); // U2c: the shared dd/mm field
     await send.page.click('#pk-preview');
     await says(send.page, '#pk-status', new RegExp(`^2 product\\(s\\) would go to the tills of ${STORE} as of ${today}\\.$`));
-    await says(send.page, '#pk-left', /P-DRAFT-JAM — a draft, not on sale/);
+    await says(send.page, '#pk-left', /Synthetic mango jam 200 g — a draft, not on sale/); // D-054: by its name, not P-DRAFT-JAM
     expect(send.writes).toEqual([]);
     await send.page.click('#pk-publish');
-    await says(send.page, '#pk-status', /^Sent\. Catalogue pack version \d+ is signed; each store computer takes it on its next pull\.$/);
+    await says(send.page, '#pk-status', /^Sent\. Catalogue pack version \d+ is signed\. A store computer that is online takes it within 5 minutes; one that is offline takes it as soon as its internet is back\.$/);
     expect(send.writes).toEqual(['POST /v1/catalogue/pack']);
     await send.page.click('#lang');
     await says(send.page, '#pack-h', /^கவுண்டர்களுக்கு அனுப்பு$/);

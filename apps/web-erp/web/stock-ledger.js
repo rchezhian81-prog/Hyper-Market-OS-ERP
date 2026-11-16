@@ -107,6 +107,8 @@ function mountParts() {
   if (!o || typeof o.pickable !== 'function') return;
   o.pickable('product', 'product', both('whichProduct'), { allowCode: true });
   o.pickable('place', 'place', both('whichPlace'), { allowCode: true, scope: () => ({ storeId: myStore() }) });
+  // D-024: "To" starts on today (everything up to now); "From" is left open (from the beginning) unless one is chosen.
+  { const to = $('to'); if (to !== null && to.value === '' && window.sreShopDay !== undefined) to.value = window.sreShopDay.today(); }
   if (typeof o.shopDate === 'function') { o.shopDate('from', both('from')); o.shopDate('to', both('to')); }
 }
 

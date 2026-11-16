@@ -26,13 +26,18 @@ function paint() {
   if (read === null) return;
   el('relabel-open').textContent = `${read.open} ${w('open')}`;
   el('relabel-rows').replaceChildren(...(read.tasks.length === 0 ? [text('li', w('none'), 'muted')] : read.tasks.map((r) => {
-    const li = document.createElement('li'); li.className = `row tone-${r.done !== null ? 'ok' : r.dueNow ? 'degraded' : 'idle'}`; li.dataset.task = r.taskId; li.dataset.product = r.productId;
+    // D-026: a task a newer price in force has replaced is shown as such, settled — no label to print at its old price.
+    const replaced = r.done === null && r.replacedBy !== undefined && r.replacedBy !== null ? r.replacedBy : null;
+    const li = document.createElement('li'); li.className = `row tone-${r.done !== null || replaced !== null ? 'ok' : r.dueNow ? 'degraded' : 'idle'}`; li.dataset.task = r.taskId; li.dataset.product = r.productId;
+    if (replaced !== null) li.dataset.replaced = replaced.taskId;
     const head = document.createElement('div'); head.className = 'head';
-    head.append(text('strong', `${w('product')} ${r.productId} · ${w('newPrice')} ${rupees(r.priceMinor)}`), text('span', r.done !== null ? `✓ ${w('done')}` : r.dueNow ? `⚠ ${w('dueNow')}` : w('notYet'), 'state'));
+    const item = typeof api.itemWords === 'function' ? api.itemWords(lang(), r) : `${w('product')} ${r.productId}`;
+    head.append(text('strong', `${item} · ${w('newPrice')} ${rupees(r.priceMinor)}`), text('span', r.done !== null ? `✓ ${w('done')}` : replaced !== null ? `${w('replaced')} ${rupees(replaced.priceMinor)}` : r.dueNow ? `⚠ ${w('dueNow')}` : w('notYet'), 'state'));
     li.append(head, text('span', `${r.branchId} · ${w('place')}: ${r.locationId ?? w('notOnPlan')} · ${w('from')} ${when(r.dueAt)} · ${w(r.because)}`, 'facts'));
     // OB-358: who it is for — the department's floor champion, else the store manager (and why); the reader's own marked.
     const forWho = text('span', api.assigneeWords(lang(), r), 'facts for'); forWho.dataset.assignee = r.assignee ? r.assignee.to : 'none'; li.append(forWho);
     if (r.done !== null) li.append(text('span', `${w('done')} ${w('doneBy')} ${r.done.doneBy} · ${when(r.done.doneAt)} · ${rupees(r.done.shelfPriceMinor)}`, 'facts'));
+    else if (replaced !== null) li.append(text('span', `${w('replacedNoLabel')} ${w('from')} ${when(replaced.dueAt)}`, 'facts replaced'));
     else if (session.may.close && r.mayClose === true) { // OB-370: the assignee, or a store manager of this store
       const form = document.createElement('form');
       const price = document.createElement('input'); price.inputMode = 'decimal'; price.autocomplete = 'off'; price.className = 'rl-price';

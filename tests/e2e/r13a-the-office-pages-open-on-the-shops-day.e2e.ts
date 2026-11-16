@@ -151,9 +151,10 @@ describe.skipIf(!HAVE_BROWSER)('OB-606: the office pages open on the shop\'s day
 
   for (const { at, day } of EVENINGS) {
     describe(`at ${at} (the shop's ${day.today()} 01:00)`, () => {
-      it('day book opens on the shop\'s yesterday; GST returns on the shop\'s last month; buying\'s budget on the shop\'s month', async () => {
+      // D-024 (OB-800 fix batch 4b): the day book opens on the shop's TODAY (it used to open on yesterday) — still the SHOP's day.
+      it('day book opens on the shop\'s today; GST returns on the shop\'s last month; buying\'s budget on the shop\'s month', async () => {
         const book = await open('day-book.html', at);
-        try { await holds(book.page, 'day', day.daysAgo(1)); } finally { await book.close(); }
+        try { await holds(book.page, 'day', day.today()); } finally { await book.close(); }
         const gst = await open('gst-returns.html', at);
         try {
           const mmyyyy = `${day.lastMonth().slice(5, 7)}${day.lastMonth().slice(0, 4)}`;

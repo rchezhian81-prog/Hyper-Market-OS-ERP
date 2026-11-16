@@ -170,8 +170,11 @@ describe.each(backings)('the store computer carries readings, losses and acknowl
     expect((await ok(call('POST', '/v1/prices/list/p-salt/entries/e2', 'u-owner', { scope: 'store', scopeRef: 'br-1', priceMinor: 1_700, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY }), 'entry')).body).toMatchObject({ relabelTasks: 2 });
 
     h = harness(h); // ── COLD RESTART ──
-    const later = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr'), 'tasks')).body as { tasks: { taskId: string; done: { doneBy: string; shelfPriceMinor: number } | null; because: string }[]; open: number };
-    expect(later.open).toBe(3);
+    const later = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr'), 'tasks')).body as { tasks: { taskId: string; priceMinor: number; done: { doneBy: string; shelfPriceMinor: number } | null; replacedBy: { priceMinor: number } | null; because: string }[]; open: number };
+    // D-026 (fix batch 4b): the ₹17 entry, set later and in force today, REPLACES the still-open ₹18 task at L2 — no label is
+    // printed at ₹18 now. Open: the two ₹17 tasks. The replaced one stays on record, saying which price replaced it.
+    expect(later.open).toBe(2);
+    expect(later.tasks.filter((t) => t.priceMinor === 1_800 && t.done === null).map((t) => t.replacedBy?.priceMinor)).toEqual([1_700]);
     expect(later.tasks.find((t) => t.taskId === first)!.done).toMatchObject({ doneBy: 'u-mgr', shelfPriceMinor: 1_800 });
     // The shelf label is now a price-integrity observation (D-7), in the person's name.
     const obs = (await ok(call('GET', '/v1/pricing/integrity/ageing', 'u-owner', undefined, { branchId: 'br-1', productId: 'p-salt' }), 'price integrity')).body;

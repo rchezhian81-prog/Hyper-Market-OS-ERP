@@ -11,7 +11,8 @@ let lang = 'en';
 /** Yesterday in the SHOP's calendar (OB-606: its zone, never this device's) — the day an accountant usually posts in the
  *  morning. '' when the bundle is not here to say (the day is then the person's to choose). */
 function defaultDay() {
-  return window.sreShopDay === undefined ? '' : window.sreShopDay.daysAgo(1);
+  // D-024: the day book opens on today (the trading day the people in the store are working on); the calendar picks another.
+  return window.sreShopDay === undefined ? '' : window.sreShopDay.today();
 }
 
 /** A stand-in with the same surface as the bundled session, so the shell always opens (and says so). */

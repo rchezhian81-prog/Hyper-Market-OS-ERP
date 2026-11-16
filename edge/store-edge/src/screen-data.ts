@@ -1889,6 +1889,12 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   const notOnTills = notOnTheTills(input);
   if (notOnTills.length > 0) payload['notOnTills'] = notOnTills;
 
+  // D-018 (fix batch 4b, P-07): the price each item is charged at the tills today, from the till catalogue this store
+  // computer holds — so every Products row shows a price without opening the item. Stamped with when the store computer
+  // received it, so a stale figure says how old it is (P-08). Head office's own history is still read when an item opens.
+  const tillPrices = tillPricesOf(input);
+  if (tillPrices !== undefined) payload['tillPrices'] = tillPrices;
+
   // The shelf map, served as its parts rather than as a built map — the screen builds its own so
   // that anything assigned on it is kept while the person carries on working.
   if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
@@ -1909,6 +1915,15 @@ export type NotOnTheTillsWhy = 'no_price' | 'no_tax_class' | 'kept_off_the_lane'
  * with the reason. A product with no GST rate on the master is out for that; any other is out for want of a price (the till
  * pack carries a product only with a price for this store that day). Empty when the box holds no till catalogue.
  */
+/** D-018: productId → the price (paise) the tills charge today, and when the store computer received that catalogue. */
+export function tillPricesOf(input: ScreenInput): { readonly asAt: string; readonly byProduct: Readonly<Record<string, number>> } | undefined {
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined) return undefined;
+  const byProduct: Record<string, number> = {};
+  for (const p of till.products) if (Number.isSafeInteger(p.unitPriceMinor)) byProduct[p.productId] = p.unitPriceMinor;
+  return { asAt: till.builtAt, byProduct };
+}
+
 export function notOnTheTills(input: ScreenInput): readonly { readonly productId: string; readonly why: NotOnTheTillsWhy; readonly detail?: string }[] {
   const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
   if (till === undefined || !input.pack.productMaster.known) return [];

@@ -80,6 +80,7 @@ const WORDS = {
     notOnTillsWhy_no_price: 'head office sent the tills no price for it for this store today (a price refused by the margin floor waits for its approval) — the till says "not in the price list"',
     notOnTillsWhy_no_tax_class: 'it has no GST rate, so head office left it out of the till pack',
     discontinued: 'Discontinued', draft: 'Not finished', noPrice: 'No price set',
+    onTheTills: 'on the tills', stockOnHand: 'in stock: {q}', stockNone: 'in stock: none recorded', stockReading: 'in stock: reading…', stockNotRead: 'in stock: not shown',
     priceNotRead: 'price: open the item to read it from head office', pricesReading: 'Reading the prices already set from head office…',
     showPrice: 'Show the price', noBarcode: 'no barcode', cashierLead: 'Name, price and barcode of every item. Costs and suppliers are not shown on this screen.',
     whatYouCanDo: 'What you can do', putOnSale: 'Put this on sale',
@@ -166,6 +167,7 @@ const WORDS = {
     notOnTillsWhy_no_price: 'இன்று இந்தக் கடைக்கு அதன் விலையைத் தலைமை அலுவலகம் கவுண்டர்களுக்கு அனுப்பவில்லை (லாப வரம்பால் மறுக்கப்பட்ட விலை அனுமதிக்காகக் காத்திருக்கிறது) — கவுண்டர் "விலைப் பட்டியலில் இல்லை" என்கிறது',
     notOnTillsWhy_no_tax_class: 'அதற்கு GST விகிதம் இல்லை, எனவே தலைமை அலுவலகம் அதைக் கவுண்டர் தொகுப்பில் சேர்க்கவில்லை',
     discontinued: 'நிறுத்தப்பட்டது', draft: 'முடிக்கப்படவில்லை', noPrice: 'விலை நிர்ணயிக்கப்படவில்லை',
+    onTheTills: 'கவுண்டர்களில்', stockOnHand: 'கையிருப்பு: {q}', stockNone: 'கையிருப்பு: பதிவு இல்லை', stockReading: 'கையிருப்பு: படிக்கிறது…', stockNotRead: 'கையிருப்பு: காட்டப்படவில்லை',
     priceNotRead: 'விலை: தலைமை அலுவலகத்திலிருந்து படிக்கப் பொருளைத் திறக்கவும்', pricesReading: 'ஏற்கனவே நிர்ணயித்த விலைகளைத் தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
     showPrice: 'விலையைக் காட்டு', noBarcode: 'பார்கோடு இல்லை', cashierLead: 'ஒவ்வொரு பொருளின் பெயர், விலை, பார்கோடு. அடக்க விலையும் விநியோகஸ்தர்களும் இந்தத் திரையில் காட்டப்படாது.',
     whatYouCanDo: 'நீங்கள் என்ன செய்யலாம்', putOnSale: 'இதை விற்பனைக்கு வை',
@@ -568,6 +570,7 @@ function cashierRow(r) {
 
 function renderItems() {
   const query = el('item-search').value.trim().toLowerCase();
+  if (cashierView === null) readStockOnce();
   if (cashierView !== null) {
     const rows = cashierView.rows(query);
     if (rows.length === 0) {
@@ -646,6 +649,14 @@ function itemRow(view) {
   sub.textContent = `${view.product.sku} · ${t(SELLABLE_WORDS[view.sellable] ?? 'notOnSale')}`
     + ` · ${priceWords(view)}`;
   what.append(name, sub);
+  const held = stockWords(view);
+  if (held !== null) {
+    const qty = document.createElement('small');
+    qty.className = 'on-hand';
+    qty.dataset.product = view.product.productId;
+    qty.textContent = held;
+    what.append(qty);
+  }
   // D-005 (fix batch 3): the store computer says this item is NOT on the tills — said instead of "On sale", in red, with why.
   const out = notOnTills.get(view.product.productId);
   if (out !== undefined && view.sellable === 'sellable') {
@@ -691,12 +702,42 @@ function itemRow(view) {
 // The store setup never carries every price ever set; `window.cataloguePrices` reads one item's when it is opened. An item
 // not read yet is never shown as "no price set", and a read that failed says why for that item (P-08).
 const prices = window.cataloguePrices ?? null;
+// D-018 (fix batch 4b): the price each item is charged at the tills today, as the store computer holds it — shown on every
+// row so nobody has to open an item to see its price. Head office's own history is still read when an item is opened.
+const tillPrices = window.catalogueData?.tillPrices?.byProduct ?? null;
+function tillPriceWords(productId) {
+  const p = tillPrices === null ? undefined : tillPrices[productId];
+  return typeof p === 'number' ? `${inr(p)} ${t('onTheTills')}` : null;
+}
 function priceWords(view) {
   const state = prices === null ? 'loaded' : prices.state(view.product.productId);
-  if (state === 'loaded' || state === 'none') return view.priceToday === null ? t('noPrice') : inr(view.priceToday.price.minor);
+  if (state === 'loaded' || state === 'none') return view.priceToday === null ? (tillPriceWords(view.product.productId) ?? t('noPrice')) : inr(view.priceToday.price.minor);
+  const atTills = tillPriceWords(view.product.productId);
+  if (atTills !== null) return atTills;
   if (state === 'loading') return t('pricesReading');
   if (state === 'not_loaded') return t('priceNotRead');
   return prices.why(view.product.productId) ?? t('priceNotRead');
+}
+// D-018: how many we have, read ONCE from head office for every item in this person's stores (never a guessed 0).
+const stock = window.catalogueStock ?? null;
+function stockWords(view) {
+  if (stock === null) return null;
+  const state = stock.state();
+  if (state === 'loading' || state === 'not_loaded') return t('stockReading');
+  if (state !== 'loaded') return t('stockNotRead');
+  const q = stock.onHand(view.product.productId);
+  if (q === undefined) return t('stockNone');
+  const uom = view.product.baseUom ?? '';
+  const label = window.sreQuantity && typeof window.sreQuantity.label === 'function' ? window.sreQuantity.label(q, uom) : `${q} ${uom}`.trim();
+  return t('stockOnHand').replace('{q}', label);
+}
+function readStockOnce() {
+  if (stock === null || stock.state() !== 'not_loaded') return;
+  void stock.load().then(() => {
+    renderItems();
+    const note = el('stock-note');
+    if (note !== null) { const why = stock.state() === 'loaded' ? '' : (stock.why() ?? ''); note.textContent = why; note.hidden = why === ''; }
+  });
 }
 function readPrices(productId, again = false) {
   if (prices === null) return;

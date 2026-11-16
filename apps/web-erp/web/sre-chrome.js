@@ -1268,7 +1268,7 @@
       'pick_tax-class': 'Which tax class?', 'pickHint_tax-class': 'An HSN code, or a product under it',
       taxClassRowOne: 'HSN {code} — 1 product', taxClassRowMany: 'HSN {code} — {n} products',
       pickFromBox: 'Head office cannot be reached — this list is from this store computer\'s copy of the catalogue (version {v}). A product published since is not in it.',
-      thisPage: 'This page', datePlaceholder: 'dd/mm/yyyy',
+      thisPage: 'This page', datePlaceholder: 'dd/mm/yyyy', dateCalendar: 'Calendar', dateCalendarFor: 'Choose {label} on a calendar',
       loading: 'Reading the records…', loadingDetail: 'This takes a moment. Nothing is shown until it is read.',
       empty: 'Nothing here yet', emptyDetail: 'No records have been found for this list. An empty list does not mean everything is fine — it means there is nothing to show yet.',
       'pick_role': 'Which roles?', 'pickHint_role': 'A few letters of the role', 'pick_batch': 'Which batch?', 'pickHint_batch': 'The batch code, or its use-by day',
@@ -1300,7 +1300,7 @@
       'pick_tax-class': 'எந்த வரி வகுப்பு?', 'pickHint_tax-class': 'HSN குறியீடு, அல்லது அதன் கீழுள்ள ஒரு பொருள்',
       taxClassRowOne: 'HSN {code} — 1 பொருள்', taxClassRowMany: 'HSN {code} — {n} பொருள்கள்',
       pickFromBox: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — இந்தப் பட்டியல் இந்தக் கடை கணினியின் பட்டியல் நகலிலிருந்து (பதிப்பு {v}). அதன் பின் வெளியிடப்பட்ட பொருள் இதில் இல்லை.',
-      thisPage: 'இந்தப் பக்கம்', datePlaceholder: 'நா/மா/ஆண்டு',
+      thisPage: 'இந்தப் பக்கம்', datePlaceholder: 'நா/மா/ஆண்டு', dateCalendar: 'நாள்காட்டி', dateCalendarFor: '{label} — நாள்காட்டியில் தேர்வு செய்யவும்',
       loading: 'பதிவுகளைப் படிக்கிறது…', loadingDetail: 'சிறிது நேரம் ஆகும். படிக்கும் வரை எதுவும் காட்டப்படாது.',
       empty: 'இன்னும் எதுவும் இல்லை', emptyDetail: 'இந்தப் பட்டியலுக்கு எந்தப் பதிவும் கிடைக்கவில்லை. காலியான பட்டியல் எல்லாம் சரி என்று பொருளல்ல — காட்ட இன்னும் எதுவும் இல்லை என்று பொருள்.',
       'pick_role': 'எந்தப் பணிப் பொறுப்புகள்?', 'pickHint_role': 'பொறுப்பின் சில எழுத்துகள்', 'pick_batch': 'எந்தத் தொகுதி?', 'pickHint_batch': 'தொகுதிக் குறியீடு, அல்லது பயன்படுத்தும் கடைசி நாள்',
@@ -2205,9 +2205,51 @@
     control.addEventListener('blur', check);
     if (value) { control.value = shownDate(value); check(); }
     wrap.sreSetDate = (iso) => { control.value = shownDate(iso); check(); };
+    // D-024: a calendar beside the box — the browser's own date picker, so nobody has to type the date. What is picked
+    // is written into the dd/mm/yyyy box as if typed (the page reads it the same way); typing still works.
+    const row = document.createElement('span');
+    row.className = 'sre-date-row';
+    control.replaceWith(row);
+    const cal = document.createElement('button');
+    cal.type = 'button';
+    cal.id = `${id}-calendar-open`;
+    cal.className = 'sre-date-calendar sre-btn';
+    const calWords = () => { cal.textContent = `📅 ${ow('dateCalendar')}`; cal.setAttribute('aria-label', fill(ow('dateCalendarFor'), { label: said(label) })); };
+    calWords();
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;position:relative;max-width:100%;min-width:0;';
+    control.style.minWidth = '0';
+    control.style.flex = '1 1 8rem';
+    row.append(control, cal);
+    // The browser's own picker lives only while it is open: made on the click, gone once a day is chosen or it closes —
+    // so the page never carries a hidden, unlabelled box (a screen reader and a keyboard meet only the two above).
+    const closePicker = () => { const n = byId(`${id}-calendar`); if (n) n.parentNode.removeChild(n); };
+    cal.addEventListener('click', () => {
+      closePicker();
+      const native = document.createElement('input');
+      native.type = 'date';
+      native.id = `${id}-calendar`;
+      native.className = 'sre-date-native';
+      native.tabIndex = -1;
+      native.setAttribute('aria-hidden', 'true');
+      native.style.cssText = 'position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;';
+      native.value = control.dataset.iso ?? '';
+      native.min = control.dataset.min ?? '';
+      native.max = control.dataset.max ?? '';
+      native.addEventListener('change', () => {
+        if (native.value === '') return;
+        control.value = shownDate(native.value);
+        control.dispatchEvent(new Event('input', { bubbles: true }));
+        control.dispatchEvent(new Event('change', { bubbles: true }));
+        closePicker();
+        control.focus();
+      });
+      native.addEventListener('blur', () => { setTimeout(closePicker, 0); });
+      row.append(native);
+      try { native.showPicker(); } catch { native.focus(); }
+    });
     // on the toggle: the placeholder, and a problem already shown is said again in the new language
     wrap.sreWords = { label, required, hint };
-    wrap.sreRepaint = () => { control.placeholder = ow('datePlaceholder'); if (control.value.trim() !== '') check(); };
+    wrap.sreRepaint = () => { control.placeholder = ow('datePlaceholder'); calWords(); if (control.value.trim() !== '') check(); };
     return wrap;
   }
   const dateValue = (id) => { const el = byId(id); if (!el) return null; const iso = el.dataset.iso; return iso ? iso : (el.value.trim() === '' ? null : parseShopDate(el.value)); };
