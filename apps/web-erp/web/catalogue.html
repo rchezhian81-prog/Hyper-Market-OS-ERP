@@ -219,11 +219,19 @@
           <div>
             <span class="label" id="mrp-label">MRP printed on the pack</span>
             <span class="value" id="mrp-value">—</span>
+            <span class="label" id="mrp-source"></span>
           </div>
           <div>
             <span class="label" id="floor-label">Lowest price that keeps the margin</span>
             <span class="value" id="floor-value">—</span>
           </div>
+        </div>
+
+        <!-- D-019: head office holds no MRP for this item — the MRP printed on the pack, checked by a second person. -->
+        <div class="field" id="mrp-given" hidden>
+          <p class="lead" id="mrp-given-lead">Head office has no MRP for this item. Type the MRP printed on the pack. A second person checks it against the pack before the price is used.</p>
+          <label for="mrp-given-value" id="mrp-given-label">MRP printed on the pack (in rupees)</label>
+          <input id="mrp-given-value" type="text" inputmode="decimal" autocomplete="off" />
         </div>
 
         <div class="two">

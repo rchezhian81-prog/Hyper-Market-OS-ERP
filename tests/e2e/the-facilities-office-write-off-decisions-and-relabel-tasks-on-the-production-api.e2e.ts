@@ -56,7 +56,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the facili
         // Relabel: the salt has two shelf places; a price change raises a task for each.
         await post('/v1/merchandising/stores/br-1/shelf-map', 'u-mgr', { locations: [{ locationId: 'L1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1 }, { locationId: 'L2', aisle: 4, rack: 1, bay: 1, shelf: 2, position: 1 }] }, 'PUT');
         await post('/v1/merchandising/stores/br-1/planograms/PG-1', 'u-mgr', { effectiveFrom: '2026-01-01', assignments: [{ productId: 'p-salt', locationId: 'L1', capacityMinor: 10, primary: true }, { productId: 'p-salt', locationId: 'L2', capacityMinor: 10, primary: false }] }, 'PUT');
-        await post('/v1/catalogue/products/p-salt/publish', 'u-owner', { product: { sku: 'SKU-SALT', name: 'Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] });
+        await post('/v1/catalogue/products/p-salt/publish', 'u-owner', { product: { sku: 'SKU-SALT', name: 'Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft', mrpHistory: [{ value: { minor: 2_500, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] });
         await post('/v1/prices/changes', 'u-owner', { productId: 'p-salt', priceMinor: 1_800, mrpMinor: 2_500, costMinor: 1_000, currency: 'INR', marginFloorBps: 0, storeId: 'br-1' });
       },
     });

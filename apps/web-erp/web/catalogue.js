@@ -88,6 +88,11 @@ const WORDS = {
     backToList: 'Back to the list',
     priceLead: 'The two limits below are checked before anything is saved. A price over the MRP cannot be saved by anybody.',
     itemCode: 'Item code', mrpPrinted: 'MRP printed on the pack',
+    mrpFromHeadOffice: 'Head office’s MRP for this item', mrpFromHeadOfficeSince: 'from',
+    mrpStoreCopy: 'This is the store computer’s copy — head office could not be asked:',
+    mrpGivenLabel: 'MRP printed on the pack (in rupees)',
+    mrpGivenLead: 'Head office has no MRP for this item. Type the MRP printed on the pack. A second person checks it against the pack before the price is used.',
+    needMrpGiven: 'Head office has no MRP for this item. Type the MRP printed on the pack first.',
     lowestPrice: 'Lowest price that keeps the margin', newPrice: 'New price (in rupees)',
     startsOn: 'Starts on', checkPrice: 'Check this price', priceThis: 'Change price', priceThisOf: 'Change the price of',
     saveIt: 'Save this price', priceOk: 'This price is fine', needsApproval: 'Somebody else has to approve this',
@@ -169,6 +174,11 @@ const WORDS = {
     backToList: 'பட்டியலுக்குத் திரும்பு',
     priceLead: 'கீழே உள்ள இரு வரம்புகளும் சேமிக்கும் முன் சரிபார்க்கப்படும். MRP-ஐ விட அதிக விலையை யாராலும் சேமிக்க முடியாது.',
     itemCode: 'பொருள் குறியீடு', mrpPrinted: 'பாக்கெட்டில் அச்சிடப்பட்ட MRP',
+    mrpFromHeadOffice: 'இந்தப் பொருளுக்குத் தலைமை அலுவலகத்தின் MRP', mrpFromHeadOfficeSince: 'முதல்',
+    mrpStoreCopy: 'இது கடைக் கணினியின் நகல் — தலைமை அலுவலகத்திடம் கேட்க முடியவில்லை:',
+    mrpGivenLabel: 'பாக்கெட்டில் அச்சிடப்பட்ட MRP (ரூபாயில்)',
+    mrpGivenLead: 'இந்தப் பொருளுக்குத் தலைமை அலுவலகத்தில் MRP இல்லை. பாக்கெட்டில் அச்சிடப்பட்ட MRP-ஐத் தட்டச்சு செய்யுங்கள். விலை பயன்படுத்தப்படும் முன் இரண்டாம் நபர் அதைப் பாக்கெட்டுடன் சரிபார்ப்பார்.',
+    needMrpGiven: 'இந்தப் பொருளுக்குத் தலைமை அலுவலகத்தில் MRP இல்லை. முதலில் பாக்கெட்டில் அச்சிடப்பட்ட MRP-ஐத் தட்டச்சு செய்யுங்கள்.',
     lowestPrice: 'லாபத்தைக் காக்கும் குறைந்தபட்ச விலை', newPrice: 'புதிய விலை (ரூபாயில்)',
     startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்', priceThis: 'விலையை மாற்று', priceThisOf: 'இதன் விலையை மாற்று:',
     saveIt: 'இந்த விலையைச் சேமி', priceOk: 'இந்த விலை சரியானது', needsApproval: 'வேறு ஒருவர் இதை ஒப்புதல் அளிக்க வேண்டும்',
@@ -249,9 +259,14 @@ const PRICE_REFUSAL_WORDS = {
     en: 'This screen has no cost price for this item, so nobody can say what this price earns. It needs somebody to approve it with their eyes open.',
     ta: 'இந்தப் பொருளுக்கான செலவு விலை இந்தத் திரைக்குத் தெரியவில்லை. எனவே இந்த விலை என்ன ஈட்டும் என்று சொல்ல முடியாது. ஒருவர் தெரிந்தே ஒப்புதல் அளிக்க வேண்டும்.',
   },
+  // D-019: the MRP typed from the pack is the ceiling — and a second person checks it against the pack.
+  the_mrp_was_typed_from_the_pack: {
+    en: 'Head office has no MRP for this item, so the MRP you typed from the pack is the ceiling. Somebody else has to check it against the pack and approve this price.',
+    ta: 'இந்தப் பொருளுக்குத் தலைமை அலுவலகத்தில் MRP இல்லை, எனவே நீங்கள் பாக்கெட்டிலிருந்து தட்டச்சு செய்த MRP தான் வரம்பு. வேறு ஒருவர் அதைப் பாக்கெட்டுடன் சரிபார்த்து இந்த விலையை அனுமதிக்க வேண்டும்.',
+  },
   no_mrp_recorded: {
-    en: 'No MRP has been recorded for this item, so the legal ceiling cannot be checked. Add the MRP from the pack first.',
-    ta: 'இந்தப் பொருளுக்கு MRP பதிவு செய்யப்படவில்லை. எனவே சட்ட வரம்பைச் சரிபார்க்க முடியாது. முதலில் பாக்கெட்டில் உள்ள MRP-ஐச் சேர்க்கவும்.',
+    en: 'No MRP has been recorded for this item, so the legal ceiling cannot be checked. Type the MRP printed on the pack in the box above.',
+    ta: 'இந்தப் பொருளுக்கு MRP பதிவு செய்யப்படவில்லை. எனவே சட்ட வரம்பைச் சரிபார்க்க முடியாது. பாக்கெட்டில் அச்சிடப்பட்ட MRP-ஐ மேலே உள்ள பெட்டியில் தட்டச்சு செய்யுங்கள்.',
   },
   approved_by_the_person_who_set_it: {
     en: 'The person who set this price cannot also approve it. Somebody else has to look at it.',
@@ -401,6 +416,8 @@ function sampleSession() {
       refusals: ['no_mrp_recorded'], detail: ['this is sample data'],
     }),
     activatePrice: () => ({ ok: false, refusals: ['no_mrp_recorded'], detail: ['this is sample data'] }),
+    readMrpFromHeadOffice: async () => ({ source: 'store_copy', mrpMinor: null, why: 'this is sample data' }),
+    mrpSourceFor: () => ({ source: 'store_copy', mrpMinor: null, why: 'this is sample data' }),
     canChangePriceInCloud: false,
     changePriceInCloud: async () => ({ saved: false, reason: 'this is sample data' }),
     rollBack: (e) => e,
@@ -847,11 +864,8 @@ function renderLimits() {
   el('price-limits').hidden = false;
   readPrices(view.product.productId); // Round A: an item typed into the form has its prices read too
 
-  const mrp = (view.product.mrpHistory ?? [])
-    .filter((m) => m.effectiveFrom <= today())
-    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
-    .at(-1);
-  el('mrp-value').textContent = mrp === undefined ? '—' : inr(mrp.value.minor);
+  paintMrp(view.product.productId);
+  void readMrpLive(view.product.productId);
   renderMrpReplace(view.product.productId);
 
   // The floor is derived from the cost and the tenant's own margin policy. Absent a cost there is
@@ -864,6 +878,45 @@ function renderLimits() {
     : inr(Math.ceil((costMinor * 10_000) / (10_000 - floorBps)));
 }
 el('price-item').addEventListener('input', renderLimits);
+
+/**
+ * D-019 · D-020: paint the MRP the price is checked against, and where it came from — head office's own (read live),
+ * the store computer's copy (said so, with why), or none (then the box for the MRP printed on the pack).
+ */
+function paintMrp(productId) {
+  const src = session.mrpSourceFor(productId);
+  const note = el('mrp-source');
+  el('mrp-given-label').textContent = t('mrpGivenLabel');
+  el('mrp-given-lead').textContent = t('mrpGivenLead');
+  if (src.source === 'head_office') {
+    el('mrp-value').textContent = inr(src.mrpMinor);
+    note.textContent = `${t('mrpFromHeadOffice')}${src.from === null ? '' : ` — ${t('mrpFromHeadOfficeSince')} ${String(src.from).slice(0, 10)}`}`;
+  } else if (src.source === 'store_copy') {
+    el('mrp-value').textContent = src.mrpMinor === null ? '—' : inr(src.mrpMinor);
+    note.textContent = `${t('mrpStoreCopy')} ${src.why}`;
+  } else {
+    el('mrp-value').textContent = '—';
+    note.textContent = '';
+  }
+  const needsGiven = src.source === 'head_office_has_none' || (src.source === 'store_copy' && src.mrpMinor === null);
+  el('mrp-given').hidden = !needsGiven;
+}
+
+/** Read head office's MRP in force today for the item (once per item), repaint, and re-check a price already typed. */
+const mrpAsked = new Set();
+async function readMrpLive(productId) {
+  if (mrpAsked.has(productId)) return;
+  mrpAsked.add(productId);
+  await session.readMrpFromHeadOffice(productId);
+  const sku = el('price-item').value.trim();
+  const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
+  if (view === undefined || view.product.productId !== productId) return;
+  paintMrp(productId);
+  if (el('new-price').value.trim() !== '') checkThePrice(true);
+}
+
+/** The MRP typed from the pack, in paise — only while the box is showing (head office has none). */
+const mrpGiven = () => (el('mrp-given').hidden ? undefined : (toMinor(el('mrp-given-value').value) > 0 ? toMinor(el('mrp-given-value').value) : undefined));
 
 // ── OB-512: replacing an MRP that is not yet in force ───────────────────────
 const MRP_REPLACE_WORDS = {
@@ -927,7 +980,9 @@ function checkThePrice(quiet) {
   const priceText = el('new-price').value.trim();
   const from = dateOf('price-from').trim();
   const view = session.shelf().find((v) => v.product.sku === sku || v.product.productId === sku);
-  if (quiet && (sku === '' || priceText === '' || from === '' || view === undefined || !(toMinor(priceText) > 0))) {
+  if (view !== undefined) { paintMrp(view.product.productId); void readMrpLive(view.product.productId); }
+  const givenMissing = view !== undefined && !el('mrp-given').hidden && mrpGiven() === undefined;
+  if (quiet && (sku === '' || priceText === '' || from === '' || view === undefined || !(toMinor(priceText) > 0) || givenMissing)) {
     lastProposal = null;
     paintCheckPrimary();
     el('price-verdict').hidden = true;
@@ -939,19 +994,22 @@ function checkThePrice(quiet) {
   if (priceText === '') { tell(t('read'), t('needPrice')); return; }
   if (from === '') { tell(t('read'), t('needDate')); return; }
   if (view === undefined) { tell(t('read'), t('unknownItem')); return; }
+  if (givenMissing) { tell(t('read'), t('needMrpGiven')); return; }
 
+  const given = mrpGiven();
   lastProposal = session.proposePrice({
     id: `pc-${view.product.productId}-${from}-${toMinor(priceText)}`,
     productId: view.product.productId,
     priceMinor: toMinor(priceText),
     effectiveFrom: from,
+    ...(given === undefined ? {} : { mrpGivenMinor: given }),
   });
   renderProposal(lastProposal, view.product.productId);
 }
 el('check-price').addEventListener('click', () => { checkThePrice(false); });
 // OB-390: the check runs as the price is typed, so Save is the next act — no separate "Check" press needed.
 // (delegated, so the shared date field that replaces `price-from` is heard too)
-document.addEventListener('input', (e) => { if (['new-price', 'price-from', 'price-item'].includes(e.target?.id)) checkThePrice(true); });
+document.addEventListener('input', (e) => { if (['new-price', 'price-from', 'price-item', 'mrp-given-value'].includes(e.target?.id)) checkThePrice(true); });
 
 function renderProposal(proposal, productId) {
   const box = el('price-verdict');
@@ -991,7 +1049,13 @@ function renderProposal(proposal, productId) {
 
 /** The price an ask on this page was last made for — so "Save it" becomes the one main action after asking. */
 let priceAskedFor = null;
-const priceKey = (proposal) => `${proposal.draft.productId}|${proposal.draft.price.minor}`;
+const priceKey = (proposal) => `${proposal.draft.productId}|${proposal.draft.price.minor}|${mrpGiven() ?? ''}`;
+
+/** What the ask and the save send: the item, the price and any MRP typed from the pack (head office has none). */
+const priceInput = (proposal) => {
+  const given = mrpGiven();
+  return { productId: proposal.draft.productId, priceMinor: proposal.draft.price.minor, ...(given === undefined ? {} : { mrpGivenMinor: given }) };
+};
 
 /** Which of "Ask for approval" and "Save it" is the main action: asking first, then saving once asked. */
 /** Step 1's button, 'Check this price', is the primary only until a check has been made (U1 - G3: one primary per step). */
@@ -1014,9 +1078,7 @@ el('ask-price').addEventListener('click', () => {
   void busy('ask-price', async () => {
     if (lastProposal === null || !lastProposal.needsApproval) return;
     const proposal = lastProposal;
-    const outcome = await session.askPriceApproval(lang, {
-      productId: proposal.draft.productId, priceMinor: proposal.draft.price.minor, why: el('price-why').value,
-    });
+    const outcome = await session.askPriceApproval(lang, { ...priceInput(proposal), why: el('price-why').value });
     if (outcome.kind === 'asked') { priceAskedFor = priceKey(proposal); el('price-why').value = ''; paintPriceApproval(); }
     tellApproval(outcome.kind, session.presentAskOutcome(lang, 'price', outcome), 'price');
   });
@@ -1039,9 +1101,7 @@ el('save-price').addEventListener('click', () => {
     // rejected, expired, used or changed — each is said plainly, and nothing is sent. With no head office behind
     // this page it says so, and nothing is saved: a name on this screen is not an approval.
     if (proposal.needsApproval) {
-      const outcome = await session.savePriceWithApproval({
-        productId: proposal.draft.productId, priceMinor: proposal.draft.price.minor,
-      });
+      const outcome = await session.savePriceWithApproval(priceInput(proposal));
       tellApproval(outcome.kind, session.presentUseOutcome(lang, 'price', outcome, inr(proposal.draft.price.minor)), 'price');
       if (outcome.kind === 'done') {
         el('save-price').hidden = true;
@@ -1055,10 +1115,7 @@ el('save-price').addEventListener('click', () => {
     // cost, margin floor), records the append-only change, and it is read back by the lane. The screen shows
     // what the cloud decided and changes nothing itself.
     if (session.canChangePriceInCloud) {
-      const outcome = await session.changePriceInCloud({
-        productId: proposal.draft.productId,
-        priceMinor: proposal.draft.price.minor,
-      });
+      const outcome = await session.changePriceInCloud(priceInput(proposal));
       if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
       tell(t('priceSaved'), `${inr(proposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
       el('save-price').hidden = true;

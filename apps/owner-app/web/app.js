@@ -502,15 +502,41 @@ function showAlert(alert) {
   el('drill').hidden = false;
 }
 
+// D-010 (fix batch 4a): the purchase orders waiting for this person to issue them, read live from head office as the
+// person signed in (window.ownerOrders — read only). Each is counted in "Waiting for you" and opens Approvals, where its
+// items, quantities and prices are shown and it is issued. The phone decides nothing about them.
+let ownerOrders = null;
+const ORDER_WORDS = {
+  en: { order: 'Purchase order', raised: 'raised by', open: 'Open Approvals to see it and issue it', notRead: 'Purchase orders waiting at head office could not be read.' },
+  ta: { order: 'கொள்முதல் ஆணை', raised: 'உருவாக்கியவர்', open: 'பார்க்கவும் வழங்கவும் ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்', notRead: 'தலைமை அலுவலகத்தில் காத்திருக்கும் கொள்முதல் ஆணைகளைப் படிக்க முடியவில்லை.' },
+};
+const ord = (k) => (ORDER_WORDS[lang] ?? ORDER_WORDS.en)[k];
+
+function orderRow(o) {
+  const box = document.createElement('div');
+  box.className = 'row order-to-issue';
+  box.dataset.po = o.poId;
+  const what = document.createElement('div'); what.className = 'what'; what.textContent = `${ord('order')} · ${o.number} · ${o.supplierName}`;
+  const value = document.createElement('div'); value.className = 'value'; value.textContent = inr(o.totalMinor);
+  const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = `${ord('raised')} ${o.raisedBy}`;
+  const actions = document.createElement('div'); actions.className = 'row-actions';
+  const go = document.createElement('a'); go.className = 'primary open-approvals'; go.href = '../approvals'; go.textContent = ord('open');
+  actions.append(go);
+  box.append(what, value, meta, actions);
+  return box;
+}
+
 function renderApprovals(approvals, freshness) {
   const host = el('approvals');
-  el('approvals-count').textContent = countOf(approvals, freshness);
-  if (approvals.length === 0) {
+  const orders = ownerOrders !== null && ownerOrders.state === 'read' ? ownerOrders.orders : [];
+  const notRead = ownerOrders !== null && ownerOrders.state === 'not_read' ? [Object.assign(document.createElement('p'), { className: 'empty unknown orders-not-read', textContent: ord('notRead') })] : [];
+  el('approvals-count').textContent = countOf([...approvals, ...orders], freshness);
+  if (approvals.length === 0 && orders.length === 0) {
     const none = emptyLine(t('nothingWaiting'), freshness);
-    host.replaceChildren(none);
+    host.replaceChildren(none, ...notRead);
     return;
   }
-  host.replaceChildren(...approvals.map((request) => {
+  host.replaceChildren(...orders.map(orderRow), ...notRead, ...approvals.map((request) => {
     const box = document.createElement('div');
     box.className = 'row';
 
@@ -796,6 +822,11 @@ if (real === undefined && window.ownerData !== undefined) {
   el('headline').textContent = `${t('noDataTitle')} — ${t('noDataBody')}`;
 } else {
   render();
+}
+
+// D-010: then the orders waiting for this person at head office (read only), and the list is drawn again with them.
+if (window.ownerOrders && typeof window.ownerOrders.read === 'function' && real !== undefined) {
+  window.ownerOrders.read().then((got) => { ownerOrders = got; render(); }).catch(() => { ownerOrders = { state: 'not_read' }; render(); });
 }
 
 // ── The shell's own honesty about where this page came from ─────────────────

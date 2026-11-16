@@ -37,6 +37,7 @@ import {
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 import { openNewWorkGate, type NewWorkGate } from '../../../packages/platform-admin/src/client-version'; // OB-521 (R8-A)
+import { mayIssueOrders, ordersWaitingToIssue, type OrderWaitingToIssue } from '../../../packages/purchasing/src/orders-waiting-to-issue'; // D-010
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
@@ -60,6 +61,45 @@ export interface OwnerData {
   readonly acknowledgeStaleDecisions?: boolean;
   /** OB-521: the app version policy, served with the payload (`null` = none is in force). */
   readonly appVersionPolicy?: unknown;
+  /** D-010: the person signed in on the store computer, and what they hold (filled by the store computer). */
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+}
+
+/** D-010: what head office's order list says about orders waiting for their second person, for this owner. */
+export type OwnerOrdersRead =
+  | { readonly state: 'read'; readonly orders: readonly OrderWaitingToIssue[] }
+  | { readonly state: 'not_read' };
+
+/**
+ * D-010: the purchase orders waiting for THIS person to issue them — not one they raised, and only when they may issue
+ * orders — read live from head office in their own session (`GET /v1/purchase/orders`, read only). The phone decides
+ * nothing about them: the owner opens Approvals, sees the lines, and issues there. No head office (a phone away from the
+ * store, a fault) → `not_read`, and the page says the orders could not be read rather than showing none.
+ */
+export async function readOwnerOrders(fetchFn: typeof fetch | undefined, data: OwnerData | undefined): Promise<OwnerOrdersRead> {
+  if (fetchFn === undefined) return { state: 'not_read' };
+  const viewer = { userId: data?.userId ?? null, permissions: data?.permissions ?? null };
+  if (!mayIssueOrders(viewer)) return { state: 'read', orders: [] };
+  try {
+    const res = await fetchFn('/v1/purchase/orders', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (!res.ok) return { state: 'not_read' };
+    const body = (await res.json()) as unknown;
+    // The suppliers by name where this person may read them; otherwise each is named by its code (never a guess).
+    const suppliers = new Map<string, string>();
+    try {
+      const sup = await fetchFn('/v1/purchase/suppliers', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      if (sup.ok) {
+        const list = ((await sup.json()) as { suppliers?: unknown }).suppliers;
+        for (const s of Array.isArray(list) ? list as { supplierId?: unknown; name?: unknown }[] : []) {
+          if (typeof s?.supplierId === 'string' && typeof s.name === 'string' && s.name.trim() !== '') suppliers.set(s.supplierId, s.name);
+        }
+      }
+    } catch { /* names stay codes */ }
+    return { state: 'read', orders: ordersWaitingToIssue(body, viewer, { suppliers }).filter((o) => !o.raisedByViewer) };
+  } catch {
+    return { state: 'not_read' };
+  }
 }
 
 /** Where decisions wait until they can be sent. Injectable so a host app can supply a better one. */
@@ -139,6 +179,8 @@ interface OwnerWindow {
   ownerQueueProblem?: string | null;
   /** OB-521: this build's new-work gate — its words when a NEW decision is refused. */
   ownerVersion?: NewWorkGate;
+  /** D-010: the purchase orders waiting for this person to issue them, read live (read only). */
+  ownerOrders?: { readonly read: () => Promise<OwnerOrdersRead> };
 }
 
 /**
@@ -215,6 +257,8 @@ if (browserWindow !== undefined) {
   if (session !== null) browserWindow.ownerSession = session;
   browserWindow.ownerBrief = buildBrief;
   browserWindow.ownerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };
+  const ownerFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+  browserWindow.ownerOrders = Object.freeze({ read: () => readOwnerOrders(ownerFetch === undefined ? undefined : ownerFetch.bind(globalThis), browserWindow.ownerData) });
 }
 
 export { buildBrief };

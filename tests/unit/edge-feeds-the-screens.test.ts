@@ -419,6 +419,15 @@ describe('the two gates on a day close are produced HERE, not fetched', () => {
     expect(payload['unsentItems']).toEqual([{ id: 'k1', what: 'SaleCommitted' }]);
   });
 
+  it('D-060: lists every queue the day close counts (a ticked checklist item included), when the box hands its own list', () => {
+    const outbox = new SyncOutbox();
+    outbox.enqueue(makeEvent({
+      id: 'e1', type: 'SaleCommitted', occurredAt: NOW, idempotencyKey: 'k1', source: 'lane-1', payload: {},
+    }));
+    const theCloseCounts = [{ id: 'k1', what: 'SaleCommitted' }, { id: 'completions:tick-1', what: 'ChecklistCompleted' }];
+    expect(managerPayload(input({ outbox, unsentForTheClose: () => theCloseCounts }))['unsentItems']).toEqual(theCloseCounts);
+  });
+
   it('drops an item from the unsent register once it is acknowledged', () => {
     const outbox = new SyncOutbox();
     outbox.enqueue(makeEvent({

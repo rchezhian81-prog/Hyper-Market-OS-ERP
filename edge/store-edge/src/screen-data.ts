@@ -112,6 +112,12 @@ export interface ScreenInput {
   readonly unreadableRecords: number;
   /** The store's real outbox — the only honest source for "has everything reached the cloud?". */
   readonly outbox: SyncOutbox;
+  /**
+   * Fix batch 4a (D-060 · P-08 · one truth): EVERY item the day close counts as unsent — the sales outbox and every other
+   * queue on this box (returns, closing-checklist ticks, the day-close queue, till cash, device events, …), exactly the
+   * list the store computer counts when it refuses a close. Absent (a screen-only test box): the sales outbox alone.
+   */
+  readonly unsentForTheClose?: () => readonly { readonly id: string; readonly what: string }[];
   readonly now: string;
   readonly tradingDay: string;
   /**
@@ -824,6 +830,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
     payload['userId'] = who.userId;
     payload['approvalLimitMinor'] = who.approvalLimitMinor ?? null;
   }
+  // D-010: what the person signed in holds — an empty list here that the screen server fills from this box's role register
+  // (`asSignedInPerson`), so Today counts an order waiting for its second person as theirs only when they may issue it.
+  payload['permissions'] = [];
   if (input.pack.policies.known) {
     const policies = input.pack.policies.value;
     payload['storeId'] = policies.storeId;
@@ -851,7 +860,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   if (input.cardPayments !== undefined) payload['cardPayments'] = cardPaymentsList(input.cardPayments);
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.
-  payload['unsentItems'] = input.outbox.pending().map((item) => ({
+  // D-060: the SAME list the store computer counts when it refuses a close — a ticked checklist item waiting to reach
+  // head office is listed here too, so the screen never says "nothing is open" while the box refuses.
+  payload['unsentItems'] = input.unsentForTheClose !== undefined ? [...input.unsentForTheClose()] : input.outbox.pending().map((item) => ({
     id: item.key,
     what: item.event.type,
   }));
@@ -1158,6 +1169,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
 
   return {
     ownerId: 'owner',
+    // D-010: what the person signed in holds — filled by the screen server from this box's role register, so the page
+    // counts a purchase order waiting for its second person as theirs only when they may issue it.
+    permissions: [],
     staleAfterSeconds: policies.staleAfterSeconds,
     // R3 · C5 · OB-195: always the published 15 days; a pack carrying another figure is read as 15 and flagged.
     ...privacySlaOf(policies.privacySlaDays),

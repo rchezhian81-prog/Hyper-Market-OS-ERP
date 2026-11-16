@@ -53,6 +53,13 @@ export interface PricingDeps {
    */
   readonly marginFloorFor?: (tenantId: string, storeId: string) => Promise<number | undefined> | number | undefined;
   /**
+   * The MRP head office holds on the product master IN FORCE TODAY (the shop's today), or undefined when it holds none.
+   * Present in the running system: then the MRP a request sends can never raise the legal ceiling (the lower of the two is
+   * used), and with no MRP on record the one sent — read off the pack (D-019) — is believed only with a second person's
+   * approval for exactly this change. A bare stub without it judges by the body's figure, as before.
+   */
+  readonly mrpOnRecordFor?: (tenantId: string, productId: string) => Promise<{ readonly mrpMinor: number; readonly from: string } | undefined>;
+  /**
    * Seal this price change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
    * ALWAYS the caller (`ctx.userId`), never client-supplied; a price is a public shelf figure, so it is
@@ -141,10 +148,18 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           // A price for several stores is judged at the strictest of their floors.
           marginFloorBps = Math.max(...floors.map((f) => f.floor as number));
         }
+        // The legal ceiling: head office's own MRP in force today where it holds one — the LOWER of it and the one sent, so
+        // a request cannot lift the ceiling by sending a higher figure. Where it holds none, the MRP sent (read off the
+        // pack) is the ceiling, but only a second person's approval for exactly this change makes it one (below).
+        const onRecord = deps.mrpOnRecordFor === undefined ? undefined : await deps.mrpOnRecordFor(ctx.tenantId, b.productId!);
+        const mrpMinor = onRecord === undefined ? b.mrpMinor! : Math.min(b.mrpMinor!, onRecord.mrpMinor);
+        const mrpSource = deps.mrpOnRecordFor === undefined ? 'request'
+          : onRecord === undefined ? 'pack_checked_by_second_person'
+            : onRecord.mrpMinor <= b.mrpMinor! ? 'product_master' : 'sent_lower_than_product_master';
         const check = checkPrice({
           id,
           proposedPrice: money(b.priceMinor!, currency),
-          mrp: money(b.mrpMinor!, currency),
+          mrp: money(mrpMinor, currency),
           cost: money(b.costMinor!, currency),
           marginFloorBps,
           setBy,
@@ -157,12 +172,23 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           throw apiError(422, {
             code: `price_${check.verdict}`,
             whatHappened: check.verdict === 'above_mrp'
-              ? 'The price is above the printed MRP — a legal ceiling no approval can lift.'
+              ? `The price is above the printed MRP${onRecord !== undefined && onRecord.mrpMinor < b.mrpMinor! ? ` of ₹${(onRecord.mrpMinor / 100).toFixed(2)} on the product master from ${onRecord.from} (lower than the ₹${(b.mrpMinor! / 100).toFixed(2)} sent)` : ''} — a legal ceiling no approval can lift.`
               : `The price is ${check.verdict.replace('_', ' ')} and needs a separate approver's sign-off with a reason.`,
             wasItSaved: 'not_saved',
             nextSafeAction: check.verdict === 'above_mrp'
               ? 'Set a price at or below the MRP. Nothing was changed.'
               : 'Ask for approval (POST /v1/approvals/requests, kind price_change, with exactly this change); once someone who may approve prices approves it, send the approvalId. Nothing was changed.',
+          });
+        }
+
+        // D-019: head office holds no MRP for this item today, so the MRP sent is the one read off the pack. It is the ceiling
+        // only once a second person who may approve prices has checked it and approved exactly this change (MRP included).
+        if (deps.mrpOnRecordFor !== undefined && onRecord === undefined && approval === undefined) {
+          throw apiError(422, {
+            code: 'mrp_not_on_record_needs_second_person',
+            whatHappened: `Head office holds no MRP for ${b.productId!} today, so the MRP sent with this price (₹${(b.mrpMinor! / 100).toFixed(2)}, read off the pack) cannot be relied on by one person alone. A second person who may approve prices has to check it against the pack and approve exactly this change.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind price_change, with exactly this change and its MRP); once someone else who may approve prices approves it, send the approvalId. Or add the MRP to the product first. Nothing was changed.',
           });
         }
 
@@ -193,6 +219,8 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           after: {
             priceMinor: String(record.priceMinor), currency: record.currency,
             verdict: record.verdict, approvedBy: record.approvedBy ?? '',
+            // Which MRP the ceiling was — and where it came from (the product master, or the pack checked by a second person).
+            mrpMinor: String(mrpMinor), mrpSource,
           },
           ...(record.reason ? { reason: record.reason } : {}),
           correlationId: record.id,

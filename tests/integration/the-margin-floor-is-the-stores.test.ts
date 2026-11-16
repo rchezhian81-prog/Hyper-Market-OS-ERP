@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { aBranch } from '../support/a-branch';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { storeRules } from '../support/store-rules';
+import { mrpOnRecord } from '../support/mrp-on-record';
 
 /**
  * **M05 — the margin floor a head-office price is judged by is the STORE's, never a figure sent with the price (M05-FR-02 ·
@@ -21,6 +22,7 @@ async function shop(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.provisionOwner(A, 'owner-1');
   await aBranch(h, A, 'owner-1');
+  await mrpOnRecord(h, A, 'owner-1', 'P1', 10_000); // the ₹100 MRP on the product master — the ceiling a price is judged by
   return h;
 }
 

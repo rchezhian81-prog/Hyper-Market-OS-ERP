@@ -35,7 +35,7 @@ import { createPosView, type PosView } from './view-adapter';
 import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
 import { createDeviceHeartbeat, type DeviceHeartbeat, type DeviceStatus } from './device-heartbeat';
 import {
-  createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome, type ReturnableLineShown,
+  createRefundView, refundOutcomeOf, keyedReturnMinor, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome, type ReturnableLineShown,
 } from './refund-view';
 import { assessExchange, returnedValueAtOriginalPrices, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
@@ -1221,6 +1221,8 @@ export function bootPos(config?: {
   readonly receiptNotice: () => string | undefined;
   /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
   readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
+  /** D-059: the how-many keypad's answer for a bill line in its own unit ("0.850" kg → 850 g), or `undefined` if it cannot come back. */
+  readonly keyedReturnMinor: (typed: string, line: { readonly uom: string; readonly returnableMinor: number }) => number | undefined;
   /**
    * OB-264: a MIRROR refund finds its sale by the old ERP's bill number on the customer's bill — `null` if no sale on the
    * store computer carries it. The refund rules then apply exactly as for `lookupRefund` (within the bill, approvals).
@@ -2446,7 +2448,7 @@ export function bootPos(config?: {
   });
   const cancellableView = Object.assign(quotedView, { ringQuotationAtTill: ringQuotationRemembered, cancelBillAtTill, quotationsOnBill, billCancelWords: (lang: 'en' | 'ta') => BILL_CANCEL_WORDS[lang] });
   // ── R8-B · OB-523 — end ──
-  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
+  return Object.assign(cancellableView, { findItems, guestSalesOnly, mirrorPilot, realTrading, taxInvoice, printBillCopy, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, recallPhoneBasketAtTill, recallQueueBasketAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, keyedReturnMinor, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, operatorShown, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, couponAtTill, removeCouponAtTill: () => { session.setCoupon(null); }, couponOnBill, giftCardBalance, sellGiftCard, refusedOffers: () => session.refusedOffers(), holdOffersStartingAfter: (cutoffAt: string | null) => { session.holdOffersStartingAfter(cutoffAt); }, heldOffers: () => session.heldOffers(), applyVersionPolicy, appVersion });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

@@ -412,7 +412,7 @@ import { secretUseCounter, secretUseReads, secretUseRollupSweep } from './w6-sec
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { qualitySampleAdapter, inMemoryQualitySamples, scaleStampExpirySweep } from './r6b-quality-scale-adapters'; // Round 6 · R6-B — quality samples (M10-FR-02), scale-stamp alerts (B7)
 import { saasRolloutSurface, saasRolloutSweep, rolloutPackSection } from './saas-rollout-adapters'; // OB-288 P4 — multi-tenant SaaS and controlled rollout
-import { productsPricesSurface } from './w1-products-prices-adapters'; // Round 4a — products and prices
+import { productsPricesSurface, mrpOnRecordFor } from './w1-products-prices-adapters'; // Round 4a — products and prices
 import { spaceSurface } from './w2-space-adapters'; // Wave 2 · Round 4a part 2 — shelves, floor plan, display space, range, product checks
 import { floorDevicesSurface } from './floor-devices-adapters'; // OB-288 P6 — store floor devices (ESL, RFID, IoT, CCTV events)
 import { r16aSaleBranches } from './r16a-check-gaps-adapters'; // R16-A · OB-612: the bill findings narrow to the caller's branches
@@ -941,6 +941,9 @@ export function buildSurface(deps: {
         ...pricingAdapter({ store, now, calendar: shopCalendar }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }),
         // M05: the floor a head-office price is judged by is the one the owner set in the store's rules.
         marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
+        // The legal ceiling is head office's own MRP in force today (the lower of it and the one sent) — the same reading the
+        // Price lists route judges by; with none on record, the MRP sent needs a second person (D-019).
+        mrpOnRecordFor: mrpOnRecordFor({ store, now, calendar: shopCalendar }),
       }),
     ...calendared(priceListRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }

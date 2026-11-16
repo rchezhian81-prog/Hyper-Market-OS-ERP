@@ -1058,9 +1058,17 @@ export async function startEdge(
   // queue AHEAD of the next close event, so it reaches head office first; it is not trading the day still owes the cloud,
   // and counting it would stop an offline store closing (P-01). It stays visible on the queue and is relayed once.
   const EXCEPTION_RELAYS = new Set(['LatePaymentAnswerRecorded', 'CarriedPaymentResolved', 'PaymentNoAnswerRaised']);
-  const unsentAcrossAllQueues = (): number => outbox.pending().length + returnsOutbox.pending().length
-    + completionsOutbox.pending().length + dayCloseOutbox.pending().filter((i) => !EXCEPTION_RELAYS.has(i.event.type)).length + concessionTagsOutbox.pending().length
-    + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
+  // D-060 (one truth): the items themselves, so the manager's "Check what is still open" lists exactly what this count
+  // counts — a ticked closing-checklist item still waiting to reach head office included. The sales outbox keeps its own
+  // keys; every other queue's key is prefixed with the queue, so two queues never share an id on the screen.
+  const unsentItemsAcrossAllQueues = (): { id: string; what: string }[] => [
+    ...outbox.pending().map((i) => ({ id: i.key, what: i.event.type })),
+    ...([['returns', returnsOutbox.pending()], ['completions', completionsOutbox.pending()],
+      ['day-close', dayCloseOutbox.pending().filter((i) => !EXCEPTION_RELAYS.has(i.event.type))], ['concession-tags', concessionTagsOutbox.pending()],
+      ['device-events', deviceEventsOutbox.pending()], ['till-cash', tillCashOutbox.pending()]] as const)
+      .flatMap(([queue, items]) => items.map((i) => ({ id: `${queue}:${i.key}`, what: i.event.type }))),
+  ];
+  const unsentAcrossAllQueues = (): number => unsentItemsAcrossAllQueues().length;
 
   // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
   // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
@@ -2271,6 +2279,7 @@ export async function startEdge(
       checklistTicks: checklistTicksNow, // fix batch 3: the closing-checklist ticks made on this box
       unreadableRecords: recordsNow.unreadable,
       outbox,
+      unsentForTheClose: unsentItemsAcrossAllQueues, // D-060: the close's own list, every queue
       now,
       // The shop's own wall clock, not UTC: dated in UTC, a Tamil Nadu shop was on the wrong day for five and a half
       // hours after midnight UTC (SP-4b). The till dates each sale by the same rule at the moment it is taken.
@@ -2636,8 +2645,8 @@ export async function startEdge(
         return { closed: false, reason: `the day cannot close: ${open.length} closing-checklist item(s) for ${dayToClose} must be done before the day closes and are not done — ${open.map((i) => i.description).join('; ')}. Tick each one on the Checklists page.` };
       }
     }
-    // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
-    // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
+    // LIVE unsent across ALL pipelines — the same list the manager screen's `unsentItems` shows (D-060: one truth).
+    // A day must not lock while any refund, completion or checklist tick is still unsent (hard rule #10).
     const unsentSyncItems = unsentAcrossAllQueues();
     // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
     // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.

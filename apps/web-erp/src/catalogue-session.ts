@@ -122,7 +122,27 @@ export interface PromotionLaunchPort {
 export interface PriceChangeCloudInput {
   readonly productId: string;
   readonly priceMinor: number;
+  /**
+   * D-019: the MRP the person typed from the pack, used ONLY when head office holds no MRP for this item on that day.
+   * It is sent as the change's `mrpMinor` (so the approval is for exactly it), and such a price always needs a second
+   * person's approval. Ignored whenever head office has its own MRP.
+   */
+  readonly mrpGivenMinor?: number;
 }
+
+/**
+ * D-020: head office's MRP for one product on one day, read live (`GET /v1/prices/list/:productId/basis`), never the
+ * store computer's till-pack copy. `read: false` = head office could not be asked (no connection, not wired), said so.
+ */
+export type HeadOfficeMrp =
+  | { readonly read: true; readonly mrpMinor: number | null; readonly from: string | null }
+  | { readonly read: false; readonly reason: string };
+
+/** Where the MRP the price was checked against came from — shown beside the price, never guessed (P-08). */
+export type MrpSource =
+  | { readonly source: 'head_office'; readonly mrpMinor: number; readonly from: string | null }
+  | { readonly source: 'head_office_has_none' }
+  | { readonly source: 'store_copy'; readonly mrpMinor: number | null; readonly why: string };
 
 /** EXACTLY the body `POST /v1/prices/changes` receives (less the `approvalId`) — and therefore exactly what an
  *  approval for it is FOR. Built in one place (`priceChangeRequestBody`), so the ask and the send never drift. */
@@ -146,6 +166,8 @@ export type PriceChangeCloudOutcome =
  *  below cost is the cloud's to refuse, never the screen's to wave through. */
 export interface PriceChangeCloudPort {
   post(input: PriceChangeBody & { readonly approvalId?: string }): Promise<PriceChangeCloudOutcome>;
+  /** D-020: head office's own MRP for this product at this store on this day. Absent: the screen uses its pack copy. */
+  readMrp?(productId: string, storeId: string, on: string): Promise<HeadOfficeMrp>;
 }
 
 // ── What an approval is FOR — one rule, the engine's own (ADR-0024) ─────────────────────────────────────────
@@ -277,7 +299,7 @@ export const MIN_REASON_LENGTH = 10;
 
 export type ApprovalCopyKey =
   | 'notSaved' | 'notStarted'
-  | 'summaryBelowCost' | 'summaryBelowFloor' | 'summaryOffer'
+  | 'summaryBelowCost' | 'summaryBelowFloor' | 'summaryOffer' | 'summaryTypedMrp'
   | 'askedPrice' | 'askedOffer' | 'needsWhy' | 'notConnectedPrice' | 'notConnectedOffer'
   | 'noMrp' | 'noCost' | 'askRefused' | 'askRefusedNoWords' | 'askLostLink'
   | 'savedPrice' | 'startedOffer'
@@ -292,6 +314,7 @@ export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
     summaryBelowCost: 'Price of {product} to {price} (below cost {cost})',
     summaryBelowFloor: 'Price of {product} to {price} (below the margin floor; cost {cost})',
     summaryOffer: 'Launch offer {offer} — loses margin ({promo} instead of {normal}; it costs us {cost})',
+    summaryTypedMrp: 'Price of {product} to {price} — head office has no MRP, so {mrp} was typed from the pack: check the MRP on the pack before approving (cost {cost})',
     askedPrice: 'Asked. Waiting for a second person who may approve prices to approve it on the Approvals page. Nothing is saved yet.',
     askedOffer: 'Asked. Waiting for a second person who may approve prices to approve it on the Approvals page. The offer has not started yet.',
     needsWhy: 'Write why this is needed, in a sentence — the person approving reads it. Nothing was asked.',
@@ -329,6 +352,7 @@ export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
     summaryBelowCost: '{product} விலையை {price} ஆக்குதல் (அடக்க விலை {cost}-ஐ விடக் குறைவு)',
     summaryBelowFloor: '{product} விலையை {price} ஆக்குதல் (குறைந்தபட்ச லாபத்தை விடக் குறைவு; அடக்க விலை {cost})',
     summaryOffer: '{offer} சலுகையைத் தொடங்குதல் — லாபம் குறையும் ({normal}-க்குப் பதில் {promo}; நமக்கு ஆகும் செலவு {cost})',
+    summaryTypedMrp: '{product} விலையை {price} ஆக்குதல் — தலைமை அலுவலகத்தில் MRP இல்லை, எனவே {mrp} பாக்கெட்டிலிருந்து தட்டச்சு செய்யப்பட்டது: அனுமதிக்கும் முன் பாக்கெட்டில் MRP-ஐச் சரிபாருங்கள் (அடக்க விலை {cost})',
     askedPrice: 'கேட்கப்பட்டது. விலைகளை அனுமதிக்கக்கூடிய இரண்டாம் நபர் அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. இன்னும் எதுவும் சேமிக்கப்படவில்லை.',
     askedOffer: 'கேட்கப்பட்டது. விலைகளை அனுமதிக்கக்கூடிய இரண்டாம் நபர் அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. சலுகை இன்னும் தொடங்கவில்லை.',
     needsWhy: 'இது ஏன் தேவை என்று ஒரு வாக்கியத்தில் எழுதுங்கள் — அனுமதிப்பவர் அதைப் படிப்பார். எதுவும் கேட்கப்படவில்லை.',
@@ -668,7 +692,20 @@ export interface CatalogueSession {
     readonly effectiveFrom: string;
     readonly scope?: PriceScope;
     readonly scopeRef?: string;
+    /** D-019: the MRP typed from the pack — used only when head office (or, unconnected, this screen) has none. */
+    readonly mrpGivenMinor?: number;
   }): PriceProposal;
+
+  /**
+   * D-020: read head office's OWN MRP for this product in force TODAY, live — not the store computer's till-pack copy,
+   * which can be days behind (an MRP the owner just added said "No MRP" until the pack was sent again). Remembered for
+   * the checks and the sends that follow. Not connected / no answer: the pack's copy, with the reason, said plainly.
+   * Today's, whatever day the price starts: a dearer MRP dated ahead must never lift today's ceiling.
+   */
+  readMrpFromHeadOffice(productId: string): Promise<MrpSource>;
+
+  /** D-019 · D-020: where today's MRP for this product comes from, as last read (no network call). */
+  mrpSourceFor(productId: string): MrpSource;
 
   /**
    * Turn a proposal into a price in this browser only (no head office behind the page) — a new entry, never an
@@ -811,22 +848,51 @@ export function createCatalogueSession(
       .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
       .at(-1)?.value;
 
+  /** D-020: head office's MRP as last read, per product and day — the authority whenever it has been read. */
+  const liveMrp = new Map<string, { readonly mrpMinor: number | null; readonly from: string | null }>();
+  /** Why head office could not be asked, per product and day (the pack's copy is used, and that is said). */
+  const unread = new Map<string, string>();
+  const mrpKey = (productId: string, on: string): string => `${productId}|${on}`;
+
+  const sourceOf = (productId: string, on: string): MrpSource => {
+    const live = liveMrp.get(mrpKey(productId, on));
+    if (live !== undefined) {
+      return live.mrpMinor === null ? { source: 'head_office_has_none' } : { source: 'head_office', mrpMinor: live.mrpMinor, from: live.from };
+    }
+    const pack = mrpToday(productId);
+    return { source: 'store_copy', mrpMinor: pack === undefined ? null : pack.minor, why: unread.get(mrpKey(productId, on)) ?? 'head office has not been asked' };
+  };
+
+  /**
+   * The ceiling a price is checked against (D-019 · D-020): head office's own MRP when it has been read; the pack's
+   * copy only when head office could not be asked; and only when neither holds one, the MRP typed from the pack —
+   * flagged, because a typed MRP needs a second person's check before the shop relies on it.
+   */
+  const ceilingFor = (productId: string, on: string, given: number | undefined): { readonly mrp?: Money; readonly typed: boolean } => {
+    const src = sourceOf(productId, on);
+    if (src.source === 'head_office') return { mrp: inr(src.mrpMinor), typed: false };
+    if (src.source === 'store_copy' && src.mrpMinor !== null) return { mrp: inr(src.mrpMinor), typed: false };
+    if (given !== undefined && Number.isSafeInteger(given) && given > 0) return { mrp: inr(given), typed: true };
+    return { typed: false };
+  };
+
   /**
    * The ONE place the body of a price change is built — for the change sent with no approval, for the change sent
    * naming one, and for the details an approval is asked for. A price with no ceiling or no known cost cannot be
    * checked for the law or the margin, so it is refused here, plainly, rather than sent (P-08).
    */
   const priceBody = (input: PriceChangeCloudInput):
-    | { readonly ok: true; readonly body: PriceChangeBody }
+    | { readonly ok: true; readonly body: PriceChangeBody; readonly typed: boolean }
     | { readonly ok: false; readonly missing: 'mrp' | 'cost' } => {
-    const mrp = mrpToday(input.productId);
-    if (mrp === undefined) return { ok: false, missing: 'mrp' };
+    const ceiling = ceilingFor(input.productId, config.today, input.mrpGivenMinor);
+    if (ceiling.mrp === undefined) return { ok: false, missing: 'mrp' };
     const cost = ports.costOf(input.productId);
     if (!cost.known) return { ok: false, missing: 'cost' };
     return {
       ok: true,
+      typed: ceiling.typed,
       body: {
-        productId: input.productId, priceMinor: input.priceMinor, mrpMinor: mrp.minor, costMinor: cost.cost.minor,
+        productId: input.productId, priceMinor: input.priceMinor, mrpMinor: ceiling.mrp.minor, costMinor: cost.cost.minor,
         currency: config.currency, marginFloorBps: config.marginFloorBps,
       },
     };
@@ -1030,13 +1096,11 @@ export function createCatalogueSession(
     ),
 
     proposePrice: (input) => {
-      const product = ports.products().find((p) => p.productId === input.productId);
-      // The MRP in force today, from the effective-dated history — not the newest one recorded. A
-      // future MRP increase must not raise today's ceiling before the pack it is printed on ships.
-      const mrp = (product?.mrpHistory ?? [])
-        .filter((m) => m.effectiveFrom <= config.today)
-        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
-        .at(-1)?.value;
+      // The MRP in force today, from the effective-dated history — not the newest one recorded. A future MRP increase
+      // must not raise today's ceiling before the pack it is printed on ships. D-020: head office's own, when read —
+      // for TODAY, whatever day the price starts (a dearer MRP dated ahead never lifts today's ceiling).
+      const ceiling = ceilingFor(input.productId, config.today, input.mrpGivenMinor);
+      const mrp = ceiling.mrp;
 
       return proposePriceChange(
         {
@@ -1051,12 +1115,27 @@ export function createCatalogueSession(
         {
           today: config.today,
           ...(mrp === undefined ? {} : { mrp }),
+          ...(ceiling.typed ? { mrpTypedFromThePack: true } : {}),
           cost: ports.costOf(input.productId),
           marginFloorBps: config.marginFloorBps,
           existing: ports.priceEntries(),
         },
       );
     },
+
+    readMrpFromHeadOffice: async (productId) => {
+      const on = config.today;
+      const read = ports.changePrice?.().readMrp;
+      const key = mrpKey(productId, on);
+      if (read === undefined) { unread.set(key, 'this screen is not connected to head office'); return sourceOf(productId, on); }
+      let answer: HeadOfficeMrp;
+      try { answer = await read(productId, config.storeId, on); } catch { answer = { read: false, reason: 'no connection to head office' }; }
+      if (answer.read) { liveMrp.set(key, { mrpMinor: answer.mrpMinor, from: answer.from }); unread.delete(key); }
+      else if (!liveMrp.has(key)) unread.set(key, answer.reason);
+      return sourceOf(productId, on);
+    },
+
+    mrpSourceFor: (productId) => sourceOf(productId, config.today),
 
     activatePrice: (proposal, approval) =>
       activatePriceChange(proposal, {
@@ -1123,7 +1202,10 @@ export function createCatalogueSession(
       if (port === undefined) {
         return { saved: false, reason: 'this screen is not connected to head office, so it cannot change the price' };
       }
-      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      const built = priceBody(input);
+      if (built.ok && built.typed) {
+        return { saved: false, reason: 'head office has no MRP for this item, so the MRP typed from the pack needs a second person to check it — ask for approval first' };
+      }
       if (!built.ok) {
         return built.missing === 'mrp'
           ? { saved: false, reason: 'this product has no MRP recorded, so the legal ceiling cannot be checked' }
@@ -1140,14 +1222,14 @@ export function createCatalogueSession(
     askPriceApproval: async (lang, input) => {
       if (!connected() || ports.changePrice === undefined) return { kind: 'not_connected' };
       if (!hasReason(input.why)) return { kind: 'needs_why' };
-      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      const built = priceBody(input);
       if (!built.ok) return { kind: 'cannot_check', missing: built.missing };
       const body = built.body;
       const t = translator(CATALOGUE_APPROVAL_COPY, lang);
       const product = ports.products().find((p) => p.productId === body.productId);
-      const summary = fill(t(body.priceMinor < body.costMinor ? 'summaryBelowCost' : 'summaryBelowFloor'), {
+      const summary = fill(t(built.typed ? 'summaryTypedMrp' : body.priceMinor < body.costMinor ? 'summaryBelowCost' : 'summaryBelowFloor'), {
         product: product === undefined || product.name.trim() === '' ? body.productId : product.name,
-        price: rupees(body.priceMinor), cost: rupees(body.costMinor),
+        price: rupees(body.priceMinor), cost: rupees(body.costMinor), mrp: rupees(body.mrpMinor),
       });
       return ask({
         kind: PRICE_APPROVAL_KIND, subjectRef: body.productId,
@@ -1161,7 +1243,7 @@ export function createCatalogueSession(
     savePriceWithApproval: async (input) => {
       const port = ports.changePrice;
       if (!connected() || port === undefined) return { kind: 'not_connected' };
-      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      const built = priceBody(input);
       if (!built.ok) return { kind: 'cannot_check', missing: built.missing };
       const body = built.body;
       const found = await findApproval(PRICE_APPROVAL_KIND, body.productId, priceChangeDetails(body), body.priceMinor);

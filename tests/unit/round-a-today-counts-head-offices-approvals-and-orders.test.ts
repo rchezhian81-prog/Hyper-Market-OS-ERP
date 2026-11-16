@@ -56,10 +56,10 @@ describe('the Today figures', () => {
     purchaseOrders: { result: 'read', value: { open: 1, awaitingApproval: 1 } },
   };
 
-  it('one approval waiting at head office is counted (never 0): the store computer\'s two plus head office\'s one', () => {
+  it('one approval waiting at head office is counted (never 0): the store computer\'s two plus head office\'s one — and (D-010) the order waiting for its second person', () => {
     const f = todayLiveFigures(BOX, live, 'en');
-    expect(f.approvalsWaiting).toMatchObject({ known: true, count: 3 });
-    expect(f.approvalsWaiting.note).toBe(`2 ${TODAY_LIVE_WORDS.en.onBox} · 1 ${TODAY_LIVE_WORDS.en.atHeadOffice}`);
+    expect(f.approvalsWaiting).toMatchObject({ known: true, count: 4 });
+    expect(f.approvalsWaiting.note).toBe(`2 ${TODAY_LIVE_WORDS.en.onBox} · 1 ${TODAY_LIVE_WORDS.en.atHeadOffice} · 1 ${TODAY_LIVE_WORDS.en.ordersToIssue}`);
     expect(f.headOffice).toEqual({ known: true, count: 1 });
     expect(f.approvalsIcanClear).toEqual({ known: true, count: 2 });
   });
@@ -86,7 +86,7 @@ describe('the Today figures', () => {
 
   it('a store computer never given its approvals still counts head office\'s, and says its own list was not given', () => {
     const f = todayLiveFigures({ ...BOX, approvalsWaiting: { known: false, why: 'not told' }, approvalsIcanClear: { known: false, why: 'not told' } }, live, 'en');
-    expect(f.approvalsWaiting).toMatchObject({ known: true, count: 1 });
+    expect(f.approvalsWaiting).toMatchObject({ known: true, count: 2 }); // head office's one approval + its one waiting order (D-010)
     expect(f.approvalsWaiting.note).toMatch(/the store computer's own list was not given/);
   });
 
