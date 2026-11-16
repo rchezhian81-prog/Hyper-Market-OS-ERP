@@ -265,7 +265,8 @@ function renderExpiry() {
         const pick = document.createElement('button');
         pick.type = 'button'; pick.className = 'pick-markdown';
         pick.textContent = window.markdowns.words(lang, 'pickRow');
-        pick.addEventListener('click', () => { window.expiryMarkdownPick(item); });
+        // D-025: the row's own figures fill the form (and its quantity in words, "2.500 kg")
+        pick.addEventListener('click', () => { window.expiryMarkdownPick(item, quantityOf(item)); });
         row.append(pick);
       }
       return row;

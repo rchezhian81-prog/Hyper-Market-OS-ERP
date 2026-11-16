@@ -11,6 +11,8 @@ const session = api?.session ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const t = (k, slots) => (api === null ? k : api.words(lang(), k, slots));
 let proposal = null; let clearance = null;
+/** D-025: the near-expiry row the form was filled from (its name and figures, shown in words), or null when typed. */
+let picked = null;
 
 function proposalWords(p) {
   return p.reason === 'marked_down'
@@ -23,6 +25,14 @@ function paint() {
   $('markdown').hidden = false;
   for (const [id, k] of [['md-h', 'proposeH'], ['md-lead', 'proposeLead'], ['l-md-product', 'product'], ['l-md-batch', 'batch'], ['l-md-days', 'daysLeft'], ['l-md-qty', 'onHand'],
     ['l-md-price', 'price'], ['l-md-rate', 'rate'], ['md-go', 'propose'], ['md-send-lead', 'sendLead'], ['md-send', 'sendForApproval'], ['cl-h', 'clearanceH'], ['cl-lead', 'clearanceLead'], ['cl-go', 'clearanceShow']]) $(id).textContent = t(k);
+  // D-025: the row fills the form; the typed boxes are only for an item not on the list
+  $('md-pick-hint').textContent = t('pickHint');
+  $('md-picked').hidden = picked === null;
+  if (picked !== null) {
+    const slots = { name: picked.name, batch: picked.batchId ?? '', days: String(picked.days), qty: picked.qtyWords };
+    $('md-picked-what').textContent = t(picked.batchId ? 'picked' : 'pickedNoBatch', slots);
+  }
+  $('md-typed-summary').textContent = t(picked === null ? 'typeInstead' : 'typeChange');
   $('md-result').hidden = proposal === null;
   if (proposal !== null) {
     $('md-proposal').textContent = proposalWords(proposal);
@@ -55,12 +65,18 @@ function paint() {
 }
 
 /** expiry.js: a near-expiry row's "Work out a markdown" fills the form with what the list knows. */
-window.expiryMarkdownPick = (item) => {
+window.expiryMarkdownPick = (item, qtyWords) => {
   $('md-product').value = item.productId; $('md-batch').value = item.batchId ?? '';
   $('md-days').value = String(Math.max(0, item.daysToExpiry)); $('md-qty').value = String(item.qty);
   $('md-price').value = ''; $('md-rate').value = '';
-  $('md-product').scrollIntoView?.({ block: 'center' }); $('md-rate').focus();
+  picked = { name: item.name ?? item.productId, batchId: item.batchId ?? null, days: Math.max(0, item.daysToExpiry), qtyWords: typeof qtyWords === 'string' && qtyWords !== '' ? qtyWords : String(item.qty) };
+  $('md-typed').open = false;
+  proposal = null; $('md-status').textContent = '';
+  paint();
+  $('md-picked').scrollIntoView?.({ block: 'center' }); $('md-rate').focus();
 };
+// a typed change to the item's details means the form no longer stands for the row it was filled from
+for (const id of ['md-product', 'md-batch', 'md-days', 'md-qty']) $(id)?.addEventListener('input', () => { if (picked !== null) { picked = null; paint(); } });
 
 $('md-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();

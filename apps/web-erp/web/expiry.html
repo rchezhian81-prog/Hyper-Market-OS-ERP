@@ -145,11 +145,20 @@
           <h2 id="md-h"></h2>
           <p class="lead" id="md-lead"></p>
           <form id="md-form" novalidate>
+            <!-- D-025 (fix batch 6): a near-expiry row's "Work out a markdown" fills the item, batch, days left and stock; they
+                 are shown in words, and typing them is only for an item not on the list. -->
+            <p class="lead" id="md-pick-hint"></p>
+            <p id="md-picked" hidden><strong id="md-picked-what"></strong></p>
+            <details id="md-typed">
+              <summary id="md-typed-summary"></summary>
+              <div class="row2">
+                <label for="md-product"><span id="l-md-product"></span><input id="md-product" autocomplete="off" /></label>
+                <label for="md-batch"><span id="l-md-batch"></span><input id="md-batch" autocomplete="off" /></label>
+                <label for="md-days"><span id="l-md-days"></span><input id="md-days" inputmode="numeric" autocomplete="off" /></label>
+                <label for="md-qty"><span id="l-md-qty"></span><input id="md-qty" inputmode="numeric" autocomplete="off" /></label>
+              </div>
+            </details>
             <div class="row2">
-              <label for="md-product"><span id="l-md-product"></span><input id="md-product" autocomplete="off" /></label>
-              <label for="md-batch"><span id="l-md-batch"></span><input id="md-batch" autocomplete="off" /></label>
-              <label for="md-days"><span id="l-md-days"></span><input id="md-days" inputmode="numeric" autocomplete="off" /></label>
-              <label for="md-qty"><span id="l-md-qty"></span><input id="md-qty" inputmode="numeric" autocomplete="off" /></label>
               <label for="md-price"><span id="l-md-price"></span><input id="md-price" inputmode="decimal" autocomplete="off" /></label>
               <label for="md-rate"><span id="l-md-rate"></span><input id="md-rate" inputmode="numeric" autocomplete="off" /></label>
             </div>

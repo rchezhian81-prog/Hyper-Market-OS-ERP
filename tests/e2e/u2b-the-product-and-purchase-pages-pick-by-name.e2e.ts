@@ -115,6 +115,9 @@ describe.skipIf(!existsSync(CHROMIUM))('U2b: the product and purchase pages pick
     const s = await open(PEOPLE.owner, '/price-lists');
     try {
       expect(await s.page.textContent('#l-p-product')).toBe('Product');
+      // D-023 (fix batch 6): the everyday page asks for the store; zones, channels and customers are under "advanced"
+      expect(await s.page.textContent('#l-p-ref')).toBe('Store');
+      await s.page.check('#advanced');
       expect(await s.page.textContent('#l-p-ref')).toBe('Store, zone, channel or customer');
       await pick(s.page, 'p-product', 'ton', 'p-milk', 'Toned milk 500 ml');
       await s.page.selectOption('#p-scope', 'store');

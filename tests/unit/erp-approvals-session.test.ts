@@ -248,17 +248,17 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       { key: 'productId', label: 'Item', value: 'Toor dal 1kg' },
       { key: 'locationId', label: 'Where', value: 'aisle-3' },
       { key: 'qty', label: 'Quantity', value: '12' },
-      { key: 'uom', label: 'Unit', value: 'ea' },
+      // D-014 (fix batch 6): the unit in words, the evidence said (not its file id), and the write-off's own id not shown
+      { key: 'uom', label: 'Unit', value: 'each (pieces)' },
       { key: 'lossType', label: 'Kind of loss', value: 'damage' },
       { key: 'reasonCode', label: 'Reason code', value: 'damage' },
       { key: 'valueMinor', label: 'What it is worth', value: '₹1,140.00' },
-      { key: 'evidenceRef', label: 'Evidence', value: 'photo-17' },
-      { key: 'writeOffId', label: 'Write-off', value: 'WO-1' },
+      { key: 'evidenceRef', label: 'Evidence', value: 'Photo attached' },
     ]);
     const ta = presentRequest('ta', row({ kind: 'stock_write_off', label: 'Write off stock (a material loss)', details }));
     expect(ta.label).toBe('சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)');
     expect(ta.details.map((d) => d.label)).toEqual([
-      'பொருள்', 'எங்கே', 'எண்ணிக்கை', 'அலகு', 'இழப்பின் வகை', 'காரணக் குறியீடு', 'மதிப்பு', 'ஆதாரம்', 'இழப்புப் பதிவு',
+      'பொருள்', 'எங்கே', 'எண்ணிக்கை', 'அலகு', 'இழப்பின் வகை', 'காரணக் குறியீடு', 'மதிப்பு', 'ஆதாரம்',
     ]);
   });
 
@@ -267,12 +267,13 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       Object.fromEntries(presentRequest(lang, row({ details })).details.map((d) => [d.key, `${d.label}: ${d.value}`]));
     // An upward stock correction: `quantityMinor` is a count of stock, never rupees.
     expect(labelsOf('en', { movementId: 'mv-9', kind: 'adjusted', productId: 'P1', locationId: 'aisle-3', quantityMinor: 5, uom: 'ea', reason: 'found in the back' })).toEqual({
-      movementId: 'Stock movement: mv-9', kind: 'What kind: adjusted', productId: 'Item: P1', locationId: 'Where: aisle-3',
-      quantityMinor: 'Quantity: 5', uom: 'Unit: ea', reason: 'Why: found in the back',
+      // D-014: the movement's own id is not shown; the unit is in words
+      kind: 'What kind: adjusted', productId: 'Item: P1', locationId: 'Where: aisle-3',
+      quantityMinor: 'Quantity: 5', uom: 'Unit: each (pieces)', reason: 'Why: found in the back',
     });
     // An online-order refund, a compensation, a supplier bill and a supplier payment.
     expect(labelsOf('en', { refundId: 'rf-1', orderId: 'ord-7', amountMinor: 25000, basis: 'short_pick' })).toEqual({
-      refundId: 'Refund: rf-1', orderId: 'Order: ord-7', amountMinor: 'Amount: ₹250.00', basis: 'Reason for the refund: short_pick',
+      refundId: 'Refund: rf-1', orderId: 'Order: ord-7', amountMinor: 'Amount: ₹250.00', basis: 'Reason for the refund: Short picked',
     });
     expect(labelsOf('en', { caseId: 'case-3', kind: 'goodwill_credit', amountMinor: 50000 })).toEqual({
       caseId: 'Customer case: case-3', kind: 'What kind: goodwill_credit', amountMinor: 'Amount: ₹500.00',

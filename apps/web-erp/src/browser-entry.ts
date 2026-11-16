@@ -300,7 +300,7 @@ import {
 } from './data-io-session';
 import {
   createApprovalsSession,
-  type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus,
+  type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus, type ApprovalNames,
   type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
 } from './approvals-session';
 import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
@@ -4127,6 +4127,7 @@ export function approvalsPortsFromData(
   data: ApprovalsData | undefined,
   inbox?: ApprovalInboxView,
   decide: ApprovalsPorts['decide'] = postApprovalDecision,
+  names?: () => ApprovalNames,
 ): ApprovalsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -4134,7 +4135,39 @@ export function approvalsPortsFromData(
     // Default-deny: an absent permission list may do nothing here (the routes would refuse it anyway).
     mayUse: () => held.has(APPROVALS_PERMISSION),
     decide,
+    ...(names === undefined ? {} : { names }),
   };
+}
+
+/**
+ * D-014 (fix batch 6): the names Approvals reads its codes by — items from the store computer's own signed catalogue (then
+ * head office's, for any it does not hold), places and the store from the store's signed directory (`window.sreDirectory`).
+ * A code neither names is shown as it is, never a guess.
+ */
+export function approvalNamesOf(products: ReadonlyMap<string, string>, directory: unknown): ApprovalNames {
+  const places = new Map<string, string>();
+  const d = directory !== null && typeof directory === 'object' ? directory as { places?: unknown; store?: unknown } : {};
+  if (Array.isArray(d.places)) {
+    for (const p of d.places as { id?: unknown; name?: unknown }[]) if (typeof p?.id === 'string' && typeof p.name === 'string' && p.name.trim() !== '') places.set(p.id, p.name);
+  }
+  const store = d.store as { id?: unknown; name?: unknown } | undefined;
+  if (store && typeof store.id === 'string' && typeof store.name === 'string' && store.name.trim() !== '' && !places.has(store.id)) places.set(store.id, store.name);
+  return { product: (id) => products.get(id), place: (id) => places.get(id) };
+}
+
+/** D-014: the items' names for Approvals — the box's catalogue, then head office's (`GET /v1/catalogue/products`, read only). */
+export async function readApprovalProductNames(fetchFn: typeof fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch): Promise<ReadonlyMap<string, string>> {
+  const out = new Map(await readBoxProductNames());
+  if (out.size > 0 || fetchFn === undefined) return out;
+  try {
+    const res = await fetchFn('/v1/catalogue/products', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (!res.ok) return out;
+    const body = (await res.json()) as { products?: unknown };
+    if (Array.isArray(body?.products)) {
+      for (const p of body.products as { productId?: unknown; name?: unknown }[]) if (typeof p?.productId === 'string' && typeof p.name === 'string' && p.name.trim() !== '') out.set(p.productId, p.name);
+    }
+  } catch { /* the codes are shown as they are */ }
+  return out;
 }
 
 /** Build the Approvals page, or `null` when the box carried no payload for it (the shell shows its sample). */
@@ -5807,6 +5840,8 @@ interface ManagerWindow {
   approvals?: {
     refresh(): Promise<ApprovalInboxView | null>;
     present(inbox: ApprovalInboxView): ApprovalsSession;
+    /** D-014: read the items' names once; the next paint shows them. */
+    loadNames?(): Promise<void>;
   };
   workforceInboxData?: WorkforceInboxData;
   workforceInboxSession?: WorkforceInboxSession;
@@ -6346,6 +6381,8 @@ export interface CataloguePriceRelay {
   load(productId: string): Promise<CataloguePriceState>;
   /** Every price entry read so far, for the session's price port. */
   entries(): readonly PriceEntry[];
+  /** D-022: forget what was read for this item, so the next `load` reads head office again (after a price is saved). */
+  forget(productId: string): void;
 }
 
 export function openCataloguePriceRelay(fetchFn: typeof fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch): CataloguePriceRelay {
@@ -6363,6 +6400,10 @@ export function openCataloguePriceRelay(fetchFn: typeof fetch | undefined = (glo
     state: (productId) => state.get(productId) ?? 'not_loaded',
     why: (productId) => reasons.get(productId),
     entries: () => [...read.values()].flat(),
+    forget: (productId) => {
+      if (pending.has(productId)) return; // a read already on its way brings the newest record
+      state.delete(productId); reasons.delete(productId); read.delete(productId);
+    },
     load: (productId) => {
       const now = state.get(productId);
       if (now === 'loaded' || now === 'none') return Promise.resolve(now);
@@ -7485,15 +7526,22 @@ if (browserWindow !== undefined) {
   // says so. The one write — a checker's approve/reject WITH A REASON, in their own session — runs only on an explicit
   // click; head office never offers a person their own request and refuses a self-approval, which the page never fakes.
   const approvalsData = browserWindow.approvalsData;
-  const approvals = bootApprovals(approvalsData);
+  // D-014 (fix batch 6): the items and places named, read once by the page (`loadNames`) and used on every repaint.
+  let approvalProductNames: ReadonlyMap<string, string> = new Map();
+  const approvalNames = (): ApprovalNames => approvalNamesOf(approvalProductNames, (globalThis as { sreDirectory?: unknown }).sreDirectory);
+  const approvals = approvalsData === undefined ? null : createApprovalsSession(
+    { userId: approvalsData.userId === undefined ? null : approvalsData.userId },
+    approvalsPortsFromData(approvalsData, undefined, postApprovalDecision, approvalNames),
+  );
   if (approvals !== null) {
     browserWindow.approvalsSession = approvals;
     browserWindow.approvals = {
       refresh: fetchApprovalInboxOrNull,
       present: (inbox) => createApprovalsSession(
         { userId: approvalsData?.userId === undefined ? null : approvalsData.userId },
-        approvalsPortsFromData(approvalsData, inbox),
+        approvalsPortsFromData(approvalsData, inbox, postApprovalDecision, approvalNames),
       ),
+      loadNames: async () => { approvalProductNames = await readApprovalProductNames(); },
     };
   }
   // D-042 (fix batch 4a): the purchase orders waiting for their second person, listed on Approvals with their lines, and

@@ -40,6 +40,46 @@ export interface PriceEntry {
   readonly batchId?: string;
 }
 
+/**
+ * D-022 (fix batch 6): one row of the price history as a person reads it — entries that say exactly the same thing (same
+ * dates, price, state, scope and batch; only the version differs) are ONE row naming all their versions. The record
+ * itself is untouched: every entry is still kept (append-only), this only stops the screen repeating itself.
+ */
+export interface PriceHistoryRow {
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly price: Money;
+  readonly status: PriceEntryStatus;
+  readonly scope: PriceScope;
+  readonly scopeRef: string;
+  readonly batchId?: string;
+  /** The newest version of the identical entries. */
+  readonly version: number;
+  /** Every version this row stands for, oldest first. */
+  readonly versions: readonly number[];
+}
+
+export function priceHistoryRows(entries: readonly PriceEntry[], productId: string): PriceHistoryRow[] {
+  const rows: PriceHistoryRow[] = [];
+  const keyOf = (e: PriceEntry): string => JSON.stringify([e.effectiveFrom, e.effectiveTo ?? null, e.price.minor, e.price.currency, e.status, e.scope, e.scopeRef, e.batchId ?? null]);
+  const at = new Map<string, number>();
+  for (const e of priceHistory(entries, productId)) {
+    const key = keyOf(e);
+    const i = at.get(key);
+    if (i !== undefined) {
+      const row = rows[i]!;
+      rows[i] = { ...row, version: Math.max(row.version, e.version), versions: [...row.versions, e.version] };
+      continue;
+    }
+    at.set(key, rows.length);
+    rows.push({
+      effectiveFrom: e.effectiveFrom, effectiveTo: e.effectiveTo ?? null, price: e.price, status: e.status, scope: e.scope, scopeRef: e.scopeRef,
+      ...(e.batchId === undefined ? {} : { batchId: e.batchId }), version: e.version, versions: [e.version],
+    });
+  }
+  return rows;
+}
+
 /** The context a price is resolved against at a moment in time. */
 export interface ResolveContext {
   readonly productId: string;

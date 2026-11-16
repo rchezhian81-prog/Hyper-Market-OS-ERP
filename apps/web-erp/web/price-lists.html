@@ -82,14 +82,16 @@
         <button id="tab-zones" type="button">Price zones</button>
         <button id="tab-channels" type="button">Channel prices</button>
         <button id="tab-pack" type="button">Send to the tills</button>
+        <label for="advanced" class="advanced-toggle"><input id="advanced" type="checkbox" /> <span id="l-advanced">Zones, channels and customers (advanced)</span></label>
       </nav>
+      <p class="muted" id="daily-note"></p>
 
       <section id="view-prices" aria-labelledby="prices-h">
         <h3 id="prices-h">Dated prices</h3>
         <p class="lead" id="prices-lead"></p>
         <div class="row">
           <label for="p-product"><span id="l-p-product">Product</span><input id="p-product" list="product-list" autocomplete="off" /></label>
-          <label for="p-scope"><span id="l-p-scope">Which price</span>
+          <label for="p-scope" id="p-scope-wrap"><span id="l-p-scope">Which price</span>
             <select id="p-scope"><option value="store" id="o-store">One store's shelf price</option><option value="zone" id="o-zone">A price zone</option><option value="channel" id="o-channel">A channel (app, delivery)</option><option value="customer" id="o-customer">One customer</option></select>
           </label>
           <label for="p-ref"><span id="l-p-ref">Store, zone, channel or customer</span><input id="p-ref" list="ref-list" autocomplete="off" /></label>
