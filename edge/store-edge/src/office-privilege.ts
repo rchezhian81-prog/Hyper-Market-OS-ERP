@@ -54,8 +54,10 @@ export const PRIVILEGE_AUTHORITY: Readonly<Record<PrivilegeKind, string>> = Obje
   // OB-733 "A": the maker's word adds a store-PC person (the owner, the store manager) — the name alone gives no authority.
   person_provision: 'identity.role.request',
   role_request: 'identity.role.request',
-  role_grant_approval: 'identity.role.grant',
-  role_grant_rejection: 'identity.role.grant',
+  // OB-804 A: both people — the owner and a store manager — act under the maker's word; head office's approve route then
+  // judges which may decide this one (the owner any but their own; a store manager only a role the owner asked for).
+  role_grant_approval: 'identity.role.request',
+  role_grant_rejection: 'identity.role.request',
   access_change_request: 'identity.role.request',
   access_change_decision: 'identity.role.grant',
   // Somebody else's PIN: the maker's word (and head office refuses reaching above yourself, OB-739). Your own: see `pinAuthority`.

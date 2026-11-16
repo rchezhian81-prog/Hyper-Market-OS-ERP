@@ -121,9 +121,9 @@ describe('CR-01 step 4b-1: a store-PC person, a rejection by PIN, and the page\'
     const bare = await relay(h, '/v1/identity/box/grants/g-r/reject', sealPrivilegeRecord(KEY, record('role_grant_rejection', 'u-owner', { grantId: 'g-r' })));
     expect(bare.status).toBe(400);
     expect(codeOf(bare)).toBe('rejection_needs_reason');
-    // The manager does not hold the checker's word.
+    // The manager decides only a role the owner asked for (OB-804 A) — never his own ask.
     const mgr = await relay(h, '/v1/identity/box/grants/g-r/reject', sealPrivilegeRecord(KEY, record('role_grant_rejection', 'u-mgr', { grantId: 'g-r', reason: 'no' })));
-    expect(codeOf(mgr)).toBe('acting_person_lacks_authority');
+    expect(codeOf(mgr)).toBe('only_the_owners_ask_is_yours');
     // Sealed for another request.
     const other = await relay(h, '/v1/identity/box/grants/g-r/reject', sealPrivilegeRecord(KEY, record('role_grant_rejection', 'u-owner', { grantId: 'g-x', reason: 'no' })));
     expect(codeOf(other)).toBe('privilege_record_does_not_match');
@@ -159,11 +159,12 @@ describe('CR-01 step 4b-1: a store-PC person, a rejection by PIN, and the page\'
     expect(o.pending.map((p) => p.grantId)).toEqual(['g-here']);
     expect(o.people).toContainEqual({ userId: 'priya.k', displayName: 'Priya K', state: 'store_pc' });
 
-    // The store manager asks but does not read what waits (as on his own routes).
+    // The store manager asks but does not read everything that waits (as on his own routes): only the owner's asks he may
+    // decide (OB-804 A) — here none, so an empty list; every request the owner reads stays out of it.
     const m = (await view(h, 'u-mgr')).body as Record<string, unknown>;
     expect(m).toMatchObject({ mayAsk: true, mayRead: false, mayDecide: false });
     expect(m['grants']).toBeDefined();
-    expect(m['pending']).toBeUndefined();
+    expect(m['pending']).toEqual([]);
 
     // A cashier sees no list at all.
     const c = (await view(h, 'u-cash')).body as Record<string, unknown>;

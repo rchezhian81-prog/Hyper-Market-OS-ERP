@@ -21,7 +21,7 @@ import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkPrivilegeRecord, PRIVILEGE_VIA, type PrivilegeKind, type PrivilegeRecord } from '../../../packages/identity/src/privilege-seal';
-import { identityRoutes, type IdentityDeps } from './index';
+import { identityRoutes, grantRequestsDecidableBy, ROLE_GRANT_DECISION_ROUTE_PERMISSION, type IdentityDeps } from './index';
 import type { PeopleDeps } from './people';
 import { statusOf, type ApprovalState } from './approval-requests';
 import { isGenericName, PRODUCT_ID, readablePersonName, tidyPersonName } from '../../../packages/identity/src/sign-in-names';
@@ -320,7 +320,8 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
       api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.approve,
       permission: GRANTS_SYNC_PERMISSION, idempotent: true,
       handler: async (ctx) => {
-        const record = await accept(ctx, 'role_grant_approval', 'identity.role.grant');
+        // OB-804 A: the person's own approve route judges who may decide (the owner any; a store manager the owner's asks).
+        const record = await accept(ctx, 'role_grant_approval', ROLE_GRANT_DECISION_ROUTE_PERMISSION);
         const grantId = ctx.params['grantId'] ?? '';
         const out = await runAs(APPROVE_ROUTE, ctx, record, { grantId }, {});
         const b = (isObj(out.body) ? out.body : {}) as Record<string, unknown>;
@@ -342,7 +343,7 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
       api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.reject,
       permission: GRANTS_SYNC_PERMISSION, idempotent: true,
       handler: async (ctx) => {
-        const record = await accept(ctx, 'role_grant_rejection', 'identity.role.grant');
+        const record = await accept(ctx, 'role_grant_rejection', ROLE_GRANT_DECISION_ROUTE_PERMISSION);
         const grantId = ctx.params['grantId'] ?? '';
         const out = await runAs(REJECT_ROUTE, ctx, record, { grantId }, { reason: record.body['reason'] });
         const b = (isObj(out.body) ? out.body : {}) as Record<string, unknown>;
@@ -391,8 +392,12 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
           body['people'] = people.filter((p) => p.state !== 'ended').map((p) => ({ userId: p.userId, displayName: p.displayName, state: p.state }))
             .sort((a, b) => a.userId.localeCompare(b.userId));
         }
-        if (mayRead) {
-          body['pending'] = (await deps.identity.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending' && here(g.branchScope));
+        if (mayRead || mayAsk) {
+          // OB-804 A: each waiting ask says whether this person may decide it; a store manager (who asks, but does not read
+          // every request) sees exactly the owner's asks they may decide.
+          const waiting = (await deps.identity.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending' && here(g.branchScope));
+          const yours = new Set((await grantRequestsDecidableBy(deps.identity, ctx.tenantId, forUser, waiting)).map((g) => g.grantId));
+          body['pending'] = waiting.filter((g) => mayRead || yours.has(g.grantId)).map((g) => ({ ...g, youMayDecide: yours.has(g.grantId) }));
         }
         // CR-01 step 4b-2: the take-backs — waiting ones for whoever may decide them, and the person's own asks.
         if ((mayAsk || held.has('identity.role.grant')) && deps.takeBack !== undefined) {

@@ -146,14 +146,18 @@ describe('the office screens on the store PC make a privilege change by PIN (CR-
     ]);
   });
 
-  it('the manager cannot approve: his PIN is checked holding identity.role.grant, which his role lacks — nothing relayed', async () => {
+  it('the manager cannot approve a request the owner did not ask for (OB-804 A): head office refuses it by name, nothing given', async () => {
     const ho = await headOffice();
     const { url } = await box(ho.url);
     const mgr = await signIn(url, 'u-mgr');
-    const r = await post(url, '/office/privilege/grants/g-x/approve', mgr, { pin: pinOf('u-mgr') });
+    expect((await post(url, '/office/privilege/grants', mgr, { pin: pinOf('u-mgr'), request: ask })).status).toBe(200);
+    // His PIN is confirmed for the maker's word he holds; head office's approve route then judges who may decide this one —
+    // a store manager only a role the owner asked for, never his own ask.
+    const r = await post(url, '/office/privilege/grants/g-box-1/approve', mgr, { pin: pinOf('u-mgr') });
     expect(r.status).toBe(403);
-    expect(await r.json()).toMatchObject({ refusedBecause: 'pin_not_confirmed' });
-    expect(ho.seen).toEqual([]);
+    expect(await r.json()).toMatchObject({ ok: false, refusedBecause: 'head_office_refused', code: 'only_the_owners_ask_is_yours' });
+    const grants = await ho.h.request({ method: 'GET', path: '/v1/identity/grants', userId: 'u-owner', tenantId: T });
+    expect((grants.body as { grants: { userId: string }[] }).grants.map((g) => g.userId)).not.toContain('u-new');
   });
 
   it('nobody signed in, or a request from another site — refused, nothing relayed', async () => {
