@@ -258,6 +258,104 @@ async function refresh() {
 }
 refresh();
 
+// ── D-042 (fix batch 4a): purchase orders waiting for their second person ─────────────────────────────────────────────
+// Read live from head office as the person signed in (window.ordersToIssue, tested in orders-to-issue-session.ts). Each
+// order shows its supplier, every item by name with how many, the agreed price and the value, and the total. "Issue this
+// order" runs only on an explicit click, with a written reason, through the Budget tab's own path; it is not offered on
+// an order the person raised, nor to anyone who may not issue orders. Head office still decides (limit, budget, holds).
+const orders = window.ordersToIssue ?? null;
+let ordersRead = null;
+const ow = (key) => {
+  const words = window.ordersToIssueWords;
+  return words ? (words[lang]?.[key] ?? words.en[key]) : key;
+};
+const rupees = (minor) => `₹${Math.floor(Math.abs(minor) / 100).toLocaleString('en-IN')}.${String(Math.abs(minor) % 100).padStart(2, '0')}`;
+
+function orderNode(o) {
+  const li = document.createElement('li');
+  li.className = `row tone-${o.overBudget ? 'error' : 'degraded'}`;
+  li.dataset.po = o.poId;
+  const head = document.createElement('div'); head.className = 'head';
+  const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = `${o.number} · ${o.supplierName}`;
+  const value = document.createElement('span'); value.className = 'value'; value.textContent = rupees(o.totalMinor);
+  head.append(headline, value);
+  const facts = document.createElement('div'); facts.className = 'facts';
+  facts.append(fact(ow('supplier'), o.supplierName), fact(ow('raisedBy'), o.raisedBy), fact(ow('total'), rupees(o.totalMinor)));
+  const table = document.createElement('table'); table.className = 'lines';
+  const thead = document.createElement('tr');
+  for (const [k, num] of [['item', false], ['qty', true], ['price', true], ['value', true]]) { const th = document.createElement('th'); th.textContent = ow(k); if (num) th.className = 'num'; thead.append(th); }
+  table.append(thead);
+  for (const l of o.lines) {
+    const tr = document.createElement('tr'); tr.dataset.product = l.productId;
+    const per = l.per > 1 ? `${l.per} ${l.uom}` : l.uom === 'ea' ? '' : l.uom;
+    const cells = [[l.name, false], [l.quantity, true], [`${rupees(l.unitCostMinor)}${per ? ` ${ow('perUnit')} ${per}` : ''}`, true], [rupees(l.valueMinor), true]];
+    for (const [text, num] of cells) { const td = document.createElement('td'); td.textContent = text; if (num) td.className = 'num'; tr.append(td); }
+    table.append(tr);
+  }
+  li.append(head, facts, table);
+  if (o.overBudget) { const why = document.createElement('div'); why.className = 'summary-line over-budget'; why.textContent = ow('overBudget'); li.append(why); }
+  if (o.raisedByViewer || !orders.mayIssue) {
+    const note = document.createElement('div'); note.className = 'facts not-yours'; note.textContent = o.raisedByViewer ? ow('yours') : ow('notYours');
+    li.append(note);
+    return li;
+  }
+  const box = document.createElement('div'); box.className = 'decide';
+  const inputId = `issue-reason-${o.poId}`;
+  const field = document.createElement('div'); field.className = 'sre-field';
+  const label = document.createElement('label'); label.htmlFor = inputId; label.className = 'sre-field-label'; label.textContent = ow('reason');
+  const input = document.createElement('input'); input.type = 'text'; input.id = inputId; input.className = 'issue-reason sre-input'; input.autocomplete = 'off'; input.maxLength = 300; input.required = true;
+  field.append(label, input);
+  box.append(field);
+  let over = null;
+  if (o.overBudget) {
+    const f2 = document.createElement('div'); f2.className = 'sre-field';
+    const l2 = document.createElement('label'); l2.htmlFor = `over-reason-${o.poId}`; l2.className = 'sre-field-label'; l2.textContent = ow('overReason');
+    over = document.createElement('input'); over.type = 'text'; over.id = `over-reason-${o.poId}`; over.className = 'over-reason sre-input'; over.autocomplete = 'off'; over.maxLength = 300;
+    f2.append(l2, over); box.append(f2);
+  }
+  const buttons = document.createElement('div'); buttons.className = 'buttons';
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'act issue sre-btn sre-btn-primary'; go.textContent = ow('issue'); go.dataset.po = o.poId;
+  const status = document.createElement('p'); status.className = 'issue-status'; status.setAttribute('role', 'status'); status.id = `issue-status-${o.poId}`;
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      const outcome = await orders.issue(o, input.value, over === null ? undefined : over.value);
+      status.textContent = orders.outcomeWords(lang, outcome);
+      if (outcome.kind === 'needs_reason') { input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+      if (outcome.kind === 'issued') {
+        paintResult({ tone: 'ok', icon: '✓', label: `${o.number}: ${status.textContent}`, announcement: '' });
+        await readOrders();
+      }
+    } finally { go.disabled = false; }
+  });
+  buttons.append(go);
+  box.append(buttons, status);
+  li.append(box);
+  return li;
+}
+
+function paintOrders() {
+  if (orders === null) return;
+  el('orders-to-issue').hidden = false;
+  el('orders-heading').textContent = ow('heading');
+  el('orders').setAttribute('aria-label', ow('heading'));
+  const state = el('orders-state');
+  if (ordersRead === null) { state.textContent = ow('reading'); el('orders').replaceChildren(); return; }
+  if (ordersRead.state !== 'read') { state.textContent = ow(ordersRead.state === 'not_your_role' ? 'notYourRole' : 'unreachable'); el('orders').replaceChildren(); return; }
+  state.textContent = ordersRead.orders.length === 0 ? ow('none') : '';
+  el('orders').replaceChildren(...ordersRead.orders.map(orderNode));
+}
+
+async function readOrders() {
+  if (orders === null) return;
+  paintOrders();
+  ordersRead = await orders.read();
+  paintOrders();
+}
+document.addEventListener('sre:chrome', () => paintOrders());
+el('lang').addEventListener('click', () => paintOrders());
+void readOrders();
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */

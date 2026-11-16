@@ -830,6 +830,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
     payload['userId'] = who.userId;
     payload['approvalLimitMinor'] = who.approvalLimitMinor ?? null;
   }
+  // D-010: what the person signed in holds — an empty list here that the screen server fills from this box's role register
+  // (`asSignedInPerson`), so Today counts an order waiting for its second person as theirs only when they may issue it.
+  payload['permissions'] = [];
   if (input.pack.policies.known) {
     const policies = input.pack.policies.value;
     payload['storeId'] = policies.storeId;
@@ -1166,6 +1169,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
 
   return {
     ownerId: 'owner',
+    // D-010: what the person signed in holds — filled by the screen server from this box's role register, so the page
+    // counts a purchase order waiting for its second person as theirs only when they may issue it.
+    permissions: [],
     staleAfterSeconds: policies.staleAfterSeconds,
     // R3 · C5 · OB-195: always the published 15 days; a pack carrying another figure is read as 15 and flagged.
     ...privacySlaOf(policies.privacySlaDays),

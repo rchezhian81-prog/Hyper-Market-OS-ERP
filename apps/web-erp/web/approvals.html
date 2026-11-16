@@ -49,6 +49,10 @@
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      table.lines { width:100%; border-collapse:collapse; font-size:14px; }
+      table.lines th, table.lines td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line-soft); overflow-wrap:anywhere; }
+      table.lines td.num, table.lines th.num { text-align:right; font-variant-numeric:tabular-nums; }
+      #orders-state:empty { display:none; }
       [hidden] { display:none !important; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
@@ -82,6 +86,14 @@
       <h3 id="waiting-heading"></h3>
       <ul class="rows" id="waiting" aria-label="Waiting for you"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <!-- D-042 (fix batch 4a): purchase orders waiting for their second person, each with its supplier, items, quantities
+           and prices; issued here through the Budget tab's own path, only by a person who may and did not raise it. -->
+      <section id="orders-to-issue" hidden>
+        <h3 id="orders-heading"></h3>
+        <p class="state" id="orders-state" role="status"></p>
+        <ul class="rows" id="orders"></ul>
+      </section>
 
       <h3 id="mine-heading"></h3>
       <ul class="rows" id="mine" aria-label="What you asked for"></ul>

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2431,
+  "testFiles": 2436,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -160,7 +160,7 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 35,
+        "unit": 36,
         "integration": 29,
         "realDb": 13,
         "browser": 11,
@@ -177,6 +177,7 @@
           "tests/unit/cr01-step5-the-licence-is-signed-and-checked-offline.test.ts",
           "tests/unit/cr01-step5-the-owners-licence-desk.test.ts",
           "tests/unit/customer-pii-safeguards.test.ts",
+          "tests/unit/d010-d042-orders-waiting-for-the-second-person.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/effective-grants.test.ts",
@@ -536,11 +537,11 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 26,
         "realDb": 14,
-        "browser": 12,
-        "connected": 5,
+        "browser": 13,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -551,6 +552,7 @@
           "tests/unit/blanket-po-and-segregation.test.ts",
           "tests/unit/buying-scope.test.ts",
           "tests/unit/contract-expiry-alerts.test.ts",
+          "tests/unit/d010-d042-orders-waiting-for-the-second-person.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-buying-boot.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -615,6 +617,7 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/d010-d042-a-waiting-order-is-counted-and-issued-from-approvals.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/supplier-contracts-and-rebate-schemes-are-recorded-on-their-pages.e2e.ts",
@@ -628,6 +631,7 @@
           "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/d010-d042-a-waiting-order-is-counted-and-issued-from-approvals.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",
@@ -1251,10 +1255,10 @@
       "id": "M13",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 28,
+        "unit": 29,
         "integration": 26,
         "realDb": 9,
-        "browser": 8,
+        "browser": 9,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1271,6 +1275,7 @@
           "tests/unit/erp-service-session.test.ts",
           "tests/unit/exchange-engine.test.ts",
           "tests/unit/exchanges-route.test.ts",
+          "tests/unit/fix-batch4a-a-weighed-refund-is-keyed-in-kg.test.ts",
           "tests/unit/lane-lookup-route.test.ts",
           "tests/unit/lane-server-cors.test.ts",
           "tests/unit/loyalty-stored-value.test.ts",
@@ -1330,6 +1335,7 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
+          "tests/e2e/fix-batch4a-a-weighed-refund-is-keyed-in-kg.e2e.ts",
           "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts",
           "tests/e2e/return-governance-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
@@ -1356,7 +1362,7 @@
         "unit": 21,
         "integration": 20,
         "realDb": 8,
-        "browser": 10,
+        "browser": 11,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -1421,6 +1427,7 @@
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/fix-batch3-the-day-close-names-its-day-and-waits-for-the-closing-checklist.e2e.ts",
+          "tests/e2e/fix-batch4a-the-close-check-counts-unsent-checklist-ticks.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
           "tests/e2e/ob773-the-cash-office-never-says-signed-off-when-it-could-not-read.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",

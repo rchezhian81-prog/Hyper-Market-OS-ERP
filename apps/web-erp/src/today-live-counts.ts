@@ -14,6 +14,7 @@
 // reached, so its part is not counted. Pure apart from the one injected fetch; it writes nothing.
 
 import type { Tally } from './manager-session';
+import { waitingOrderCounts, type WaitingOrderViewer } from '../../../packages/purchasing/src/orders-waiting-to-issue';
 
 /** One Today figure as the store computer sends it (`edge/store-edge/src/screen-data.ts` `TodayFigure`). */
 export type TodayFigure =
@@ -28,14 +29,15 @@ export type LiveRead<T> =
 
 export interface LiveCounts {
   readonly approvals: LiveRead<{ readonly waitingForMe: number; readonly routedToOwner: number }>;
-  readonly purchaseOrders: LiveRead<{ readonly open: number; readonly awaitingApproval: number }>;
+  /** `awaitingApproval`: every order waiting for its second person; `forViewer` (D-010): those THIS person may issue. */
+  readonly purchaseOrders: LiveRead<{ readonly open: number; readonly awaitingApproval: number; readonly forViewer?: number }>;
   /** D-009: the shifts head office's cash office has already signed off (`GET /v1/shifts/over-short`, reviewed rows). */
   readonly signedOffShifts?: LiveRead<readonly string[]>;
 }
 
 type Lang = 'en' | 'ta';
 type WordKey = 'onBox' | 'atHeadOffice' | 'boxNotGiven' | 'hoUnreachable' | 'hoRefusedApprovals' | 'routedToOwner'
-  | 'awaitingSecond' | 'fromHeadOffice' | 'poNotYourRole' | 'poRefused' | 'poAsLastHeard';
+  | 'awaitingSecond' | 'fromHeadOffice' | 'poNotYourRole' | 'poRefused' | 'poAsLastHeard' | 'ordersToIssue';
 
 /** Every word, with its Tamil twin. */
 export const TODAY_LIVE_WORDS: Readonly<Record<Lang, Readonly<Record<WordKey, string>>>> = Object.freeze({
@@ -49,6 +51,7 @@ export const TODAY_LIVE_WORDS: Readonly<Record<Lang, Readonly<Record<WordKey, st
     poNotYourRole: 'your role does not see purchase orders',
     poRefused: 'head office would not show its purchase orders for your sign-in',
     poAsLastHeard: 'head office could not be reached — as the store computer last heard',
+    ordersToIssue: 'purchase order(s) waiting to be issued by a second person — open Approvals',
   },
   ta: {
     onBox: 'இந்தக் கடைக் கணினியில்', atHeadOffice: 'தலைமை அலுவலகத்தில் உங்களுக்காகக் காத்திருக்கின்றன',
@@ -60,6 +63,7 @@ export const TODAY_LIVE_WORDS: Readonly<Record<Lang, Readonly<Record<WordKey, st
     poNotYourRole: 'உங்கள் பங்கு கொள்முதல் ஆணைகளைப் பார்ப்பதில்லை',
     poRefused: 'உங்கள் உள்நுழைவுக்குத் தலைமை அலுவலகம் அதன் கொள்முதல் ஆணைகளைக் காட்டவில்லை',
     poAsLastHeard: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — கடைக் கணினி கடைசியாகக் கேட்டபடி',
+    ordersToIssue: 'இரண்டாவது நபர் வழங்கக் காத்திருக்கும் கொள்முதல் ஆணை(கள்) — ஒப்புதல்கள் பக்கத்தைத் திறக்கவும்',
   },
 });
 
@@ -94,8 +98,11 @@ export function openOrdersOf(orders: unknown): { readonly open: number; readonly
   return { open, awaitingApproval };
 }
 
-/** Read both counts from head office in the caller's own session (two GETs — read only). */
-export async function readLiveCounts(fetchFn: typeof fetch | undefined): Promise<LiveCounts> {
+/**
+ * Read both counts from head office in the caller's own session (GETs — read only). `viewer` (D-010): who is looking and
+ * what they hold, so the orders THEY may issue are counted as theirs to clear; absent, none is (never assumed).
+ */
+export async function readLiveCounts(fetchFn: typeof fetch | undefined, viewer?: WaitingOrderViewer): Promise<LiveCounts> {
   const get = async <T>(path: string, shape: (body: Record<string, unknown>) => T): Promise<LiveRead<T>> => {
     if (fetchFn === undefined) return { result: 'lost_link' };
     try {
@@ -112,7 +119,7 @@ export async function readLiveCounts(fetchFn: typeof fetch | undefined): Promise
   };
   const [approvals, purchaseOrders, signedOffShifts] = await Promise.all([
     get('/v1/approvals/requests', (b) => ({ waitingForMe: Array.isArray(b['waitingForMe']) ? b['waitingForMe'].length : 0, routedToOwner: nonNegInt(b['routedToOwnerAboveYourLimit']) })),
-    get('/v1/purchase/orders', (b) => openOrdersOf(b['orders'])),
+    get('/v1/purchase/orders', (b) => ({ ...openOrdersOf(b['orders']), forViewer: viewer === undefined ? 0 : waitingOrderCounts(b, viewer).forViewer })),
     get('/v1/shifts/over-short', (b) => signedOffShiftsOf(b['overShort'])),
   ]);
   return { approvals, purchaseOrders, signedOffShifts };
@@ -180,18 +187,30 @@ export function todayLiveFigures(
   let approvalsWaiting: TodayLiveFigures['approvalsWaiting'];
   let approvalsIcanClear: Tally = box.approvalsIcanClear;
   let headOffice: Tally | null = null;
+  // D-010: an order waiting for its second person IS an approval waiting — counted here, and as this person's to clear
+  // when they may issue it (one they did not raise). Unread orders add nothing (the purchase-orders tile says why).
+  const orders = live.purchaseOrders.result === 'read' ? live.purchaseOrders.value : null;
+  const ordersWaiting = orders?.awaitingApproval ?? 0;
+  const ordersForMe = orders?.forViewer ?? 0;
+  const ordersTail = ordersWaiting > 0 ? ` · ${ordersWaiting} ${w.ordersToIssue}` : '';
   if (live.approvals.result === 'read') {
     const n = live.approvals.value.waitingForMe;
     const routed = live.approvals.value.routedToOwner;
-    const tail = `${n} ${w.atHeadOffice}${routed > 0 ? ` · ${routed} ${w.routedToOwner}` : ''}`;
-    headOffice = { known: true, count: n };
+    const tail = `${n} ${w.atHeadOffice}${routed > 0 ? ` · ${routed} ${w.routedToOwner}` : ''}${ordersTail}`;
+    headOffice = { known: true, count: n + ordersForMe };
     approvalsWaiting = box.approvalsWaiting.known
-      ? { known: true, count: box.approvalsWaiting.count + n, note: `${box.approvalsWaiting.count} ${w.onBox} · ${tail}` }
-      : { known: true, count: n, note: `${tail} · ${w.boxNotGiven}` };
-    approvalsIcanClear = box.approvalsIcanClear.known ? { known: true, count: box.approvalsIcanClear.count + n } : { known: true, count: n };
+      ? { known: true, count: box.approvalsWaiting.count + n + ordersWaiting, note: `${box.approvalsWaiting.count} ${w.onBox} · ${tail}` }
+      : { known: true, count: n + ordersWaiting, note: `${tail} · ${w.boxNotGiven}` };
+    approvalsIcanClear = box.approvalsIcanClear.known ? { known: true, count: box.approvalsIcanClear.count + n + ordersForMe } : { known: true, count: n + ordersForMe };
   } else {
     const why = live.approvals.result === 'lost_link' ? w.hoUnreachable : w.hoRefusedApprovals;
-    approvalsWaiting = box.approvalsWaiting.known ? { known: true, count: box.approvalsWaiting.count, note: `${box.approvalsWaiting.count} ${w.onBox} · ${why}` } : box.approvalsWaiting;
+    approvalsWaiting = box.approvalsWaiting.known
+      ? { known: true, count: box.approvalsWaiting.count + ordersWaiting, note: `${box.approvalsWaiting.count} ${w.onBox} · ${why}${ordersTail}` }
+      : box.approvalsWaiting;
+    if (ordersForMe > 0) {
+      headOffice = { known: true, count: ordersForMe };
+      if (box.approvalsIcanClear.known) approvalsIcanClear = { known: true, count: box.approvalsIcanClear.count + ordersForMe };
+    }
   }
   let purchaseOrdersOpen: TodayFigure;
   if (live.purchaseOrders.result === 'read') {
