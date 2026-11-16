@@ -1367,6 +1367,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     bins: w.bins,
     ...(w.contents === undefined ? {} : { contents: w.contents }),
     ...(w.goodsIn === undefined ? {} : { goodsIn: w.goodsIn.map((g) => ({ ...g, recalled: g.recalled === true })) }),
+    // Fix batch 5 · D-033: when the box took this put-away list from head office, so the handheld can say how old it is.
+    ...(w.goodsIn === undefined || input.pack.receivedAt === null ? {} : { goodsInAsAt: input.pack.receivedAt }),
     ...(w.barcodes === undefined ? {} : { barcodes: w.barcodes }),
     ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
     ...(w.poId === undefined ? {} : { poId: w.poId }),
@@ -1374,6 +1376,7 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     // OB-37: the store's open deliveries, each with what is still to arrive — the phone lets the receiver choose one.
     ...(w.openDeliveries === undefined ? {} : { openDeliveries: w.openDeliveries.map((d) => ({
       poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
+      ...(typeof d.supplierName === 'string' && d.supplierName.trim() !== '' ? { supplierName: d.supplierName } : {}), // D-033
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
       ...(d.asn === undefined ? {} : { asn: d.asn }), // OB-288 P3: the ASN the phone receives against, offline
     })) }),
@@ -1419,6 +1422,9 @@ export function receivingAidsFor(input: ScreenInput): Record<string, unknown> {
   if (input.pack.warehouse.known && input.pack.warehouse.value.openDeliveries !== undefined) {
     out['openDeliveries'] = input.pack.warehouse.value.openDeliveries.map((d) => ({
       poId: d.poId, number: d.number, supplierId: d.supplierId,
+      ...(typeof d.supplierName === 'string' && d.supplierName.trim() !== '' ? { supplierName: d.supplierName } : {}), // D-033
+      // Fix batch 5 · D-017: the place the order names, so Receive books the goods there (not always the back store).
+      ...(typeof d.deliverToLocationId === 'string' && d.deliverToLocationId !== '' ? { deliverToLocationId: d.deliverToLocationId } : {}),
       due: d.ordered.map((o) => ({ productId: o.productId, dueMinor: o.quantityMinor })),
     }));
     if (input.pack.receivedAt !== null) out['deliveriesAsAt'] = input.pack.receivedAt;

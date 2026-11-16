@@ -60,6 +60,21 @@
         <p class="lead" id="lede"></p>
       </div>
 
+      <!-- Fix batch 5 · D-036: a transfer is STARTED here (proposed; a second person sends it below) -->
+      <section aria-labelledby="start-transfer" id="start-box" hidden>
+        <h3 id="start-transfer">Start a transfer</h3>
+        <p class="lede" id="start-transfer-note"></p>
+        <div class="field"><label for="s-from" id="l-s-from">From</label><input id="s-from" type="text" autocomplete="off"></div>
+        <div class="field"><label for="s-to" id="l-s-to">To</label><input id="s-to" type="text" autocomplete="off"></div>
+        <div class="field"><label for="s-item" id="l-s-item">Item</label><input id="s-item" type="text" autocomplete="off"></div>
+        <div class="field"><label for="s-qty" id="l-s-qty">How many</label><input id="s-qty" type="text" inputmode="numeric" autocomplete="off"></div>
+        <div class="field"><label for="s-uom" id="l-s-uom">Unit</label><input id="s-uom" type="text" autocomplete="off"></div>
+        <button id="s-add" class="sre-btn" type="button">Add this item</button>
+        <ul class="rows" id="s-lines"></ul>
+        <button id="s-propose" class="sre-btn sre-btn-primary" type="button">Propose this transfer</button>
+        <p class="status" id="s-status" role="status" aria-live="polite"></p>
+      </section>
+
       <!-- U5 · G17: the four figures as the chrome's summary cards (a count not read yet is "Not known", never a dash) -->
       <div id="panels" role="status" aria-live="polite"></div>
 

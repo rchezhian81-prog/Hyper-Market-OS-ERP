@@ -82,6 +82,20 @@ function sampleSession() {
 let session = window.indentsSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
+// ── Fix batch 5 · D-035: every line by the item's NAME (the code only when no name is known) ──
+let knownProducts = [];
+function pname(productId) {
+  const p = knownProducts.find((x) => x.productId === productId);
+  if (p && typeof p.name === 'string' && p.name.trim() !== '') return p.name;
+  const o = office();
+  return (o && o.nameOf('product', productId)) || productId;
+}
+/** The item's own unit, to pre-fill the Unit box (empty when the item is not known here). */
+function unitOfProduct(productId) {
+  const p = knownProducts.find((x) => x.productId === productId);
+  return p && typeof p.uom === 'string' ? p.uom : '';
+}
+
 // ── the register ────────────────────────────────────────────────────────────
 
 /** The indent's lines on the chrome's register (no search or paging — a handful of lines; the rows stack on a phone). */
@@ -150,9 +164,9 @@ function indentNode(r) {
       const short = (i.shortfall ?? []).filter((s) => s.quantityMinor > 0);
       item.dataset.short = short.length > 0 ? (i.resolvedBy ? 'resolved' : 'open') : 'none';
       // Batch 2: what did not arrive, and who resolved it — in words beside the issue, never only a colour.
-      const shortText = short.length === 0 ? '' : ` · ${t('issueShortWord')}: ${short.map((s) => `${s.productId} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')}`
+      const shortText = short.length === 0 ? '' : ` · ${t('issueShortWord')}: ${short.map((s) => `${pname(s.productId)} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')}`
         + (i.resolvedBy ? ` · ${t('issueResolvedBy')} ${i.resolvedBy}${typeof i.lostValueMinor === 'number' ? ` · ${t('issueLostWord')} ₹${(i.lostValueMinor / 100).toFixed(2)}` : ''}` : '');
-      item.textContent = `${t('issueLabel')} ${i.issueId} · ${i.lines.map((l) => `${l.productId} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${i.issuedBy} · ${i.state === 'in_transit' ? t('issueInTransit') : t('issueReceived')}${shortText}`;
+      item.textContent = `${t('issueLabel')} ${i.issueId} · ${i.lines.map((l) => `${pname(l.productId)} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${i.issuedBy} · ${i.state === 'in_transit' ? t('issueInTransit') : t('issueReceived')}${shortText}`;
       issues.append(item);
     }
     li.append(issues);
@@ -177,7 +191,7 @@ function renderRaiseLines() {
     const li = document.createElement('li');
     li.dataset.productId = l.productId;
     // OB-31: the line holds what was TYPED, in its unit ("2.5" kg); the session turns it into grams on Save.
-    const what = document.createElement('span'); what.textContent = `${l.productId} × ${`${l.quantity} ${l.uom}`.trim()}`;
+    const what = document.createElement('span'); what.textContent = `${pname(l.productId)} × ${`${l.quantity} ${l.uom}`.trim()}`;
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'minor sre-btn sre-btn-quiet'; remove.textContent = t('raiseRemove');
     remove.addEventListener('click', () => { raiseLines = raiseLines.filter((_, i) => i !== index); renderRaiseLines(); });
     li.append(what, remove);
@@ -228,7 +242,7 @@ function paintApprover(view) {
   const chosen = select.value;
   select.replaceChildren(...view.approvable.map((i) => {
     const opt = document.createElement('option'); opt.value = i.indentId;
-    opt.textContent = `${i.indentId} · ${i.lines.map((l) => `${l.productId} × ${l.requestedMinor}`).join(', ')} · ${t('requestedByLabel')} ${i.requestedBy}`;
+    opt.textContent = `${i.indentId} · ${i.lines.map((l) => `${pname(l.productId)} × ${l.requestedMinor}`).join(', ')} · ${t('requestedByLabel')} ${i.requestedBy}`;
     return opt;
   }));
   if (chosen && view.approvable.some((i) => i.indentId === chosen)) select.value = chosen;
@@ -255,7 +269,7 @@ function renderReceiveLines() {
     label.htmlFor = inputId;
     // OB-31: issued and counted in the line's own unit — 2500 g of a kg line reads "2.500 kg" and is typed back as "2.500".
     const unit = session.unitOf(choice.indentId, l.productId);
-    label.textContent = `${l.productId}${l.batchId ? ` · ${l.batchId}` : ''} (${t('colIssued')} ${session.quantityText(l.quantityMinor, unit)})`;
+    label.textContent = `${pname(l.productId)}${l.batchId ? ` · ${l.batchId}` : ''} (${t('colIssued')} ${session.quantityText(l.quantityMinor, unit)})`;
     const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'decimal'; input.value = session.typedText(l.quantityMinor, unit); input.className = 'counted';
     li.append(label, input);
     return li;
@@ -279,7 +293,7 @@ function paintReceiver(view) {
   const chosen = select.value;
   select.replaceChildren(...receivable.map((r) => {
     const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
-    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${l.productId} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${r.issue.lines.map((l) => `${pname(l.productId)} × ${session.quantityText(l.quantityMinor, session.unitOf(r.indentId, l.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
     return opt;
   }));
   if (chosen && receivable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;
@@ -305,7 +319,7 @@ function renderResolveLines() {
     const label = document.createElement('label');
     const inputId = `found-${s.productId}-${s.batchId ?? 'none'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
     label.htmlFor = inputId;
-    label.textContent = `${s.productId}${s.batchId ? ` · ${s.batchId}` : ''} (${t('resolveMissingWord')} ${session.quantityText(s.quantityMinor, session.unitOf(choice.indentId, s.productId))})`;
+    label.textContent = `${pname(s.productId)}${s.batchId ? ` · ${s.batchId}` : ''} (${t('resolveMissingWord')} ${session.quantityText(s.quantityMinor, session.unitOf(choice.indentId, s.productId))})`;
     const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'decimal'; input.value = '0'; input.className = 'found';
     li.append(label, input);
     return li;
@@ -338,7 +352,7 @@ function paintResolver(view) {
   const chosen = select.value;
   select.replaceChildren(...resolvable.map((r) => {
     const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
-    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${t('issueShortWord')}: ${(r.issue.shortfall ?? []).map((s) => `${s.productId} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${t('issueShortWord')}: ${(r.issue.shortfall ?? []).map((s) => `${pname(s.productId)} × ${session.quantityText(s.quantityMinor, session.unitOf(r.indentId, s.productId))}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
     return opt;
   }));
   if (chosen && resolvable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;
@@ -391,6 +405,7 @@ const tell = (tone, text) => paintResult({ tone, label: text, announcement: text
 
 function paint() {
   const view = session.view(lang);
+  knownProducts = Array.isArray(view.products) ? view.products : []; // D-035
   el('title').textContent = t('title');
   el('lead').textContent = t('lead');
   el('whoami').textContent = window.indentsData?.userId ?? '';
@@ -425,11 +440,19 @@ function paint() {
 
 // ── the writes: each on an explicit click, never on load ────────────────────
 
+// Fix batch 5 · D-035: choosing the item fills its own unit (the person may still change it); nothing to type.
+for (const ev of ['change', 'input']) {
+  el('raise-product').addEventListener(ev, () => {
+    const uom = unitOfProduct(el('raise-product').value.trim());
+    if (uom !== '' && (el('raise-uom').value.trim() === '' || el('raise-uom').dataset.prefilled === 'true')) { el('raise-uom').value = uom; el('raise-uom').dataset.prefilled = 'true'; }
+  });
+}
+el('raise-uom').addEventListener('input', () => { el('raise-uom').dataset.prefilled = 'false'; });
 el('raise-add').addEventListener('click', () => {
   const productId = el('raise-product').value.trim();
   // OB-31: typed in the item's unit ("2.5" kg); the session checks it and turns it into grams on Save — never here.
   const quantity = el('raise-qty').value.trim();
-  const uom = el('raise-uom').value.trim();
+  const uom = el('raise-uom').value.trim() || unitOfProduct(productId); // D-035: the item's own unit when none was typed
   if (productId === '' || quantity === '') { tell('error', session.raiseRefusalWords(lang, 'bad_line')); return; }
   if (raiseLines.some((l) => l.productId === productId)) { tell('error', session.raiseRefusalWords(lang, 'duplicate_product')); return; }
   raiseLines = [...raiseLines, { productId, quantity, uom }];

@@ -430,7 +430,7 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     await page.waitForFunction(rowsRendered, undefined, { timeout: 10_000 });
     await page.waitForSelector('#resolver:not([hidden])');
     expect(await page.getAttribute('#rows li.row[data-indent-id="ind-4"] ul.issues li', 'data-short')).toBe('open');
-    expect((await page.textContent('#rows li.row[data-indent-id="ind-4"] ul.issues li')) ?? '').toContain('short: RICE × 3');
+    expect((await page.textContent('#rows li.row[data-indent-id="ind-4"] ul.issues li')) ?? '').toContain('short: Rice 5kg × 3'); // Fix batch 5 · D-035: by the item's name, never its code
     // An issue already resolved says by whom and what was lost — in words — and is not offered again.
     expect(await page.getAttribute('#rows li.row[data-indent-id="ind-5"] ul.issues li', 'data-short')).toBe('resolved');
     const resolvedText = (await page.textContent('#rows li.row[data-indent-id="ind-5"] ul.issues li')) ?? '';

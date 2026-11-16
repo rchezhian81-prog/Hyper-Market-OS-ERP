@@ -87,9 +87,10 @@ describe.skipIf(!existsSync(CHROMIUM))('UI-2: the handhelds and the kiosks read 
     it(`${shell.app} at 360px: no sideways scroll, 44px targets (the 56px audit clean), the connection always seen — English and Tamil`, async () => {
       const { page, errors } = await phone(shell);
       if (shell === WAREHOUSE) {
-        // the job, not a code; the staff code and the job said as what they are; a count of pieces without "EA"
-        expect(await text(page, 'h1#who')).toBe('Stock room work Staff u-worker · Job A-1');
-        expect(await text(page, '#assignment')).toBe('Staff u-worker · Job A-1');
+        // the job, not a code; the staff code said as what it is (Fix batch 5 · D-033: the assignment's internal id, "Job …",
+        // is gone — it said nothing to the person); a count of pieces without "EA"
+        expect(await text(page, 'h1#who')).toBe('Stock room work Staff u-worker');
+        expect(await text(page, '#assignment')).toBe('Staff u-worker');
         expect(await text(page, '#pick-lines .item .qty')).toBe('12 units');
         expect(await text(page, '#issue-lines .item .qty')).toBe('6 units · still owed');
       }
@@ -101,7 +102,7 @@ describe.skipIf(!existsSync(CHROMIUM))('UI-2: the handhelds and the kiosks read 
 
       await tamil(page);
       if (shell === WAREHOUSE) {
-        expect(await text(page, '#assignment')).toBe('ஊழியர் u-worker · பணி A-1');
+        expect(await text(page, '#assignment')).toBe('ஊழியர் u-worker');
         expect(await page.evaluate('document.getElementById("who").firstChild.textContent.trim()')).toBe('ஸ்டாக் அறை வேலை');
         expect(await text(page, '#pick-lines .item .qty')).toBe('12 அலகுகள்');
       }

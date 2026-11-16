@@ -40,6 +40,9 @@ export const RESOLUTION_REASONS = Object.freeze(['damaged', 'expired', 'miscount
 const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.freeze({
   en: {
     title: 'Transfers', lede: 'Send an approved transfer, count it in at the other end, and settle anything that did not arrive. Head office values the stock at its own cost — nothing is priced here.',
+    startTransfer: 'Start a transfer', startTransferNote: 'Propose it here: it moves nothing yet. A second person then sends it (the person who proposed it cannot), and head office values it at its own cost.',
+    lFromPlace: 'From', lToPlace: 'To', lItem: 'Item', lHowMany: 'How many', lUnit: 'Unit', addLine: 'Add this item', removeLine: 'Remove', proposeTransfer: 'Propose this transfer', proposed_ok: 'Proposed — it now waits on this page for a second person to send it.',
+    needPlaces: 'Choose where it comes from and where it goes.', samePlace: 'From and to are the same place — nothing would move.', needTransferLine: 'Add at least one item with a whole number above zero.', twiceOnTransfer: 'That item is already on this transfer.', mayNotStart: 'You may not start a transfer.',
     registerH: 'Transfers', registerLede: 'Newest first: waiting to be sent, on the road, and received. A shortfall stays open until a person settles it.', empty: 'No transfers yet.',
     proposed: 'Waiting to be sent', in_transit: 'On the road — not sellable yet', received: 'Received', shortOpen: 'Shortfall open', shortSettled: 'Shortfall settled', onIndent: 'Floor indent — settled on the indent',
     from: 'from', to: 'to', proposedBy: 'proposed by', sentBy: 'sent and approved by', countedBy: 'counted in by', costEach: 'head office cost', costUnknown: 'head office holds no cost',
@@ -63,6 +66,9 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
   },
   ta: {
     title: 'இடமாற்றங்கள்', lede: 'ஒப்புதலான இடமாற்றத்தை அனுப்புங்கள், மறுமுனையில் எண்ணி வரவு வையுங்கள், வராதவற்றைத் தீர்த்து வையுங்கள். தலைமை அலுவலகம் தன் சொந்த விலையில் சரக்கை மதிப்பிடும் — இங்கே விலை எதுவும் உள்ளிடப்படாது.',
+    startTransfer: 'புதிய இடமாற்றம் தொடங்கு', startTransferNote: 'இங்கே முன்மொழியுங்கள்: இப்போது எதுவும் நகராது. பிறகு இரண்டாவது நபர் அனுப்புவார் (முன்மொழிந்தவர் அனுப்ப முடியாது); தலைமை அலுவலகம் தன் விலையில் மதிப்பிடும்.',
+    lFromPlace: 'எங்கிருந்து', lToPlace: 'எங்கே', lItem: 'பொருள்', lHowMany: 'எத்தனை', lUnit: 'அலகு', addLine: 'இந்தப் பொருளைச் சேர்', removeLine: 'நீக்கு', proposeTransfer: 'இந்த இடமாற்றத்தை முன்மொழி', proposed_ok: 'முன்மொழியப்பட்டது — இரண்டாவது நபர் அனுப்ப இந்தப் பக்கத்தில் காத்திருக்கிறது.',
+    needPlaces: 'எங்கிருந்து, எங்கே என்பதைத் தேர்ந்தெடுங்கள்.', samePlace: 'இரண்டும் ஒரே இடம் — எதுவும் நகராது.', needTransferLine: 'பூஜ்ஜியத்திற்கு மேல் முழு எண்ணுடன் குறைந்தது ஒரு பொருளைச் சேர்க்கவும்.', twiceOnTransfer: 'அந்தப் பொருள் ஏற்கனவே இந்த இடமாற்றத்தில் உள்ளது.', mayNotStart: 'நீங்கள் இடமாற்றத்தைத் தொடங்க முடியாது.',
     registerH: 'இடமாற்றங்கள்', registerLede: 'புதியவை முதலில்: அனுப்பக் காத்திருப்பவை, வழியில் உள்ளவை, வந்தவை. குறைபாடு ஒருவர் தீர்க்கும் வரை திறந்திருக்கும்.', empty: 'இன்னும் இடமாற்றங்கள் இல்லை.',
     proposed: 'அனுப்பக் காத்திருக்கிறது', in_transit: 'வழியில் — இன்னும் விற்க முடியாது', received: 'வந்து சேர்ந்தது', shortOpen: 'குறைபாடு திறந்துள்ளது', shortSettled: 'குறைபாடு தீர்க்கப்பட்டது', onIndent: 'தளக் கோரிக்கை — கோரிக்கையிலேயே தீர்க்கப்படும்',
     from: 'இருந்து', to: 'க்கு', proposedBy: 'முன்மொழிந்தவர்', sentBy: 'அனுப்பி ஒப்புதல் தந்தவர்', countedBy: 'எண்ணி வரவு வைத்தவர்', costEach: 'தலைமை அலுவலக விலை', costUnknown: 'தலைமை அலுவலகத்திடம் விலை இல்லை',
@@ -143,6 +149,26 @@ export function createTransfersSession(viewer: TransferViewer | undefined, http:
       if (a.result !== 'ok') return refusedOrLost(a);
       const rows = (a.body as { transfers?: unknown }).transfers;
       return { result: 'ok', rows: Array.isArray(rows) ? (rows as TransferRow[]) : [] };
+    },
+    /**
+     * Fix batch 5 · D-036: START a transfer here — propose it (it moves nothing yet). A second person sends it from this page
+     * (head office refuses the proposer as the sender, §28), and head office values it at its own cost: no price is typed.
+     */
+    async propose(input: { readonly transferId: string; readonly fromLocationId: string; readonly toLocationId: string; readonly lines: readonly { readonly productId: string; readonly quantityText: string; readonly uom: string }[] }): Promise<Outcome<{ readonly body: unknown }>> {
+      if (!may.move) return { result: 'invalid', key: 'mayNotStart' };
+      const from = input.fromLocationId.trim();
+      const to = input.toLocationId.trim();
+      if (from === '' || to === '') return { result: 'invalid', key: 'needPlaces' };
+      if (from === to) return { result: 'invalid', key: 'samePlace' };
+      if (input.lines.length === 0) return { result: 'invalid', key: 'needTransferLine' };
+      const lines: { productId: string; quantityMinor: number; uom: string }[] = [];
+      for (const l of input.lines) {
+        const q = whole(l.quantityText);
+        if (l.productId.trim() === '' || q === undefined || q <= 0) return { result: 'invalid', key: 'needTransferLine' };
+        if (lines.some((x) => x.productId === l.productId.trim())) return { result: 'invalid', key: 'twiceOnTransfer' };
+        lines.push({ productId: l.productId.trim(), quantityMinor: q, uom: (l.uom.trim() === '' ? 'EA' : l.uom.trim()).toUpperCase() });
+      }
+      return post(`/v1/warehouse/transfers/${enc(input.transferId)}`, { fromLocationId: from, toLocationId: to, lines });
     },
     /** Send it: an EMPTY body — the approver is the signed-in person and the stock is head office's. */
     dispatch: (transferId: string) => post(`/v1/warehouse/transfers/${enc(transferId)}/dispatch`, {}),

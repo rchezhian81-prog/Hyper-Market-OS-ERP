@@ -151,7 +151,7 @@ const currentRow = () => rows?.find((r) => r.transfer.transferId === currentId);
 
 function paintWords() {
   document.title = `SRE ${t('title')}`;
-  const map = [['who', 'title'], ['title', 'title'], ['lede', 'lede'], ['reg-h', 'registerH'], ['reg-lede', 'registerLede'], ['c-transfer', 'colTransfer'], ['c-route', 'colRoute'], ['c-lines', 'colLines'], ['c-state', 'colState'],
+  const map = [['who', 'title'], ['title', 'title'], ['lede', 'lede'], ['start-transfer', 'startTransfer'], ['start-transfer-note', 'startTransferNote'], ['l-s-from', 'lFromPlace'], ['l-s-to', 'lToPlace'], ['l-s-item', 'lItem'], ['l-s-qty', 'lHowMany'], ['l-s-uom', 'lUnit'], ['s-add', 'addLine'], ['s-propose', 'proposeTransfer'], ['reg-h', 'registerH'], ['reg-lede', 'registerLede'], ['c-transfer', 'colTransfer'], ['c-route', 'colRoute'], ['c-lines', 'colLines'], ['c-state', 'colState'],
     ['d-lines-h', 'linesH'], ['d-dispatch-note', 'dispatchNote'], ['d-dispatch', 'dispatch'],
     ['d-cancel-h', 'cancelH'], ['d-cancel-note', 'cancelNote'], ['l-d-cancel-reason', 'cancelReason'], ['d-cancel', 'cancel'], ['d-receive-h', 'receiveH'], ['d-receive-note', 'receiveNote'], ['d-receive', 'receive'],
     ['d-short-h', 'shortH'], ['d-resolve-h', 'resolveH'], ['d-resolve-note', 'resolveNote'], ['l-d-reason-code', 'reasonCode'], ['l-d-note', 'note'], ['d-resolve', 'resolve']];
@@ -218,12 +218,53 @@ if (session !== null) {
     paintWords();
     paintRegister();
     paintDrawer();
+    paintStartLines();
     if (register !== null) register.repaint();
   });
 }
 
+// ── Fix batch 5 · D-036: START a transfer here — places and items chosen by name, proposed in this person's session ──
+let startLines = [];
+const nameOfItem = (id) => { const o = office(); return (o && o.nameOf('product', id)) || id; };
+function paintStartLines() {
+  $('s-lines').replaceChildren(...startLines.map((l, i) => {
+    const remove = node('button', { type: 'button', className: 'quiet sre-btn sre-btn-quiet', textContent: t('removeLine') });
+    remove.addEventListener('click', () => { startLines = startLines.filter((_, j) => j !== i); paintStartLines(); });
+    return node('li', { dataset: { productId: l.productId } }, node('span', { textContent: `${nameOfItem(l.productId)} × ${`${l.quantityText} ${l.uom}`.trim()}` }), remove);
+  }));
+}
+function paintStart() {
+  $('start-box').hidden = session === null || session.nobody || !session.may.move;
+  if ($('start-box').hidden) return;
+  const o = office();
+  if (o && typeof o.pickable === 'function') {
+    o.pickable($('s-from'), 'place', { en: session.text('en', 'lFromPlace'), ta: session.text('ta', 'lFromPlace') });
+    o.pickable($('s-to'), 'place', { en: session.text('en', 'lToPlace'), ta: session.text('ta', 'lToPlace') });
+    o.pickable($('s-item'), 'product', { en: session.text('en', 'lItem'), ta: session.text('ta', 'lItem') });
+  }
+  paintStartLines();
+}
+if (session !== null) {
+  $('s-add').addEventListener('click', () => {
+    const productId = $('s-item').value.trim();
+    const quantityText = $('s-qty').value.trim();
+    if (productId === '' || !/^\d+$/.test(quantityText) || Number(quantityText) <= 0) { say($('s-status'), { result: 'invalid', key: 'needTransferLine' }); return; }
+    if (startLines.some((l) => l.productId === productId)) { say($('s-status'), { result: 'invalid', key: 'twiceOnTransfer' }); return; }
+    startLines = [...startLines, { productId, quantityText, uom: $('s-uom').value.trim() }];
+    $('s-item').value = ''; $('s-qty').value = ''; $('s-uom').value = ''; $('s-status').textContent = '';
+    paintStartLines();
+  });
+  $('s-propose').addEventListener('click', async () => {
+    const transferId = `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const out = await session.propose({ transferId, fromLocationId: $('s-from').value, toLocationId: $('s-to').value, lines: startLines });
+    say($('s-status'), out, 'proposed_ok');
+    if (out.result === 'ok') { startLines = []; $('s-from').value = ''; $('s-to').value = ''; paintStartLines(); await loadList(); }
+  });
+}
+
 paintWords();
-whenChrome(() => { paintRegister(); });
+paintStart();
+whenChrome(() => { paintRegister(); paintStart(); });
 if (session !== null && !session.nobody) { $('list-status').textContent = t('reading'); void loadList(); }
 
 if ('serviceWorker' in navigator) {

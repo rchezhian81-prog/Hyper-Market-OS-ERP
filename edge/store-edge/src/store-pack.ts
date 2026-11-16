@@ -1138,6 +1138,8 @@ export interface PackOpenDelivery {
   readonly poId: string;
   readonly number: string;
   readonly supplierId: string;
+  /** Fix batch 5 · D-033: the supplier's name from head office's supplier master (absent = no master record). */
+  readonly supplierName?: string;
   readonly deliverToLocationId: string;
   /** The goods-receipt id this delivery is received under (head office's next one for the order). */
   readonly grnId: string;

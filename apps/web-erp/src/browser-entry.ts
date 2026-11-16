@@ -6033,7 +6033,12 @@ export function readReceivingAids(data: ManagerData | undefined): Pick<ManagerCo
         const r = l as Record<string, unknown>;
         return isStr(r['productId']) && Number.isInteger(r['dueMinor']) && (r['dueMinor'] as number) >= 0 ? [{ productId: r['productId'], dueMinor: r['dueMinor'] as number }] : [];
       });
-      orders.push({ poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '', due });
+      orders.push({
+        poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '',
+        ...(isStr(o['deliverToLocationId']) ? { deliverToLocationId: o['deliverToLocationId'] } : {}), // D-017
+        ...(isStr(o['supplierName']) ? { supplierName: o['supplierName'] } : {}), // D-033
+        due,
+      });
     }
     out.openDeliveries = orders;
   }

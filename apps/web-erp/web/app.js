@@ -81,6 +81,7 @@ const WORDS = {
     mfgRequired: 'This is a packed product: type the month and year of manufacture printed on the pack before adding it.',
     mfgWord: 'made',
     // Fix batch 4b · D-029: receive against a chosen order; per line what arrived, damaged, the batch and the expiry date.
+    placeLabel: 'Book the goods into', placeStore: 'This store (the shelves the tills sell from) — {id}', placeBack: 'The back store — {id}', placeFromOrder: 'The order says deliver to: {place}.', placeChosenOther: 'The order says deliver to {place}; you chose another place.',
     orderLabel: 'Which order is this delivery?', orderPick: '— choose the order —', orderNone: 'No order — delivered without one',
     orderOther: 'An order not listed — type its number', orderItems: '{n} item(s) due',
     orderAsAt: 'Orders as head office last sent them ({at}). An order issued after that is not listed: choose "An order not listed".',
@@ -184,6 +185,7 @@ const WORDS = {
     needMfg: 'தயாரிப்பு மாதத்தை ஆண்டு-மாதம் என எழுதவும், உதாரணமாக 2026-09 (அல்லது முழுத் தேதி, 2026-09-14).',
     mfgRequired: 'இது பொதி செய்த பொருள்: சேர்ப்பதற்கு முன் பொதியில் அச்சிட்ட தயாரிப்பு மாதத்தையும் ஆண்டையும் தட்டச்சு செய்யவும்.',
     mfgWord: 'தயாரிப்பு',
+    placeLabel: 'பொருட்களை எங்கே பதிவு செய்வது', placeStore: 'இந்தக் கடை (பில்லிங் விற்கும் அலமாரிகள்) — {id}', placeBack: 'பின் கிடங்கு — {id}', placeFromOrder: 'ஆர்டர் சொல்லும் இடம்: {place}.', placeChosenOther: 'ஆர்டர் சொல்லும் இடம் {place}; நீங்கள் வேறு இடத்தைத் தேர்ந்தெடுத்தீர்கள்.',
     orderLabel: 'இந்த டெலிவரி எந்த ஆர்டருக்கு?', orderPick: '— ஆர்டரைத் தேர்ந்தெடுங்கள் —', orderNone: 'ஆர்டர் இல்லை — ஆர்டர் இல்லாமல் வந்தது',
     orderOther: 'பட்டியலில் இல்லாத ஆர்டர் — அதன் எண்ணைத் தட்டச்சு செய்யவும்', orderItems: '{n} பொருள்(கள்) வர வேண்டியவை',
     orderAsAt: 'தலைமை அலுவலகம் கடைசியாக அனுப்பிய ஆர்டர்கள் ({at}). அதன் பிறகு வழங்கிய ஆர்டர் பட்டியலில் இல்லை: "பட்டியலில் இல்லாத ஆர்டர்" என்பதைத் தேர்ந்தெடுங்கள்.',
@@ -1247,7 +1249,7 @@ function renderOrderChoice() {
   const opt = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; return o; };
   sel.replaceChildren(
     opt('', t('orderPick')),
-    ...open.orders.map((d) => opt(`po:${d.poId}`, `${d.number} · ${d.supplierId} · ${fill(t('orderItems'), { n: String(d.due.filter((l) => l.dueMinor > 0).length) })}`)),
+    ...open.orders.map((d) => opt(`po:${d.poId}`, `${d.number} · ${d.supplierName ?? d.supplierId} · ${fill(t('orderItems'), { n: String(d.due.filter((l) => l.dueMinor > 0).length) })}`)),
     opt('none', t('orderNone')),
     opt('other', t('orderOther')),
   );
@@ -1273,11 +1275,33 @@ el('grn-order').addEventListener('change', () => {
     el('grn-po').value = poId;
     receiptLines = [...session.dueLinesOf(poId).map((l) => ({ productId: l.productId, dueMinor: l.dueMinor, quantityMinor: l.dueMinor, uom: 'ea' })), ...receiptLines];
     el('grn-order-hint').textContent = t('linesFromOrder');
+    renderPlaceChoice(poId);
   } else {
     el('grn-po').value = '';
+    renderPlaceChoice(null);
   }
   renderLines();
 });
+// ── Fix batch 5 · D-017: the goods are booked where the order says (this store or the back store), or where the manager picks ──
+function placeWords(p) { return fill(t(p.kind === 'store' ? 'placeStore' : 'placeBack'), { id: p.locationId }); }
+function renderPlaceChoice(poId) {
+  const sel = el('grn-place');
+  if (!session || typeof session.receivePlaces !== 'function') { el('grn-place-field').hidden = true; return; }
+  const places = session.receivePlaces();
+  el('grn-place-label').textContent = t('placeLabel');
+  sel.replaceChildren(...places.map((p) => { const o = document.createElement('option'); o.value = p.locationId; o.textContent = placeWords(p); return o; }));
+  const preferred = session.defaultReceivePlace(poId ?? null);
+  sel.value = preferred;
+  sayPlaceHint(poId ?? null);
+}
+function sayPlaceHint(poId) {
+  const named = poId === null ? undefined : openDeliveriesNow().orders?.find((d) => d.poId === poId)?.deliverToLocationId;
+  const place = named === undefined ? undefined : session.receivePlaces().find((p) => p.locationId === named);
+  el('grn-place-hint').textContent = place === undefined ? ''
+    : fill(t(el('grn-place').value === named ? 'placeFromOrder' : 'placeChosenOther'), { place: placeWords(place) });
+}
+el('grn-place').addEventListener('change', () => { const c = chosenPo(); sayPlaceHint(c.ok ? c.poId : null); });
+
 /** The order the delivery is against: the chosen one, none, or the typed number when the list is not known or the order is not on it. */
 function chosenPo() {
   const open = openDeliveriesNow();
@@ -1360,6 +1384,7 @@ el('save-receipt').addEventListener('click', () => {
       receivedAt: new Date().toISOString(),
       lines: toSave,
       ...(checklist === undefined ? {} : { checklist }),
+      ...(el('grn-place').value === '' ? {} : { locationId: el('grn-place').value }), // D-017
     });
     // An unmatched delivery is SAID, not filed quietly. Nobody can check an invoice against a
     // purchase order that does not exist, and the person who can still fix that is the buyer today.
@@ -1376,6 +1401,7 @@ el('save-receipt').addEventListener('click', () => {
     el('grn-po').value = '';
     el('grn-order').value = '';
     renderOrderChoice();
+    renderPlaceChoice(null);
     renderLines();
   } catch (e) {
     // Fix batch 4b · D-029: the lines that are wrong, by name, in the manager's language — nothing was saved.
@@ -1744,6 +1770,7 @@ function paintChrome() {
   el('grn-number-label').textContent = t('deliveryNote');
   el('grn-po-label').textContent = t('poNumber');
   renderOrderChoice(); // D-029: the order list, in this language
+  { const keep = el('grn-place').value; const c = chosenPo(); renderPlaceChoice(c.ok ? c.poId : null); if (keep !== '' && [...el('grn-place').options].some((o) => o.value === keep)) { el('grn-place').value = keep; sayPlaceHint(c.ok ? c.poId : null); } } // D-017
   el('grn-product-label').textContent = t('itemCode');
   el('grn-qty-label').textContent = t('howMany');
   el('grn-temp-label').textContent = t('tempLabel');
