@@ -36,6 +36,13 @@ function standInShopDate(at) {
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * OB-805 A · D-003: the paise a cash amount leaves off (0, or −1 … −99 — down only, OB-285), from the till's own rule; and
+ * the words for it: "Round off −₹0.50 · Pay ₹303.00". A till shell without the rule rounds nothing.
+ */
+const cashRoundOff = (dueMinor) => (typeof session.cashRoundOffMinor === 'function' ? session.cashRoundOffMinor(dueMinor) : 0);
+const roundOffWords = (roundOffMinor, payMinor) => `${t('roundOff')} ${roundOffMinor < 0 ? '−' : '+'}${inr(Math.abs(roundOffMinor))} · ${t('payCash')} ${inr(payMinor)}`;
+
 /** A product's name from the lane's catalogue, or its code when the catalogue does not know it — a
  *  cashier reads "Amul Ghee 1L", not "P1", but a delisted item still shows something rather than blank. */
 const descOf = (productId) => (session.productName && session.productName(productId)) || productId;
@@ -148,6 +155,8 @@ const WORDS = {
     pickReasonFirst: 'Pick a reason first — nothing was voided',
     scanFirst: 'Scan an item first.', read: 'Please read this',
     notEnough: 'Not enough — the customer still owes',
+    // OB-805 A · D-003: a cash bill's paise come off (never on — OB-285), shown before the cash is keyed and on the bill.
+    roundOff: 'Round off', payCash: 'Pay',
     receiptsUsedUp: 'This till has used all its receipt numbers. Do not take money — tell the manager to load a new number range.',
     allSent: 'Everything on this lane has reached the cloud.',
     // P-08: when the box has not said how many sales it holds, the count is NOT KNOWN — never a zero from this till.
@@ -442,6 +451,7 @@ const WORDS = {
     unsentHeld: 'விற்பனை(கள்) இந்தப் பெட்டியில் சேமிக்கப்பட்டு அனுப்பக் காத்திருக்கின்றன. எதுவும் இழக்கப்படவில்லை — தலைமை அலுவலகத்தை அடைந்தவுடன் அவை செல்லும்.',
     tapLineFirst: 'முதலில் ஒரு வரியைத் தொடவும்.', scanFirst: 'முதலில் ஒரு பொருளை ஸ்கேன் செய்யவும்.',
     read: 'இதைப் படிக்கவும்', notEnough: 'போதவில்லை — வாடிக்கையாளர் இன்னும் தர வேண்டியது',
+    roundOff: 'முழுமையாக்கல் (ரவுண்ட் ஆஃப்)', payCash: 'செலுத்த வேண்டியது',
     receiptsUsedUp: 'இந்த பணப்பெட்டியின் ரசீது எண்கள் முடிந்துவிட்டன. பணம் வாங்க வேண்டாம் — புதிய எண் வரம்பை ஏற்ற மேலாளரிடம் சொல்லவும்.',
     allSent: 'இந்த லேனில் உள்ள அனைத்தும் அனுப்பப்பட்டுவிட்டன.',
     unsentNotKnown: 'தெரியவில்லை',
@@ -1953,17 +1963,21 @@ el('tender').addEventListener('click', async () => {
   // D-5: no cash into a drawer that has no float — the cashier is told the next step, and card or UPI still work.
   if (!(await floatIsOut())) { tell(t('cashNeedsFloatTitle'), t('cashNeedsFloat'), STOP); return; }
 
-  const changeFor = (rupees) => Math.round(rupees * 100) - payable;
+  // OB-805 A · D-003: the cash asked for is the bill less its paise — ₹303.50 is paid with ₹303.00, the drawer's coins.
+  const roundOff = cashRoundOff(payable);
+  const due = payable + roundOff;
+  const rounded = roundOff === 0 ? '' : ` (${roundOffWords(roundOff, due)})`;
+  const changeFor = (rupees) => Math.round(rupees * 100) - due;
   const received = await ask({
-    title: `${t('cashReceived')} — ${inr(payable)}`,
+    title: `${t('cashReceived')} — ${inr(due)}${rounded}`,
     mode: 'number',
-    hint: `${t('notEnough')} ${inr(payable)}`,
+    hint: `${t('notEnough')} ${inr(due)}${rounded}`,
     onChange: (rupees) => (changeFor(rupees) < 0
       ? `${t('notEnough')} ${inr(-changeFor(rupees))}`
       : `${t('changeDue')}: ${inr(changeFor(rupees))}`),
-    quick: quickCash(payable),
+    quick: quickCash(due),
     // D-14: OK with nothing keyed, or too little, keeps the panel open and says what to key — it never closes silently.
-    check: (value) => (Number(value) <= 0 ? t('keyCashFirst').replace('{amount}', inr(payable))
+    check: (value) => (Number(value) <= 0 ? t('keyCashFirst').replace('{amount}', inr(due))
       : changeFor(Number(value)) < 0 ? `${t('notEnough')} ${inr(-changeFor(Number(value)))}` : null),
   });
   if (received === null) return;
@@ -2434,9 +2448,13 @@ async function splitPayment(payable, first) {
     // D-5: the cash part of a split goes into the drawer too — refused with no float out; the other tenders stay offered.
     if (kind === 'cash' && !(await floatIsOut())) { tell(t('cashNeedsFloatTitle'), t('cashNeedsFloat'), STOP); continue; }
     const max = kind === 'loyalty_points' ? pointsMax : kind === 'store_credit' ? creditMax : remaining;
-    const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(remaining)}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
+    // OB-805 A · D-003: cash that finishes the bill is taken less the paise of what is left (down only — OB-285).
+    const cashRound = kind === 'cash' ? cashRoundOff(remaining) : 0;
+    const cashDue = remaining + cashRound;
+    const roundedWords = cashRound === 0 ? '' : ` (${roundOffWords(cashRound, cashDue)})`;
+    const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(kind === 'cash' ? cashDue : remaining)}${roundedWords}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(cashDue)}${roundedWords}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
       // One tap: the notes that cover what is left, or the most this part may be.
-      quick: kind === 'cash' ? quickCash(remaining) : [{ label: `${t('upTo')} ${inr(max)}`, value: String(max / 100) }] });
+      quick: kind === 'cash' ? quickCash(cashDue) : [{ label: `${t('upTo')} ${inr(max)}`, value: String(max / 100) }] });
     if (typed === null) return;
     const amountMinor = Math.round(Number(typed) * 100);
     if (!(amountMinor > 0)) continue;
@@ -2447,10 +2465,15 @@ async function splitPayment(payable, first) {
       if (ref === null) return;
       parts.push({ kind, amountMinor, ...(ref ? { ref } : {}), ...(ref && machineRefs.get(ref) ? { machineRef: machineRefs.get(ref) } : {}) });
     } else if (kind === 'cash') {
-      // Cash over what is owed is change: the bill records what it covered, the drawer the change handed back.
-      const covered = Math.min(amountMinor, remaining);
-      change = amountMinor - covered;
-      parts.push({ kind, amountMinor: covered });
+      // Cash over what is owed is change: the bill records what it covered, the drawer the change handed back. Cash that
+      // covers what is left LESS its paise finishes the bill — the paise are the bill's round off (OB-805 A).
+      if (amountMinor >= cashDue) {
+        change = amountMinor - cashDue;
+        parts.push({ kind, amountMinor: cashDue });
+        remaining = 0;
+        continue;
+      }
+      parts.push({ kind, amountMinor });
     } else {
       walletSpent += amountMinor;
       parts.push({ kind, amountMinor });

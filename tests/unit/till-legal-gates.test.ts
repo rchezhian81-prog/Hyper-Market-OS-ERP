@@ -87,7 +87,9 @@ describe('B5 — a weighed line is weighed quantity × the displayed price per k
     await pos.tenderCash('S-1', 'R-1', TODAY);
     const line = (written[0]!['lines'] as Line[])[0]!;
     expect(line).toMatchObject({ productId: 'P-BAN', quantityMinor: 333, unitPriceMinor: 99_99, lineTotalMinor: 33_29 });
-    expect(written[0]!['total']).toBe(33_29);
+    // Paid in CASH, the bill's 29 paise come off as its round off (OB-805 A · OB-285, down only) — the line stays ₹33.29.
+    expect(written[0]!['total']).toBe(33_00);
+    expect(written[0]!['roundOffMinor']).toBe(-29);
   });
 
   it('an exact weight is charged exactly (1.234 kg at ₹80.00/kg = ₹98.72); the down step only drops a fraction', () => {

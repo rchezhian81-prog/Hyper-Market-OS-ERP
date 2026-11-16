@@ -71,6 +71,11 @@ export interface BuildReceiptInput {
   /** A7: the bill's compensation cess — net + GST + cess = total. Absent = none. */
   readonly cessMinor?: number;
   readonly totalMinor: number;
+  /**
+   * What the bill is below its lines — 0 to −₹1, never above (OB-285): OB-805 A's cash round off (a cash bill's paise come
+   * off). Printed as "Round off" above the TOTAL; the lines and the GST inside them are unchanged. Absent = none.
+   */
+  readonly roundOffMinor?: number;
   readonly tenders: readonly ReceiptTenderInput[];
   readonly changeMinor?: number;
   /**
@@ -136,8 +141,13 @@ export function buildReceipt(input: BuildReceiptInput): ReceiptDocument {
 
   // The printed totals must add up, or the receipt is not issued.
   const lineSum = input.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0);
+  const roundOff = input.roundOffMinor ?? 0;
+  if (!Number.isInteger(roundOff) || roundOff > 0 || roundOff < -100) throw new ReceiptTotalsError(`round off ${String(input.roundOffMinor)} is not 0 to −1.00`);
+  if (roundOff !== 0 && input.pricesIncludeTax !== true) throw new ReceiptTotalsError('a round off is printed only on a bill whose prices include GST');
+  /** The goods: what the lines (and the GST inside them) add to — the total before the round off. */
+  const goods = input.totalMinor - roundOff;
   if (input.pricesIncludeTax === true) {
-    if (lineSum !== input.totalMinor) throw new ReceiptTotalsError(`lines ${lineSum} ≠ total ${input.totalMinor} (prices include GST)`);
+    if (lineSum !== goods) throw new ReceiptTotalsError(roundOff === 0 ? `lines ${lineSum} ≠ total ${input.totalMinor} (prices include GST)` : `lines ${lineSum} + round off ${roundOff} ≠ total ${input.totalMinor} (prices include GST)`);
   } else if (lineSum !== input.netMinor) {
     throw new ReceiptTotalsError(`lines ${lineSum} ≠ net ${input.netMinor}`);
   }
@@ -147,8 +157,8 @@ export function buildReceipt(input: BuildReceiptInput): ReceiptDocument {
   }
   const cess = input.cessMinor ?? 0;
   if (!Number.isInteger(cess) || cess < 0) throw new ReceiptTotalsError(`cess ${String(input.cessMinor)} is not a whole amount`);
-  if (input.netMinor + input.taxMinor + cess !== input.totalMinor) {
-    throw new ReceiptTotalsError(cess === 0 ? `net + tax ≠ total ${input.totalMinor}` : `net + tax + cess ≠ total ${input.totalMinor}`);
+  if (input.netMinor + input.taxMinor + cess !== goods) {
+    throw new ReceiptTotalsError(cess === 0 ? `net + tax ≠ total ${goods}` : `net + tax + cess ≠ total ${goods}`);
   }
   const lineCess = input.lines.reduce((sum, l) => sum + (l.cessMinor ?? 0), 0);
   if (lineCess !== cess) throw new ReceiptTotalsError(`line cess ${lineCess} ≠ cess ${cess}`);
@@ -240,6 +250,8 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
     out.push(pair(`GST ${(band.rateBps / 100).toFixed(band.rateBps % 100 === 0 ? 0 : 2)}%`, amount(band.taxMinor), width));
   }
   if (doc.cessMinor !== undefined && doc.cessMinor > 0) out.push(pair('Compensation cess', amount(doc.cessMinor), width));
+  // OB-805 A: a cash bill's paise taken off — printed, never hidden in the total.
+  if (doc.roundOffMinor !== undefined && doc.roundOffMinor !== 0) out.push(pair('Round off', amount(doc.roundOffMinor), width));
   out.push(pair('TOTAL', amount(doc.totalMinor), width));
   out.push(rule);
 

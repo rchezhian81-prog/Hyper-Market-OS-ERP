@@ -144,8 +144,10 @@ describe.skipIf(!HAVE_BROWSER)('the served till enforces the legal gates (B5 · 
     await expect.poll(async () => (await readLog(edge.log.path)).length, { timeout: 10_000 }).toBe(1);
     const [first] = await readLog(edge.log.path);
     if (first?.ok !== true) throw new Error('the sale did not land on the box');
-    const saved = JSON.parse(first.record) as { total: number; lines: { productId: string; quantityMinor: number; unitPriceMinor: number; lineTotalMinor: number; scaleCheck?: { scales: { assetId: string; reverificationDueOn: string }[] } }[] };
-    expect(saved.total).toBe(33_29);
+    const saved = JSON.parse(first.record) as { total: number; roundOffMinor?: number; lines: { productId: string; quantityMinor: number; unitPriceMinor: number; lineTotalMinor: number; scaleCheck?: { scales: { assetId: string; reverificationDueOn: string }[] } }[] };
+    // Paid in cash: the 29 paise come off as the bill's round off (OB-805 A · OB-285) — the line stays ₹33.29.
+    expect(saved.total).toBe(33_00);
+    expect(saved.roundOffMinor).toBe(-29);
     expect(saved.lines[0]).toMatchObject({ productId: 'P-BAN', quantityMinor: 333, unitPriceMinor: 99_99, lineTotalMinor: 33_29 });
     expect(saved.lines[0]!.scaleCheck?.scales).toEqual([{ assetId: 'SCALE-L1', reverificationDueOn: day(120) }]);
   });

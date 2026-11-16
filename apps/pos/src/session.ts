@@ -31,6 +31,7 @@ import { maskVoucherCode } from '../../../packages/loyalty/src/till-vouchers';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
+import { cashRoundOffMinor } from '../../../packages/tender/src/cash-round-off';
 import { buildTaxInvoice, invoiceRoundOff, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
 import { splitInclusiveWithCess, readCessRate, type CessRate } from '../../../packages/finance/src/cess';
 import {
@@ -382,6 +383,11 @@ export interface CommittedBill {
   /** A7: the bill's compensation cess (net + GST + cess = total). Absent when no line carries one. */
   readonly cessMinor?: number;
   readonly totalMinor: number;
+  /**
+   * What the bill is below its lines (0 to −₹1, never above — OB-285): OB-805 A's cash round off, or real trading's OB-279.
+   * Total = lines + round off; the GST inside the lines is unchanged. Absent = none.
+   */
+  readonly roundOffMinor?: number;
   readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string; readonly reference?: string }[];
   /** W3 · OB-673: the coupon this bill honoured and what it took off (already inside the lines). */
   readonly coupons?: readonly { readonly code: string; readonly discountMinor: number }[];
@@ -1487,6 +1493,26 @@ export class PosSession {
    * tenders count — a pending card/UPI is shown honestly and never treated as paid
    * (M12-FR-03 / §4.3).
    */
+  /**
+   * OB-805 A · D-003: the paise a CASH payment may leave off — 0, or −1 … −99 (down only: OB-285). The cash the customer is
+   * asked for is `cashDueMinor` plus this. None in real trading (its OB-279 rounding is the tax invoice's) or in the mirror
+   * pilot (no cash is taken there).
+   */
+  cashRoundOffFor(cashDueMinor: number): number {
+    if (this.config.realTrading !== undefined || this.config.mirrorPilot === true) return 0;
+    return cashRoundOffMinor(cashDueMinor);
+  }
+
+  /** The round off a commit's tenders took, judged before the disk: what the paid tenders fall short of the payable. */
+  private cashRoundOffTaken(payableMinor: number, tenders: readonly Tender[], roundCash: boolean): number {
+    if (!roundCash || this.config.realTrading !== undefined || this.config.mirrorPilot === true) return 0;
+    if (!tenders.some((t) => t.kind === 'cash' && (t.status === 'settled' || t.status === 'authorized'))) return 0;
+    const paid = settle(money(payableMinor, this.config.currency), tenders).settled.minor;
+    const short = payableMinor - paid;
+    // Only the paise of a rupee: anything else is a payment short, which `settle` refuses below as before.
+    return short > 0 && short < 100 ? -short : 0;
+  }
+
   previewSettlement(tenders: readonly Tender[]): Settlement {
     return settle(this.totals().payable, tenders);
   }
@@ -1499,7 +1525,16 @@ export class PosSession {
   async commit(
     saleId: string, number: string, committedAt: string, tenders: readonly Tender[],
     /** OB-264: the old ERP's bill number for this sale — required in the mirror pilot, refused outside it. */
-    extra: { readonly oldErpBillNumber?: string } = {},
+    extra: {
+      readonly oldErpBillNumber?: string;
+      /**
+       * OB-805 A · D-003: the till took CASH rounded down to the rupee (`cashRoundOffMinor`). The tenders then fall short of
+       * the payable by the paise taken off (1 to 99), and the bill records that as its round off — never above the goods
+       * (OB-285). Only with a cash tender, off real trading (its own OB-279 rounding governs the tax invoice) and off the
+       * mirror pilot (no cash there).
+       */
+      readonly roundCash?: boolean;
+    } = {},
   ): Promise<CommittedSale> {
     // A sale whose answer was lost is resolved first, under its own id — never rung again as a new one (A8).
     if (this.awaiting !== undefined) {
@@ -1632,8 +1667,14 @@ export class PosSession {
     if (negative.length > 0) throw new BillArithmeticError(saleId, `line(s) ${negative.map((l) => l.productId).join(', ')} would be charged below zero`);
     const lineSum = recordLines.reduce((t, l) => t + l.lineTotalMinor, 0);
     // OB-279 · OB-285: in real trading the payable is the lines less what the rounding takes off — never above the lines.
-    const roundOff = totals.roundOffMinor ?? 0;
-    if (lineSum + roundOff !== totals.payable.minor || roundOff > 0) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
+    const taxRoundOff = totals.roundOffMinor ?? 0;
+    if (lineSum + taxRoundOff !== totals.payable.minor || taxRoundOff > 0) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
+    // OB-805 A · D-003: a cash bill's paise come off — the cash the till took is short of the payable by 1 to 99 paise, and
+    // that is the bill's round off (down only, OB-285). Worked out here from the tenders themselves, before the disk.
+    const cashRound = this.cashRoundOffTaken(totals.payable.minor, tenders, extra.roundCash === true);
+    const roundOff = taxRoundOff + cashRound;
+    /** What the customer pays: the payable less the cash round off. */
+    const charged = money(totals.payable.minor + cashRound, totals.payable.currency);
     const inside = recordLines.reduce(
       (acc, l) => {
         // A7: a cess-liable line's value of supply comes out of its price with the GST AND the cess pulled back.
@@ -1658,7 +1699,7 @@ export class PosSession {
     // The order is: **decide, then record, then account for it.** Validation is not an effect —
     // nothing has happened yet and nothing needs to survive a power cut. It is the same `settle`
     // that `commitSale` uses below, so the two cannot reach different answers about one basket.
-    if (!settle(totals.payable, tenders).fullyPaid) {
+    if (!settle(charged, tenders).fullyPaid) {
       throw new UnpaidSaleError(saleId);
     }
     // OB-252: guest sales only — points and store credit belong to a named customer, so neither is spent here. Refused
@@ -1733,7 +1774,7 @@ export class PosSession {
     const record = JSON.stringify({
       ...input,
       lines: recordLines, // the cloud sees the rich lines (prices + frozen HSN/rate); commitSale keeps the ledger shape
-      total: totals.payable.minor,
+      total: charged.minor,
       netMinor: inside.net,
       taxMinor: inside.tax,
       // A7: the compensation cess inside the bill (net + GST + cess = the lines).
@@ -1767,7 +1808,7 @@ export class PosSession {
       for (const l of active) { const huid = huidOf(this.flagsOf(l)); if (huid !== undefined) this.huidsSoldHere.add(huid); }
 
       const sale = commitSale(
-        { ...input, total: totals.payable },
+        { ...input, total: charged },
         this.stockLedger,
         this.outbox,
       );
@@ -1793,7 +1834,8 @@ export class PosSession {
           ...(l.cessMinor === undefined ? {} : { cessMinor: l.cessMinor }),
         })),
         taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
-        netMinor: inside.net, taxMinor: inside.tax, ...(inside.cess === 0 ? {} : { cessMinor: inside.cess }), totalMinor: totals.payable.minor,
+        netMinor: inside.net, taxMinor: inside.tax, ...(inside.cess === 0 ? {} : { cessMinor: inside.cess }), totalMinor: charged.minor,
+        ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
         // OB-677: a gift card is shown by its last four only — never its whole code (like every instrument reference).
         tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }), ...(t.giftCard === undefined ? {} : { reference: maskVoucherCode(t.giftCard.code) }) })),
         ...(couponsOnRecord.length === 0 ? {} : { coupons: couponsOnRecord }),

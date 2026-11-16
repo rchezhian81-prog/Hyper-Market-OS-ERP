@@ -107,7 +107,9 @@ describe('the frequent actions fit the spec\'s budget by construction (Stage G s
   });
 
   it('take cash is Tender → Cash → the note in hand: exact amount plus the covering notes, never one below the bill', () => {
-    expect(code(APP)).toMatch(/quick: quickCash\(payable\)/);
+    // OB-805 A: the quick notes cover the CASH asked for — the bill less its paise (down only, OB-285).
+    expect(code(APP)).toMatch(/const due = payable \+ roundOff;/);
+    expect(code(APP)).toMatch(/quick: quickCash\(due\)/);
     const helper = code(APP).slice(code(APP).indexOf('function quickCash'), code(APP).indexOf("el('tender').addEventListener"));
     expect(helper).toMatch(/\[100, 200, 500, 2000\]\.filter\(\(note\) => note > rupees/);
     expect(helper).toContain("t('exact')");

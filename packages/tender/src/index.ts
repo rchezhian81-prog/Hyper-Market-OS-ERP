@@ -27,3 +27,5 @@ export * from './paid-on-old-erp';
 export * from './old-erp-bill-number';
 // OB-271: the shop's own card machine's / UPI's approval or reference number, typed from the slip — never card data.
 export * from './machine-reference';
+// OB-805 A · D-003: a cash bill is rounded DOWN to the rupee (never above the goods — OB-285), with a Round off line.
+export * from './cash-round-off';

@@ -9,6 +9,7 @@ import { acceptSale, type IncomingSale, type IntakeContext } from '../../service
 import { splitInclusive } from '../../packages/pricing/src/pricing';
 import { money } from '../../packages/contracts/src/money';
 import { rate } from '../../packages/contracts/src/rate';
+import { cashRoundOffMinor } from '../../packages/tender/src/cash-round-off';
 
 /**
  * **Verifier r2final NEW-2 (B19 · OB-173 · OB-178 · GST) and L1.** An offer is worked out on what each line ACTUALLY
@@ -40,7 +41,7 @@ const CAT: CatalogueSnapshot = {
 };
 
 type Line = { productId: string; quantityMinor: number; uom: string; unitPriceMinor: number; lineTotalMinor: number; taxRateBps: number };
-type Rec = { lines: Line[]; total: number; netMinor: number; taxMinor: number; tenders: { amount: { minor: number } }[] };
+type Rec = { lines: Line[]; total: number; netMinor: number; taxMinor: number; roundOffMinor?: number; tenders: { amount: { minor: number } }[] };
 
 function till(promotions: readonly Promotion[]) {
   const written: Rec[] = [];
@@ -60,16 +61,21 @@ async function ring(promotions: readonly Promotion[]): Promise<{ payable: number
   return { payable, rec: written[0]! };
 }
 
-/** The bill's own arithmetic: lines sum to the total, net + tax is the total, nothing below zero, the bag at ₹5. */
+/**
+ * The bill's own arithmetic: lines sum to the total, net + tax is the total, nothing below zero, the bag at ₹5. Paid in cash,
+ * the bill's paise come off as its round off (OB-805 A · OB-285, down only): total = lines + round off, the GST unchanged.
+ */
 function holds(rec: Rec): void {
+  const lines = rec.lines.reduce((n, l) => n + l.lineTotalMinor, 0);
   expect(rec.lines.every((l) => l.lineTotalMinor >= 0)).toBe(true);
-  expect(rec.lines.reduce((n, l) => n + l.lineTotalMinor, 0)).toBe(rec.total);
+  expect(rec.roundOffMinor ?? 0).toBe(cashRoundOffMinor(lines));
+  expect(lines + (rec.roundOffMinor ?? 0)).toBe(rec.total);
   const inside = rec.lines.map((l) => splitInclusive(money(l.lineTotalMinor, 'INR'), rate(l.taxRateBps)));
   expect(inside.every((s) => s.net.minor >= 0 && s.tax.minor >= 0)).toBe(true);
   expect(rec.netMinor).toBe(inside.reduce((n, s) => n + s.net.minor, 0));
   expect(rec.taxMinor).toBe(inside.reduce((n, s) => n + s.tax.minor, 0));
   expect(rec.netMinor >= 0 && rec.taxMinor >= 0).toBe(true);
-  expect(rec.netMinor + rec.taxMinor).toBe(rec.total);
+  expect(rec.netMinor + rec.taxMinor).toBe(lines);
   expect(rec.lines.find((l) => l.productId === 'P-BAG')).toMatchObject({ unitPriceMinor: 5_00, lineTotalMinor: 5_00 });
   expect(rec.tenders[0]!.amount.minor).toBe(rec.total);
 }
@@ -82,7 +88,7 @@ describe('NEW-2: the till spreads a basket offer by what each line actually char
     const { payable, rec } = await ring([amountOff(100_00)]);
     // Goods are ₹33.29 + ₹70.00 = ₹103.29; the bag is not discountable. ₹100 spread 32.23 : 67.77.
     expect(payable).toBe(8_29);
-    expect(rec.total).toBe(8_29);
+    expect(rec.total).toBe(8_00); // cash: the 29 paise come off (OB-805 A)
     expect(of(rec, 'P-BAN')).toBe(1_06);
     expect(of(rec, 'P-RICE')).toBe(2_23);
     holds(rec);
