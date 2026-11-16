@@ -161536,6 +161536,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "replacedBy",
                 "assignee",
                 "assignedToMe",
                 "mayClose",
@@ -161562,6 +161563,36 @@
                 },
                 "dueNow": {
                   "type": "boolean"
+                },
+                "replacedBy": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "taskId",
+                        "priceMinor",
+                        "dueAt"
+                      ],
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "priceMinor": {
+                          "type": "number"
+                        },
+                        "dueAt": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "productName": {
+                  "type": "string"
                 },
                 "storeManagers": {
                   "type": "array",
@@ -161704,6 +161735,7 @@
               "required": [
                 "done",
                 "dueNow",
+                "replacedBy",
                 "assignee",
                 "assignedToMe",
                 "mayClose",
@@ -161730,6 +161762,36 @@
                 },
                 "dueNow": {
                   "type": "boolean"
+                },
+                "replacedBy": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "taskId",
+                        "priceMinor",
+                        "dueAt"
+                      ],
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "priceMinor": {
+                          "type": "number"
+                        },
+                        "dueAt": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "productName": {
+                  "type": "string"
                 },
                 "storeManagers": {
                   "type": "array",
@@ -220643,6 +220705,12 @@
                       "type": "string"
                     }
                   ]
+                },
+                "damagedMinor": {
+                  "type": "integer"
+                },
+                "expiry": {
+                  "type": "string"
                 },
                 "manufacturedOn": {
                   "type": "string"

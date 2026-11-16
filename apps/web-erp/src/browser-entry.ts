@@ -39,6 +39,8 @@ import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 // OB-606: every page's "today", month and shown dates at the SHOP's clock (the zone the store computer told the page).
 import { shopDay, servedShopZone, type ShopDay } from '../../../packages/calendar/src/shop-day';
+import { openCatalogueStock, type CatalogueStock } from './catalogue-stock';
+import { storePullMaxMinutes } from '../../../packages/sync/src/pull-timing';
 import {
   APPROVE_REASONS,
   REJECT_REASONS,
@@ -48,7 +50,9 @@ import {
   type ApprovalRegister,
   type BoxCloseOutcome,
   type DecisionReasonCode,
+  type ManagerConfig,
   type ManagerPorts,
+  type OpenDelivery,
   type ManagerSession,
   type Register,
   type RegisterItem,
@@ -449,6 +453,11 @@ export interface ManagerData {
   readonly receivingChecklist?: unknown;
   /** B4 · OB-504: the products head office makes PACKED (absent = not told). */
   readonly packedProductIds?: unknown;
+  /** Fix batch 4b · D-029: the deliveries this store waits for, the items' names and the batch-tracked products (absent = not told). */
+  readonly openDeliveries?: unknown;
+  readonly deliveriesAsAt?: unknown;
+  readonly productNames?: unknown;
+  readonly batchTrackedProductIds?: unknown;
   /**
    * Fix batch 3 (D-012 · D-011 · M14-FR-04): the day the STORE COMPUTER closes if asked now (its most recently ended
    * trading day), the running day and when it can be closed (after the store's cutoff), and the store rules' closing-
@@ -5364,6 +5373,8 @@ export function officeQuantityLabel(quantityMinor: number, uom: string): string 
 interface ManagerWindow {
   /** OB-606: the shop's day for every page — today, this month, a shown date — at the shop's clock, never the device's. */
   sreShopDay?: ShopDay;
+  /** D-054: the store computer's longest gap between two pulls, in minutes. */
+  sreStorePull?: { readonly maxMinutes: number };
   /** OB-31 (screen audit 31 Oct 2026): a held quantity as a person reads it — 2500 of a kg product is "2.500 kg", never "2500 kg". */
   sreQuantity?: { readonly label: typeof officeQuantityLabel };
   managerSession?: ManagerSession;
@@ -5404,6 +5415,8 @@ interface ManagerWindow {
   catalogueCashierView?: CashierProductView;
   /** Round A: the prices already set, read from head office item by item (absent when the box sent them). */
   cataloguePrices?: CataloguePriceRelay;
+  /** D-018: how many of each item we have, read once from head office for the Products list. */
+  catalogueStock?: CatalogueStock;
   catalogueOutbox?: SyncOutbox;
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
@@ -5992,6 +6005,8 @@ export function bootManager(config?: {
       })(),
       // B4 · OB-504: read strictly — only a list of product ids counts as being told.
       ...(Array.isArray(data?.packedProductIds) ? { packedProductIds: (data.packedProductIds as unknown[]).filter((p): p is string => typeof p === 'string') } : {}),
+      // Fix batch 4b · D-029: read strictly — what is not a whole delivery, name or id is left out, never guessed.
+      ...readReceivingAids(data),
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
@@ -6001,6 +6016,33 @@ export function bootManager(config?: {
     // on the device before the screen says so, and is still there after a reload or a restart of the browser.
     config?.outbox ?? openManagerOutbox(storeId, config?.storage),
   );
+}
+
+/** Fix batch 4b · D-029: the Receive form's open orders, item names and batch-tracked list, read strictly from the payload. */
+export function readReceivingAids(data: ManagerData | undefined): Pick<ManagerConfig, 'openDeliveries' | 'deliveriesAsAt' | 'productNames' | 'batchTrackedProductIds'> {
+  const out: { -readonly [K in 'openDeliveries' | 'deliveriesAsAt' | 'productNames' | 'batchTrackedProductIds']?: ManagerConfig[K] } = {};
+  const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  if (Array.isArray(data?.openDeliveries)) {
+    const orders: OpenDelivery[] = [];
+    for (const d of data.openDeliveries as unknown[]) {
+      if (d === null || typeof d !== 'object') continue;
+      const o = d as Record<string, unknown>;
+      if (!isStr(o['poId']) || !isStr(o['number']) || !Array.isArray(o['due'])) continue;
+      const due = (o['due'] as unknown[]).flatMap((l) => {
+        if (l === null || typeof l !== 'object') return [];
+        const r = l as Record<string, unknown>;
+        return isStr(r['productId']) && Number.isInteger(r['dueMinor']) && (r['dueMinor'] as number) >= 0 ? [{ productId: r['productId'], dueMinor: r['dueMinor'] as number }] : [];
+      });
+      orders.push({ poId: o['poId'], number: o['number'], supplierId: isStr(o['supplierId']) ? o['supplierId'] : '', due });
+    }
+    out.openDeliveries = orders;
+  }
+  if (isStr(data?.deliveriesAsAt)) out.deliveriesAsAt = data.deliveriesAsAt;
+  if (data?.productNames !== null && typeof data?.productNames === 'object') {
+    out.productNames = Object.fromEntries(Object.entries(data.productNames as Record<string, unknown>).filter((e): e is [string, string] => isStr(e[1])));
+  }
+  if (Array.isArray(data?.batchTrackedProductIds)) out.batchTrackedProductIds = (data.batchTrackedProductIds as unknown[]).filter(isStr);
+  return out;
 }
 
 /** The slice of a browser's storage the device queue needs, so a test can hand in a Map-backed one. */
@@ -6826,6 +6868,8 @@ const browserWindow = (globalThis as { window?: ManagerWindow }).window;
 if (browserWindow !== undefined) {
   // OB-606: one shop's day for every page in this bundle (each page's own script reads its dates from it).
   browserWindow.sreShopDay = shopDay();
+  // D-054: how soon a store computer that is online takes a pack just sent — the store computer's own loop timing.
+  browserWindow.sreStorePull = Object.freeze({ maxMinutes: storePullMaxMinutes() });
   // OB-31: one way to word a held quantity on the office pages (the till's `quantityLabel` for kg / L).
   browserWindow.sreQuantity = Object.freeze({ label: officeQuantityLabel });
   // UI-3: the one chart drawing (inline SVG, no library, no network) as `window.sreCharts` — design system §4.3.
@@ -6887,6 +6931,8 @@ if (browserWindow !== undefined) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData, priceRelay !== undefined);
     if (priceRelay !== undefined) browserWindow.cataloguePrices = priceRelay;
+    // D-018: the full Products list (not the cashier's) shows on-hand per row; read once, when the list first paints.
+    if (!cashierOnly) browserWindow.catalogueStock = openCatalogueStock();
     browserWindow.catalogueOutbox = catalogueOutbox;
   }
   // The merchandising screen (SP-8c-ii · F08 · §31): its count and its refill indent go onto the SAME durable device queue

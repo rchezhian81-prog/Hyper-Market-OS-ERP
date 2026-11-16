@@ -77,7 +77,7 @@ const WORDS = {
     packLead: 'Head office signs one pack of products and prices for a store; the store computer pulls it and the tills sell from it with no network. Look first at what would go and what is left out, then send it. Drafts, products with no price or no tax rate are never sent.',
     pkStore: 'Store', pkAsOf: 'Prices as of (date)', pkPreview: 'See what would go', pkPublish: 'Send to the tills', pkAck: 'Products you checked are leaving the tills (only if head office asks)',
     pkGoes: '{n} product(s) would go to the tills of {store} as of {day}.', pkLeft: 'Left out: {id} — {why}', pkNoneLeft: 'Nothing is left out.',
-    pkSent: 'Sent. Catalogue pack version {v} is signed; each store computer takes it on its next pull.', pkNoRight: 'Only someone who keeps the catalogue may send a pack. You can look at what would go.',
+    pkSent: 'Sent. Catalogue pack version {v} is signed. A store computer that is online takes it within {m} minutes; one that is offline takes it as soon as its internet is back.', pkNoRight: 'Only someone who keeps the catalogue may send a pack. You can look at what would go.',
     pkStepUp: 'This pack needs a fresh two-step sign-in, because {why} Sign out, sign in again with the code from your phone, then press “Send to the tills” again. Nothing was sent.',
     pkNeedStore: 'Write the store first.',
     why_draft_not_on_sale: 'a draft, not on sale', why_no_price: 'no price for this store that day', why_no_tax_class: 'no GST rate for its HSN that day', why_price_above_mrp: 'its price is above its MRP',
@@ -118,7 +118,7 @@ const WORDS = {
     packLead: 'தலைமை அலுவலகம் ஒரு கடைக்கான பொருட்களும் விலைகளும் அடங்கிய ஒரு பொதியில் கையொப்பமிடுகிறது; கடைக் கணினி அதை எடுத்துக்கொள்கிறது, கவுண்டர்கள் இணையம் இல்லாமலே அதிலிருந்து விற்கின்றன. முதலில் எது செல்லும், எது விடுபடும் என்று பாருங்கள், பிறகு அனுப்புங்கள். வரைவுகள், விலையோ வரி விகிதமோ இல்லாத பொருட்கள் ஒருபோதும் அனுப்பப்படாது.',
     pkStore: 'கடை', pkAsOf: 'விலைகள் இந்தத் தேதியின்படி', pkPreview: 'எது செல்லும் என்று பார்', pkPublish: 'கவுண்டர்களுக்கு அனுப்பு', pkAck: 'கவுண்டர்களிலிருந்து நீங்குவதாக நீங்கள் சரிபார்த்த பொருட்கள் (தலைமை அலுவலகம் கேட்டால் மட்டும்)',
     pkGoes: '{day} தேதியின்படி {store} கவுண்டர்களுக்கு {n} பொருள்(கள்) செல்லும்.', pkLeft: 'விடுபட்டது: {id} — {why}', pkNoneLeft: 'எதுவும் விடுபடவில்லை.',
-    pkSent: 'அனுப்பப்பட்டது. பொருள் பொதி பதிப்பு {v} கையொப்பமிடப்பட்டது; ஒவ்வொரு கடைக் கணினியும் அடுத்த முறை எடுக்கும்போது அதைப் பெறும்.', pkNoRight: 'பொருள் பட்டியலைப் பராமரிப்பவர் மட்டுமே பொதியை அனுப்பலாம். எது செல்லும் என்று நீங்கள் பார்க்கலாம்.',
+    pkSent: 'அனுப்பப்பட்டது. பொருள் பொதி பதிப்பு {v} கையொப்பமிடப்பட்டது. இணையத்தில் உள்ள கடைக் கணினி அதை {m} நிமிடங்களுக்குள் பெறும்; இணையம் இல்லாத கணினி இணையம் திரும்பியதும் பெறும்.', pkNoRight: 'பொருள் பட்டியலைப் பராமரிப்பவர் மட்டுமே பொதியை அனுப்பலாம். எது செல்லும் என்று நீங்கள் பார்க்கலாம்.',
     pkStepUp: 'இந்தப் பொதிக்கு புதிய இரு-படி உள்நுழைவு தேவை, ஏனெனில் {why} வெளியேறி, உங்கள் தொலைபேசிக் குறியீட்டுடன் மீண்டும் உள்நுழைந்து, மீண்டும் “கவுண்டர்களுக்கு அனுப்பு” அழுத்துங்கள். எதுவும் அனுப்பப்படவில்லை.',
     pkNeedStore: 'முதலில் கடையை எழுதுங்கள்.',
     why_draft_not_on_sale: 'வரைவு, விற்பனையில் இல்லை', why_no_price: 'அன்று இந்தக் கடைக்கு விலை இல்லை', why_no_tax_class: 'அன்று அதன் HSN க்கு GST விகிதம் இல்லை', why_price_above_mrp: 'அதன் விலை MRP ஐ விட அதிகம்',
@@ -495,14 +495,25 @@ for (const v of ['prices', 'zones', 'channels', 'pack']) $(`tab-${v}`).addEventL
 // ── W4 · Send to the tills: preview head office's pack for a store, then send it (its own permission; head office's step-up) ──
 // U2c: the pack's day on the shared dd/mm field (the last native date on this page); ISO goes to head office as before.
 const packOf = () => ({ storeId: $('pk-store').value.trim(), asOf: dateOf('pk-asof') || today() });
+// D-054 (fix batch 4b): items and stores by their names — a code only when head office gave no name.
+const productNames = new Map();
+const productName = (id) => productNames.get(id) ?? id;
+const storeName = (id) => { const n = typeof window.sreOffice?.nameOf === 'function' ? window.sreOffice.nameOf('store', id) : id; return n && n !== id ? `${n} (${id})` : id; };
+/** D-054: the pack goes to THIS store by default — the store computer's own store, else the shop's only open store. */
+function defaultPackStore() {
+  const box = $('pk-store'); if (box === null || box.value.trim() !== '') return;
+  const here = typeof window.sreOffice?.me === 'function' ? window.sreOffice.me().storeId : null;
+  if (typeof here === 'string' && here !== '') box.value = here;
+  else if (stores.length === 1) box.value = stores[0];
+}
 $('pk-preview').addEventListener('click', async () => {
   const st = $('pk-status'); const { storeId, asOf } = packOf();
   if (storeId === '') { tell(st, false, t('pkNeedStore')); return; }
   const out = await call('GET', `/v1/catalogue/pack/preview?${new URLSearchParams({ storeId, asOf })}`);
   if (!out.ok) { say(st, out, ''); return; }
-  st.className = 'status'; st.textContent = fill(t('pkGoes'), { n: out.body.includedCount ?? out.body.snapshot?.products?.length ?? 0, store: storeId, day: asOf });
+  st.className = 'status'; st.textContent = fill(t('pkGoes'), { n: out.body.includedCount ?? out.body.snapshot?.products?.length ?? 0, store: storeName(storeId), day: asOf });
   const left = [...(out.body.excluded ?? []), ...(out.body.notSold ?? [])];
-  $('pk-left').replaceChildren(...(left.length === 0 ? [t('pkNoneLeft')] : left.map((x) => fill(t('pkLeft'), { id: x.productId, why: WORDS[lang][`why_${x.reason}`] ?? x.reason })))
+  $('pk-left').replaceChildren(...(left.length === 0 ? [t('pkNoneLeft')] : left.map((x) => fill(t('pkLeft'), { id: productName(x.productId), why: WORDS[lang][`why_${x.reason}`] ?? x.reason })))
     .map((line) => Object.assign(document.createElement('li'), { textContent: line })));
 });
 $('pk-publish').addEventListener('click', async () => {
@@ -512,7 +523,7 @@ $('pk-publish').addEventListener('click', async () => {
   const ack = $('pk-ack').value.trim();
   const out = await call('POST', '/v1/catalogue/pack', { storeId, asOf, ...(/^\d+$/.test(ack) && Number(ack) > 0 ? { acknowledgedRemovals: Number(ack) } : {}) });
   if (out.status === 403 && out.body?.error?.code === 'reauthentication_required') { tell(st, false, fill(t('pkStepUp'), { why: out.body.error.whatHappened })); return; }
-  say(st, out, fill(t('pkSent'), { v: out.body?.version ?? '' }));
+  say(st, out, fill(t('pkSent'), { v: out.body?.version ?? '', m: window.sreStorePull?.maxMinutes ?? 5 }));
 });
 $('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); repaintPickers(); });
 
@@ -521,12 +532,15 @@ if (named && !mayRead) tell($('page-status'), false, t('noRight'));
 if (named && mayRead) {
   setShopDate('p-from', today());
   $('pk-asof').value = today();
+  defaultPackStore(); document.addEventListener('sre:chrome', defaultPackStore, { once: true });
   if (!mayPropose) { $('page-status').className = 'status'; $('page-status').textContent = t('readOnly'); }
   const asked = new URLSearchParams(location.search).get('product');
   if (asked !== null && /^[A-Za-z0-9_.:-]{1,64}$/.test(asked)) $('p-product').value = asked;
   void Promise.all([call('GET', '/v1/catalogue/products'), call('GET', '/v1/org/nodes')]).then(([p, n]) => {
+    if (p.ok) for (const x of p.body?.products ?? []) if (typeof x.name === 'string' && x.name.trim() !== '') productNames.set(x.productId, x.name);
     if (p.ok) $('product-list').replaceChildren(...(p.body?.products ?? []).map((x) => { const o = document.createElement('option'); o.value = x.productId; o.label = x.name; return o; }));
     if (n.ok) stores = (n.body?.nodes ?? []).filter((x) => x.kind === 'branch' && x.status !== 'closed').map((x) => x.nodeId).sort();
+    defaultPackStore();
     paintRefs();
   });
   void loadChannels();

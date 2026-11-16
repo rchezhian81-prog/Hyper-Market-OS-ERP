@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2437,
+  "testFiles": 2445,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -650,8 +650,8 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 14,
-        "integration": 33,
+        "unit": 15,
+        "integration": 34,
         "realDb": 12,
         "browser": 10,
         "connected": 3,
@@ -660,6 +660,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/erp-buying-session.test.ts",
           "tests/unit/erp-goods-receipt-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
@@ -684,6 +685,7 @@
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
+          "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/goods-receipt-disposition.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
@@ -968,8 +970,8 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 31,
-        "integration": 36,
+        "unit": 32,
+        "integration": 37,
         "realDb": 11,
         "browser": 12,
         "connected": 4,
@@ -982,6 +984,7 @@
           "tests/unit/a-recalled-unit-returned-at-the-till-is-held.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
+          "tests/unit/d029-receive-against-an-order-with-batch-expiry-and-damaged.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-expiry-session.test.ts",
           "tests/unit/erp-food-safety-queue.test.ts",
@@ -1026,6 +1029,7 @@
           "tests/integration/an-expired-batch-is-refused-on-its-batch-barcode-offline.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
+          "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
@@ -4350,7 +4354,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 12,
+        "integration": 13,
         "realDb": 7,
         "browser": 3,
         "connected": 2,
@@ -4381,6 +4385,7 @@
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/cr01-oi12-auto-approve-limits-are-set-by-two-people-and-applied-by-a-rule.test.ts",
           "tests/integration/cr01-oi12-step6b-a-rules-approval-places-the-act-through-its-ordinary-route.test.ts",
+          "tests/integration/d029-a-relayed-receipt-carries-expiry-and-damaged.test.ts",
           "tests/integration/inventory-near-expiry.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/security/separation-of-duties.test.ts"

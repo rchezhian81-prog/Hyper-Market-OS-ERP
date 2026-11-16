@@ -1065,6 +1065,9 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(nobody['permissions']).toEqual([]);
     expect(Array.isArray(manager['permissions'])).toBe(true);
     expect(buyingGaps(manager as never)).not.toContain('who_is_buying');
+    // Fix batch 4b · D-041: the order form is told each item's name and GST rate from the pack (never a guessed rate).
+    expect(manager['productNames']).toEqual({ p1: 'Toor dal 1kg' });
+    expect(manager['productTaxBps']).toEqual({ p1: 500 });
     const session = bootBuying(manager as never)!;
     const preview = session.previewInvoice({ text: ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p1,10,9000,90000'].join('\n'), declaredTotalMinor: 90_000 });
     const saved = session.captureInvoice({ invoiceId: 'INV-SIGNED', supplierId: 'sup-1', preview });

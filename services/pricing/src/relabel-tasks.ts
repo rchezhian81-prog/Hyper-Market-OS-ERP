@@ -68,7 +68,28 @@ export interface RelabelTaskDeps {
   /** The price-integrity observation route's own handler (D-7), run as the person who changed the label. */
   readonly recordObservationAs: (ctx: RequestContext) => Promise<HandlerResult>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** D-026: the product names, so a task says "Biscuits 200 g", never only "prod-biscuit". Optional on a bare stub. */
+  readonly productNames?: (tenantId: string) => Promise<ReadonlyMap<string, string>>;
   readonly now: () => string;
+}
+
+/**
+ * D-026 (OB-800 THE PLAN fix batch 4b): a label task an even newer price has REPLACED — the same product at the same store,
+ * a price SET LATER (raised after it) at a different figure, already in force. Its label must show the newer price, which
+ * has its own task; the old one would have someone print a label at a price no longer charged. A price set later but not
+ * yet in force replaces nothing until its day. Worked out from the recorded tasks alone (nothing is deleted or rewritten:
+ * the older task stays on record, shown as replaced and by which price, and it no longer counts as open).
+ */
+export function replacedBy(task: RelabelTask, all: readonly RelabelTask[], nowIso: string): RelabelTask | undefined {
+  const now = Date.parse(nowIso);
+  let newest: RelabelTask | undefined;
+  for (const t of all) {
+    if (t.taskId === task.taskId || t.branchId !== task.branchId || t.productId !== task.productId) continue;
+    if (Date.parse(t.dueAt) > now) continue; // a price not yet in force replaces nothing yet
+    if (!(t.raisedAt > task.raisedAt) || t.priceMinor === task.priceMinor) continue;
+    if (newest === undefined || t.raisedAt > newest.raisedAt) newest = t;
+  }
+  return newest;
 }
 
 /** The tasks a new price raises at these stores (one per shelf place, or one "not on the plan"). */
@@ -109,7 +130,7 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
   const list = async (ctx: RequestContext, mineOnly: boolean): Promise<HandlerResult> => {
     const scope = scopeOf(ctx);
     const branchId = isStr(ctx.query['branchId']) ? ctx.query['branchId'].trim() : undefined;
-    const [tasks, done] = await Promise.all([deps.tasks(ctx.tenantId), deps.done(ctx.tenantId)]);
+    const [tasks, done, names] = await Promise.all([deps.tasks(ctx.tenantId), deps.done(ctx.tenantId), deps.productNames === undefined ? Promise.resolve(new Map<string, string>()) : deps.productNames(ctx.tenantId)]);
     const doneOf = new Map(done.map((d) => [d.taskId, d] as const));
     const now = deps.now();
     const managers = new Map<string, readonly string[]>();
@@ -128,14 +149,19 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
       // OB-370: the assignee, or a store manager of this store, may close it.
       const managersHere = await managersAt(t.branchId);
       const mayClose = (t.assignee?.to === 'floor_champion' && t.assignee.employeeId === ctx.userId) || (managersHere ?? []).includes(ctx.userId);
+      const doneHere = doneOf.get(t.taskId) ?? null;
+      const newer = doneHere === null ? replacedBy(t, tasks, now) : undefined;
       rows.push({
-        ...t, assignee: t.assignee ?? null, assignedToMe, mayClose,
+        ...t, assignee: t.assignee ?? null, assignedToMe, mayClose: mayClose && newer === undefined,
         ...(storeManagers === null ? {} : { storeManagers }),
-        done: doneOf.get(t.taskId) ?? null, dueNow: Date.parse(t.dueAt) <= Date.parse(now),
+        ...(names.has(t.productId) ? { productName: names.get(t.productId)! } : {}),
+        done: doneHere, dueNow: Date.parse(t.dueAt) <= Date.parse(now),
+        replacedBy: newer === undefined ? null : { taskId: newer.taskId, priceMinor: newer.priceMinor, dueAt: newer.dueAt },
       });
     }
-    rows.sort((a, b) => Number(a.done !== null) - Number(b.done !== null) || a.dueAt.localeCompare(b.dueAt) || a.taskId.localeCompare(b.taskId));
-    return { status: 200, body: { tasks: rows, open: rows.filter((r) => r.done === null).length, asAt: now } };
+    const settled = (r: { done: unknown; replacedBy: unknown }): boolean => r.done !== null || r.replacedBy !== null;
+    rows.sort((a, b) => Number(settled(a)) - Number(settled(b)) || a.dueAt.localeCompare(b.dueAt) || a.taskId.localeCompare(b.taskId));
+    return { status: 200, body: { tasks: rows, open: rows.filter((r) => !settled(r)).length, asAt: now } };
   };
   return [
     {
@@ -184,6 +210,11 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
         }
         const prior = (await deps.done(ctx.tenantId)).find((d) => d.taskId === taskId);
         if (prior !== undefined) return { status: 200, body: { done: prior, alreadyDone: true } };
+        // D-026: a task a newer price in force has replaced is not closed at its old price — the newer task is the one to do.
+        const newer = replacedBy(task, await deps.tasks(ctx.tenantId), deps.now());
+        if (newer !== undefined) {
+          throw apiError(409, { code: 'replaced_by_a_newer_price', whatHappened: `A newer price, ₹${(newer.priceMinor / 100).toFixed(2)}, is in force for this item at ${task.branchId}; this label task at ₹${(task.priceMinor / 100).toFixed(2)} is replaced by it.`, wasItSaved: 'not_saved', nextSafeAction: 'Put up the label at the newer price and close that task instead. Nothing was changed.' });
+        }
         if (b['shelfPriceMinor'] !== task.priceMinor) {
           throw apiError(422, { code: 'label_shows_another_price', whatHappened: `The label shows ₹${((b['shelfPriceMinor'] as number) / 100).toFixed(2)}; the price is ₹${(task.priceMinor / 100).toFixed(2)}.`, wasItSaved: 'not_saved', nextSafeAction: 'Print the label at the new price and put it up, then close the task. It stays open.' });
         }

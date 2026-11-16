@@ -733,6 +733,8 @@ function paintAdvances() {
   for (const [id, k] of [['adv-h', 'h'], ['adv-lede', 'lead'], ['adv-show', 'show'], ['adv-ask-h', 'askH'], ['l-adv-supplier', 'supplier'], ['l-adv-amount', 'amountRs'], ['l-adv-on', 'paidOnL'],
     ['l-adv-method', 'method'], ['adv-m-bank', 'm_bank_transfer'], ['adv-m-cheque', 'm_cheque'], ['adv-m-upi', 'm_upi'], ['adv-m-cash', 'm_cash'], ['l-adv-ref', 'reference'], ['l-adv-po', 'poId'],
     ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH']]) { const n = $(id); if (n) n.textContent = at(k); }
+  // D-024: an advance is usually paid today — the box starts on today; the calendar or typing changes it.
+  { const box = $('adv-on'); if (box !== null && box.value === '' && window.sreShopDay !== undefined) box.value = window.sreShopDay.today(); }
   shopDate('adv-on', { en: adv === null ? 'Paid on' : adv.words('en', 'paidOnL'), ta: adv === null ? 'செலுத்திய நாள்' : adv.words('ta', 'paidOnL') });
   renderAdvances(); renderAsks();
 }

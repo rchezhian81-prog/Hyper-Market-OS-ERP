@@ -20,6 +20,7 @@ export const RELABEL_COPY = {
     no_department_owns_it: 'no department owns this product here', no_champion_named: 'no floor champion named for', champion_left: 'the floor champion has left —',
     nobodyHolds: 'nobody holds the store manager role here (not set)',
     notYoursToClose: 'Closed by the person it is for, or the store manager.',
+    replaced: 'Replaced — a newer price is in force:', replacedNoLabel: 'No label to print at this price.',
   },
   ta: {
     relabelMineH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை', relabelH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள்', relabelLead: 'விலை மாறியது. புதிய லேபிளை வைத்து, படம் எடுத்து, லேபிளில் உள்ள விலையைத் தட்டச்சு செய்து, பணியை முடிக்கவும்.',
@@ -30,8 +31,15 @@ export const RELABEL_COPY = {
     no_department_owns_it: 'இங்கு இந்தப் பொருள் எந்தப் பிரிவுக்கும் சொந்தமில்லை', no_champion_named: 'தளச் சாம்பியன் பெயரிடப்படவில்லை:', champion_left: 'தளச் சாம்பியன் விலகிவிட்டார் —',
     nobodyHolds: 'இங்கு கடை மேலாளர் பணியில் யாரும் இல்லை (அமைக்கப்படவில்லை)',
     notYoursToClose: 'இதை ஒதுக்கப்பட்டவர் அல்லது கடை மேலாளர் மட்டுமே முடிக்கலாம்.',
+    replaced: 'மாற்றப்பட்டது — புதிய விலை நடைமுறையில்:', replacedNoLabel: 'இந்த விலைக்கு லேபிள் அச்சிட வேண்டாம்.',
   },
 } as const;
+
+/** D-026: what a task is about, by the item's name — its code only when head office holds no name for it. */
+export function relabelItemWords(lang: Lang, row: Pick<RelabelRow, 'productId' | 'productName'>): string {
+  const name = typeof row.productName === 'string' && row.productName.trim() !== '' ? row.productName.trim() : null;
+  return name === null ? `${relabelWords(lang, 'product')} ${row.productId}` : name;
+}
 
 /** OB-358: who a task is for, in words. */
 export function relabelAssigneeWords(lang: Lang, row: Pick<RelabelRow, 'assignee' | 'storeManagers' | 'assignedToMe'>): string {
@@ -66,6 +74,10 @@ export interface RelabelRow {
   readonly storeManagers?: readonly string[];
   /** OB-370: whether the reader may close it — its assignee, or a store manager of its store. */
   readonly mayClose?: boolean;
+  /** D-026: the item's name, as head office's product master names it (absent when head office has none). */
+  readonly productName?: string;
+  /** D-026: a newer price already in force for the same item at the same store (that price has its own task). */
+  readonly replacedBy?: { readonly taskId: string; readonly priceMinor: number; readonly dueAt: string } | null;
 }
 export interface RelabelSession {
   readonly may: { readonly read: boolean; readonly close: boolean; readonly readMine: boolean };

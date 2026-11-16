@@ -982,6 +982,9 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   Object.assign(payload, receivingChecklistFor(input));
   // B4 · OB-504: which products are PACKED — the Receive form refuses a packed line with no month of manufacture, offline.
   Object.assign(payload, packedProductIdsFor(input));
+  // Fix batch 4b · D-029: the Receive form's aids, offline — the orders this store waits for (each with what is still due),
+  // the items' names, and the batch-tracked products (a line of one needs a batch and an expiry).
+  Object.assign(payload, receivingAidsFor(input));
   // OB-288 lane 2 · §31.1: this box's clock against head office's, in words (P-08). Absent when the box has no clock check.
   if (input.clock !== undefined) payload['clock'] = input.clock;
   // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
@@ -1406,6 +1409,28 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
   };
 }
 
+/**
+ * Fix batch 4b · D-029: what the manager's Receive form needs to receive against an order without typing it — the store's open
+ * deliveries as head office last told this box (the same list the handheld chooses from, OB-37 / D-031), each line with what
+ * is still due; when the box took that list; the items' names; and the batch-tracked products. Absent stays absent.
+ */
+export function receivingAidsFor(input: ScreenInput): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (input.pack.warehouse.known && input.pack.warehouse.value.openDeliveries !== undefined) {
+    out['openDeliveries'] = input.pack.warehouse.value.openDeliveries.map((d) => ({
+      poId: d.poId, number: d.number, supplierId: d.supplierId,
+      due: d.ordered.map((o) => ({ productId: o.productId, dueMinor: o.quantityMinor })),
+    }));
+    if (input.pack.receivedAt !== null) out['deliveriesAsAt'] = input.pack.receivedAt;
+  }
+  const names = warehouseProductNames(input)['productNames'];
+  if (names !== undefined) out['productNames'] = names;
+  // Batch-tracked is marked only in the catalogue head office SIGNED (the pack file carries no such mark), so the list is
+  // served from that alone; without it the form asks for nothing extra and head office still refuses such a line by name.
+  if (input.cataloguePack !== undefined) Object.assign(out, batchTrackedProductIdsFor(input));
+  return out;
+}
+
 /** The products' names (and Tamil names, where recorded) from the store pack; nothing when the pack holds no products. */
 function warehouseProductNames(input: ScreenInput): Record<string, unknown> {
   if (!input.pack.products.known) return {};
@@ -1780,6 +1805,11 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
     payload['productIds'] = input.pack.products.value.map((p) => p.productId);
     // OB-31: each product's unit, so the buyer's screen checks a weighed line as grams × price per kg.
     payload['productUoms'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.uom]));
+    // Fix batch 4b · D-041: each item's GST rate as head office's catalogue holds it (basis points), so "Raise an order"
+    // shows the GST and the total with GST. An item with no rate held is absent — the screen says so, never guesses one.
+    // D-041: each item's name, so the order's lines say "Marie biscuits", never only "prod-biscuit".
+    payload['productNames'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.name]));
+    payload['productTaxBps'] =Object.fromEntries(input.pack.products.value.filter((p) => Number.isInteger(p.taxBps)).map((p) => [p.productId, p.taxBps]));
   }
   if (input.pack.purchaseOrders.known) {
     payload['ordered'] = foldByReference(
@@ -1889,6 +1919,12 @@ export function cataloguePayload(input: ScreenInput): Record<string, unknown> | 
   const notOnTills = notOnTheTills(input);
   if (notOnTills.length > 0) payload['notOnTills'] = notOnTills;
 
+  // D-018 (fix batch 4b, P-07): the price each item is charged at the tills today, from the till catalogue this store
+  // computer holds — so every Products row shows a price without opening the item. Stamped with when the store computer
+  // received it, so a stale figure says how old it is (P-08). Head office's own history is still read when an item opens.
+  const tillPrices = tillPricesOf(input);
+  if (tillPrices !== undefined) payload['tillPrices'] = tillPrices;
+
   // The shelf map, served as its parts rather than as a built map — the screen builds its own so
   // that anything assigned on it is kept while the person carries on working.
   if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
@@ -1909,6 +1945,15 @@ export type NotOnTheTillsWhy = 'no_price' | 'no_tax_class' | 'kept_off_the_lane'
  * with the reason. A product with no GST rate on the master is out for that; any other is out for want of a price (the till
  * pack carries a product only with a price for this store that day). Empty when the box holds no till catalogue.
  */
+/** D-018: productId → the price (paise) the tills charge today, and when the store computer received that catalogue. */
+export function tillPricesOf(input: ScreenInput): { readonly asAt: string; readonly byProduct: Readonly<Record<string, number>> } | undefined {
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined) return undefined;
+  const byProduct: Record<string, number> = {};
+  for (const p of till.products) if (Number.isSafeInteger(p.unitPriceMinor)) byProduct[p.productId] = p.unitPriceMinor;
+  return { asAt: till.builtAt, byProduct };
+}
+
 export function notOnTheTills(input: ScreenInput): readonly { readonly productId: string; readonly why: NotOnTheTillsWhy; readonly detail?: string }[] {
   const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
   if (till === undefined || !input.pack.productMaster.known) return [];

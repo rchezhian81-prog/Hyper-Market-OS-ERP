@@ -184,7 +184,7 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
       // The boxes name the item's unit as soon as its code is typed — "10" beside "kg" is ten kilos.
       await page.fill('#po-product', 'p-rice');
       expect(await page.textContent('#po-qty-label')).toBe('How many kg');
-      expect(await page.textContent('#po-cost-label')).toBe('Agreed price per kg (in rupees)');
+      expect(await page.textContent('#po-cost-label')).toBe('Agreed price per kg, before GST (in rupees)'); // D-041
       await addLine(page, 'sup-1', 'p-rice', '10', '45');      // 10 kg at ₹45 a kg
       await addLine(page, 'sup-1', 'p-rice', '2.5', '45');     // 2.5 kg — a loose amount, not refused as "not whole"
       // A fraction of an ITEM is still refused, before anything is sent.
