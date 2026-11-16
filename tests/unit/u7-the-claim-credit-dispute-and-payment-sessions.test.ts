@@ -72,8 +72,9 @@ describe('U7 · the supplier payment session — the bills a payment settles', (
   it('reads the bills typed, and sends them with the payment it asks approval for', async () => {
     expect(billsOf(' inv-a, inv-b ,, inv-a  inv-c')).toEqual(['inv-a', 'inv-b', 'inv-c']);
     expect(billsOf(undefined)).toEqual([]);
+    // OB-807 A: asked on the amount, how and the bills; a day or reference typed early is not part of the ask.
     const base = { supplierId: 'sup-1', amountRupees: '500', paidOn: '2026-11-12', method: 'bank_transfer', reference: 'NEFT-1' };
-    expect(paymentBody(base)).toEqual({ amountMinor: 50_000, paidOn: '2026-11-12', method: 'bank_transfer', reference: 'NEFT-1' });
+    expect(paymentBody(base)).toEqual({ amountMinor: 50_000, method: 'bank_transfer' });
     expect(paymentBody({ ...base, settles: 'inv-a, inv-b' })).toMatchObject({ settles: ['inv-a', 'inv-b'] });
     const { fetch: post, sent } = fakeFetch(201, { requestId: 'rq-1' });
     // D-048: the ask reads the supplier first; this one has a checked bank account, so the approval is asked for.
@@ -82,7 +83,8 @@ describe('U7 · the supplier payment session — the bills a payment settles', (
       : post(url, init))) as unknown as typeof globalThis.fetch;
     const s = createSupplierPaymentSession({ viewer: { userId: 'u-pay', permissions: ['purchase.supplier.pay'] }, fetch, newKey: () => 'k', newId: () => 'pay-1' });
     expect((await s.ask({ ...base, settles: 'inv-a' })).result).toBe('ok');
-    expect(sent[0]!.body).toMatchObject({ kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', details: { settles: ['inv-a'], reference: 'NEFT-1', supplierId: 'sup-1', paymentId: 'pay-1' } });
+    expect(sent[0]!.body).toMatchObject({ kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', details: { amountMinor: 50_000, method: 'bank_transfer', settles: ['inv-a'], supplierId: 'sup-1', paymentId: 'pay-1' } });
+    expect((sent[0]!.body as { details: Record<string, unknown> }).details).not.toHaveProperty('reference');
     expect(Object.keys(SUPPLIER_PAYMENT_COPY.ta).sort()).toEqual(Object.keys(SUPPLIER_PAYMENT_COPY.en).sort());
   });
 });

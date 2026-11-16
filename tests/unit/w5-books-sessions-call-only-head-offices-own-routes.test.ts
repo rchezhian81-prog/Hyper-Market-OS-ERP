@@ -8,7 +8,7 @@ import { createConcessionTagsSession, CONCESSION_TAGS_COPY, lineBody } from '../
 import { createRelatedPartyOrderSession, RELATED_PARTY_ORDER_COPY } from '../../apps/web-erp/src/related-party-order-session';
 import { createSupplierPaymentSession, SUPPLIER_PAYMENT_COPY, paymentBody } from '../../apps/web-erp/src/supplier-payment-session';
 import { createSupplierPortalWatchSession, SUPPLIER_PORTAL_WATCH_COPY } from '../../apps/web-erp/src/supplier-portal-watch-session';
-import { actionDetails } from '../../services/identity/src/approval-requests';
+import { paymentTerms } from '../../services/purchase/src/supplier-master';
 import { wireW5Books } from '../../apps/web-erp/src/w5-books-browser-wiring';
 
 /**
@@ -252,38 +252,49 @@ describe('M15-FR-03 · OB-301 · the related-party check', () => {
 });
 
 describe('M23-FR-01 · §28 · a supplier payment — asked, approved by another, recorded exactly as approved', () => {
-  it('asks with the record route\'s own details (the engine\'s fingerprint) and records them, naming the approval', async () => {
+  it('asks on the payment\'s terms (the engine\'s fingerprint) and records them with the day and reference typed after paying, naming the approval (OB-807 A)', async () => {
     // D-048: the ask reads the supplier first (held? a checked bank account? a shared one?) — this one may be paid.
     const ho = headOffice((url, method) => (method === 'GET' && url === '/v1/purchase/suppliers/sup-1' ? { status: 200, body: { supplier: { name: 'Demo Foods' }, blocked: false, bank: { accountRef: 'xx-1234' }, duplicateBankAccount: false } } : method === 'GET' ? { status: 200, body: { mine: [
-      { requestId: 'areq-1', kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', status: 'approved', valueMinor: 250_000, details: { amountMinor: 250_000, paidOn: '2026-09-05', method: 'bank_transfer', reference: 'UTR1', supplierId: 'sup-1', paymentId: 'pay-1' } },
+      { requestId: 'areq-1', kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', status: 'approved', valueMinor: 250_000, details: { amountMinor: 250_000, method: 'bank_transfer', supplierId: 'sup-1', paymentId: 'pay-1' } },
+      { requestId: 'areq-0', kind: 'supplier_payment', subjectRef: 'sup-1/pay-0', status: 'approved', valueMinor: 100, details: { amountMinor: 100, paidOn: '2026-09-04', method: 'cash', reference: 'OLD-1', supplierId: 'sup-1', paymentId: 'pay-0' } },
       { requestId: 'areq-2', kind: 'supplier_payment', subjectRef: 'advance:adv-1', status: 'approved', valueMinor: 1, details: {} },
       { requestId: 'areq-3', kind: 'stock_write_off', subjectRef: 'x/y', status: 'approved', valueMinor: 1, details: {} },
     ] } } : url === '/v1/approvals/requests' ? { status: 201, body: { requestId: 'areq-1' } } : { status: 201, body: { payment: {}, alreadyRecorded: false, owedMinor: 0 } }));
-    const s = createSupplierPaymentSession({ viewer: { userId: 'u-acct', permissions: ['purchase.supplier.pay'] }, fetch: ho.fetch, newId: () => 'pay-1' });
-    const asked = await s.ask({ supplierId: ' sup-1 ', amountRupees: '2,500', paidOn: '2026-09-05', method: 'bank_transfer', reference: ' UTR1 ' });
+    const s = createSupplierPaymentSession({ viewer: { userId: 'u-acct', permissions: ['purchase.supplier.pay'] }, fetch: ho.fetch, newId: () => 'pay-1', today: () => '2026-09-06' });
+    // Asked BEFORE paying: no day, no reference — the amount, how, the bills.
+    const asked = await s.ask({ supplierId: ' sup-1 ', amountRupees: '2,500', method: 'bank_transfer' });
     expect(asked).toEqual({ result: 'ok', value: { requestId: 'areq-1', paymentId: 'pay-1' } });
     expect(`${ho.calls[0]!.method} ${ho.calls[0]!.url}`).toBe('GET /v1/purchase/suppliers/sup-1');
     const ask = ho.calls[1]!.body as { kind: string; subjectRef: string; details: Record<string, unknown>; valueMinor: number };
     expect(ask).toMatchObject({ kind: 'supplier_payment', subjectRef: 'sup-1/pay-1', valueMinor: 250_000 });
+    expect(ask.details).toEqual({ amountMinor: 250_000, method: 'bank_transfer', supplierId: 'sup-1', paymentId: 'pay-1' });
     const mine = await s.myAsks();
-    expect(mine.result === 'ok' ? mine.value.map((a) => a.requestId) : []).toEqual(['areq-1']);
-    await s.record((mine as { value: readonly Parameters<typeof s.record>[0][] }).value[0]!);
+    expect(mine.result === 'ok' ? mine.value.map((a) => a.requestId) : []).toEqual(['areq-1', 'areq-0']);
+    const [approved, older] = (mine as { value: readonly Parameters<typeof s.record>[0][] }).value;
+    // Recorded without the day or reference: refused here, nothing sent.
+    expect(await s.record(approved!)).toEqual({ result: 'invalid', why: 'needPaid' });
+    expect(await s.record(approved!, { paidOn: '2026-09-07', reference: 'UTR1' })).toEqual({ result: 'invalid', why: 'paidInFuture' });
+    expect(ho.calls).toHaveLength(3);
+    await s.record(approved!, { paidOn: '2026-09-05', reference: ' UTR1 ' });
     const rec = ho.calls[3]!;
     expect(`${rec.method} ${rec.url}`).toBe('POST /v1/purchase/suppliers/sup-1/payments/pay-1');
-    expect(rec.body).toEqual({ amountMinor: 250_000, paidOn: '2026-09-05', method: 'bank_transfer', reference: 'UTR1', approvalId: 'areq-1' });
-    // The details asked for are exactly what head office fingerprints on the record route.
-    expect(actionDetails(rec.body, { supplierId: 'sup-1', paymentId: 'pay-1' })).toEqual(ask.details);
+    expect(rec.body).toEqual({ amountMinor: 250_000, method: 'bank_transfer', paidOn: '2026-09-05', reference: 'UTR1', approvalId: 'areq-1' });
+    // The terms asked for are exactly what head office fingerprints on the record route (without the day and reference).
+    expect(paymentTerms(rec.body, { supplierId: 'sup-1', paymentId: 'pay-1' })).toEqual(ask.details);
+    // An approval asked the older way carries its own day and reference: recorded exactly as approved, nothing typed used.
+    await s.record(older!, { paidOn: '2026-09-05', reference: 'TYPED' });
+    expect(ho.calls[4]!.body).toEqual({ amountMinor: 100, paidOn: '2026-09-04', method: 'cash', reference: 'OLD-1', approvalId: 'areq-0' });
     expect(JSON.stringify(ho.calls)).not.toMatch(/approvedBy|card|cvv/i);
     allReal(ho.calls);
   });
   it('a person without the right to pay, or a payment that does not read, is refused before any call', async () => {
     const ho = headOffice();
     const viewer = createSupplierPaymentSession({ viewer: { userId: 'u-b', permissions: ['supplier.view'] }, fetch: ho.fetch });
-    expect(await viewer.ask({ supplierId: 's', amountRupees: '1', paidOn: '2026-09-01', method: 'cash', reference: 'r' })).toEqual({ result: 'invalid', why: 'cannotPay' });
-    expect(paymentBody({ supplierId: 's', amountRupees: '1', paidOn: '2026-09-01', method: 'card', reference: 'r' })).toBeNull();
-    expect(paymentBody({ supplierId: 's', amountRupees: '-1', paidOn: '2026-09-01', method: 'cash', reference: 'r' })).toBeNull();
+    expect(await viewer.ask({ supplierId: 's', amountRupees: '1', method: 'cash' })).toEqual({ result: 'invalid', why: 'cannotPay' });
+    expect(paymentBody({ supplierId: 's', amountRupees: '1', method: 'card' })).toBeNull();
+    expect(paymentBody({ supplierId: 's', amountRupees: '-1', method: 'cash' })).toBeNull();
     const payer = createSupplierPaymentSession({ viewer: { userId: 'u-a', permissions: ['purchase.supplier.pay'] }, fetch: ho.fetch });
-    expect(await payer.ask({ supplierId: '', amountRupees: '1', paidOn: '2026-09-01', method: 'cash', reference: 'r' })).toEqual({ result: 'invalid', why: 'needPayment' });
+    expect(await payer.ask({ supplierId: '', amountRupees: '1', method: 'cash' })).toEqual({ result: 'invalid', why: 'needPayment' });
     expect(ho.calls).toEqual([]);
   });
 });
