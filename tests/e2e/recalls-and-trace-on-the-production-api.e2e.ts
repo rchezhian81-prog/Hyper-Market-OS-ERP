@@ -102,12 +102,14 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
       await page.locator('#result.tone-ok').waitFor({ timeout: 15_000 });
       const said = (await page.textContent('#result')) ?? '';
       expect(said).toMatch(/Recall started: B-77/);
-      expect(said).toMatch(/The tills' catalogue v2 now refuses it, offline too\./);
+      // The version is head office's next pack (OB-806 A: an accepted price may already have sent one by itself).
+      expect(said).toMatch(/The tills' catalogue v\d+ now refuses it, offline too\./);
       expect(said).toMatch(/The owners were alerted \(\d\)/);
       await rowsAtLeast(page, '#r-rows li', 1);
       expect(await page.textContent('#r-rows li')).toMatch(/B-77 — Open/);
       const pack = (await shop.cloud().request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER })).body as { snapshot: { version: number; products: { productId: string; recallBlock?: boolean }[] } };
-      expect(pack.snapshot.version).toBe(2);
+      // The pack the screen named is the pack head office now holds (its number read from the screen, never assumed).
+      expect(pack.snapshot.version).toBe(Number(/catalogue v(\d+) now refuses/.exec(said)![1]));
       expect(pack.snapshot.products.find((p) => p.productId === 'p-paneer')?.recallBlock).toBe(true);
 
       // ── trace forward, then backward from a bill ──

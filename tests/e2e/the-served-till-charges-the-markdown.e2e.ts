@@ -74,10 +74,15 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
     request: (r: { method: 'GET' | 'POST' | 'PUT'; path: string; userId: string; body?: unknown; idempotencyKey?: string }) =>
       cloud.request({ method: r.method, path: r.path, userId: r.userId, ...(r.body === undefined ? {} : { body: r.body }), ...(r.idempotencyKey === undefined ? {} : { idempotencyKey: r.idempotencyKey }) }),
   } as unknown as ApiHarness);
-  const packPrice = async (): Promise<{ version: number; price: number | undefined }> => {
-    await ok(call('POST', '/v1/catalogue/pack', OWNER, { storeId: STORE, asOf: today }), 'pack');
+  /** The pack head office holds now — read only (OB-806 A: an accepted price is sent to the tills by itself). */
+  const packNow = async (): Promise<{ version: number; price: number | undefined }> => {
     const pack = (await call('GET', '/v1/catalogue/pack', OWNER)).body as { snapshot: { version: number; products: { productId: string; unitPriceMinor: number }[] } };
     return { version: pack.snapshot.version, price: pack.snapshot.products.find((p) => p.productId === PRODUCT)?.unitPriceMinor };
+  };
+  /** "Send to the tills" by hand — needed once here, because the barcode was added after the shelf price was sent. */
+  const packPrice = async (): Promise<{ version: number; price: number | undefined }> => {
+    await ok(call('POST', '/v1/catalogue/pack', OWNER, { storeId: STORE, asOf: today }), 'pack');
+    return packNow();
   };
 
   beforeAll(async () => {
@@ -145,14 +150,15 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
   }
 
   it('markdown proposed → refused without a second person → approved → new pack → the served till charges ₹37.50, also after a box restart', async () => {
-    expect(await packPrice()).toEqual({ version: 1, price: SHELF });
+    const first = await packPrice();
+    expect(first.price).toBe(SHELF);
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-till-markdown-'));
     dirs.push(dir);
     let edge = await startBox(dir);
     let running = true;
     stops.push(async () => { if (running) await edge.stop(); });
-    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
-    const before = await ringOne(edge, 1);
+    expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: first.version });
+    const before = await ringOne(edge, first.version);
     expect(before.total).toBe('₹50.00');
     expect(before.line).toBe('₹50.00');
     expect(before.errors).toEqual([]);
@@ -162,22 +168,22 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
       items: [{ productId: PRODUCT, batchId: 'B-7', remainingShelfLifeDays: 2, onHandMinor: 100, currentPriceMinor: SHELF, avgDailyDemand: 10 }],
     }), 'markdown')) as { proposals: { productId: string; markdownBps: number; newPriceMinor: number; reason: string }[] };
     expect(proposed.proposals[0]).toMatchObject({ productId: PRODUCT, markdownBps: 2_500, newPriceMinor: 3_750, reason: 'marked_down' });
-    expect(await packPrice()).toMatchObject({ price: SHELF });
+    expect(await packNow()).toEqual(first); // no new pack, no new price
 
     // ── The person turns the proposal into a price change. Under the 20% floor: refused until a second person approves.
     const change = { productId: PRODUCT, priceMinor: proposed.proposals[0]!.newPriceMinor, mrpMinor: MRP, costMinor: COST, currency: 'INR', marginFloorBps: 2_000, storeId: STORE };
     const refused = await call('POST', '/v1/prices/changes', MANAGER, change);
     expect(refused.status).toBe(422);
     expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/below floor.*separate approver/);
-    expect((await packPrice()).price).toBe(SHELF);
+    expect(await packNow()).toEqual(first); // a refused price is never sent to the tills (OB-806 A)
     // The manager asks; the owner (who may approve prices) approves in their own session; the change names the approval.
     const withApproval = await approvedBody(asHarness(), cloud.tenantId, MANAGER, OWNER, 'price_change', PRODUCT, change, {}, change.priceMinor);
     const saved = await call('POST', '/v1/prices/changes', MANAGER, withApproval);
     expect(saved.status, JSON.stringify(saved.body)).toBe(201);
-    expect(saved.body).toMatchObject({ approvedBy: OWNER, operativeAt: [STORE] });
-    // The next pack head office publishes carries it (each publish is a new version; the ones above still said ₹50.00).
-    const next = await packPrice();
-    expect(next).toEqual({ version: 4, price: 3_750 });
+    // OB-806 A: once accepted it is sent to the store's tills at once — a new signed pack, nobody presses "Send to the tills".
+    expect(saved.body).toMatchObject({ approvedBy: OWNER, operativeAt: [STORE], tills: [{ storeId: STORE, sent: true, version: first.version + 1 }] });
+    const next = await packNow();
+    expect(next).toEqual({ version: first.version + 1, price: 3_750 });
 
     // ── The box pulls the new pack; the served till charges the markdown.
     expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: next.version });

@@ -153,13 +153,29 @@ describe.each(backings)('the store computer carries readings, losses and acknowl
     await ok(call('PUT', '/v1/merchandising/stores/br-1/planograms/PG-1', 'u-mgr', { effectiveFrom: '2026-01-01', assignments: [{ productId: 'p-salt', locationId: 'L1', capacityMinor: 10, primary: true }, { productId: 'p-salt', locationId: 'L2', capacityMinor: 10, primary: false }] }), 'plan');
     await ok(call('POST', '/v1/catalogue/products/p-salt/publish', 'u-owner', { product: { sku: 'SKU-SALT', name: 'Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft', mrpHistory: [{ value: { minor: 2_500, currency: 'INR' }, effectiveFrom: '2026-01-01' }] }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }), 'product');
 
+    await ok(call('POST', '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', 'u-owner', { rateBps: 500 }), 'gst rate'); // so the pack can carry the item
+
     const change = await ok(call('POST', '/v1/prices/changes', 'u-owner', { productId: 'p-salt', priceMinor: 1_800, mrpMinor: 2_500, costMinor: 1_000, currency: 'INR', marginFloorBps: 0 }), 'price change');
-    expect(change.body).toMatchObject({ operativeAt: ['br-1'], relabelTasks: 2 });
+    expect(change.body).toMatchObject({ operativeAt: ['br-1'], relabelTasks: 2, tills: [{ storeId: 'br-1', sent: true }] }); // OB-806 A
+    const sentVersion = (change.body as { tills: { version: number }[] }).tills[0]!.version;
     expect((await call('GET', '/v1/pricing/relabel-tasks', 'u-cash')).status).toBe(403);
 
     h = harness(h); // ── COLD RESTART ──
-    const tasks = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr', undefined, { branchId: 'br-1' }), 'tasks')).body as { tasks: { taskId: string; locationId: string | null; priceMinor: number; because: string; done: unknown; dueNow: boolean }[]; open: number };
-    expect([tasks.open, tasks.tasks.map((t) => [t.locationId, t.priceMinor, t.because, t.done, t.dueNow])]).toEqual([2, [['L1', 1_800, 'price_change', null, true], ['L2', 1_800, 'price_change', null, true]]]);
+    type TaskRows = { tasks: { taskId: string; locationId: string | null; priceMinor: number; because: string; done: unknown; dueNow: boolean; waitingForTills: boolean }[]; open: number };
+    // OB-806 A · D-021: the store computer has not yet said it holds the pack with ₹18 — the labels WAIT for the tills, so the
+    // shelf never shows a price the till does not charge.
+    const waiting = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr', undefined, { branchId: 'br-1' }), 'tasks')).body as TaskRows;
+    expect([waiting.open, waiting.tasks.map((t) => [t.locationId, t.dueNow, t.waitingForTills])]).toEqual([2, [['L1', false, true], ['L2', false, true]]]);
+    // A store computer holding an OLDER pack (without ₹18) still leaves them waiting.
+    if (sentVersion > 1) {
+      await ok(call('POST', '/v1/store-packs/br-1/held', 'box-1', { catalogueVersion: sentVersion - 1, storePackVersion: null }), 'held (older)');
+      const older = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr', undefined, { branchId: 'br-1' }), 'tasks')).body as TaskRows;
+      expect(older.tasks.every((t) => t.waitingForTills && !t.dueNow)).toBe(true);
+    }
+    // The store computer takes the pack that carries ₹18 and says so → the label tasks fall due.
+    await ok(call('POST', '/v1/store-packs/br-1/held', 'box-1', { catalogueVersion: sentVersion, storePackVersion: null }), 'held');
+    const tasks = (await ok(call('GET', '/v1/pricing/relabel-tasks', 'u-mgr', undefined, { branchId: 'br-1' }), 'tasks')).body as TaskRows;
+    expect([tasks.open, tasks.tasks.map((t) => [t.locationId, t.priceMinor, t.because, t.done, t.dueNow, t.waitingForTills])]).toEqual([2, [['L1', 1_800, 'price_change', null, true, false], ['L2', 1_800, 'price_change', null, true, false]]]);
     const first = tasks.tasks[0]!.taskId;
     expect(codeOf(await call('POST', `/v1/pricing/relabel-tasks/${first}/done`, 'u-mgr', { shelfPriceMinor: 1_800 }))).toBe('not_readable_as_relabel_done');
     expect(codeOf(await call('POST', `/v1/pricing/relabel-tasks/${first}/done`, 'u-mgr', { shelfPriceMinor: 2_000, evidenceRef: 'photo-l1' }))).toBe('label_shows_another_price');

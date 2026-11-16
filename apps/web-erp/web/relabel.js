@@ -32,7 +32,7 @@ function paint() {
     if (replaced !== null) li.dataset.replaced = replaced.taskId;
     const head = document.createElement('div'); head.className = 'head';
     const item = typeof api.itemWords === 'function' ? api.itemWords(lang(), r) : `${w('product')} ${r.productId}`;
-    head.append(text('strong', `${item} · ${w('newPrice')} ${rupees(r.priceMinor)}`), text('span', r.done !== null ? `✓ ${w('done')}` : replaced !== null ? `${w('replaced')} ${rupees(replaced.priceMinor)}` : r.dueNow ? `⚠ ${w('dueNow')}` : w('notYet'), 'state'));
+    head.append(text('strong', `${item} · ${w('newPrice')} ${rupees(r.priceMinor)}`), text('span', r.done !== null ? `✓ ${w('done')}` : replaced !== null ? `${w('replaced')} ${rupees(replaced.priceMinor)}` : r.dueNow ? `⚠ ${w('dueNow')}` : r.waitingForTills === true ? w('waitingForTills') : w('notYet'), 'state'));
     li.append(head, text('span', `${r.branchId} · ${w('place')}: ${r.locationId ?? w('notOnPlan')} · ${w('from')} ${when(r.dueAt)} · ${w(r.because)}`, 'facts'));
     // OB-358: who it is for — the department's floor champion, else the store manager (and why); the reader's own marked.
     const forWho = text('span', api.assigneeWords(lang(), r), 'facts for'); forWho.dataset.assignee = r.assignee ? r.assignee.to : 'none'; li.append(forWho);

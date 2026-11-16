@@ -399,7 +399,8 @@ describe.skipIf(!HAVE_BROWSER)('Round 4a: the product and price pages work throu
     expect(waiting).toBeDefined();
     expect((await decide(ho, TENANT, OWNER, waiting!.requestId, 'approved', 'fine (synthetic)')).status).toBe(201);
     await page.click('#save');
-    await says(page, 'price-status', new RegExp(`Saved with the approval of ${OWNER}\\.$`));
+    // OB-806 A: a price from a later day is saved, and the page says it goes to the tills on or after that day.
+    await says(page, 'price-status', new RegExp(`Saved with the approval of ${OWNER}\\. It starts on a later day, so send it to the tills on or after that day\\.$`));
 
     // D-023 (fix batch 6): channel prices and zones are the advanced part of the page — one tick away
     await page.check('#advanced');

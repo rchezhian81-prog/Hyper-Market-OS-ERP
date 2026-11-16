@@ -14,6 +14,7 @@ export const RELABEL_COPY = {
   en: {
     relabelMineH: 'Shelf labels to change — mine', relabelH: 'Shelf labels to change', relabelLead: 'A price changed. Put the new label up, photograph it, type the price the label shows, and close the task.',
     open: 'to change', none: 'No label to change.', product: 'Product', place: 'Shelf place', notOnPlan: 'not on the shelf plan — find it on the floor', newPrice: 'New price', from: 'from', dueNow: 'due now', notYet: 'not due yet',
+    waitingForTills: 'waiting for the tills — change the label once the tills charge this price',
     price_change: 'price change', price_list_entry: 'price list', done: 'Changed', doneBy: 'by', labelPrice: 'Price on the new label (₹)', photo: 'Photo reference', close: 'Label changed',
     needFields: 'Type the price on the label and the photo reference first.', saved: 'Saved.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
     for: 'For', championOf: 'floor champion of', storeManager: 'the store manager', yours: 'yours', notAssigned: 'not assigned (raised before tasks were assigned)',
@@ -25,6 +26,7 @@ export const RELABEL_COPY = {
   ta: {
     relabelMineH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை', relabelH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள்', relabelLead: 'விலை மாறியது. புதிய லேபிளை வைத்து, படம் எடுத்து, லேபிளில் உள்ள விலையைத் தட்டச்சு செய்து, பணியை முடிக்கவும்.',
     open: 'மாற்ற வேண்டியவை', none: 'மாற்ற வேண்டிய லேபிள் இல்லை.', product: 'பொருள்', place: 'அலமாரி இடம்', notOnPlan: 'அலமாரித் திட்டத்தில் இல்லை — தளத்தில் தேடவும்', newPrice: 'புதிய விலை', from: 'முதல்', dueNow: 'இப்போது செய்ய வேண்டும்', notYet: 'இன்னும் நேரம் வரவில்லை',
+    waitingForTills: 'பில் இயந்திரங்களுக்காகக் காத்திருக்கிறது — பில் இயந்திரங்கள் இந்த விலையை வசூலித்த பிறகு லேபிளை மாற்றவும்',
     price_change: 'விலை மாற்றம்', price_list_entry: 'விலைப் பட்டியல்', done: 'மாற்றப்பட்டது', doneBy: 'செய்தவர்', labelPrice: 'புதிய லேபிளில் உள்ள விலை (₹)', photo: 'புகைப்படக் குறிப்பு', close: 'லேபிள் மாற்றப்பட்டது',
     needFields: 'முதலில் லேபிளில் உள்ள விலையையும் புகைப்படக் குறிப்பையும் தட்டச்சு செய்யவும்.', saved: 'சேமிக்கப்பட்டது.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
     for: 'யாருக்கு', championOf: 'தளச் சாம்பியன் —', storeManager: 'கடை மேலாளர்', yours: 'உங்களுடையது', notAssigned: 'ஒதுக்கப்படவில்லை (பணி ஒதுக்கீட்டுக்கு முன் எழுப்பப்பட்டது)',
@@ -67,7 +69,10 @@ export function paiseOf(raw: string): number | undefined {
 
 export interface RelabelRow {
   readonly taskId: string; readonly branchId: string; readonly productId: string; readonly locationId: string | null; readonly priceMinor: number; readonly dueAt: string;
-  readonly because: 'price_change' | 'price_list_entry'; readonly dueNow: boolean; readonly done: { readonly doneBy: string; readonly doneAt: string; readonly shelfPriceMinor: number } | null;
+  readonly because: 'price_change' | 'price_list_entry'; readonly dueNow: boolean;
+  /** OB-806 A: the date is reached but the store's tills do not charge this price yet — the label waits for them. */
+  readonly waitingForTills?: boolean;
+  readonly done: { readonly doneBy: string; readonly doneAt: string; readonly shelfPriceMinor: number } | null;
   /** OB-358: who the task goes to (null = raised before the rule), whether it is the reader's, and who holds the store manager role. */
   readonly assignee?: { readonly to: 'floor_champion'; readonly departmentId: string; readonly employeeId: string } | { readonly to: 'store_manager'; readonly departmentId: string | null; readonly because: 'no_department_owns_it' | 'no_champion_named' | 'champion_left' } | null;
   readonly assignedToMe?: boolean;

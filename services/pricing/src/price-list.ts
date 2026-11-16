@@ -24,6 +24,7 @@ import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { shopToday, type ShopCalendarOf, shopClock } from '../../../packages/calendar/src/shop-clock';
+import type { AcceptedPriceForTills, TillDeliveryAnswer } from './index';
 
 const SCOPES: readonly PriceScope[] = ['customer', 'channel', 'zone', 'store'];
 const isScope = (v: unknown): v is PriceScope => typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
@@ -50,6 +51,8 @@ export interface PriceListDeps {
   readonly allowedEntries?: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
   /** D-19: the store → zone register — the zone a store belongs to, when the request names none. */
   readonly zoneOfStore?: (tenantId: string, storeId: string) => Promise<string | undefined>;
+  /** OB-806 A: send an accepted store price to that store's tills (see `PricingDeps.toTheTills`). Optional on a bare stub. */
+  readonly toTheTills?: (tenantId: string, input: AcceptedPriceForTills) => Promise<readonly TillDeliveryAnswer[]>;
   readonly now: () => string;
 }
 
@@ -174,7 +177,12 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
           ...(batchId === undefined ? {} : { batchId }),
         };
         await deps.recordEntry(ctx.tenantId, productId, entry);
-        return { status: 201, body: { entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null, ...(batchId === undefined ? {} : { batchId }) } };
+        // OB-806 A: an accepted STORE price goes to that store's tills now, through the one signed pack publish; the answer
+        // says whether it went (a price starting on a later day waits for its day — said, never silent). A zone, channel or
+        // customer price is not a store's till price by itself, so nothing is sent for it here.
+        const tills = deps.toTheTills === undefined || entry.scope !== 'store' ? null
+          : await deps.toTheTills(ctx.tenantId, { productId, priceMinor, storeIds: [entry.scopeRef], startsOn: entry.effectiveFrom.slice(0, 10), by: ctx.userId });
+        return { status: 201, body: { tills, entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null, ...(batchId === undefined ? {} : { batchId }) } };
       },
     },
     {

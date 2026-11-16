@@ -96,7 +96,7 @@ describe.skipIf(!HAVE_BROWSER)('D-019 · D-020: Change price reads head office�
       await page.fill('#new-price', '32');
       await page.waitForSelector('#save-price:not([hidden])', { timeout: 10_000 });
       expect(await hidden(page, 'price-approval'), 'a clean price at or under head office’s MRP needs nobody else').toBe(true);
-      const saved = await clickFor(page, '#save-price', /starts on the day you gave/, confirmIt);
+      const saved = await clickFor(page, '#save-price', /the tills will have it within 5 minutes/, confirmIt); // OB-806 A
       expect(saved.title).toBe('Price saved');
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
@@ -168,7 +168,7 @@ describe.skipIf(!HAVE_BROWSER)('D-019 · D-020: Change price reads head office�
       // The approver checks the pack and approves, in their own session; Save sends exactly that change naming it.
       decideAsSomeoneElse(ho, 'areq-1', 'approved', 'checked the pack: MRP ₹35');
       const saved = await clickFor(page, '#save-price', /^Price saved/, confirmIt);
-      expect(saved.text).toBe('Price saved: ₹32.00. The approval has now been used — another change needs a new approval.');
+      expect(saved.text).toBe('Price saved: ₹32.00. The approval has now been used — another change needs a new approval. Saved — the tills will have it within 5 minutes.'); // OB-806 A
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
       expect(change[0]!.body).toEqual({ ...figures, approvalId: 'areq-1' });

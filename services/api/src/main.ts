@@ -39,7 +39,8 @@ import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-in
 import { billMismatchDrafts, tillVarianceDrafts } from './ai-explainers'; // CR-01 OI-13 (OB-763 B): A12 and A14
 import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
-import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
+import { catalogueRoutes, hmacSigner, type CatalogueDeps } from '../../catalogue/src/index';
+import { notSentLogAdapter, tillsSender } from './till-delivery';
 import { privilegeSealKey, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { boxPrivilegeRoutes } from '../../identity/src/box-privilege';
 import { boxPrivilegeAdapter } from './box-privilege-adapters';
@@ -820,6 +821,24 @@ export function buildSurface(deps: {
       // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
       ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
     });
+  // The catalogue pack's deps — ONE composition for "Send to the tills" and for the automatic send after an accepted price
+  // (OB-806 A), so both sign, version and judge a pack exactly the same way.
+  const catalogueDeps: CatalogueDeps = {
+    ...(store === undefined ? {
+      signer, currentPack: empty(undefined), storePack: () => {},
+      buildSnapshot: (tenantId: string) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
+      approvalsSince: empty([]), now,
+    } : {
+      ...catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */, calendar: shopCalendar /* R16-A: the shop's date */ }),
+      notSent: notSentLogAdapter({ store }), // OB-806 A · P-08: an accepted price not sent is recorded, and shown
+    }),
+    // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
+    // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
+    bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
+  };
+  // OB-806 A (owner, 16 Nov 2026): an accepted price goes to the store's tills at once, through that same publish.
+  const toTheTills = store === undefined ? undefined
+    : tillsSender({ catalogue: catalogueDeps, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) });
   const surface: Route[] = [
     ...identityRoutes(identityDeps),
     // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the store PC's office screens, sealed there with the
@@ -890,16 +909,7 @@ export function buildSurface(deps: {
         }),
         ...(deps.identityDirectoryTenantId === undefined ? {} : { directoryTenantId: deps.identityDirectoryTenantId }),
       }),
-    ...catalogueRoutes({
-      ...(store === undefined ? {
-        signer, currentPack: empty(undefined), storePack: () => {},
-        buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
-        approvalsSince: empty([]), now,
-      } : catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */, calendar: shopCalendar /* R16-A: the shop's date */ })),
-      // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
-      // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
-      bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
-    }),
+    ...catalogueRoutes(catalogueDeps),
     // Unit sale price on the label (B3, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...labellingRoutes(),
     // Master-data commit guards (B2 dual-MRP) — stateless product-master validation.
@@ -945,10 +955,12 @@ export function buildSurface(deps: {
         // The legal ceiling is head office's own MRP in force today (the lower of it and the one sent) — the same reading the
         // Price lists route judges by; with none on record, the MRP sent needs a second person (D-019).
         mrpOnRecordFor: mrpOnRecordFor({ store, now, calendar: shopCalendar }),
+        // OB-806 A: once accepted and recorded, the price goes to the store's tills (the answer says whether it went).
+        ...(toTheTills === undefined ? {} : { toTheTills }),
       }),
     ...calendared(priceListRoutes)(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */, ...(toTheTills === undefined ? {} : { toTheTills }) /* OB-806 A */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),
@@ -2407,7 +2419,7 @@ export function buildSurface(deps: {
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
   recallWithdrawSurface(surface, { store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // FG-3 · OB-383 a recall started by mistake is withdrawn (WF-09)
-  p1IdentitySurface(surface, { store, now, calendar: shopCalendar, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
+  p1IdentitySurface(surface, { store, now, calendar: shopCalendar, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(toTheTills === undefined ? {} : { toTheTills }) /* OB-806 A */ }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   customerCommerceSurface(surface, { store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }); // OB-288 wave 3 (M16-FR-04 · M17-FR-01/02 · M18-FR-04 · M20 · M21-FR-01/02 · WF-13 · D08 · OB-295/303/311/314/322/329)

@@ -49,6 +49,8 @@ export interface PricingHeadOffice {
   /** D-020: head office's OWN MRP per product (the product master's, null = none) — what `GET …/basis` answers. A product
    *  not listed is not answered (404), as before this route was read. */
   mrpAtHeadOffice?: Record<string, { readonly mrpMinor: number | null; readonly from: string | null }>;
+  /** OB-806 A: the till pack versions head office has sent after an accepted price (as the real route answers `tills`). */
+  packVersion?: number;
 }
 
 export const newHeadOffice = (catalogueData: Record<string, unknown>): PricingHeadOffice =>
@@ -155,7 +157,10 @@ async function route(ho: PricingHeadOffice, method: string, path: string, body: 
       });
     }
     opened?.spend();
-    return { status: 201, body: { productId, priceMinor, verdict: check.verdict, approvedBy: approval?.decidedBy ?? null } };
+    // OB-806 A: an accepted price is sent to the store's tills at once — the real route says so in `tills`.
+    ho.packVersion = (ho.packVersion ?? 0) + 1;
+    const tills = [{ storeId: typeof b['storeId'] === 'string' ? b['storeId'] : 'store-1', sent: true, version: ho.packVersion, withinMinutes: 5 }];
+    return { status: 201, body: { tills, productId, priceMinor, verdict: check.verdict, approvedBy: approval?.decidedBy ?? null } };
   }
 
   const launch = /^\/v1\/promotions\/([^/]+)\/launch$/.exec(path);

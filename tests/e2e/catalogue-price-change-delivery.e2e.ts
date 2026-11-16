@@ -151,7 +151,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       await goBack(page);
       expect(posts(ho, '/v1/prices/changes'), 'Go back sends nothing').toHaveLength(0);
       taps.count += 2; // Save, tapped by clickFor, and Confirm on the sheet
-      const said = await clickFor(page, '#save-price', /starts on the day you gave/, confirmIt);
+      const said = await clickFor(page, '#save-price', /the tills will have it within 5 minutes/, confirmIt); // OB-806 A
       expect(said.title).toBe('Price saved');
       // U1 · OB-698 (2 Nov 2026): the owner chose the consequence-and-confirm sheet on every price change — one tap more
       // than the "open → new price → submit" budget, listed as a justified exception (design system §1.1).
@@ -261,7 +261,7 @@ describe.skipIf(!HAVE_BROWSER)('operator price-change delivery under the two-per
       // Save — names the approved request; no approver, no reason, no name in the body. Head office accepts it.
       const saved = await clickFor(page, '#save-price', /^Price saved/, confirmIt);
       expect(saved.title).toBe('Price saved');
-      expect(saved.text).toBe('Price saved: ₹90.00. The approval has now been used — another change needs a new approval.');
+      expect(saved.text).toBe('Price saved: ₹90.00. The approval has now been used — another change needs a new approval. Saved — the tills will have it within 5 minutes.'); // OB-806 A
       const change = posts(ho, '/v1/prices/changes');
       expect(change).toHaveLength(1);
       expect(change[0]!.body).toEqual({ ...BELOW_COST, approvalId: 'areq-1' });
