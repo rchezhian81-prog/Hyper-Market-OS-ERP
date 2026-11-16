@@ -1780,6 +1780,11 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
     payload['productIds'] = input.pack.products.value.map((p) => p.productId);
     // OB-31: each product's unit, so the buyer's screen checks a weighed line as grams × price per kg.
     payload['productUoms'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.uom]));
+    // Fix batch 4b · D-041: each item's GST rate as head office's catalogue holds it (basis points), so "Raise an order"
+    // shows the GST and the total with GST. An item with no rate held is absent — the screen says so, never guesses one.
+    // D-041: each item's name, so the order's lines say "Marie biscuits", never only "prod-biscuit".
+    payload['productNames'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.name]));
+    payload['productTaxBps'] =Object.fromEntries(input.pack.products.value.filter((p) => Number.isInteger(p.taxBps)).map((p) => [p.productId, p.taxBps]));
   }
   if (input.pack.purchaseOrders.known) {
     payload['ordered'] = foldByReference(

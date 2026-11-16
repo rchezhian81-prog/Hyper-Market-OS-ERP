@@ -21,7 +21,7 @@ const src = (f: string): string => readFileSync(`apps/web-erp/src/${f}`, 'utf8')
 const before = (path: string): string => beforeFixture('be62d0a', path);
 
 const PAGES = [
-  { page: 'buying.js', pickers: ["pickerBeside(el('po-supplier'), 'supplier'", "pickerBeside(el('po-product'), 'product'", "pickerBeside(el('po-store'), 'store'"], words: 'web/buying.js', store: "el('po-store').value = id" },
+  { page: 'buying.js', pickers: ["pickerBeside(el('po-supplier'), 'supplier'", "pickerBeside(el('po-product'), 'product'", "pickerBeside(el('po-store'), 'store'"], words: 'web/buying.js', store: "for (const id of ['po-store', 'reorder-store'])" },
   { page: 'count-plans.js', pickers: ["pickerBeside($('place'), 'place'", "kind: 'product'"], words: 'src/count-plans-session.ts', store: 'scope: () => ({ storeId: myStore() })', prefills: false },
   { page: 'packaging.js', pickers: ["pickerBeside($('q-branch'), 'store'", "pickerBeside($('m-branch'), 'store'"], words: 'src/packaging-session.ts', store: "for (const f of ['q-branch', 'm-branch'])" },
   { page: 'demand-events.js', pickers: ["pickerBeside($('store'), 'store'", "pickerBeside($('product'), 'product'", "kind: 'product'"], words: 'src/demand-events-session.ts', store: "$('store').value = id" },

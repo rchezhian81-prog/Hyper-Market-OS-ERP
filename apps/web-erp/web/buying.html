@@ -359,9 +359,26 @@
         <div id="reorder-raise-box" hidden>
           <button id="reorder-raise" class="primary wide sre-btn sre-btn-primary" type="button">Raise a requisition from the ticked lines</button>
           <p class="otb-status" id="reorder-raise-status" role="status" aria-live="polite"></p>
+          <!-- Fix batch 4b · D-040: one PROPOSED order per usual supplier, at the last agreed price; a second person issues each. -->
+          <button id="reorder-usual" class="primary wide sre-btn sre-btn-primary" type="button">Order these from the usual supplier</button>
+          <div class="otb-status" id="reorder-usual-status" role="status" aria-live="polite"></div>
         </div>
         <h3 id="reorder-params-h">Reorder settings</h3>
         <div id="reorder-params" aria-labelledby="reorder-params-h"></div>
+        <!-- Fix batch 4b · D-038: suggested figures for every item from recent sales — a person ticks and saves them. -->
+        <div id="suggest-box" hidden>
+          <h3 id="suggest-h">Suggested figures from recent sales</h3>
+          <button id="suggest-read" class="wide sre-btn" type="button">Suggest figures for every item from recent sales</button>
+          <p class="lead" id="suggest-lead"></p>
+          <p class="otb-status" id="suggest-status" role="status" aria-live="polite"></p>
+          <div id="suggest-table"></div>
+          <div id="suggest-left"></div>
+          <div id="suggest-save-box" hidden>
+            <div class="field"><label for="suggest-reason" id="suggest-reason-l">Why these figures</label><input id="suggest-reason" type="text" autocomplete="off" /></div>
+            <button id="suggest-save" class="primary wide sre-btn sre-btn-primary" type="button">Save the ticked figures</button>
+          </div>
+          <div class="otb-status" id="suggest-save-status" role="status" aria-live="polite"></div>
+        </div>
         <div id="reorder-set" hidden>
           <h3 id="reorder-set-h">Set an item's reorder settings</h3>
           <div class="otb-row">

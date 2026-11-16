@@ -7,6 +7,7 @@ import { createOpenOrdersSession, openOrdersWords, openOrdersOutcomeWords, rupee
 import { createSupplierTermsSession, supplierTermsWords, supplierTermsOutcomeWords } from './supplier-terms-session';
 import { createReplenishmentSession, replenishmentWords, replenishmentOutcomeWords, qtyIn, editable, heldReorderSettingsOf } from './replenishment-session';
 import { shopMomentOf } from './findings-session';
+import { orderGstSummary, ratePercent, type OrderLineValue } from './order-gst';
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
@@ -45,7 +46,12 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
     // OB-630: the store pack's copy of the reorder settings, for when head office cannot be reached (shown as a copy).
     const held = heldReorderSettingsOf(raw);
     win['buyingReorder'] = { session: createReplenishmentSession({ viewer: buyerOf(win['buyingData']), ...(uoms === undefined ? {} : { productUoms: uoms }), ...(held === undefined ? {} : { held }) }), words: replenishmentWords, outcomeWords: replenishmentOutcomeWords, qtyIn, editable, moment: shopMomentOf };
-    win['buyingOpenOrders'] = { session: createOpenOrdersSession({ viewer: buyerOf(win['buyingData']) }), words: openOrdersWords, outcomeWords: openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice };
+    // Fix batch 4b · D-041: GST on the order being raised, at the rates the store pack carries (never a guessed rate).
+    const rates = raw !== null && typeof raw === 'object' && (raw as { productTaxBps?: unknown }).productTaxBps !== null && typeof (raw as { productTaxBps?: unknown }).productTaxBps === 'object'
+      ? (raw as { productTaxBps: Record<string, unknown> }).productTaxBps : {};
+    const taxBpsOf = (productId: string): number | undefined => { const r = rates[productId]; return typeof r === 'number' && Number.isInteger(r) && r >= 0 ? r : undefined; };
+    win['buyingOrderGst'] = { summary: (lines: readonly OrderLineValue[]) => orderGstSummary(lines, taxBpsOf), ratePercent };
+    win['buyingOpenOrders'] ={ session: createOpenOrdersSession({ viewer: buyerOf(win['buyingData']) }), words: openOrdersWords, outcomeWords: openOrdersOutcomeWords, rupees, lineQty, editableQty, editablePrice };
   }
   // M06-FR-03: supplier contracts (with the agreed lead time) on the Supplier scorecard page, rebate schemes on the Supplier
   // rebates page — the same tested session, each page's own viewer.

@@ -48,6 +48,8 @@ describe('the Reorder tab session (M09-FR-02)', () => {
     await s.raiseFromDraft({ proposalId: ' prop-a02-1 ', productId: 'SOAP', qtyText: '24' });
     expect(await s.raiseFromDraft({ proposalId: 'p', productId: 'GHEE', qtyText: '1' })).toEqual({ result: 'invalid', why: 'unitUnknown' });
     expect(sent).toEqual([
+      // Fix batch 4b · D-039: the settings in force are read first, so a figure 5 times off is asked about again.
+      { method: 'GET', path: '/v1/replenishment/parameters?storeId=br-1' },
       { method: 'POST', path: '/v1/replenishment/parameters/br-1/RICE', body: { maxLevel: 50_000, reorderPoint: 10_000, safetyStock: 2_500, leadTimeDays: 3, reason: 'festival' } },
       { method: 'GET', path: '/v1/replenishment/parameters?storeId=br-1' },
       { method: 'POST', path: '/v1/replenishment/stored-proposal?storeId=br-1', body: {} },

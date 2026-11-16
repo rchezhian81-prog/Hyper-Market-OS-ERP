@@ -68,7 +68,7 @@ const WORDS = {
     poLead: 'Somebody else has to approve it before it goes to the supplier.',
     itemCode: 'Item', howMany: 'How many', agreedPrice: 'Agreed price each (in rupees)',
     // OB-31: a loose item is ordered in its own unit — "2.5" kg — and priced per whole kg / litre, never per gram.
-    howManyIn: 'How many {unit}', pricePer: 'Agreed price per {one} (in rupees)',
+    howManyIn: 'How many {unit}', pricePer: 'Agreed price per {one}, before GST (in rupees)',
     unitMany: { ea: 'items', kg: 'kg', L: 'litres', g: 'grams', ml: 'ml' },
     unitOne: { ea: 'item', kg: 'kg', L: 'litre', g: 'gram', ml: 'ml' },
     needWholeItems: 'Items are ordered in whole numbers. Loose goods take up to three decimals of a kg or a litre (2.5 kg).',
@@ -103,6 +103,10 @@ const WORDS = {
     refusedBy: 'Head office refused:', cannotReach: 'Head office cannot be reached — nothing was changed.',
     readingOtb: 'Reading the budgets from head office…', notSignedIn: 'Nobody is signed in — the budgets cannot be read.',
     proposedOver: 'Order proposed — over this month\'s budget by',
+    // Fix batch 4b · D-041: the agreed price is before GST; the GST and the total with GST are shown at the item's held rate.
+    priceBeforeGst: 'Price each, before GST', gstRate: 'GST rate', gstCol: 'GST', beforeGst: 'Before GST', gstTotal: 'GST', withGst: 'Total with GST',
+    noRateFor: 'No GST rate is held for {items} — its GST is not in the total. Check the item\'s HSN / tax class on Product details.',
+    rateNotHeld: 'not held',
   },
   ta: {
     buying: 'கொள்முதல்', supplierInvoice: 'சப்ளையர் இன்வாய்ஸ்', checkAgainst: 'ஆர்டருடன் சரிபார்',
@@ -131,7 +135,7 @@ const WORDS = {
     blocked: 'இதை இன்னும் செலுத்த வேண்டாம்', agreed: 'இவை பொருந்துகின்றன', withheld: 'நிறுத்தி வைக்கப்பட்டது',
     poLead: 'சப்ளையருக்குச் செல்வதற்கு முன் வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும்.',
     itemCode: 'பொருள்', howMany: 'எத்தனை', agreedPrice: 'ஒப்புக்கொண்ட விலை (ரூபாயில்)',
-    howManyIn: 'எத்தனை {unit}', pricePer: 'ஒரு {one}-க்கு ஒப்புக்கொண்ட விலை (ரூபாயில்)',
+    howManyIn: 'எத்தனை {unit}', pricePer: 'ஒரு {one}-க்கு ஒப்புக்கொண்ட விலை, GST க்கு முன் (ரூபாயில்)',
     unitMany: { ea: 'பொருட்கள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
     unitOne: { ea: 'பொருள்', kg: 'கிலோ', L: 'லிட்டர்', g: 'கிராம்', ml: 'மி.லி.' },
     needWholeItems: 'பொருட்கள் முழு எண்ணில் ஆர்டர் செய்யப்படும். தளர்வான பொருட்கள் கிலோ / லிட்டரில் மூன்று தசம இடங்கள் வரை (2.5 கிலோ).',
@@ -166,6 +170,9 @@ const WORDS = {
     refusedBy: 'தலைமை அலுவலகம் மறுத்தது:', cannotReach: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     readingOtb: 'தலைமை அலுவலகத்திலிருந்து பட்ஜெட்டைப் படிக்கிறது…', notSignedIn: 'யாரும் உள்நுழையவில்லை — பட்ஜெட்டைப் படிக்க முடியாது.',
     proposedOver: 'ஆர்டர் முன்மொழியப்பட்டது — இந்த மாதப் பட்ஜெட்டை மீறிய தொகை',
+    priceBeforeGst: 'ஒன்றின் விலை, GST க்கு முன்', gstRate: 'GST விகிதம்', gstCol: 'GST', beforeGst: 'GST க்கு முன்', gstTotal: 'GST', withGst: 'GST உடன் மொத்தம்',
+    noRateFor: '{items} க்கு GST விகிதம் பதிவில் இல்லை — அதன் GST மொத்தத்தில் சேர்க்கப்படவில்லை. பொருள் விவரங்களில் HSN / வரி வகையைச் சரிபாருங்கள்.',
+    rateNotHeld: 'பதிவில் இல்லை',
   },
 };
 let lang = 'en';
@@ -209,6 +216,38 @@ function myStore() {
   const office = window.sreOffice;
   const me = office && typeof office.me === 'function' ? office.me() : null;
   return (me && me.storeId) || (window.sreDirectory && window.sreDirectory.store && window.sreDirectory.store.id) || '';
+}
+
+/** Fix batch 4b · D-041: a thing's name from the chrome's directory, or its code when no name is known (never a guess). */
+// The names this page knows: each item's from the store computer's catalogue (the buying payload), each supplier's from
+// head office's supplier list (read once, below). A code with no known name is shown as the code — never a guessed name.
+const namesBook = {
+  product: new Map(Object.entries((window.buyingData && window.buyingData.productNames) || {})),
+  supplier: new Map(),
+};
+function nameOfThing(kind, id) {
+  const booked = namesBook[kind]?.get(id);
+  if (typeof booked === 'string' && booked !== '') return booked;
+  const office = window.sreOffice;
+  const named = office && typeof office.nameOf === 'function' ? office.nameOf(kind, id) : '';
+  return named && named !== '' ? named : id;
+}
+/** Read head office's supplier names once (a read only); when it cannot be read the codes stay, and the picker still names. */
+async function readSupplierNames() {
+  try {
+    const res = await fetch('/v1/purchase/suppliers', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (!res.ok) return;
+    const body = await res.json();
+    for (const s of (body && body.suppliers) || []) if (s && typeof s.supplierId === 'string' && typeof s.name === 'string' && s.name !== '') namesBook.supplier.set(s.supplierId, s.name);
+  } catch { /* unreachable: the codes stay on screen */ }
+}
+/** Name a code typed or filled into a field beside it ("Demo Foods (sup-demo-foods)"); nothing when no name is known. */
+function nameBeside(input, kind) {
+  const beside = el(`${input.id}-name`);
+  if (!beside) return;
+  const id = input.value.trim();
+  const name = id === '' ? id : nameOfThing(kind, id);
+  beside.textContent = id !== '' && name !== id ? `${name} (${id})` : '';
 }
 
 /** Why a capture was refused — one entry per `CaptureRefusal` in the model, in both languages. */
@@ -439,7 +478,7 @@ function linesTable(lines) {
   for (const line of lines) {
     const row = document.createElement('tr');
     for (const [text, cls] of [
-      [line.productId, ''], [quantityText(line.productId, line.quantity), 'amount'],
+      [nameOfThing('product', line.productId), ''], [quantityText(line.productId, line.quantity), 'amount'],
       [inr(line.unitPriceMinor), 'amount'], [inr(line.lineTotalMinor), 'amount'],
     ]) {
       const td = document.createElement('td');
@@ -599,12 +638,43 @@ function renderPoLines() {
     el('po-lines').replaceChildren(none);
     return;
   }
-  el('po-lines').replaceChildren(linesTable(poLines.map((l) => ({
+  const valued = poLines.map((l) => ({
     productId: l.productId, quantity: l.orderedQty,
     // OB-31 rule 3: grams × the price per kg ÷ 1000, rounded once — the session's arithmetic, never qty × price here.
     unitPriceMinor: l.unitCostMinor,
     lineTotalMinor: typeof session.lineValueMinor === 'function' ? session.lineValueMinor(l.productId, l.orderedQty, l.unitCostMinor) : l.unitCostMinor * l.orderedQty,
-  }))));
+  }));
+  const gst = window.buyingOrderGst ? window.buyingOrderGst.summary(valued.map((l) => ({ productId: l.productId, valueMinor: l.lineTotalMinor }))) : null;
+  if (gst === null) { el('po-lines').replaceChildren(linesTable(valued)); return; }
+  // Fix batch 4b · D-041: item names, the price before GST, each line's GST at the item's held rate, and the totals.
+  const table = document.createElement('table');
+  table.id = 'po-lines-table';
+  const head = document.createElement('tr');
+  for (const [text, cls] of [[t('item'), ''], [t('howMany'), 'amount'], [t('priceBeforeGst'), 'amount'], [t('lineTotal'), 'amount'], [t('gstRate'), 'amount'], [t('gstCol'), 'amount']]) {
+    head.append(textCell('th', text, cls));
+  }
+  table.append(head);
+  gst.lines.forEach((g, i) => {
+    const l = valued[i];
+    const row = document.createElement('tr');
+    row.dataset.product = l.productId;
+    row.append(
+      textCell('td', nameOfThing('product', l.productId)), textCell('td', quantityText(l.productId, l.quantity), 'amount'),
+      textCell('td', inr(l.unitPriceMinor), 'amount'), textCell('td', inr(l.lineTotalMinor), 'amount'),
+      textCell('td', g.taxBps === undefined ? t('rateNotHeld') : window.buyingOrderGst.ratePercent(g.taxBps), 'amount'),
+      textCell('td', g.gstMinor === undefined ? '—' : inr(g.gstMinor), 'amount'),
+    );
+    table.append(row);
+  });
+  const totals = textCell('p', `${t('beforeGst')}: ${inr(gst.beforeGstMinor)} · ${t('gstTotal')}: ${inr(gst.gstMinor)} · ${t('withGst')}: ${inr(gst.withGstMinor)}`, 'totals');
+  totals.id = 'po-gst-totals';
+  const parts = [table, totals];
+  if (gst.noRate.length > 0) {
+    const warn = textCell('p', t('noRateFor').replace('{items}', gst.noRate.map((id) => nameOfThing('product', id)).join(', ')), 'exception');
+    warn.id = 'po-gst-no-rate';
+    parts.push(warn);
+  }
+  el('po-lines').replaceChildren(...parts);
 }
 
 /** OB-31: the unit the typed item is counted in ('ea' when the screen was not told). */
@@ -625,9 +695,23 @@ el('po-product').addEventListener('input', paintPoUnit);
 pickerBeside(el('po-supplier'), 'supplier', 'whichSupplier');
 pickerBeside(el('po-store'), 'store', 'whichStore');
 pickerBeside(el('po-product'), 'product', 'whichItem');
+// Fix batch 4b · D-038: the Reorder tab picks its store and items too, never a typed code only.
+pickerBeside(el('reorder-store'), 'store', 'whichStore');
+pickerBeside(el('rp-productId'), 'product', 'whichItem');
+pickerBeside(el('dr-product'), 'product', 'whichItem');
 paintPickers();
+// Fix batch 4b · D-041: a code typed (or filled in) is named beside its box, so the order shows names, not only codes.
+for (const [id, kind] of [['po-supplier', 'supplier'], ['po-store', 'store'], ['po-product', 'product']]) {
+  el(id).addEventListener('change', () => nameBeside(el(id), kind));
+}
 // "Deliver to store" is the person's own store unless they change it (U2 · G5); the chrome may load after this page.
-const prefillStore = () => { if (el('po-store').value.trim() === '') { const id = myStore(); if (id !== '') el('po-store').value = id; } };
+// D-038: the Reorder tab's store is this store too.
+const prefillStore = () => {
+  for (const id of ['po-store', 'reorder-store']) {
+    if (el(id).value.trim() === '') { const store = myStore(); if (store !== '') el(id).value = store; }
+    nameBeside(el(id), 'store');
+  }
+};
 prefillStore();
 document.addEventListener('sre:chrome', prefillStore);
 
@@ -1057,30 +1141,138 @@ function paintReorderWords() {
   el('tab-reorder').textContent = rt('tab'); el('reorder-title').textContent = rt('title'); el('reorder-lead').textContent = rt('lead');
   for (const [id, k] of [['reorder-store-label', 'store'], ['reorder-read', 'show'], ['reorder-proposal-h', 'proposalH'], ['reorder-raise', 'raise'], ['reorder-params-h', 'paramsH'],
     ['reorder-set-h', 'setH'], ['rp-productId-l', 'product'], ['rp-reason-l', 'reason'], ['rp-save', 'set'], ['draft-h', 'draftH'], ['dr-id-l', 'draftId'], ['dr-product-l', 'product'], ['dr-qty-l', 'draftQty'], ['dr-raise', 'raiseDraft'],
-    ...RP_FIELDS.map((f) => [`rp-${f}-l`, f])]) el(id).textContent = rt(k);
+    ...RP_FIELDS.map((f) => [`rp-${f}-l`, f]),
+    ['reorder-usual', 'usual'], ['suggest-h', 'suggestH'], ['suggest-read', 'suggest'], ['suggest-reason-l', 'suggestReason']]) el(id).textContent = rt(k);
+  el('suggest-save').textContent = rt(sgConfirm ? 'saveAnyway' : 'saveSuggested');
+  if (!rpConfirm) el('rp-save').textContent = rt('set'); else el('rp-save').textContent = rt('saveAnyway');
   if (rp !== null && !rp.session.may.read) { el('reorder-status').className = 'otb-status'; el('reorder-status').textContent = rt(rp.session.may.named ? 'cannotRead' : 'nobody'); }
   el('reorder-set').hidden = rp === null || !rp.session.may.set;
+  el('suggest-box').hidden = rp === null || !rp.session.may.set;
   renderReorder();
+  renderSuggestions();
 }
+
+// ── D-039: a figure more than 5 times what it is now is asked about again (a slip like 48200 for 48) ─────────────
+let rpConfirm = false;
+const jumpWords = (jumps) => jumps.map((j) => rt('bigJumpRow').replace('{item}', nameOfThing('product', j.productId)).replace('{field}', rt(j.field))
+  .replace('{from}', rpQty(j.from, j.productId)).replace('{to}', rpQty(j.to, j.productId))).join(' · ');
+function rpUnconfirm() { rpConfirm = false; el('rp-save').textContent = rt('set'); }
+for (const f of ['productId', ...RP_FIELDS]) el(`rp-${f}`).addEventListener('input', rpUnconfirm);
 
 el('reorder-read').addEventListener('click', () => { void readReorder(); });
 el('rp-save').addEventListener('click', async () => {
   if (rp === null) return;
   const form = Object.fromEntries(['productId', 'reason', ...RP_FIELDS].map((f) => [f, el(`rp-${f}`).value]));
-  const out = await rp.session.setParameters(el('reorder-store').value, form);
+  const store = el('reorder-store').value;
+  const out = await rp.session.setParameters(store, form, rpConfirm);
+  if (out.result === 'invalid' && out.why === 'bigJump') {
+    rpConfirm = true; el('rp-save').textContent = rt('saveAnyway');
+    el('rp-status').className = 'otb-status err';
+    el('rp-status').textContent = `${rt('bigJump')} ${jumpWords(rp.session.jumpsIn(store, form))}`;
+    return;
+  }
+  rpUnconfirm();
   rpSay('rp-status', out, 'savedNow');
   if (out.result === 'ok') { await readReorder(); rpSay('rp-status', out, 'savedNow'); }
 });
 // A product chosen in the form shows its current settings, in its own unit, ready to change.
 el('rp-productId').addEventListener('change', () => {
+  rpUnconfirm();
   const c = rpParams?.products.find((p) => p.current.productId === el('rp-productId').value.trim())?.current;
   if (c === undefined) return;
   for (const f of RP_FIELDS) el(`rp-${f}`).value = f === 'leadTimeDays' ? (c[f] === undefined ? '' : String(c[f])) : rp.editable(c[f], rp.session.uomOf(c.productId));
+});
+
+// ── D-038: suggested figures for every item from recent sales — nothing saved until a person ticks and saves ─────
+let sgResult = null;
+let sgConfirm = false;
+function renderSuggestions() {
+  const table = el('suggest-table');
+  el('suggest-left').replaceChildren();
+  el('suggest-save-box').hidden = true;
+  if (sgResult === null) { table.replaceChildren(); el('suggest-lead').textContent = ''; return; }
+  el('suggest-lead').textContent = rt('suggestLead').replace('{days}', String(sgResult.windowDays));
+  if (sgResult.suggestions.length === 0) { table.replaceChildren(textCell('p', rt('noSuggestions'), 'empty')); }
+  else {
+    const t2 = document.createElement('table');
+    t2.id = 'suggest-rows';
+    const head = document.createElement('tr');
+    for (const k of ['useIt', 'product', 'sold', 'reorderPoint', 'maxLevel']) head.append(textCell('th', rt(k)));
+    t2.append(head);
+    for (const s of sgResult.suggestions) {
+      const row = document.createElement('tr');
+      row.dataset.product = s.productId;
+      const tick = document.createElement('input'); tick.type = 'checkbox'; tick.className = 'tick';
+      // An item with no figures yet is ticked for you; one that has figures is left for you to choose.
+      tick.checked = s.current === undefined;
+      tick.setAttribute('aria-label', `${rt('useIt')} ${nameOfThing('product', s.productId)}`);
+      tick.addEventListener('change', () => { sgConfirm = false; el('suggest-save').textContent = rt('saveSuggested'); });
+      const use = document.createElement('td'); use.append(tick);
+      const now = (minor) => (minor === undefined ? '' : ` (${rt('now')} ${rpQty(minor, s.productId)})`);
+      row.append(use, textCell('td', nameOfThing('product', s.productId)),
+        textCell('td', rpQty(Math.round(s.perDayMinor * 7), s.productId), 'amount'),
+        textCell('td', `${rpQty(s.reorderPointMinor, s.productId)}${now(s.current?.reorderPoint)}`, 'amount'),
+        textCell('td', `${rpQty(s.maxLevelMinor, s.productId)}${now(s.current?.maxLevel)}`, 'amount'));
+      t2.append(row);
+    }
+    table.replaceChildren(t2);
+    el('suggest-save-box').hidden = false;
+    if (el('suggest-reason').value.trim() === '') el('suggest-reason').value = rt('suggestReasonDefault');
+  }
+  for (const l of sgResult.leftOut) el('suggest-left').append(textCell('p', `${nameOfThing('product', l.productId)}: ${rt(l.why === 'no_sales' ? 'leftNoSales' : 'leftUnit')}`, 'exception'));
+}
+el('suggest-read').addEventListener('click', async () => {
+  if (rp === null) return;
+  const out = await rp.session.suggestFromSales(el('reorder-store').value);
+  sgConfirm = false;
+  if (out.result !== 'ok') { sgResult = null; renderSuggestions(); rpSay('suggest-status', out); return; }
+  sgResult = out.value;
+  el('suggest-status').className = 'otb-status'; el('suggest-status').textContent = '';
+  el('suggest-save-status').textContent = '';
+  renderSuggestions();
+});
+el('suggest-save').addEventListener('click', async () => {
+  if (rp === null) return;
+  if (sgResult === null) { el('suggest-save-status').className = 'otb-status err'; el('suggest-save-status').textContent = rt('suggestFirst'); return; }
+  const ticked = new Set([...el('suggest-table').querySelectorAll('tr[data-product]')].filter((tr) => tr.querySelector('input.tick')?.checked === true).map((tr) => tr.dataset.product));
+  const rows = sgResult.suggestions.filter((s) => ticked.has(s.productId)).map((s) => ({ productId: s.productId, maxLevelMinor: s.maxLevelMinor, reorderPointMinor: s.reorderPointMinor }));
+  const out = await rp.session.saveSuggested(el('reorder-store').value, rows, el('suggest-reason').value, sgConfirm);
+  const status = el('suggest-save-status');
+  if (out.result !== 'ok') { rpSay('suggest-save-status', out); return; }
+  if (out.value.jumps !== undefined && out.value.jumps.length > 0) {
+    sgConfirm = true; el('suggest-save').textContent = rt('saveAnyway');
+    status.className = 'otb-status err'; status.textContent = `${rt('bigJump')} ${jumpWords(out.value.jumps)}`;
+    return;
+  }
+  sgConfirm = false; el('suggest-save').textContent = rt('saveSuggested');
+  const { saved, notSaved } = out.value;
+  status.className = `otb-status ${notSaved.length === 0 ? 'good' : 'err'}`;
+  status.textContent = notSaved.length === 0 ? rt('savedSome').replace('{n}', String(saved.length))
+    : `${rt('savedPart').replace('{n}', String(saved.length))} ${notSaved.map((n) => `${nameOfThing('product', n.productId)} — ${rp.outcomeWords(lang, n.outcome, '')}`).join(' · ')}`;
+  if (saved.length > 0) { sgResult = null; renderSuggestions(); await readReorder(); }
 });
 el('reorder-raise').addEventListener('click', async () => {
   const ticked = [...el('reorder-proposal').querySelectorAll('tr[data-product]')].filter((tr) => tr.querySelector('input.tick')?.checked === true)
     .map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.qty')?.value ?? '' }));
   rpSay('reorder-raise-status', await rp.session.raise(rpProposal, ticked), 'raisedNow');
+});
+// D-040: one PROPOSED order per usual supplier, at the last agreed price, through the same path as "Raise an order".
+el('reorder-usual').addEventListener('click', async () => {
+  const status = el('reorder-usual-status');
+  const ticked = [...el('reorder-proposal').querySelectorAll('tr[data-product]')].filter((tr) => tr.querySelector('input.tick')?.checked === true)
+    .map((tr) => ({ productId: tr.dataset.product, qtyText: tr.querySelector('input.qty')?.value ?? '' }));
+  const out = await rp.session.orderFromUsualSuppliers(rpProposal, ticked, (input) => session.proposeToCloud(input));
+  if (out.result !== 'ok') { status.className = 'otb-status err'; status.textContent = rp.outcomeWords(lang, out, ''); return; }
+  const { proposed, failed, leftOut } = out.value;
+  const parts = [textCell('p', proposed.length === 0 ? rt('usualNone') : rt('usualDone').replace('{n}', String(proposed.length)))];
+  for (const p of proposed) {
+    const line = textCell('p', `${nameOfThing('supplier', p.supplierId)} · ${p.poId} · ${inr(p.totalMinor)}${p.overBudget ? ` — ${t('escalates')}` : ''}`);
+    line.dataset.po = p.poId; parts.push(line);
+  }
+  for (const f of failed) parts.push(textCell('p', `${rt('usualFailed')} ${nameOfThing('supplier', f.supplierId)}: ${f.reason}`, 'exception'));
+  if (leftOut.length > 0) parts.push(textCell('p', `${rt('usualLeft')} ${leftOut.map((l) => `${nameOfThing('product', l.productId)} (${rt(`lo_${l.why}`)})`).join(' · ')}`, 'exception'));
+  status.className = `otb-status ${proposed.length > 0 && failed.length === 0 ? 'good' : 'err'}`;
+  status.replaceChildren(...parts);
 });
 el('dr-raise').addEventListener('click', async () => {
   rpSay('dr-status', await rp.session.raiseFromDraft({ proposalId: el('dr-id').value, productId: el('dr-product').value, qtyText: el('dr-qty').value }), 'raisedNow');
@@ -1158,6 +1350,7 @@ paintChrome();
 renderPoLines();
 renderSavedInvoices();
 void syncToBox();
+if (real !== undefined) void readSupplierNames().then(() => { nameBeside(el('po-supplier'), 'supplier'); renderPoLines(); });
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //
