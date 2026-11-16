@@ -43,7 +43,13 @@ export const BOX_PRIVILEGE_PATHS = Object.freeze({
   accessChangeDecide: '/v1/identity/box/access-changes/:approvalId/decide',
   /** CR-01 step 4b-2 (OB-734 · OB-739): a till PIN set, changed or cancelled on the store PC's screen. */
   tillPins: '/v1/identity/box/till-pins',
+  /** CR-01 step 4c-2 (ADR-0034 · OB-740 "B"): ask to switch one permission of a role on or off. */
+  rolePermissions: '/v1/identity/box/role-permissions',
+  /** CR-01 step 4c-2: the second person approves (the change is applied at once, as the asker) or rejects it. */
+  rolePermissionDecide: '/v1/identity/box/role-permissions/:approvalId/decide',
 });
+/** CR-01 step 4c-2: the authority both people act under on the store PC — the owner's and the store manager's (OB-740 "B"). */
+export const ROLE_CHANGE_AUTHORITY = 'identity.role.adjust';
 /** What a till PIN act is (OB-734 "A"): somebody else's set or cancelled by a manager, or the person's own changed. */
 export const TILL_PIN_ACTIONS = ['set', 'cancel', 'own'] as const;
 export type TillPinAction = (typeof TILL_PIN_ACTIONS)[number];
@@ -87,8 +93,11 @@ export interface PrivilegeChangeAlert {
   readonly pinAction?: TillPinAction;
   /** For a take-back (`access_change_*`): a mover (one role back) or a leaver (every role back, till PIN cancelled). */
   readonly event?: 'mover' | 'leaver';
-  /** For a take-back decided (`access_change_decision`): approved (and applied) or rejected. */
+  /** For a take-back or a role change decided: approved (and applied) or rejected. */
   readonly decision?: 'approved' | 'rejected';
+  /** For a role change (`role_permission_*`, CR-01 step 4c-2): the permission switched on (`add`) or off (`remove`). */
+  readonly permission?: string;
+  readonly change?: 'add' | 'remove';
   /** For an approval: who approved it (the acting person). Absent for a request (it waits for a second person). */
   readonly approvedBy?: string;
   /** When the PIN was confirmed at the store PC, and when head office recorded it. */
@@ -124,6 +133,13 @@ export interface BoxPrivilegeDeps {
   readonly takeBack?: {
     readonly routes: (recordAudit: IdentityDeps['recordAudit']) => readonly Route[];
     readonly allRequests: (tenantId: string) => Promise<readonly ApprovalState[]> | readonly ApprovalState[];
+  };
+  /**
+   * CR-01 step 4c-2 (ADR-0034): what a role may do — head office's own role-change routes (check, apply), built on the same
+   * deps as the person's own, with the audit given here. The approval routes come from `takeBack`. Absent: refused (503).
+   */
+  readonly roleChange?: {
+    readonly routes: (recordAudit: IdentityDeps['recordAudit']) => readonly Route[];
   };
 }
 
@@ -173,7 +189,7 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
     if ((kind === 'role_grant_approval' || kind === 'role_grant_rejection') && record.body['grantId'] !== (ctx.params['grantId'] ?? '')) {
       throw refuse(403, 'privilege_record_does_not_match', `The sealed decision is for request ${String(record.body['grantId'])}, not ${ctx.params['grantId'] ?? ''}.`, 'Nobody\'s access changed.');
     }
-    if (kind === 'access_change_decision' && record.body['approvalId'] !== (ctx.params['approvalId'] ?? '')) {
+    if ((kind === 'access_change_decision' || kind === 'role_permission_decision') && record.body['approvalId'] !== (ctx.params['approvalId'] ?? '')) {
       throw refuse(403, 'privilege_record_does_not_match', `The sealed approval is for request ${String(record.body['grantId'])}, not ${ctx.params['grantId'] ?? ''}.`, 'Nobody\'s access changed.');
     }
     const spent = await deps.spendRequestId(ctx.tenantId, { requestId: record.requestId, kind, userId: record.userId, relayedBy: ctx.userId, at: deps.now() });
@@ -199,6 +215,20 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
     }
     const r = deps.takeBack.routes(auditVia({ requestId: record.requestId, relayedBy: ctx.userId })).find((x) => x.method === 'POST' && x.path === path);
     if (r === undefined) throw new Error(`the person's own route ${path} is missing`);
+    return r.handler({ tenantId: ctx.tenantId, userId, branchId: ctx.branchId, params, query: {}, body, idempotencyKey, traceId: ctx.traceId });
+  };
+
+  /**
+   * CR-01 step 4c-2: run head office's own role-change route (check or apply) as `userId`, its audit marked office_pin. The
+   * apply route's "recent second factor" is met here by the two sealed PIN confirmations (ADR-0033 §2): the asker's, when
+   * they asked, and the approver's, now — each checked fresh, once, by the seal.
+   */
+  const runRoleChangeAs = async (path: string, ctx: RequestContext, record: PrivilegeRecord, userId: string, params: Readonly<Record<string, string>>, body: unknown, idempotencyKey: string) => {
+    if (deps.roleChange === undefined) {
+      throw refuse(503, 'role_change_not_wired', 'Head office has no role-change routes wired here, so what a role may do cannot be changed from the store PC.', 'Nobody\'s access changed. The administrator checks the office service\'s setup.');
+    }
+    const r = deps.roleChange.routes(auditVia({ requestId: record.requestId, relayedBy: ctx.userId })).find((x) => x.method === 'POST' && x.path === path);
+    if (r === undefined) throw new Error(`head office's role-change route ${path} is missing`);
     return r.handler({ tenantId: ctx.tenantId, userId, branchId: ctx.branchId, params, query: {}, body, idempotencyKey, traceId: ctx.traceId });
   };
 
@@ -534,6 +564,96 @@ export function boxPrivilegeRoutes(deps: BoxPrivilegeDeps): readonly Route[] {
         return { status: 200, body: { userId, action, recorded: true, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
       },
     },
+    {
+      // CR-01 step 4c-2 (ADR-0034 · ADR-0033 §2 · OB-740 "B" · OB-809): THE ASKER — the owner or a store manager — asks, by
+      // PIN, to switch one permission of one role on or off, with a reason. Head office's own check runs first, as them (the
+      // never-from-a-screen list, the owner's reserved powers, IT kept apart, §28 "you hold it yourself"); then the person's
+      // own approval route (kind `role_permission_change`, exactly the change and its request id). Nobody's access changes yet.
+      api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.rolePermissions,
+      permission: GRANTS_SYNC_PERMISSION, idempotent: true,
+      handler: async (ctx) => {
+        const record = await accept(ctx, 'role_permission_request', ROLE_CHANGE_AUTHORITY);
+        const b = record.body;
+        const changeId = typeof b['requestId'] === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(b['requestId']) ? b['requestId'] : undefined;
+        const roleId = typeof b['roleId'] === 'string' ? b['roleId'].trim() : '';
+        const permission = typeof b['permission'] === 'string' ? b['permission'].trim() : '';
+        const change = b['change'] === 'add' || b['change'] === 'remove' ? b['change'] : undefined;
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        const extra = Object.keys(b).filter((k) => !['requestId', 'roleId', 'permission', 'change', 'reason'].includes(k));
+        if (changeId === undefined || roleId === '' || permission === '' || change === undefined || reason === '' || extra.length > 0) {
+          throw refuse(400, 'not_readable_as_a_role_change', 'A change to what a role may do needs { requestId, roleId, permission, change ("add" or "remove"), reason } and nothing else.', 'Nothing was asked.');
+        }
+        const checked = await runRoleChangeAs('/v1/identity/role-permissions/check', ctx, record, record.userId, {}, { roleId, permission, change }, `${record.requestId}:check`);
+        const cb = (isObj(checked.body) ? checked.body : {}) as Record<string, unknown>;
+        if (checked.status >= 300) return { status: checked.status, body: { ...cb, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
+        if (cb['allowed'] !== true) {
+          const r = isObj(cb['refusal']) ? cb['refusal'] : {};
+          throw refuse(422, typeof r['code'] === 'string' ? r['code'] : 'role_change_not_allowed', typeof r['whatHappened'] === 'string' ? r['whatHappened'] : 'This change to what a role may do is not allowed.', 'Nothing was asked. Choose another permission or role.');
+        }
+        const details = { roleId, permission, change, reason, requestId: changeId };
+        const summary = `${change === 'add' ? 'Switch on' : 'Switch off'} "${permission}" for the role ${roleId}`;
+        const out = await runTakeBackAs('/v1/approvals/requests', ctx, record, record.userId, {}, {
+          kind: 'role_permission_change', subjectRef: changeId, details, valueMinor: null, summary, reason,
+        }, record.requestId);
+        const ob = (isObj(out.body) ? out.body : {}) as Record<string, unknown>;
+        if (out.status === 201) {
+          await alert(ctx, {
+            requestId: record.requestId, kind: 'role_permission_request', actingUserId: record.userId, subjectUserId: '',
+            roleId, branchScope: ctx.branchId === null ? [] : [ctx.branchId], grantId: typeof ob['requestId'] === 'string' ? ob['requestId'] : '',
+            requestedBy: record.userId, permission, change, confirmedAt: record.confirmedAt,
+          });
+        }
+        return { status: out.status, body: { ...ob, change: details, approvedBy: cb['approvedBy'], affectedPeople: cb['affectedPeople'], via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
+      },
+    },
+    {
+      // CR-01 step 4c-2 (OB-740 "B" — the owner always one of the two, never his own): THE SECOND PERSON approves or rejects,
+      // by PIN, under the person's own decide route (the engine judges who may decide this one). Approved, the very change the
+      // asker asked for — sealed by their PIN when they asked — is applied at once through head office's apply route AS the
+      // asker: every rule of ADR-0034 judged again on the roles held now, recorded as one append-only adjustment, audited in
+      // the asker's name with the approver named, the owner alerted. Rejected, nothing changes.
+      api: 'API-01', method: 'POST', path: BOX_PRIVILEGE_PATHS.rolePermissionDecide,
+      permission: GRANTS_SYNC_PERMISSION, idempotent: true,
+      handler: async (ctx) => {
+        const record = await accept(ctx, 'role_permission_decision', ROLE_CHANGE_AUTHORITY);
+        const approvalId = ctx.params['approvalId'] ?? '';
+        const decision = record.body['decision'] === 'approved' || record.body['decision'] === 'rejected' ? record.body['decision'] : undefined;
+        const reason = typeof record.body['reason'] === 'string' ? record.body['reason'].trim() : '';
+        if (decision === undefined || reason === '') {
+          throw refuse(400, 'not_readable_as_a_decision', 'A decision is "approved" or "rejected", with a reason (M02-FR-03).', 'Nothing was decided.');
+        }
+        const state = deps.takeBack === undefined ? undefined : (await deps.takeBack.allRequests(ctx.tenantId)).find((x) => x.request.requestId === approvalId);
+        if (state !== undefined && state.request.kind !== 'role_permission_change') {
+          throw refuse(422, 'not_a_role_change', `Approval ${approvalId} is not a change to what a role may do (it is "${state.request.kind}"). Only a role change is decided here.`, 'Nothing was decided.');
+        }
+        const decided = await runTakeBackAs('/v1/approvals/requests/:requestId/decide', ctx, record, record.userId, { requestId: approvalId }, { decision, reason }, record.requestId);
+        const db = (isObj(decided.body) ? decided.body : {}) as Record<string, unknown>;
+        if (decided.status >= 300 || state === undefined) return { status: decided.status, body: { ...db, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
+        const d = state.request.details;
+        const roleId = String(d['roleId'] ?? '');
+        const permission = String(d['permission'] ?? '');
+        const change = d['change'] === 'remove' ? 'remove' as const : 'add' as const;
+        if (decision === 'rejected') {
+          return { status: 200, body: { approvalId, decided: 'rejected', applied: false, roleId, permission, change, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId } };
+        }
+        // Apply exactly what was approved, as the person who asked (their PIN sealed the ask) — head office's own checks.
+        const applied = await runRoleChangeAs('/v1/identity/role-permissions/:requestId', ctx, record, state.request.requestedBy, { requestId: String(d['requestId'] ?? '') },
+          { roleId, permission, change, reason: String(d['reason'] ?? ''), approvalId }, `${record.requestId}:apply`);
+        const ab = (isObj(applied.body) ? applied.body : {}) as Record<string, unknown>;
+        const done = applied.status === 201;
+        if (done) {
+          await alert(ctx, {
+            requestId: record.requestId, kind: 'role_permission_decision', actingUserId: record.userId, subjectUserId: '',
+            roleId, branchScope: ctx.branchId === null ? [] : [ctx.branchId], grantId: approvalId, requestedBy: state.request.requestedBy,
+            approvedBy: record.userId, permission, change, decision: 'approved', confirmedAt: record.confirmedAt,
+          });
+        }
+        return {
+          status: done ? 200 : applied.status,
+          body: { approvalId, decided: 'approved', applied: done, roleId, permission, change, result: ab, via: PRIVILEGE_VIA, privilegeRequestId: record.requestId },
+        };
+      },
+    },
   ];
 }
 
@@ -542,6 +662,10 @@ export function privilegeAlertWords(a: PrivilegeChangeAlert): string {
   const where = a.branchScope === 'all' ? 'every store' : a.branchScope.join(', ') || 'no store named';
   const what = a.kind === 'till_pin_change'
     ? `${a.actingUserId} ${a.pinAction === 'cancel' ? 'cancelled' : 'set a new'} till PIN ${a.pinAction === 'cancel' ? 'of' : 'for'} ${a.subjectUserId}${a.pinAction === 'cancel' ? '; they cannot sign in at a till or the office screens until a new one is set' : ' (they typed it themselves; nobody else saw it)'}`
+    : a.kind === 'role_permission_request'
+      ? `${a.actingUserId} asked to ${a.change === 'remove' ? 'switch off' : 'switch on'} "${a.permission ?? ''}" for the role ${a.roleId}; it waits for a second person to approve`
+    : a.kind === 'role_permission_decision'
+      ? `${a.actingUserId} approved switching ${a.change === 'remove' ? 'off' : 'on'} "${a.permission ?? ''}" for the role ${a.roleId}, asked for by ${a.requestedBy}; it is done`
     : a.kind === 'access_change_request'
       ? `${a.actingUserId} asked to ${a.event === 'leaver' ? `record that ${a.subjectUserId} has left (every role taken back, till PIN cancelled)` : `take a role back from ${a.subjectUserId}`}; it waits for a second person to approve`
       : a.kind === 'access_change_decision'

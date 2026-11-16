@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1744 | 1005 | 1005 | 196 | 453 |
+| 13 | 1746 | 1007 | 1007 | 196 | 453 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -54,6 +54,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/box/grants/:grantId/approve` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/grants/:grantId/reject` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/people` | `identity.people.sync` | core | yes |
+| POST | `/v1/identity/box/role-permissions` | `identity.grants.sync` | core | yes |
+| POST | `/v1/identity/box/role-permissions/:approvalId/decide` | `identity.grants.sync` | core | yes |
 | POST | `/v1/identity/box/till-pins` | `identity.people.sync` | core | yes |
 | GET | `/v1/identity/box/users-view` | `identity.grants.sync` | core | — |
 | POST | `/v1/identity/chartered-accountant/grants/:changeId` | `identity.ca.grant.request` | core | yes |

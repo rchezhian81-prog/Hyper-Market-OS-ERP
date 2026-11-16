@@ -89,7 +89,9 @@ export type AskResult = { readonly result: 'asked'; readonly request: ApprovalRe
 
 export type DecisionWord = 'approved' | 'rejected';
 /** A checker's decision as the server recorded it. */
-export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string; readonly catalogueChange?: CatalogueChangeMade } | Refused | LostLink;
+export type DecideResult = { readonly result: 'decided'; readonly decision: DecisionWord; readonly decidedBy: string; readonly catalogueChange?: CatalogueChangeMade;
+  /** CR-01 step 4c-2: an approved change to what a role may do, applied at once on the store PC — whether it was. */
+  readonly roleChange?: CatalogueChangeMade } | Refused | LostLink;
 
 export interface ApprovalsPorts {
   /** The inbox the shell last read (live from head office, or the injected stand-in). */
@@ -97,7 +99,9 @@ export interface ApprovalsPorts {
   /** Whether this person may use approvals at all (`identity.self.read` — every signed-in member of the shop). */
   mayUse(): boolean;
   /** Record a decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. Only on a click. */
-  decide(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string }): Promise<DecideResult>;
+  decide(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string;
+    /** The request's kind — CR-01 step 4c-2: on the store PC a role change is decided through its PIN door. */
+    readonly kind?: string }): Promise<DecideResult>;
   /** D-014: the names the page has read for items and places (none → the codes are shown as they are). */
   names?(): ApprovalNames;
 }
@@ -153,7 +157,7 @@ export type CopyKey =
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData'
   // OB-773: a store manager's catalogue change — the before and after, and whether head office made it.
-  | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade'
+  | 'kindCatalogueChange' | 'changeItem' | 'changeHsn' | 'changeNothing' | 'statusChangeMade' | 'statusChangeNotMade' | 'decidedChangeMade' | 'decidedChangeNotMade' | 'decidedRoleChangeMade'
   | 'fieldName' | 'fieldSku' | 'fieldBaseUom' | 'fieldCategory' | 'fieldTaxClass' | 'fieldLifecycle' | 'fieldBrand' | 'fieldManufacturer'
   | 'fieldParent' | 'fieldMrp' | 'fieldAttributes' | 'fieldBarcodes' | 'fieldNewBarcode' | 'fieldGstRate' | 'fieldLabelFact';
 
@@ -258,6 +262,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     statusChangeMade: 'Approved by {who} and made — the change is in the catalogue.',
     statusChangeNotMade: 'Approved by {who}, but head office could NOT make it: {reason}',
     decidedChangeMade: 'Approved. Head office has made the change.',
+    decidedRoleChangeMade: 'Approved and done: the role is changed at head office now; it reaches the tills and screens on the store computer\'s next pull.',
     decidedChangeNotMade: 'Approved, but head office could NOT make the change: {reason}',
     fieldName: 'Name', fieldSku: 'SKU', fieldBaseUom: 'Unit it is counted in', fieldCategory: 'Category', fieldTaxClass: 'Tax (HSN) class', fieldLifecycle: 'Lifecycle',
     fieldBrand: 'Brand', fieldManufacturer: 'Manufacturer', fieldParent: 'A variant of', fieldMrp: 'MRP', fieldAttributes: 'Attributes',
@@ -361,6 +366,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     statusChangeMade: '{who} ஒப்புக்கொண்டார், மாற்றம் செய்யப்பட்டது — அது பட்டியலில் உள்ளது.',
     statusChangeNotMade: '{who} ஒப்புக்கொண்டார், ஆனால் தலைமை அலுவலகத்தால் அதைச் செய்ய முடியவில்லை: {reason}',
     decidedChangeMade: 'ஒப்புக்கொள்ளப்பட்டது. தலைமை அலுவலகம் மாற்றத்தைச் செய்துவிட்டது.',
+    decidedRoleChangeMade: 'ஒப்புதல் அளிக்கப்பட்டு முடிந்தது: தலைமை அலுவலகத்தில் பணி இப்போது மாற்றப்பட்டது; கடைக் கணினியின் அடுத்த இழுப்பில் கவுண்டர்களுக்கும் திரைகளுக்கும் வரும்.',
     decidedChangeNotMade: 'ஒப்புக்கொள்ளப்பட்டது, ஆனால் தலைமை அலுவலகத்தால் மாற்றத்தைச் செய்ய முடியவில்லை: {reason}',
     fieldName: 'பெயர்', fieldSku: 'SKU', fieldBaseUom: 'எண்ணப்படும் அலகு', fieldCategory: 'வகை', fieldTaxClass: 'வரி (HSN) வகுப்பு', fieldLifecycle: 'வாழ்க்கைச் சுழற்சி',
     fieldBrand: 'பிராண்ட்', fieldManufacturer: 'உற்பத்தியாளர்', fieldParent: 'இதன் வகைமாறு', fieldMrp: 'MRP', fieldAttributes: 'பண்புகள்',
@@ -624,7 +630,7 @@ export interface ApprovalsView {
 
 /** The outcome of pressing Approve or Reject. */
 export type DecideOutcome =
-  | { readonly kind: 'decided'; readonly decision: DecisionWord; readonly catalogueChange?: CatalogueChangeMade }
+  | { readonly kind: 'decided'; readonly decision: DecisionWord; readonly catalogueChange?: CatalogueChangeMade; readonly roleChange?: CatalogueChangeMade }
   | { readonly kind: 'needs_reason' }
   | { readonly kind: 'nobody_named' }
   | { readonly kind: 'not_permitted' }
@@ -787,8 +793,11 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       const row = ports.inbox().waitingForMe.find((r) => r.requestId === requestId);
       if (row === undefined || row.status !== 'waiting') return { kind: 'not_waiting' };
       if (row.requestedBy === config.userId) return { kind: 'own_request' }; // §28 — never sent
-      const r = await ports.decide({ requestId, decision, reason: reason.trim() });
-      if (r.result === 'decided') return { kind: 'decided', decision: r.decision, ...(r.catalogueChange === undefined || r.decision !== 'approved' ? {} : { catalogueChange: r.catalogueChange }) };
+      const r = await ports.decide({ requestId, decision, reason: reason.trim(), kind: row.kind });
+      if (r.result === 'decided') {
+        return { kind: 'decided', decision: r.decision, ...(r.catalogueChange === undefined || r.decision !== 'approved' ? {} : { catalogueChange: r.catalogueChange }),
+          ...(r.roleChange === undefined || r.decision !== 'approved' ? {} : { roleChange: r.roleChange }) };
+      }
       if (r.result === 'lost_link') return { kind: 'lost_link' };
       if (r.code === 'self_approval') return { kind: 'own_request' };
       return { kind: 'refused', code: r.code, whatHappened: r.whatHappened };
@@ -800,6 +809,12 @@ export function createApprovalsSession(config: ApprovalsConfig, ports: Approvals
       const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
       switch (o.kind) {
         case 'decided':
+          // CR-01 step 4c-2: an approved role change is applied at once on the store PC — said, and so is one that was not (P-08).
+          if (o.roleChange !== undefined) {
+            return o.roleChange.applied
+              ? presentStatus({ tone: 'ok', icon: '✓', label: t('decidedRoleChangeMade'), needsAttention: false })
+              : presentStatus({ tone: 'degraded', icon: '⚠', label: fill(t('decidedChangeNotMade'), { reason: o.roleChange.reason ?? '—' }), needsAttention: true });
+          }
           // OB-773: an approved catalogue change is made at once — said, and so is a change head office could not make (P-08).
           if (o.catalogueChange !== undefined) {
             return o.catalogueChange.applied

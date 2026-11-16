@@ -832,6 +832,11 @@ export function buildSurface(deps: {
           routes: (recordAudit) => [...approvalRequestRoutes(approvalRequestsAdapter({ store, now })), ...accessLifecycleRoutes(lifecycleDepsWith(recordAudit))],
           allRequests: (t: string) => approvalRequestsAdapter({ store, now }).allRequests(t),
         },
+        // CR-01 step 4c-2 · ADR-0034 · OB-809: what a role may do, asked and approved by PIN on the store PC — head office's
+        // own role-change routes (check, apply), the same deps as the person's own, the audit marked office_pin.
+        roleChange: {
+          routes: (recordAudit) => roleAdjustmentRoutes({ ...roleAdjustmentAdapter({ store, now }), recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+        },
       }),
       identity: identityDeps,
       ...(privilegeKey === undefined ? {} : { privilegeSealKey: privilegeKey }),

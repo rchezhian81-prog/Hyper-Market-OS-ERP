@@ -175,7 +175,10 @@ export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist
   /** CR-01 step 4b-2 (OB-734 · OB-735 · OB-739): a take-back asked / decided, and a till PIN set, changed or cancelled — by PIN. */
   | 'access_change_request'
   | 'access_change_decision'
-  | 'till_pin_change';
+  | 'till_pin_change'
+  /** CR-01 step 4c-2 (ADR-0034 · OB-740 "B"): a change to what a role may do, asked / decided — by PIN. */
+  | 'role_permission_request'
+  | 'role_permission_decision';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {

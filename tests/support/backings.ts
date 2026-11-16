@@ -13,7 +13,8 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 
 export interface Backing { readonly name: string; readonly harness: () => ApiHarness }
 
-export function useBackings(): readonly Backing[] {
+/** `options` are given to both harnesses (e.g. CR-01 step 4c-2's privilege-seal secret); the store is each backing's own. */
+export function useBackings(options: Omit<NonNullable<Parameters<typeof apiHarness>[0]>, 'store' | 'idempotency'> = {}): readonly Backing[] {
   const DATABASE_URL = process.env['DATABASE_URL'];
   let pool: Pool | undefined;
   beforeAll(async () => {
@@ -23,9 +24,9 @@ export function useBackings(): readonly Backing[] {
     await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
   });
   afterAll(async () => { await pool?.end(); });
-  const out: Backing[] = [{ name: 'the in-memory event store', harness: () => apiHarness() }];
+  const out: Backing[] = [{ name: 'the in-memory event store', harness: () => apiHarness({ ...options }) }];
   if (DATABASE_URL !== undefined) {
-    out.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
+    out.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ ...options, store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
   }
   return out;
 }
