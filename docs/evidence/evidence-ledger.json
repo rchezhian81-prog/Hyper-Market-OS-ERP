@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2428,
+  "testFiles": 2430,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -160,7 +160,7 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 35,
+        "unit": 36,
         "integration": 29,
         "realDb": 13,
         "browser": 11,
@@ -177,6 +177,7 @@
           "tests/unit/cr01-step5-the-licence-is-signed-and-checked-offline.test.ts",
           "tests/unit/cr01-step5-the-owners-licence-desk.test.ts",
           "tests/unit/customer-pii-safeguards.test.ts",
+          "tests/unit/d010-d042-orders-waiting-for-the-second-person.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/effective-grants.test.ts",
@@ -534,11 +535,11 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 26,
         "realDb": 14,
-        "browser": 12,
-        "connected": 5,
+        "browser": 13,
+        "connected": 6,
         "device": 0,
         "uat": 0
       },
@@ -549,6 +550,7 @@
           "tests/unit/blanket-po-and-segregation.test.ts",
           "tests/unit/buying-scope.test.ts",
           "tests/unit/contract-expiry-alerts.test.ts",
+          "tests/unit/d010-d042-orders-waiting-for-the-second-person.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-buying-boot.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -613,6 +615,7 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/d010-d042-a-waiting-order-is-counted-and-issued-from-approvals.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/supplier-contracts-and-rebate-schemes-are-recorded-on-their-pages.e2e.ts",
@@ -626,6 +629,7 @@
           "tests/e2e/w3-earned-rebates-are-measured-and-put-in-the-books-on-the-rebates-page.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/d010-d042-a-waiting-order-is-counted-and-issued-from-approvals.e2e.ts",
           "tests/e2e/open-orders-are-amended-and-cancelled-on-the-buying-page.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-on-the-production-api.e2e.ts",

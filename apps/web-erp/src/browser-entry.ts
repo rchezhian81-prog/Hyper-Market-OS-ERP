@@ -279,6 +279,7 @@ import {
 } from './suppliers-session';
 import { createSupplierBillsSession, browserHeadOfficeCall, type SupplierBillsSession } from './supplier-bills-session';
 import { createOpenToBuySession, type OpenToBuySession } from './open-to-buy-session';
+import { createOrdersToIssueSession, ORDERS_TO_ISSUE_WORDS, type OrdersToIssueSession } from './orders-to-issue-session'; // D-042
 import {
   createIndentsSession,
   type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
@@ -434,6 +435,8 @@ export interface ManagerData {
   // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
   // Absent means the box was not told; the screen then names nobody and refuses every decision.
   readonly userId?: string;
+  /** D-010: what the person signed in holds (the store computer fills it from its role register); absent = not told. */
+  readonly permissions?: readonly string[];
   /** Maximum value this manager may approve alone; null = no limit. */
   readonly approvalLimitMinor?: number | null;
   readonly storeId?: string;
@@ -5773,6 +5776,9 @@ interface ManagerWindow {
   };
   approvalsData?: ApprovalsData;
   approvalsSession?: ApprovalsSession;
+  /** D-042: purchase orders waiting for their second person, on the Approvals page. */
+  ordersToIssue?: OrdersToIssueSession;
+  ordersToIssueWords?: typeof ORDERS_TO_ISSUE_WORDS;
   /** The shell reads the live inbox through this and re-presents it — a GET read; decisions go through the session. */
   approvals?: {
     refresh(): Promise<ApprovalInboxView | null>;
@@ -6818,7 +6824,10 @@ if (browserWindow !== undefined) {
   if (managerStorageProblem !== undefined) browserWindow.managerStorageProblem = managerStorageProblem;
   // Round A: Today also counts what waits for this person at head office and head office's open orders — in their own
   // session, read only; offline the store computer's figures stay and the tiles say head office was not reached.
-  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch), figures: todayLiveFigures, overShort: overShortStillOpen });
+  // D-010: who is looking and what they hold (the store computer fills both for the person signed in), so an order waiting
+  // for its second person counts as theirs to clear only when they may issue it and did not raise it.
+  const todayViewer = { userId: browserWindow.managerData?.userId ?? null, permissions: browserWindow.managerData?.permissions ?? null };
+  browserWindow.todayLive = Object.freeze({ read: () => readLiveCounts((globalThis as { fetch?: typeof fetch }).fetch, todayViewer), figures: todayLiveFigures, overShort: overShortStillOpen });
   // The buyer's shell shares this bundle: one build, two screens, and each boots only what it was
   // given. A shell that was told nothing gets `undefined` and says so rather than showing zeros.
   // The buyer's DURABLE device queue (SP-7a · F02): opened per store so the session writes into it and the relay drains
@@ -7397,6 +7406,18 @@ if (browserWindow !== undefined) {
         approvalsPortsFromData(approvalsData, inbox),
       ),
     };
+  }
+  // D-042 (fix batch 4a): the purchase orders waiting for their second person, listed on Approvals with their lines, and
+  // issued through the Budget tab's own path (`POST /v1/purchase/orders/:poId/approval`) — read and written as the person
+  // signed in. Nobody named → no session (the page shows nothing about orders).
+  const ordersFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+  browserWindow.ordersToIssueWords = ORDERS_TO_ISSUE_WORDS;
+  if (typeof approvalsData?.userId === 'string' && approvalsData.userId.trim() !== '' && ordersFetch !== undefined) {
+    browserWindow.ordersToIssue = createOrdersToIssueSession(
+      browserHeadOfficeCall(ordersFetch.bind(globalThis)),
+      { userId: approvalsData.userId, permissions: Array.isArray(approvalsData.permissions) ? approvalsData.permissions : null },
+      readBoxProductNames,
+    );
   }
   // The Workforce guidance inbox (A10): boots from the box's policy (who + what they hold), then the shell
   // refreshes the worklist with a live GET (read-only). Offline it shows its sample stand-in and says so. A10
