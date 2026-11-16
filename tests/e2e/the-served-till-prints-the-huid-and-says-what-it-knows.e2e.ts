@@ -149,7 +149,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
     expect(bill).toMatch(/^Gold ring 22K\n.*\n {2}HUID: AB12CD$/m);
     expect(bill).toMatch(/^ {2}1\.234 kg x 80\.00 +98\.72$/m);
     expect(bill).toMatch(/^ {2}500 g x 4\.00 +2000\.00$/m);
-    expect(bill).toMatch(/^TOTAL +47098\.72$/m);
+    // Paid in cash: the 72 paise come off as a printed round off (OB-805 A · OB-285, down only).
+    expect(bill).toMatch(/^Round off +-0\.72$/m);
+    expect(bill).toMatch(/^TOTAL +47098\.00$/m);
     expect(await page.getAttribute('#refusal-receipt', 'aria-label')).toBe('The bill');
     // The banner's own words are as before: the bill number and the gold piece sold.
     expect(await page.textContent('#refusal-text')).toContain('Gold ring 22K — HUID AB12CD');

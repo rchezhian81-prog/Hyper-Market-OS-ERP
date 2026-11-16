@@ -134,18 +134,20 @@ describe.skipIf(!HAVE_BROWSER)('F7: the served till spreads an offer by what eac
     await expect.poll(async () => (await readLog(edge.log.path)).length, { timeout: 10_000 }).toBe(1);
     const [first] = await readLog(edge.log.path);
     if (first?.ok !== true) throw new Error('the sale did not land on the box');
-    const saved = JSON.parse(first.record) as { lines: Line[]; total: number; netMinor: number; taxMinor: number };
+    const saved = JSON.parse(first.record) as { lines: Line[]; total: number; netMinor: number; taxMinor: number; roundOffMinor?: number };
     const of = (id: string): Line => saved.lines.find((l) => l.productId === id)!;
     expect(of('P-BAN')).toMatchObject({ quantityMinor: 333, uom: 'kg', unitPriceMinor: 99_99, lineTotalMinor: 1_06 });
     expect(of('P-RICE').lineTotalMinor).toBe(2_23);
     expect(of('P-BAG')).toMatchObject({ unitPriceMinor: 5_00, lineTotalMinor: 5_00 });
-    expect(saved.total).toBe(8_29);
+    // Paid in cash: the bill's 29 paise come off as its round off (OB-805 A · OB-285, down only) — the lines stand at ₹8.29.
+    expect(saved.total).toBe(8_00);
+    expect(saved.roundOffMinor).toBe(-29);
     expect(saved.lines.every((l) => l.lineTotalMinor >= 0)).toBe(true);
-    expect(saved.lines.reduce((n, l) => n + l.lineTotalMinor, 0)).toBe(saved.total);
+    expect(saved.lines.reduce((n, l) => n + l.lineTotalMinor, 0)).toBe(8_29);
     const inside = saved.lines.map((l) => splitInclusive(money(l.lineTotalMinor, 'INR'), rate(l.taxRateBps)));
     expect(inside.every((s) => s.net.minor >= 0 && s.tax.minor >= 0)).toBe(true);
     expect(saved.taxMinor).toBe(inside.reduce((n, s) => n + s.tax.minor, 0));
-    expect(saved.netMinor + saved.taxMinor).toBe(saved.total);
+    expect(saved.netMinor + saved.taxMinor).toBe(8_29); // the GST is of the goods; the round off is not taxed
   });
 
   it('L1: a carry bag posted straight to the box as "kg" and charged a paisa is refused before the disk', async () => {

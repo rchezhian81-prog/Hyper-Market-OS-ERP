@@ -122,6 +122,7 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
       ...(extras.cashierName === undefined ? {} : { cashierName: extras.cashierName }),
       lines: bill.lines, taxBands: bill.taxBands,
       netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
+      ...(bill.roundOffMinor === undefined || bill.roundOffMinor === 0 ? {} : { roundOffMinor: bill.roundOffMinor }),
       tenders: bill.tenders, pricesIncludeTax: true,
       header: brandedHeader(extras.brandName, template?.header ?? []), footer: template?.footer ?? [],
       // B10: the store's current FSSAI licence number, printed on every bill.

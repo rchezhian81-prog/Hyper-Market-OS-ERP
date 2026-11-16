@@ -97,6 +97,8 @@ export function committedBillOf(answer: BillCopyAnswer, identity?: TaxInvoiceIde
     taxMinor: num(r['taxMinor']) ?? [...bands.values()].reduce((n, b) => n + b.tax, 0),
     ...(num(r['cessMinor']) === undefined ? {} : { cessMinor: num(r['cessMinor'])! }),
     totalMinor, tenders, ...(taxInvoice === undefined ? {} : { taxInvoice }),
+    // OB-805 A: the round off the bill was saved with (0 to −₹1) — the copy prints it as the original did.
+    ...((ro) => (ro === undefined || ro >= 0 || ro < -100 ? {} : { roundOffMinor: ro }))(num(r['roundOffMinor'])),
   };
   return { ok: true, bill };
 }
