@@ -318,8 +318,6 @@ describe('Record the loss — a small loss as before; a big one only with the ra
         'Not recorded — u-manager rejected it: “count the sacks again”. Change what they said and ask again.'],
       [[row({ requestId: 'r1', status: 'expired', decidedBy: 'u-manager' })], big(), { kind: 'expired' },
         'Not recorded — the approval ran out of time before it was used. Ask again.'],
-      [[row({ requestId: 'r1', status: 'used', decidedBy: 'u-manager', usedBy: 'write-off:WO-1' })], big(), { kind: 'used' },
-        'Not recorded — that approval was already used once. One approval allows one loss; ask again.'],
       [[row({ requestId: 'r1', status: 'approved', decidedBy: 'u-manager' })], big({ qty: 13 }), { kind: 'changed' },
         'Not recorded — this is not exactly the loss that was approved (something changed after you asked). Ask for approval again for exactly this.'],
       [[row({ requestId: 'r1', status: 'approved', decidedBy: 'u-manager' })], big({ evidenceRef: 'photo-18' }), { kind: 'changed' },
@@ -333,6 +331,15 @@ describe('Record the loss — a small loss as before; a big one only with the ra
       expect(o.s.presentRecordOutcome('en', r).label, outcome.kind).toBe(words);
       expect(o.s.presentRecordOutcome('ta', r).label, `${outcome.kind} in Tamil`).toMatch(/^பதிவு செய்யப்படவில்லை/);
     }
+  });
+
+  it('OB-808 A: an approval already used for exactly this loss means it was written off when it was approved — said as recorded, nothing sent again', async () => {
+    const o = office({ mine: [row({ requestId: 'r1', status: 'used', decidedBy: 'u-manager', usedBy: 'write-off:WO-1' })] });
+    const r = await o.s.record(big());
+    expect(r).toEqual({ kind: 'head_office_refused', code: 'write_off_already_recorded', whatHappened: '' });
+    expect(o.posted).toEqual([]);
+    expect(o.s.presentRecordOutcome('en', r).label).toBe('This loss was already recorded. Nothing was recorded again.');
+    expect(o.s.presentRecordOutcome('en', r).label).not.toMatch(/ask again/);
   });
 
   it('a value changed after asking is not what was approved — the amount is part of it', async () => {

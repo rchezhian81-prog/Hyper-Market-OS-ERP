@@ -301,7 +301,7 @@ import {
 import {
   createApprovalsSession,
   type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus, type ApprovalNames,
-  type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
+  type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused, type StockChangeMade,
 } from './approvals-session';
 import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
 import { createTransfersSession, type TransfersSession } from './transfers-session';
@@ -3951,7 +3951,17 @@ function approvalRowOf(raw: unknown): ApprovalRequestView | null {
     ...(nonBlank(r['expiresAt']) || r['expiresAt'] === null ? { expiresAt: r['expiresAt'] as string | null } : {}),
     ...(nonBlank(r['usedBy']) ? { usedBy: r['usedBy'] } : {}),
     ...catalogueChangeOf(r['catalogueChange']),
+    ...stockChangeOf(r['stockChange']),
   };
+}
+
+/** OB-808 A: whether head office wrote off an approved loss at once (and its words when it could not) — read defensively. */
+function stockChangeOf(raw: unknown): { stockChange?: StockChangeMade } {
+  if (raw === null || typeof raw !== 'object') return {};
+  const c = raw as Record<string, unknown>;
+  if (typeof c['applied'] !== 'boolean' || (c['kind'] !== 'stock_write_off' && c['kind'] !== 'stock_adjustment_up')
+    || !nonBlank(c['productId']) || !nonBlank(c['locationId']) || typeof c['qty'] !== 'number' || !Number.isSafeInteger(c['qty']) || typeof c['uom'] !== 'string') return {};
+  return { stockChange: { applied: c['applied'], kind: c['kind'], productId: c['productId'], locationId: c['locationId'], qty: c['qty'], uom: c['uom'], ...(nonBlank(c['reason']) ? { reason: c['reason'] } : {}) } };
 }
 
 /** OB-773: whether head office made an approved catalogue change (and its words when it did not) — read defensively. */
@@ -4115,7 +4125,8 @@ async function postApprovalDecision(input: { readonly requestId: string; readonl
       const cc = body.catalogueChange;
       const made = cc !== undefined && typeof cc.applied === 'boolean'
         ? { catalogueChange: { applied: cc.applied, ...(nonBlank(cc.reason) ? { reason: cc.reason } : {}) } } : {};
-      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '', ...made };
+      // OB-808 A: an approved write-off is written off at once — what head office did, or why it could not.
+      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '', ...made, ...stockChangeOf((body as Record<string, unknown>)['stockChange']) };
     }
     return { result: 'refused', ...(await refusalOf(res)) };
   } catch {

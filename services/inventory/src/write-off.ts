@@ -23,7 +23,7 @@ import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { actionDetails, approvalNamedIn, fingerprintOf, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 
@@ -135,6 +135,22 @@ export interface WriteOffDeps {
   readonly now: () => string;
 }
 
+/**
+ * OB-808 A — a write-off already on file that THIS raiser's named approval was spent on, for exactly this body: the stored
+ * record, so a "go ahead" after the approval already wrote it off replays it. Anything else (another person, another
+ * approval, a different body, no approval) is undefined, and the route refuses the id as used, as before.
+ */
+async function alreadyWrittenOffByItsApproval(deps: WriteOffDeps, tenantId: string, caller: string, writeOffId: string, body: unknown): Promise<StoredWriteOff | undefined> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (!isStr(b['approvalId']) || deps.approvals === undefined) return undefined;
+  const state = await deps.approvals.approvalState(tenantId, (b['approvalId'] as string).trim());
+  if (state === undefined || state.usedBy !== `write-off:${writeOffId}` || state.request.kind !== 'stock_write_off'
+    || state.request.subjectRef !== writeOffId || state.request.requestedBy !== caller
+    || state.request.fingerprint !== fingerprintOf(actionDetails(body, { writeOffId }))) return undefined;
+  const stored = (await deps.writeOffs(tenantId)).find((w) => w.id === writeOffId);
+  return stored !== undefined && stored.raisedBy === caller ? stored : undefined;
+}
+
 export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
   return [
     {
@@ -176,6 +192,13 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           });
         }
         if (await deps.writeOffExists(ctx.tenantId, writeOffId)) {
+          // OB-808 A: approving a loss writes it off at once, in the raiser's name, spending the approval on THIS write-off.
+          // The raiser then pressing "Record the loss" with that same approval is the same loss, already recorded — answered
+          // with what was recorded, never written off twice and never told it failed.
+          const replay = await alreadyWrittenOffByItsApproval(deps, ctx.tenantId, ctx.userId, writeOffId, ctx.body);
+          if (replay !== undefined) {
+            return { status: 201, body: { id: writeOffId, lossType: replay.lossType, qtyRemoved: replay.qtyRemoved, valueMinor: replay.valueMinor, valueSource: replay.valueSource, requiredApproval: replay.requiredApproval, evidenceRef: replay.evidenceRef, alreadyRecorded: true } };
+          }
           throw apiError(409, {
             code: 'write_off_already_recorded',
             whatHappened: `Write-off ${writeOffId} has already been recorded — an id is used once; a correction is a new, compensating write-off.`,

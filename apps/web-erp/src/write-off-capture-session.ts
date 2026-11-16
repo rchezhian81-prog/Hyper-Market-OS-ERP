@@ -672,7 +672,12 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       if (!connected) return { kind: 'not_connected' };
       if (body.evidenceRef === undefined) return { kind: 'needs_evidence' };
       const found = await findOwnApproval(ports.approvalInbox, WRITE_OFF_APPROVAL_KIND, writeOffId, writeOffDetails(writeOffId, body), body.valueMinor);
-      if (!('requestId' in found)) return found.kind === 'done' || found.kind === 'cannot_check' ? { kind: 'not_asked' } : found;
+      if (!('requestId' in found)) {
+        // OB-808 A: approving the loss wrote it off at once, in the raiser's name — so its approval is "used" by this very
+        // loss. Said as recorded (nothing is sent again), never as "ask again".
+        if (found.kind === 'used') return { kind: 'head_office_refused', code: 'write_off_already_recorded', whatHappened: '' };
+        return found.kind === 'done' || found.kind === 'cannot_check' ? { kind: 'not_asked' } : found;
+      }
       return send(writeOffId, body, found);
     },
 
