@@ -27,6 +27,7 @@
 // `signControlTotal`, `assessReconciliation`, `outstandingExceptions`), so a decision that passes at the
 // desk passes here for the same reasons, and one that fails, fails for the same reasons.
 
+import { randomUUID } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
@@ -149,7 +150,7 @@ export function decisionRoutes(deps: MigrationDeps): readonly Route[] {
   };
   const refuse = async (tenantId: string, d: Omit<RefusedDecision, 'decisionId' | 'relayedAt'>): Promise<RefusedDecision> => {
     const relayedAt = deps.now();
-    const refused: RefusedDecision = { ...d, decisionId: `${d.kind}-${d.subjectId}-${relayedAt}`, relayedAt };
+    const refused: RefusedDecision = { ...d, decisionId: `${d.kind}-${d.subjectId}-${relayedAt}-${randomUUID().slice(0, 8)}`, relayedAt }; // P-08: two refusals in the same millisecond are two records, never one
     if (deps.recordRefusedDecision === undefined) notWired();
     await deps.recordRefusedDecision!(tenantId, refused);
     return refused;

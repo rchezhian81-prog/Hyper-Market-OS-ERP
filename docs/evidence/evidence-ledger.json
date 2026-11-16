@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 2480,
+  "testFiles": 2481,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -6806,7 +6806,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 7,
+        "integration": 8,
         "realDb": 2,
         "browser": 3,
         "connected": 1,
@@ -6834,7 +6834,8 @@
           "tests/integration/parallel-run-through-the-api.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
-          "tests/integration/the-owner-seals-the-export-and-writes-the-parallel-run-terms.test.ts"
+          "tests/integration/the-owner-seals-the-export-and-writes-the-parallel-run-terms.test.ts",
+          "tests/integration/two-refusals-in-one-millisecond-are-both-kept.test.ts"
         ],
         "realDb": [
           "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",

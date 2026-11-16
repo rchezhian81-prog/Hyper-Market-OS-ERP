@@ -16,6 +16,7 @@
 //       `MigrationParallelDaySigned` → `…/days/:businessDate/signature/synced` — the signature, re-judged here.
 //     A relayed decision the cloud cannot accept is RECORDED AS REFUSED (visible, hard rule #10) and acknowledged 202.
 
+import { randomUUID } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
@@ -80,7 +81,7 @@ export function parallelDayRoutes(deps: MigrationDeps): readonly Route[] {
   );
   const refuse = async (tenantId: string, d: Omit<RefusedDecision, 'decisionId' | 'relayedAt'>): Promise<RefusedDecision> => {
     const relayedAt = deps.now();
-    const refused: RefusedDecision = { ...d, decisionId: `${d.kind}-${d.subjectId}-${relayedAt}`, relayedAt };
+    const refused: RefusedDecision = { ...d, decisionId: `${d.kind}-${d.subjectId}-${relayedAt}-${randomUUID().slice(0, 8)}`, relayedAt }; // P-08: two refusals in the same millisecond are two records, never one
     if (deps.recordRefusedDecision === undefined) notWired();
     await deps.recordRefusedDecision!(tenantId, refused);
     return refused;
