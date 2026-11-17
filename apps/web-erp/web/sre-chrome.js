@@ -1038,7 +1038,16 @@
       find.id = 'sre-find';
       find.className = 'sre-find';
       find.autocomplete = 'off';
-      find.addEventListener('input', () => filterMenu(find.value));
+      // Batch 11 (owner's store PC, 17 Nov 2026): a browser's saved login filled the signed-in staff ID into this box,
+      // which `autocomplete="off"` does not stop, and the menu then matched no screen. A field a browser may never fill:
+      // not a login name, read-only until the person puts the cursor in it, and anything in it before then is wiped.
+      find.name = 'sre-screen-search';
+      find.readOnly = true;
+      let touched = false; // the person has put the cursor in the box — only then is what is in it theirs
+      const wipeUntouched = () => { if (!touched && find.value !== '') { find.value = ''; filterMenu(''); } };
+      find.addEventListener('focus', () => { touched = true; find.readOnly = false; });
+      find.addEventListener('input', () => { if (!touched) { wipeUntouched(); return; } filterMenu(find.value); });
+      for (const ms of [0, 300, 1000, 2500]) setTimeout(wipeUntouched, ms);
       find.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { const first = byId('sre-menu')?.querySelector('.group-section:not([hidden]) ul:not([hidden]) li:not([hidden]) a'); if (first) { e.preventDefault(); first.click(); } }
         if (e.key === 'Escape') { find.value = ''; filterMenu(''); }

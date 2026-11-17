@@ -97,9 +97,33 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
     } finally { await context.close(); }
   }, 60_000);
 
+  it('batch 11: a browser that fills the signed-in staff ID into the search box does not empty the menu', async () => {
+    const { context, page } = await open(PEOPLE.manager, '/approvals');
+    try {
+      // The owner's store PC (17 Nov 2026): the browser's saved login put "owner-01" into "Find a screen" and the menu
+      // read "No screen matches". The box is read-only until the person puts the cursor in it, and is not a login field.
+      expect(await page.getAttribute('#sre-find', 'readonly')).not.toBeNull();
+      expect(await page.getAttribute('#sre-find', 'name')).toBe('sre-screen-search');
+      // What an autofill does: a value set and an input event fired, with nobody's cursor in the box.
+      await page.evaluate(() => {
+        const box = (globalThis as unknown as { document: { getElementById(i: string): { value: string; dispatchEvent(e: unknown): void } } }).document.getElementById('sre-find');
+        box.value = 'owner-01';
+        box.dispatchEvent(new (globalThis as unknown as { Event: new (t: string, o: unknown) => unknown }).Event('input', { bubbles: true }));
+      });
+      expect(await page.inputValue('#sre-find')).toBe('');
+      expect((await shown(page, '#sre-menu li:not([hidden]) a')).length).toBeGreaterThan(3);
+      expect(await page.isVisible('#sre-find-none')).toBe(false);
+      // A person who puts the cursor in it and types still searches.
+      await page.focus('#sre-find');
+      await page.fill('#sre-find', 'shortage');
+      expect(await shown(page, '#sre-menu li:not([hidden]) a')).toEqual(['Cash over / short']);
+    } finally { await context.close(); }
+  }, 60_000);
+
   it('the search finds a page by a plain word, in English or Tamil, and Enter opens it', async () => {
     const { context, page } = await open(PEOPLE.manager, '/approvals');
     try {
+      await page.focus('#sre-find'); // a person puts the cursor in the box first (it is read-only until then — batch 11)
       await page.fill('#sre-find', 'salary'); // the manager has My payslip (their own), never Payroll
       expect(await shown(page, '#sre-menu li:not([hidden]) a')).toEqual(['My payslip']);
       expect(await page.textContent('#sre-find-count')).toBe('1 screen matches');

@@ -45,7 +45,7 @@ import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
 import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './head-office-pages'; // OB-380
 import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
-import { OFFICE_SESSION_MINUTES, rolesAtThisStore } from './office-sign-in';
+import { OFFICE_SESSION_MINUTES, rolesAtThisStore, FRONT_DOOR, tillOnlyPage } from './office-sign-in';
 import { bodyAsTheApiReadsIt, officeCallKey, sealOfficeCall } from '../../../packages/identity/src/office-call-seal'; // audit C-1 · ADR-0033 am. 3
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
@@ -860,6 +860,24 @@ export function startScreenServer(input: {
     send(res, 200, panel.download.type, panel.certificateDer);
   };
 
+  /**
+   * CR-01 step 4f: where a person's work starts — the first screen of their own menu (their role's "Your daily work" list
+   * comes first: Today for the owner and a manager, Supplier bills for the accountant, …), counting only office screens
+   * they may open by their own permissions on this store. Nothing is widened: it is the same menu the screens draw.
+   */
+  const landingFor = (userId: string): string => {
+    const pack = input.snapshot().pack;
+    const held = permissionsOf(userId, pack);
+    const menu = navigationPayload({ screen: 'manager', pack, payload: { userId }, screenOf: screenOfPath });
+    for (const group of menu.groups) {
+      for (const item of group.items) {
+        const screen = screenOfPath(item.path.split('?')[0] ?? item.path);
+        if (screen !== null && !OPEN_SCREENS.includes(screen) && mayOpenScreen(screen, held)) return redirectFor(item.path) ?? item.path;
+      }
+    }
+    return '/manager/'; // no screen of theirs: the office home, whose own gate says which screens they may open
+  };
+
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
@@ -886,11 +904,28 @@ export function startScreenServer(input: {
         const next = safeNext(form.next);
         const outcome = await office.signIn({ staffId: form.staffId, pin: form.pin });
         if (!outcome.ok) {
+          // CR-01 step 4f: at the front door a till-only PIN is told where its work is — still no office sign-in.
+          if (outcome.refusedBecause === 'not_an_office_role' && next === FRONT_DOOR) { page(res, 403, tillOnlyPage(), officeCookie(undefined)); return; }
           page(res, outcome.refusedBecause === 'not_an_office_role' ? 403 : outcome.refusedBecause === 'locked' ? 429 : 401, signInPage({ next, problem: outcome.refusedBecause }), officeCookie(undefined));
           return;
         }
-        res.writeHead(303, { location: next, 'set-cookie': officeCookie(outcome.token), 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        const to = next === FRONT_DOOR ? landingFor(outcome.userId) : next;
+        res.writeHead(303, { location: to, 'set-cookie': officeCookie(outcome.token), 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
         res.end();
+        return;
+      }
+      // CR-01 step 4f · OB-795: the front door — `/` and `/office/` always ask, so a shared PC never carries the last person
+      // in: an office sign-in still open here (and its head-office session, OB-388) is ended first, exactly as Sign out does.
+      if (req.method === 'GET' && (doorPath === '/' || doorPath === '/office' || doorPath === FRONT_DOOR)) {
+        if (office === undefined) { // no PIN gate on this socket (the hosted copy): the office home, as before
+          res.writeHead(303, { location: '/manager/', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+          res.end();
+          return;
+        }
+        await office.signOut(officeTokenOf(req.headers['cookie']));
+        await link?.end(req);
+        res.setHeader('set-cookie', [officeCookie(undefined), 'sre_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict']);
+        send(res, 200, 'text/html; charset=utf-8', signInPage({ next: FRONT_DOOR }));
         return;
       }
       // OB-263: the evening check's doors (the day's figures, the mapping, the load, the reasons, the signature).

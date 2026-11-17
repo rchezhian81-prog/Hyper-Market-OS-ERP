@@ -118,6 +118,7 @@ describe.skipIf(!existsSync(CHROMIUM))('D-027 / D-007: a short daily menu per ro
       for (const no of ['Duplicates and merges', 'Category rules', 'App content', 'GST and cess rates', 'Picker handheld', 'Delivery handheld', 'Approvals']) expect(visible).not.toContain(no);
       expect(await page.locator('#sre-menu .sre-more a', { hasText: 'Duplicates and merges' }).count()).toBe(1);
       // the search still looks everywhere, "More" included, and opens what it finds
+      await page.focus('#sre-find'); // the box is read-only until a person puts the cursor in it (batch 11: autofill)
       await page.fill('#sre-find', 'duplicates');
       expect(await shownLinks(page)).toEqual(['Duplicates and merges']);
       await page.fill('#sre-find', '');
