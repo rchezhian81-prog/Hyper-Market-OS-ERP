@@ -84,7 +84,8 @@ const PAGES: { readonly id: string; readonly path: string; readonly who: string 
  * head office's role catalogue (Group T1 carries it in both languages this round) and is allowed here on purpose.
  */
 const NOT_WORDS = [
-  'SRE Hyper Market', 'SRE Retail', 'Hyper Market', 'Toned milk 500 ml', 'English',
+  // the product's own name, 'Retail OS', set beside the SRE mark in the sidebar (batch 12, the owner's new look) — a name, not a phrase
+  'SRE Hyper Market', 'SRE Retail', 'Retail OS', 'Hyper Market', 'Toned milk 500 ml', 'English',
   'Store manager', 'Owner', 'Cashier', 'Accountant', 'Platform administrator', 'Security reviewer', 'Internal Committee member',
   // a time format, and the quality gates' recorded verdict words (the record's own values, shown as recorded)
   'HH:MM', 'GO, HOLD', 'REWORK', 'GO', 'HOLD',
