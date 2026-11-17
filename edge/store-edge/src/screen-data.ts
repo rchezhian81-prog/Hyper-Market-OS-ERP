@@ -845,6 +845,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   payload['tradingDay'] = input.tradingDay;
   // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
   payload['today'] = todayFigures(input);
+  // Batch 12 (the owner's Today look): the comparisons, the chart, the recent bills and the last sync — all from this box.
+  payload['todayBoard'] = todayBoard(input);
   // OB-392: lane-by-lane health — one card per lane, each one tap from Today. Only on a box that keeps device reports.
   const lanes = laneHealth(input);
   if (lanes !== undefined) payload['lanes'] = lanes;
@@ -1082,6 +1084,75 @@ function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): 
     for (const part of tenderPartsOf(sale)) out.tenderMix[part.kind] = (out.tenderMix[part.kind] ?? 0) + part.amountMinor;
   }
   return out;
+}
+
+/** Batch 12: "HH:MM" of a wall-clock reading that is ALREADY the shop's (`shopClock`), never of a UTC instant. */
+const hhmmOf = (shopWall: string | null): string | null => (shopWall === null ? null : (shopWall.split('T')[1] ?? '').substring(0, 5) || null);
+
+/** Batch 12: one day's bills and takings, before refunds — the Today cards' own rule (each bill's own total). */
+export interface DayTakings { readonly tradingDay: string; readonly bills: number; readonly takenMinor: number }
+
+/**
+ * Batch 12 — what the owner's Today look needs beyond `todayFigures`, every part from this box's own log (P-08):
+ *  - `previous`: the most recent EARLIER trading day this box holds, counted only up to the same time of day as now
+ *    ("by this time"), so a half-day is never compared with a whole one. Null when the box holds no earlier day — the page
+ *    then says "no previous day yet", never an arrow made from nothing.
+ *  - `byHour`: today's bills by the shop's hour; `week`: the last seven held days (absent days stay absent).
+ *  - `recent`: today's last eight bills, newest first, at the shop's clock.
+ *  - `lastSentAt` / `lastSentShop`: when this box last sent its records to head office — only on a box that tracks it;
+ *    absent otherwise, and the page says "Not known".
+ */
+export function todayBoard(input: ScreenInput): {
+  readonly today: DayTakings;
+  readonly previous: (DayTakings & { readonly byThisTime: true }) | null;
+  readonly byHour: readonly { hour: string; bills: number; takenMinor: number }[];
+  readonly week: readonly { tradingDay: string; bills: number; takenMinor: number }[];
+  readonly recent: readonly { readonly id: string; readonly number: string | null; readonly at: string | null; readonly laneId: string | null; readonly cashierId: string | null; readonly totalMinor: number }[];
+  readonly lastSentAt?: string | null;
+  readonly lastSentShop?: string | null;
+} {
+  const zone = packTimeZone(input.pack);
+  const day = salesOn(input.sales, input.tradingDay).sales;
+  const sum = (sales: readonly LoggedSale[]): number => sales.reduce((s, sale) => s + (sale.total ?? 0), 0);
+  const today: DayTakings = { tradingDay: input.tradingDay, bills: day.length, takenMinor: sum(day) };
+
+  const earlier = tradingDaysHeld(input.sales).find((d) => d < input.tradingDay);
+  let previous: (DayTakings & { readonly byThisTime: true }) | null = null;
+  if (earlier !== undefined) {
+    // The same moment on that day: now, moved back by the whole days between the two trading days (no daylight saving in
+    // the shop's zone; a sale with no time cannot be placed before or after it, so it is left out of "by this time").
+    const now = Date.parse(input.now);
+    const shift = daysBetween(earlier, input.tradingDay) * 86_400_000;
+    const upTo = salesOn(input.sales, earlier).sales.filter((s) => {
+      const at = s.committedAt === undefined ? Number.NaN : Date.parse(s.committedAt);
+      return !Number.isNaN(at) && at + shift <= now;
+    });
+    previous = { tradingDay: earlier, bills: upTo.length, takenMinor: sum(upTo), byThisTime: true };
+  }
+
+  const recent = [...day]
+    .sort((a, b) => (b.committedAt ?? '').localeCompare(a.committedAt ?? ''))
+    .slice(0, 8)
+    .map((s) => ({
+      id: s.id,
+      number: s.number ?? null,
+      at: s.committedAt === undefined ? null : hhmmOf(shopClock(s.committedAt, zone)),
+      laneId: s.laneId ?? null,
+      cashierId: s.cashierId ?? null,
+      totalMinor: s.total ?? 0,
+    }));
+
+  return {
+    today,
+    previous,
+    byHour: takingsByHourOf(input.pack, day),
+    week: recentDaysOf(input.sales, 7),
+    recent,
+    ...(input.laneLink === undefined ? {} : {
+      lastSentAt: input.laneLink.lastSentAt,
+      lastSentShop: input.laneLink.lastSentAt === null ? null : hhmmOf(shopClock(input.laneLink.lastSentAt, zone)),
+    }),
+  };
 }
 
 /**

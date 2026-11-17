@@ -26,6 +26,7 @@ import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import type { StorePack } from './store-pack';
 import { assignmentsFrom, peopleFrom } from './screen-navigation';
+import { SIGN_IN_CSS } from '../../../packages/ui/src/sign-in-style';
 
 /** The cookie the browser keeps for an office sign-in (HttpOnly, SameSite=Strict, this PC's loopback only). */
 export const OFFICE_COOKIE = 'sre_office';
@@ -312,42 +313,105 @@ export function safeNext(next: string | undefined): string {
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
-const PAGE_STYLE = [
-  'body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;background:#f4f6f8;color:#14202b}',
-  'main{max-width:30rem;margin:4rem auto;background:#fff;border:1px solid #c9d2da;border-radius:8px;padding:2rem}',
-  'h1{font-size:1.5rem;margin:0 0 .25rem}',
-  'p.ta,h1 .ta{display:block;font-size:1.05rem;color:#33424f;margin-top:.25rem}',
-  'label{display:block;margin-top:1rem;font-weight:600}',
-  'input{display:block;width:100%;box-sizing:border-box;min-height:48px;font-size:1.25rem;padding:.5rem;margin-top:.25rem;border:1px solid #6b7a88;border-radius:4px}',
-  'button{margin-top:1.5rem;min-height:48px;min-width:48px;font-size:1.1rem;padding:.6rem 1.2rem;border:0;border-radius:4px;background:#0b5394;color:#fff;cursor:pointer}',
-  'a{display:inline-block;min-height:44px;line-height:44px;color:#0b5394}',
-  '.problem{border-left:4px solid #b3261e;background:#fdecea;padding:.75rem;margin-top:1rem}',
-  'ul{padding-left:1.25rem}',
+/**
+ * Batch 12 (owner, 17 Nov 2026: "like the cloud demo's login page"): the store computer's sign-in wears the owner's approved
+ * sign-in design — the SAME stylesheet as the hosted demo's (`packages/ui/src/sign-in-style.ts`, one source): a cream page,
+ * the SRE mark and "Your store. / One workspace." on the left, the white "Staff access" card on the right. What it says is
+ * the store computer's own truth: a staff ID and a six-digit PIN (never a password), the form posts exactly as before, and
+ * nothing here is a sample — there is no practice strip on a store PC.
+ *
+ * English and Tamil are both in the page; the English / தமிழ் switch at the top right is two radio buttons and CSS, so it
+ * works with no script at all (`:has()`, Chromium 105+ — the store PC's browser).
+ */
+const STORE_SIGN_IN_STYLE = [
+  // The switch: the radio inputs stay in the page for the keyboard and a screen reader, out of sight.
+  '.sl-lang-radio{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}',
+  '#sre-login:has(#sl-lang-en:checked) [lang="ta"]:not(.sl-keep),#sre-login:has(#sl-lang-ta:checked) [lang="en"]:not(.sl-keep){display:none}',
+  '#sre-login .sl-language label{display:inline-flex;align-items:center;min-height:44px;padding:7px 16px;font-size:14px;color:var(--sre-muted);border-radius:999px;cursor:pointer}',
+  '#sre-login .sl-language label:has(input:checked){background:#fff;color:var(--sre-deep);font-weight:650;box-shadow:0 1px 4px #0e3b2e12}',
+  '#sre-login .sl-language label:has(input:focus-visible){outline:3px solid #0e3b2e;outline-offset:2px}',
+  // A PIN field is the demo's password field (the same edge, the same 53px), numeric.
+  '#sre-login input[inputmode="numeric"]{letter-spacing:.3em}',
+  '#sre-login .sl-problem{display:block;font-size:14px;line-height:1.6;border-radius:8px;padding:12px;margin-top:17px;background:var(--sre-red-bg);color:var(--sre-red);border:1px solid #e5c7c1}',
+  '#sre-login .sl-problem p{margin:0}',
+  '#sre-login .sl-links{display:grid;gap:10px;margin-top:22px}',
+  '#sre-login .sl-links a{text-decoration:none}',
+  '#sre-login .sl-allowed{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:8px}',
+  '#sre-login .sl-allowed a{display:flex;align-items:center;min-height:48px;padding:8px 14px;border:1px solid var(--sre-border);border-radius:12px;background:#f9f5ec;color:var(--sre-ink);text-decoration:none;font-weight:600}',
+  '#sre-login form#office-sign-out button{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;margin-top:18px;border:1px solid var(--sre-green);border-radius:999px;background:#fff;color:var(--sre-green);font-size:14px;font-weight:600}',
+  '#sre-login:has(#sl-lang-ta:checked) .sl-hero{font-size:clamp(29px,3.1vw,42px);letter-spacing:-.3px;line-height:1.5}',
+  '#sre-login:has(#sl-lang-ta:checked) .sl-eyebrow,#sre-login:has(#sl-lang-ta:checked) .sl-login-kicker{letter-spacing:0;line-height:1.7;font-size:13px}',
 ].join('');
 
-/** The page that asks for the PIN — English and Tamil together, so whoever is at the PC can read it. */
-export function signInPage(input: { readonly next: string; readonly problem?: OfficeRefusal }): string {
-  const problem = input.problem === undefined || input.problem === 'not_signed_in' ? '' : `<div class="problem" role="alert" id="office-problem"><p lang="en">${esc(OFFICE_WORDS[input.problem].en)}</p><p lang="ta" class="ta">${esc(OFFICE_WORDS[input.problem].ta)}</p></div>`;
-  // CR-01 step 4f: the front door is the shop's one sign-in for everybody; a screen's own gate still says "Enter your PIN".
-  const front = input.next === FRONT_DOOR;
+/** Words in both languages, side by side in the page; the switch shows one. */
+const both = (en: string, ta: string): string => `<span lang="en">${esc(en)}</span><span lang="ta">${esc(ta)}</span>`;
+
+const ICON_PATHS: Readonly<Record<string, string>> = {
+  store: '<path d="M2 7l1.5-4h17L22 7"/><path d="M2 7a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M4 10v11h16V10"/><path d="M9 21v-6h6v6"/>',
+  cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  boxes: '<path d="M3 21V8l9-4 9 4v13"/><path d="M3 21h18"/><rect x="7" y="13" width="4" height="4"/><rect x="13" y="13" width="4" height="4"/><path d="M10 9h4"/>',
+  receipt: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+  login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>',
+  user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  lock: '<circle cx="12" cy="16" r="1"/><rect x="3" y="10" width="18" height="12" rx="2"/><path d="M7 10V7a5 5 0 0 1 10 0v3"/>',
+  arrow: '<path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>',
+  usercheck: '<path d="M2 21a8 8 0 0 1 13.29-6"/><circle cx="10" cy="8" r="5"/><path d="M16 19l2 2 4-4"/>',
+};
+const svg = (name: string): string => `<svg class="sl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON_PATHS[name] ?? ''}</svg>`;
+
+/** The whole page around a card: the switch, the top bar, the left-hand welcome, the card on the right. */
+function signInShell(title: string, storeName: string, card: string): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-    front ? '<title>Sign in — SRE Hyper Market</title>' : '<title>Enter your PIN — office screens</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
+    `<title>${esc(title)}</title><style>${SIGN_IN_CSS}${STORE_SIGN_IN_STYLE}</style></head><body>`,
+    '<div id="sre-login">',
+    '<div class="sl-product">',
+    '<header class="sl-topbar"><div class="sl-brand" aria-label="SRE Hyper Market"><div class="sl-mark" aria-hidden="true">S<span>+</span></div><div class="sl-brand-name">SRE<small>HYPER MARKET</small></div></div>',
+    '<div class="sl-top-actions"><div class="sl-language" role="group" aria-label="Language · மொழி"><label for="sl-lang-en" lang="en" class="sl-keep"><input type="radio" class="sl-lang-radio" name="sl-lang" id="sl-lang-en" checked>English</label><label for="sl-lang-ta" lang="ta" class="sl-keep"><input type="radio" class="sl-lang-radio" name="sl-lang" id="sl-lang-ta">தமிழ்</label></div></div></header>',
+    '<main class="sl-main">',
+    '<section class="sl-intro" aria-label="SRE store workspace">',
+    `<div class="sl-eyebrow">${both('YOUR EVERYDAY STORE WORKSPACE', 'தினசரி கடைப் பணிகளுக்கான பணித்தளம்')}</div>`,
+    `<p class="sl-hero"><span class="sl-hero-ink">${both('Your store.', 'உங்கள் கடை.')}</span><span>${both('One workspace.', 'ஒரே பணித்தளம்.')}</span></p>`,
+    `<p class="sl-intro-copy">${both('From the first delivery to the last bill. Bring your team and your store day together.', 'முதல் சரக்கு வரவு முதல் கடைசி விற்பனை வரை. உங்கள் குழுவும் கடைப் பணிகளும் ஒரே இடத்தில்.')}</p>`,
+    '<div class="sl-illustration" aria-hidden="true"><div class="sl-workspace">',
+    `<div class="sl-workspace-head"><div class="sl-workspace-icon">${svg('store')}</div><div><strong>${esc(storeName)}</strong><small>${both('Store workspace', 'கடைப் பணித்தளம்')}</small></div></div>`,
+    `<div class="sl-three"><div>${svg('cart')}<span>${both('Purchase', 'கொள்முதல்')}</span></div><div>${svg('boxes')}<span>${both('Inventory', 'சரக்கு இருப்பு')}</span></div><div>${svg('receipt')}<span>${both('Sales & cash', 'விற்பனை & பணம்')}</span></div></div>`,
+    `</div><div class="sl-illustration-label">${svg('monitor')}<span>${both('Store computer', 'கடைக் கணினி')}</span></div></div>`,
+    '</section>',
+    `<section class="sl-login-area" aria-labelledby="office-heading"><div class="sl-login-card">${card}</div>`,
+    `<div class="sl-status"><span class="sl-dot" aria-hidden="true"></span><span>${both('Sign-in works on this computer, even without internet.', 'இணையம் இல்லாவிட்டாலும் இங்கே உள்நுழையலாம்.')}</span></div>`,
+    '</section></main></div></div></body></html>',
+  ].join('');
+}
+
+const kicker = (): string => `<div class="sl-login-kicker">${svg('login')}<span>${both('STAFF ACCESS', 'பணியாளர் உள்நுழைவு')}</span></div>`;
+const storeRow = (storeName: string): string =>
+  `<div class="sl-store">${svg('store')}<div><strong>${esc(storeName)}</strong><small>${both('On this store computer', 'இந்தக் கடைக் கணினியில்')}</small></div><span class="sl-mode">${both('STORE PC', 'கடைக் கணினி')}</span></div>`;
+const personal = (): string => `<div class="sl-personal">${svg('usercheck')}<span>${both('Use your own staff ID and PIN — never anyone else\'s. Sign out when you finish.', 'உங்கள் சொந்தப் பணியாளர் எண்ணையும் PIN-ஐயும் மட்டும் பயன்படுத்துங்கள் — வேறொருவருடையதை ஒருபோதும் வேண்டாம். பணி முடிந்ததும் வெளியேறுங்கள்.')}</span></div>`;
+
+/** The page that asks for the PIN — English and Tamil in the page, the switch at the top right shows one. */
+export function signInPage(input: { readonly next: string; readonly problem?: OfficeRefusal; readonly storeName?: string | undefined }): string {
+  const problem = input.problem === undefined || input.problem === 'not_signed_in' ? '' : `<div class="sl-problem" role="alert" id="office-problem"><p lang="en">${esc(OFFICE_WORDS[input.problem].en)}</p><p lang="ta">${esc(OFFICE_WORDS[input.problem].ta)}</p></div>`;
+  // CR-01 step 4f: the front door is the shop's one sign-in for everybody; a screen's own gate still says "Enter your PIN".
+  const front = input.next === FRONT_DOOR;
+  const storeName = input.storeName !== undefined && input.storeName.trim() !== '' ? input.storeName.trim() : 'SRE Hyper Market';
+  const card = [
+    kicker(),
     front
-      ? '<h1 id="office-heading"><span lang="en">Sign in — SRE Hyper Market</span><span lang="ta" class="ta">உள்நுழைக — SRE ஹைப்பர் மார்க்கெட்</span></h1><p lang="en" id="office-front">One sign-in for everybody — owner, manager and staff. You go straight to your own work.</p><p lang="ta" class="ta">அனைவருக்கும் ஒரே உள்நுழைவு — உரிமையாளர், மேலாளர், பணியாளர். நீங்கள் நேராக உங்கள் வேலைக்குச் செல்வீர்கள்.</p>'
-      : '<h1 id="office-heading"><span lang="en">Enter your PIN</span><span lang="ta" class="ta">உங்கள் PIN-ஐ உள்ளிடுங்கள்</span></h1>',
-    '<p lang="en">The office screens open with your own staff ID and your own till PIN. Never use anyone else\'s.</p>',
-    '<p lang="ta" class="ta">அலுவலகத் திரைகள் உங்கள் சொந்தப் பணியாளர் எண்ணாலும் உங்கள் சொந்த PIN-ஆலும் மட்டுமே திறக்கும். வேறொருவருடையதை ஒருபோதும் பயன்படுத்த வேண்டாம்.</p>',
+      ? `<h1 id="office-heading">${both('Welcome back.', 'மீண்டும் வருக.')}</h1><p class="sl-subtitle"><span lang="en" id="office-front">Sign in to SRE Hyper Market. One sign-in for everybody — owner, manager and staff. You go straight to your own work.</span><span lang="ta">SRE ஹைப்பர் மார்க்கெட்டில் உள்நுழைக. அனைவருக்கும் ஒரே உள்நுழைவு — உரிமையாளர், மேலாளர், பணியாளர். நீங்கள் நேராக உங்கள் வேலைக்குச் செல்வீர்கள்.</span></p>`
+      : `<h1 id="office-heading">${both('Enter your PIN', 'உங்கள் PIN-ஐ உள்ளிடுங்கள்')}</h1><p class="sl-subtitle">${both('The office screens open with your own staff ID and your own till PIN.', 'அலுவலகத் திரைகள் உங்கள் சொந்தப் பணியாளர் எண்ணாலும் உங்கள் சொந்த PIN-ஆலும் மட்டுமே திறக்கும்.')}</p>`,
+    storeRow(storeName),
     problem,
     '<form method="post" action="/office/sign-in" id="office-sign-in">',
     `<input type="hidden" name="next" value="${esc(input.next)}">`,
-    '<label for="office-staff">Staff ID <span lang="ta">· பணியாளர் எண்</span></label>',
-    '<input id="office-staff" name="staffId" autocomplete="username" required maxlength="64" autofocus>',
-    '<label for="office-pin">PIN <span lang="ta">· PIN</span></label>',
-    '<input id="office-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{6}" maxlength="6" required>',
-    '<button type="submit" id="office-submit">Sign in <span lang="ta">· உள்நுழை</span></button>',
-    '</form></main></body></html>',
+    `<div class="sl-field"><label for="office-staff">${both('Staff ID', 'பணியாளர் எண்')}</label><div class="sl-input-wrap">${svg('user')}<input id="office-staff" name="staffId" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64" autofocus></div></div>`,
+    `<div class="sl-field"><label for="office-pin">${both('PIN (6 digits)', 'PIN (6 இலக்கங்கள்)')}</label><div class="sl-input-wrap">${svg('lock')}<input id="office-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{6}" maxlength="6" required></div></div>`,
+    `<button type="submit" id="office-submit" class="sl-submit">${both('Sign in', 'உள்நுழைக')}${svg('arrow')}</button>`,
+    '</form>',
+    personal(),
   ].join('');
+  return signInShell(front ? 'Sign in — SRE Hyper Market' : 'Enter your PIN — office screens', storeName, card);
 }
 
 /**
@@ -355,28 +419,27 @@ export function signInPage(input: { readonly next: string; readonly problem?: Of
  * way to the till. No office sign-in is made and no office screen opens (the gate's own `not_an_office_role` refusal).
  */
 export function tillOnlyPage(): string {
-  return [
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>Your work is on the till — SRE Hyper Market</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
-    '<h1 id="office-heading"><span lang="en">Your work is on the till</span><span lang="ta" class="ta">உங்கள் வேலை விற்பனை முனையத்தில்</span></h1>',
-    '<p lang="en" id="office-till-only">Your PIN opens the till, not the office screens. Sign in at the till with the same staff ID and PIN.</p>',
-    '<p lang="ta" class="ta">உங்கள் PIN விற்பனை முனையத்தைத் திறக்கும், அலுவலகத் திரைகளை அல்ல. அதே பணியாளர் எண்ணாலும் PIN-ஆலும் விற்பனை முனையத்தில் உள்நுழையுங்கள்.</p>',
-    '<p><a id="office-to-till" href="/pos/">Go to the till <span lang="ta">· விற்பனை முனையத்துக்குச் செல்</span></a></p>',
-    `<p><a id="office-back" href="${FRONT_DOOR}">Back to sign-in <span lang="ta">· உள்நுழைவுக்குத் திரும்பு</span></a></p>`,
-    '</main></body></html>',
+  const card = [
+    kicker(),
+    `<h1 id="office-heading">${both('Your work is on the till', 'உங்கள் வேலை விற்பனை முனையத்தில்')}</h1>`,
+    '<p class="sl-subtitle"><span lang="en" id="office-till-only">Your PIN opens the till, not the office screens. Sign in at the till with the same staff ID and PIN.</span><span lang="ta">உங்கள் PIN விற்பனை முனையத்தைத் திறக்கும், அலுவலகத் திரைகளை அல்ல. அதே பணியாளர் எண்ணாலும் PIN-ஆலும் விற்பனை முனையத்தில் உள்நுழையுங்கள்.</span></p>',
+    `<div class="sl-links"><a class="sl-submit" id="office-to-till" href="/pos/">${both('Go to the till', 'விற்பனை முனையத்துக்குச் செல்')}${svg('arrow')}</a>`,
+    `<a class="sl-secondary" id="office-back" href="${FRONT_DOOR}">${both('Back to sign-in', 'உள்நுழைவுக்குத் திரும்பு')}</a></div>`,
+    personal(),
   ].join('');
+  return signInShell('Your work is on the till — SRE Hyper Market', 'SRE Hyper Market', card);
 }
 
 /** The page for a signed-in person who may not open THIS screen: the screens they may open, and Sign out. */
 export function notAllowedPage(input: { readonly displayName: string; readonly links: readonly { readonly path: string; readonly label: { readonly en: string; readonly ta: string } }[] }): string {
-  const links = input.links.length === 0 ? '' : `<ul id="office-allowed">${input.links.map((l) => `<li><a href="${esc(l.path)}">${esc(l.label.en)} <span lang="ta">· ${esc(l.label.ta)}</span></a></li>`).join('')}</ul>`;
-  return [
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>Not your screen — office screens</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
-    `<h1 id="office-heading"><span lang="en">${esc(input.displayName)} may not open this screen</span><span lang="ta" class="ta">${esc(input.displayName)} இந்தத் திரையைத் திறக்க அனுமதி இல்லை</span></h1>`,
-    '<p lang="en">Your role does not include it. These are the screens you may open:</p><p lang="ta" class="ta">உங்கள் பணிக்கு இது இல்லை. நீங்கள் திறக்கக்கூடிய திரைகள்:</p>',
-    links, signOutForm(), '</main></body></html>',
+  const links = input.links.length === 0 ? '' : `<ul id="office-allowed" class="sl-allowed">${input.links.map((l) => `<li><a href="${esc(l.path)}">${both(l.label.en, l.label.ta)}</a></li>`).join('')}</ul>`;
+  const card = [
+    kicker(),
+    `<h1 id="office-heading">${both(`${input.displayName} may not open this screen`, `${input.displayName} இந்தத் திரையைத் திறக்க அனுமதி இல்லை`)}</h1>`,
+    `<p class="sl-subtitle">${both('Your role does not include it. These are the screens you may open:', 'உங்கள் பணிக்கு இது இல்லை. நீங்கள் திறக்கக்கூடிய திரைகள்:')}</p>`,
+    links, signOutForm(),
   ].join('');
+  return signInShell('Not your screen — office screens', 'SRE Hyper Market', card);
 }
 
 /** The Sign out button — a POST, so a link or a preview can never sign anybody out. */

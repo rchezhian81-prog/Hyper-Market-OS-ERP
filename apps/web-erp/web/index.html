@@ -353,12 +353,90 @@
       .box-clock ul { margin: 6px 0 0; padding-left: 20px; }
           /* U1: a hidden button stays hidden although it wears the foundation's button class (the foundation's .sre-btn display rule follows its [hidden] rule). */
       .sre-btn[hidden] { display: none; }
+
+      /* ── Batch 12 (owner, 17 Nov 2026): the owner's Today look ─────────────────────────────────────────────────────
+         Light cards on the canvas instead of the dark band; four headline cards with a round icon, the label in both
+         languages, the big figure and its change against the previous day (green up, red down, grey no change or none);
+         the first card's border gold (decoration only, OB-728). Then the sales chart beside what needs attention, the
+         recent bills, the store's other cards, and the line saying what this computer holds and when it last sent. */
+      h1.who .twin { font-weight: 700; color: var(--accent); }
+      h1.who .day { margin-top: 4px; font-size: 15px; font-weight: 500; letter-spacing: 0; }
+      header .sync { padding: 6px 14px 6px 8px; border-radius: var(--radius-pill); background: var(--ok-surface); color: var(--on-ok-surface); font-weight: 600; }
+      #view-home { background: transparent; color: var(--ink); border-radius: 0; padding: 0; gap: 16px; }
+      #view-home p.lead, #view-home .sre-eyebrow { color: var(--muted); margin: 0; }
+      #view-home h2 { color: var(--ink); font-size: 20px; font-weight: 700; }
+      .today-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+      .today-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .today-actions .sre-btn { border-radius: var(--radius-pill); padding: 0 22px; min-height: 48px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+      #view-home .primary.wide { margin-top: 0; width: auto; }
+      .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+      .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; box-shadow: var(--shadow-sm); min-width: 0; }
+      .kpi:first-child { border: 2px solid var(--gold); padding: 17px 19px; }
+      .kpi .kpi-top { display: flex; align-items: center; gap: 12px; }
+      .kpi .kpi-top > .sre-icon { width: 48px; height: 48px; flex: none; padding: 12px; box-sizing: border-box; border-radius: 50%; background: var(--panel-2); color: var(--accent); }
+      .kpi .kpi-label { font-size: 16px; font-weight: 600; line-height: 1.3; }
+      .kpi .kpi-label small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); }
+      .kpi .kpi-n { font-size: clamp(28px, 2.4vw, 38px); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; line-height: 1.1; overflow-wrap: anywhere; }
+      .kpi .kpi-n.unknown { font-size: 22px; color: var(--degraded-text, var(--on-warn-surface)); }
+      .kpi .kpi-trend { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+      .kpi .kpi-trend .arrow { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--idle); color: var(--panel); font-weight: 800; font-size: 16px; line-height: 1; }
+      .kpi .kpi-trend .by { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+      .kpi .kpi-trend[data-dir="up"] .arrow { background: var(--ok); }
+      .kpi .kpi-trend[data-dir="up"] .by { color: var(--on-ok-surface); }
+      .kpi .kpi-trend[data-dir="down"] .arrow { background: var(--danger); }
+      .kpi .kpi-trend[data-dir="down"] .by { color: var(--danger-text); }
+      .kpi .kpi-trend .vs { line-height: 1.35; }
+      .kpi .kpi-why { margin: 0; font-size: 14px; color: var(--muted); }
+      #view-home .tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+      #view-home .tile { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; min-height: 0; box-shadow: var(--shadow-xs); }
+      #view-home .tile .n { color: var(--ink); font-size: clamp(18px, calc(145cqi / var(--chars, 6)), 28px); }
+      #view-home .tile .n.unknown { color: var(--on-warn-surface); }
+      #view-home .tile .label, #view-home .tile .note { color: var(--muted); }
+      #view-home .tile .chip { background: var(--panel-2); color: var(--accent); border-radius: 50%; }
+      #view-home .tile.attention { box-shadow: inset 4px 0 0 var(--degraded); }
+      #view-home .tile.unknown { box-shadow: inset 4px 0 0 var(--error); }
+      #view-home .tile[role="button"]:hover { background: var(--hover); }
+      #view-home :focus-visible { outline-color: var(--focus); }
+      .dash { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      .dash > .card { grid-column: span 4; }
+      .dash > #chart-card { grid-column: span 7; }
+      .dash > #attention-card { grid-column: span 5; }
+      .dash > #recent-card, .dash > .today-foot { grid-column: 1 / -1; }
+      .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+      .card-head h3 { padding: 0; border: 0; }
+      .seg { display: inline-flex; padding: 3px; border-radius: var(--radius-pill); background: var(--panel-2); border: 1px solid var(--line); }
+      .seg button { min-height: 44px; padding: 0 16px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+      .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+      .chart-host { min-height: 200px; }
+      .chart-host .chart-none { margin: 0; color: var(--muted); font-size: 15px; }
+      .attention li .pill { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--degraded); color: var(--on-warn); font-size: 14px; font-weight: 700; line-height: 1.2; }
+      .attention li .pill small { display: block; font-size: 14px; font-weight: 500; }
+      .recent-wrap { overflow-x: auto; }
+      .recent { width: 100%; border-collapse: collapse; font-size: 15px; }
+      .recent th { text-align: left; font-weight: 600; color: var(--ink-2); background: var(--panel-2); padding: 10px 12px; }
+      .recent th small, .recent td small { display: block; font-weight: 400; color: var(--muted); font-size: 14px; }
+      .recent td { padding: 10px 12px; border-top: 1px solid var(--line-soft); vertical-align: top; }
+      .recent td.money, .recent th.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .recent .done { color: var(--on-ok-surface); font-weight: 600; }
+      .recent-none { margin: 0; color: var(--muted); }
+      .today-foot { margin: 0; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; color: var(--ink-2); font-size: 14px; padding: 4px 2px; }
+      .today-foot span { display: inline-flex; align-items: center; gap: 8px; }
+      .today-foot .sre-icon { width: 18px; height: 18px; color: var(--ok); }
+      .today-foot .unknown .sre-icon { color: var(--degraded); }
+      @media (max-width: 900px) {
+        .dash > .card, .dash > #chart-card, .dash > #attention-card { grid-column: 1 / -1; }
+      }
+      @media (max-width: 519px) {
+        .kpis { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+        .today-actions, .today-actions .sre-btn { width: 100%; justify-content: center; }
+        .recent th:nth-child(3), .recent td:nth-child(3) { display: none; }
+      }
     </style>
   </head>
   <body>
     <header>
       <h1 class="who" id="who">
-        Store workspace
+        Today <span class="twin" id="who-twin" lang="ta">/ இன்று</span>
         <span class="day" id="day">Trading day —</span>
         <small id="whoami"></small>
       </h1>
@@ -403,18 +481,39 @@
            exceptions, unsent, tasks — every one allowed to say "not known"; then the cards: what needs you, the
            purchase-to-shelf flow, the store today, and the workspaces of the rail. -->
       <section id="view-home">
-        <h2 id="home-title">Today</h2>
-        <p class="lead" id="home-lead">Tap a figure to go to it.</p>
+        <!-- Batch 12 (the owner's look): the overview line with the page's two actions at the right — the ONE primary (clear
+             the next approval, only when there is one) and one secondary (the reports, only when the rail offers them). -->
+        <div class="today-head">
+          <div class="today-head-words">
+            <h2 id="home-title">Today</h2>
+            <p class="lead" id="home-lead">Tap a figure to go to it.</p>
+          </div>
+          <div class="today-actions">
+            <a id="today-reports" class="sre-btn" hidden>View reports</a>
+            <!-- The ONE primary action (store-manager.md): shown only when there is an approval this manager may clear. -->
+            <button id="next-approval" type="button" class="primary wide sre-btn sre-btn-primary" hidden>Clear the next approval</button>
+          </div>
+        </div>
+        <!-- Batch 12: the four headline cards — each against the previous day the store computer holds, by this time of day;
+             "no previous day yet" where it holds none, "Not known" with the reason where it has no figure (P-08). -->
+        <div class="kpis" id="kpis" aria-label="Today against the previous day"></div>
         <div class="tiles" id="tiles"></div>
-        <!-- The ONE primary action (store-manager.md): shown only when there is an approval this manager may clear. -->
-        <button id="next-approval" type="button" class="primary wide sre-btn sre-btn-primary" hidden>Clear the next approval</button>
       </section>
       <section id="view-home-dash" class="dash" aria-label="Today's cards">
+        <section class="card" id="chart-card" aria-labelledby="chart-title">
+          <div class="card-head"><h3 id="chart-title">Sales overview</h3>
+            <div class="seg" role="group" id="chart-range" aria-label="Range"><button type="button" id="chart-today" aria-pressed="true">Today</button><button type="button" id="chart-week" aria-pressed="false">This week</button></div>
+          </div>
+          <div class="chart-host" id="sales-chart"></div>
+        </section>
         <section class="card" id="attention-card" aria-labelledby="attention-title"><h3 id="attention-title">Needs attention</h3><ul class="attention" id="attention"></ul></section>
+        <section class="card" id="recent-card" aria-labelledby="recent-title"><h3 id="recent-title">Recent activity</h3><div class="recent-wrap" id="recent"></div></section>
         <section class="card" id="lanes-card" aria-labelledby="lanes-title" hidden><h3 id="lanes-title">Lanes</h3><div class="lanes" id="lanes"></div></section>
         <section class="card" id="flow-card" aria-labelledby="flow-title"><h3 id="flow-title">Purchase to shelf</h3><ol class="flow" id="flow"></ol></section>
         <section class="card" id="ops-card" aria-labelledby="ops-title"><h3 id="ops-title">Store today</h3><div class="ops" id="ops"></div></section>
         <section class="card" id="ws-card" aria-labelledby="ws-title" hidden><h3 id="ws-title">Workspaces</h3><div class="ws" id="workspaces"></div></section>
+        <!-- Batch 12: what this computer holds, and when it last sent to head office — the box's own record, or "Not known". -->
+        <p class="today-foot" id="today-foot" role="status"></p>
       </section>
 
       <!-- Approval inbox: ordered by value; a row you cannot decide says why. -->

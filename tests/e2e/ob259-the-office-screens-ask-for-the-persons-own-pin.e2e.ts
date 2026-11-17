@@ -38,22 +38,29 @@ describe.skipIf(!HAVE_BROWSER)('the office screens ask for the person\'s own PIN
     await page.fill('#office-pin', who.pin);
     await Promise.all([page.waitForNavigation({ waitUntil: 'load' }), page.click('#office-submit')]);
   };
+  // Batch 12: the sign-in page holds both languages; the English / தமிழ் switch at the top right shows one (CSS only, no script).
+  const tamil = async (page: Page, sel: string): Promise<string> => {
+    await page.click('label[for="sl-lang-ta"]');
+    const words = await page.locator(`${sel} [lang="ta"]`).innerText();
+    await page.click('label[for="sl-lang-en"]');
+    return words;
+  };
 
   it('asks in both languages, refuses a wrong PIN and a cashier, opens for the manager, and signs out', async () => {
     const { box, page } = await open();
     await page.goto(`${box.base}/manager/`, { waitUntil: 'load' });
     expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Enter your PIN');
-    expect(await page.locator('#office-heading [lang="ta"]').innerText()).toBe('உங்கள் PIN-ஐ உள்ளிடுங்கள்');
+    expect(await tamil(page, '#office-heading')).toBe('உங்கள் PIN-ஐ உள்ளிடுங்கள்');
     expect(await page.locator('#office-pin').getAttribute('type')).toBe('password');
     expect(await auditPage(page)).toEqual([]);
 
     await signIn(page, { userId: PEOPLE.manager.userId, pin: '000000' });
     expect(await page.locator('#office-problem [lang="en"]').innerText()).toBe('That staff ID and PIN do not match. Try again.');
-    expect(await page.locator('#office-problem [lang="ta"]').innerText()).toBe('அந்தப் பணியாளர் எண்ணும் PIN-உம் பொருந்தவில்லை. மீண்டும் முயலுங்கள்.');
+    expect(await tamil(page, '#office-problem')).toBe('அந்தப் பணியாளர் எண்ணும் PIN-உம் பொருந்தவில்லை. மீண்டும் முயலுங்கள்.');
 
     await signIn(page, PEOPLE.cashier);
     expect(await page.locator('#office-problem [lang="en"]').innerText()).toMatch(/^This PIN opens the till only\./);
-    expect(await page.locator('#office-problem [lang="ta"]').innerText()).toMatch(/^இந்த PIN விற்பனை முனையத்தை மட்டுமே திறக்கும்\./);
+    expect(await tamil(page, '#office-problem')).toMatch(/^இந்த PIN விற்பனை முனையத்தை மட்டுமே திறக்கும்\./);
     expect(await auditPage(page)).toEqual([]);
 
     await signIn(page, PEOPLE.manager);
@@ -66,7 +73,7 @@ describe.skipIf(!HAVE_BROWSER)('the office screens ask for the person\'s own PIN
     await Promise.all([page.waitForLoadState('load'), page.click('#sre-office-sign-out')]);
     expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Enter your PIN');
     await page.goto(`${box.base}/manager/`, { waitUntil: 'load' });
-    expect(await page.locator('#office-heading [lang="ta"]').innerText()).toBe('உங்கள் PIN-ஐ உள்ளிடுங்கள்');
+    expect(await tamil(page, '#office-heading')).toBe('உங்கள் PIN-ஐ உள்ளிடுங்கள்');
   }, 120_000);
 
   it('the till never asks: its own page opens as before', async () => {

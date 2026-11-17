@@ -43,7 +43,7 @@
       findScreenHint: 'Find a screen — type a word like cash, GST or expiry', matchesOne: '1 screen matches', matchesMany: '{n} screens match',
       pinned: 'Pinned', recent: 'Recently opened', pinPage: 'Pin this page', unpinPage: 'Unpin this page',
       more: 'More',
-      signOut: 'Sign out',
+      signOut: 'Sign out', productLine: 'Tamil Nadu hypermarket ERP', account: 'Your account', signedInAs: 'Signed in as',
       storeAlarm: 'The store computer needs you',
       storeCopy: 'These figures are the store computer\'s copy of head office\'s records, as head office last sent it at {at} ({age}). Anything changed at head office since then is not shown yet.',
       storeCopyNone: 'Head office has not sent this store computer its records yet, so this page shows only what the store computer itself knows.',
@@ -67,7 +67,7 @@
       findScreenHint: 'திரையைத் தேடு — பணம், ஜிஎஸ்டி, காலாவதி போன்ற சொல்லைத் தட்டச்சு செய்க', matchesOne: '1 திரை பொருந்துகிறது', matchesMany: '{n} திரைகள் பொருந்துகின்றன',
       pinned: 'மேலே வைத்தவை', recent: 'சமீபத்தில் திறந்தவை', pinPage: 'இந்தப் பக்கத்தை மேலே வை', unpinPage: 'மேலிருந்து எடு',
       more: 'மேலும்',
-      signOut: 'வெளியேறு',
+      signOut: 'வெளியேறு', productLine: 'தமிழ்நாடு ஹைப்பர் மார்க்கெட் ERP', account: 'உங்கள் கணக்கு', signedInAs: 'உள்நுழைந்தவர்',
       storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
       storeCopy: 'இந்த எண்கள் தலைமை அலுவலகப் பதிவுகளின் கடைக் கணினி நகல் — தலைமை அலுவலகம் கடைசியாக {at} அன்று அனுப்பியது ({age}). அதன் பிறகு தலைமை அலுவலகத்தில் மாறியவை இன்னும் காட்டப்படவில்லை.',
       storeCopyNone: 'தலைமை அலுவலகம் தன் பதிவுகளை இந்தக் கடைக் கணினிக்கு இன்னும் அனுப்பவில்லை, எனவே இந்தப் பக்கம் கடைக் கணினிக்குத் தெரிந்ததை மட்டுமே காட்டுகிறது.',
@@ -479,13 +479,18 @@
     const mark = document.createElement('span');
     mark.className = 'mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = own?.name ? own.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase() : 'SRE';
-    if (own?.primary && own?.onPrimary) { mark.style.background = own.primary; mark.style.color = own.onPrimary; }
+    if (own?.name) {
+      mark.textContent = own.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+      if (own.primary && own.onPrimary) { mark.style.background = own.primary; mark.style.color = own.onPrimary; }
+    } else {
+      // Batch 12 (the owner's look): the SRE gold hexagon with the basket — the stylesheet draws it (a mask in gold), no file to fetch (P-01).
+      block.classList.add('sre-logo');
+    }
     const words = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = own?.name ?? 'Hyper Market';
+    name.textContent = own?.name ?? 'Retail OS';
     const what = document.createElement('small');
-    what.textContent = t('workspace');
+    what.textContent = own?.name ? t('workspace') : t('productLine');
     words.append(name, what);
     block.append(mark, words);
     return block;
@@ -512,7 +517,8 @@
       layout();
       return;
     }
-    if (nav.branch && typeof nav.branch.name === 'string' && nav.branch.name !== '') panel.append(branchCard(nav.branch.name));
+    // Batch 12 (the owner's look): the store's name stands at the foot of the rail, above the person — drawn below.
+    const branch = nav.branch && typeof nav.branch.name === 'string' && nav.branch.name !== '' ? branchCard(nav.branch.name) : null;
     // The groups scroll on their own between the branch card and the person, so the person is always in view at the
     // foot however long the list (OB-16); the current link is scrolled into view.
     const scroller = document.createElement('div');
@@ -579,6 +585,7 @@
       (more && key !== 'Daily' ? more.body : scroller).append(section);
     }
     if (more) scroller.append(more.section); // after the daily list, which the box always sends first
+    if (branch) panel.append(branch);
     panel.append(personCard(nav));
     // Round 4c: "Sign out" inside the product's own menu, under the person — where the box drew no Sign out bar of its
     // own (the hosted copy: the front signed the person in, and its door ends the session). A plain same-origin POST.
@@ -605,6 +612,10 @@
     const shape = itemIcon(item);
     if (shape) link.append(shape);
     link.append(document.createTextNode(word(item.label)));
+    // Batch 12 (the owner's look): the screen's name in the other language under it, drawn by the stylesheet from this
+    // attribute — the link's own text stays the one name (what a search, a screen reader and the tests read).
+    const other = item.label && typeof item.label === 'object' ? item.label[lang() === 'ta' ? 'en' : 'ta'] : null;
+    if (main && typeof other === 'string' && other !== '' && other !== word(item.label)) { link.dataset.twin = other; link.classList.add('sre-twin'); }
     if (main && isCurrent(item)) link.setAttribute('aria-current', 'page');
     if (!main) link.className = 'sre-quick-link';
     return link;
@@ -1102,7 +1113,59 @@
     find.placeholder = t('findScreen');
     find.hidden = !nav || (nav.groups ?? []).length === 0;
     byId('sre-find-wrap').hidden = find.hidden;
+    paintAccount(line, nav);
     foldTopline();
+  }
+  /**
+   * Batch 12 (the owner's look): the avatar at the top right — the person head office named (never an invented one), and
+   * the same Sign out the page already offers (the box's bar, or the menu's form). Nothing new is decided here: it only
+   * presses a button that already exists. No person named → no avatar.
+   */
+  function paintAccount(line, nav) {
+    const person = nav && nav.person && typeof nav.person.name === 'string' && nav.person.name !== '' ? nav.person : null;
+    let box = byId('sre-account');
+    if (!person) { if (box) box.remove(); return; }
+    if (!box) {
+      box = document.createElement('details');
+      box.id = 'sre-account';
+      box.className = 'sre-account';
+      const summary = document.createElement('summary');
+      summary.className = 'sre-account-face';
+      const face = document.createElement('span');
+      face.className = 'avatar';
+      face.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'sr-only';
+      summary.append(face, label);
+      const panel = document.createElement('div');
+      panel.className = 'sre-account-panel';
+      box.append(summary, panel);
+      box.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.open) { box.open = false; summary.focus(); } });
+      document.addEventListener('click', (e) => { if (box.open && !box.contains(e.target)) box.open = false; });
+      line.append(box);
+    }
+    const initials = person.name.split(/\s+/).filter((w) => /^[A-Za-z஀-௿]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '•';
+    box.querySelector('.avatar').textContent = initials;
+    box.querySelector('.sr-only').textContent = `${t('account')}: ${person.name}`;
+    const panel = box.querySelector('.sre-account-panel');
+    const who = document.createElement('p');
+    who.className = 'sre-account-who';
+    const b = document.createElement('b');
+    b.textContent = person.name;
+    const small = document.createElement('small');
+    small.textContent = person.role ?? String(nav.userId ?? '');
+    who.append(document.createTextNode(`${t('signedInAs')} `), b, small);
+    const parts = [who];
+    const press = byId('sre-office-sign-out') ?? document.querySelector('#sre-sign-out button');
+    if (press) {
+      const out = document.createElement('button');
+      out.type = 'button';
+      out.className = 'sre-btn sre-account-out';
+      out.textContent = t('signOut');
+      out.addEventListener('click', () => press.click());
+      parts.push(out);
+    }
+    panel.replaceChildren(...parts);
   }
   /** On a phone, Find and Pin live at the top of the menu drawer under "This page"; on anything wider, on the top line. */
   function foldTopline() {

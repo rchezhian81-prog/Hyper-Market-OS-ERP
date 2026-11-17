@@ -151,7 +151,7 @@ describe('the one menu (Stage G slice 5b · §27 role surfaces · P-07 · P-04)'
     expect(CHROME).toMatch(/if \(child === panel \|\| child\.tagName === 'SCRIPT'\) continue;/);
     expect(CHROME).toMatch(/window\.matchMedia\('\(min-width: 1000px\)'\)/);
     expect(CHROME).toMatch(/if \(desk\.matches\) \{\n\s+panel\.hidden = false;\n\s+button\.hidden = true;/);
-    expect(CHROME).toMatch(/what\.textContent = t\('workspace'\)/);
+    expect(CHROME).toMatch(/what\.textContent = own\?\.name \? t\('workspace'\) : t\('productLine'\)/); // batch 12: the shop's own brand keeps its words; the SRE look says Retail OS's line
     expect(CHROME).toMatch(/el\.setAttribute\('aria-label', t\('closeScreens'\)\)/);
     const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
     expect(css).toMatch(/body\.sre-shell \{ display: grid; grid-template-columns: var\(--rail-width\) minmax\(0, 1fr\);/);
