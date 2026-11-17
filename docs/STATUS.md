@@ -18,6 +18,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Batch 12 (17 November 2026) · the owner's new look
+- **Owner asked:** pages that look like his picture of a Today page, and a login page like the trial copy's.
+- **Done (on its PR):**
+  - The sign-in page now has the demo login's look (staff ID + 6-digit PIN).
+  - Every office page has a deep-green sidebar with the gold SRE mark, bilingual menu rows and a big title.
+  - Today has four headline cards: Sales, Bills, Purchase orders and Low stock. Each shows a real figure, or "Not known" with the reason.
+  - Today also has a sales-by-hour chart, Needs attention rows with "Action needed", Recent activity and the last-sync line.
+  - Nothing was removed from Today.
+- **Store PC update 1.0.2212 (batch 11, the front door) is installed and working** (owner's photo, 17 Nov).
+- **Differs from his picture, on purpose:**
+  - no made-up figures;
+  - Low stock reads "Not known" until the store computer is sent a low-stock list;
+  - the page's one primary action is "Clear the next approval", not "New sale" (sales are on the till);
+  - the old tile row stays until the owner says to remove it.
+
 ## Fix batch 11 (17 November 2026) · CR-01 step 4f, the owner's front door (OB-795 A) · the empty office menu
 - **Owner found:**
   - The office menu on the left was empty. The browser had filled his staff ID into "Find a screen", which filtered every screen out.
