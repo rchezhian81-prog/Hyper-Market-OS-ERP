@@ -237,6 +237,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       // The top line (OB-16): where you are, read off the rail — and a way to find any screen you may open.
       expect(await page.textContent('#sre-crumbs')).toBe('Workspace › Inventory & backstore › Stock counts');
       expect(await page.getAttribute('#sre-find', 'aria-label')).toBe('Find a screen');
+      await page.focus('#sre-find'); // the box is read-only until a person puts the cursor in it (batch 11: autofill)
       await page.fill('#sre-find', 'audit');
       expect(await texts(page, '#sre-menu li:not([hidden]) a')).toEqual(['Audit log']);
       expect(await texts(page, '#sre-menu .group-section:not([hidden]) .group')).toEqual(['Administration']);

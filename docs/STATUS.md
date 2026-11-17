@@ -18,6 +18,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Fix batch 11 (17 November 2026) · CR-01 step 4f, the owner's front door (OB-795 A) · the empty office menu
+- **Owner found:**
+  - The office menu on the left was empty. The browser had filled his staff ID into "Find a screen", which filtered every screen out.
+  - The common login page he decided on 15 Nov (OB-795 A, step 4f) had never been built.
+- **Done (on its PR):**
+  - `http://127.0.0.1:8091/` and `/office/` are one sign-in page for everybody. They always ask staff ID + PIN, and each person lands on their own first screen. A cashier is pointed to the till.
+  - The "SRE Office" shortcut opens it. `/manager/` still works.
+  - "Find a screen" can no longer be filled by the browser.
+- **Known:** the updater cannot rewrite an existing desktop shortcut. It runs as a system task and does not know whose desktop to write to. The old shortcut still works (it asks for the PIN). The owner can type 127.0.0.1:8091 or bookmark it.
+- **Not done earlier and now noted:** step 4f was decided on 15 Nov and missed until the owner asked again.
+
 ## Fix batch 10 of THE PLAN (16 November 2026) · the owner's answers OB-804 A, OB-807 A, OB-811 B — every open question answered
 - **Done (on its PR):**
   - A store manager approves a role the owner asks to give, by PIN on the store PC (D-052, D-034).

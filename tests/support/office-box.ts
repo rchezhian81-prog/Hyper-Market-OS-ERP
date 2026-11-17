@@ -35,6 +35,8 @@ export async function startOfficeBox(opts: {
   readonly packExtras?: Record<string, unknown>;
   /** More permissions for the store manager's role. */
   readonly managerPermissions?: readonly string[];
+  /** More permissions for any role, by role id (e.g. the accountant's own daily screens). */
+  readonly rolePermissions?: Readonly<Record<string, readonly string[]>>;
 } = {}): Promise<OfficeBox> {
   const dataDir = opts.dataDir ?? await mkdtemp(join(tmpdir(), 'sre-office-gate-'));
   if (opts.dataDir === undefined) {
@@ -44,7 +46,7 @@ export async function startOfficeBox(opts: {
       policies: { storeId: STORE, branchId: STORE, branchName: 'Office gate store', warehouseId: null, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
       people: people.map((p) => ({ userId: p.userId, displayName: p.displayName, roleId: p.roleId })),
-      roles: ROLES.map((r) => (r.id === 'store_manager' ? { ...r, permissions: [...r.permissions, ...(opts.managerPermissions ?? [])] } : r)),
+      roles: ROLES.map((r) => ({ ...r, permissions: [...r.permissions, ...(r.id === 'store_manager' ? opts.managerPermissions ?? [] : []), ...(opts.rolePermissions?.[r.id] ?? [])] })),
       roleAssignments: people.map((p) => ({ userId: p.userId, roleId: p.roleId, branchScope: [STORE] })),
       ...(opts.packExtras ?? {}),
     }), 'utf8');

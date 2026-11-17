@@ -199,7 +199,7 @@ export function writeShortcuts(deps, opts = {}) {
   for (const w of wanted) {
     const file = p.join(desktop, SHORTCUTS[w]);
     if (w === 'till') fs.writeFileSync(file, url(`${screens}/pos/`), 'utf8');
-    else if (w === 'office') fs.writeFileSync(file, url(`${screens}/manager/`), 'utf8');
+    else if (w === 'office') fs.writeFileSync(file, url(`${screens}/office/`), 'utf8'); // CR-01 step 4f: the one sign-in front door
     else {
       writeLauncher(deps, L, currentRelease(deps, L)?.folder ?? deps.repoRoot);
       fs.writeFileSync(file, `@echo off\r\nrem Opens the SRE "Import & export" page (this computer only). No secret is in this file.\r\ntitle SRE Import and export - keep this window open while you work\r\n"${deps.nodePath}" "${p.join(L.runDir, 'launch.mjs')}" import\r\npause\r\n`, 'utf8');

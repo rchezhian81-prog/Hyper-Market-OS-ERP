@@ -211,6 +211,7 @@ describe.skipIf(!existsSync(CHROMIUM))('U5: the chrome\'s shared parts on a phon
     expect(await auditPage(page, { expectLang: 'ta' })).toEqual([]);
     // the menu opens with Find inside it, and Find still finds a screen
     await page.click('#sre-menu-button');
+    await page.click('#sre-find'); // a person taps the box first: it is read-only until then (batch 11: autofill)
     await page.fill('#sre-find', 'cust');
     expect(await page.locator('#sre-find-count').innerText()).not.toBe('');
     await context.close();

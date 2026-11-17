@@ -38,7 +38,7 @@ describe('shortcuts — the till, the office pages, import & export, on the desk
     expect(await main(['shortcuts'], d)).toBe(0);
     const desk = (f: string): string => d.fs.readFileSync(`C:\\Users\\owner\\Desktop\\${f}`, 'utf8');
     expect(desk(SHORTCUTS.till)).toBe('[InternetShortcut]\r\nURL=http://127.0.0.1:8091/pos/\r\n');
-    expect(desk(SHORTCUTS.office)).toBe('[InternetShortcut]\r\nURL=http://127.0.0.1:8091/manager/\r\n');
+    expect(desk(SHORTCUTS.office)).toBe('[InternetShortcut]\r\nURL=http://127.0.0.1:8091/office/\r\n'); // CR-01 step 4f: the front door
     expect(desk(SHORTCUTS.import)).toContain(`"${d.nodePath}" "F:\\SRE-data\\run\\launch.mjs" import`);
     expect(d.fs.existsSync('F:\\SRE-data\\run\\launch.mjs')).toBe(true);
     expect(said(w)).toMatch(/^ON THE DESKTOP — "SRE Till"\.$/m);

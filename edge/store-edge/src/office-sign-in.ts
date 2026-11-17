@@ -296,6 +296,14 @@ export function officeCookie(token: string | undefined): string {
     : `${OFFICE_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${OFFICE_SESSION_MINUTES * 60}`;
 }
 
+/**
+ * CR-01 step 4f · OB-795 "A for login" (owner, 15 Nov 2026, in writing): the store PC's one front door for everybody —
+ * owner, manager and staff. `http://127.0.0.1:<screen port>/` and `/office/` always ask for a staff ID and PIN (a session
+ * already open on this shared PC is ended first), and a correct one lands the person on their own first permitted page.
+ * As a sign-in `next`, this path means "wherever this person's work starts".
+ */
+export const FRONT_DOOR = '/office/';
+
 /** Where to go after signing in: a plain path on this box, never another site; else the office home. */
 export function safeNext(next: string | undefined): string {
   if (next === undefined) return '/manager/';
@@ -320,10 +328,14 @@ const PAGE_STYLE = [
 /** The page that asks for the PIN — English and Tamil together, so whoever is at the PC can read it. */
 export function signInPage(input: { readonly next: string; readonly problem?: OfficeRefusal }): string {
   const problem = input.problem === undefined || input.problem === 'not_signed_in' ? '' : `<div class="problem" role="alert" id="office-problem"><p lang="en">${esc(OFFICE_WORDS[input.problem].en)}</p><p lang="ta" class="ta">${esc(OFFICE_WORDS[input.problem].ta)}</p></div>`;
+  // CR-01 step 4f: the front door is the shop's one sign-in for everybody; a screen's own gate still says "Enter your PIN".
+  const front = input.next === FRONT_DOOR;
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>Enter your PIN — office screens</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
-    '<h1 id="office-heading"><span lang="en">Enter your PIN</span><span lang="ta" class="ta">உங்கள் PIN-ஐ உள்ளிடுங்கள்</span></h1>',
+    front ? '<title>Sign in — SRE Hyper Market</title>' : '<title>Enter your PIN — office screens</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
+    front
+      ? '<h1 id="office-heading"><span lang="en">Sign in — SRE Hyper Market</span><span lang="ta" class="ta">உள்நுழைக — SRE ஹைப்பர் மார்க்கெட்</span></h1><p lang="en" id="office-front">One sign-in for everybody — owner, manager and staff. You go straight to your own work.</p><p lang="ta" class="ta">அனைவருக்கும் ஒரே உள்நுழைவு — உரிமையாளர், மேலாளர், பணியாளர். நீங்கள் நேராக உங்கள் வேலைக்குச் செல்வீர்கள்.</p>'
+      : '<h1 id="office-heading"><span lang="en">Enter your PIN</span><span lang="ta" class="ta">உங்கள் PIN-ஐ உள்ளிடுங்கள்</span></h1>',
     '<p lang="en">The office screens open with your own staff ID and your own till PIN. Never use anyone else\'s.</p>',
     '<p lang="ta" class="ta">அலுவலகத் திரைகள் உங்கள் சொந்தப் பணியாளர் எண்ணாலும் உங்கள் சொந்த PIN-ஆலும் மட்டுமே திறக்கும். வேறொருவருடையதை ஒருபோதும் பயன்படுத்த வேண்டாம்.</p>',
     problem,
@@ -335,6 +347,23 @@ export function signInPage(input: { readonly next: string; readonly problem?: Of
     '<input id="office-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{6}" maxlength="6" required>',
     '<button type="submit" id="office-submit">Sign in <span lang="ta">· உள்நுழை</span></button>',
     '</form></main></body></html>',
+  ].join('');
+}
+
+/**
+ * CR-01 step 4f: the front door's answer to a person whose PIN opens the till only (a cashier) — said plainly, with the
+ * way to the till. No office sign-in is made and no office screen opens (the gate's own `not_an_office_role` refusal).
+ */
+export function tillOnlyPage(): string {
+  return [
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<title>Your work is on the till — SRE Hyper Market</title>', `<style>${PAGE_STYLE}</style></head><body><main>`,
+    '<h1 id="office-heading"><span lang="en">Your work is on the till</span><span lang="ta" class="ta">உங்கள் வேலை விற்பனை முனையத்தில்</span></h1>',
+    '<p lang="en" id="office-till-only">Your PIN opens the till, not the office screens. Sign in at the till with the same staff ID and PIN.</p>',
+    '<p lang="ta" class="ta">உங்கள் PIN விற்பனை முனையத்தைத் திறக்கும், அலுவலகத் திரைகளை அல்ல. அதே பணியாளர் எண்ணாலும் PIN-ஆலும் விற்பனை முனையத்தில் உள்நுழையுங்கள்.</p>',
+    '<p><a id="office-to-till" href="/pos/">Go to the till <span lang="ta">· விற்பனை முனையத்துக்குச் செல்</span></a></p>',
+    `<p><a id="office-back" href="${FRONT_DOOR}">Back to sign-in <span lang="ta">· உள்நுழைவுக்குத் திரும்பு</span></a></p>`,
+    '</main></body></html>',
   ].join('');
 }
 
