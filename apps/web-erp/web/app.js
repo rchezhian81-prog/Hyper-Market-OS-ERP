@@ -599,6 +599,7 @@ function show(next) {
     el(`tab-${name}`).setAttribute('aria-current', name === next ? 'page' : 'false');
   }
   el('view-home-dash').hidden = next !== 'home';
+  paintTitle();
   if (next === 'home') renderHome();
   if (next === 'approvals') renderApprovals();
   if (next === 'close') resetClose();
@@ -718,10 +719,286 @@ function renderAttention(floor, today) {
     const text = document.createElement('span'); text.className = 'text';
     if (row.n !== null) { const b = document.createElement('b'); b.className = 'n'; b.textContent = String(row.n); text.append(b, document.createTextNode(` ${row.text}`)); } else text.textContent = row.text;
     li.append(text);
+    // Batch 12 (the owner's look): a row that needs someone wears the orange "Action needed" pill, in both languages.
+    if (row.tone === 'attention') {
+      const pill = document.createElement('span'); pill.className = 'pill';
+      const mark = lineIcon('triangle-alert', 16);
+      if (mark) pill.append(mark);
+      const words = document.createElement('span'); words.textContent = board('actionNeeded', 'en');
+      const ta = document.createElement('small'); ta.lang = 'ta'; ta.textContent = board('actionNeeded', 'ta');
+      words.append(ta);
+      pill.append(words);
+      li.append(pill);
+    }
     const go = goLink(row.target);
-    if (go) li.append(go);
+    if (go) {
+      li.append(go);
+      // The whole row opens its screen, as the Open button does.
+      li.classList.add('opens');
+      li.addEventListener('click', (e) => { if (e.target !== go && !go.contains(e.target)) go.click(); });
+    }
     return li;
   })));
+}
+
+// ── Batch 12 (owner, 17 Nov 2026): the owner's Today look — headline cards, the chart, the recent bills, the foot ──
+// Every figure is the store computer's own (`window.managerData.todayBoard`, built from its sales log) or says why not.
+const BOARD_WORDS = {
+  en: {
+    sales: 'Sales', bills: 'Bills', purchaseOrders: 'Purchase orders', lowStock: 'Low stock',
+    vsPrevious: 'vs. {day}, by this time', noPrevious: 'No previous day yet — this computer holds no earlier day',
+    noHistory: 'No previous-day figure is kept for this', noChange: 'No change', notKnown: 'Not known',
+    boardSilent: 'the store computer has not sent this page its sales log',
+    lowStockWhy: 'this store computer is not sent a low-stock list',
+    actionNeeded: 'Action needed', salesOverview: 'Sales overview', chartToday: 'Today', chartWeek: 'This week',
+    byHour: 'Hour', byDay: 'Trading day', takings: 'Takings', chartCoversToday: 'Today\'s bills on this store computer, by the shop\'s hour, before refunds',
+    chartCoversWeek: 'The last days this store computer holds, before refunds — a day it does not hold is left out',
+    chartNone: 'Not known — the store computer has not sent this page its sales log, so nothing is drawn.',
+    recentActivity: 'Recent activity', time: 'Time', activity: 'Activity', reference: 'Reference', status: 'Status', amount: 'Amount',
+    sale: 'Sale', completed: 'Completed', noBills: 'No bill has been rung on this store computer today.',
+    savedHere: 'Local data saved — on this store computer', lastSynced: 'Last synced {at}', neverSynced: 'Not yet sent to head office today or before',
+    syncNotKnown: 'Last synced: not known — this computer does not report it', viewReports: 'View reports', overview: 'Store overview',
+    lane: 'till {lane}',
+  },
+  ta: {
+    sales: 'விற்பனை', bills: 'பில்கள்', purchaseOrders: 'கொள்முதல் ஆணைகள்', lowStock: 'குறைந்த சரக்கு',
+    vsPrevious: '{day} அன்று இதே நேரத்துடன் ஒப்பிட', noPrevious: 'முந்தைய நாள் இன்னும் இல்லை — இந்தக் கணினியில் முந்தைய நாள் இல்லை',
+    noHistory: 'இதற்கு முந்தைய நாள் எண் வைக்கப்படுவதில்லை', noChange: 'மாற்றமில்லை', notKnown: 'தெரியவில்லை',
+    boardSilent: 'கடைக் கணினி இந்தப் பக்கத்துக்கு விற்பனைப் பதிவை அனுப்பவில்லை',
+    lowStockWhy: 'இந்தக் கடைக் கணினிக்குக் குறைந்த சரக்குப் பட்டியல் அனுப்பப்படுவதில்லை',
+    actionNeeded: 'செயல்பாடு தேவை', salesOverview: 'விற்பனை நிலவரம்', chartToday: 'இன்று', chartWeek: 'இந்த வாரம்',
+    byHour: 'மணி', byDay: 'வியாபார நாள்', takings: 'வரவு', chartCoversToday: 'இந்தக் கடைக் கணினியில் இன்றைய பில்கள், கடையின் மணி நேரப்படி, திருப்பித் தருவதற்கு முன்',
+    chartCoversWeek: 'இந்தக் கடைக் கணினியில் உள்ள கடைசி நாட்கள், திருப்பித் தருவதற்கு முன் — இல்லாத நாள் விடப்பட்டுள்ளது',
+    chartNone: 'தெரியவில்லை — கடைக் கணினி இந்தப் பக்கத்துக்கு விற்பனைப் பதிவை அனுப்பவில்லை, எனவே எதுவும் வரையப்படவில்லை.',
+    recentActivity: 'சமீபத்திய செயல்பாடுகள்', time: 'நேரம்', activity: 'செயல்பாடு', reference: 'குறிப்பு எண்', status: 'நிலை', amount: 'தொகை',
+    sale: 'விற்பனை', completed: 'முடிந்தது', noBills: 'இன்று இந்தக் கடைக் கணினியில் எந்தப் பில்லும் போடப்படவில்லை.',
+    savedHere: 'உள்ளூர் தரவு சேமிக்கப்பட்டது — இந்தக் கடைக் கணினியில்', lastSynced: 'கடைசியாக ஒத்திசைக்கப்பட்டது {at}', neverSynced: 'தலைமை அலுவலகத்துக்கு இன்னும் அனுப்பப்படவில்லை',
+    syncNotKnown: 'கடைசி ஒத்திசைவு: தெரியவில்லை — இந்தக் கணினி அதைச் சொல்வதில்லை', viewReports: 'அறிக்கைகள்', overview: 'கடை நிலவரம்',
+    lane: 'முனையம் {lane}',
+  },
+};
+/** A board word in a language (the reader's when not named). */
+const board = (key, as) => BOARD_WORDS[as ?? lang][key] ?? BOARD_WORDS.en[key];
+/** "English / தமிழ்" — the label style of the owner's look: the reader's language first, the other under it. */
+function twinLabel(key) {
+  const words = document.createElement('span');
+  words.className = 'kpi-label';
+  words.append(document.createTextNode(`${board(key)} /`));
+  const other = document.createElement('small');
+  other.lang = lang === 'ta' ? 'en' : 'ta';
+  other.textContent = board(key, lang === 'ta' ? 'en' : 'ta');
+  words.append(other);
+  return words;
+}
+const boardOf = () => {
+  const b = window.managerData && window.managerData.todayBoard;
+  return b && typeof b === 'object' && b.today && typeof b.today.takenMinor === 'number' ? b : null;
+};
+/** A trading day as the shop says it: "Mon 16 Nov". */
+const shortDay = (iso) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString(lang === 'ta' ? 'ta-IN' : 'en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+};
+/** The change line under a headline figure: an arrow and how much, or plainly why there is no comparison. */
+function trendLine(now, before, previousDay, money) {
+  const line = document.createElement('div');
+  line.className = 'kpi-trend';
+  const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.setAttribute('aria-hidden', 'true');
+  const vs = document.createElement('span'); vs.className = 'vs';
+  if (previousDay === null) {
+    line.dataset.dir = 'none';
+    arrow.textContent = '–';
+    vs.textContent = before === 'no-history' ? board('noHistory') : board('noPrevious');
+    line.append(arrow, vs);
+    return line;
+  }
+  const diff = now - before;
+  line.dataset.dir = diff > 0 ? 'up' : diff < 0 ? 'down' : 'same';
+  arrow.textContent = diff > 0 ? '↑' : diff < 0 ? '↓' : '–';
+  const by = document.createElement('span'); by.className = 'by';
+  // A percentage only where the previous day had something to be a percentage of; otherwise the plain difference.
+  if (diff === 0) by.textContent = board('noChange');
+  else if (before > 0) by.textContent = `${diff > 0 ? '+' : '−'}${Math.round(Math.abs(diff) * 100 / before)}%`;
+  else by.textContent = `${diff > 0 ? '+' : '−'}${money ? inr(Math.abs(diff)) : Math.abs(diff)}`;
+  vs.textContent = board('vsPrevious').replace('{day}', shortDay(previousDay));
+  line.append(arrow, by, vs);
+  return line;
+}
+function kpiCard({ key, iconName, figure, trend, why }) {
+  const card = document.createElement('div');
+  card.className = 'kpi';
+  card.dataset.kpi = key;
+  const top = document.createElement('div'); top.className = 'kpi-top sre-with-icon';
+  // The round icon sits beside its words (the one set's rule: never an icon alone).
+  const mark = lineIcon(iconName, 24);
+  if (mark) top.append(mark);
+  top.append(twinLabel(key));
+  const n = document.createElement('div'); n.className = 'kpi-n';
+  card.append(top, n);
+  if (figure === null) {
+    n.classList.add('unknown');
+    n.textContent = board('notKnown');
+    const p = document.createElement('p'); p.className = 'kpi-why'; p.textContent = why;
+    card.append(p);
+  } else {
+    n.textContent = figure;
+    if (trend) card.append(trend);
+  }
+  return card;
+}
+function renderKpis(today) {
+  const b = boardOf();
+  const prev = b ? b.previous : null;
+  const po = today.po;
+  el('kpis').replaceChildren(
+    kpiCard({ key: 'sales', iconName: 'chart-column', figure: b ? inr(b.today.takenMinor) : null, why: board('boardSilent'), trend: b ? trendLine(b.today.takenMinor, prev ? prev.takenMinor : 0, prev ? prev.tradingDay : null, true) : null }),
+    kpiCard({ key: 'bills', iconName: 'receipt', figure: b ? String(b.today.bills) : null, why: board('boardSilent'), trend: b ? trendLine(b.today.bills, prev ? prev.bills : 0, prev ? prev.tradingDay : null, false) : null }),
+    kpiCard({ key: 'purchaseOrders', iconName: 'package', figure: po.known ? String(amountOf(po)) : null, why: todayWords(po.why, po.whyTa) ?? board('boardSilent'), trend: trendLine(0, 'no-history', null, false) }),
+    kpiCard({ key: 'lowStock', iconName: 'triangle-alert', figure: null, why: board('lowStockWhy') }),
+  );
+}
+
+let chartRange = 'today';
+function renderSalesChart() {
+  el('chart-title').textContent = `${board('salesOverview')} / ${board('salesOverview', lang === 'ta' ? 'en' : 'ta')}`;
+  el('chart-today').textContent = board('chartToday');
+  el('chart-week').textContent = board('chartWeek');
+  el('chart-today').setAttribute('aria-pressed', String(chartRange === 'today'));
+  el('chart-week').setAttribute('aria-pressed', String(chartRange === 'week'));
+  const host = el('sales-chart');
+  host.replaceChildren();
+  const b = boardOf();
+  if (!b || window.sreCharts === undefined) {
+    const p = document.createElement('p'); p.className = 'chart-none'; p.textContent = board('chartNone');
+    host.append(p);
+    return;
+  }
+  let rows;
+  if (chartRange === 'today') {
+    // Every hour from the first bill to the last: an hour with no bill on this box took nothing on this box (its log is whole).
+    const held = new Map(b.byHour.map((h) => [h.hour, h]));
+    const hours = b.byHour.map((h) => Number(h.hour));
+    const order = [];
+    if (hours.length > 0) {
+      let h = hours[0];
+      for (let i = 0; i < 24; i++) { order.push(String(h).padStart(2, '0')); if (h === hours[hours.length - 1]) break; h = (h + 1) % 24; }
+    }
+    rows = order.map((hour) => {
+      const v = held.get(hour)?.takenMinor ?? 0;
+      return { key: hour, label: `${hour}:00`, value: v, text: inr(v) };
+    });
+  } else {
+    rows = b.week.map((d) => ({ key: d.tradingDay, label: shortDay(d.tradingDay), value: d.takenMinor, text: inr(d.takenMinor), ...(d.tradingDay === b.today.tradingDay ? { mark: { en: 'today', ta: 'இன்று' } } : {}) }));
+  }
+  window.sreCharts.draw(host, {
+    id: `sales-${chartRange}`, kind: 'columns',
+    title: { en: BOARD_WORDS.en.salesOverview, ta: BOARD_WORDS.ta.salesOverview },
+    covers: chartRange === 'today' ? { en: BOARD_WORDS.en.chartCoversToday, ta: BOARD_WORDS.ta.chartCoversToday } : { en: BOARD_WORDS.en.chartCoversWeek, ta: BOARD_WORDS.ta.chartCoversWeek },
+    labelHeading: chartRange === 'today' ? { en: BOARD_WORDS.en.byHour, ta: BOARD_WORDS.ta.byHour } : { en: BOARD_WORDS.en.byDay, ta: BOARD_WORDS.ta.byDay },
+    valueHeading: { en: BOARD_WORDS.en.takings, ta: BOARD_WORDS.ta.takings },
+    rows,
+  }, lang);
+}
+el('chart-today').addEventListener('click', () => { chartRange = 'today'; renderSalesChart(); });
+el('chart-week').addEventListener('click', () => { chartRange = 'week'; renderSalesChart(); });
+
+function renderRecent() {
+  el('recent-title').textContent = `${board('recentActivity')} / ${board('recentActivity', lang === 'ta' ? 'en' : 'ta')}`;
+  const host = el('recent');
+  const b = boardOf();
+  if (!b || b.recent.length === 0) {
+    const p = document.createElement('p'); p.className = 'recent-none';
+    p.textContent = b ? board('noBills') : `${board('notKnown')} — ${board('boardSilent')}`;
+    host.replaceChildren(p);
+    return;
+  }
+  const other = lang === 'ta' ? 'en' : 'ta';
+  const cell = (tag, main, sub, cls) => {
+    const c = document.createElement(tag);
+    if (cls) c.className = cls;
+    c.append(document.createTextNode(main));
+    if (sub) { const s = document.createElement('small'); s.lang = other; s.textContent = sub; c.append(s); }
+    return c;
+  };
+  const table = document.createElement('table'); table.className = 'recent';
+  const head = document.createElement('tr');
+  for (const [key, cls] of [['time'], ['activity'], ['reference'], ['status'], ['amount', 'money']]) {
+    const th = cell('th', board(key), board(key, other), cls);
+    th.scope = 'col';
+    head.append(th);
+  }
+  const thead = document.createElement('thead'); thead.append(head);
+  const body = document.createElement('tbody');
+  for (const r of b.recent) {
+    const tr = document.createElement('tr');
+    tr.dataset.sale = r.id;
+    const what = r.laneId ? ` · ${board('lane').replace('{lane}', r.laneId)}` : '';
+    tr.append(
+      cell('td', r.at ?? board('notKnown')),
+      cell('td', `${board('sale')}${what}`, board('sale', other)),
+      cell('td', r.number ?? r.id),
+      cell('td', board('completed'), board('completed', other), 'done'),
+      cell('td', inr(r.totalMinor), null, 'money'),
+    );
+    body.append(tr);
+  }
+  table.append(thead, body);
+  host.replaceChildren(table);
+}
+
+function renderFoot() {
+  const foot = el('today-foot');
+  const b = boardOf();
+  if (!b) { foot.replaceChildren(); foot.hidden = true; return; }
+  foot.hidden = false;
+  const part = (iconName, text, unknown) => {
+    const s = document.createElement('span');
+    if (unknown) s.className = 'unknown';
+    const mark = lineIcon(iconName, 18);
+    if (mark) s.append(mark);
+    s.append(document.createTextNode(text));
+    return s;
+  };
+  const synced = !('lastSentAt' in b)
+    ? part('circle-help', board('syncNotKnown'), true)
+    : b.lastSentShop
+      ? part('refresh-cw', board('lastSynced').replace('{at}', b.lastSentShop), false)
+      : part('clock', board('neverSynced'), true);
+  foot.replaceChildren(part('check', board('savedHere'), false), synced);
+}
+
+/** The secondary action: the reports, where the rail offers this person a reports screen; nothing otherwise. */
+function renderReportsLink() {
+  const a = el('today-reports');
+  const item = railItem('reporting') ?? railItems().find((i) => i && typeof i.path === 'string' && /report/.test(i.path)) ?? null;
+  a.hidden = item === null;
+  if (item) {
+    a.href = item.path;
+    const mark = lineIcon('chart-column', 18);
+    a.replaceChildren(...(mark ? [mark] : []), document.createTextNode(board('viewReports')));
+  }
+}
+
+/** The page's one heading follows the tab, in the owner's "English / தமிழ்" style: "Today / இன்று", "Approvals / ஒப்புதல்கள்". */
+const TITLE_KEYS = { home: 'today', approvals: 'approvals', receive: 'receive', count: 'count', close: 'closeDay' };
+function paintTitle() {
+  const key = TITLE_KEYS[view] ?? 'today';
+  const other = lang === 'ta' ? 'en' : 'ta';
+  el('who').firstChild.textContent = `${t(key)} `;
+  const twin = el('who-twin');
+  twin.lang = other;
+  twin.textContent = `/ ${WORDS[other][key] ?? WORDS.en[key]}`;
+}
+/** "Tue 17 Nov 2026" for a trading day; anything that is not a date is shown as it came. */
+const longDay = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? `${shortDay(iso)} ${String(iso).slice(0, 4)}` : String(iso));
+
+function renderBoard(today) {
+  renderKpis(today);
+  renderSalesChart();
+  renderRecent();
+  renderFoot();
+  renderReportsLink();
 }
 // W1: the empty list wears the shared "nothing yet" state (sreOffice) — its words say what the list covers, so it is
 // never read as an all-clear for the whole store (P-08).
@@ -852,7 +1129,7 @@ function paintTodayWords() {
 
 function renderHome() {
   const floor = session.floor();
-  el('day').textContent = `${t('tradingDay')} ${floor.tradingDay}`;
+  el('day').textContent = `${t('tradingDay')} ${longDay(floor.tradingDay)}`;
   // Who this screen runs as, said in the header; and when the store named nobody, the strip says so (hard rule #4).
   // OB-16: the person's NAME when the store computer sent one with the menu (the rail says the same); the id otherwise.
   const named = globalThis.sreNavigation && globalThis.sreNavigation.person && typeof globalThis.sreNavigation.person.name === 'string' && globalThis.sreNavigation.userId === floor.manager ? globalThis.sreNavigation.person.name : null;
@@ -908,6 +1185,7 @@ function renderHome() {
   renderOps(floor, today);
   renderLanes(); // OB-392
   renderWorkspaces();
+  renderBoard(today); // Batch 12: the owner's look
   // The one primary action on the home screen (store-manager.md: "clear the next approval or exception"). Shown
   // only when there IS one this manager may clear — a primary button that leads nowhere teaches people to ignore
   // primary buttons. From here a decision is three taps: this, Approve (or Reject), the reason.
@@ -1753,13 +2031,13 @@ function paintBoxClock() {
 
 function paintChrome() {
   paintBoxClock();
-  el('who').firstChild.textContent = `${t('manager')} `;
+  paintTitle();
   el('tab-home').textContent = t('today');
   el('tab-approvals').textContent = t('approvals');
   el('tab-receive').textContent = t('receive');
   el('tab-count').textContent = t('count');
   el('tab-close').textContent = t('closeDay');
-  el('home-title').textContent = t('today');
+  el('home-title').textContent = `${board('overview')} / ${board('overview', lang === 'ta' ? 'en' : 'ta')}`;
   el('home-lead').textContent = t('tapAFigure');
   el('approvals-title').textContent = t('approvals');
   el('approvals-lead').textContent = t('biggestFirst');

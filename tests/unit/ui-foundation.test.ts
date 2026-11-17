@@ -59,7 +59,12 @@ describe('the tokens the stylesheet declares', () => {
     expect(T['--font']).toMatch(/Nirmala UI/);
     expect(CSS).not.toMatch(/@import/);
     // every url() is one of the app's own font files, beside the stylesheet — nothing with a scheme or a host
-    const urls = [...CSS.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1]!.replace(/["']/g, ''));
+    // Batch 12: the SRE logo is drawn inline (a `data:` SVG mask) — in the file itself, nothing fetched, no host but the SVG namespace.
+    const all = [...CSS.matchAll(/url\("?([^")]*)"?\)/g)].map((m) => m[1]!.replace(/["']/g, ''));
+    const inline = all.filter((u) => u.startsWith('data:image/svg+xml,'));
+    for (const u of inline) expect(decodeURIComponent(u).replace('http://www.w3.org/2000/svg', '')).not.toMatch(/https?:|\/\/|href=/);
+    expect(inline.length).toBe(2); // the logo's mask, with and without the -webkit- prefix
+    const urls = all.filter((u) => !u.startsWith('data:'));
     expect(urls.length).toBe(9);
     for (const u of urls) expect(u).toMatch(/^\.\/fonts\/(plus-jakarta-sans-(400|500|600|700|800)|anek-tamil-(400|500|600|700))\.woff2$/);
     // nothing waits on a font: the words show at once in the system face

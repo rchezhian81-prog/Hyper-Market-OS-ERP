@@ -1,6 +1,6 @@
 // The sign-in page's stylesheet in the owner's approved design (UX-3 · OB-18, 5 October 2026), scoped to `#sre-login`:
 // a cream canvas, the SRE mark, a hero on the left, a white "Staff access" card on the right. ONE source for both sign-ins —
-// the hosted demo's (`infra/pilot/demo-login/ui.ts`, also the Keycloak theme) and the store computer's own front door
+// the hosted demo's (the pilot's hosted sign-in, also the Keycloak theme) and the store computer's own front door
 // (`edge/store-edge/src/office-sign-in.ts`, batch 12: the owner asked the store PC's sign-in to look like the demo's).
 // System fonts only, no url() and no @font-face: a store PC's page fetches nothing.
 export const SIGN_IN_CSS = `

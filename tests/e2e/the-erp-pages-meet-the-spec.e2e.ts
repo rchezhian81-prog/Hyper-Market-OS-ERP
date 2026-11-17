@@ -227,7 +227,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await page.textContent('#sre-menu .person .avatar')).toBe('MR');
       expect(await page.$('#sre-menu .who-can')).toBeNull();
       expect(await page.evaluate('document.getElementById("sre-menu").lastElementChild.className')).toBe('person');
-      expect(await page.textContent('#sre-menu .brand small')).toBe('Store workspace');
+      expect(await page.textContent('#sre-menu .brand small')).toBe('Tamil Nadu hypermarket ERP'); // batch 12: the owner's look — "Retail OS" and its line
       expect(await texts(page, '#sre-menu .group')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
       expect(await texts(page, '#sre-menu a')).toEqual(['Today', 'Stock counts', 'Stock health', 'Users & roles', 'Audit log']);
       expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
@@ -268,7 +268,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       }
       expect(await page.textContent('#sre-menu .branch small')).toBe('கிளைப் பணியிடம்');
       expect(await page.textContent('#sre-menu .person b')).toBe('Meena Raghavan');
-      expect(await page.textContent('#sre-menu .brand small')).toBe('கடை பணியிடம்');
+      expect(await page.textContent('#sre-menu .brand small')).toBe('தமிழ்நாடு ஹைப்பர் மார்க்கெட் ERP');
       expect(await texts(page, '#sre-menu .group')).toEqual(['இன்று', 'சரக்கும் பின்கடையும்', 'நிர்வாகம்']);
       expect(await page.textContent('#sre-crumbs')).toBe('பணியிடம் › சரக்கும் பின்கடையும் › சரக்கு எண்ணிக்கை');
       expect(await page.getAttribute('#sre-find', 'aria-label')).toBe('ஒரு திரையைத் தேடு');
@@ -315,9 +315,9 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await page.evaluate('document.querySelectorAll("#tiles .tile .chip svg").length')).toBe(5); // an icon on each
       // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
       const rows = await texts(page, '#attention li');
-      expect(rows[0]).toMatch(/^1 approvals you can clear\s*Open$/);
-      expect(rows).toContainEqual(expect.stringMatching(/^4 batches expiring soon$/)); // no "Open": this rail has no Expiry screen
-      expect(rows).toContainEqual(expect.stringMatching(/^1 counts awaiting approval\s*Open$/)); // the rail has Stock counts
+      expect(rows[0]).toMatch(/^1 approvals you can clear\s*Action neededசெயல்பாடு தேவை\s*Open$/); // batch 12: the orange pill, both languages
+      expect(rows).toContainEqual(expect.stringMatching(/^4 batches expiring soon\s*Action neededசெயல்பாடு தேவை$/)); // no "Open": this rail has no Expiry screen
+      expect(rows).toContainEqual(expect.stringMatching(/^1 counts awaiting approval\s*Action neededசெயல்பாடு தேவை\s*Open$/)); // the rail has Stock counts
       expect(rows.some((r) => /recall/i.test(r))).toBe(false); // zero recalls is not a worry
       expect(await page.getAttribute('#attention li a.go', 'href')).toMatch(/\/counts\/$/);
       // purchase to shelf: four steps, one honestly not known with the reason
