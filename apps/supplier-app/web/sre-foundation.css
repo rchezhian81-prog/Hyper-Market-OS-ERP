@@ -405,7 +405,7 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-field > label { color: var(--muted); font-size: 15px; font-weight: 500; }
 /* W5: the sections drawn by w5-platform.js (section.w5) and w5-sections.js (.w5-action) — every control a real target (§1, ≥ 44px). */
 .w5 button, .w5 select, .w5 input:not([type="checkbox"]):not([type="radio"]), .w5-action button, .w5-action select, .w5-action input:not([type="checkbox"]):not([type="radio"]) { min-height: var(--tap); }
-.sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(14, 59, 46, .04); }
 .sre-input:hover, .sre-select:hover { border-color: var(--ink-2); }
 .sre-input:focus-visible, .sre-select:focus-visible { border-color: var(--accent); }
 .sre-input::placeholder { color: var(--idle); }
@@ -510,7 +510,7 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
 .sre-menu { background: var(--rail); color: var(--on-rail); margin: 0; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; overflow: hidden auto; border: 0; scrollbar-width: thin; scrollbar-color: var(--rail-line) transparent; }
 .sre-menu[hidden] { display: none; }
 .sre-menu .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
-.sre-menu .brand .mark { width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); background: var(--rail-accent); color: var(--rail); font-weight: 800; font-size: 15px; letter-spacing: .02em; display: grid; place-items: center; box-shadow: inset 0 -2px 0 rgba(25, 47, 39, .18); }
+.sre-menu .brand .mark { width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); background: var(--rail-accent); color: var(--rail); font-weight: 800; font-size: 15px; letter-spacing: .02em; display: grid; place-items: center; box-shadow: inset 0 -2px 0 rgba(14, 59, 46, .18); }
 .sre-menu .brand b { display: block; font-size: 15px; letter-spacing: .04em; }
 .sre-menu .brand small { display: block; color: var(--on-rail-muted); font-size: 14px; }
 .sre-menu .group { margin: 0; padding: 16px 12px 6px; color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
@@ -612,7 +612,7 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
 .sre-find-wrap { position: relative; display: inline-flex; align-items: center; width: min(320px, 100%); color: var(--muted); }
 .sre-find-wrap[hidden] { display: none; }
 .sre-find-wrap > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
-.sre-find-wrap > .sre-find { width: 100%; padding-left: 40px; border-color: var(--field-line); box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-find-wrap > .sre-find { width: 100%; padding-left: 40px; border-color: var(--field-line); box-shadow: inset 0 1px 1px rgba(14, 59, 46, .04); }
 .sre-find-wrap > .sre-find:hover { border-color: var(--ink-2); }
 .sre-find-wrap > .sre-find:focus-visible { border-color: var(--accent); }
 /* The rail's workspace headings (UX-2b → OB-201): words only; each screen under them carries its own icon. */

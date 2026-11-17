@@ -212,6 +212,15 @@ The owner chose a new look for every screen: **emerald and gold, rounded and mat
 gold look for SRE Retail OS", 2 Nov 2026; reference: the SRE Retail OS design system page). It is a **styling change
 only**: layouts, flows, prices, tax, payments and data are untouched; token NAMES did not change, so no screen changed.
 
+**Confirmed again as OB-831 (17 November 2026).** The owner handed the same brief over to be built and deployed (kept as
+`docs/design/emerald-and-gold-brief-2026-11-02.md`). Every token in its Colours table matches this file in both sets,
+except one, kept on purpose: in the dark set `--on-idle` is `#0d1714` rather than the brief's `#f4efe3`, because the
+brief's value reads 3.1:1 on `--idle` and the text floor is 4.5:1 (§1). With OB-831 the last pieces still in the old
+colours moved over too: every page's browser bar colour (`theme-color`) and every app's install colours
+(`theme_color` `#0e3b2e`, `background_color` `#fbf8f1`), and the two field and badge shadows that still carried the old
+forest tint. The sign-in page (`packages/ui/src/sign-in-style.ts`, one source for the hosted sign-in and the store
+computer's front door) already uses this palette's values in its own scoped set.
+
 **What does not change:** every §1 hard rule (English and Tamil on every word; status as word + icon; nothing a person
 must read under 14px; targets 44 / 48 / 56 / 64px); the meaning of every colour (green ok, amber pending or not known,
 red a problem, grey idle); the three-reds rule; no motion on the till's scan or total and reduced motion respected;
