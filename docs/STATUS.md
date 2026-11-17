@@ -18,6 +18,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
+- **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.
+- **Done (on its PR):**
+  - Checked token by token.
+  - Finished the browser-bar and install colours on every page and app, and the emerald shadows.
+  - Batch 12's new look and the sign-in page already use the palette.
+- **Kept on purpose:** dark `--on-idle` stays `#0d1714`, because the brief's value fails the 4.5:1 text rule.
+- **Open:**
+  - The sign-in page shows the system font, not Plus Jakarta Sans, because its stylesheet fetches nothing.
+  - The low-spec Android speed check needs a real phone.
+- **Store PC release 1.0.2215 (batch 12, the new look) is published.**
+
 ## Batch 12 (17 November 2026) · the owner's new look
 - **Owner asked:** pages that look like his picture of a Today page, and a login page like the trial copy's.
 - **Done (on its PR):**
