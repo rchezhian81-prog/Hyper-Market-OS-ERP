@@ -39,14 +39,21 @@ describe.skipIf(!existsSync(CHROMIUM))('CR-01 step 4f: one sign-in front door fo
     await page.fill('#office-pin', who.pin);
     await Promise.all([page.waitForNavigation({ waitUntil: 'load' }), page.click('#office-submit')]);
   };
+  // Batch 12: the sign-in page holds both languages; the English / தமிழ் switch at the top right shows one (CSS only, no script).
+  const tamil = async (page: Page, sel: string): Promise<string> => {
+    await page.click('label[for="sl-lang-ta"]');
+    const words = await page.locator(`${sel} [lang="ta"]`).innerText();
+    await page.click('label[for="sl-lang-en"]');
+    return words;
+  };
 
   it('the shop\'s address asks everybody to sign in; the owner lands on Today', async () => {
     const { box, page } = await open();
     const res = await page.goto(`${box.base}/`, { waitUntil: 'load' });
     expect(res?.status()).toBe(200);
     expect(await page.title()).toBe('Sign in — SRE Hyper Market');
-    expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Sign in — SRE Hyper Market');
-    expect(await page.locator('#office-heading [lang="ta"]').innerText()).toBe('உள்நுழைக — SRE ஹைப்பர் மார்க்கெட்');
+    expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Welcome back.');
+    expect(await tamil(page, '#office-heading')).toBe('மீண்டும் வருக.');
     expect(await page.locator('#office-front').innerText()).toMatch(/owner, manager and staff/);
     expect(await auditPage(page)).toEqual([]);
     await signIn(page, PEOPLE.owner);
@@ -67,7 +74,7 @@ describe.skipIf(!existsSync(CHROMIUM))('CR-01 step 4f: one sign-in front door fo
     await page.goto(`${box.base}/office/`, { waitUntil: 'load' });
     await signIn(page, PEOPLE.cashier);
     expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Your work is on the till');
-    expect(await page.locator('#office-heading [lang="ta"]').innerText()).toBe('உங்கள் வேலை விற்பனை முனையத்தில்');
+    expect(await tamil(page, '#office-heading')).toBe('உங்கள் வேலை விற்பனை முனையத்தில்');
     expect(await page.locator('#office-to-till').getAttribute('href')).toBe('/pos/');
     expect(await auditPage(page)).toEqual([]);
     // No office sign-in was made: the manager's screen still asks for a PIN.
@@ -81,7 +88,7 @@ describe.skipIf(!existsSync(CHROMIUM))('CR-01 step 4f: one sign-in front door fo
     await signIn(page, PEOPLE.manager);
     expect(new URL(page.url()).pathname).toBe('/manager/');
     await page.goto(`${box.base}/office/`, { waitUntil: 'load' });
-    expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Sign in — SRE Hyper Market');
+    expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Welcome back.');
     // The manager's sign-in has ended: the old address asks for a PIN again, and opens for the manager as before.
     await page.goto(`${box.base}/manager/`, { waitUntil: 'load' });
     expect(await page.locator('#office-heading [lang="en"]').innerText()).toBe('Enter your PIN');

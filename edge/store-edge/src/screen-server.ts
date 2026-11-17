@@ -667,7 +667,7 @@ export function startScreenServer(input: {
     if (path !== UPDATE_PATHS.request) {
       req.resume();
       if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'this page is only read; the request is sent from it'); return; }
-      if (!session.ok) { page(res, 401, signInPage({ next: UPDATE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
+      if (!session.ok) { page(res, 401, signInPage({ storeName: storeNameNow(), next: UPDATE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
       const isOwner = (rolesAtThisStore(session.userId, snap.pack) ?? []).includes(OWNER_ROLE);
       page(res, 200, updatePage({ check: update.deps.check(), isOwner, displayName: displayNameIn(snap.pack, session.userId), openShifts: await update.deps.openShifts(), updaterPending: update.updaterPending(), progress: update.progress?.(), waitingSince: update.waitingSince?.() }));
       return;
@@ -700,7 +700,7 @@ export function startScreenServer(input: {
     if (path !== LICENCE_PATHS.load) {
       req.resume();
       if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'this page is only read; a licence is loaded from it'); return; }
-      if (!session.ok) { page(res, 401, signInPage({ next: LICENCE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
+      if (!session.ok) { page(res, 401, signInPage({ storeName: storeNameNow(), next: LICENCE_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined)); return; }
       if (path === LICENCE_PATHS.request) {
         const r = licence.deps.request();
         if (r === undefined) { json(res, 404, { ok: false, en: 'This PC does not know its tenant id, so it cannot write a licence request.' }); return; }
@@ -846,7 +846,7 @@ export function startScreenServer(input: {
     if (office !== undefined) {
       const session = await office.check(officeTokenOf(req.headers['cookie']));
       if (!session.ok) {
-        page(res, 401, signInPage({ next: HANDHELD_SEAL_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
+        page(res, 401, signInPage({ storeName: storeNameNow(), next: HANDHELD_SEAL_PATHS.page, problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
         return;
       }
     }
@@ -865,6 +865,12 @@ export function startScreenServer(input: {
    * comes first: Today for the owner and a manager, Supplier bills for the accountant, …), counting only office screens
    * they may open by their own permissions on this store. Nothing is widened: it is the same menu the screens draw.
    */
+  /** Batch 12: the store's own name on the sign-in card ("SRE Hyper Market" until the store pack names the branch). */
+  const storeNameNow = (): string | undefined => {
+    const policies = input.snapshot().pack.policies;
+    const name = policies.known ? (policies.value as { branchName?: unknown }).branchName : undefined;
+    return typeof name === 'string' && name.trim() !== '' ? name : undefined;
+  };
   const landingFor = (userId: string): string => {
     const pack = input.snapshot().pack;
     const held = permissionsOf(userId, pack);
@@ -896,7 +902,7 @@ export function startScreenServer(input: {
           await office.signOut(officeTokenOf(req.headers['cookie']));
           await link?.end(req); // OB-388: the head-office session on this PC ends with the office sign-in
           res.setHeader('set-cookie', [officeCookie(undefined), 'sre_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict']);
-          send(res, 200, 'text/html; charset=utf-8', signInPage({ next: '/manager/' }));
+          send(res, 200, 'text/html; charset=utf-8', signInPage({ storeName: storeNameNow(), next: '/manager/' }));
           return;
         }
         const body = await readBody(req, 4096);
@@ -906,7 +912,7 @@ export function startScreenServer(input: {
         if (!outcome.ok) {
           // CR-01 step 4f: at the front door a till-only PIN is told where its work is — still no office sign-in.
           if (outcome.refusedBecause === 'not_an_office_role' && next === FRONT_DOOR) { page(res, 403, tillOnlyPage(), officeCookie(undefined)); return; }
-          page(res, outcome.refusedBecause === 'not_an_office_role' ? 403 : outcome.refusedBecause === 'locked' ? 429 : 401, signInPage({ next, problem: outcome.refusedBecause }), officeCookie(undefined));
+          page(res, outcome.refusedBecause === 'not_an_office_role' ? 403 : outcome.refusedBecause === 'locked' ? 429 : 401, signInPage({ storeName: storeNameNow(), next, problem: outcome.refusedBecause }), officeCookie(undefined));
           return;
         }
         const to = next === FRONT_DOOR ? landingFor(outcome.userId) : next;
@@ -925,7 +931,7 @@ export function startScreenServer(input: {
         await office.signOut(officeTokenOf(req.headers['cookie']));
         await link?.end(req);
         res.setHeader('set-cookie', [officeCookie(undefined), 'sre_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict']);
-        send(res, 200, 'text/html; charset=utf-8', signInPage({ next: FRONT_DOOR }));
+        send(res, 200, 'text/html; charset=utf-8', signInPage({ storeName: storeNameNow(), next: FRONT_DOOR }));
         return;
       }
       // OB-263: the evening check's doors (the day's figures, the mapping, the load, the reasons, the signature).
@@ -1055,7 +1061,7 @@ export function startScreenServer(input: {
       if (office !== undefined && !OPEN_SCREENS.includes(route.screen)) {
         const session = await office.check(officeTokenOf(req.headers['cookie']));
         if (!session.ok) {
-          page(res, 401, signInPage({ next: safeNext(req.url), problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
+          page(res, 401, signInPage({ storeName: storeNameNow(), next: safeNext(req.url), problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
           return;
         }
         if (!mayOpenScreen(route.screen, permissionsOf(session.userId, snap.pack))) { // R10-A · OB-543: any word that opens it
