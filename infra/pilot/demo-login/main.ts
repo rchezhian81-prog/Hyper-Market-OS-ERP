@@ -10,6 +10,8 @@
 
 import { createServer } from 'node:http';
 import { chmodSync, chownSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   addLogin, createDemoLoginHandler, FailureThrottle, generatePassword, loginFileProblems, startupRefusals,
   type DemoLoginFile,
@@ -45,12 +47,15 @@ function serve(): void {
   const logins = (): DemoLoginFile => readLogins(file);
   const count = logins().logins.length;
 
+  const fontsDir = env['DEMO_LOGIN_FONTS_DIR'] ?? join(dirname(fileURLToPath(import.meta.url)), 'fonts');
   const handle = createDemoLoginHandler({
     logins,
     idp: { secret: env['IDP_SIGNING_KEY']!, issuer: env['IDP_ISSUER']!, audience: env['IDP_AUDIENCE']! },
     throttle: new FailureThrottle(),
     now: () => Date.now(),
     audit: (line) => { process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), ...line })}\n`); },
+    // Batch 16: the page's own fonts, from dist/fonts/ beside this bundle (scripts/build-service.mjs puts them there).
+    font: (name) => { try { return readFileSync(join(fontsDir, name)); } catch { return undefined; } },
   });
 
   // The identity bridge (H-11): asks the INTERNAL API who the session is. Never the public front.
@@ -112,7 +117,7 @@ function serve(): void {
           return;
         }
         const out = handle(request);
-        res.writeHead(out.status, out.headers).end(out.body);
+        res.writeHead(out.status, out.headers).end(out.bytes ?? out.body);
       } catch (err) {
         process.stderr.write(`demo sign-in error: ${err instanceof Error ? err.message : String(err)}\n`);
         res.writeHead(500, { 'content-type': 'text/plain' }).end('The demo sign-in could not complete. Nothing was changed.');

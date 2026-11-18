@@ -26,7 +26,10 @@ import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import type { StorePack } from './store-pack';
 import { assignmentsFrom, peopleFrom } from './screen-navigation';
-import { SIGN_IN_CSS } from '../../../packages/ui/src/sign-in-style';
+import { SIGN_IN_CSS, signInFontFaces } from '../../../packages/ui/src/sign-in-style';
+
+/** CR-01 batch 16: the path the screen server serves the sign-in page's own fonts from, before anyone signs in. */
+export const SIGN_IN_FONTS_PATH = '/fonts/';
 
 /** The cookie the browser keeps for an office sign-in (HttpOnly, SameSite=Strict, this PC's loopback only). */
 export const OFFICE_COOKIE = 'sre_office';
@@ -364,7 +367,7 @@ const svg = (name: string): string => `<svg class="sl-icon" viewBox="0 0 24 24" 
 function signInShell(title: string, storeName: string, card: string): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(title)}</title><style>${SIGN_IN_CSS}${STORE_SIGN_IN_STYLE}</style></head><body>`,
+    `<title>${esc(title)}</title><style>${signInFontFaces(SIGN_IN_FONTS_PATH)}${SIGN_IN_CSS}${STORE_SIGN_IN_STYLE}</style></head><body>`,
     '<div id="sre-login">',
     '<div class="sl-product">',
     '<header class="sl-topbar"><div class="sl-brand" aria-label="SRE Hyper Market"><div class="sl-mark" aria-hidden="true">S<span>+</span></div><div class="sl-brand-name">SRE<small>HYPER MARKET</small></div></div>',

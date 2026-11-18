@@ -19,6 +19,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+- **Batch 16 (18 Nov 2026):** the sign-in page now draws Plus Jakarta Sans and Anek Tamil from the store PC itself (`/fonts/`, only the seven allow-listed files, before sign-in), with the internet cut off; the hosted demo sign-in does the same from its own files. Closes batch 13's open sign-in-font item. The Keycloak theme stays on the system fonts until the owner asks. Small choices recorded as OB-837 – OB-839 (decided under OB-801).
+
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.
 - **Done (on its PR):**
