@@ -188,7 +188,8 @@ describe('a figure that cannot be worked out says so where the number would be',
     expect(box).toMatch(/value\.className = 'value none'/);
     // The reason is the value's own text, in one string with the label — not appended to some
     // other element where it can be styled small and skimmed past.
-    expect(box).toMatch(/value\.textContent = `\$\{t\('notAvailable'\)\}[^`]*\$\{f\.notAvailableBecause\}`/);
+    // (A reason that already begins "Not known —" — D-057's margin — is the value's text as it is, not prefixed twice.)
+    expect(box).toMatch(/value\.textContent = (?:[^;\n]*\? f\.notAvailableBecause : )?`\$\{t\('notAvailable'\)\}[^`]*\$\{f\.notAvailableBecause\}`/);
     // And the branch is taken on the value being absent, not on it being falsy — a real ₹0 taken
     // on a quiet morning is a fact, and it must print as ₹0.00.
     expect(box).toMatch(/f\.valueMinor === undefined/);
