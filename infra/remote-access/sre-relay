@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# The owner's relay server, by name — OB-840 · ADR-0035. Installed as /usr/local/sbin/sre-relay by setup-relay.sh.
+#
+#   sudo sre-relay add-owner --person <your id in the shop system> --login <a sign-in name of your choice>
+#        the ONE remote sign-in ("4A"): a one-time password shown here once; at first sign-in you choose your own password
+#        and set up the authenticator app (required — "3A")
+#   sudo sre-relay approve-link     approve the store computer: type the pairing code IT shows (nothing else gets in)
+#   sudo sre-relay code             show the link code again
+#   sudo sre-relay status           is everything running; is the store computer's line up
+#   sudo sre-relay update           take the newest version of these files and restart (keeps every key and sign-in)
+#
+# The identity server's administration is used ONLY from this console, never from the internet. No secret is printed,
+# except the one-time password `add-owner` makes for the owner himself.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+RELAY_HOME="${RELAY_HOME:-/opt/sre-relay}"
+ENV_FILE="$RELAY_HOME/.env"
+LISTEN_PORT=18095
+
+say() { printf '%s\n' "$*"; }
+refuse() { say "REFUSED — $*"; say "Nothing was changed."; exit 2; }
+[ "$(id -u)" = "0" ] || refuse "run it with sudo."
+[ -f "$ENV_FILE" ] || refuse "this server is not set up yet. Run setup-relay.sh first (guide step 4)."
+COMPOSE=(docker compose --project-directory "$HERE" -f "$HERE/docker-compose.yml" --env-file "$ENV_FILE")
+setting() { grep "^$1=" "$ENV_FILE" | head -n1 | cut -d= -f2-; }
+
+# kcadm.sh inside the identity server's container, from THIS console only. The administrator's password goes to it in
+# its own environment variable (never on a command line, never printed).
+kc() { KC_CLI_PASSWORD="$(setting KEYCLOAK_ADMIN_PASSWORD)" "${COMPOSE[@]}" exec -T -e KC_CLI_PASSWORD idp /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/kcadm.config; }
+kc_login() { kc config credentials --server http://localhost:8080/auth --realm master --user "$(setting KEYCLOAK_ADMIN_USER)" >/dev/null; }
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  add-owner)
+    PERSON="" LOGIN=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --person) PERSON="${2:-}"; shift 2 ;;
+        --login) LOGIN="${2:-}"; shift 2 ;;
+        *) refuse "not understood: $1" ;;
+      esac
+    done
+    printf '%s' "$PERSON" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$' || refuse "--person must be your id in the shop system (the store computer's Users & roles page shows it)."
+    printf '%s' "$LOGIN" | grep -Eq '^[a-z][a-z0-9._-]{2,40}$' || refuse "--login must be a sign-in name: small letters and digits, at least 3 (for example: owner.sre)."
+    # Never a shared or job name (hard rule #4: no shared logins).
+    printf '%s' "$LOGIN" | grep -Eqi '^(admin|administrator|owner|store|shop|cashier[0-9]*|manager|office|till[0-9-]*|user|test|demo)$' && refuse "\"$LOGIN\" is a job name, not a person's. Choose your own (for example: your first name and a dot)."
+    kc_login
+    # "4A": only the owner, for now — one person. A second is refused here (and refused at the store computer anyway).
+    EXISTING="$(kc get users -r sre-store --fields username | grep '"username"' | grep -v 'service-account-' || true)"
+    [ -z "$EXISTING" ] || refuse "a remote sign-in already exists on this server. Only the owner may sign in remotely (decision 4A)."
+    kc create users -r sre-store -s "username=$LOGIN" -s enabled=true \
+      -s 'requiredActions=["CONFIGURE_TOTP","UPDATE_PASSWORD"]' -s "attributes.sre_user_id=[\"$PERSON\"]" >/dev/null
+    kc add-roles -r sre-store --uusername "$LOGIN" --rolename sre-privileged >/dev/null
+    TEMP="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | cut -c1-16)"
+    kc set-password -r sre-store --username "$LOGIN" --new-password "$TEMP" --temporary >/dev/null
+    say ""
+    say "  Your remote sign-in is made:  $LOGIN"
+    say "  One-time password (shown once, here only):  $TEMP"
+    say ""
+    say "  Write it on paper now; do not photograph it or send it to anyone. At your first sign-in (guide step 8)"
+    say "  you choose your own password and scan the QR code with Google or Microsoft Authenticator."
+    ;;
+  approve-link)
+    mapfile -t WAITING < <(docker run --rm -v "$HERE/../..:/repo:ro" -v "$RELAY_HOME/data:/data" node:22-alpine node /repo/infra/remote-access/link-desk.mjs pending /data/pending)
+    [ "${#WAITING[@]}" -gt 0 ] || refuse "no store computer is waiting. At the store computer run remote-access setup first (guide step 7), then this."
+    say "${#WAITING[@]} store computer(s) waiting. The store computer's screen shows its PAIRING CODE."
+    read -r -p "Type the pairing code shown on YOUR store computer: " TYPED
+    TYPED="$(printf '%s' "$TYPED" | tr 'a-z' 'A-Z' | tr -d ' -')"
+    KEY=""
+    for line in "${WAITING[@]}"; do
+      CODE="$(printf '%s' "$line" | sed -n 's/.*"code":"\([A-Z0-9-]*\)".*/\1/p' | tr -d '-')"
+      if [ -n "$CODE" ] && [ "$CODE" = "$TYPED" ]; then KEY="$(printf '%s' "$line" | sed -n 's/.*"publicKey":"\(ssh-ed25519 [A-Za-z0-9+/=]*\)".*/\1/p')"; fi
+    done
+    [ -n "$KEY" ] || refuse "no waiting store computer has that code. Check the code on the store computer's screen."
+    # ONE store computer: its key replaces any before it. Forwarding only, to its own door on this server's loopback only.
+    printf 'restrict,port-forwarding,permitlisten="127.0.0.1:%s" %s sre-store-pc\n' "$LISTEN_PORT" "$KEY" > "$RELAY_HOME/ssh/authorized/sre-link.new"
+    chmod 644 "$RELAY_HOME/ssh/authorized/sre-link.new"
+    mv "$RELAY_HOME/ssh/authorized/sre-link.new" "$RELAY_HOME/ssh/authorized/sre-link"
+    rm -f "$RELAY_HOME/data/pending/"*.json
+    say "APPROVED — the store computer with that code may now open its line. It connects by itself within a minute."
+    ;;
+  code)
+    "${COMPOSE[@]}" exec -T link-desk wget -qO /data/jwks.json http://idp:8080/auth/realms/sre-store/protocol/openid-connect/certs
+    say "LINK CODE: $("${COMPOSE[@]}" exec -T link-desk node /repo/infra/remote-access/link-desk.mjs code /srv/remote-link/pins.json /data/jwks.json)"
+    ;;
+  status)
+    "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
+    if "${COMPOSE[@]}" exec -T front sh -c "nc -z 127.0.0.1 $LISTEN_PORT" >/dev/null 2>&1; then
+      say "The store computer's line: UP."
+    else
+      say "The store computer's line: DOWN (its internet or the store computer is off, or the link is turned off there)."
+    fi
+    [ -s "$RELAY_HOME/ssh/authorized/sre-link" ] && say "Approved store computer: yes." || say "Approved store computer: none yet (sudo sre-relay approve-link)."
+    ;;
+  update)
+    git -C "$HERE/../.." pull --ff-only
+    "${COMPOSE[@]}" up -d --build --remove-orphans
+    say "Updated. Your sign-in, the authenticator setup and the approved store computer are kept."
+    ;;
+  *)
+    say "Usage: sudo sre-relay add-owner --person <id> --login <name> | approve-link | code | status | update"
+    exit 2
+    ;;
+esac

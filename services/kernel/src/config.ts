@@ -365,6 +365,15 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
   // CR-01 step 4a · ADR-0033 · OB-732 "B": the dedicated privilege-seal secret (till.env, copied from the store computer's
   // settings at setup). Optional: absent, the office screens refuse a privilege change made here, in words.
   { key: 'BOX_PRIVILEGE_SEAL_KEY', secret: true, minLength: 32, optional: true },
+  /**
+   * OB-840 · ADR-0035: the REMOTE door's port on this PC's loopback (where the line the store PC dials out to the owner's
+   * relay ends). Written only by `store-computer remote-access setup`; absent → no remote door (the default: OFF).
+   */
+  { key: 'EDGE_REMOTE_DOOR_PORT', optional: true },
+  /** OB-840: the pins file `remote-access setup` wrote (the relay's realm, its PUBLIC signing key, who may come in). */
+  { key: 'EDGE_REMOTE_ACCESS_FILE', optional: true },
+  /** OB-840 · P-08: the remote link service's status file, read for Today's "remote access" line. */
+  { key: 'EDGE_REMOTE_LINK_STATUS_FILE', optional: true },
 ];
 
 export type ProbeState = 'live' | 'not_live' | 'ready' | 'not_ready';
