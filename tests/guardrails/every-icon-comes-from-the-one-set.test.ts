@@ -152,8 +152,9 @@ describe('every icon a screen names is in the set — and the set holds only tho
 
   it('every figure the Today page asks for resolves to an icon of the set', () => {
     const app = readFileSync('apps/web-erp/web/app.js', 'utf8');
-    const asked = [...app.matchAll(/iconName: '([a-z]+)'/g)].map((m) => m[1]!);
-    expect(asked.length).toBeGreaterThanOrEqual(5);
+    // Batch 15: the figures live on the four headline cards now (the old strip is gone) — each card's icon is in the set.
+    const asked = [...app.matchAll(/iconName: '([a-z-]+)'/g)].map((m) => m[1]!);
+    expect(asked.length).toBeGreaterThanOrEqual(4);
     for (const name of asked) expect(FIGURE_ICONS[name] ?? (NAMES.includes(name) ? name : undefined), `figure "${name}"`).toBeDefined();
   });
 

@@ -108,14 +108,15 @@ describe.each(backings)('a vendor\'s route sheet reaches the warehouse handheld 
     const m = new RegExp(`<script>window\\.${GLOBAL_FOR['warehouse']} = ([\\s\\S]*?);</script>`).exec(html);
     expect(m, html.slice(0, 300)).not.toBeNull();
     const served = JSON.parse(m![1]!) as Body;
-    expect(served['dsdRoutes']).toEqual(routesInPack);
+    // Batch 15 (D-066): each route also carries its supplier's NAME from the pack, so the phone shows the name, not the code.
+    expect(served['dsdRoutes']).toEqual((routesInPack as Record<string, unknown>[]).map((r) => ({ ...r, supplierName: 'Synthetic supplier sup-bake' })));
     expect(served['openDeliveries']).toEqual([]);
 
     // ── OFFLINE at the back door: the phone (signed in as the receiver) checks the van in against the route ──
     online = false;
     const outbox = new SyncOutbox();
     const phone = new DsdDoorSession(asPhoneHolder('warehouse', served, 'u-recv') as unknown as DsdDoorData, outbox, () => '2030-06-01T06:30:00.000Z');
-    expect(phone.choices()).toEqual({ orders: [], routes: [{ routeId: 'r-bread', supplierId: 'sup-bake' }] });
+    expect(phone.choices()).toEqual({ orders: [], routes: [{ routeId: 'r-bread', supplierId: 'sup-bake', supplierName: 'Synthetic supplier sup-bake' }] });
     expect(phone.start({ checkInId: 'door-1', routeId: 'r-bread', driverName: 'mobile 9876543210' }).code).toBe('dsd_started');
     for (const id of ['b1', 'b2', 'b3']) expect(phone.scan(id, '890BREAD').code).toBe('dsd_scanned');
     const view = phone.view()!;

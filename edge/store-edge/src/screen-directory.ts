@@ -15,6 +15,8 @@ export interface DirectoryPerson { readonly id: string; readonly name: string; r
 export interface DirectoryPlace { readonly id: string; readonly name: string; readonly kind: 'store' | 'warehouse' | 'bin'; readonly zone?: string }
 /** U7: a role the shop gives, by name in both languages where the pack carries the Tamil name (OB-699). */
 export interface DirectoryRole { readonly id: string; readonly name: string; readonly nameTa?: string }
+/** Batch 15: a supplier by name (head office's supplier master, names only), so a page never shows a bare supplier code. */
+export interface DirectorySupplier { readonly id: string; readonly name: string }
 export interface DirectoryMe { readonly userId: string; readonly name: string; readonly roleIds: readonly string[]; readonly permissions: readonly string[] }
 
 export interface DirectoryPayload {
@@ -25,8 +27,10 @@ export interface DirectoryPayload {
   readonly places: readonly DirectoryPlace[];
   /** U7: the roles the pack's register holds — the picker's `role` kind (who a procedure is for, several at once). */
   readonly roles: readonly DirectoryRole[];
+  /** Batch 15: the suppliers by name, from the pack's `suppliers` (empty when it sent none). */
+  readonly suppliers: readonly DirectorySupplier[];
   /** Which registers the pack really held — a page says "not known" for a list the box was never given. */
-  readonly known: { readonly people: boolean; readonly places: boolean; readonly store: boolean; readonly roles: boolean };
+  readonly known: { readonly people: boolean; readonly places: boolean; readonly store: boolean; readonly roles: boolean; readonly suppliers: boolean };
 }
 
 const binName = (bin: PackWarehouse['bins'][number]): string => (typeof bin.zone === 'string' ? `${bin.binId} (${bin.zone})` : bin.binId);
@@ -53,13 +57,16 @@ export function directoryPayload(pack: StorePack, signedIn: string | null): Dire
   const tamilOf = new Map<string, string>();
   for (const r of roleRows) { if (r && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string' && typeof (r as { nameTa?: unknown }).nameTa === 'string') tamilOf.set((r as { id: string }).id, (r as { nameTa: string }).nameTa); }
   const roles: DirectoryRole[] = rolesFrom(roleRows).map((r) => ({ id: r.id, name: r.name, ...(tamilOf.has(r.id) ? { nameTa: tamilOf.get(r.id)! } : {}) }));
+  const suppliers: DirectorySupplier[] = pack.suppliers !== undefined && pack.suppliers.known && Array.isArray(pack.suppliers.value)
+    ? pack.suppliers.value.flatMap((r) => (r && typeof r.supplierId === 'string' && typeof r.name === 'string' && r.name.trim() !== '' ? [{ id: r.supplierId, name: r.name.trim() }] : []))
+    : [];
   let me: DirectoryMe | null = null;
   if (signedIn !== null) {
     const roleIds = pack.roleAssignments.known && Array.isArray(pack.roleAssignments.value) ? assignmentsFrom(pack.roleAssignments.value).filter((a) => a.userId === signedIn).map((a) => a.roleId) : [];
     me = { userId: signedIn, name: people.find((p) => p.id === signedIn)?.name ?? signedIn, roleIds, permissions: permissionsOf(signedIn, pack) ?? [] };
   }
   return {
-    store, timeZone: packTimeZone(pack), me, people, places, roles,
-    known: { people: pack.people.known, places: pack.warehouse.known || store !== null, store: store !== null, roles: pack.roles.known && roles.length > 0 },
+    store, timeZone: packTimeZone(pack), me, people, places, roles, suppliers,
+    known: { people: pack.people.known, places: pack.warehouse.known || store !== null, store: store !== null, roles: pack.roles.known && roles.length > 0, suppliers: pack.suppliers !== undefined && pack.suppliers.known },
   };
 }

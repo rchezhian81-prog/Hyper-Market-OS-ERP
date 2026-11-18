@@ -207,6 +207,8 @@ const TABLE: Readonly<Record<string, Row>> = {
   'invoice.b2c_dynamic_qr.ifsc': { enter: 'HDFC0001234', stored: 'HDFC0001234', control: 'text', bad: { enter: 'HDFC1234', value: 'HDFC1234' } },
   // OB-348: the shop's state — a two-letter code (high-impact: the owner approves); OB-299: the delivery-fee product.
   'delivery.till_fee_product': { enter: 'p-delivery', stored: 'p-delivery', control: 'text', bad: { enter: 'home delivery', value: 'home delivery' } },
+  // Batch 15: the town under the store's name in every menu — empty (not set) or one line of at most 60 characters.
+  'store.town': { enter: 'Tiruppur', stored: 'Tiruppur', control: 'text', bad: { enter: 'x'.repeat(61), value: 'x'.repeat(61) } },
 };
 
 /** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */

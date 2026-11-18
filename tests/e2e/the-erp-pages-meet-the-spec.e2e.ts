@@ -302,17 +302,18 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     for (const device of [DESK, PHONE]) {
       const desk = device === DESK;
       const page = await open('index.html', device, undefined, { sreNavigation: home, managerData: MANAGER_DATA });
-      // the band: sales first, as money, with its note; then the floor's four
-      expect(await texts(page, '#tiles .tile .label')).toEqual(['Sales today', 'Approvals waiting', 'Exceptions open', 'Not yet sent to cloud', 'Tasks today']);
-      expect(await texts(page, '#tiles .tile .n')).toEqual(['₹12,345.00', '1', '0', '0', '1']);
-      // every figure fits inside its tile — ₹12,345.00 once ran past the tile's edge (OB-201 review)
-      expect(await page.evaluate(`[...document.querySelectorAll('#tiles .tile')].filter((t) => {
-        const n = t.querySelector('.n'); const r = document.createRange(); r.selectNodeContents(n);
+      // Batch 15: the old dark strip is gone — no figure is lost. Sales today is the Sales card, as money, with its note
+      // (the box's own figure where it sent no board); approvals, exceptions, not-yet-sent and tasks are on Store today.
+      expect(await page.evaluate('document.getElementById("tiles")')).toBeNull();
+      expect(await page.textContent('#kpis [data-kpi="sales"] .kpi-n')).toBe('₹12,345.00');
+      expect(await page.textContent('#kpis [data-kpi="sales"] .kpi-note')).toBe('41 sales on this box');
+      // every figure fits inside its card — ₹12,345.00 once ran past a tile's edge (OB-201 review)
+      expect(await page.evaluate(`[...document.querySelectorAll('#kpis .kpi, #ops .op')].filter((t) => {
+        const n = t.querySelector('.kpi-n, .n'); const r = document.createRange(); r.selectNodeContents(n);
         const a = r.getBoundingClientRect(); const b = t.getBoundingClientRect(); const pad = parseFloat(getComputedStyle(t).paddingRight) || 0;
         return a.right > b.right - pad + 0.5 || a.left < b.left - 0.5;
-      }).length`), `tiles at ${device.viewport.width}`).toBe(0);
-      expect(await page.textContent('#tiles .tile:first-child .note')).toBe('41 sales on this box');
-      expect(await page.evaluate('document.querySelectorAll("#tiles .tile .chip svg").length')).toBe(5); // an icon on each
+      }).length`), `cards at ${device.viewport.width}`).toBe(0);
+      expect(await page.evaluate('document.querySelectorAll("#kpis .kpi .kpi-top svg").length')).toBe(4); // an icon on each card
       // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
       const rows = await texts(page, '#attention li');
       expect(rows[0]).toMatch(/^1 approvals you can clear\s*Action neededசெயல்பாடு தேவை\s*Open$/); // batch 12: the orange pill, both languages
@@ -324,12 +325,14 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await texts(page, '#flow li .l')).toEqual(['Purchase orders open', 'Receipts recorded', 'Counts awaiting approval', 'Floor indents open']);
       expect(await texts(page, '#flow li .n')).toEqual(['2', '1', '1', 'Not known']);
       expect(await page.textContent('#flow li:last-child .note')).toBe('the store computer has not been given the floor indents');
-      // the store today
-      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Disputed supplier claims open', 'Tasks today']);
-      // U7 · OB-727: the disputed supplier claims sit on the band too; this fixture's box was not sent them, so the
-      // figure says "Not known" with the reason — never a zero (P-08).
-      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', 'Not known', '1']);
-      expect((await texts(page, '#ops .op .note'))[4]).toBe('the store computer has not said');
+      // the store today — batch 15: the old strip's approvals, exceptions and not-yet-sent first, each one tap from its list
+      expect(await texts(page, '#ops .op .l')).toEqual(['Approvals waiting', 'Exceptions open', 'Not yet sent to cloud', 'Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Disputed supplier claims open', 'Tasks today']);
+      // U7 · OB-727: the disputed supplier claims; this fixture's box was not sent them, so the figure says "Not known"
+      // with the reason — never a zero (P-08).
+      expect(await texts(page, '#ops .op .n')).toEqual(['1', '0', '0', '3', '2', '4', '0', 'Not known', '1']);
+      expect((await texts(page, '#ops .op .note'))[7]).toBe('the store computer has not said');
+      expect(await page.evaluate('document.querySelector(\'#ops [data-figure="approvals"]\').classList.contains("attention")')).toBe(true); // 1 waiting: it wants you
+      expect(await page.evaluate('[...document.querySelectorAll(\'#ops [data-figure="approvals"] .go, #ops [data-figure="exceptions"] .go, #ops [data-figure="unsent"] .go\')].length')).toBe(3); // each opens its list
       // the workspaces: the rail's own groups, each a link to its first screen
       expect(await texts(page, '#workspaces a b')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
       expect(await texts(page, '#workspaces a small')).toEqual(['1 screen', '2 screens', '2 screens']);
@@ -346,7 +349,9 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       if (desk) {
         await page.click('#lang');
         await page.waitForFunction('document.documentElement.lang === "ta"');
-        expect(await texts(page, '#tiles .tile .label')).toEqual(['இன்றைய விற்பனை', 'காத்திருக்கும் ஒப்புதல்கள்', 'திறந்த விதிவிலக்குகள்', 'கிளௌடுக்கு அனுப்பப்படாதவை', 'இன்றைய பணிகள்']);
+        expect((await texts(page, '#ops .op .l')).slice(0, 3)).toEqual(['காத்திருக்கும் ஒப்புதல்கள்', 'திறந்த விதிவிலக்குகள்', 'கிளௌடுக்கு அனுப்பப்படாதவை']);
+        expect((await texts(page, '#ops .op .l')).at(-1)).toBe('இன்றைய பணிகள்');
+        expect(await page.textContent('#kpis [data-kpi="sales"] .kpi-note')).toBe('41 sales on this box'); // the box sent no Tamil note: its English stands
         expect(await page.textContent('#attention-title')).toBe('கவனம் தேவை');
         expect(await auditPage(page, { expectLang: 'ta' }), 'Today in Tamil').toEqual([]);
       }
@@ -355,7 +360,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
   it('a Today page the store computer has not fed says "Not known" for every figure it was not given — and why', async () => {
     const page = await open('index.html', DESK, undefined, { sreNavigation: home });
-    expect(await texts(page, '#tiles .tile .n')).toContain('Not known');
+    expect(await texts(page, '#kpis .kpi-n')).toContain('Not known');
+    expect((await texts(page, '#ops .op .n')).slice(0, 3)).toEqual(['Not known', 'Not known', 'Not known']); // batch 15: the old strip's figures, still said
     expect(await texts(page, '#flow li .n')).toEqual(['Not known', 'Not known', 'Not known', 'Not known']);
     expect(await texts(page, '#flow li .note')).toEqual(Array(4).fill('the store computer has not said'));
     expect(await auditPage(page, { expectLang: 'en' })).toEqual([]);

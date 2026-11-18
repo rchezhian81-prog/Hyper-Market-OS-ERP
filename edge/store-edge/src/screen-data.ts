@@ -77,6 +77,7 @@ import { toCloudReturn } from './cloud-return';
 import { refundLegs, type DayBookReturn } from '../../../packages/finance/src/day-book';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { myRosterOnBox, foodHandlingForViewer, rosterCopyOnBox } from './workforce-pack'; // Round 7 · OB-507 · OB-502 · Round 8 · OB-531
+import { previousFigure, type TodayHistoryRecord } from './today-history'; // Batch 15
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -190,6 +191,27 @@ export interface ScreenInput {
    * day close alike (`closing-checklist.ts`). Absent: no ticks read (the pack's own "done" stands).
    */
   readonly checklistTicks?: readonly unknown[];
+  /**
+   * Batch 15: this box's own Today history (`today-history.ts`) — each trading day's open purchase orders and low-stock count
+   * as it saw them, and the price changes each new catalogue pack brought. Absent: the box keeps none (the cards then say
+   * there is no earlier figure; Recent activity lists no price change).
+   */
+  readonly todayHistory?: readonly TodayHistoryRecord[];
+  /**
+   * Batch 15: the back-office work this box's screens and handhelds handed it (its device-events log): approvals decided and
+   * deliveries booked in, each with whether it has reached head office yet. Absent: none read (Recent activity lists bills
+   * and head office's records only).
+   */
+  readonly boxWork?: readonly BoxWorkItem[];
+}
+
+/** Batch 15: one piece of work a screen or handheld on this box recorded, as the box's own log holds it. */
+export interface BoxWorkItem {
+  readonly type: string;
+  readonly occurredAt: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+  /** Whether head office has taken it (false: saved on this box, still waiting to be sent). */
+  readonly sent: boolean;
 }
 
 /** The store rules' closing checklist for one trading day, with this box's ticks — or undefined when head office sent none. */
@@ -738,7 +760,66 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
     };
   })();
 
-  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, supplierClaimDisputes, ...(tillDevices === undefined ? {} : { tillDevices }), ...(drawersOverShortToday === undefined ? {} : { drawersOverShortToday }) };
+  // Batch 15: the items at or below their reorder point, as head office judged them on its own stock figures when it built
+  // the pack. No list sent → not known; a list with no reorder point set at all → not known, and the page offers to set them.
+  const lowStock = lowStockFigure(pack);
+
+  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, supplierClaimDisputes, lowStock, ...(tillDevices === undefined ? {} : { tillDevices }), ...(drawersOverShortToday === undefined ? {} : { drawersOverShortToday }) };
+}
+
+/** Batch 15: head office's supplier names by code (names only); empty when it sent none. */
+export function supplierNamesOf(pack: StorePack): ReadonlyMap<string, string> {
+  const reg = pack.suppliers;
+  if (reg === undefined || !reg.known || !Array.isArray(reg.value)) return new Map();
+  return new Map(reg.value.flatMap((r) => (r !== null && typeof r === 'object' && typeof r.supplierId === 'string' && typeof r.name === 'string' && r.name.trim() !== '' ? [[r.supplierId, r.name.trim()] as const] : [])));
+}
+/** Batch 15: the supplier's name — the record's own, else the pack's master — or nothing (the screen then shows the code). */
+const supplierNameFor = (names: ReadonlyMap<string, string>, supplierId: string, own: string | undefined): { supplierName?: string } => {
+  const name = typeof own === 'string' && own.trim() !== '' ? own : names.get(supplierId);
+  return name === undefined ? {} : { supplierName: name };
+};
+
+/** Batch 15: today's figures this box records in its Today history — only the ones it knows. */
+export function dailyFiguresOf(figures: Record<string, TodayFigure>): { purchaseOrdersOpen?: number; lowStock?: number } {
+  const out: { purchaseOrdersOpen?: number; lowStock?: number } = {};
+  const po = figures['purchaseOrdersOpen'];
+  const low = figures['lowStock'];
+  if (po !== undefined && po.known) out.purchaseOrdersOpen = po.value;
+  if (low !== undefined && low.known) out.lowStock = low.value;
+  return out;
+}
+
+/** Batch 15: the low-stock list head office sent, read strictly — undefined when there is none or it cannot be read. */
+export function lowStockListOf(pack: StorePack): { readonly levelsSet: number; readonly items: readonly { readonly productId: string; readonly name?: string; readonly onHandMinor: number; readonly reorderPoint: number; readonly uom?: string }[] } | undefined {
+  const reg = pack.lowStock;
+  if (reg === undefined || !reg.known || reg.value === null || typeof reg.value !== 'object') return undefined;
+  const v = reg.value as { levelsSet?: unknown; items?: unknown };
+  if (typeof v.levelsSet !== 'number' || !Number.isSafeInteger(v.levelsSet) || v.levelsSet < 0 || !Array.isArray(v.items)) return undefined;
+  const items = v.items.flatMap((raw) => {
+    if (raw === null || typeof raw !== 'object') return [];
+    const i = raw as Record<string, unknown>;
+    if (typeof i['productId'] !== 'string' || i['productId'] === '' || typeof i['onHandMinor'] !== 'number' || typeof i['reorderPoint'] !== 'number') return [];
+    return [{
+      productId: i['productId'], onHandMinor: i['onHandMinor'], reorderPoint: i['reorderPoint'],
+      ...(typeof i['name'] === 'string' && i['name'].trim() !== '' ? { name: i['name'] } : {}),
+      ...(typeof i['uom'] === 'string' && i['uom'] !== '' ? { uom: i['uom'] } : {}),
+    }];
+  });
+  return { levelsSet: v.levelsSet, items };
+}
+
+/** Batch 15: Today's Low stock figure — the count, or "Not known" and why (no list sent; no reorder level set yet). */
+export function lowStockFigure(pack: StorePack): TodayFigure & { readonly noLevels?: true } {
+  const list = lowStockListOf(pack);
+  if (list === undefined) return notGiven('a low-stock list', 'குறைந்த சரக்குப் பட்டியல்');
+  if (list.levelsSet === 0) {
+    return { known: false, noLevels: true, why: 'no reorder levels set yet', whyTa: 'மறு ஆர்டர் அளவுகள் இன்னும் அமைக்கப்படவில்லை' };
+  }
+  return {
+    known: true, value: list.items.length,
+    note: `at or below their reorder level, of ${list.levelsSet} items with one — head office's stock figures`,
+    noteTa: `மறு ஆர்டர் அளவுடைய ${list.levelsSet} பொருட்களில், அந்த அளவில் அல்லது அதற்குக் கீழ் — தலைமை அலுவலகத்தின் சரக்குக் கணக்கு`,
+  };
 }
 
 /** ₹ for a variance's magnitude, en-IN grouping (the direction word carries the sign). */
@@ -845,9 +926,20 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   // The shop's own trading day, not the browser's clock (the same rule the catalogue screen follows).
   payload['tradingDay'] = input.tradingDay;
   // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
-  payload['today'] = todayFigures(input);
+  const figures = todayFigures(input);
+  payload['today'] = figures;
   // Batch 12 (the owner's Today look): the comparisons, the chart, the recent bills and the last sync — all from this box.
   payload['todayBoard'] = todayBoard(input);
+  // Batch 15: the low-stock list the Low stock card and its Needs attention row open — head office's, with each item's name.
+  const lowStockList = lowStockListOf(input.pack);
+  if (lowStockList !== undefined) {
+    const productNames = new Map((input.pack.products.known ? input.pack.products.value : []).map((p) => [p.productId, p.name] as const));
+    payload['lowStockList'] = {
+      levelsSet: lowStockList.levelsSet,
+      ...(input.pack.receivedAt === null ? {} : { asAt: input.pack.receivedAt }),
+      items: lowStockList.items.map((i) => ({ ...i, ...(i.name === undefined && productNames.get(i.productId) !== undefined ? { name: productNames.get(i.productId) } : {}) })),
+    };
+  }
   // OB-392: lane-by-lane health — one card per lane, each one tap from Today. Only on a box that keeps device reports.
   const lanes = laneHealth(input);
   if (lanes !== undefined) payload['lanes'] = lanes;
@@ -1103,6 +1195,109 @@ export interface DayTakings { readonly tradingDay: string; readonly bills: numbe
  *  - `lastSentAt` / `lastSentShop`: when this box last sent its records to head office — only on a box that tracks it;
  *    absent otherwise, and the page says "Not known".
  */
+/** Batch 15: one row of Today's Recent activity — a bill, a delivery booked in, an approval decided, a write-off or a price change. */
+export interface ActivityRow {
+  readonly kind: 'sale' | 'goods_receipt' | 'approval' | 'write_off' | 'price_change';
+  readonly id: string;
+  /** The shop's clock, "HH:MM"; null when the record carries no time. */
+  readonly at: string | null;
+  /** The moment, for ordering (ISO); '' when not known. */
+  readonly sortAt: string;
+  readonly reference: string;
+  /** The row's state, said on the page as a word and an icon. */
+  readonly status: 'completed' | 'approved' | 'rejected' | 'saved_here' | 'sent' | 'recorded' | 'needs_approval' | 'on_tills';
+  readonly amountMinor?: number;
+  /** A short fact beside the kind — the till, the item, the old and new price. */
+  readonly detail?: string;
+  readonly detailTa?: string;
+}
+
+const RECENT_ROWS = 10;
+
+/**
+ * Batch 15: today's activity on this store — the bills on this box's sales log, the deliveries booked in and approvals decided on
+ * its screens and handhelds (its own device-events log, with whether head office has them yet), the write-offs head office
+ * holds for this store (the pack), and the price changes the newest catalogue brought (this box's own history) — newest
+ * first. Each comes from a record; nothing is made up, and a source this box was not given simply adds no row.
+ */
+export function recentActivity(input: ScreenInput): readonly ActivityRow[] {
+  const zone = packTimeZone(input.pack);
+  const onToday = (iso: unknown): iso is string => typeof iso === 'string' && !Number.isNaN(Date.parse(iso)) && packTradingDay(input.pack, iso) === input.tradingDay;
+  const clock = (iso: string | undefined): string | null => (iso === undefined ? null : hhmmOf(shopClock(iso, zone)));
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  // A pack built before a section existed may not carry it at all: read defensively, never assumed.
+  const products = input.pack.products as StorePack['products'] | undefined;
+  const names = new Map((products !== undefined && products.known ? products.value : []).map((p) => [p.productId, p.name] as const));
+  const rows: ActivityRow[] = [];
+
+  for (const sale of salesOn(input.sales, input.tradingDay).sales) {
+    rows.push({
+      kind: 'sale', id: sale.id, at: clock(sale.committedAt), sortAt: sale.committedAt ?? '', reference: sale.number ?? sale.id, status: 'completed',
+      amountMinor: sale.total ?? 0,
+      ...(sale.laneId === undefined ? {} : { detail: `till ${sale.laneId}`, detailTa: `முனையம் ${sale.laneId}` }),
+    });
+  }
+
+  for (const w of input.boxWork === undefined ? [] : input.boxWork) {
+    const p = w.payload;
+    const at = str(p['decidedAt']) ?? str(p['receivedAt']) ?? str(p['completedAt']) ?? w.occurredAt;
+    if (!onToday(at)) continue;
+    if (w.type === 'ApprovalDecided') {
+      const decision = p['status'] === 'rejected' ? 'rejected' : p['status'] === 'approved' ? 'approved' : undefined;
+      if (decision === undefined) continue;
+      const value = p['value'] as { minor?: unknown } | null | undefined;
+      const subject = str(p['subjectType'])?.replace(/_/g, ' ');
+      rows.push({
+        kind: 'approval', id: str(p['id']) ?? `${w.occurredAt}:approval`, at: clock(at), sortAt: at, reference: str(p['subjectRef']) ?? str(p['id']) ?? '—', status: decision,
+        ...(value !== null && value !== undefined && typeof value.minor === 'number' ? { amountMinor: value.minor } : {}),
+        ...(subject === undefined ? {} : {
+          detail: `${subject}${w.sent ? '' : ' · saved here, not yet at head office'}`,
+          detailTa: `${subject}${w.sent ? '' : ' · இங்கே சேமிக்கப்பட்டது, தலைமை அலுவலகத்துக்கு இன்னும் செல்லவில்லை'}`,
+        }),
+      });
+    } else if (w.type === 'GoodsReceived' || w.type === 'ReceivingCompleted') {
+      const grn = str(p['grnId']) ?? str(p['id']);
+      const po = str(p['poId']);
+      rows.push({
+        kind: 'goods_receipt', id: grn ?? `${w.occurredAt}:receipt`, at: clock(at), sortAt: at, reference: str(p['number']) ?? grn ?? '—',
+        status: w.sent ? 'sent' : 'saved_here',
+        ...(po === undefined ? {} : { detail: `order ${po}`, detailTa: `ஆணை ${po}` }),
+      });
+    }
+  }
+
+  const waste = input.pack.wasteWriteOffs as StorePack['wasteWriteOffs'] | undefined;
+  if (waste !== undefined && waste.known) {
+    for (const raw of waste.value) {
+      if (raw === null || typeof raw !== 'object') continue;
+      const w = raw as Record<string, unknown>;
+      if (!onToday(w['at'])) continue;
+      const productId = str(w['productId']);
+      const item = productId === undefined ? undefined : (names.get(productId) ?? productId);
+      rows.push({
+        kind: 'write_off', id: str(w['id']) ?? `${String(w['at'])}:write-off`, at: clock(w['at'] as string), sortAt: w['at'] as string,
+        reference: str(w['id']) ?? '—', status: w['requiredApproval'] === true ? 'needs_approval' : 'recorded',
+        ...(typeof w['valueMinor'] === 'number' ? { amountMinor: w['valueMinor'] } : {}),
+        ...(item === undefined ? {} : { detail: item, detailTa: item }),
+      });
+    }
+  }
+
+  for (const r of input.todayHistory === undefined ? [] : input.todayHistory) {
+    if (r.kind !== 'price_change' || !onToday(r.at)) continue;
+    const item = r.name ?? names.get(r.productId) ?? r.productId;
+    const change = `${item}: ${rupees(r.fromMinor)} → ${rupees(r.toMinor)}`;
+    rows.push({
+      kind: 'price_change', id: `${r.productId}:${r.packVersion}`, at: clock(r.at), sortAt: r.at, reference: item, status: 'on_tills',
+      amountMinor: r.toMinor, detail: change, detailTa: change,
+    });
+  }
+
+  return rows.sort((a, b) => b.sortAt.localeCompare(a.sortAt) || a.id.localeCompare(b.id)).slice(0, RECENT_ROWS);
+}
+
+const rupees = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function todayBoard(input: ScreenInput): {
   readonly today: DayTakings;
   readonly previous: (DayTakings & { readonly byThisTime: true }) | null;
@@ -1111,6 +1306,10 @@ export function todayBoard(input: ScreenInput): {
   readonly recent: readonly { readonly id: string; readonly number: string | null; readonly at: string | null; readonly laneId: string | null; readonly cashierId: string | null; readonly totalMinor: number }[];
   readonly lastSentAt?: string | null;
   readonly lastSentShop?: string | null;
+  /** Batch 15: each figure's value at the end of the most recent earlier day this box recorded it (null: none). Absent: no history kept. */
+  readonly dailyPrevious?: { readonly purchaseOrdersOpen: { readonly tradingDay: string; readonly value: number } | null; readonly lowStock: { readonly tradingDay: string; readonly value: number } | null };
+  /** Batch 15: today's bills, deliveries booked in, approvals decided, write-offs and price changes, newest first. */
+  readonly activity: readonly ActivityRow[];
 } {
   const zone = packTimeZone(input.pack);
   const day = salesOn(input.sales, input.tradingDay).sales;
@@ -1149,6 +1348,13 @@ export function todayBoard(input: ScreenInput): {
     byHour: takingsByHourOf(input.pack, day),
     week: recentDaysOf(input.sales, 7),
     recent,
+    activity: recentActivity(input),
+    ...(input.todayHistory === undefined ? {} : {
+      dailyPrevious: {
+        purchaseOrdersOpen: previousFigure(input.todayHistory, 'purchaseOrdersOpen', input.tradingDay),
+        lowStock: previousFigure(input.todayHistory, 'lowStock', input.tradingDay),
+      },
+    }),
     ...(input.laneLink === undefined ? {} : {
       lastSentAt: input.laneLink.lastSentAt,
       lastSentShop: input.laneLink.lastSentAt === null ? null : hhmmOf(shopClock(input.laneLink.lastSentAt, zone)),
@@ -1448,7 +1654,7 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     // OB-37: the store's open deliveries, each with what is still to arrive — the phone lets the receiver choose one.
     ...(w.openDeliveries === undefined ? {} : { openDeliveries: w.openDeliveries.map((d) => ({
       poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
-      ...(typeof d.supplierName === 'string' && d.supplierName.trim() !== '' ? { supplierName: d.supplierName } : {}), // D-033
+      ...supplierNameFor(supplierNamesOf(input.pack), d.supplierId, d.supplierName), // D-033 · batch 15: else the pack's supplier names
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
       ...(d.asn === undefined ? {} : { asn: d.asn }), // OB-288 P3: the ASN the phone receives against, offline
     })) }),
@@ -1458,6 +1664,7 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     // against an order (each sheet names the place it is for). Absent stays absent: the phone then offers orders only.
     ...(w.dsdRoutes === undefined ? {} : { dsdRoutes: w.dsdRoutes.map((r) => ({
       routeId: r.routeId, supplierId: r.supplierId, storeId: r.storeId, version: r.version,
+      ...supplierNameFor(supplierNamesOf(input.pack), r.supplierId, undefined), // Batch 15: the van's supplier by name
       lines: r.lines.map((l) => ({ productId: l.productId, expectedMinor: l.expectedMinor, ...(l.unitCostMinor === undefined ? {} : { unitCostMinor: l.unitCostMinor }), ...(l.uom === undefined ? {} : { uom: l.uom }) })),
     })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
@@ -1494,7 +1701,7 @@ export function receivingAidsFor(input: ScreenInput): Record<string, unknown> {
   if (input.pack.warehouse.known && input.pack.warehouse.value.openDeliveries !== undefined) {
     out['openDeliveries'] = input.pack.warehouse.value.openDeliveries.map((d) => ({
       poId: d.poId, number: d.number, supplierId: d.supplierId,
-      ...(typeof d.supplierName === 'string' && d.supplierName.trim() !== '' ? { supplierName: d.supplierName } : {}), // D-033
+      ...supplierNameFor(supplierNamesOf(input.pack), d.supplierId, d.supplierName), // D-033 · batch 15: else the pack's supplier names
       // Fix batch 5 · D-017: the place the order names, so Receive books the goods there (not always the back store).
       ...(typeof d.deliverToLocationId === 'string' && d.deliverToLocationId !== '' ? { deliverToLocationId: d.deliverToLocationId } : {}),
       due: d.ordered.map((o) => ({ productId: o.productId, dueMinor: o.quantityMinor })),

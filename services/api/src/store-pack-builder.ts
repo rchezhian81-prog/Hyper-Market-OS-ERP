@@ -67,6 +67,7 @@ import { rosterPackSection, certificationsPackSection } from './r7d-workforce-ad
 import { wasteWriteOffsSectionFor, categoryPolicySectionFor } from './r2-screen-feeds'; // screen gap audit Round A
 import { catalogueMasterSections, expirySections, financeSections, gstReconciliationQueueSection } from './round-a-pack-sections'; // Round A
 import { couponPackSectionFor, giftCardPackSectionFor } from './till-vouchers-adapters'; // W3 · OB-673 · OB-677
+import { lowStockSectionOf, supplierNamesOf } from './low-stock-section'; // Batch 15
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -139,6 +140,8 @@ export interface StorePackBuildInput {
    * Absent → the section is left out and the Today page says it was not told (never a zero).
    */
   readonly supplierClaimDisputes?: (tenantId: string) => Promise<{ readonly open: number; readonly overdue: number }>;
+  /** Batch 15: the store's town or city from store setup (`store.town`), carried in the policies. Undefined/absent → not sent. */
+  readonly storeTown?: (tenantId: string, storeId: string) => Promise<string | undefined>;
 }
 
 /**
@@ -208,7 +211,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const floorDevices = input.floorDevices === undefined ? {} : await input.floorDevices(tenantId);
     // OB-676: the owner's confirmation of the hand-over limit, only when he has confirmed the figure in force.
     const toleranceConfirmed = input.handoverToleranceConfirmation === undefined ? undefined : await input.handoverToleranceConfirmation(tenantId, storeId);
+    // Batch 15: the town under the store's name in the menu — only when store setup holds one.
+    const town = input.storeTown === undefined ? undefined : (await input.storeTown(tenantId, storeId))?.trim();
     sections['policies'] = {
+      ...(town === undefined || town === '' ? {} : { branchTown: town }),
       ...(toleranceConfirmed === undefined ? {} : { handoverToleranceConfirmed: toleranceConfirmed }),
       ...floorDevices,
       ...(staffPurchase === undefined ? {} : { staffPurchase }),
@@ -234,13 +240,14 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── products: what head office published, its category, the ledger at this store ───────────────────────────────
   const published = await catalogueAdapter({ store, now, signer: input.signer }).currentPack(tenantId);
   const masterRecords = await productMasterAdapter({ store, now }).products(tenantId);
+  // the store's stock: on its floor and in its back store (every place the store holds) — the products' figure and, batch 15,
+  // what the low-stock list is judged on.
+  const onHand = new Map<string, number>();
+  for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
+    if (branchOf(row.locationId) === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
+  }
   if (published !== undefined) {
     const master = new Map(masterRecords.map((p) => [p.productId, p] as const));
-    const onHand = new Map<string, number>();
-    for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
-      // the store's stock: on its floor and in its back store (every place the store holds)
-      if (branchOf(row.locationId) === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
-    }
     const barcodes = new Map<string, string[]>();
     for (const b of published.snapshot.barcodes) barcodes.set(b.productId, [...(barcodes.get(b.productId) ?? []), b.code]);
     // OB-39 "B": the store's AVERAGE BUYING COST per product (per whole unit) — what the box's Today margin is costed at. A
@@ -369,6 +376,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   const asns = new Map<string, Awaited<ReturnType<typeof deliveryAsnOf>>>();
   for (const d of openDeliveriesFor(orders, storeId, branchOf)) asns.set(d.poId, await deliveryAsnOf(store, tenantId, d.poId));
   const supplierRecords = await foldSupplierRecords(store, tenantId);
+  // Batch 15: every supplier's NAME (names only), so Receive, the handheld and the office screens never show a bare code.
+  sections['suppliers'] = supplierNamesOf(supplierRecords.values());
   const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
     const po = orders.find((o) => o.poId === d.poId)!;
     const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
@@ -560,7 +569,16 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // version (who, when, why), read from head office's own register (M09-FR-02) — so the Buying page's Reorder tab shows
   // the box's copy, said as a copy and how old, when head office cannot be reached (P-01 · P-08). Always sent for the
   // store: an empty list is head office's own answer "none kept yet"; a box on an older pack says it was not told.
-  sections['reorderSettings'] = { storeId, products: parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId) }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
+  const reorderInForce = parametersAt(await replenishmentParametersAdapter({ store, now }).versions(tenantId), storeId);
+  sections['reorderSettings'] = { storeId, products: reorderInForce }; // no build time inside: the content hash must not change when nothing did (PA-06 renewal)
+  // Batch 15: the items at or below their reorder point, on head office's own stock figures — Today's Low stock card.
+  const namesById = new Map(masterRecords.map((p) => [p.productId, p] as const));
+  const publishedById = new Map((published?.snapshot.products ?? []).map((p) => [p.productId, p] as const));
+  sections['lowStock'] = lowStockSectionOf(reorderInForce.map((r) => r.current), onHand, (productId) => {
+    const name = publishedById.get(productId)?.name ?? (namesById.get(productId) as { name?: string } | undefined)?.name;
+    const uom = namesById.get(productId)?.baseUom ?? publishedById.get(productId)?.baseUom;
+    return { ...(name === undefined ? {} : { name }), ...(uom === undefined ? {} : { uom: unitCode(uom) }) };
+  });
   // W3 · OB-673 · OB-677: the coupons and gift cards the till judges offline (till-vouchers-adapters.ts) — no build time inside.
   // U7 · OB-727: the disputed supplier claims for the Today page — two counts, no build time inside.
   if (input.supplierClaimDisputes !== undefined) sections['supplierClaimDisputes'] = await input.supplierClaimDisputes(tenantId);

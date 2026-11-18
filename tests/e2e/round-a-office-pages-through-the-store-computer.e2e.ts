@@ -151,8 +151,9 @@ describe.skipIf(!HAVE_BROWSER)('Round A — the office pages through the store c
   it('Today: the approval waiting at head office and the open order are counted, scoped to the person signed in', async () => {
     const { page, errors } = await open(OWNER, '/manager/');
     // The approvals tile: the store computer's own 0, plus the one waiting for the owner at head office.
-    await page.waitForFunction(() => /1 waiting for you at head office/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('tiles').textContent ?? ''), undefined, { timeout: 15_000 });
-    const approvalsTile = page.locator('#tiles .tile', { hasText: 'Approvals waiting' });
+    await page.waitForFunction(() => /1 waiting for you at head office/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('ops').textContent ?? ''), undefined, { timeout: 15_000 });
+    // Batch 15: the approvals figure lives on Store today (the old strip is gone).
+    const approvalsTile = page.locator('#ops [data-figure="approvals"]');
     // D-010: the owner may issue the order the manager raised, so it counts here too — the category change plus the order.
     expect((await approvalsTile.locator('.n').textContent())?.trim()).toBe('2');
     await says(page, '#attention', /approvals waiting for you at head office/);
@@ -165,7 +166,7 @@ describe.skipIf(!HAVE_BROWSER)('Round A — the office pages through the store c
     // Scoped to the person: the manager ASKED for the category change, so it is not his to decide — head office shows him
     // none waiting (never his own request), while the open order is counted for him too.
     const mgr = await open(MANAGER, '/manager/');
-    await mgr.page.waitForFunction(() => /0 waiting for you at head office/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('tiles').textContent ?? ''), undefined, { timeout: 15_000 });
+    await mgr.page.waitForFunction(() => /0 waiting for you at head office/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } } }).document.getElementById('ops').textContent ?? ''), undefined, { timeout: 15_000 });
     expect((await mgr.page.locator('li', { hasText: 'Purchase orders open' }).first().locator('.n').textContent())?.trim()).toBe('1');
     expect(mgr.errors).toEqual([]);
   });

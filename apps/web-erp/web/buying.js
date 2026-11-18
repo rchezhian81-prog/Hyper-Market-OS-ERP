@@ -373,6 +373,8 @@ for (const name of VIEWS) {
     }
   });
 }
+// Batch 15: Today's "Set reorder levels" lands on the Reorder tab (`buying#reorder`).
+if (location.hash === '#reorder') el('tab-reorder').click();
 
 // ── The invoice flow ────────────────────────────────────────────────────────
 
@@ -539,7 +541,7 @@ function renderSavedInvoices() {
     row.dataset.id = w.invoiceId;
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = `${w.invoiceId} · ${w.supplierId} — ${w.lineCount} ${t('linesWord')} · ${inr(w.totalMinor)} · ${w.poId === null ? t('noOrderWord') : w.poId}`;
+    what.textContent = `${w.invoiceId} · ${supplierLabel(w.supplierId)} — ${w.lineCount} ${t('linesWord')} · ${inr(w.totalMinor)} · ${w.poId === null ? t('noOrderWord') : w.poId}`;
     const state = document.createElement('div');
     state.className = `pill ${w.state}`;
     state.textContent = words(STATE_WORDS, w.state);
@@ -884,7 +886,7 @@ function renderOtb() {
     const box = document.createElement('div');
     box.className = `escalation${o.escalation ? ' over' : ''}`;
     box.dataset.po = o.poId;
-    box.append(textCell('div', `${o.poId} · ${o.supplierId} · ${inr(o.totalMinor)} · ${t('raisedBy')} ${o.requisitionedBy}`, 'what'));
+    box.append(textCell('div', `${o.poId} · ${supplierLabel(o.supplierId)} · ${inr(o.totalMinor)} · ${t('raisedBy')} ${o.requisitionedBy}`, 'what'));
     if (o.escalation) box.append(textCell('div', `${t('overBy')} ${inr(o.escalation.overByMinor)} (${o.escalation.overCategories.map((c) => c.categoryId).join(', ')}). ${t('escalates')}`, 'why'));
     else box.append(textCell('div', o.checked ? t('withinBudget') : t('notChecked'), 'why'));
     if (otb.mayIssue) issueControls(o, box);
@@ -956,7 +958,7 @@ function orderBox(order) {
   box.className = 'open-order';
   box.dataset.po = order.poId;
   const scope = lines[0]?.buyingScope ?? 'scope_not_recorded';
-  box.append(textCell('div', `${ot('order')} ${order.number} (${order.poId}) · ${ot('supplier')} ${order.supplierId} · ${ot('deliverTo')} ${order.deliverTo === 'store_not_named' ? ot('store_not_named') : order.deliverTo} · ${ot(`sc_${scope}`)}${order.amendmentCount > 0 ? ` · ${order.amendmentCount} ${ot('amendments')}` : ''}`, 'what'));
+  box.append(textCell('div', `${ot('order')} ${order.number} (${order.poId}) · ${ot('supplier')} ${supplierLabel(order.supplierId)} · ${ot('deliverTo')} ${order.deliverTo === 'store_not_named' ? ot('store_not_named') : order.deliverTo} · ${ot(`sc_${scope}`)}${order.amendmentCount > 0 ? ` · ${order.amendmentCount} ${ot('amendments')}` : ''}`, 'what'));
   const wrap = document.createElement('div'); wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'open-lines';
@@ -1396,4 +1398,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */
   });
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }
