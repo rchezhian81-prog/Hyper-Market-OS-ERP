@@ -3,7 +3,8 @@
 // bilingual copy carried onto the REAL sign-in service, with every sample state removed. What the page says about the
 // connection is the server's truth (this is the hosted, online copy; the store computer's own status is read inside the
 // workspace after sign-in — RL-2), never a sample. No external asset is fetched: the stylesheet and the script are served
-// by this same service under a content hash, the icons are inline SVG, the fonts are the system's (with Tamil coverage).
+// by this same service under a content hash, the icons are inline SVG, and the fonts (Plus Jakarta Sans, Anek Tamil; batch 16)
+// come from this same service at /login/fonts/ — the system fonts (with Tamil coverage) stand in if they cannot be read.
 //
 // Progressive by design: the form posts and validates with no script at all (keyboard submission, native focus, the
 // `required` attributes); the script adds the language switch, show/hide password, the Caps Lock hint, the help and
@@ -12,7 +13,7 @@
 
 import { createHash } from 'node:crypto';
 import { DEMO_BANNER_TEXT_EN, DEMO_BANNER_TEXT_TA } from '../../../packages/ui/src/demo-banner';
-import { SIGN_IN_CSS } from '../../../packages/ui/src/sign-in-style';
+import { SIGN_IN_CSS, signInFontFaces } from '../../../packages/ui/src/sign-in-style';
 
 export type Lang = 'en' | 'ta';
 
@@ -101,7 +102,13 @@ export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 // ── the stylesheet — the design pack's, scoped to #sre-login — shared with the store computer's own sign-in (batch 12) ──
+/** Batch 16: where this service serves the page's own allow-listed font files (behind the front, which forwards /login/ only). */
+export const LOGIN_FONTS_PATH = '/login/fonts/';
+// LOGIN_CSS is the design's stylesheet, ALSO copied verbatim into the Keycloak theme (scripts/build-keycloak-theme.mjs), so it
+// names no font file: Keycloak serves its resources elsewhere, and moving that theme is a separate owner decision.
 export const LOGIN_CSS = SIGN_IN_CSS;
+/** What this service sends at LOGIN_CSS_PATH: the page's own faces (served at LOGIN_FONTS_PATH), then the design's stylesheet. */
+export const LOGIN_PAGE_CSS = signInFontFaces(LOGIN_FONTS_PATH) + LOGIN_CSS;
 
 // ── the script — language, show/hide, Caps Lock, dialogs, the pending-submit guard; nothing else ────────────────
 export const LOGIN_JS = `(function(){
@@ -159,7 +166,7 @@ export const LOGIN_JS = `(function(){
 `;
 
 const version = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 12);
-export const LOGIN_CSS_VERSION = version(LOGIN_CSS);
+export const LOGIN_CSS_VERSION = version(LOGIN_PAGE_CSS);
 export const LOGIN_JS_VERSION = version(LOGIN_JS);
 export const LOGIN_CSS_PATH = '/login/login.css';
 export const LOGIN_JS_PATH = '/login/login.js';

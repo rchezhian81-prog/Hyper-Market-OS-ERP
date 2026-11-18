@@ -14,12 +14,32 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile --prod=false || pnpm install
 
+# The shipped image carries only what the running service loads: `pg` (the one npm dependency the bundle keeps
+# external, `packages: 'external'` in scripts/build-service.mjs), installed from the lockfile with --prod. The
+# build tooling and test runners (esbuild, eslint, vite, vitest and their dependencies) stay in the deps stage and
+# never reach the image — the QG-03 image scan of 18 Nov 2026 flagged a HIGH in picomatch that came in only through
+# them (CVE-2026-112366, no fix released). Not running a tool beats silencing its findings, as with npm below.
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile --prod || pnpm install --prod
+
+# The bundle is built here, with the build tooling, and only its output is copied into the runtime image below.
+FROM deps AS build
+COPY package.json pnpm-workspace.yaml tsconfig.json ./
+COPY packages ./packages
+COPY services ./services
+COPY edge ./edge
+COPY scripts ./scripts
+COPY apps ./apps
+RUN node scripts/build-service.mjs edge
+
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
 # QG-03 container-image scan (OB-288 gates lane): the base image ships the npm, corepack and yarn package managers.
-# Nothing in this image runs them — the service starts with `node`, and the build below uses node_modules copied from
+# Nothing in this image runs them — the service starts with `node`, and the build stage uses node_modules from
 # the deps stage — yet the npm CLI's own bundled dependencies carry HIGH vulnerabilities the image scan reports
 # (brace-expansion, ip-address, pacote, picomatch, sigstore, http-cache-semantics). A tool that is never run is
 # attack surface, not function, so it is removed rather than its findings silenced.
@@ -29,7 +49,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 
 RUN addgroup -S sre && adduser -S -G sre sre
 
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json pnpm-workspace.yaml tsconfig.json ./
 COPY packages ./packages
 COPY services ./services
@@ -43,7 +63,7 @@ COPY apps ./apps
 # extensionless ESM imports, which current Node's ESM resolver will not resolve from source — so
 # launching straight at `edge/store-edge/src/start.ts` dies on the first import and the box never
 # comes up. esbuild bundles the workspace TypeScript into one file, exactly as the API is built.
-RUN node scripts/build-service.mjs edge
+COPY --from=build /app/edge/store-edge/dist ./edge/store-edge/dist
 
 # Owned by the user that writes it. A sale that cannot be written is a sale refused at the lane,
 # so the permissions on this directory are a trading matter rather than a tidiness one.

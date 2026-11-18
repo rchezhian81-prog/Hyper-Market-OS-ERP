@@ -45,7 +45,8 @@ import { counterLabelFor, readCounterLabelRequest } from './store-work';
 import { TILL_SHELL_SCREENS, CUSTOMER_FACING_SCREENS, customerFacingGlobals } from './self-checkout-screens'; // OB-288 P6
 import { HEAD_OFFICE_PAGE_SHELLS, isHeadOfficeCall, isHeadOfficePage } from './head-office-pages'; // OB-380
 import { HEAD_OFFICE_CALL_MAX_BYTES, headOfficeCallRefusal, headOfficeSignInPage, type HeadOfficeCallRefusal, type HeadOfficeLink } from './head-office-link'; // OB-388
-import { OFFICE_SESSION_MINUTES, rolesAtThisStore, FRONT_DOOR, tillOnlyPage } from './office-sign-in';
+import { OFFICE_SESSION_MINUTES, rolesAtThisStore, FRONT_DOOR, tillOnlyPage, SIGN_IN_FONTS_PATH } from './office-sign-in';
+import { signInFontFile, SIGN_IN_FONT_HEADERS } from '../../../packages/ui/src/sign-in-style';
 import { bodyAsTheApiReadsIt, officeCallKey, sealOfficeCall } from '../../../packages/identity/src/office-call-seal'; // audit C-1 · ADR-0033 am. 3
 import { peopleFrom } from './screen-navigation';
 import { HANDHELD_SEAL_PATHS, handheldSealPage, handheldSealPanel, type HandheldSealSource } from './handheld-seal'; // OB-424
@@ -928,6 +929,19 @@ export async function startScreenServer(input: {
       const remote = remoteOf.get(req);
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
       const doorPath = (req.url ?? '/').split('?')[0];
+      // Batch 16 · P-01: the sign-in page's own fonts, served BEFORE sign-in from this box's files (never the internet).
+      // Only the exact allow-listed woff2 names are read — no folder, no listing, no other file, no path escape.
+      if (doorPath !== undefined && doorPath.startsWith(SIGN_IN_FONTS_PATH)) {
+        req.resume();
+        const name = signInFontFile(doorPath.slice(SIGN_IN_FONTS_PATH.length));
+        if (name === null) { send(res, 404, 'text/plain; charset=utf-8', 'not a font this page uses'); return; }
+        if (req.method !== 'GET' && req.method !== 'HEAD') { send(res, 405, 'text/plain; charset=utf-8', 'read with GET'); return; }
+        let font: Buffer;
+        try { font = await readFile(join(input.appsDir, 'web-erp', 'web', 'fonts', name)); } catch { send(res, 404, 'text/plain; charset=utf-8', 'font not on this box'); return; }
+        res.writeHead(200, { ...SIGN_IN_FONT_HEADERS, 'content-length': String(font.length), 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        res.end(req.method === 'HEAD' ? undefined : font);
+        return;
+      }
       // OB-388: Sign out on a box with the head-office link also ends the person's head-office session here.
       if (office === undefined && link !== undefined && req.method === 'POST' && doorPath === '/office/sign-out') {
         if (!sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }

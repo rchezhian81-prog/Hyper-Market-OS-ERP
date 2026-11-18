@@ -26,10 +26,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **The door** lets only the owner in, only with the one-time code, and only to Today, Reports and Approvals. Approve/reject is recorded in his name plus "from outside the shop". Every remote request is logged on the store PC.
   - **Today** says: Remote access connected / not connected since <time> / turned off.
 - **Owner must do (runbook `docs/runbooks/remote-access-for-the-owner.md`):** rent the server (DigitalOcean Bangalore or Lightsail Mumbai, 2 GB, about US$12/month — check the price), buy the domain and tell me its name, add the A record, run the setup on the server, install Google or Microsoft Authenticator, run `remote-access setup` at the store PC, check from his phone on mobile data.
-- **Open for the owner (security, batched):** which approval kinds beyond 5A's list stay in the store (tenant closure, approval rules, settings, feature switches, supplier bank change); whether approving a price change from outside is "approve" (allowed now) or "price publishing".
+- **Answered (18 Nov, in writing):** OB-841 B (closing the shop or a branch, approval rules, high-impact settings and switches, and supplier bank-account changes are decided only in the shop) and OB-842 A (a price or catalogue approval may be given from outside).
 - **Not proven yet:** a real relay and the real store PC (only CI, a pretend Windows, and a local sshd run here).
 
 
+- **Batch 16 (18 Nov 2026):** the sign-in page now draws Plus Jakarta Sans and Anek Tamil from the store PC itself (`/fonts/`, only the seven allow-listed files, before sign-in), with the internet cut off; the hosted demo sign-in does the same from its own files. Closes batch 13's open sign-in-font item. The Keycloak theme stays on the system fonts until the owner asks. Small choices recorded as OB-837 – OB-839 (decided under OB-801).
+
+## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.
 - **Done (on its PR):**
   - Checked token by token.
