@@ -174,7 +174,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till checks pack dates, BIS licences 
       const a = await s.approveAtTill({ managerId: 'u-mgr', pin, kind: 'no_receipt_return', valueMinor: 64_000, reason: 'faulty' });
       const desk = s.noReceiptReturn();
       return desk!.submit({
-        returnId: 'RT-E2E-1', number: await s.nextReceipt(), reasonCode: 'faulty', refundMinor: 64_000, refundTender: 'cash',
+        returnId: 'RT-E2E-1', number: await s.nextReceipt('return'), reasonCode: 'faulty', refundMinor: 64_000, refundTender: 'cash',
         approval: { by: a.approvedBy, reason: 'faulty', approvalId: a.approvalId },
         lines: [{ productId: 'p-ghee', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       });

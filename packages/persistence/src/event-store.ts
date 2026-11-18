@@ -260,9 +260,15 @@ export class InMemoryEventStore implements EventStore {
     // so a lane retrying a lost reply with the version it first read still gets its idempotent answer.
     if (options?.guard !== undefined && staged.length > 0) {
       const all = guardsOf(options);
+      // Checked in order, each against the version the guards before it in this batch leave — exactly as the SQL store's
+      // sequential compare-and-bump: the same key named twice, at v then v+1, moves it by two (OB-850: several document
+      // numbers from one range in one save); named twice at the same version, the second is refused.
+      const seen = new Map<string, number>();
       for (const g of all) {
-        const current = this.guards.get(tenantKey(tenantId, g.key)) ?? 0;
+        const gkey = tenantKey(tenantId, g.key);
+        const current = seen.get(gkey) ?? this.guards.get(gkey) ?? 0;
         if (current !== g.expectedVersion) return Promise.reject(new ConcurrencyConflictError(g.key, g.expectedVersion));
+        seen.set(gkey, current + 1);
       }
       for (const g of all) {
         const gkey = tenantKey(tenantId, g.key);
@@ -502,7 +508,8 @@ export class SqlEventStore implements EventStore {
     // the version moved, updates no row — and this whole transaction rolls back with the conflict named.
     // Several guards (`alsoGuards`) are taken in key order, so two batches holding the same pair never deadlock.
     if (guards.length > 0 && results.some((r) => !r.deduped)) {
-      for (const guard of [...guards].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+      // The same key named more than once (OB-850) is bumped in the order of the versions named: v, then v+1, …
+      for (const guard of [...guards].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.expectedVersion - b.expectedVersion))) {
         await client.query(
           'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
           [tenantId, guard.key],

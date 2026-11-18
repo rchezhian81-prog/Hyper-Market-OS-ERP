@@ -144,7 +144,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     // The manager approves with their own PIN, for this bill and this amount (ADR-0021).
     const approval = await managerApprovesOn(till, 'u-manager', { kind: 'refund', billRef: bill!.sale.saleId, valueMinor: 10_000 });
     const refund = await bill!.submit({
-      returnId: 'RET-1', number: await till.nextReceipt(), reasonCode: 'damaged', refundMinor: 10_000, refundTender: 'cash',
+      returnId: 'RET-1', number: await till.nextReceipt('return'), reasonCode: 'damaged', refundMinor: 10_000, refundTender: 'cash',
       lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval,
     });
     expect(refund.kind).toBe('settled');

@@ -209,7 +209,7 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
     // The manager approves with their own till PIN, for this bill and this amount (ADR-0021).
     const approval = await managerApprovesOn(till, MANAGER, { kind: 'refund', billRef: 'S-1', valueMinor: PRICE, reason: 'checked the goods' });
     const refunded = await bill.submit({
-      returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'changed_mind',
+      returnId: 'RT-1', number: await till.nextReceipt('return'), reasonCode: 'changed_mind',
       lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       refundMinor: PRICE, refundTender: 'cash', approval,
     });

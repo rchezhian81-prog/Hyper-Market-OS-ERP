@@ -219,7 +219,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
       const approved = await w.posSession!.approveAtTill({ managerId: manager!, pin: managerPin!, kind: 'refund', billRef: 'S-1', valueMinor: 48_000, reason: 'checked the goods' });
       if (!approved.approved) return { kind: 'approval_refused', laneMessage: approved.laneMessage } as unknown as RefundOutcome;
       return bill.submit({
-        returnId: 'RT-1', number: await w.posSession!.nextReceipt(), reasonCode: 'changed_mind',
+        returnId: 'RT-1', number: await w.posSession!.nextReceipt('return'), reasonCode: 'changed_mind',
         lines: [{ productId: 'p-rice', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 48_000, refundTender: 'cash', approval: { by: manager!, reason: 'checked the goods', approvalId: approved.approvalId },
       });

@@ -91,7 +91,7 @@ describe('M13-FR-02 — the till and the box hold a recalled unit coming back (o
     const take = async (returnId: string, productId: string, valueMinor: number) => {
       const approval = await managerApprovesOn(till, MANAGER, { kind: 'no_receipt_return', valueMinor, reason: 'faulty' });
       return desk.submit({
-        returnId, number: await till.nextReceipt(), reasonCode: 'faulty', refundMinor: valueMinor, refundTender: 'cash', approval,
+        returnId, number: await till.nextReceipt('return'), reasonCode: 'faulty', refundMinor: valueMinor, refundTender: 'cash', approval,
         lines: [{ productId, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       });
     };
@@ -205,7 +205,7 @@ describe.skipIf(!DATABASE_URL)('M13-FR-02 — on the REAL stack: head office kee
     for (const [returnId, productId, valueMinor] of [['RT-PG-RECALL', RECALLED, 64_000], ['RT-PG-FINE', FINE, 10_500]] as const) {
       const approval = await managerApprovesOn(till, MANAGER, { kind: 'no_receipt_return', valueMinor, reason: 'faulty' });
       expect((await desk.submit({
-        returnId, number: await till.nextReceipt(), reasonCode: 'faulty', refundMinor: valueMinor, refundTender: 'cash', approval,
+        returnId, number: await till.nextReceipt('return'), reasonCode: 'faulty', refundMinor: valueMinor, refundTender: 'cash', approval,
         lines: [{ productId, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       })).kind).toBe('settled');
     }

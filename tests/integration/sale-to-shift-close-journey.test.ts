@@ -228,7 +228,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     expect(bill.sale).toMatchObject({ saleId: 'S-1', totalMinor: 114_000 });
     const approval = await managerApprovesOn(till, MANAGER, { kind: 'refund', billRef: 'S-1', valueMinor: RICE.price, reason: 'bag torn' });
     const refunded = await bill.submit({
-      returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'damaged',
+      returnId: 'RT-1', number: await till.nextReceipt('return'), reasonCode: 'damaged',
       lines: [{ productId: RICE.productId, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       refundMinor: RICE.price, refundTender: 'store_credit', approval, customerRef: MOBILE.replace(/\s/g, ''),
     });

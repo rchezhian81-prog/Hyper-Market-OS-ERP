@@ -120,7 +120,8 @@ export interface FloorIndentsDeps {
   /** SP-5: head office's weighted-average unit cost at a place, or undefined when that stock is unvalued. */
   readonly unitCostAt: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** A lifecycle step that moves no stock — the indent aggregate alone. */
-  readonly recordIndent: (tenantId: string, indent: FloorIndent, type: IndentEventType) => Promise<void> | void;
+  /** OB-850: a REQUESTED indent answers as saved, with its format-A number (`IND1/26-27/00001`) taken in the same save. */
+  readonly recordIndent: (tenantId: string, indent: FloorIndent, type: IndentEventType) => Promise<void | FloorIndent> | void | FloorIndent;
   /** An ISSUE: the indent, the transfer proposed AND dispatched, and its `transferred_out` movements — ONE atomic write.
    *  SP-8c: a handheld issue also names the back-store BIN it took from; its bin movement(s) ride the same write. */
   readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[], expectedStockVersion?: number) => Promise<void> | void;
@@ -323,7 +324,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         try {
           indent = requestIndent({ indentId, fromLocationId: b['fromLocationId'], toLocationId: b['toLocationId'], lines, requestedBy: ctx.userId, at: now, reason: isStr(b['reason']) ? b['reason'].trim() : null });
         } catch (e) { return refusedBy(e); }
-        await deps.recordIndent(ctx.tenantId, indent, 'FloorIndentRequested');
+        indent = (await deps.recordIndent(ctx.tenantId, indent, 'FloorIndentRequested')) ?? indent;
         await audit(ctx.tenantId, {
           actorId: ctx.userId, action: 'floor_indent.request', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
           before: null, after: { state: 'requested', from: indent.fromLocationId, to: indent.toLocationId, lines: String(lines.length), requestedMinor: String(indentTotals(indent).requestedMinor) },

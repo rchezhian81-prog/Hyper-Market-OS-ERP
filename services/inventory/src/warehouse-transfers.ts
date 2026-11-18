@@ -113,7 +113,8 @@ export interface TransfersDeps {
    * batch's recall and quality-hold state read from their registers. Never the body's word.
    */
   readonly availableAt: (tenantId: string, fromLocationId: string, lines: readonly TransferLine[]) => Promise<readonly AvailableLot[]> | readonly AvailableLot[];
-  readonly recordProposed: (tenantId: string, transfer: Transfer) => Promise<void> | void;
+  /** OB-850: answers the transfer as saved, with its format-A number (`TRF1/26-27/00001`) taken in the same save. */
+  readonly recordProposed: (tenantId: string, transfer: Transfer) => Promise<void | Transfer> | void | Transfer;
   /**
    * SP-5 (F05): record the dispatched aggregate AND append its M08 movements (`transferred_out` at the source) in ONE
    * atomic write, each movement idempotent on its own id — a crash between the two must never leave a transfer in
@@ -373,9 +374,9 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const lines: TransferLine[] = read.lines.map((l, i) => ({ ...l, unitCost: { minor: costs[i] ?? 0, currency: 'INR' } }));
         const costUnknown = [...new Set(read.lines.filter((_, i) => costs[i] === null).map((l) => l.productId))];
         const transfer: Transfer = { transferId, fromLocationId: b.fromLocationId, toLocationId: b.toLocationId, lines, state: 'proposed', requestedBy: ctx.userId };
-        await deps.recordProposed(ctx.tenantId, transfer);
+        const saved = (await deps.recordProposed(ctx.tenantId, transfer)) ?? transfer;
         return { status: 201, body: {
-          transferId, state: 'proposed', fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, lines: lines.length,
+          transferId, ...(saved.documentNumber === undefined ? {} : { documentNumber: saved.documentNumber }), state: 'proposed', fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, lines: lines.length,
           unitCostsMinor: costs, costUnknown, ignoredFromCaller: read.callerSentCost ? ['unitCost'] : [],
         } };
       },

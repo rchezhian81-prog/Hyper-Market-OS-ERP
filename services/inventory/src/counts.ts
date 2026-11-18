@@ -58,6 +58,8 @@ export interface CountPolicy {
 
 export interface StoredReconciliation {
   readonly countId: string;
+  /** OB-850 (document numbers, format A): a count outside any plan's `CNT1/26-27/00001` (a planned count carries its plan's). */
+  readonly documentNumber?: string;
   readonly productId: string;
   readonly locationId: string;
   readonly expectedMinor: number;
@@ -160,7 +162,8 @@ export interface CountsDeps {
    * Record the reconciliation — and, when `rec.movementId` is set (SP-5b), append `countCorrection(rec)` to the M08
    * ledger (and the bin's projection for a bin count) in the SAME atomic write, idempotent on the movement id.
    */
-  readonly recordReconciliation: (tenantId: string, rec: StoredReconciliation) => Promise<void> | void;
+  /** OB-850: a count outside a plan answers its format-A number (`CNT1/26-27/00001`), taken in the same save. */
+  readonly recordReconciliation: (tenantId: string, rec: StoredReconciliation) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /** SP-4: the count by id, whatever position it is for — the decide step needs it (latest state). */
   readonly reconciliation: (tenantId: string, countId: string) => Promise<StoredReconciliation | undefined> | StoredReconciliation | undefined;
   /**
@@ -406,7 +409,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         if (rec.varianceMinor !== 0) {
           await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId: rec.productId, locationId: rec.locationId, kind: rec.varianceMinor > 0 ? 'adjusted' : 'wasted' }], 'count correction (count it under the open plan instead)');
         }
-        await deps.recordReconciliation(ctx.tenantId, rec);
+        const numbered = await deps.recordReconciliation(ctx.tenantId, rec);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'count.record', objectType: 'stock_count', objectId: countId,
           at: rec.at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -416,7 +419,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
         });
         return {
           status: 201,
-          body: { countId, expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval, pendingApproval: rec.pendingApproval ?? false, movementId: rec.movementId ?? null, flags: rec.governanceFlags ?? [] },
+          body: { countId, ...(numbered?.documentNumber === undefined ? {} : { documentNumber: numbered.documentNumber }), expectedMinor: rec.expectedMinor, countedMinor: rec.countedMinor, varianceMinor: rec.varianceMinor, valueMinor: rec.valueMinor, reconciled: rec.reconciled, adjusted: rec.adjusted, requiredApproval: rec.requiredApproval, pendingApproval: rec.pendingApproval ?? false, movementId: rec.movementId ?? null, flags: rec.governanceFlags ?? [] },
         };
       },
     },
