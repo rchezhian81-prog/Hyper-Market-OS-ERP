@@ -518,7 +518,8 @@
       return;
     }
     // Batch 12 (the owner's look): the store's name stands at the foot of the rail, above the person — drawn below.
-    const branch = nav.branch && typeof nav.branch.name === 'string' && nav.branch.name !== '' ? branchCard(nav.branch.name) : null;
+    // Batch 15: the store's town or city under its name, when store setup holds one; nothing when it does not.
+    const branch = nav.branch && typeof nav.branch.name === 'string' && nav.branch.name !== '' ? branchCard(nav.branch.name, typeof nav.branch.town === 'string' ? nav.branch.town.trim() : '') : null;
     // The groups scroll on their own between the branch card and the person, so the person is always in view at the
     // foot however long the list (OB-16); the current link is scrolled into view.
     const scroller = document.createElement('div');
@@ -933,7 +934,7 @@
   // ── The branch and the person (OB-16): the rail names the shop and the person, as head office named them ──
   // The pack carries the branch's name and, when head office sent one, the person's name and role. Without them the
   // rail still says WHO by id — never a blank, never an invented name.
-  function branchCard(name) {
+  function branchCard(name, town) {
     const card = document.createElement('div');
     card.className = 'branch';
     const mark = document.createElement('span');
@@ -946,7 +947,9 @@
     b.textContent = name;
     const small = document.createElement('small');
     small.textContent = t('branchWorkspace');
-    words.append(b, small);
+    words.append(b);
+    if (town) { const place = document.createElement('small'); place.className = 'town'; place.textContent = town; words.append(place); }
+    words.append(small);
     const dot = document.createElement('span');
     dot.className = 'dot';
     dot.setAttribute('aria-hidden', 'true');
@@ -2412,6 +2415,8 @@
       return key;
     }
     if (kind === 'store') return d?.store && d.store.id === key ? d.store.name : key;
+    // Batch 15: a supplier by name from the pack's supplier master, when the box sent it.
+    if (kind === 'supplier') { const hit = Array.isArray(d?.suppliers) ? d.suppliers.find((s) => s.id === key) : undefined; if (hit) return hit.name; }
     if (kind === 'place') { const hit = d?.places?.find((p) => p.id === key); return hit ? hit.name : (d?.store && d.store.id === key ? d.store.name : key); }
     if (kind === 'zone') return ZONE_WORDS[key] ? said(ZONE_WORDS[key]) : key;
     if (kind === 'role') { const r = navigation()?.roles?.find?.((x) => x.id === key); return r ? r.name : key; }

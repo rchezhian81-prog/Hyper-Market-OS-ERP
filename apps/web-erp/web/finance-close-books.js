@@ -74,7 +74,7 @@ function paintDisplay(v, tiles, rows) {
     const li = node('li', { className: l.findings.length > 0 ? 'flagged' : '' });
     li.dataset.contract = l.contractId;
     li.append(
-      node('div', { className: 'head' }, node('strong', { textContent: `${l.contractId} · ${l.supplierId} · ${l.storeId}` }), node('span', { textContent: l.agrees ? w('agrees') : w('differs') })),
+      node('div', { className: 'head' }, node('strong', { textContent: `${l.contractId} · ${supplierLabel(l.supplierId)} · ${l.storeId}` }), node('span', { textContent: l.agrees ? w('agrees') : w('differs') })),
       node('p', { className: 'facts', textContent: `${w('funding')} ${api.rupees(l.fundingMinor)} · ${w('received')} ${api.rupees(l.receivedMinor)} · ${w('outstanding')} ${api.rupees(l.outstandingMinor)} · ${w('ledger')} ${api.rupees(l.ledgerMinor)}` }),
     );
     if (l.findings.length > 0) li.append(node('p', { className: 'flags', textContent: l.findings.map((f) => w(`finding_${f}`)).join(' · ') }));
@@ -221,4 +221,10 @@ if (api !== null && may.read) {
 } else if (api !== null) {
   // No book-reading permission: the two tabs stay hidden; head office would refuse each read anyway.
   $('tab-books').hidden = true; $('tab-ca').hidden = true;
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }

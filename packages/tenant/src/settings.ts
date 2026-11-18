@@ -292,6 +292,16 @@ export const SETTINGS = {
    * DELIVERY-FEE line when a bill is marked for delivery (its price may be ₹0; its HSN/SAC and GST are the catalogue's).
    * Empty = not set: the till then refuses to mark a bill for delivery and says the owner has not set the fee.
    */
+  /**
+   * Batch 15 (owner's gap audit, 18 Nov 2026): the town or city the store is in, shown under the store's name at the foot of
+   * every screen's menu. Empty = not set: nothing is shown (never a guessed place).
+   */
+  STORE_TOWN: {
+    key: 'store.town',
+    label: 'Town / city the store is in (empty = not set)',
+    labelTa: 'கடை அமைந்துள்ள ஊர் / நகரம் (காலி = அமைக்கப்படவில்லை)',
+    defaultValue: '',
+  } as TenantSetting<string>,
   TILL_DELIVERY_FEE_PRODUCT: {
     key: 'delivery.till_fee_product',
     label: 'The product whose price is the till\'s delivery-fee line (empty = not set)',

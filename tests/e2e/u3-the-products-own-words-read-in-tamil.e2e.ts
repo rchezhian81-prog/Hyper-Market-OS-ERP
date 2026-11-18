@@ -50,12 +50,13 @@ describe.skipIf(!existsSync(CHROMIUM))('U3: the product\'s own words read in Tam
 
   it('Today: the takings note is Tamil after the toggle, and the three typed ids pick by name', async () => {
     const { page, errors, context } = await open(PEOPLE.manager, '/manager/');
-    await page.waitForSelector('#tiles .tile .note');
-    const before = await page.textContent('#tiles .tile:first-child .note');
+    // Batch 15: the takings note sits on the Sales card now (the old strip is gone).
+    await page.waitForSelector('#kpis [data-kpi="sales"] .kpi-note');
+    const before = await page.textContent('#kpis [data-kpi="sales"] .kpi-note');
     expect(before).toMatch(/sales? on this box/);
     await toTamil(page);
-    await page.waitForFunction(() => /[஀-௿]/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector('#tiles .tile:first-child .note')?.textContent ?? ''));
-    expect(await page.textContent('#tiles .tile:first-child .note')).toMatch(/இந்தக் கணினியில் \d+ விற்பனை/);
+    await page.waitForFunction(() => /[஀-௿]/.test((globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector('#kpis [data-kpi="sales"] .kpi-note')?.textContent ?? ''));
+    expect(await page.textContent('#kpis [data-kpi="sales"] .kpi-note')).toMatch(/இந்தக் கணினியில் \d+ விற்பனை/);
     // U2c: the delivery's item, the count's product and the carry-over's second person each have the picker's button.
     await page.click('#tab-receive');
     await page.waitForSelector('#grn-product-pick');

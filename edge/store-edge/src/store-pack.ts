@@ -241,6 +241,28 @@ export interface PackPurchaseOrder {
   readonly lines: readonly { readonly productId: string; readonly qty: number; readonly unitMinor: number }[];
 }
 
+/** Batch 15: one item at or below its reorder point, as head office counted its stock at this store. */
+export interface PackLowStockItem {
+  readonly productId: string;
+  readonly name?: string;
+  /** Stock on hand at this store (floor and back store), in the item's smallest step. */
+  readonly onHandMinor: number;
+  /** The reorder point in force (same smallest step). */
+  readonly reorderPoint: number;
+  readonly uom?: string;
+}
+/** Batch 15: the low-stock list head office sends (`lowStock`). */
+export interface PackLowStock {
+  /** How many items at this store have a reorder point set. */
+  readonly levelsSet: number;
+  readonly items: readonly PackLowStockItem[];
+}
+/** Batch 15: a supplier's name from head office's supplier master. */
+export interface PackSupplierName {
+  readonly supplierId: string;
+  readonly name: string;
+}
+
 /** What actually arrived against a purchase order (M07). */
 export interface PackReceipt {
   readonly poId: string;
@@ -985,6 +1007,8 @@ export interface PackPolicies {
   readonly storeId: string;
   readonly branchId: string | null;
   readonly branchName: string;
+  /** Batch 15: the store's town or city from store setup (`store.town`), shown under its name in the menu. Absent: not set. */
+  readonly branchTown?: string;
   /** Where the trading day ends, "HH:MM" local (M01-FR-02). */
   readonly tradingDayCutoff: string;
   /**
@@ -1376,6 +1400,14 @@ export interface StorePack {
   /** OB-630: this store's reorder settings as head office last sent them ({ storeId, products, asAt }) — the Buying page's
    *  Reorder tab shows this copy, said as a copy, when head office cannot be reached. Absent: the box was never told. */
   readonly reorderSettings: Register<unknown>;
+  /**
+   * Batch 15: the items at this store whose stock is at or below their reorder point (D-038 reorder settings), worked out by
+   * head office from ITS stock figures when it built the pack. `levelsSet` is how many items have a reorder point at all —
+   * 0 means nobody has set one yet, which the Today page says rather than "no low stock". Absent: an older pack.
+   */
+  readonly lowStock?: Register<PackLowStock>;
+  /** Batch 15: head office's supplier master as names only (never a bank detail), so a screen names a supplier, never its code. */
+  readonly suppliers?: Register<readonly PackSupplierName[]>;
   /** Who is on the waste review screen and what they may do there. */
   readonly wastePolicy: Register<PackWastePolicy>;
   /** Who is on the shop-floor write-off CAPTURE screen, what they hold, and the material-loss threshold (M28-FR-01). */
@@ -1648,6 +1680,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     gstReturnsPolicy: notKnown(why),
     wasteWriteOffs: notKnown(why),
     reorderSettings: notKnown(why),
+    lowStock: notKnown(why),
+    suppliers: notKnown(why),
     wastePolicy: notKnown(why),
     writeOffCapturePolicy: notKnown(why),
     countsQueue: notKnown(why),
@@ -1803,6 +1837,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     gstReturnsPolicy: section<PackGstReturnsPolicy>('gstReturnsPolicy'),
     wasteWriteOffs: section<readonly unknown[]>('wasteWriteOffs'),
     reorderSettings: section<unknown>('reorderSettings'),
+    lowStock: section<PackLowStock>('lowStock'),
+    suppliers: section<readonly PackSupplierName[]>('suppliers'),
     wastePolicy: section<PackWastePolicy>('wastePolicy'),
     writeOffCapturePolicy: section<PackWriteOffCapturePolicy>('writeOffCapturePolicy'),
     countsQueue: section<readonly unknown[]>('countsQueue'),

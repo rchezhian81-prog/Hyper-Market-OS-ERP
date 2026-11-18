@@ -42,13 +42,13 @@ const signal = (feedback: DsdSignal['feedback'], code: DsdFeedbackCode, detail: 
  * A vendor's route sheet as the box served it (R3 D-11): what that van brings when it comes with no purchase order. It
  * names the place it is for; a check-in against it is made for that place, as head office judges it.
  */
-export interface DsdRouteOnPhone { readonly routeId: string; readonly supplierId: string; readonly storeId?: string; readonly version?: number; readonly lines: readonly DsdExpectedLine[] }
+export interface DsdRouteOnPhone { readonly routeId: string; readonly supplierId: string; readonly supplierName?: string; readonly storeId?: string; readonly version?: number; readonly lines: readonly DsdExpectedLine[] }
 export interface DsdDoorData {
   readonly workerId: string;
   readonly storeId: string;
   readonly barcodes?: readonly BarcodeResolution[];
   readonly packs?: readonly PackHierarchy[];
-  readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly ordered: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitCost: { readonly minor: number } }[] }[];
+  readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly supplierName?: string; readonly ordered: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitCost: { readonly minor: number } }[] }[];
   /** Vendors' route sheets the box served (head office's, for this store); absent = none on this phone, and only orders are offered. */
   readonly dsdRoutes?: readonly DsdRouteOnPhone[];
   /**
@@ -84,10 +84,11 @@ export class DsdDoorSession {
   constructor(private readonly data: DsdDoorData, private readonly outbox: SyncOutbox, private readonly now: () => string = () => new Date().toISOString()) {}
 
   /** What the phone holds to check against: the store's open orders, and any route sheets. */
-  choices(): { readonly orders: readonly { poId: string; number: string; supplierId: string }[]; readonly routes: readonly { routeId: string; supplierId: string }[] } {
+  choices(): { readonly orders: readonly { poId: string; number: string; supplierId: string; supplierName?: string }[]; readonly routes: readonly { routeId: string; supplierId: string; supplierName?: string }[] } {
     return {
-      orders: (this.data.openDeliveries ?? []).map((d) => ({ poId: d.poId, number: d.number, supplierId: d.supplierId })),
-      routes: (this.data.dsdRoutes ?? []).map((r) => ({ routeId: r.routeId, supplierId: r.supplierId })),
+      // Batch 15: each supplier by NAME where the store computer sent one (the code only when no name exists).
+      orders: (this.data.openDeliveries ?? []).map((d) => ({ poId: d.poId, number: d.number, supplierId: d.supplierId, ...named(d.supplierName) })),
+      routes: (this.data.dsdRoutes ?? []).map((r) => ({ routeId: r.routeId, supplierId: r.supplierId, ...named(r.supplierName) })),
     };
   }
 
@@ -159,11 +160,13 @@ export class DsdDoorSession {
   }
 
   /** The live view: what was expected, scanned, handed back and kept, and every difference by name. */
-  view(): (DsdReconciliation & { readonly checkInId: string; readonly supplierId: string; readonly against: string; readonly closed: boolean }) | null {
+  view(): (DsdReconciliation & { readonly checkInId: string; readonly supplierId: string; readonly supplierName?: string; readonly against: string; readonly closed: boolean }) | null {
     const c = this.current;
     if (c === null) return null;
     const r = reconcileDsd({ against: c.against.kind, expected: c.expected, scans: c.scans, handBacks: c.handBacks });
-    return { ...r, checkInId: c.checkInId, supplierId: c.supplierId, against: c.against.kind === 'po' ? c.against.poId : c.against.routeId, closed: c.closed };
+    const fromOrder = (this.data.openDeliveries ?? []).find((d) => d.supplierId === c.supplierId)?.supplierName;
+    const fromRoute = (this.data.dsdRoutes ?? []).find((d) => d.supplierId === c.supplierId)?.supplierName;
+    return { ...r, checkInId: c.checkInId, supplierId: c.supplierId, ...named(fromOrder ?? fromRoute), against: c.against.kind === 'po' ? c.against.poId : c.against.routeId, closed: c.closed };
   }
 
   /** Close with the signed delivery note. Queues ONE record; refuses an unsigned note by name. No cash field exists. */
@@ -198,3 +201,8 @@ export class DsdDoorSession {
 }
 
 export { DSD_HAND_BACK_REASONS };
+
+/** Batch 15: a supplier's name when one was sent (never a blank). */
+function named(name: string | undefined): { supplierName?: string } {
+  return typeof name === 'string' && name.trim() !== '' ? { supplierName: name.trim() } : {};
+}

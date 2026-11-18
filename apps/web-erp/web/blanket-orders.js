@@ -63,7 +63,7 @@ function agreementRow(v) {
   const li = document.createElement('li'); li.dataset.agreement = a.agreementId; li.dataset.status = a.status;
   if (a.status === 'proposed' || v.expired) li.className = 'attention';
   const state = a.status === 'proposed' ? `⏳ ${t('proposed')}` : v.expired ? `✕ ${t('expired')}` : v.validToday ? `✓ ${t('validToday')}` : `○ ${t('notInForce')}`;
-  li.append(text('strong', `${a.agreementId} · ${t('supplier')} ${a.supplierId} · ${a.validFrom} – ${a.validTo} · ${state}`));
+  li.append(text('strong', `${a.agreementId} · ${t('supplier')} ${supplierLabel(a.supplierId)} · ${a.validFrom} – ${a.validTo} · ${state}`));
   li.append(text('span', `${t('ceiling')} ${api.rupees(d.ceilingMinor)} · ${t('issued')} ${api.rupees(d.issuedMinor)} · ${t('pending')} ${api.rupees(d.pendingMinor)} · ${t('remaining')} ${api.rupees(d.remainingMinor)} · ${t('releases')} ${d.releases}`, 'figures'));
   for (const p of d.byProduct) {
     const cost = a.lines.find((l) => l.productId === p.productId)?.agreedUnitCost.minor;
@@ -121,3 +121,9 @@ document.addEventListener('sre:chrome', () => { shopDate('p-from', { en: wordsIn
 pickable('p-supplier', 'supplier', 'pickSupplier');
 pickable('p-deliver', 'store', 'pickStore');
 prefillStore('p-deliver');
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
+}

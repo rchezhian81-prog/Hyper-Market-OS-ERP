@@ -45,7 +45,7 @@ function paintDay() {
     if (lateIds.has(b.slotId)) li.className = 'attention';
     const state = lateIds.has(b.slotId) ? `⚠ ${t('late')}` : t(`s_${b.status}`);
     li.append(text('strong', `${t('door')} ${b.dockId} · ${hhmm(b.startsAt)} – ${hhmm(b.endsAt)} · ${state}`));
-    li.append(text('span', [b.supplierId === undefined ? '' : `${t('supplier')}: ${b.supplierId}`, (b.poIds ?? []).length === 0 ? '' : (b.poIds ?? []).join(', '), `${t('bookedBy')} ${b.bookedBy}`].filter((x) => x !== '').join(' · '), 'meta'));
+    li.append(text('span', [b.supplierId === undefined ? '' : `${t('supplier')}: ${supplierLabel(b.supplierId)}`, (b.poIds ?? []).length === 0 ? '' : (b.poIds ?? []).join(', '), `${t('bookedBy')} ${b.bookedBy}`].filter((x) => x !== '').join(' · '), 'meta'));
     const last = b.history[b.history.length - 1];
     if (last !== undefined && last.reason !== undefined) li.append(text('span', last.reason, 'meta'));
     if (may.book) {
@@ -115,3 +115,9 @@ else {
 }
 // the chrome (and `sreOffice.me`) loads after this script: fill the store in once it is there
 document.addEventListener('sre:chrome', () => { shopDate('d-date', { en: wordsIn('en', 'date'), ta: wordsIn('ta', 'date') }); paint(); }, { once: true });
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
+}

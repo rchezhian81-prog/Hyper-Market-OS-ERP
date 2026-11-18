@@ -130,6 +130,6 @@ describe.skipIf(!HAVE_BROWSER)('the cash office never says "every drawer is sign
     await page.waitForFunction('document.getElementById("attention").textContent.includes("closed over or short today")');
     const attention = (await page.textContent('#attention'))?.replace(/\s+/g, ' ') ?? '';
     expect(attention).toMatch(/1 drawer\(s\) closed over or short today — sign-off is on Cash over \/ short \(lane-1 short ₹500\.00/);
-    expect(await page.textContent('#tiles')).toContain('not counted here: 1 drawer(s) closed over or short today');
+    expect(await page.textContent('#ops [data-figure="exceptions"]')).toContain('not counted here: 1 drawer(s) closed over or short today'); // batch 15: on Store today
   });
 });

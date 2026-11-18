@@ -717,7 +717,7 @@ function renderSpace() {
     const what = document.createElement('span');
     what.className = 'what';
     const name = document.createElement('strong');
-    name.textContent = contract.supplierId;
+    name.textContent = supplierLabel(contract.supplierId);
     const sub = document.createElement('small');
     sub.textContent = contract.detail;
     what.append(name, sub);
@@ -787,3 +787,9 @@ if ('serviceWorker' in navigator) {
 pickable('count-product', 'product', 'pickProduct');
 pickable('drop-product', 'product', 'pickProduct');
 pickable('drop-replacement', 'product', 'pickProduct');
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
+}

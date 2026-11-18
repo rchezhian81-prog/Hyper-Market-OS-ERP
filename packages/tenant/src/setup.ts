@@ -113,6 +113,10 @@ const validateIfsc = emptyOr((v) => isIfsc(v.toUpperCase()), 'Give the 11-charac
 const validateProductRef: SetupValidator = (v) =>
   (isString(v) && (v === '' || /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/.test(v)) ? null
     : 'Give the product id of the delivery-fee product as the catalogue holds it — or leave it empty (not set).');
+/** Batch 15: the town — empty (not set) or a plain name of at most 60 characters, no line breaks. */
+const validateTown: SetupValidator = (v) =>
+  (isString(v) && v.trim().length <= 60 && ![...v].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) ? null
+    : 'Give the town or city as one line of at most 60 characters — or leave it empty (not set).');
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -336,6 +340,15 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     question: 'For the dynamic QR: that bank account\'s IFSC. (Empty = not set.)',
     questionTa: 'டைனமிக் QR-க்கு: அந்த வங்கிக் கணக்கின் IFSC. (காலி = அமைக்கப்படவில்லை.)',
     validate: validateIfsc,
+  },
+  {
+    // Batch 15: the town under the store's name in every menu — optional; empty shows nothing.
+    setting: SETTINGS.STORE_TOWN,
+    group: 'give_now',
+    required: false,
+    question: 'Which town or city is the store in? It is shown under the store\'s name at the foot of every menu. (Empty = not set; nothing is shown.)',
+    questionTa: 'கடை எந்த ஊர் அல்லது நகரத்தில் உள்ளது? ஒவ்வொரு பட்டியலின் அடியிலும் கடையின் பெயருக்குக் கீழே இது காட்டப்படும். (காலி = அமைக்கப்படவில்லை; எதுவும் காட்டப்படாது.)',
+    validate: validateTown,
   },
   {
     // OB-299: the till's delivery sale — the fee line is this catalogue product at its signed price (₹0 allowed).

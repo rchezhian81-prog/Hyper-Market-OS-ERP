@@ -608,47 +608,6 @@ for (const name of VIEWS) el(`tab-${name}`).addEventListener('click', () => show
 
 // ── Home: four figures, and every one may say it does not know ──────────────
 
-/** A figure that could not be read is not a zero, and it is not painted like one. */
-function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
-  const box = document.createElement('div');
-  box.className = 'tile';
-  const n = document.createElement('div');
-  n.className = 'n';
-  // A floor figure says `count`; a Today figure from the box says `value` (UX-2b). Either way: known, or why not.
-  const amount = figure.known ? (figure.count ?? figure.value ?? 0) : null;
-  if (figure.known) {
-    n.textContent = money ? inr(amount) : String(amount);
-    // The figure's length sizes it, so a long amount never runs past the tile (index.html `#view-home .tile .n`).
-    n.style.setProperty('--chars', String(Math.max(6, n.textContent.length)));
-    if (attentionWhen && attentionWhen(amount)) box.classList.add('attention');
-  } else {
-    n.classList.add('unknown');
-    n.textContent = t('notKnown');
-    box.classList.add('unknown');
-  }
-  const caption = document.createElement('div');
-  caption.className = 'label';
-  caption.textContent = label;
-  const top = document.createElement('div');
-  top.className = 'top';
-  top.append(caption);
-  const mark = iconName ? icon(iconName) : null;
-  if (mark) { const chip = document.createElement('span'); chip.className = 'chip'; chip.setAttribute('aria-hidden', 'true'); chip.append(mark); top.append(chip); }
-  const small = document.createElement('div');
-  small.className = 'note';
-  // The reason it does not know, in the model's own words — it is the only place that knows. U3 (OB-699): the box
-  // carries its note in both languages; the screen shows the reader's, and the English when the box sent only that.
-  small.textContent = figure.known ? (note ?? todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
-  box.append(top, n, small);
-  if (goTo) {
-    box.tabIndex = 0;
-    box.setAttribute('role', 'button');
-    box.addEventListener('click', () => show(goTo));
-    box.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') show(goTo); });
-  }
-  return box;
-}
-
 // ── Today (UX-2b · OB-15/OB-16): the figures the store computer sent with this screen, the rail's own workspaces ──
 // Every figure comes from `window.managerData.today` — built on the store computer from its pack and its own log —
 // or says it is not known. The page invents nothing: no figure, no name, no screen it was not given.
@@ -666,6 +625,18 @@ const icon = (name) => (window.sreChrome && typeof window.sreChrome.icon === 'fu
 /** A way to act on a row: a view of this page, or a rail link the person holds — nothing when they hold neither. */
 function goLink(target) {
   if (!target) return null;
+  // Batch 15: a row that opens a list on this page, or that leads to a named place on another page.
+  if (target.open) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'go sre-btn'; b.textContent = t('open');
+    b.addEventListener('click', () => target.open());
+    return b;
+  }
+  if (target.href) {
+    const a = document.createElement('a');
+    a.className = 'go'; a.href = target.href; a.textContent = target.label ?? t('open');
+    return a;
+  }
   if (target.view) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'go sre-btn'; b.textContent = t('open');
@@ -703,6 +674,12 @@ function renderAttention(floor, today) {
   add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
   add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });
   add(today.counts, 'countsAwaiting', 'attnCounts', { rail: 'counts' });
+  // Batch 15: the items at or below their reorder level — the row opens the list (head office's figures).
+  if (today.lowStock) {
+    const f = today.lowStock;
+    if (!f.known) rows.push({ tone: 'unknown', n: null, text: `${board('lowStock')}: ${t('notKnown')} — ${f.noLevels === true ? board('noLevels') : todayWords(f.why, f.whyTa)}`, target: f.noLevels === true && railItem('buying') ? { href: `${railItem('buying').path}#reorder`, label: board('setLevels') } : null });
+    else if (amountOf(f) > 0) rows.push({ tone: 'attention', n: amountOf(f), text: board('attnLowStock'), target: lowStockListOf() !== null ? { open: openLowStock } : null });
+  }
   // D04-FR-05: the tills' devices — only on a box that has a till; which device and why, in the box's words.
   if (today.tillDevices) {
     const f = today.tillDevices;
@@ -759,6 +736,16 @@ const BOARD_WORDS = {
     savedHere: 'Local data saved — on this store computer', lastSynced: 'Last synced {at}', neverSynced: 'Not yet sent to head office today or before',
     syncNotKnown: 'Last synced: not known — this computer does not report it', viewReports: 'View reports', overview: 'Store overview',
     lane: 'till {lane}',
+    // Batch 15
+    vsYesterdayEnd: 'vs. {day}, at its end', noYesterday: 'No earlier day yet — this computer started keeping this today',
+    noLevels: 'no reorder levels set yet', setLevels: 'Set reorder levels', openList: 'See the items',
+    lowStockTitle: 'Low stock', lowStockLead: 'Items at or below their reorder level, on head office\'s stock figures when this computer last took them ({at}).',
+    lowStockLeadNoTime: 'Items at or below their reorder level, on head office\'s stock figures.',
+    lowStockNone: 'No item is at or below its reorder level.', item: 'Item', onHand: 'On hand', reorderLevel: 'Reorder level', close: 'Close',
+    attnLowStock: 'items at or below their reorder level',
+    goodsReceipt: 'Goods received', approval: 'Approval', writeOff: 'Write-off', priceChange: 'Price change',
+    st_completed: 'Completed', st_approved: 'Approved', st_rejected: 'Rejected', st_saved_here: 'Saved here — sending', st_sent: 'Sent to head office',
+    st_recorded: 'Recorded', st_needs_approval: 'Needs approval', st_on_tills: 'On the tills', noActivity: 'Nothing has happened on this store computer today yet.',
   },
   ta: {
     sales: 'விற்பனை', bills: 'பில்கள்', purchaseOrders: 'கொள்முதல் ஆணைகள்', lowStock: 'குறைந்த சரக்கு',
@@ -775,6 +762,15 @@ const BOARD_WORDS = {
     savedHere: 'உள்ளூர் தரவு சேமிக்கப்பட்டது — இந்தக் கடைக் கணினியில்', lastSynced: 'கடைசியாக ஒத்திசைக்கப்பட்டது {at}', neverSynced: 'தலைமை அலுவலகத்துக்கு இன்னும் அனுப்பப்படவில்லை',
     syncNotKnown: 'கடைசி ஒத்திசைவு: தெரியவில்லை — இந்தக் கணினி அதைச் சொல்வதில்லை', viewReports: 'அறிக்கைகள்', overview: 'கடை நிலவரம்',
     lane: 'முனையம் {lane}',
+    vsYesterdayEnd: '{day} முடிவுடன் ஒப்பிட', noYesterday: 'முந்தைய நாள் இன்னும் இல்லை — இந்தக் கணினி இன்றுதான் இதைப் பதிவுசெய்யத் தொடங்கியது',
+    noLevels: 'மறு ஆர்டர் அளவுகள் இன்னும் அமைக்கப்படவில்லை', setLevels: 'மறு ஆர்டர் அளவுகளை அமைக்கவும்', openList: 'பொருட்களைப் பார்க்கவும்',
+    lowStockTitle: 'குறைந்த சரக்கு', lowStockLead: 'மறு ஆர்டர் அளவில் அல்லது அதற்குக் கீழ் உள்ள பொருட்கள் — இந்தக் கணினி கடைசியாகப் பெற்ற தலைமை அலுவலகச் சரக்குக் கணக்கின்படி ({at}).',
+    lowStockLeadNoTime: 'மறு ஆர்டர் அளவில் அல்லது அதற்குக் கீழ் உள்ள பொருட்கள் — தலைமை அலுவலகச் சரக்குக் கணக்கின்படி.',
+    lowStockNone: 'எந்தப் பொருளும் மறு ஆர்டர் அளவில் அல்லது அதற்குக் கீழ் இல்லை.', item: 'பொருள்', onHand: 'கையிருப்பு', reorderLevel: 'மறு ஆர்டர் அளவு', close: 'மூடு',
+    attnLowStock: 'பொருட்கள் மறு ஆர்டர் அளவில் அல்லது அதற்குக் கீழ்',
+    goodsReceipt: 'சரக்கு வரவு', approval: 'ஒப்புதல்', writeOff: 'தள்ளுபடி', priceChange: 'விலை மாற்றம்',
+    st_completed: 'முடிந்தது', st_approved: 'ஒப்புதல் அளிக்கப்பட்டது', st_rejected: 'நிராகரிக்கப்பட்டது', st_saved_here: 'இங்கே சேமிக்கப்பட்டது — அனுப்பப்படுகிறது', st_sent: 'தலைமை அலுவலகத்துக்கு அனுப்பப்பட்டது',
+    st_recorded: 'பதிவுசெய்யப்பட்டது', st_needs_approval: 'ஒப்புதல் தேவை', st_on_tills: 'கல்லாக்களில் நடைமுறையில்', noActivity: 'இன்று இந்தக் கடைக் கணினியில் இன்னும் எதுவும் நடக்கவில்லை.',
   },
 };
 /** A board word in a language (the reader's when not named). */
@@ -825,7 +821,7 @@ function trendLine(now, before, previousDay, money) {
   line.append(arrow, by, vs);
   return line;
 }
-function kpiCard({ key, iconName, figure, trend, why }) {
+function kpiCard({ key, iconName, figure, trend, why, note, action, opens }) {
   const card = document.createElement('div');
   card.className = 'kpi';
   card.dataset.kpi = key;
@@ -844,20 +840,123 @@ function kpiCard({ key, iconName, figure, trend, why }) {
   } else {
     n.textContent = figure;
     if (trend) card.append(trend);
+    // Batch 15: where the figure came from, in the box's own words (the old strip's note, now on its card).
+    if (note) { const p = document.createElement('p'); p.className = 'kpi-note'; p.textContent = note; card.append(p); }
+  }
+  // Batch 15: a card's one way on — a link (set the reorder levels) or a button that opens its list.
+  if (action) card.append(action);
+  if (opens) {
+    card.classList.add('opens');
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `${board(key)}: ${figure ?? board('notKnown')} — ${board('openList')}`);
+    card.addEventListener('click', (e) => { if (!(e.target instanceof Element && e.target.closest('a'))) opens(); });
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opens(); } });
   }
   return card;
+}
+/** Batch 15: a card's change against the last figure this computer kept for an earlier day — or plainly why there is none. */
+function dailyTrend(now, previous) {
+  if (previous === undefined) return trendLine(0, 'no-history', null, false);
+  if (previous === null) {
+    const line = document.createElement('div'); line.className = 'kpi-trend'; line.dataset.dir = 'none';
+    const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '–';
+    const vs = document.createElement('span'); vs.className = 'vs'; vs.textContent = board('noYesterday');
+    line.append(arrow, vs);
+    return line;
+  }
+  const line = trendLine(now, previous.value, previous.tradingDay, false);
+  const vs = line.querySelector('.vs');
+  if (vs) vs.textContent = board('vsYesterdayEnd').replace('{day}', shortDay(previous.tradingDay));
+  return line;
+}
+/** Batch 15: a figure where more is worse (low stock): its rise wears red, its fall green. */
+function worseWhenUp(line) { line.classList.add('worse-up'); return line; }
+/** Batch 15: the link to the Buying page's Reorder tab, where this person holds the Buying page; nothing otherwise. */
+function reorderLink() {
+  const item = railItem('buying');
+  if (!item) return null;
+  const a = document.createElement('a');
+  a.className = 'kpi-link'; a.href = `${item.path}#reorder`; a.textContent = board('setLevels');
+  return a;
 }
 function renderKpis(today) {
   const b = boardOf();
   const prev = b ? b.previous : null;
   const po = today.po;
+  const low = today.lowStock;
+  const dp = b && b.dailyPrevious && typeof b.dailyPrevious === 'object' ? b.dailyPrevious : null;
+  // Batch 15: the takings from the board, else the box's own figure (the old strip's "Sales today"), with its note either way.
+  const sales = today.sales;
+  const salesFigure = b ? inr(b.today.takenMinor) : sales.known ? inr(amountOf(sales)) : null;
+  const salesNote = sales.known ? (todayWords(sales.note, sales.noteTa) ?? '') : '';
+  const lowKnown = low.known;
   el('kpis').replaceChildren(
-    kpiCard({ key: 'sales', iconName: 'chart-column', figure: b ? inr(b.today.takenMinor) : null, why: board('boardSilent'), trend: b ? trendLine(b.today.takenMinor, prev ? prev.takenMinor : 0, prev ? prev.tradingDay : null, true) : null }),
+    kpiCard({ key: 'sales', iconName: 'chart-column', figure: salesFigure, why: todayWords(sales.why, sales.whyTa) ?? board('boardSilent'), note: salesNote, trend: b ? trendLine(b.today.takenMinor, prev ? prev.takenMinor : 0, prev ? prev.tradingDay : null, true) : null }),
     kpiCard({ key: 'bills', iconName: 'receipt', figure: b ? String(b.today.bills) : null, why: board('boardSilent'), trend: b ? trendLine(b.today.bills, prev ? prev.bills : 0, prev ? prev.tradingDay : null, false) : null }),
-    kpiCard({ key: 'purchaseOrders', iconName: 'package', figure: po.known ? String(amountOf(po)) : null, why: todayWords(po.why, po.whyTa) ?? board('boardSilent'), trend: trendLine(0, 'no-history', null, false) }),
-    kpiCard({ key: 'lowStock', iconName: 'triangle-alert', figure: null, why: board('lowStockWhy') }),
+    kpiCard({ key: 'purchaseOrders', iconName: 'package', figure: po.known ? String(amountOf(po)) : null, why: todayWords(po.why, po.whyTa) ?? board('boardSilent'), trend: po.known ? dailyTrend(amountOf(po), dp ? dp.purchaseOrdersOpen : undefined) : null }),
+    kpiCard({
+      key: 'lowStock', iconName: 'triangle-alert', figure: lowKnown ? String(amountOf(low)) : null,
+      // "Not known — no reorder levels set yet" with the way to set them; otherwise the box's own reason.
+      why: lowKnown ? '' : low.noLevels === true ? board('noLevels') : (todayWords(low.why, low.whyTa) ?? board('lowStockWhy')),
+      trend: lowKnown ? worseWhenUp(dailyTrend(amountOf(low), dp ? dp.lowStock : undefined)) : null,
+      action: !lowKnown && low.noLevels === true ? reorderLink() : null,
+      ...(lowKnown && lowStockListOf() !== null ? { opens: openLowStock } : {}),
+    }),
   );
 }
+
+// ── Batch 15: the low-stock list — head office's items at or below their reorder level, opened from the card or the row ──
+function lowStockListOf() {
+  const l = window.managerData && window.managerData.lowStockList;
+  return l && typeof l === 'object' && Array.isArray(l.items) ? l : null;
+}
+function renderLowStock() {
+  const list = lowStockListOf();
+  el('lowstock-title').textContent = `${board('lowStockTitle')} / ${board('lowStockTitle', lang === 'ta' ? 'en' : 'ta')}`;
+  el('lowstock-close').textContent = board('close');
+  if (list === null) { el('lowstock-card').hidden = true; return; }
+  const at = typeof list.asAt === 'string' ? (window.sreShopDay?.dateTimeOf(list.asAt) || list.asAt) : null;
+  el('lowstock-lead').textContent = at ? board('lowStockLead').replace('{at}', at) : board('lowStockLeadNoTime');
+  const host = el('lowstock-rows');
+  if (list.items.length === 0) {
+    const p = document.createElement('p'); p.className = 'recent-none'; p.textContent = board('lowStockNone');
+    host.replaceChildren(p);
+    return;
+  }
+  const other = lang === 'ta' ? 'en' : 'ta';
+  const table = document.createElement('table'); table.className = 'recent lowstock';
+  const head = document.createElement('tr');
+  for (const [key, cls] of [['item'], ['onHand', 'money'], ['reorderLevel', 'money']]) {
+    const th = document.createElement('th'); th.scope = 'col'; if (cls) th.className = cls;
+    th.append(document.createTextNode(board(key)));
+    const sub = document.createElement('small'); sub.lang = other; sub.textContent = board(key, other); th.append(sub);
+    head.append(th);
+  }
+  const thead = document.createElement('thead'); thead.append(head);
+  const body = document.createElement('tbody');
+  const qty = (n, uom) => `${new Intl.NumberFormat(lang === 'ta' ? 'ta-IN' : 'en-IN').format(Number(n))}${uom ? ` ${uom}` : ''}`;
+  for (const i of list.items) {
+    const tr = document.createElement('tr'); tr.dataset.product = i.productId;
+    const name = document.createElement('td'); name.textContent = i.name ?? i.productId;
+    const held = document.createElement('td'); held.className = 'money'; held.textContent = qty(i.onHandMinor, i.uom);
+    const point = document.createElement('td'); point.className = 'money'; point.textContent = qty(i.reorderPoint, i.uom);
+    tr.append(name, held, point);
+    body.append(tr);
+  }
+  table.append(thead, body);
+  host.replaceChildren(table);
+}
+function openLowStock() {
+  renderLowStock();
+  el('lowstock-card').hidden = false;
+  el('lowstock-card').scrollIntoView({ block: 'start' });
+  el('lowstock-title').focus();
+}
+el('lowstock-close').addEventListener('click', () => {
+  el('lowstock-card').hidden = true;
+  el('kpis').querySelector('[data-kpi="lowStock"]')?.focus();
+});
 
 let chartRange = 'today';
 function renderSalesChart() {
@@ -903,10 +1002,18 @@ function renderSalesChart() {
 el('chart-today').addEventListener('click', () => { chartRange = 'today'; renderSalesChart(); });
 el('chart-week').addEventListener('click', () => { chartRange = 'week'; renderSalesChart(); });
 
+// Batch 15: each kind of row, its words and icon; each state, its word, icon and tone (status is always word + icon).
+const ACTIVITY_KINDS = { sale: ['sale', 'receipt'], goods_receipt: ['goodsReceipt', 'truck'], approval: ['approval', 'badge-check'], write_off: ['writeOff', 'trash'], price_change: ['priceChange', 'tag'] };
+const ACTIVITY_STATES = {
+  completed: ['circle-check', 'done'], approved: ['circle-check', 'done'], rejected: ['x', 'bad'], saved_here: ['clock', 'pending'],
+  sent: ['circle-check', 'done'], recorded: ['check', 'done'], needs_approval: ['triangle-alert', 'pending'], on_tills: ['tag', 'done'],
+};
 function renderRecent() {
   el('recent-title').textContent = `${board('recentActivity')} / ${board('recentActivity', lang === 'ta' ? 'en' : 'ta')}`;
   const host = el('recent');
   const b = boardOf();
+  const rows = b && Array.isArray(b.activity) ? b.activity : null;
+  if (rows !== null) { renderActivity(host, rows); return; }
   if (!b || b.recent.length === 0) {
     const p = document.createElement('p'); p.className = 'recent-none';
     p.textContent = b ? board('noBills') : `${board('notKnown')} — ${board('boardSilent')}`;
@@ -940,6 +1047,64 @@ function renderRecent() {
       cell('td', r.number ?? r.id),
       cell('td', board('completed'), board('completed', other), 'done'),
       cell('td', inr(r.totalMinor), null, 'money'),
+    );
+    body.append(tr);
+  }
+  table.append(thead, body);
+  host.replaceChildren(table);
+}
+
+/** Batch 15: today's bills, deliveries booked in, approvals decided, write-offs and price changes — time, what, reference, status, amount. */
+function renderActivity(host, rows) {
+  if (rows.length === 0) {
+    const p = document.createElement('p'); p.className = 'recent-none'; p.textContent = board('noActivity');
+    host.replaceChildren(p);
+    return;
+  }
+  const other = lang === 'ta' ? 'en' : 'ta';
+  const cell = (tag, main, sub, cls) => {
+    const c = document.createElement(tag);
+    if (cls) c.className = cls;
+    c.append(document.createTextNode(main));
+    if (sub) { const s2 = document.createElement('small'); s2.lang = other; s2.textContent = sub; c.append(s2); }
+    return c;
+  };
+  const table = document.createElement('table'); table.className = 'recent';
+  const head = document.createElement('tr');
+  for (const [key, cls] of [['time'], ['activity'], ['reference'], ['status'], ['amount', 'money']]) {
+    const th = cell('th', board(key), board(key, other), cls);
+    th.scope = 'col';
+    head.append(th);
+  }
+  const thead = document.createElement('thead'); thead.append(head);
+  const body = document.createElement('tbody');
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    tr.dataset.kind = r.kind;
+    if (r.kind === 'sale') tr.dataset.sale = r.id;
+    const [kindKey, kindIcon] = ACTIVITY_KINDS[r.kind] ?? ['activity', 'activity'];
+    const what = document.createElement('td'); what.className = 'what sre-with-icon';
+    const mark = lineIcon(kindIcon, 18);
+    if (mark) what.append(mark);
+    const words = document.createElement('span');
+    const detail = lang === 'ta' ? (r.detailTa ?? r.detail) : r.detail;
+    words.append(document.createTextNode(`${board(kindKey)}${detail ? ` · ${detail}` : ''}`));
+    const sub = document.createElement('small'); sub.lang = other; sub.textContent = board(kindKey, other); words.append(sub);
+    what.append(words);
+    const [stateIcon, tone] = ACTIVITY_STATES[r.status] ?? ['circle-help', 'pending'];
+    const state = document.createElement('td'); state.className = `state ${tone}`;
+    const stateWords = document.createElement('span'); stateWords.className = 'sre-with-icon';
+    const sMark = lineIcon(stateIcon, 16);
+    if (sMark) stateWords.append(sMark);
+    stateWords.append(document.createTextNode(board(`st_${r.status}`)));
+    const sSub = document.createElement('small'); sSub.lang = other; sSub.textContent = board(`st_${r.status}`, other);
+    state.append(stateWords, sSub);
+    tr.append(
+      cell('td', r.at ?? board('notKnown')),
+      what,
+      cell('td', r.reference),
+      state,
+      cell('td', typeof r.amountMinor === 'number' ? inr(r.amountMinor) : '—', null, 'money'),
     );
     body.append(tr);
   }
@@ -995,6 +1160,7 @@ const longDay = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? `${shortDay(
 
 function renderBoard(today) {
   renderKpis(today);
+  renderLowStock(); // Batch 15: kept current while open
   renderSalesChart();
   renderRecent();
   renderFoot();
@@ -1009,14 +1175,18 @@ function quiet(text) {
 }
 
 /** A small figure box: the number (or "Not known" and why), its label, its note, and a way in when there is one. */
-function figureBox(tag, figure, label, target) {
+function figureBox(tag, figure, label, target, opts = {}) {
   const box = document.createElement(tag);
   if (tag !== 'li') box.className = 'op';
+  // Batch 15: the figures the old dark strip carried live here now — each names itself for the page's own checks.
+  if (opts.key) box.dataset.figure = opts.key;
+  if (opts.attentionWhen && figure.known && opts.attentionWhen(amountOf(figure))) box.classList.add('attention');
+  if (!figure.known) box.classList.add('unknown');
   const n = document.createElement('b'); n.className = 'n';
   if (figure.known) n.textContent = String(amountOf(figure)); else { n.textContent = t('notKnown'); n.classList.add('unknown'); }
   const l = document.createElement('span'); l.className = 'l'; l.textContent = label;
   // U3 (OB-699) · U7: the box's note or reason in the reader's language — the Tamil it sent, else the English.
-  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
+  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (opts.note ?? todayWords(figure.note, figure.noteTa) ?? '') : todayWords(figure.why, figure.whyTa);
   box.append(n, l, note);
   const go = goLink(target);
   if (go) box.append(go);
@@ -1032,12 +1202,17 @@ function renderFlow(today) {
 }
 function renderOps(floor, today) {
   el('ops').replaceChildren(
+    // Batch 15: the old dark strip's day figures — approvals, exceptions, what is not yet at head office — first, each one tap
+    // from its list; "Sales today" is on the Sales card and "Tasks today" stays below.
+    figureBox('div', today.approvalsWaiting, t('approvalsLabel'), { view: 'approvals' }, { key: 'approvals', note: today.approvalsNote, attentionWhen: (n) => n > 0 }),
+    figureBox('div', floor.exceptions, t('exceptionsLabel'), { view: 'close' }, { key: 'exceptions', attentionWhen: (n) => n > 0, ...(today.overShortNote ? { note: today.overShortNote } : {}) }),
+    figureBox('div', floor.unsent, t('unsentLabel'), { view: 'close' }, { key: 'unsent', attentionWhen: (n) => n > 0, ...(floor.heldHere > 0 ? { note: `${floor.heldHere} ${t('heldHere')}` } : {}) }),
     figureBox('div', today.deliveries, t('deliveriesToday'), null),
     figureBox('div', today.checklist, t('checklistOpen'), { rail: 'checklist' }),
     figureBox('div', today.expiring, t('expiringSoon'), { rail: 'expiry' }),
     figureBox('div', today.recalls, t('recallsOpen'), { rail: 'expiry' }),
     figureBox('div', today.claimDisputes, t('claimDisputesOpen'), { rail: 'supplier-claims' }),
-    figureBox('div', floor.tasks, t('tasksLabel'), null),
+    figureBox('div', floor.tasks, t('tasksLabel'), null, { key: 'tasks' }),
   );
 }
 function renderWorkspaces() {
@@ -1149,6 +1324,7 @@ function renderHome() {
     hoApprovals: liveFigures ? liveFigures.headOffice : null,
     counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'), claimDisputes: figureOf('supplierClaimDisputes'),
     tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
+    lowStock: figureOf('lowStock'), // Batch 15
     // D-2: only on a store computer that keeps a till-cash log.
     // D-009: a drawer head office says is signed off on Cash over/short is left out (the box's figure stands when it cannot tell).
     overShort: todayFigures() && todayFigures().drawersOverShortToday
@@ -1156,29 +1332,11 @@ function renderHome() {
       : null,
   };
   const overShortToday = today.overShort && today.overShort.known ? amountOf(today.overShort) : 0;
-  el('tiles').replaceChildren(
-    // The takings first (OB-15: "sales today") — the box's own log, never a guess; its note says how many sales.
-    tile({ figure: today.sales, label: t('salesTodayLabel'), money: true, iconName: 'rupee' }),
-    tile({
-      figure: liveFigures ? liveFigures.approvalsWaiting : floor.approvalsWaiting,
-      label: t('approvalsLabel'),
-      note: [liveFigures?.approvalsWaiting.note, allClearable.known ? `${allClearable.count} ${t('youCanClear')}` : ''].filter(Boolean).join(' · '),
-      goTo: 'approvals',
-      attentionWhen: (n) => n > 0,
-      iconName: 'check',
-    }),
-    tile({
-      figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'alert',
-      // D-2: a 0 here beside a drawer that closed short is not an all-clear — the tile says what it leaves out.
-      ...(overShortToday > 0 ? { note: t('overShortNotCounted').replace('{n}', String(overShortToday)) } : {}),
-    }),
-    tile({
-      figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'cloud',
-      // How many of those are still only on this screen (SP-2a) — a fact the store computer cannot show.
-      ...(floor.heldHere > 0 ? { note: `${floor.heldHere} ${t('heldHere')}` } : {}),
-    }),
-    tile({ figure: floor.tasks, label: t('tasksLabel'), iconName: 'list' }),
-  );
+  // Batch 15: the old dark strip is gone — its figures live on the cards: Sales on the Sales card, the rest on Store today.
+  today.approvalsWaiting = liveFigures ? liveFigures.approvalsWaiting : floor.approvalsWaiting;
+  today.approvalsNote = [liveFigures?.approvalsWaiting.note, allClearable.known ? `${allClearable.count} ${t('youCanClear')}` : ''].filter(Boolean).join(' · ');
+  // D-2: a 0 beside a drawer that closed short is not an all-clear — the exceptions figure says what it leaves out.
+  today.overShortNote = overShortToday > 0 ? t('overShortNotCounted').replace('{n}', String(overShortToday)) : '';
   paintTodayWords();
   renderAttention(floor, today);
   renderFlow(today);
