@@ -23385,6 +23385,50 @@
         }
       }
     },
+    "/v1/document-numbers": {
+      "get": {
+        "operationId": "getDocumentNumbers",
+        "tags": [
+          "API-01 Identity / Admin"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "org.branch.read",
+        "x-entitlement": null,
+        "x-body-schema": "derived",
+        "responses": {
+          "200": {
+            "description": "The reply, as the handler builds it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentNumbersReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"org.branch.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/v1/documents/issued/{documentId}": {
       "get": {
         "operationId": "getDocumentsIssuedByDocumentId",
@@ -124104,15 +124148,15 @@
           "waits": {
             "type": "object",
             "required": [
-              "refund",
               "purchase_order",
+              "refund",
               "stock_adjustment"
             ],
             "properties": {
-              "refund": {
+              "purchase_order": {
                 "type": "number"
               },
-              "purchase_order": {
+              "refund": {
                 "type": "number"
               },
               "stock_adjustment": {
@@ -131897,6 +131941,109 @@
         "additionalProperties": true,
         "x-body-schema": "derived",
         "x-derived-from": "services/platform/src/device-events.ts"
+      },
+      "GetDocumentNumbersReply": {
+        "type": "object",
+        "required": [
+          "ranges",
+          "tills",
+          "warnings",
+          "rule",
+          "asAt"
+        ],
+        "properties": {
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeStanding"
+            }
+          },
+          "tills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "storeId",
+                "storeNumber",
+                "lanes",
+                "ranges"
+              ],
+              "properties": {
+                "storeId": {
+                  "type": "string"
+                },
+                "storeNumber": {
+                  "type": "number"
+                },
+                "lanes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "laneId",
+                      "code"
+                    ],
+                    "properties": {
+                      "laneId": {
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "ranges": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "head",
+                      "lastNumber",
+                      "remaining",
+                      "warn"
+                    ],
+                    "properties": {
+                      "says": {
+                        "type": "string"
+                      },
+                      "head": {
+                        "type": "string"
+                      },
+                      "lastNumber": {
+                        "type": "string"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      },
+                      "warn": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rule": {
+            "type": "string"
+          },
+          "asAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "x-body-schema": "derived",
+        "x-derived-from": "services/platform/src/document-number-issue.ts"
       },
       "GetDocumentsIssuedByDocumentIdReply": {
         "type": "object",
@@ -147516,6 +147663,9 @@
               "grnId": {
                 "type": "string"
               },
+              "documentNumber": {
+                "type": "string"
+              },
               "receivingChecklist": {
                 "$ref": "#/components/schemas/ReceivingChecklistOnFile"
               },
@@ -147714,6 +147864,9 @@
                     "grnId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "receivingChecklist": {
                       "$ref": "#/components/schemas/ReceivingChecklistOnFile"
                     },
@@ -147881,6 +148034,9 @@
                       }
                     },
                     "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
                       "type": "string"
                     },
                     "receivingChecklist": {
@@ -148087,6 +148243,9 @@
                     "grnId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "receivingChecklist": {
                       "$ref": "#/components/schemas/ReceivingChecklistOnFile"
                     },
@@ -148254,6 +148413,9 @@
                       }
                     },
                     "grnId": {
+                      "type": "string"
+                    },
+                    "documentNumber": {
                       "type": "string"
                     },
                     "receivingChecklist": {
@@ -164104,6 +164266,9 @@
               "number": {
                 "type": "string"
               },
+              "documentNumber": {
+                "type": "string"
+              },
               "supplierId": {
                 "type": "string"
               },
@@ -164294,6 +164459,9 @@
                   "type": "string"
                 },
                 "number": {
+                  "type": "string"
+                },
+                "documentNumber": {
                   "type": "string"
                 },
                 "supplierId": {
@@ -269861,6 +270029,9 @@
               }
             ]
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "applications": {
             "type": "array",
             "items": {
@@ -294299,6 +294470,9 @@
           "grnId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "receivingChecklist": {
             "$ref": "#/components/schemas/ReceivingChecklistOnFile"
           },
@@ -299420,8 +299594,8 @@
               "storeId",
               "kind",
               "tradingDay",
-              "attemptId",
               "laneId",
+              "attemptId",
               "billRef",
               "amountMinor",
               "askedAt",
@@ -299447,10 +299621,10 @@
               "tradingDay": {
                 "type": "string"
               },
-              "attemptId": {
+              "laneId": {
                 "type": "string"
               },
-              "laneId": {
+              "attemptId": {
                 "type": "string"
               },
               "billRef": {
@@ -299488,8 +299662,8 @@
               "storeId",
               "kind",
               "tradingDay",
-              "attemptId",
               "laneId",
+              "attemptId",
               "billRef",
               "amountMinor",
               "askedAt",
@@ -299515,10 +299689,10 @@
               "tradingDay": {
                 "type": "string"
               },
-              "attemptId": {
+              "laneId": {
                 "type": "string"
               },
-              "laneId": {
+              "attemptId": {
                 "type": "string"
               },
               "billRef": {
@@ -312664,6 +312838,67 @@
         },
         "additionalProperties": true
       },
+      "RangeStanding": {
+        "type": "object",
+        "required": [
+          "prefix",
+          "yearLabel",
+          "kind",
+          "words",
+          "issued",
+          "lastNumber",
+          "remaining",
+          "warn"
+        ],
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "yearLabel": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "business_invoice",
+              "customer_credit_note",
+              "customer_debit_note",
+              "floor_indent",
+              "goods_receipt",
+              "money_receipt",
+              "purchase_order",
+              "return_to_supplier",
+              "sale_bill",
+              "stock_count",
+              "supplier_advance",
+              "supplier_debit_note",
+              "supplier_payment",
+              "till_return",
+              "transfer_out",
+              "write_off"
+            ]
+          },
+          "words": {
+            "type": "string"
+          },
+          "issued": {
+            "type": "number"
+          },
+          "lastNumber": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "number"
+          },
+          "warn": {
+            "type": "boolean"
+          },
+          "says": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
       "Rate": {
         "anyOf": [
           {
@@ -324828,6 +325063,9 @@
           "number": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "supplierId": {
             "type": "string"
           },
@@ -327049,6 +327287,9 @@
         ],
         "properties": {
           "paymentId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "supplierId": {

@@ -18,6 +18,8 @@
 //      means take me out of rotation, not restart me.
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
+import { documentNumberRoutes, issuedDocumentNumbers } from '../../platform/src/document-number-issue';
+import { bankedReceiptCounts, formatAPackSection } from './adapters';
 import { once } from 'node:events';
 import { Pool, Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
@@ -1366,6 +1368,16 @@ export function buildSurface(deps: {
         handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
         supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-727: the disputed supplier claims on Today
       }, t, storeId),
+    }),
+    // OB-847 · OB-844 A: every document-number range, its last number and the 90,000 warning; each till's lane code.
+    ...documentNumberRoutes(store === undefined ? { now, issues: async () => [], tills: async () => [] } : {
+      now,
+      issues: (t) => issuedDocumentNumbers(store, t),
+      tills: async (t) => {
+        const banked = await bankedReceiptCounts(store, t);
+        const branches = (await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').slice(0, 9);
+        return Promise.all(branches.map(async (b) => ({ storeId: b.nodeId, ...await formatAPackSection(store, now, t, b.nodeId, banked) })));
+      },
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
     // characters with the count, versioned and audited — and the store pack carries it to the till's store computer.

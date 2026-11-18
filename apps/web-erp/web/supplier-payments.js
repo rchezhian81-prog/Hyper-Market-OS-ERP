@@ -64,7 +64,9 @@ function paint() {
           if (!(await confirmed(a, paid))) { say('pay-status', w('notConfirmed'), 'err'); return; }
           const out = await session.record(a, paid);
           if (out.result !== 'ok') { say('pay-status', api.outcomeWords(lang(), out), 'err'); return; }
-          say('pay-status', out.value.alreadyRecorded ? w('already') : w('recorded', { owed: api.rupees(out.value.owedMinor ?? 0) }), 'ok');
+          // OB-847: the payment's own number (SPAY/26-27/00001), made by head office when it saved it.
+          const number = out.value.payment && typeof out.value.payment.documentNumber === 'string' ? `${out.value.payment.documentNumber} — ` : '';
+          say('pay-status', `${number}${out.value.alreadyRecorded ? w('already') : w('recorded', { owed: api.rupees(out.value.owedMinor ?? 0) })}`, 'ok');
           await loadAsks();
         } finally { go.disabled = false; }
       });

@@ -5911,6 +5911,9 @@
           "grnId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "receivingChecklist": {
             "$ref": "#/components/schemas/ReceivingChecklistOnFile"
           },

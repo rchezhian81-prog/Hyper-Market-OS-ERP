@@ -59,7 +59,12 @@
       .row.default { border-left: 5px solid var(--line); opacity: 0.9; }
       .empty { color: var(--muted); padding: 20px 4px; }
       .note { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
-      .row[hidden], #prefixes[hidden] { display: none; }
+      .row[hidden], #prefixes[hidden], #docnumbers[hidden] { display: none; }
+      /* OB-847: document numbers — a plain table; a range from 90,000 is marked. */
+      table.docnumbers { border-collapse: collapse; margin: 8px 0 16px; width: 100%; max-width: 720px; }
+      table.docnumbers th, table.docnumbers td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line, #e3e0d6); font-variant-numeric: tabular-nums; }
+      table.docnumbers tr.warn td { color: var(--bad, #a8251c); font-weight: 600; }
+      .docnumbers-warnings { margin: 0 0 8px; padding-left: 20px; color: var(--bad, #a8251c); }
       .row.flagged { border-left: 6px solid var(--warn); }
 
       .edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
@@ -115,6 +120,14 @@
       </div>
 
       <div id="groups"></div>
+      <!-- OB-847: document numbers (format A) — every range, its last number and the 90,000 warning; each till's code. -->
+      <section id="docnumbers" hidden aria-labelledby="docnumbers-title">
+        <h3 id="docnumbers-title">Document numbers</h3>
+        <p class="lead" id="docnumbers-lead"></p>
+        <ul id="docnumbers-warnings" class="docnumbers-warnings"></ul>
+        <div id="docnumbers-tills"></div>
+        <div id="docnumbers-ranges"></div>
+      </section>
       <!-- OB-81: till bill-number prefixes, issued by head office per (store, till) — drawn by setup.js from window.receiptPrefixSession. -->
       <section id="prefixes" hidden aria-labelledby="prefixes-title">
         <h3 id="prefixes-title">Till bill-number prefixes</h3>

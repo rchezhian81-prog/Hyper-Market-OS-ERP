@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +14,8 @@ import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { financialYearLabel } from '../../packages/numbering/src/document-numbers';
 import { prepareTillBox, signInThroughScreen, takeFloatOnPage } from '../support/till-operator';
+import { rangeStandings, type DocumentNumberIssue } from '../../services/platform/src/document-number-issue';
+import { apiHarness } from '../support/api-harness';
 
 /**
  * **OB-847 (owner, 18 Nov 2026: "Document numbers, format A") · OB-846 A — in a real Chromium, on a real store computer:
@@ -72,6 +76,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-847 — the till\'s bill and return carry for
   const stops: (() => Promise<void>)[] = [];
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'pos'], { stdio: 'ignore' });
+    execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     if (SHOTS !== undefined) await mkdir(SHOTS, { recursive: true });
   }, 90_000);
@@ -159,6 +164,84 @@ describe.skipIf(!HAVE_BROWSER)('OB-847 — the till\'s bill and return carry for
     const returnNumber = `1R01/${yy}/00001`;
     expect(await page.textContent('#refusal')).toContain(returnNumber);
     await shot(page, 'till-return-on-screen.png');
+    expect(errors).toEqual([]);
+  }, 120_000);
+
+  /** The office pages served as files, with head office's answers for the paths each page reads (synthetic data). */
+  const office = async (answers: Readonly<Record<string, unknown>>, inject: Readonly<Record<string, unknown>>): Promise<{ base: string; stop: () => Promise<void> }> => {
+    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+      void (async () => {
+        const path = (req.url ?? '/').split('?')[0] ?? '/';
+        for await (const chunk of req) void chunk;
+        const answer = Object.entries(answers).find(([k]) => path === k || path.startsWith(k));
+        if (answer !== undefined) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(answer[1])); return; }
+        const file = path.replace(/^\//, '');
+        try {
+          let body = (await readFile(join('apps/web-erp/web', file))).toString('utf8');
+          if (file.endsWith('.html')) body = body.replace('<!--SCREEN-DATA-->', Object.entries(inject).map(([k, v]) => `<script>window.${k} = ${JSON.stringify(v).replace(/</g, '\\u003c')};</script>`).join(''));
+          res.writeHead(200, { 'content-type': file.endsWith('.html') ? 'text/html; charset=utf-8' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream', 'cache-control': 'no-store' });
+          res.end(body);
+        } catch { res.writeHead(404); res.end('not found'); }
+      })();
+    });
+    await new Promise<void>((r) => { server.listen(0, '127.0.0.1', () => { r(); }); });
+    const addr = server.address();
+    return { base: `http://127.0.0.1:${typeof addr === 'object' && addr !== null ? addr.port : 0}`, stop: () => new Promise((d) => { server.close(() => { d(); }); server.closeAllConnections(); }) };
+  };
+
+  it('the office screens show the new numbers: a raised order says PO/YY-YY/…; Store setup lists every range and warns from 90,000', async () => {
+    const yy = financialYearLabel(new Date().toISOString());
+    // Head office's real setup status, from the real API (in memory).
+    const h = apiHarness();
+    const tenantId = randomUUID();
+    await h.seedOwner(tenantId, 'u-owner');
+    const status = (await h.request({ method: 'GET', path: '/v1/platform/setup', userId: 'u-owner', tenantId })).body;
+    // The document-number ranges as head office answers them: a few documents saved, a till range near its end (synthetic).
+    const at = new Date().toISOString();
+    const issue = (kind: DocumentNumberIssue['kind'], prefix: string, count: number): DocumentNumberIssue => ({ number: `${prefix}/${yy}/${String(count).padStart(5, '0')}`, kind, prefix, yearLabel: yy, count, documentRef: `${prefix}-${count}`, issuedAt: at });
+    const warning = `Till numbers 1L01/${yy} have reached 90,412; at 99,999 the till moves to its next range by itself. Tell the owner.`;
+    const docnumbers = {
+      ranges: rangeStandings([issue('purchase_order', 'PO', 1), issue('purchase_order', 'PO', 2), issue('goods_receipt', 'GRN1', 1), issue('supplier_payment', 'SPAY', 1), issue('customer_credit_note', 'CCN', 1)]),
+      tills: [{ storeId: 'S1', storeNumber: 1, lanes: [{ laneId: 'lane-1', code: '1L01' }, { laneId: 'lane-2', code: '1L02' }, { laneId: 'device:hh-1', code: '1Q01' }],
+        ranges: [{ head: `1L01/${yy}/`, lastNumber: `1L01/${yy}/90412`, remaining: 9_587, warn: true, says: warning }, { head: `1L02/${yy}/`, lastNumber: `1L02/${yy}/01234`, remaining: 98_765, warn: false }, { head: `1R01/${yy}/`, lastNumber: `1R01/${yy}/00017`, remaining: 99_982, warn: false }] }],
+      warnings: [warning],
+    };
+    const srv = await office({
+      '/v1/platform/setup': status, '/v1/receipt-prefixes': { tills: [], needsPrefix: [], storesInBusiness: 1, multiStore: false, needsYearPrefix: [], currentFinancialYear: '' }, '/v1/document-numbers': docnumbers,
+      '/v1/purchase/orders/': { order: { status: 'proposed', requisitionedBy: 'u-buyer', totalMinor: 50_000, documentNumber: `PO/${yy}/00003` }, openCommitment: null },
+    }, { setupData: { servedBy: 'store_computer', userId: 'u-manager', permissions: ['org.branch.read'] }, buyingData: { buyerId: 'u-buyer', productIds: ['p1'] } });
+    stops.push(srv.stop);
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    // ── Buying: the buyer raises an order; the banner says its number, made by head office.
+    await page.goto(`${srv.base}/buying.html`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as { buyingSession?: { canProposeToCloud: boolean } }).buyingSession?.canProposeToCloud === true, undefined, { timeout: 10_000 });
+    await page.click('#tab-po');
+    await page.fill('#po-supplier', 'sup-1');
+    await page.fill('#po-store', 'store-1');
+    await page.fill('#po-product', 'p1');
+    await page.fill('#po-qty', '10');
+    await page.fill('#po-cost', '50');
+    await page.click('#add-po-line');
+    await page.click('#raise-po');
+    await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+    expect(await page.textContent('#banner')).toContain(`PO/${yy}/00003`);
+    await shot(page, 'buying-order-raised.png');
+
+    // ── Store setup: the document-number ranges, each till's code, and the warning from 90,000.
+    await page.goto(`${srv.base}/setup.html`, { waitUntil: 'load' });
+    await page.waitForSelector('#docnumbers:not([hidden])', { timeout: 10_000 });
+    const panel = (await page.textContent('#docnumbers')) ?? '';
+    expect(panel).toContain('Document numbers');
+    expect(panel).toContain('1L01');
+    expect(panel).toContain(`PO/${yy}/00002`);
+    expect(panel).toContain(`GRN1/${yy}/00001`);
+    expect(await page.textContent('#docnumbers-warnings')).toContain('have reached 90,412');
+    if (SHOTS !== undefined) await page.locator('#docnumbers').screenshot({ path: join(SHOTS, 'setup-document-numbers.png') });
     expect(errors).toEqual([]);
   }, 120_000);
 });

@@ -94,6 +94,13 @@ describe.each(backings)('a supplier payment pays only what advances have not cov
     expect(after.body).toMatchObject({ advancesAppliedMinor: 30_000, balanceToPayMinor: 0 });
     // Four refusals in between took no number: the second payment saved is 00002, across a cold restart.
     expect(after.body).toMatchObject({ payment: { documentNumber: expect.stringMatching(/^SPAY\/\d{2}-\d{2}\/00002$/) } });
+    // OB-847: the manager's list of ranges — each range's last number and what is left; nothing near 90,000, so no warning.
+    const ranges = await h2.request({ method: 'GET', path: '/v1/document-numbers', userId: 'u-owner', tenantId: T });
+    expect(ranges.status, JSON.stringify(ranges.body)).toBe(200);
+    const rb = ranges.body as { ranges: { prefix: string; issued: number; lastNumber: string; warn: boolean }[]; warnings: string[] };
+    expect(rb.ranges.filter((r) => ['SPAY', 'SADV', 'PO', 'GRN1'].includes(r.prefix)).map((r) => [r.prefix, r.issued, r.warn]).sort())
+      .toEqual([['GRN1', 2, false], ['PO', 2, false], ['SADV', 2, false], ['SPAY', 2, false]]);
+    expect(rb.warnings).toEqual([]);
     expect(codeOf(await pay(h2, 'pay-again', 1))).toBe('payment_exceeds_balance');
   }, 120_000);
 });

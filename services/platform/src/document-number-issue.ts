@@ -22,6 +22,7 @@
 //   • OB-844 A: 5 digits. From 90,000 the answer carries a warning; at 99,999 the range refuses by name (`numbers_used_up`)
 //     — it never wraps. (A TILL's range moves to its +50 range instead — that is the till's own register.)
 
+import type { Route } from '../../kernel/src/index';
 import type { EventStore, BatchEntry, AppendOptions, WriteGuard, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError, EventIdClashError } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
@@ -205,6 +206,42 @@ export function rangeStandings(issues: readonly DocumentNumberIssue[]): readonly
       ...(w.warn ? { says: `${DOCUMENT_KINDS[i.kind].words} numbers ${i.prefix}/${i.yearLabel} have reached ${i.count.toLocaleString('en-IN')}; ${w.remaining.toLocaleString('en-IN')} are left this financial year. Tell the owner.` } : {}),
     };
   }).sort((a, b) => (a.prefix === b.prefix ? (a.yearLabel < b.yearLabel ? 1 : -1) : a.prefix < b.prefix ? -1 : 1));
+}
+
+/** What the document-numbers read needs: the issue record, and each store's tills' codes and their banked till ranges. */
+export interface DocumentNumbersDeps {
+  readonly issues: (tenantId: string) => Promise<readonly DocumentNumberIssue[]>;
+  /** Each store: its number, each till lane's code, and the highest count head office holds in each format-A till range. */
+  readonly tills: (tenantId: string) => Promise<readonly {
+    readonly storeId: string; readonly storeNumber: number; readonly laneCodes: Readonly<Record<string, string>>; readonly banked: Readonly<Record<string, number>>;
+  }[]>;
+  readonly now: () => string;
+}
+
+/**
+ * OB-847 · OB-844 A: `GET /v1/document-numbers` — every range, its last number and what is left this year, with the
+ * 90,000 warning said in words (P-03: only a range running out is flagged); and each till's lane code, given automatically.
+ */
+export function documentNumberRoutes(deps: DocumentNumbersDeps): readonly Route[] {
+  return [{
+    api: 'API-01', method: 'GET', path: '/v1/document-numbers',
+    permission: 'org.branch.read',
+    handler: async (ctx) => {
+      const inScope = (s: string): boolean => ctx.scope === undefined || ctx.scope === 'all' || ctx.scope.includes(s);
+      const ranges = rangeStandings((await deps.issues(ctx.tenantId)).filter((i) => i.storeId === undefined || inScope(i.storeId)));
+      const tills = (await deps.tills(ctx.tenantId)).filter((t) => inScope(t.storeId)).map((t) => ({
+        storeId: t.storeId, storeNumber: t.storeNumber,
+        lanes: Object.entries(t.laneCodes).map(([laneId, code]) => ({ laneId, code: `${t.storeNumber}${code}` })).sort((a, b) => (a.code < b.code ? -1 : 1)),
+        ranges: Object.entries(t.banked).map(([head, count]) => {
+          const w = rangeWarning(count);
+          return { head, lastNumber: `${head}${String(count).padStart(5, '0')}`, remaining: w.remaining, warn: w.warn,
+            ...(w.warn ? { says: `Till numbers ${head.slice(0, -1)} have reached ${count.toLocaleString('en-IN')}; at 99,999 the till moves to its next range by itself. Tell the owner.` } : {}) };
+        }).sort((a, b) => (a.head < b.head ? -1 : 1)),
+      }));
+      const warnings = [...ranges.filter((r) => r.warn).map((r) => r.says!), ...tills.flatMap((t) => t.ranges.filter((r) => r.warn).map((r) => r.says!))];
+      return { status: 200, body: { ranges, tills, warnings, rule: 'PREFIX/YY-YY/NNNNN — at most 16 characters; restarts each 1 April (shop date); a warning from 90,000', asAt: deps.now() } };
+    },
+  }];
 }
 
 /** A record's number for a screen: its format-A number when it has one, else what it was always called (OB-845 A). */
