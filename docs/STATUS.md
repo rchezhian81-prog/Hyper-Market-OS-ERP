@@ -19,6 +19,24 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Where things stand — end of 18 November 2026 session
+- **Released:**
+  - store PC **1.0.2242**: batches 14, 15 and 16 and remote access (OB-840), and the image fix plus OB-843 for the picomatch advisory;
+  - store PC **1.0.2246**: document numbers (OB-844–854).
+- **Owner, in the store:**
+  - install 1.0.2246 (Software update page, tills closed);
+  - check that a bill reads `1L01/26-27/00001`, and that Store setup → Document numbers lists every till;
+  - type the town on Store setup;
+  - set reorder levels on Buying → Reorder;
+  - ask the CA to confirm OB-845, OB-853 and OB-854 in writing;
+  - when ready, buy the web address for remote access (runbook `docs/runbooks/remote-access-for-the-owner.md`);
+  - the Bpal exports for the full load (`docs/runbooks/bpal-full-load-export-sheet.md`).
+- **Open, mine:**
+  - the stock-count review screen still shows the old id for counts made outside a plan;
+  - no dedicated tests yet for the TRF and RTS numbers and the batch write-offs at API level;
+  - the remote relay has not yet run on a real server.
+- **Dated:** OB-843 (picomatch accepted for the development tools) ends 18 Dec 2026. A guardrail fails then, or as soon as a fixed picomatch is in the lockfile.
+
 ## Document numbers (OB-844–847) · 18 November 2026 · format A
 - **Owner decided (in writing):** "Document numbers, format A"; "OB-844 A, OB-845 A, OB-846 A". Small choices: OB-848 (decided under OB-801); the till's temporary range after a restore: OB-849 (CA to confirm).
 - **Done (on its branch `claude/document-numbers`):**
