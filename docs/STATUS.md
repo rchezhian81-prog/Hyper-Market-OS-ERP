@@ -27,7 +27,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Store setup shows **Document numbers**: each till's code, each range's last number, what is left this year, and the 90,000 warning.
   - Old documents keep their old numbers.
 - **Also numbered now (OB-850, branch `claude/document-numbers-2`):** stock counts `CNT1`, transfers out `TRF1`, returns to supplier `RTS1`, floor indents `IND1`, money received `RCT1`, and each write-off of a batch its own `WOF1` (a count's held write-off, damage found when the floor receives, a returned item written off). Shown on Transfers, Count plans, Floor indents, Goods receipts (a return gone back), Business customers (a payment) and the write-off page.
-- **Waiting on the owner (tax):** the till's number given when payment starts; the temporary `1T01` range after a restore.
+- **Answered (tax, 18 Nov):** OB-853 A (the temporary `1T01` range after a restore, as built) and OB-854 A (a number taken at payment and never used is shown as a Cancelled bill number). The CA confirms both in writing (owner action).
 - **Owner, in the store:** the CA confirms in writing that the new series start on the install day for the rest of 2026-27 (OB-845 A), and the temporary till range after a restore (OB-849).
 ## Batch 15 (18 November 2026) · Today's last gaps, the town, supplier names (D-061–D-066 · OB-834, OB-835, OB-836)
 - **Owner asked:** fix the remaining gaps from the gap audit (items 1–6 of batch 15).

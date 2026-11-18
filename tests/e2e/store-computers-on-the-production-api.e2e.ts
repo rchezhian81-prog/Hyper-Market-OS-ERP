@@ -218,8 +218,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await s.page.click('#lang');
       expect(await s.page.locator('#title').innerText()).toBe('கடை கணினிகள்');
       expect(await s.page.locator('#open-replace').innerText()).toBe('மாற்றப்பட்ட கடை கணினியைப் பதிவு செய்');
-      expect(await s.page.locator('#unused-h').innerText()).toBe('எடுத்தும் பயன்படுத்தாதவை');
-      expect(await s.page.locator('#k-unused').innerText()).toBe('எடுத்தும் பயன்படுத்தாதவை');
+      expect(await s.page.locator('#unused-h').innerText()).toBe('ரத்து செய்யப்பட்ட பில் எண்கள்');
+      expect(await s.page.locator('#k-unused').innerText()).toBe('ரத்து செய்யப்பட்ட பில் எண்கள்');
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     // Head office's own record, not the page.
