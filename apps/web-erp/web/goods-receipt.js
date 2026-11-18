@@ -151,7 +151,8 @@ function receiptNode(r) {
   headline.className = 'headline';
   headline.textContent = r.number;
   id.append(headline);
-  for (const line of [r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
+  // OB-847: under the new number, the delivery's own reference it was booked as.
+  for (const line of [r.reference ?? '', r.poId ?? t('noPo'), r.receivedAt ? shopWhen(r.receivedAt) : '']) {
     if (line === '') continue;
     const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = line; id.append(sub);
   }

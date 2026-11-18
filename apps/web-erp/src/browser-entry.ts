@@ -3523,6 +3523,7 @@ export async function fetchGoodsReceipt(path = '/v1/inventory/goods-receipt'): P
       .map((c) => ({ lineId: String(c['lineId'] ?? ''), productId: String(c['productId'] ?? ''), because: c['because'] === 'not_on_order' ? 'not_on_order' as const : 'no_issued_order' as const }));
     return {
       grnId: String(g['grnId'] ?? ''), number: String(g['documentNumber'] ?? g['number'] ?? '') /* OB-847: its format-A number when it has one */,
+      ...(typeof g['documentNumber'] === 'string' ? { reference: String(g['number'] ?? g['grnId'] ?? '') } : {}),
       poId: typeof g['poId'] === 'string' ? g['poId'] : null,
       warehouseId: String(g['warehouseId'] ?? ''), receivedBy: String(g['receivedBy'] ?? ''),
       receivedAt: String(g['receivedAt'] ?? ''),

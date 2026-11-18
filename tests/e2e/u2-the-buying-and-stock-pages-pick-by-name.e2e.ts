@@ -98,7 +98,8 @@ describe.skipIf(!existsSync(CHROMIUM))('U2: the buying and stock pages pick by n
     await page.fill('#po-cost', '150');
     await page.click('#add-po-line');
     await page.click('#raise-po');
-    await page.waitForFunction(() => /PO-/.test((globalThis as unknown as { document: { body: { innerText: string } } }).document.body.innerText));
+    // OB-847: the order's number is head office's, PO/YY-YY/NNNNN.
+    await page.waitForFunction(() => /PO\/\d{2}-\d{2}\/\d{5}/.test((globalThis as unknown as { document: { body: { innerText: string } } }).document.body.innerText));
     const order = sent.all().find((w) => w.method === 'POST' && w.path.startsWith('/v1/purchase/orders/'));
     expect(order, 'the order reached head office').toBeDefined();
     const body = order!.body as { supplierId: string; deliverToLocationId: string; lines: { productId: string }[] };
