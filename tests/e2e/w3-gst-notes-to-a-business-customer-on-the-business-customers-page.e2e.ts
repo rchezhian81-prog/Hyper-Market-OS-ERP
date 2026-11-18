@@ -7,6 +7,12 @@ import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
 import { startPageShell } from './lib/page-shell';
 import { creditLimitWithApproval } from '../support/approved-credit-limit';
 import { customerListPrice, unpriced } from '../support/b2b-price-on-record';
+import { financialYearLabel } from '../../packages/numbering/src/document-numbers';
+
+/** OB-847: the notes' numbers this year (format A), e.g. CCN/26-27/00001. */
+const YY = financialYearLabel(new Date().toISOString());
+const CCN1 = `CCN/${YY}/00001`;
+const CDN1 = `CDN/${YY}/00001`;
 
 /**
  * **GST credit and debit notes to a business customer on the Business customers page — in a real browser, on the PRODUCTION
@@ -107,12 +113,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       await inv.locator('input.cn-line').fill('1,200');
       await inv.locator('select.cn-reason').selectOption('goods_returned');
       await inv.locator('button.cn-raise').click();
-      await says(s.page, '#cn-status', /^Head office refused: "Rice 25kg": 120000 asked, but INV-\d+ charged 100000 on it/);
+      await says(s.page, '#cn-status', /^Head office refused: "Rice 25kg": 120000 asked, but BINV\/\d\d-\d\d\/\d{5} charged 100000 on it/);
       // ₹200 back: worked out and asked.
       await inv.locator('input.cn-line').fill('200');
       await inv.locator('button.cn-raise').click();
       await says(s.page, '#cn-status', /^Asked for approval\. A second person approves it/);
-      await says(s.page, '#cn-asked', /Credit note to CATERER against INV-\d+: ₹210\.00 \(goods returned\) — waiting for approval/);
+      await says(s.page, '#cn-asked', /Credit note to CATERER against BINV\/\d\d-\d\d\/\d{5}: ₹210\.00 \(goods returned\) — waiting for approval/);
       expect(await s.page.locator('#cn-asked button.cn-issue').count(), 'nothing to issue until a second person approves').toBe(0);
       expect(s.writes).toEqual(['POST /v1/finance/credit-notes/preview', 'POST /v1/finance/credit-notes/preview', 'POST /v1/approvals/requests']);
       expect(s.errors).toEqual([]);
@@ -135,9 +141,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       expect(await asked.innerText()).toContain(`approved by ${MANAGER} — the bags came back`);
       await asked.locator('button.cn-issue').click();
       await says(s.page, '#cn-status', /^Issued\. The invoice is unchanged/);
-      const cn = s.page.locator('#cn-notes li[data-note="CN-000001"]');
+      const cn = s.page.locator(`#cn-notes li[data-note="${CCN1}"]`);
       await cn.waitFor({ timeout: 15_000 });
-      expect(await cn.innerText()).toMatch(/CN-000001 · Credit note \(takes off\) · against INV-\d+ · ₹200\.00 \+ GST ₹10\.00 = ₹210\.00/);
+      expect(await cn.innerText()).toMatch(/CCN\/\d\d-\d\d\/00001 · Credit note \(takes off\) · against BINV\/\d\d-\d\d\/\d{5} · ₹200\.00 \+ GST ₹10\.00 = ₹210\.00/);
       expect(await cn.getAttribute('data-posting')).toBe('waiting_for_posting_rule');
       expect(await cn.innerText()).toMatch(/Waiting for the accountant's posting rule/);
       await says(s.page, '#cn-invoices', /credited ₹200\.00 · left to credit ₹800\.00/);
@@ -149,8 +155,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       await inv.locator('select.cn-reason').selectOption('price_correction');
       await inv.locator('button.cn-raise').click();
       await says(s.page, '#cn-status', /^Asked for approval\./);
-      await says(s.page, '#cn-asked', /Debit note to CATERER against INV-\d+: ₹10\.50 \(price correction\) — waiting for approval/);
-      expect(await s.page.locator('#cn-notes li[data-note="CDN-000001"]').count(), 'no debit note before approval').toBe(0);
+      await says(s.page, '#cn-asked', /Debit note to CATERER against BINV\/\d\d-\d\d\/\d{5}: ₹10\.50 \(price correction\) — waiting for approval/);
+      expect(await s.page.locator(`#cn-notes li[data-note="${CDN1}"]`).count(), 'no debit note before approval').toBe(0);
       const mine = (await shop.cloud().request({ method: 'GET', path: '/v1/approvals/requests', userId: MANAGER })).body as { waitingForMe: { requestId: string; kind: string }[] };
       const dReq = mine.waitingForMe.find((r) => r.kind === 'customer_debit_note');
       expect(dReq, 'the debit note waits for a second person').toBeDefined();
@@ -160,7 +166,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       await dAsked.waitFor({ timeout: 15_000 });
       await dAsked.locator('button.cn-issue').click();
       await says(s.page, '#cn-status', /^Issued\./);
-      await s.page.locator('#cn-notes li[data-note="CDN-000001"]').waitFor({ timeout: 15_000 });
+      await s.page.locator(`#cn-notes li[data-note="${CDN1}"]`).waitFor({ timeout: 15_000 });
 
       await s.page.click('#lang');
       await says(s.page, '#cn-h', /GST வரவு மற்றும் பற்றுக் குறிப்புகள்/);
@@ -174,10 +180,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
     expect((await shop.cloud().request({ method: 'GET', path: '/v1/b2b/documents/CATERER/inv-c1', userId: ACCOUNTANT })).body).toEqual(before);
     expect(await owed()).toBe(105_000 - 21_000 + 1_050);
     const desk2 = (await shop.cloud().request({ method: 'GET', path: '/v1/finance/credit-notes/customers/CATERER', userId: ACCOUNTANT })).body as { notes: { number: string; issuedOn: string; approvedBy?: string }[] };
-    expect(desk2.notes.map((n) => [n.number, n.approvedBy ?? null])).toEqual([['CDN-000001', MANAGER], ['CN-000001', MANAGER]]);
+    expect(desk2.notes.map((n) => [n.number, n.approvedBy ?? null])).toEqual([[`CCN/${YY}/00001`, MANAGER], [`CDN/${YY}/00001`, MANAGER]]);
     const day = desk2.notes[0]!.issuedOn;
     const ret = (await shop.cloud().request({ method: 'GET', path: `/v1/finance/gstr1/return?from=${day.slice(0, 7)}-01&to=${day.slice(0, 7)}-31`, userId: ACCOUNTANT })).body as { creditDebitNotes?: { registered: { noteNumber: string; recipientGstin: string }[] } };
-    expect(ret.creditDebitNotes?.registered.map((r) => [r.noteNumber, r.recipientGstin])).toEqual([['CDN-000001', BUYER_GSTIN], ['CN-000001', BUYER_GSTIN]]);
+    expect(ret.creditDebitNotes?.registered.map((r) => [r.noteNumber, r.recipientGstin])).toEqual([[`CCN/${YY}/00001`, BUYER_GSTIN], [`CDN/${YY}/00001`, BUYER_GSTIN]]);
   }, 120_000);
 
   // W4 · M23-FR-02: the month's credit notes against the books, read by head office from the POSTED LEDGER (only the month
@@ -185,7 +191,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
   // accountant's posting rule"; once the rule is written and the posting run puts it in the books, the month agrees exactly.
   it('the accountant compares the month\'s credit notes with the books on the page: a signed difference, then agreement once posted (M23-FR-02)', async () => {
     const notes = ((await shop.cloud().request({ method: 'GET', path: '/v1/finance/credit-notes/customers/CATERER', userId: ACCOUNTANT })).body as { notes: { number: string; issuedOn: string }[] }).notes;
-    const month = notes.find((n) => n.number === 'CN-000001')!.issuedOn.slice(0, 7); // the shop's own date of the note
+    const month = notes.find((n) => n.number === `CCN/${YY}/00001`)!.issuedOn.slice(0, 7); // the shop's own date of the note
     const s = await open(ACCOUNTANT);
     const reads: string[] = [];
     s.page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname === '/v1/finance/credit-notes/reconciliation') reads.push(u.search); });
@@ -198,7 +204,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('GST notes 
       await says(s.page, '#cnr-figs [data-fig="notes"]', /1 note\(s\) · ₹210\.00 \(value ₹200\.00 \+ GST ₹10\.00\)/);
       await says(s.page, '#cnr-figs [data-fig="books"]', /₹0\.00/);
       await says(s.page, '#cnr-figs [data-fig="difference"]', /^Difference\+₹210\.00 — Does not agree with the books\.$/);
-      await says(s.page, '#cnr-missing li[data-missing="CN-000001"]', /CN-000001 · ₹210\.00 · waiting for the accountant's posting rule/);
+      await says(s.page, `#cnr-missing li[data-missing="${CCN1}"]`, /CCN\/\d\d-\d\d\/00001 · ₹210\.00 · waiting for the accountant's posting rule/);
       expect(reads, 'only the month is sent — no ledger figure').toEqual([`?period=${month}`]);
 
       // The accountant writes HIS rule (these account names are this test's) and runs the B2B posting.
