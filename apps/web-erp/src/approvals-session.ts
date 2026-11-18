@@ -44,6 +44,8 @@ export interface ApprovalRequestView {
   readonly requestedAt: string;
   readonly status: ApprovalStatus;
   readonly decidedBy?: string;
+  /** OB-840 · ADR-0035: 'remote' when the checker decided from outside the shop (through the store PC's remote door). */
+  readonly decidedVia?: 'remote';
   readonly decisionReason?: string;
   readonly decidedAt?: string;
   readonly expiresAt?: string | null;
@@ -161,7 +163,7 @@ export type CopyKey =
   | 'detailUserId' | 'detailRoleId' | 'detailBranchScope' | 'detailMinutes' | 'detailMaxMinutes' | 'detailGrantId'
   | 'detailEvent' | 'detailGrants' | 'detailOwnedOpenItems' | 'detailRequestId' | 'allBranches'
   | 'statusWaitingForYou' | 'statusWaiting' | 'statusApproved' | 'statusApprovedUntil' | 'statusRejected'
-  | 'statusExpired' | 'statusUsed'
+  | 'statusExpired' | 'statusUsed' | 'decidedRemotely'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
   | 'decideNotWaiting' | 'decideOwnRequest' | 'decideAlreadyDecided' | 'decideRefused' | 'decideRefusedNoWords' | 'decideLostLink'
   | 'deciderNamedReviewer' | 'deciderNoReviewer'
@@ -251,6 +253,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     allBranches: 'all branches',
     statusWaitingForYou: 'Waiting for your decision', statusWaiting: 'Waiting for a second person',
     statusApproved: 'Approved by {who}', statusApprovedUntil: 'Approved by {who} — use it before {until}',
+    decidedRemotely: '{who} (from outside the shop)',
     statusRejected: 'Rejected by {who}: {reason}', statusExpired: 'Expired — it was not used in time. Ask again.',
     statusUsed: 'Used — the action it allowed has been done.',
     decidedApproved: 'Approved. The person who asked can now go ahead — once.',
@@ -361,6 +364,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     allBranches: 'அனைத்துக் கிளைகளும்',
     statusWaitingForYou: 'உங்கள் முடிவுக்காகக் காத்திருக்கிறது', statusWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது',
     statusApproved: '{who} அனுமதித்தார்', statusApprovedUntil: '{who} அனுமதித்தார் — {until}-க்குள் பயன்படுத்தவும்',
+    decidedRemotely: '{who} (கடைக்கு வெளியிலிருந்து)',
     statusRejected: '{who} மறுத்தார்: {reason}', statusExpired: 'காலாவதியானது — நேரத்தில் பயன்படுத்தப்படவில்லை. மீண்டும் கேளுங்கள்.',
     statusUsed: 'பயன்படுத்தப்பட்டது — அது அனுமதித்த செயல் முடிந்தது.',
     decidedApproved: 'அனுமதிக்கப்பட்டது. கேட்டவர் இப்போது ஒருமுறை தொடரலாம்.',
@@ -688,7 +692,8 @@ export interface ApprovalsSession {
 /** Where a request stands, in words — the shared chip both this page and the import screen show. */
 export function presentRequestStatus(lang: Lang, r: ApprovalRequestView, waitingForReader = false, names: ApprovalNames = NO_NAMES): StatusPresentation {
   const t = translator(APPROVALS_COPY, lang);
-  const who = r.decidedBy ?? '—';
+  // OB-840: a decision made from outside the shop says so beside the name.
+  const who = r.decidedVia === 'remote' && r.decidedBy !== undefined ? fill(t('decidedRemotely'), { who: r.decidedBy }) : r.decidedBy ?? '—';
   // OB-808 A: an approved write-off says what head office did with it — written off at once, or why it could not be.
   if (r.stockChange !== undefined && (r.status === 'used' || r.status === 'approved')) {
     const c = r.stockChange;

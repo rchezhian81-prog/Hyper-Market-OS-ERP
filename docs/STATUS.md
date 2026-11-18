@@ -29,6 +29,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Supplier names, not codes**, on Receive, the handheld's door check-in (and its items by name) and twelve office pages; the code only when no name exists.
 - **Decided under OB-801 (evening list):** OB-834 (town on Store setup), OB-835 (what "yesterday" means), OB-836 (what Recent activity lists).
 - **Owner, in the store:** Store setup → type the town → it shows under SRE HYPER MARKET in the menu after the next store pack. Buying → Reorder → set reorder levels for the fast movers, so Low stock shows a number.
+## Remote access (OB-840) (18 November 2026) · the owner sees Today, reports and approvals from outside the shop
+- **Owner decided (18 Nov, in writing):** "1A, 2A, 3A, 4A, 5A" — ADR-0035.
+- **Done (on branch `claude/remote-access-ob840`; its PR):**
+  - **The relay server** (`infra/remote-access/`): Caddy with automatic TLS for his domain, the store's sign-in with the authenticator code required, a forwarding-only line end, the admin console never on the internet. One setup command makes its own secrets on the server; it refuses the demo server.
+  - **The store PC dials out** ("SRE Remote Link" service, OFF by default) to a new door on its own loopback (127.0.0.1:8095), never the shop network.
+  - **The door** lets only the owner in, only with the one-time code, and only to Today, Reports and Approvals. Approve/reject is recorded in his name plus "from outside the shop". Every remote request is logged on the store PC.
+  - **Today** says: Remote access connected / not connected since <time> / turned off.
+- **Owner must do (runbook `docs/runbooks/remote-access-for-the-owner.md`):** rent the server (DigitalOcean Bangalore or Lightsail Mumbai, 2 GB, about US$12/month — check the price), buy the domain and tell me its name, add the A record, run the setup on the server, install Google or Microsoft Authenticator, run `remote-access setup` at the store PC, check from his phone on mobile data.
+- **Answered (18 Nov, in writing):** OB-841 B (closing the shop or a branch, approval rules, high-impact settings and switches, and supplier bank-account changes are decided only in the shop) and OB-842 A (a price or catalogue approval may be given from outside).
+- **Not proven yet:** a real relay and the real store PC (only CI, a pretend Windows, and a local sshd run here).
+
+
 - **Batch 16 (18 Nov 2026):** the sign-in page now draws Plus Jakarta Sans and Anek Tamil from the store PC itself (`/fonts/`, only the seven allow-listed files, before sign-in), with the internet cut off; the hosted demo sign-in does the same from its own files. Closes batch 13's open sign-in-font item. The Keycloak theme stays on the system fonts until the owner asks. Small choices recorded as OB-837 – OB-839 (decided under OB-801).
 
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)

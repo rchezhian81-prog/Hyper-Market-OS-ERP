@@ -87,6 +87,7 @@ import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
+import { REMOTE_ACCESS_LOG, REMOTE_DOOR_HOST, readRemoteAccess, remoteLinkView } from './remote-door'; // OB-840 · ADR-0035
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { ensureDeviceTls, sayDeviceTlsEvent, socketAddressesFor, type DeviceTlsMaterial } from './device-tls'; // OB-422
 import type { HandheldSealSource } from './handheld-seal'; // OB-424
@@ -2469,8 +2470,41 @@ export async function startEdge(
         : issueTillCredential({ userId, pin, key: tillPinKey(settings['PACK_SIGNING_KEY']!), issuedAt, issuedBy: by }));
     },
   };
+  // OB-840 · ADR-0035 (owner's decision 18 Nov 2026, "1A … 5A"): the REMOTE door — where the encrypted line the store PC
+  // dials out to the owner's relay ends, on THIS PC's loopback only. OFF unless `store-computer remote-access setup` put
+  // EDGE_REMOTE_DOOR_PORT and the pins file in the till's settings; and only with the office PIN on and the office calls on
+  // this PC (the same path the store's own pages use), never with a head-office link or behind a forwarding front.
+  const remoteDoorPort = settings['EDGE_REMOTE_DOOR_PORT'];
+  const remoteAccessFile = settings['EDGE_REMOTE_ACCESS_FILE'];
+  const remoteDoorWhyNot = remoteDoorPort === undefined ? null
+    : screenPort === undefined ? 'this box serves no screens'
+      : officeGate === null ? 'the office PIN sign-in is not on'
+        : headOfficeLinkSetting.on ? 'the head-office sign-in link is on'
+          : settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? 'this box is behind a forwarding front'
+            : settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined || privilegeApi === undefined ? 'the office calls on this PC are not set up (no privilege-seal key or office API)'
+              : remoteAccessFile === undefined ? 'EDGE_REMOTE_ACCESS_FILE is not set'
+                : !/^\d{1,5}$/.test(remoteDoorPort) ? 'EDGE_REMOTE_DOOR_PORT is not a port number' : null;
+  if (remoteDoorPort !== undefined && remoteDoorWhyNot !== null) say(`remote door NOT opened: ${remoteDoorWhyNot}. The till keeps selling; nobody can reach the office pages from outside.`);
+  const remoteLog = remoteDoorPort === undefined || remoteDoorWhyNot !== null ? null
+    : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: REMOTE_ACCESS_LOG });
+  const remoteLinkStatusFile = settings['EDGE_REMOTE_LINK_STATUS_FILE'];
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(privilegeDeps === undefined ? {} : { privilege: privilegeDeps }),
+    ...(remoteLog === null ? {} : {
+      remoteDoor: {
+        port: Number(remoteDoorPort),
+        access: () => readRemoteAccess((() => { try { return readFileSync(remoteAccessFile!, 'utf8'); } catch { return undefined; } })(), tenantId),
+        record: async (entry: Record<string, unknown>) => { await remoteLog.append(JSON.stringify(entry)); },
+      },
+    }),
+    // OB-840 · P-08: Today says whether the remote link is connected, not connected since when, or turned off.
+    remoteLink: () => remoteLinkView({
+      doorOn: remoteLog !== null,
+      statusText: (() => { try { return remoteLinkStatusFile === undefined ? undefined : readFileSync(remoteLinkStatusFile, 'utf8'); } catch { return undefined; } })(),
+      nowMs: Date.now(),
+      // The shop's own wall clock (its zone from the signed pack), shown as "YYYY-MM-DD HH:MM".
+      shopTime: (iso) => packWallClock(snapshot().pack, iso).replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d).*$/, '$1 $2'),
+    }),
     about: () => aboutFacts,
     // CR-01 step 3d: the updater (a Windows task, SYSTEM) acts on the request; it leaves its mark and its latest word in the
     // status folder this service may read. No mark: the page says the updater is not set up on this PC.
@@ -2547,6 +2581,7 @@ export async function startEdge(
     // OB-263: the evening check's doors on the migration screen — only while the box is in the mirror pilot.
     eveningCheck: { box: eveningCheckBox, on: () => mirrorPilot().on },
   });
+  if (screens?.remotePort !== undefined) say(`remote door on ${REMOTE_DOOR_HOST}:${screens.remotePort} — loopback only; it answers only the owner's relay line, signed in with a one-time code (ADR-0035)`);
   if (screens !== null) {
     say(screens.host === SCREEN_HOST || screens.host === 'localhost'
       ? `screens on ${screens.host}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`

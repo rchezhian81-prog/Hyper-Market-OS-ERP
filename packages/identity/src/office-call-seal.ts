@@ -56,6 +56,13 @@ export interface OfficeCallClaims {
   /** When the box sealed this one call (epoch seconds). */
   readonly issuedAt: number;
   readonly nonce: string;
+  /**
+   * OB-840 · ADR-0035: present only on a call the store PC's REMOTE door carried — the person was signed in at the relay
+   * (password and a one-time code), not by PIN on this PC. Absent on every in-store call, so an in-store seal is unchanged.
+   */
+  readonly via?: 'remote';
+  /** OB-840: how the remote person proved who they are, as the relay's signed token said (e.g. `pwd otp mfa`). Remote only. */
+  readonly amr?: readonly string[];
 }
 
 /** The query in one canonical text: sorted by name, URL-encoded. */
@@ -82,12 +89,15 @@ const mac = (key: Buffer, payload: string): Buffer => createHmac('sha256', key).
 export function sealOfficeCall(key: Buffer, input: {
   readonly tenantId: string; readonly userId: string; readonly branchId: string | null;
   readonly request: OfficeCallRequest; readonly signedInAt: number; readonly nowMs: number; readonly nonce?: string;
+  /** OB-840: a call the remote door carried, with the relay sign-in's methods. Absent for every in-store call. */
+  readonly remote?: { readonly amr: readonly string[] };
 }): string {
   const claims: OfficeCallClaims = {
     v: 1, tenantId: input.tenantId, userId: input.userId, branchId: input.branchId,
     method: input.request.method.toUpperCase(), path: input.request.path, query: canonicalQuery(input.request.query),
     body: bodyDigest(input.request.body), idempotencyKey: input.request.idempotencyKey ?? '',
     signedInAt: Math.floor(input.signedInAt), issuedAt: Math.floor(input.nowMs / 1000), nonce: input.nonce ?? randomUUID(),
+    ...(input.remote === undefined ? {} : { via: 'remote' as const, amr: [...input.remote.amr] }),
   };
   const payload = b64(JSON.stringify(claims));
   return `${OFFICE_CALL_PREFIX}${payload}.${b64(mac(key, payload))}`;
@@ -130,6 +140,11 @@ export function checkOfficeCall(key: Buffer, token: string, request: OfficeCallR
     || !(c['branchId'] === null || isStr(c['branchId'])) || !isStr(c['method']) || !isStr(c['path']) || !isStr(c['query']) || !isStr(c['body'])
     || !isStr(c['idempotencyKey']) || !isNum(c['signedInAt']) || !isNum(c['issuedAt']) || !isStr(c['nonce']) || c['nonce'] === '') {
     return { ok: false, refusedBecause: 'not_readable', detail: 'the office-call seal is missing a field' };
+  }
+  // OB-840: the remote mark, when present, is exactly 'remote' with the relay sign-in's methods; nothing else is read.
+  if ((c['via'] !== undefined && c['via'] !== 'remote') || (c['amr'] !== undefined && !(Array.isArray(c['amr']) && c['amr'].every(isStr)))
+    || ((c['via'] === undefined) !== (c['amr'] === undefined))) {
+    return { ok: false, refusedBecause: 'not_readable', detail: 'the office-call seal has an unreadable remote mark' };
   }
   const claims = c as unknown as OfficeCallClaims;
   if (claims.method !== request.method.toUpperCase() || claims.path !== request.path || claims.query !== canonicalQuery(request.query)

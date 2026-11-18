@@ -1,0 +1,170 @@
+# The owner's RELAY server — OB-840 · ADR-0035 (owner's decision 18 Nov 2026, "1A … 5A").
+#
+# A small rented server in India that holds ONLY the public sign-in page and the far end of the encrypted line the store
+# computer dials out. The shop's data is NOT here: every page and figure is served by the store computer, down that line.
+# Remote access is down whenever the shop's internet or the store computer is off; selling never depends on it.
+#
+#   proxy     Caddy — the ONE public address (the owner's domain): automatic TLS (Let's Encrypt), HSTS, no Server header.
+#             /auth/realms/sre-store/* → the identity server's sign-in pages; its admin console and master realm → 404.
+#             /remote-link/pins → the public keys the store computer pins; /remote-link/ask → the link desk.
+#             Everything else → the front, which lets a request through only after the sign-in service says yes.
+#   idp       Keycloak 26.0.7 with the store's realm (infra/keycloak/realm-sre-store.json): password + a one-time code.
+#   db        Its own small PostgreSQL. The identity server's tables only — no shop data.
+#   sign-in   The product's sign-in service (services/identity/src/sign-in.ts) — "who is this?" for every request.
+#   tunnel    sshd: accepts ONE public key (the store computer's, approved by the owner), forwarding only, and lets that key
+#             listen on 127.0.0.1:18095 inside this container and nowhere else. No shell, no agent, no X11, no password.
+#   front     nginx, inside the tunnel's own network (so it can reach that 127.0.0.1:18095): it asks the sign-in service,
+#             then hands the request with the person's current token down the line to the store computer's remote door.
+#   link-desk Takes the store computer's pairing request (its PUBLIC key) — used only once the owner approves it here.
+#
+# Setup: infra/remote-access/setup-relay.sh (one command, on a fresh Ubuntu server). It writes .env next to this file
+# with secrets it generates on the server; nothing secret is in this file or in git. Runbook:
+# docs/runbooks/remote-access-for-the-owner.md.
+name: sre-relay
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${RELAY_DB_PASSWORD:?run setup-relay.sh first}
+    volumes:
+      - ${RELAY_HOME:-/opt/sre-relay}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U keycloak -d keycloak']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+
+  idp:
+    image: quay.io/keycloak/keycloak:26.0.7
+    restart: unless-stopped
+    command: ['start', '--import-realm']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${RELAY_DB_PASSWORD:?run setup-relay.sh first}
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://${RELAY_DOMAIN:?run setup-relay.sh first}/auth
+      KC_HEALTH_ENABLED: 'true'
+      # The FIRST administrator, used only from this server's own console (sre-relay add-owner). Never on the internet.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-kcadmin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?run setup-relay.sh first}
+      # What the realm file reads: this domain (sign-in returns here), the shop this realm is, the product API's name.
+      SRE_WEB_ORIGIN: https://${RELAY_DOMAIN}
+      SRE_TENANT_ID: ${RELAY_TENANT_ID:?run setup-relay.sh first}
+      SRE_API_AUDIENCE: sre-retail-os-api
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60
+    volumes:
+      - ../keycloak/realm-sre-store.json:/opt/keycloak/data/import/realm-sre-store.json:ro
+      - ../keycloak/themes/sre:/opt/keycloak/themes/sre:ro
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 900m
+
+  sign-in:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ['node', '/app/sign-in.mjs']
+    user: '1000:1000'
+    depends_on:
+      - idp
+    environment:
+      SIGN_IN_ISSUER: https://${RELAY_DOMAIN}/auth/realms/sre-store
+      SIGN_IN_INTERNAL_ISSUER: http://idp:8080/auth/realms/sre-store
+      SIGN_IN_ORIGIN: https://${RELAY_DOMAIN}
+      SIGN_IN_CLIENT_ID: sre-web
+      IDP_AUDIENCE: sre-retail-os-api
+      # A remote sign-in is short: access tokens live five minutes and are renewed; nothing longer is believed.
+      IDP_MAX_TOKEN_LIFETIME_SECONDS: '3600'
+      PORT: '8092'
+    volumes:
+      # Built on this server by setup-relay.sh from services/identity/src/sign-in-main.ts.
+      - ${RELAY_HOME:-/opt/sre-relay}/sign-in:/app:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 32
+
+  tunnel:
+    build: ./sshd
+    image: sre-relay-tunnel:1
+    restart: unless-stopped
+    ports:
+      # The ONE port the store computer dials. Only its approved key gets in, and only to forward to its own door.
+      - '${RELAY_SSH_PORT:-2222}:2222'
+    volumes:
+      - ${RELAY_HOME:-/opt/sre-relay}/ssh/ssh_host_ed25519_key:/etc/ssh/keys/ssh_host_ed25519_key:ro
+      - ${RELAY_HOME:-/opt/sre-relay}/ssh/authorized:/etc/ssh/authorized:ro
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    pids_limit: 32
+
+  front:
+    image: nginx:alpine
+    restart: unless-stopped
+    # In the tunnel's OWN network: the line ends on 127.0.0.1:18095 there, and nowhere else.
+    network_mode: 'service:tunnel'
+    depends_on:
+      - tunnel
+      - sign-in
+    volumes:
+      - ./nginx.remote.conf:/etc/nginx/conf.d/default.conf:ro
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+
+  link-desk:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ['node', '/repo/infra/remote-access/link-desk.mjs', 'serve']
+    user: '1000:1000'
+    environment:
+      LINK_DESK_PENDING: /data/pending
+      PORT: '8094'
+    volumes:
+      - ../../infra/remote-access:/repo/infra/remote-access:ro
+      - ../../scripts/lib/remote-link-code.mjs:/repo/scripts/lib/remote-link-code.mjs:ro
+      - ${RELAY_HOME:-/opt/sre-relay}/data:/data
+      - ${RELAY_HOME:-/opt/sre-relay}/www:/srv/remote-link:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    pids_limit: 16
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - idp
+      - front
+      - link-desk
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?run setup-relay.sh first}
+      RELAY_TLS_EMAIL: ${RELAY_TLS_EMAIL:?run setup-relay.sh first}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${RELAY_HOME:-/opt/sre-relay}/www:/srv/remote-link:ro
+      - ${RELAY_HOME:-/opt/sre-relay}/caddy-data:/data
+      - ${RELAY_HOME:-/opt/sre-relay}/caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m

@@ -1130,7 +1130,12 @@ function renderFoot() {
     : b.lastSentShop
       ? part('refresh-cw', board('lastSynced').replace('{at}', b.lastSentShop), false)
       : part('clock', board('neverSynced'), true);
-  foot.replaceChildren(part('check', board('savedHere'), false), synced);
+  // OB-840 · P-08: the remote link, in the store computer's own words — connected; not connected since <time>; turned off.
+  const link = window.sreRemoteLink;
+  const remote = link && typeof link === 'object' && typeof link.en === 'string'
+    ? part(link.state === 'connected' ? 'globe' : link.state === 'off' ? 'circle-help' : 'clock', String(link[lang] ?? link.en), link.state !== 'connected')
+    : null;
+  foot.replaceChildren(part('check', board('savedHere'), false), synced, ...(remote === null ? [] : [remote]));
 }
 
 /** The secondary action: the reports, where the rail offers this person a reports screen; nothing otherwise. */
