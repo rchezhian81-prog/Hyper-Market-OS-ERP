@@ -3,6 +3,7 @@ import type { Deps, Settings } from './store-computer.mjs';
 
 export declare const SERVICES: Readonly<{ database: 'SRE-Database'; api: 'SRE-API'; till: 'SRE-Till' }>;
 export declare const SERVICE_ORDER: readonly string[];
+export declare const REMOTE_LINK_SERVICE: 'SRE-RemoteLink';
 export declare const DISPLAY: Readonly<Record<string, string>>;
 export declare const DESCRIPTION: Readonly<Record<string, string>>;
 export declare const SERVICES_DIR: string;

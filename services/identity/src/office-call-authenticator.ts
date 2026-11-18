@@ -31,6 +31,9 @@ export function withOfficeCalls(input: {
       const decision = await input.revocations.isRevoked(c.tenantId, { sub: c.userId, iat: c.signedInAt });
       if (decision.revoked) { input.onRefusal?.(`office-call refused: ${decision.because ?? 'revoked'}`); return undefined; }
     }
+    // OB-840 · ADR-0035: a call the store PC's remote door carried keeps the relay sign-in's methods and its remote mark, so
+    // what it records (an approval decision) says it came remotely. Every in-store call is a PIN sign-in, as before.
+    if (c.via === 'remote') return { tenantId: c.tenantId, userId: c.userId, branchId: c.branchId, authTime: c.signedInAt, amr: c.amr ?? [], via: 'remote' };
     return { tenantId: c.tenantId, userId: c.userId, branchId: c.branchId, authTime: c.signedInAt, amr: OFFICE_CALL_AMR };
   };
 }

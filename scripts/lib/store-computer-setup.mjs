@@ -13,7 +13,7 @@
 // In an installed release (release.json beside scripts/) the PostgreSQL programs and the service host come with it, in
 // runtime\pgsql\bin and runtime\winsw — nothing is downloaded on the shop's PC (ADR-0032).
 
-import { installServices } from './store-computer-services.mjs';
+import { installServices, REMOTE_LINK_SERVICE, serviceConfig, serviceState } from './store-computer-services.mjs';
 import { adoptDockerCopy, dockerCopyState, finishLeftBehindMove, writeMadeAsServices } from './store-computer-adopt.mjs';
 import { ensurePrivilegeSealKey, loadSettings, parseEnvText, pathFor, prepare, resolveDataFolder, resolveLayout, sameFolder } from './store-computer.mjs';
 import { currentRelease, writeLauncher } from './store-computer-schedule.mjs';
@@ -161,6 +161,11 @@ export async function firstRun(given, opts = {}) {
     // CR-01 step 3d (OI-05): the updater — a task that acts only on the owner's request from the Software update page.
     // Not being able to set it up never undoes the setup: the page then says the updater is not set up.
     registerUpdater(here, L);
+  }
+  // OB-840: the owner's remote link is never installed here; when he turned it on, it is started again after an update.
+  if (serviceState(deps, REMOTE_LINK_SERVICE) !== 'missing' && serviceConfig(deps, REMOTE_LINK_SERVICE).auto) {
+    deps.spawn('sc.exe', ['start', REMOTE_LINK_SERVICE], {});
+    say('The owner\'s remote link was on before, so it was started again.');
   }
   say(`This shop's tenant id: ${now.settings.EDGE_TENANT_ID}  (${move || made === false ? 'kept' : 'made by this setup on this PC'}; a name, not a secret).`);
   say('SETUP DONE.');

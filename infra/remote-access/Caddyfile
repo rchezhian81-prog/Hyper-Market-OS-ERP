@@ -1,0 +1,71 @@
+# The relay's ONE public address — OB-840 · ADR-0035, on ADR-0018's pattern (infra/compose/Caddyfile).
+#
+# RELAY_DOMAIN is the owner's own domain; a free certificate is fetched and renewed automatically (Let's Encrypt), with
+# RELAY_TLS_EMAIL for the certificate notices. Plain http goes to https. Every response carries HSTS and no Server header.
+#
+#   /auth/realms/sre-store/*  → the identity server's own sign-in pages (password, then the authenticator app's code)
+#   /auth/resources/*         → their stylesheets and pictures
+#   /auth/* anything else     → 404 by name: the admin console, its API and the master realm are NEVER on the internet
+#   /remote-link/pins         → the public keys the store computer pins at setup (no secret)
+#   /remote-link/ask          → the link desk: the store computer's pairing request (its PUBLIC key)
+#   everything else           → the front, which lets a request through only after the sign-in service says yes, and then
+#                               only down the line to the store computer's remote door
+# No secret lives here; every value arrives from the environment.
+
+{
+	admin off
+	email {$RELAY_TLS_EMAIL}
+}
+
+{$RELAY_DOMAIN} {
+	tls {$RELAY_TLS_EMAIL}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		-Server
+	}
+	# No referrer ever leaves this address for another site. `same-origin` (not `no-referrer`) on EVERY page, because the
+	# office pages' Sign out is a form posted to the sign-in service, which refuses a post whose Origin is "null" — and a
+	# browser sends "null" from a `no-referrer` page. Deferred, so it replaces the store computer's own header.
+	header {
+		Referrer-Policy same-origin
+		defer
+	}
+
+	# The identity server's administration is never reachable from the internet (ADR-0019); nor is its master realm.
+	@idpAllowed path /auth/realms/sre-store/* /auth/resources/*
+	handle @idpAllowed {
+		reverse_proxy idp:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle /auth/* {
+		header Content-Type application/json
+		respond `{"error":{"code":"not_public","whatHappened":"This part of the sign-in server is not reachable from the internet.","wasItSaved":"not_saved","nextSafeAction":"Sign in at your shop's own address. The sign-in server is administered from the server itself (runbook: remote access)."}}` 404
+	}
+
+	handle /remote-link/pins {
+		root * /srv/remote-link
+		rewrite * /pins.json
+		header Content-Type application/json
+		file_server
+	}
+	handle /remote-link/ask {
+		reverse_proxy link-desk:8094 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle /remote-link/* {
+		header Content-Type application/json
+		respond `{"error":{"code":"not_found","whatHappened":"There is no such page here.","wasItSaved":"not_saved","nextSafeAction":"Open your shop's address."}}` 404
+	}
+
+	# Everything else: the front (in the tunnel's network), behind the sign-in, down the line to the store computer.
+	handle {
+		reverse_proxy tunnel:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}

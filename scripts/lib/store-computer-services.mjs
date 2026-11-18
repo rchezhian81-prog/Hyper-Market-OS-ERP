@@ -43,6 +43,11 @@ import { writeServicesMarker } from './store-computer-db.mjs';
 /** The three services, by their Windows names, in the order they are installed (and the reverse of removal). */
 export const SERVICES = Object.freeze({ database: 'SRE-Database', api: 'SRE-API', till: 'SRE-Till' });
 export const SERVICE_ORDER = Object.freeze([SERVICES.database, SERVICES.api, SERVICES.till]);
+/**
+ * OB-840 · ADR-0035: the owner's remote link — NOT one of the three: it is installed only by `remote-access setup` (OFF by
+ * default), under its own virtual account, and nothing the shop needs to trade depends on it.
+ */
+export const REMOTE_LINK_SERVICE = 'SRE-RemoteLink';
 /** What the Windows Services list shows for each. */
 export const DISPLAY = Object.freeze({
   [SERVICES.database]: 'SRE Retail OS - shop database',
@@ -557,6 +562,13 @@ export async function removeServices(deps) {
   const { L } = loadSettings(deps);
   const P = servicePaths({ platform: deps.platform, repoRoot: deps.repoRoot, dataRoot: L.dataRoot ?? deps.dataRoot ?? '', nodePath: deps.nodePath });
   let failed = 0;
+  // OB-840: the owner's remote link, when he turned it on, goes with the program it runs (its keys and pins are kept).
+  if (serviceState(deps, REMOTE_LINK_SERVICE) !== 'missing') {
+    deps.spawn(SC, ['stop', REMOTE_LINK_SERVICE], {});
+    await waitForState(deps, REMOTE_LINK_SERVICE, 'stopped', 30_000);
+    const r = deps.spawn(SC, ['delete', REMOTE_LINK_SERVICE], {});
+    if (ran(r)) say(`REMOVED — the owner's remote link (${REMOTE_LINK_SERVICE}).`); else { say(`NOT REMOVED — the owner's remote link (${REMOTE_LINK_SERVICE}). ${said(r)}`); failed += 1; }
+  }
   for (const name of [...SERVICE_ORDER].reverse()) {
     if (serviceState(deps, name) === 'missing') { say(`${DISPLAY[name]} (${name}): not installed.`); continue; }
     deps.spawn(SC, ['stop', name], {});

@@ -54,6 +54,8 @@ export interface RequestContext {
    * Absent when the token carries no such evidence, which `requireStepUp` refuses.
    */
   readonly reauth?: ReauthEvidence;
+  /** OB-840 · ADR-0035: 'remote' when the store PC's remote door carried this call (placed by the pipeline, never the caller). */
+  readonly via?: 'remote';
 }
 
 export interface HandlerResult {

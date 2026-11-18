@@ -58,6 +58,10 @@ export interface Deps {
   readonly web?: (url: string, headers: Record<string, string>) => Promise<{ status: number; text(): Promise<string> }>;
   /** CR-01 step 3d: download a release file to `file`; { status: 200 } when written. */
   readonly download?: (url: string, headers: Record<string, string>, file: string) => Promise<{ status: number }>;
+  /** OB-840: POST JSON (the remote link's pairing request to the owner's relay — its PUBLIC key only). */
+  readonly postJson?: (url: string, body: unknown) => Promise<{ status: number }>;
+  /** OB-840: the service host program for the remote link (tests); absent → the release's runtime\winsw. */
+  readonly serviceHost?: string;
   readonly portInUse: (port: number) => Promise<boolean>;
   readonly sleep: (ms: number) => Promise<void>;
   readonly now: () => Date;

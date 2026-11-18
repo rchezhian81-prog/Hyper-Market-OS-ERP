@@ -50,6 +50,12 @@ export interface Principal {
    * kernel asks the `channels` guard on EVERY request; absent the guard, such a token is refused (fail-closed).
    */
   readonly channel?: SessionChannel;
+  /**
+   * OB-840 · ADR-0035: 'remote' when the store PC's remote door carried this call (the person signed in at the relay with
+   * a password and a one-time code). Set only by the office-call authenticator from the store PC's own seal; absent for
+   * every other caller. Handlers that record a person's act (an approval decision) record this mark beside the name.
+   */
+  readonly via?: 'remote';
 }
 
 /** The session a token is bound to: a support-access session (owner-approved, time-boxed) or a remote session. */
@@ -690,6 +696,8 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       ...(write && key !== undefined ? { idempotencyKey: key } : {}),
       traceId,
       ...(reauth === undefined ? {} : { reauth }),
+      // OB-840: the remote door's mark, from the store PC's own seal only (never from the request).
+      ...(principal.via === undefined ? {} : { via: principal.via }),
     }));
     handlerReturned = true;
 
