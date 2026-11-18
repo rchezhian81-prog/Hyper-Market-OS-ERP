@@ -126,6 +126,8 @@ export function clearanceMarkdownAdapter(input: { readonly store: EventStore; re
   const storeOf = async (t: string) => input.locationBranches(t);
   return {
     now,
+    // D-025: the clearance rows name their item.
+    productNames: async (t) => new Map((await productMasterAdapter({ store, now }).products(t)).filter((p) => typeof p.name === 'string' && p.name.trim() !== '').map((p) => [p.productId, p.name] as const)),
     clearanceProducts: async (t, storeId, onDate) => {
       const out = new Map<string, 'product_master' | 'store_range'>();
       for (const p of await productMasterAdapter({ store, now }).products(t)) if (p.lifecycle === 'clearance') out.set(p.productId, 'product_master');

@@ -188,7 +188,8 @@ describe('a figure that cannot be worked out says so where the number would be',
     expect(box).toMatch(/value\.className = 'value none'/);
     // The reason is the value's own text, in one string with the label — not appended to some
     // other element where it can be styled small and skimmed past.
-    expect(box).toMatch(/value\.textContent = `\$\{t\('notAvailable'\)\}[^`]*\$\{f\.notAvailableBecause\}`/);
+    // (A reason that already begins "Not known —" — D-057's margin — is the value's text as it is, not prefixed twice.)
+    expect(box).toMatch(/value\.textContent = (?:[^;\n]*\? f\.notAvailableBecause : )?`\$\{t\('notAvailable'\)\}[^`]*\$\{f\.notAvailableBecause\}`/);
     // And the branch is taken on the value being absent, not on it being falsy — a real ₹0 taken
     // on a quiet morning is a fact, and it must print as ₹0.00.
     expect(box).toMatch(/f\.valueMinor === undefined/);
@@ -356,7 +357,8 @@ describe('a figure about today is about today', () => {
     // makes the department's money "not complete", never short.
     const report = REPORTS.find((r) => r.id === 'units_by_category')!;
     expect(report.answers).toMatch(/how many items/);
-    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units', 'takenMinor', 'items', 'weighed']);
+    // D-057 (batch 14): with the margin per department, or "Not known — N lines had no cost".
+    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units', 'takenMinor', 'items', 'weighed', 'marginMinor', 'marginPercent']);
     const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf("const salesByCategory: Record<string"), code(SCREEN_DATA).indexOf("payload['salesByCategory'] = salesByCategory;"));
     expect(builder).toMatch(/line\.lineTotalMinor/);
     expect(builder).not.toMatch(/unitPriceMinor|unitPrice\b/);

@@ -133,6 +133,8 @@ export function apiHarness(opts: {
   now?: () => string;
   /** OB-847: false to prove the OLDER till numbering (packs with no format-A section). Absent → format A. */
   tillFormatA?: boolean;
+  /** D-021: the catalogue's clock only (pack building and the price sends) — moved past a price's start day. */
+  catalogueNow?: () => string;
   /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
   notificationTransport?: NotificationTransport;
   /** PF-10 r6: provider → delivery-report callback secret (tests build these at run time; production reads its env). */
@@ -167,6 +169,7 @@ export function apiHarness(opts: {
   const built = buildRouter(buildSurface({
     signingKey: PACK_KEY, boxHistorySealSecret: opts.boxHistorySealSecret ?? TEST_BOX_HISTORY_SEAL_SECRET, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
     ...(opts.personalDataKeys === undefined ? {} : { personalDataKeys: opts.personalDataKeys }),
+    ...(opts.catalogueNow === undefined ? {} : { catalogueNow: opts.catalogueNow }),
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
     ...(opts.invoiceExtractor === undefined ? {} : { invoiceExtractor: opts.invoiceExtractor }),
     ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),

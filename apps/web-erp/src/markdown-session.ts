@@ -24,10 +24,12 @@ export interface MarkdownProposalRow {
   readonly productId: string; readonly batchId: string | null; readonly remainingShelfLifeDays: number; readonly onHandMinor: number;
   readonly projectedSalesMinor: number; readonly surplusMinor: number; readonly markdownBps: number; readonly currentPriceMinor: number;
   readonly newPriceMinor: number; readonly reason: string;
+  /** D-025: the item's name, as head office's product master holds it (absent when it holds none). */
+  readonly productName?: string;
 }
 export interface ClearanceRead {
   readonly storeId: string; readonly asOf: string; readonly suggestions: readonly MarkdownProposalRow[];
-  readonly notJudged: readonly { readonly productId: string; readonly batchId: string | null; readonly onHandMinor: number; readonly because: string }[];
+  readonly notJudged: readonly { readonly productId: string; readonly batchId: string | null; readonly onHandMinor: number; readonly because: string; readonly productName?: string }[];
 }
 export interface CompetitorRuleRead {
   readonly gapBps: number; readonly maxAgeDays: number; readonly source: string; readonly version: number | null; readonly setBy: string | null;
@@ -116,10 +118,15 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const wholeOf = (typed: string): number | undefined => (/^\d{1,9}$/.test(typed.trim()) ? Number(typed.trim()) : undefined);
 
+/** D-025: the item's name head office sent with a row, when it sent one. */
+const nameOf = (p: Record<string, unknown>): { productName?: string } => (typeof p['productName'] === 'string' && p['productName'].trim() !== '' ? { productName: p['productName'].trim() } : {});
+/** D-025: what a clearance row is about, by the item's name — its code only when head office holds no name for it. */
+export const clearanceItemWords = (row: { readonly productId: string; readonly batchId: string | null; readonly productName?: string }): string =>
+  `${row.productName ?? row.productId}${row.batchId === null ? '' : ` · ${row.batchId}`}`;
 const proposalOf = (p: Record<string, unknown>): MarkdownProposalRow => ({
   productId: str(p['productId']), batchId: typeof p['batchId'] === 'string' ? p['batchId'] : null, remainingShelfLifeDays: num(p['remainingShelfLifeDays']),
   onHandMinor: num(p['onHandMinor']), projectedSalesMinor: num(p['projectedSalesMinor']), surplusMinor: num(p['surplusMinor']), markdownBps: num(p['markdownBps']),
-  currentPriceMinor: num(p['currentPriceMinor']), newPriceMinor: num(p['newPriceMinor']), reason: str(p['reason']),
+  currentPriceMinor: num(p['currentPriceMinor']), newPriceMinor: num(p['newPriceMinor']), reason: str(p['reason']), ...nameOf(p),
 });
 
 export function createMarkdownSession(input: {
@@ -169,7 +176,7 @@ export function createMarkdownSession(input: {
         result: 'ok', value: {
           storeId: str(out.value['storeId']) || storeId, asOf: str(out.value['asOf']),
           suggestions: (Array.isArray(out.value['suggestions']) ? out.value['suggestions'] : []).filter(isObj).map(proposalOf),
-          notJudged: (Array.isArray(out.value['notJudged']) ? out.value['notJudged'] : []).filter(isObj).map((n) => ({ productId: str(n['productId']), batchId: typeof n['batchId'] === 'string' ? n['batchId'] : null, onHandMinor: num(n['onHandMinor']), because: str(n['because']) })),
+          notJudged: (Array.isArray(out.value['notJudged']) ? out.value['notJudged'] : []).filter(isObj).map((n) => ({ productId: str(n['productId']), batchId: typeof n['batchId'] === 'string' ? n['batchId'] : null, onHandMinor: num(n['onHandMinor']), because: str(n['because']), ...nameOf(n) })),
         },
       };
     },

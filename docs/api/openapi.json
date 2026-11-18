@@ -161855,6 +161855,9 @@
                 },
                 "commitVia": {
                   "type": "string"
+                },
+                "productName": {
+                  "type": "string"
                 }
               },
               "additionalProperties": true
@@ -161894,6 +161897,9 @@
                     "no_sell_by_date_known",
                     "no_shelf_price"
                   ]
+                },
+                "productName": {
+                  "type": "string"
                 }
               },
               "additionalProperties": true
@@ -162013,6 +162019,8 @@
         "required": [
           "tasks",
           "open",
+          "firstLoad",
+          "dueNow",
           "asAt"
         ],
         "properties": {
@@ -162021,6 +162029,7 @@
             "items": {
               "type": "object",
               "required": [
+                "firstLabel",
                 "done",
                 "dueNow",
                 "waitingForTills",
@@ -162039,6 +162048,9 @@
                 "raisedAt"
               ],
               "properties": {
+                "firstLabel": {
+                  "type": "boolean"
+                },
                 "done": {
                   "anyOf": [
                     {
@@ -162203,6 +162215,21 @@
           "open": {
             "type": "number"
           },
+          "firstLoad": {
+            "type": "object",
+            "required": [
+              "open"
+            ],
+            "properties": {
+              "open": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "dueNow": {
+            "type": "number"
+          },
           "asAt": {
             "type": "string"
           }
@@ -162216,6 +162243,8 @@
         "required": [
           "tasks",
           "open",
+          "firstLoad",
+          "dueNow",
           "asAt"
         ],
         "properties": {
@@ -162224,6 +162253,7 @@
             "items": {
               "type": "object",
               "required": [
+                "firstLabel",
                 "done",
                 "dueNow",
                 "waitingForTills",
@@ -162242,6 +162272,9 @@
                 "raisedAt"
               ],
               "properties": {
+                "firstLabel": {
+                  "type": "boolean"
+                },
                 "done": {
                   "anyOf": [
                     {
@@ -162404,6 +162437,21 @@
             }
           },
           "open": {
+            "type": "number"
+          },
+          "firstLoad": {
+            "type": "object",
+            "required": [
+              "open"
+            ],
+            "properties": {
+              "open": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          },
+          "dueNow": {
             "type": "number"
           },
           "asAt": {
@@ -304201,6 +304249,9 @@
             "type": "string"
           },
           "at": {
+            "type": "string"
+          },
+          "startsOn": {
             "type": "string"
           }
         },

@@ -71,6 +71,9 @@ export interface CatalogueDeps {
   readonly bulkPublishThreshold?: (tenantId: string) => Promise<number | undefined> | number | undefined;
   /** OB-806 A · P-08: where an accepted price that did not reach the tills is recorded, and read back until a pack goes. */
   readonly notSent?: NotSentLog;
+  /** D-021: before a pack is read, send every later-day price whose start day has come (`sendPricesNowInForce`, composed
+   *  with the shop's clock and an audit entry by `services/api/src/till-delivery.ts`). Absent → no start-day check. */
+  readonly startDaySend?: (tenantId: string) => Promise<unknown>;
 }
 
 /** OB-806 A: one accepted price whose automatic sending to a store's tills did not go — and why, in words. */
@@ -82,6 +85,8 @@ export interface NotSentToTills {
   readonly why: string;
   readonly by: string;
   readonly at: string;
+  /** D-021: the shop's date the price starts (YYYY-MM-DD) — kept so a `starts_later` price is sent by itself on that day. */
+  readonly startsOn?: string;
 }
 
 export type TillNotSentReason = 'starts_later' | 'needs_the_owner' | 'refused' | 'failed';
@@ -93,6 +98,8 @@ export interface NotSentLog {
   readonly recordSent: (tenantId: string, storeId: string, version: number, at: string) => Promise<void> | void;
   /** The prices not sent for a store since the last pack that went for it (oldest first). */
   readonly since: (tenantId: string, storeId: string) => Promise<readonly NotSentToTills[]> | readonly NotSentToTills[];
+  /** D-021: the stores that have anything on their not-sent list now (so the start-day check knows where to look). */
+  readonly storesWaiting?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
 }
 
 /** One pack, built and judged, ready to sign — the ONE path both "Send to the tills" and the automatic send use. */
@@ -150,12 +157,12 @@ export async function sendAcceptedPriceToTills(deps: CatalogueDeps, tenantId: st
 }): Promise<TillDelivery> {
   const notSent = async (reason: TillNotSentReason, why: string): Promise<TillDelivery> => {
     try {
-      await deps.notSent?.recordNotSent(tenantId, { storeId: input.storeId, productId: input.productId, priceMinor: input.priceMinor, reason, why, by: input.by, at: deps.now() });
+      await deps.notSent?.recordNotSent(tenantId, { storeId: input.storeId, productId: input.productId, priceMinor: input.priceMinor, reason, why, by: input.by, at: deps.now(), startsOn: input.startsOn });
     } catch { /* the answer below still says it was not sent — never silent */ }
     return { storeId: input.storeId, sent: false, reason, why };
   };
   if (input.startsOn > input.today) {
-    return notSent('starts_later', `The price starts on ${input.startsOn}; today's pack cannot carry it yet. Send to the tills on or after that day.`);
+    return notSent('starts_later', `The price starts on ${input.startsOn}; today's pack cannot carry it yet. It goes to the tills by itself on that day, when the store computer next takes its pack.`);
   }
   try {
     const prepared = await preparePublish(deps, tenantId, { storeId: input.storeId });
@@ -173,6 +180,58 @@ export async function sendAcceptedPriceToTills(deps: CatalogueDeps, tenantId: st
 }
 
 /**
+ * D-021 (owner, 18 Nov 2026, under OB-801): a price accepted for a LATER day goes to the tills by itself on its start day —
+ * no button. When a store computer asks for its pack, head office first looks at each store's not-sent list: every
+ * `starts_later` price whose day has now come is sent through the SAME signed publish (`preparePublish`) as "Send to the
+ * tills" and the automatic send. Never early (a price whose day has not come stays waiting); never twice (the pack that goes
+ * settles it — `recordSent` — so the next ask finds nothing); never past a check the button would ask for (a send that needs
+ * the owner's fresh two-step sign-in, or that the pack's checks refuse, is recorded ONCE as not sent with why, and the
+ * owner's "Send to the tills" sends it — P-08). No AI anywhere on this path (hard rule #5).
+ */
+export async function sendPricesNowInForce(deps: CatalogueDeps, tenantId: string, input: {
+  /** The shop's date today (YYYY-MM-DD). */
+  readonly today: string;
+  readonly withinMinutes: number;
+}): Promise<readonly (TillDelivery & { readonly productIds: readonly string[] })[]> {
+  const log = deps.notSent;
+  if (log === undefined || log.storesWaiting === undefined) return [];
+  const out: (TillDelivery & { readonly productIds: readonly string[] })[] = [];
+  for (const storeId of await log.storesWaiting(tenantId)) {
+    const open = await log.since(tenantId, storeId);
+    const same = (a: NotSentToTills, b: NotSentToTills) => a.productId === b.productId && a.priceMinor === b.priceMinor;
+    const due = open.filter((e, i) => e.reason === 'starts_later' && e.startsOn !== undefined && e.startsOn <= input.today
+      // Already tried on or after its day and stopped for the owner, refused or failed: the owner's button sends it now.
+      && !open.slice(i + 1).some((later) => later.reason !== 'starts_later' && same(later, e)));
+    if (due.length === 0) continue;
+    const productIds = [...new Set(due.map((e) => e.productId))];
+    const by = due[0]!.by; // the person whose accepted price this is
+    const stop = async (reason: TillNotSentReason, why: string) => {
+      for (const e of due) {
+        try {
+          await log.recordNotSent(tenantId, { storeId, productId: e.productId, priceMinor: e.priceMinor, reason, why, by: e.by, at: deps.now(), ...(e.startsOn === undefined ? {} : { startsOn: e.startsOn }) });
+        } catch { /* the answer below still says it was not sent */ }
+      }
+      out.push({ storeId, sent: false, reason, why, productIds });
+    };
+    try {
+      const prepared = await preparePublish(deps, tenantId, { storeId });
+      if (prepared.stepUp.needed) {
+        await stop('needs_the_owner', `Its start day has come, but sending now would also send other changes that need the owner's fresh two-step sign-in (${prepared.stepUp.because}), so it waits for the owner's "Send to the tills".`);
+        continue;
+      }
+      const result = prepared.sign(by);
+      if (!result.ok) { await stop('refused', result.detail); continue; }
+      await deps.storePack(tenantId, result.pack!);
+      await log.recordSent(tenantId, storeId, result.pack!.snapshot.version, deps.now());
+      out.push({ storeId, sent: true, version: result.pack!.snapshot.version, withinMinutes: input.withinMinutes, productIds });
+    } catch (e) {
+      await stop('failed', `On its start day the pack could not be built or stored (${e instanceof Error ? e.message : String(e)}).`);
+    }
+  }
+  return out;
+}
+
+/**
  * The API-02 surface.
  *
  * Note what is **not** here: no endpoint that edits a price. Prices are drafted and approved
@@ -181,11 +240,25 @@ export async function sendAcceptedPriceToTills(deps: CatalogueDeps, tenantId: st
  * with a different lock.
  */
 export function catalogueRoutes(deps: CatalogueDeps): readonly Route[] {
+  // D-021: one start-day check at a time per tenant, so two store computers asking together never send the same price twice.
+  const running = new Map<string, Promise<unknown>>();
+  const dueCheck = async (tenantId: string): Promise<void> => {
+    if (deps.startDaySend === undefined) return;
+    const before = running.get(tenantId);
+    if (before !== undefined) { await before; return; }
+    const run = (async () => {
+      try { await deps.startDaySend!(tenantId); } catch { /* never fail the pack read: what did not go is on the not-sent list */ }
+    })();
+    running.set(tenantId, run);
+    try { await run; } finally { running.delete(tenantId); }
+  };
   return [
     {
       api: 'API-02', method: 'GET', path: '/v1/catalogue/pack',
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
+        // D-021: a price whose start day has come goes into the pack first — the store computer takes it on this very ask.
+        await dueCheck(ctx.tenantId);
         const pack = await deps.currentPack(ctx.tenantId);
         if (pack === undefined) throw notFound('published catalogue pack');
         return { status: 200, body: pack };

@@ -595,7 +595,7 @@ export interface ReportingData {
   readonly unitsWithNoCategory?: number;
   readonly categoryNames?: Readonly<Record<string, string>>;
   /** D-057: per department — items, weighed grams, the money its lines took. */
-  readonly salesByCategory?: Readonly<Record<string, { readonly items: number; readonly grams: number; readonly takenMinor: number; readonly linesWithNoMoney: number }>>;
+  readonly salesByCategory?: Readonly<Record<string, { readonly items: number; readonly grams: number; readonly takenMinor: number; readonly linesWithNoMoney: number; readonly marginMinor?: number; readonly marginBps?: number; readonly marginNotKnown?: string }>>;
 }
 
 /**

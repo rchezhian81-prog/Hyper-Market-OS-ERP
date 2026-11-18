@@ -118,6 +118,11 @@ export interface DepartmentSales {
   readonly takenMinor: number;
   /** Lines from a till that wrote no line money: the department's money is then incomplete, and says so. */
   readonly linesWithNoMoney: number;
+  /** D-057: the department's margin (before GST, at the average buying cost) — present only when every line had a cost. */
+  readonly marginMinor?: number;
+  readonly marginBps?: number;
+  /** D-057: why the margin is not known ("Not known — 2 lines had no cost"); absent on an older store computer. */
+  readonly marginNotKnown?: string;
 }
 
 /** 2500 → "2.500 kg". */
@@ -463,12 +468,18 @@ export function createReportingSession(
             figures: [
               ...byMoney.map(([id, d]) => at(`${name(id)} — taken`, incomplete(d) === undefined ? d.takenMinor : undefined, 'minor_currency', incomplete(d))),
               ...byMoney.filter(([, d]) => d.items > 0).map(([id, d]) => at(`${name(id)} — items`, d.items, 'count')),
+              // D-057: the margin per department, or why it is not known — never a guessed cost.
+              ...byMoney.filter(([, d]) => d.marginMinor !== undefined || d.marginNotKnown !== undefined).map(([id, d]) => at(`${name(id)} — margin`, d.marginMinor, 'minor_currency', d.marginMinor === undefined ? d.marginNotKnown : undefined)),
             ],
             rows: byMoney.map(([id, d]) => ({
               department: name(id),
               takenMinor: incomplete(d) === undefined ? String(d.takenMinor) : 'not complete',
               items: String(d.items),
               weighed: d.grams === 0 ? '' : kgWords(d.grams),
+              ...(d.marginMinor === undefined && d.marginNotKnown === undefined ? {} : {
+                marginMinor: d.marginMinor === undefined ? (d.marginNotKnown ?? '') : String(d.marginMinor),
+                marginPercent: d.marginBps === undefined ? '' : `${(d.marginBps / 100).toFixed(1)}%`,
+              }),
             })),
           };
         }

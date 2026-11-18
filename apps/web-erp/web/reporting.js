@@ -416,6 +416,8 @@ function renderReport(outcome) {
 const COLUMN_WORDS = {
   department: { en: 'Department', ta: 'துறை' }, takenMinor: { en: 'Taken', ta: 'வசூல்' }, items: { en: 'Items', ta: 'பொருட்கள்' },
   weighed: { en: 'Weighed', ta: 'எடை' }, units: { en: 'Items sold', ta: 'விற்ற பொருட்கள்' }, totalMinor: { en: 'Taken', ta: 'வசூல்' },
+  // D-057: the margin per department (before GST, at the average buying cost), and as a share of what it took before GST.
+  marginMinor: { en: 'Margin', ta: 'லாப வரம்பு' }, marginPercent: { en: 'Margin %', ta: 'லாப வரம்பு %' },
 };
 function columnLabel(k) { return COLUMN_WORDS[k]?.[lang] ?? COLUMN_WORDS[k]?.en ?? k; }
 
@@ -433,7 +435,8 @@ function figureBox(f) {
     // In the space where the number would have been, so it cannot be skimmed past. Never a zero,
     // never a blank — "Waste: ₹0" is a number somebody puts in a board pack.
     value.className = 'value none';
-    value.textContent = `${t('notAvailable')} — ${f.notAvailableBecause}`;
+    // A reason that already begins "Not known —" (D-057's margin) says it itself; it is not prefixed a second time.
+    value.textContent = /^Not known\b/.test(f.notAvailableBecause) ? f.notAvailableBecause : `${t('notAvailable')} — ${f.notAvailableBecause}`;
   } else {
     value.className = 'value';
     value.textContent = f.unit === 'minor_currency'

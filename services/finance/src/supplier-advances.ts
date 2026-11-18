@@ -6,7 +6,8 @@
 // back) or is paid twice. So:
 //
 //   • PAY (`POST /v1/finance/supplier-advances/:advanceId`) — { supplierId, amountMinor, paidOn, method, reference, poId?,
-//     approvalId }. Paying a supplier is a payment: it needs a SECOND person's approval in their own session (the engine's
+//     approvalId }. OB-807 A (batch 14): approval is asked with the terms (supplier, amount, method, order) and the paid date
+//     and reference are added when it is recorded — never a day still to come. Paying a supplier is a payment: it needs a SECOND person's approval in their own session (the engine's
 //     `supplier_payment` kind, never the maker's own), spent once. The advance is ONE journal through the accountant's
 //     mapping (`supplier_advance`: e.g. Dr supplier advances, Cr bank) — the journal IS the record, so a re-send posts
 //     nothing twice. Refused, nothing written: an unknown supplier, a mapping without the rule (the accountant's call).
@@ -26,6 +27,8 @@ import { apiError, notFound } from '../../kernel/src/index';
 import { postJournal as mapToJournal, type PostingMap } from '../../../packages/finance/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { approvalCarriesDateAndReference, paymentTerms } from '../../purchase/src/supplier-master';
 
 export const SUPPLIER_ADVANCE_KIND = 'supplier_advance';
 export const SUPPLIER_ADVANCE_APPLIED_KIND = 'supplier_advance_applied';
@@ -184,12 +187,27 @@ export function supplierAdvanceRoutes(deps: SupplierAdvanceDeps): readonly Route
           if (!same) throw apiError(409, { code: 'advance_id_used', whatHappened: `Advance ${advanceId} is already recorded for ${prior.supplierAdvance.supplierId}, ${prior.supplierAdvance.amountMinor} paise. A different payment cannot take its id.`, wasItSaved: 'not_saved', nextSafeAction: 'Record the payment under its own advance id. Nothing was changed.' });
           return { status: 200, body: { advance: prior.supplierAdvance, entryId: prior.entryId, alreadyRecorded: true } };
         }
+        // OB-807 A (as for payments, batch 14): the paid date is typed when the advance is recorded — never a day still to come.
+        if ((b['paidOn'] as string) > shopDateIn(deps.now())) {
+          throw apiError(422, {
+            code: 'paid_on_in_the_future',
+            whatHappened: `The advance is dated ${String(b['paidOn'])}, a day that has not come yet in the shop (today is ${shopDateIn(deps.now())}). An advance is recorded once the money has gone.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Record it with the day the money was actually paid. Nothing was recorded and the approval was not used.',
+          });
+        }
         if (!(await deps.supplierExists(t, b['supplierId'] as string))) throw notFound(`supplier ${String(b['supplierId'])}`);
         // §28: paying a supplier needs a second person's approval, given in their own session, for exactly this payment.
+        // OB-807 A (owner, 16 Nov 2026, in writing — advances follow payments, batch 14): an advance is APPROVED on its terms
+        // (the supplier, the amount, how it is paid, the order) and the paid date and the bank reference (UTR, cheque or UPI
+        // number) are added only when it is RECORDED. So the approval is matched on the terms alone; an approval asked the
+        // older way, with the date and reference in it, still has to match them exactly. Nothing is loosened: amount,
+        // supplier, method, order, maker, one use, expiry and the checker's authority are all judged exactly as before.
+        const askedWithDateAndReference = await approvalCarriesDateAndReference(deps.approvals, t, b['approvalId']);
         const opened = await approvalNamedIn(deps.approvals, {
           tenantId: t, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
           kind: 'supplier_payment', subjectRef: `advance:${advanceId}`,
-          details: actionDetails(ctx.body, { advanceId }), valueMinor: b['amountMinor'],
+          details: askedWithDateAndReference ? actionDetails(ctx.body, { advanceId }) : paymentTerms(ctx.body, { advanceId }), valueMinor: b['amountMinor'],
           maker: ctx.userId, usedBy: `supplier-advance:${advanceId}`, now: deps.now(),
         });
         if (opened === undefined) {
@@ -197,7 +215,7 @@ export function supplierAdvanceRoutes(deps: SupplierAdvanceDeps): readonly Route
             code: 'advance_needs_approval',
             whatHappened: 'Paying a supplier in advance is a payment: it needs a second person\'s approval (§28), never the maker\'s own.',
             wasItSaved: 'not_saved',
-            nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind supplier_payment, subject advance:${advanceId}, with these details); once approved, send this again with the approvalId. Nothing was recorded.`,
+            nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind supplier_payment, subject advance:${advanceId}, with the supplier, amount, method and order); once approved and paid, send this again with the approvalId, the paid date and the reference. Nothing was recorded.`,
           });
         }
         const supplierId = (b['supplierId'] as string).trim();

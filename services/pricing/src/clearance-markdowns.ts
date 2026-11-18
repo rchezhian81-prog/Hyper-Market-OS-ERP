@@ -35,6 +35,8 @@ export interface ClearanceMarkdownDeps {
   readonly shelfPriceMinor: (tenantId: string, productId: string, storeId: string, at: string) => Promise<number | undefined>;
   /** The caller may read this store (PA-01): throws by name when not. */
   readonly assertStoreInScope: (ctx: Parameters<Route['handler']>[0], storeId: string) => Promise<void>;
+  /** D-025: the product names, so a suggestion says "Plum cake 500g", never only "p-cake". Optional on a bare stub. */
+  readonly productNames?: (tenantId: string) => Promise<ReadonlyMap<string, string>>;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -78,10 +80,13 @@ export function clearanceMarkdownRoutes(deps: ClearanceMarkdownDeps): readonly R
             });
           }
         }
+        // D-025: each row carries the item's name as head office's product master holds it (absent when it holds none).
+        const names = deps.productNames === undefined ? new Map<string, string>() : await deps.productNames(ctx.tenantId);
+        const named = <R extends { productId: string }>(r: R): R & { productName?: string } => (names.has(r.productId) ? { ...r, productName: names.get(r.productId)! } : r);
         return {
           status: 200,
           body: {
-            storeId, asOf, suggestions, notJudged, clearanceProducts: products,
+            storeId, asOf, suggestions: suggestions.map(named), notJudged: notJudged.map(named), clearanceProducts: products,
             advisoryOnly: true, pricesChanged: false, asAt: deps.now(),
           },
         };

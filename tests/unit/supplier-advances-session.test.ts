@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createSupplierAdvancesSession, advanceBody, advancesWords, advancesOutcomeWords, SUPPLIER_ADVANCES_COPY, type PaymentAsk } from '../../apps/web-erp/src/supplier-advances-session';
+import { createSupplierAdvancesSession, advanceBody, advanceRecordBodyOf, advancesWords, advancesOutcomeWords, SUPPLIER_ADVANCES_COPY, type PaymentAsk } from '../../apps/web-erp/src/supplier-advances-session';
 import { actionDetails } from '../../services/identity/src/approval-requests';
+import { paymentTerms } from '../../services/purchase/src/supplier-master';
 
 /**
  * Supplier advances on the Supplier bills page (D10-FR-01 · §28): the payment asked for carries exactly the details head
@@ -20,10 +21,22 @@ function fakeFetch(answers: Record<string, unknown> = {}) {
 const PAYER = { userId: 'u-pay', permissions: ['finance.period.read', 'purchase.supplier.pay', 'finance.journal.post'] };
 
 describe('supplier advances (D10-FR-01)', () => {
-  it('reads the payment form into the pay route\'s body, and refuses an incomplete one', () => {
-    expect(advanceBody(FORM)).toEqual({ supplierId: 'sup-1', amountMinor: 100_000, paidOn: '2026-11-01', method: 'bank_transfer', reference: 'NEFT-1' });
+  it('OB-807 A: approval is asked with the TERMS only — the paid day and the reference are not asked for', () => {
+    expect(advanceBody(FORM)).toEqual({ supplierId: 'sup-1', amountMinor: 100_000, method: 'bank_transfer' });
+    expect(advanceBody({ supplierId: 'sup-1', amountRupees: '1,000', method: 'bank_transfer', poId: '' })).toEqual({ supplierId: 'sup-1', amountMinor: 100_000, method: 'bank_transfer' });
     expect(advanceBody({ ...FORM, poId: ' po-a ' })).toMatchObject({ poId: 'po-a' });
-    for (const bad of [{ amountRupees: '0' }, { amountRupees: 'ten' }, { method: 'barter' }, { reference: ' ' }, { paidOn: '1/11/2026' }, { supplierId: '' }]) expect(advanceBody({ ...FORM, ...bad })).toBeNull();
+    for (const bad of [{ amountRupees: '0' }, { amountRupees: 'ten' }, { method: 'barter' }, { supplierId: '' }]) expect(advanceBody({ ...FORM, ...bad })).toBeNull();
+  });
+
+  it('OB-807 A: the record adds the day and the UTR typed once paid — never missing, never a day still to come', () => {
+    const ask: PaymentAsk = { requestId: 'apr-1', subjectRef: 'advance:adv-9', status: 'approved', details: { supplierId: 'sup-1', amountMinor: 100_000, method: 'upi', advanceId: 'adv-9' }, valueMinor: 100_000 };
+    expect(advanceRecordBodyOf(ask, undefined, '2026-11-18')).toBe('needPaid');
+    expect(advanceRecordBodyOf(ask, { paidOn: '2026-11-18', reference: ' ' }, '2026-11-18')).toBe('needPaid');
+    expect(advanceRecordBodyOf(ask, { paidOn: '2026-11-19', reference: 'UTR-1' }, '2026-11-18')).toBe('paidInFuture');
+    expect(advanceRecordBodyOf(ask, { paidOn: '2026-11-18', reference: ' UTR-1 ' }, '2026-11-18')).toEqual({ supplierId: 'sup-1', amountMinor: 100_000, method: 'upi', paidOn: '2026-11-18', reference: 'UTR-1' });
+    // An approval asked the older way already carries its day and reference: sent as approved, the typed ones not used.
+    const older: PaymentAsk = { ...ask, details: { ...ask.details, paidOn: '2026-11-01', reference: 'NEFT-1' } };
+    expect(advanceRecordBodyOf(older, { paidOn: '2026-11-18', reference: 'X' }, '2026-11-18')).toMatchObject({ paidOn: '2026-11-01', reference: 'NEFT-1' });
   });
 
   it('asks for exactly what is recorded: the record takes the approved request\'s details and names it', async () => {
@@ -33,12 +46,15 @@ describe('supplier advances (D10-FR-01)', () => {
     const asked = sent[0]!.body as { kind: string; subjectRef: string; details: Record<string, unknown>; valueMinor: number };
     expect(asked).toMatchObject({ kind: 'supplier_payment', subjectRef: 'advance:adv-9', valueMinor: 100_000 });
     const approved: PaymentAsk = { requestId: 'apr-1', subjectRef: asked.subjectRef, status: 'approved', details: asked.details, valueMinor: 100_000 };
-    await s.record(approved);
+    expect(await s.record(approved)).toEqual({ result: 'invalid', why: 'needPaid' }); // nothing sent without the day and UTR
+    expect(sent).toHaveLength(1);
+    await s.record(approved, { paidOn: '2026-11-01', reference: ' NEFT-1 ' });
     const recorded = sent[1]!;
     expect(recorded.path).toBe('/v1/finance/supplier-advances/adv-9');
     expect(recorded.body).toEqual({ supplierId: 'sup-1', amountMinor: 100_000, paidOn: '2026-11-01', method: 'bank_transfer', reference: 'NEFT-1', approvalId: 'apr-1' });
-    // The engine's own rule: what was asked for is the recorded body plus the path id.
-    expect(asked.details).toEqual(actionDetails(recorded.body, { advanceId: 'adv-9' }));
+    // Head office's rule (OB-807 A): what was asked for is the recorded body's TERMS plus the path id.
+    expect(asked.details).toEqual(paymentTerms(recorded.body, { advanceId: 'adv-9' }));
+    expect(asked.details).not.toEqual(actionDetails(recorded.body, { advanceId: 'adv-9' }));
   });
 
   it('a use and an undo are one call each, in paise, refused before any call when incomplete', async () => {

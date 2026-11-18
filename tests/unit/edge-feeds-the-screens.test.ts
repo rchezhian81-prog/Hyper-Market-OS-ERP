@@ -832,12 +832,14 @@ describe('a sale in the log becomes a reporting fact, correctly', () => {
       { productId: 'p2', quantityMinor: 850, uom: 'kg', lineTotalMinor: 68_00 },
     ] });
     const older = sale({ id: 'S-2', lines: [{ productId: 'p1', quantityMinor: 2, uom: 'ea' }] }); // a till that wrote no line money
+    // D-057 (batch 14): with each department's margin — ₹145.00 with 5% GST in it is ₹138.10 before GST, less the ₹100.00
+    // average buying cost = ₹38.10 (27.59%); tomato has no GST rate in the pack, so its margin is "Not known", said why.
     expect(reportingPayload(input({ sales: [bill] }))!['salesByCategory']).toEqual({
-      grocery: { items: 1, grams: 0, takenMinor: 145_00, linesWithNoMoney: 0 },
-      produce: { items: 0, grams: 850, takenMinor: 68_00, linesWithNoMoney: 0 },
+      grocery: { items: 1, grams: 0, takenMinor: 145_00, linesWithNoMoney: 0, marginMinor: 38_10, marginBps: 2_759 },
+      produce: { items: 0, grams: 850, takenMinor: 68_00, linesWithNoMoney: 0, marginNotKnown: 'Not known — 1 line had no GST rate' },
     });
     expect((reportingPayload(input({ sales: [bill, older] }))!['salesByCategory'] as Record<string, unknown>)['grocery'])
-      .toEqual({ items: 3, grams: 0, takenMinor: 145_00, linesWithNoMoney: 1 });
+      .toEqual({ items: 3, grams: 0, takenMinor: 145_00, linesWithNoMoney: 1, marginNotKnown: 'Not known — 1 line came from a till that did not write what it charged' });
   });
 
   it('names no user rather than inventing one', () => {

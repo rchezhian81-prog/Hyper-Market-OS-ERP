@@ -5,9 +5,10 @@
 //     against bills, left; each use; and the advances account in the ledger beside the register — two figures reached two
 //     ways, with whether they agree ("not known" when the mapping names no account, never zero — P-08);
 //   • PAY an advance — paying a supplier is a payment, so the person ASKS (kind `supplier_payment`, subject
-//     `advance:<id>`, exactly the payment's details and amount); a DIFFERENT person with the paying authority approves on the
-//     Approvals page; the asker then RECORDS it, naming that approval — the payment's details are taken from the approved
-//     request itself, so what is recorded is exactly what was approved (never retyped);
+//     `advance:<id>`, the payment's terms: supplier, amount, how, order); a DIFFERENT person with the paying authority
+//     approves on the Approvals page; once the money has gone the asker RECORDS it, naming that approval — the terms are
+//     taken from the approved request itself (never retyped), and the day it was paid and its reference (UTR, cheque or UPI
+//     number) are typed then, because they exist only after the money has gone (OB-807 A, as for payments — batch 14);
 //   • USE an advance against the same supplier's matched bill (one journal), or UNDO a use by a reversal (a compensating
 //     journal — never a deletion).
 // Head office re-checks every permission, the approval, the supplier, the bill and every amount. Nothing is read on open.
@@ -26,9 +27,11 @@ export const SUPPLIER_ADVANCES_COPY = {
     ledgerAgrees: 'The advances left on the register equal the advances account in the ledger.', ledgerDisagrees: 'The advances left on the register do NOT equal the advances account in the ledger — a person must look.',
     ledgerNotKnown: 'The ledger side is not known: the accountant\'s mapping names no account for supplier advances.', register: 'On the register', ledger: 'In the ledger',
     askH: 'Pay an advance', amountRs: 'Amount (₹)', paidOnL: 'Paid on', method: 'How', m_bank_transfer: 'Bank transfer', m_cheque: 'Cheque', m_upi: 'UPI', m_cash: 'Cash',
-    reference: 'Bank or cheque reference', poId: 'Against order (optional)', ask: 'Ask for approval to pay',
-    askedNow: 'Asked. A different person who pays suppliers approves exactly this payment on the Approvals page; then record it below.',
-    approvedH: 'Payments you asked for', st_waiting: 'Waiting for a second person', st_approved: 'Approved — record it once paid', st_rejected: 'Rejected', st_expired: 'Approval ran out — ask again', st_used: 'Recorded',
+    reference: 'Reference (UTR, cheque or UPI number)', poId: 'Against order (optional)', ask: 'Ask for approval to pay',
+    askedNow: 'Asked. A different person who pays suppliers approves this amount on the Approvals page; once it is paid, record it below with the day and the reference.',
+    recordH: 'Approved — record it when paid', recordLede: 'Once the money has gone, type the day it was paid and its reference (UTR, cheque or UPI number), then press "Record this payment" on the approved line.',
+    needPaid: 'Type the day it was paid and its reference (UTR, cheque or UPI number) before recording it.', paidInFuture: 'The day it was paid cannot be a day still to come.',
+    approvedH: 'Payments you asked for', st_waiting: 'Waiting for a second person', st_approved: 'Approved — record it when paid', st_rejected: 'Rejected', st_expired: 'Approval ran out — ask again', st_used: 'Recorded',
     record: 'Record this payment', recordedNow: 'Recorded — one journal in the books, with who approved it.', already: 'Already recorded — nothing changed.',
     // U1 · OB-698: the consequence-and-confirm sheet before an advance payment is recorded
     confirmTitle: 'Record {amount} paid to supplier {supplier} as an advance ({method} {reference})',
@@ -37,7 +40,7 @@ export const SUPPLIER_ADVANCES_COPY = {
     confirmLabel: 'Record the payment', confirmUnavailable: 'The confirm step could not open, so nothing was sent. Reload the page and try again.',
     useH: 'Use against a bill', invoiceId: 'The supplier\'s matched bill number', usedOn: 'On (YYYY-MM-DD)', use: 'Use it', usedNow: 'Used against the bill — one journal in the books.',
     undo: 'Undo this use', undoneNow: 'Undone by a compensating journal — the bill is owed again and the advance is open again.',
-    needAsk: 'Fill in the supplier, an amount in rupees, the day (YYYY-MM-DD), how it was paid and the reference.', needUse: 'Write the bill number, an amount in rupees and the day (YYYY-MM-DD).', needUndo: 'Write the day (YYYY-MM-DD) for the undo.',
+    needAsk: 'Fill in the supplier, an amount in rupees and how it will be paid.', needUse: 'Write the bill number, an amount in rupees and the day (YYYY-MM-DD).', needUndo: 'Write the day (YYYY-MM-DD) for the undo.',
     nobody: 'Nobody is signed in on this screen.', cannotRead: 'Your role cannot read the supplier advances.', cannotPay: 'Your role cannot pay suppliers.', cannotUse: 'Your role cannot post journals.',
     refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was read or saved.',
   },
@@ -48,8 +51,10 @@ export const SUPPLIER_ADVANCES_COPY = {
     ledgerAgrees: 'பதிவேட்டில் மீதமுள்ள முன்பணங்கள் பேரேட்டின் முன்பணக் கணக்குக்குச் சமம்.', ledgerDisagrees: 'பதிவேட்டில் மீதமுள்ள முன்பணங்கள் பேரேட்டின் முன்பணக் கணக்குக்குச் சமமில்லை — ஒருவர் பார்க்க வேண்டும்.',
     ledgerNotKnown: 'பேரேட்டுப் பக்கம் தெரியவில்லை: கணக்காளரின் வரைபடத்தில் விநியோகஸ்தர் முன்பணத்துக்குக் கணக்கு இல்லை.', register: 'பதிவேட்டில்', ledger: 'பேரேட்டில்',
     askH: 'முன்பணம் செலுத்து', amountRs: 'தொகை (₹)', paidOnL: 'செலுத்திய நாள்', method: 'எப்படி', m_bank_transfer: 'வங்கிப் பரிமாற்றம்', m_cheque: 'காசோலை', m_upi: 'யுபிஐ', m_cash: 'ரொக்கம்',
-    reference: 'வங்கி அல்லது காசோலைக் குறிப்பு', poId: 'ஆணைக்கு எதிராக (விருப்பம்)', ask: 'செலுத்த அனுமதி கேள்',
-    askedNow: 'கேட்கப்பட்டது. விநியோகஸ்தர்களுக்குச் செலுத்தும் வேறொருவர் இதே செலுத்துதலை அனுமதிகள் பக்கத்தில் அனுமதிப்பார்; பின்னர் கீழே பதிவு செய்யுங்கள்.',
+    reference: 'குறிப்பு (UTR, காசோலை அல்லது UPI எண்)', poId: 'ஆணைக்கு எதிராக (விருப்பம்)', ask: 'செலுத்த அனுமதி கேள்',
+    askedNow: 'கேட்கப்பட்டது. விநியோகஸ்தர்களுக்குச் செலுத்தும் வேறொருவர் இந்தத் தொகையை அனுமதிகள் பக்கத்தில் அனுமதிப்பார்; செலுத்தியதும், நாளும் குறிப்பும் சேர்த்துக் கீழே பதிவு செய்யுங்கள்.',
+    recordH: 'அனுமதிக்கப்பட்டது — செலுத்தியதும் பதிவு செய்யுங்கள்', recordLede: 'பணம் சென்றதும், செலுத்திய நாளையும் அதன் குறிப்பையும் (UTR, காசோலை அல்லது UPI எண்) தட்டச்சு செய்து, அனுமதிக்கப்பட்ட வரியில் "இந்தச் செலுத்துதலைப் பதிவு செய்" அழுத்தவும்.',
+    needPaid: 'பதிவதற்கு முன் செலுத்திய நாளையும் அதன் குறிப்பையும் (UTR, காசோலை அல்லது UPI எண்) தட்டச்சு செய்யவும்.', paidInFuture: 'செலுத்திய நாள் இன்னும் வராத நாளாக இருக்க முடியாது.',
     approvedH: 'நீங்கள் கேட்ட செலுத்துதல்கள்', st_waiting: 'இரண்டாமவருக்காகக் காத்திருக்கிறது', st_approved: 'அனுமதிக்கப்பட்டது — செலுத்தியதும் பதிவு செய்யுங்கள்', st_rejected: 'நிராகரிக்கப்பட்டது', st_expired: 'அனுமதி காலாவதியானது — மீண்டும் கேளுங்கள்', st_used: 'பதிவானது',
     record: 'இந்தச் செலுத்துதலைப் பதிவு செய்', recordedNow: 'பதிவானது — கணக்கில் ஒரு பதிவு, அனுமதித்தவருடன்.', already: 'ஏற்கனவே பதிவானது — எதுவும் மாறவில்லை.',
     confirmTitle: 'விநியோகஸ்தர் {supplier}க்கு முன்பணமாகச் செலுத்திய {amount} பதியப்படும் ({method} {reference})',
@@ -58,7 +63,7 @@ export const SUPPLIER_ADVANCES_COPY = {
     confirmLabel: 'செலுத்துதலைப் பதிவு செய்', confirmUnavailable: 'உறுதிப்படுத்தும் திரையைத் திறக்க முடியவில்லை, எனவே எதுவும் அனுப்பப்படவில்லை. பக்கத்தைப் புதுப்பித்து மீண்டும் முயற்சிக்கவும்.',
     useH: 'பில்லுக்கு எதிராகப் பயன்படுத்து', invoiceId: 'விநியோகஸ்தரின் பொருந்திய பில் எண்', usedOn: 'நாள் (YYYY-MM-DD)', use: 'பயன்படுத்து', usedNow: 'பில்லுக்கு எதிராகப் பயன்படுத்தப்பட்டது — கணக்கில் ஒரு பதிவு.',
     undo: 'இந்தப் பயன்பாட்டை ரத்து செய்', undoneNow: 'ஈடுசெய்யும் பதிவால் ரத்தானது — பில் மீண்டும் நிலுவை, முன்பணம் மீண்டும் திறந்தது.',
-    needAsk: 'விநியோகஸ்தர், ரூபாயில் தொகை, நாள் (YYYY-MM-DD), எப்படிச் செலுத்தியது, குறிப்பு — நிரப்புங்கள்.', needUse: 'பில் எண், ரூபாயில் தொகை, நாள் (YYYY-MM-DD) — எழுதுங்கள்.', needUndo: 'ரத்து செய்யும் நாளை எழுதுங்கள் (YYYY-MM-DD).',
+    needAsk: 'விநியோகஸ்தர், ரூபாயில் தொகை, எப்படிச் செலுத்தப்படும் — நிரப்புங்கள்.', needUse: 'பில் எண், ரூபாயில் தொகை, நாள் (YYYY-MM-DD) — எழுதுங்கள்.', needUndo: 'ரத்து செய்யும் நாளை எழுதுங்கள் (YYYY-MM-DD).',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை.', cannotRead: 'உங்கள் பணி விநியோகஸ்தர் முன்பணங்களைப் படிக்க முடியாது.', cannotPay: 'உங்கள் பணி விநியோகஸ்தர்களுக்குச் செலுத்த முடியாது.', cannotUse: 'உங்கள் பணி கணக்குப் பதிவுகள் இட முடியாது.',
     refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் படிக்கவோ சேமிக்கவோ இல்லை.',
   },
@@ -76,21 +81,42 @@ export interface AdvancePosition {
 }
 export interface AdvancesRegister { readonly advances: readonly AdvancePosition[]; readonly registerLeftMinor: number; readonly advancesAccount: string | null; readonly ledgerMinor: number | null; readonly agrees: boolean; readonly asAt: string }
 export interface PaymentAsk { readonly requestId: string; readonly subjectRef: string; readonly status: string; readonly details: Record<string, unknown>; readonly valueMinor: number | null }
-export interface AskForm { readonly supplierId: string; readonly amountRupees: string; readonly paidOn: string; readonly method: string; readonly reference: string; readonly poId: string }
+export interface AskForm {
+  readonly supplierId: string; readonly amountRupees: string; readonly method: string; readonly poId: string;
+  /** Ignored when asking (OB-807 A): the day and the reference are typed when the approved advance is recorded (`PaidDetails`). */
+  readonly paidOn?: string; readonly reference?: string;
+}
+/** OB-807 A: what is typed when an approved advance is recorded — the day it was paid and its reference. */
+export interface PaidDetails { readonly paidOn: string; readonly reference: string }
 export interface UseForm { readonly invoiceId: string; readonly amountRupees: string; readonly on: string }
 
-type Why = 'nobody' | 'cannotRead' | 'cannotPay' | 'cannotUse' | 'needAsk' | 'needUse' | 'needUndo';
+type Why = 'nobody' | 'cannotRead' | 'cannotPay' | 'cannotUse' | 'needAsk' | 'needUse' | 'needUndo' | 'needPaid' | 'paidInFuture';
 type Done<T = Record<string, unknown>> = Promise<Outcome<T, Why>>;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const METHODS = ['bank_transfer', 'cheque', 'upi', 'cash'] as const;
 const seg = (s: string): string => encodeURIComponent(s.trim());
 const ADVANCE_PREFIX = 'advance:';
 
-/** The payment as head office's pay route reads it (the same details are asked for), or null when the form is not complete. */
+/** OB-807 A: the advance's TERMS as approval is asked for them — supplier, amount, how, order — or null when the form is not
+ *  complete. No paid day and no reference: they exist only once the money has gone. Pure. */
 export function advanceBody(f: AskForm): Record<string, unknown> | null {
   const amountMinor = paiseOf(f.amountRupees);
-  if (f.supplierId.trim() === '' || amountMinor === null || amountMinor <= 0 || !DAY.test(f.paidOn.trim()) || !(METHODS as readonly string[]).includes(f.method) || f.reference.trim() === '') return null;
-  return { supplierId: f.supplierId.trim(), amountMinor, paidOn: f.paidOn.trim(), method: f.method, reference: f.reference.trim(), ...(f.poId.trim() === '' ? {} : { poId: f.poId.trim() }) };
+  if (f.supplierId.trim() === '' || amountMinor === null || amountMinor <= 0 || !(METHODS as readonly string[]).includes(f.method)) return null;
+  return { supplierId: f.supplierId.trim(), amountMinor, method: f.method, ...(f.poId.trim() === '' ? {} : { poId: f.poId.trim() }) };
+}
+
+/**
+ * The body head office's pay route reads, from the APPROVED request (never a form typed again) and the day and reference typed
+ * once the money has gone. An approval asked the older way already carries its day and reference: those are sent as approved,
+ * and anything typed is not used. 'needPaid' / 'paidInFuture' when the typed ones will not do. Pure.
+ */
+export function advanceRecordBodyOf(ask: PaymentAsk, paid: PaidDetails | undefined, today: string | undefined): Record<string, unknown> | 'needPaid' | 'paidInFuture' {
+  const approved = Object.fromEntries(Object.entries(ask.details).filter(([k]) => k !== 'advanceId'));
+  if ('paidOn' in approved || 'reference' in approved) return approved;
+  const paidOn = (paid?.paidOn ?? '').trim(); const reference = (paid?.reference ?? '').trim();
+  if (!DAY.test(paidOn) || reference === '') return 'needPaid';
+  if (today !== undefined && DAY.test(today) && paidOn > today) return 'paidInFuture';
+  return { ...approved, paidOn, reference };
 }
 
 export const advancesOutcomeWords = (lang: Lang, out: Outcome<unknown>, good: string): string => {
@@ -104,7 +130,7 @@ export interface SupplierAdvancesSession {
   askToPay(f: AskForm): Done<{ readonly requestId: string; readonly advanceId: string }>;
   /** The advance payments this person asked for, newest last — each with where its approval stands. */
   myAsks(): Done<readonly PaymentAsk[]>;
-  record(ask: PaymentAsk): Done<{ readonly alreadyRecorded: boolean }>;
+  record(ask: PaymentAsk, paid?: PaidDetails): Done<{ readonly alreadyRecorded: boolean }>;
   use(advanceId: string, f: UseForm): Done<{ readonly alreadyRecorded: boolean }>;
   undo(advanceId: string, application: { readonly applicationId: string; readonly amountMinor: number }, on: string): Done<{ readonly alreadyRecorded: boolean }>;
 }
@@ -112,6 +138,8 @@ export interface SupplierAdvancesSession {
 export function createSupplierAdvancesSession(input: {
   readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined;
   readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly newId?: (prefix: string) => string;
+  /** The shop's today (YYYY-MM-DD), so a paid day still to come is refused here as well as at head office. */
+  readonly today?: () => string;
 }): SupplierAdvancesSession {
   const named = input.viewer?.userId !== undefined;
   const held = new Set(input.viewer?.permissions ?? []);
@@ -130,7 +158,7 @@ export function createSupplierAdvancesSession(input: {
       // The engine fingerprints the pay route's details: its body plus the path id (`actionDetails`).
       const out = await call<{ requestId: string }>('POST', '/v1/approvals/requests', {
         kind: 'supplier_payment', subjectRef: `${ADVANCE_PREFIX}${advanceId}`, details: { ...body, advanceId }, valueMinor: body['amountMinor'],
-        summary: `Advance to supplier ${String(body['supplierId'])}: ${rupees(body['amountMinor'] as number)} by ${String(body['method'])}, ref ${String(body['reference'])}`, reason: `Advance before the bill${body['poId'] === undefined ? '' : ` for order ${String(body['poId'])}`}`,
+        summary: `Advance to supplier ${String(body['supplierId'])}: ${rupees(body['amountMinor'] as number)} by ${String(body['method'])}`, reason: `Advance before the bill${body['poId'] === undefined ? '' : ` for order ${String(body['poId'])}`}`,
       });
       return out.result === 'ok' ? { result: 'ok', value: { requestId: out.value.requestId, advanceId } } : out;
     },
@@ -140,11 +168,13 @@ export function createSupplierAdvancesSession(input: {
       if (mine.result !== 'ok') return mine;
       return { result: 'ok', value: (mine.value.mine ?? []).filter((q) => q.kind === 'supplier_payment' && q.subjectRef.startsWith(ADVANCE_PREFIX)) };
     },
-    // Exactly what was approved is recorded: the details come from the approved request, never from a form typed again.
-    record: async (ask) => {
+    // Exactly what was approved is recorded: the terms come from the approved request, never from a form typed again; the day
+    // and the reference are the ones typed now that it has been paid (OB-807 A).
+    record: async (ask, paid) => {
       const no = gate('pay'); if (no !== undefined) return no;
       const advanceId = ask.subjectRef.slice(ADVANCE_PREFIX.length);
-      const body = Object.fromEntries(Object.entries(ask.details).filter(([k]) => k !== 'advanceId'));
+      const body = advanceRecordBodyOf(ask, paid, input.today?.());
+      if (typeof body === 'string') return { result: 'invalid', why: body };
       return call('POST', `/v1/finance/supplier-advances/${seg(advanceId)}`, { ...body, approvalId: ask.requestId });
     },
     use: async (advanceId, f) => {

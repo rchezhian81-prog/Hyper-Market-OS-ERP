@@ -16,7 +16,7 @@ import { shopClock, type ShopCalendarOf } from '../../../packages/calendar/src/s
 import { storePullMaxMinutes } from '../../../packages/sync/src/pull-timing';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
-  sendAcceptedPriceToTills, type CatalogueDeps, type NotSentLog, type NotSentToTills,
+  sendAcceptedPriceToTills, sendPricesNowInForce, type CatalogueDeps, type NotSentLog, type NotSentToTills,
 } from '../../catalogue/src/index';
 import type { AcceptedPriceForTills, TillDeliveryAnswer } from '../../pricing/src/index';
 import { STREAM, streamName } from './adapters';
@@ -25,9 +25,27 @@ export const TILL_DELIVERY_STREAM = streamName(STREAM.catalogue, 'till-delivery'
 const NOT_SENT = 'PriceNotSentToTills';
 const SENT = 'PackSentForStore';
 
-interface SentForStore { readonly storeId: string; readonly version: number; readonly at: string }
+interface SentForStore { readonly storeId: string; readonly version: number; readonly at: string; readonly shopDate?: string }
 
-export function notSentLogAdapter(input: { readonly store: EventStore }): NotSentLog {
+export function notSentLogAdapter(input: { readonly store: EventStore; readonly calendar?: ShopCalendarOf }): NotSentLog {
+  const fold = async (tenantId: string): Promise<Map<string, NotSentToTills[]>> => {
+    // Folded in append order: a pack that went for the store settles everything not sent before it — EXCEPT a price whose
+    // start day is still after the day that pack was built (D-021): that pack could not carry it, so it stays waiting.
+    const open = new Map<string, NotSentToTills[]>();
+    for (const e of await input.store.readStream(tenantId, TILL_DELIVERY_STREAM) as readonly PersistedEvent[]) {
+      const p = e.event.payload as { storeId?: unknown };
+      if (typeof p.storeId !== 'string') continue;
+      const list = open.get(p.storeId) ?? [];
+      if (e.event.type === SENT) {
+        const sentOn = (e.event.payload as SentForStore).shopDate;
+        open.set(p.storeId, sentOn === undefined ? [] : list.filter((x) => x.reason === 'starts_later' && x.startsOn !== undefined && x.startsOn > sentOn));
+      } else if (e.event.type === NOT_SENT) {
+        list.push(e.event.payload as NotSentToTills);
+        open.set(p.storeId, list);
+      }
+    }
+    return open;
+  };
   return {
     recordNotSent: async (tenantId, e) => {
       await input.store.append(tenantId, TILL_DELIVERY_STREAM, makeEvent({
@@ -36,23 +54,16 @@ export function notSentLogAdapter(input: { readonly store: EventStore }): NotSen
       }));
     },
     recordSent: async (tenantId, storeId, version, at) => {
+      // The shop's date the pack was built on — so a later-day price it could not carry stays on the list (D-021).
+      const shopDate = await shopClock(input.calendar).today(tenantId, at);
       await input.store.append(tenantId, TILL_DELIVERY_STREAM, makeEvent({
         id: `sent-${storeId}-v${version}`, type: SENT, occurredAt: at,
         // One pack version, once: a retried send of the same version is the same fact.
-        idempotencyKey: `sent-${tenantId}-${storeId}-v${version}`, source: 'api/catalogue', payload: { storeId, version, at } satisfies SentForStore,
+        idempotencyKey: `sent-${tenantId}-${storeId}-v${version}`, source: 'api/catalogue', payload: { storeId, version, at, shopDate } satisfies SentForStore,
       }));
     },
-    since: async (tenantId, storeId) => {
-      // Folded in append order: a pack that went for the store settles everything not sent before it.
-      let open: NotSentToTills[] = [];
-      for (const e of await input.store.readStream(tenantId, TILL_DELIVERY_STREAM) as readonly PersistedEvent[]) {
-        const p = e.event.payload as { storeId?: unknown };
-        if (p.storeId !== storeId) continue;
-        if (e.event.type === SENT) open = [];
-        else if (e.event.type === NOT_SENT) open.push(e.event.payload as NotSentToTills);
-      }
-      return open;
-    },
+    since: async (tenantId, storeId) => (await fold(tenantId)).get(storeId) ?? [],
+    storesWaiting: async (tenantId) => [...(await fold(tenantId)).entries()].filter(([, l]) => l.length > 0).map(([id]) => id),
   };
 }
 
@@ -82,6 +93,37 @@ export function tillsSender(input: {
           : { productId: price.productId, priceMinor: String(price.priceMinor), reason: d.reason },
         ...(d.sent ? {} : { reason: d.why }),
         correlationId: `price-${price.productId}`,
+      });
+    }
+    return answers;
+  };
+}
+
+/**
+ * D-021: the start-day check the store computer's pack ask runs first (`CatalogueDeps.startDaySend`). Every later-day price
+ * whose day has come on the shop's clock is sent through the one signed publish, with an audit entry for each store saying
+ * what went — or, once, why not.
+ */
+export function startDaySender(input: {
+  readonly catalogue: CatalogueDeps;
+  readonly now: () => string;
+  readonly calendar?: ShopCalendarOf;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}): (tenantId: string) => ReturnType<typeof sendPricesNowInForce> {
+  return async (tenantId) => {
+    const today = await shopClock(input.calendar).today(tenantId, input.now());
+    const answers = await sendPricesNowInForce(input.catalogue, tenantId, { today, withinMinutes: storePullMaxMinutes() });
+    for (const d of answers) {
+      await input.recordAudit?.(tenantId, {
+        actorId: 'system:start-day-send',
+        action: d.sent ? 'catalogue.pack.sent_on_start_day' : 'catalogue.pack.not_sent_on_start_day',
+        objectType: 'store', objectId: d.storeId, at: input.now(), origin: { tenantId, branchId: d.storeId },
+        before: null,
+        after: d.sent
+          ? { productIds: d.productIds.join(','), packVersion: String(d.version), shopDate: today }
+          : { productIds: d.productIds.join(','), reason: d.reason, shopDate: today },
+        ...(d.sent ? {} : { reason: d.why }),
+        correlationId: `start-day-${d.storeId}-${today}`,
       });
     }
     return answers;

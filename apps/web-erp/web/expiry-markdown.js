@@ -11,6 +11,7 @@ const session = api?.session ?? null;
 const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
 const t = (k, slots) => (api === null ? k : api.words(lang(), k, slots));
 let proposal = null; let clearance = null;
+const itemWords = (r) => (typeof api?.itemWords === 'function' ? api.itemWords(r) : `${r.productName ?? r.productId}${r.batchId === null ? '' : ` · ${r.batchId}`}`);
 /** D-025: the near-expiry row the form was filled from (its name and figures, shown in words), or null when typed. */
 let picked = null;
 
@@ -48,7 +49,8 @@ function paint() {
   for (const s of clearance.suggestions) {
     const row = document.createElement('div'); row.className = 'row'; row.dataset.product = s.productId; row.dataset.batch = s.batchId ?? '';
     const what = document.createElement('span'); what.className = 'what';
-    const strong = document.createElement('strong'); strong.textContent = `${s.productId}${s.batchId === null ? '' : ` · ${s.batchId}`}`;
+    // D-025: the row names the item ("Plum cake 500g · CK-9"), its code only when head office holds no name.
+    const strong = document.createElement('strong'); strong.textContent = itemWords(s);
     const small = document.createElement('small'); small.textContent = proposalWords(s);
     what.append(strong, small); row.append(what);
     if (s.reason === 'marked_down') {
@@ -59,7 +61,7 @@ function paint() {
   }
   if (clearance.notJudged.length > 0) {
     const h = document.createElement('h3'); h.textContent = t('notJudgedH'); parts.push(h);
-    for (const n of clearance.notJudged) parts.push(Object.assign(document.createElement('p'), { className: 'lead', textContent: `${n.productId}${n.batchId === null ? '' : ` · ${n.batchId}`}: ${t(`nj_${n.because}`)}` }));
+    for (const n of clearance.notJudged) parts.push(Object.assign(document.createElement('p'), { className: 'lead', textContent: `${itemWords(n)}: ${t(`nj_${n.because}`)}` }));
   }
   box.replaceChildren(...parts);
 }

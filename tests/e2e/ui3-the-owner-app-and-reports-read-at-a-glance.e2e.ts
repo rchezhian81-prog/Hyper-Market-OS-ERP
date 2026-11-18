@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
+// Batch 14: a picture for the owner, only when B14_SHOTS names a folder (never committed).
+const shot = async (page: { screenshot(o: { path: string; fullPage: boolean }): Promise<unknown> }, name: string): Promise<void> => { const dir = process.env['B14_SHOTS']; if (dir !== undefined && dir !== '') await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true }); };
 import { mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -245,6 +247,9 @@ describe.skipIf(!HAVE_BROWSER)('UI-3: the owner app and the reports read at a gl
       expect(await text(p, '#report-covers')).toMatch(new RegExp(`^Store Test Store · trading day ${TODAY} · read from the store computer at \\d{4}-`));
       expect(await text(p, 'figure[data-chart="units_by_category"] tbody')).toContain('In no department₹896.00');
       expect(await text(p, '#report-figures')).toMatch(/In no department — items\s*6/);
+      // D-057 (batch 14): the margin per department — here the till's items carry no cost, so it says so, never a guess.
+      expect(await text(p, '#report-figures')).toMatch(/In no department — margin[\s\S]*Not known — 3 lines had no cost/);
+      if (width === 1280) await shot(p, 'd057-department-report-margin');
       // a figure's "as at" is the shop's clock, never the raw universal-time stamp
       expect(await text(p, '#report-figures')).not.toMatch(/\dT\d{2}:\d{2}.*Z/);
       await fits(p, 'main', `Reports at ${width}px`);

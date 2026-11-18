@@ -42,7 +42,7 @@ import { billMismatchDrafts, tillVarianceDrafts } from './ai-explainers'; // CR-
 import { tradingDayIn, tradingMonthIn, shopClock } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner, type CatalogueDeps } from '../../catalogue/src/index';
-import { notSentLogAdapter, tillsSender } from './till-delivery';
+import { notSentLogAdapter, startDaySender, tillsSender } from './till-delivery';
 import { privilegeSealKey, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { boxPrivilegeRoutes } from '../../identity/src/box-privilege';
 import { boxPrivilegeAdapter } from './box-privilege-adapters';
@@ -492,6 +492,8 @@ const HOLD_MINUTES = 60;
  */
 export function buildSurface(deps: {
   readonly signingKey: string;
+  /** D-021: the catalogue's clock (pack building, the price sends, the start-day check) — tests move it past a start day. */
+  readonly catalogueNow?: () => string;
   /**
    * Round 32 · OB-116: head office's own BOX_HISTORY_SEAL_KEY — the secret the store computers' saved history is sealed
    * under (never a store computer's PACK_SIGNING_KEY). Absent, or equal to the pack signing key: no key at all — nothing saved
@@ -827,14 +829,16 @@ export function buildSurface(deps: {
     });
   // The catalogue pack's deps — ONE composition for "Send to the tills" and for the automatic send after an accepted price
   // (OB-806 A), so both sign, version and judge a pack exactly the same way.
+  // D-021: the catalogue's clock — the API's own, unless a test moves it past a price's start day.
+  const catalogueNow = deps.catalogueNow ?? now;
   const catalogueDeps: CatalogueDeps = {
     ...(store === undefined ? {
       signer, currentPack: empty(undefined), storePack: () => {},
-      buildSnapshot: (tenantId: string) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
-      approvalsSince: empty([]), now,
+      buildSnapshot: (tenantId: string) => ({ tenantId, version: 1, builtAt: catalogueNow(), products: [], barcodes: [] }),
+      approvalsSince: empty([]), now: catalogueNow,
     } : {
-      ...catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */, calendar: shopCalendar /* R16-A: the shop's date */ }),
-      notSent: notSentLogAdapter({ store }), // OB-806 A · P-08: an accepted price not sent is recorded, and shown
+      ...catalogueAdapter({ store, signer, now: catalogueNow, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */, calendar: shopCalendar /* R16-A: the shop's date */ }),
+      notSent: notSentLogAdapter({ store, calendar: shopCalendar }), // OB-806 A · P-08: an accepted price not sent is recorded, and shown
     }),
     // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
     // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
@@ -842,7 +846,12 @@ export function buildSurface(deps: {
   };
   // OB-806 A (owner, 16 Nov 2026): an accepted price goes to the store's tills at once, through that same publish.
   const toTheTills = store === undefined ? undefined
-    : tillsSender({ catalogue: catalogueDeps, now, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) });
+    : tillsSender({ catalogue: catalogueDeps, now: catalogueNow, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) });
+  // D-021: a later-day price goes to the tills by itself on its start day — checked when a store computer asks for its pack.
+  const catalogueWithStartDay: CatalogueDeps = store === undefined ? catalogueDeps : {
+    ...catalogueDeps,
+    startDaySend: startDaySender({ catalogue: catalogueDeps, now: catalogueNow, calendar: shopCalendar, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+  };
   const surface: Route[] = [
     ...identityRoutes(identityDeps),
     // CR-01 step 4a · ADR-0033: a privilege change confirmed by PIN on the store PC's office screens, sealed there with the
@@ -918,7 +927,7 @@ export function buildSurface(deps: {
         }),
         ...(deps.identityDirectoryTenantId === undefined ? {} : { directoryTenantId: deps.identityDirectoryTenantId }),
       }),
-    ...catalogueRoutes(catalogueDeps),
+    ...catalogueRoutes(catalogueWithStartDay),
     // Unit sale price on the label (B3, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...labellingRoutes(),
     // Master-data commit guards (B2 dual-MRP) — stateless product-master validation.
