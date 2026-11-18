@@ -146113,6 +146113,9 @@
                     "planId": {
                       "type": "string"
                     },
+                    "documentNumber": {
+                      "type": "string"
+                    },
                     "locationId": {
                       "type": "string"
                     },
@@ -178014,15 +178017,12 @@
       "PostB2bCollectionsByCustomerIdPaymentsByReceiptIdReply": {
         "type": "object",
         "required": [
-          "receiptId",
           "allocatedMinor",
           "unappliedMinor",
-          "allocations"
+          "allocations",
+          "receiptId"
         ],
         "properties": {
-          "receiptId": {
-            "type": "string"
-          },
           "allocatedMinor": {
             "type": "number"
           },
@@ -178034,6 +178034,12 @@
             "items": {
               "$ref": "#/components/schemas/PaymentAllocation"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "receiptId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -214590,7 +214596,6 @@
       "PostInventoryCountsByCountIdReply": {
         "type": "object",
         "required": [
-          "countId",
           "expectedMinor",
           "countedMinor",
           "varianceMinor",
@@ -214600,12 +214605,10 @@
           "requiredApproval",
           "pendingApproval",
           "movementId",
-          "flags"
+          "flags",
+          "countId"
         ],
         "properties": {
-          "countId": {
-            "type": "string"
-          },
           "expectedMinor": {
             "type": "number"
           },
@@ -214645,6 +214648,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "countId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -221095,6 +221104,9 @@
           "lineId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "productId": {
             "type": "string"
           },
@@ -221161,6 +221173,9 @@
             "type": "boolean"
           },
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -264052,19 +264067,16 @@
       "PostWarehouseTransfersByTransferIdReply": {
         "type": "object",
         "required": [
-          "transferId",
           "state",
           "fromLocationId",
           "toLocationId",
           "lines",
           "unitCostsMinor",
           "costUnknown",
-          "ignoredFromCaller"
+          "ignoredFromCaller",
+          "transferId"
         ],
         "properties": {
-          "transferId": {
-            "type": "string"
-          },
           "state": {
             "type": "string"
           },
@@ -264101,6 +264113,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
           }
         },
         "additionalProperties": true,
@@ -282589,6 +282607,9 @@
           "planId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "locationId": {
             "type": "string"
           },
@@ -290665,6 +290686,9 @@
           "via"
         ],
         "properties": {
+          "documentNumber": {
+            "type": "string"
+          },
           "returnedBy": {
             "type": "string"
           },
@@ -301294,6 +301318,9 @@
         ],
         "properties": {
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {
@@ -325418,6 +325445,9 @@
           "countId": {
             "type": "string"
           },
+          "documentNumber": {
+            "type": "string"
+          },
           "productId": {
             "type": "string"
           },
@@ -330812,6 +330842,9 @@
         ],
         "properties": {
           "transferId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "fromLocationId": {

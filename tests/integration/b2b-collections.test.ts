@@ -55,6 +55,8 @@ describe('b2b collections: aged from the due date, a dispute is not chased, stop
 
     // 120,000 named against inv-1 first, the rest spilling to the next due (inv-2).
     const p = (await pay(h, A, 'u-owner', 'CUST1', 'r1', { receivedMinor: 120_000, against: ['inv-1'] })).body as Pay;
+    // OB-850: the money received has its own number (RCT1 — store 1 when the request names no store), made in the same save.
+    expect(p).toMatchObject({ documentNumber: expect.stringMatching(/^RCT1\/\d{2}-\d{2}\/00001$/) });
     expect(p.allocatedMinor).toBe(120_000);
     expect(p.unappliedMinor).toBe(0);
     expect(p.allocations.find((a) => a.invoiceId === 'inv-1')?.appliedMinor).toBe(100_000);

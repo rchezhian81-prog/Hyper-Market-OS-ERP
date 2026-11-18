@@ -208,8 +208,11 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   // ── 6. The floor asks for 30; a floor manager approves; the back store issues 30 FROM THE BIN. ─────────────────────────
   const asked = await ok(call('POST', `/v1/floor/indents/${INDENT}`, FLOOR_ASK, { fromLocationId: BACK, toLocationId: FLOOR, lines: [{ productId: PRODUCT, quantityMinor: ASKED, uom: 'ea' }], reason: 'dairy chiller low' }, INDENT), 201);
   expect(asked['indent']).toMatchObject({ state: 'requested', requestedBy: FLOOR_ASK });
+  // OB-850: the indent's own number (store 1's range), made in the same save — and it stays on the indent once approved.
+  expect(asked['indent']).toMatchObject({ documentNumber: expect.stringMatching(/^IND1\/\d{2}-\d{2}\/00001$/) });
   expect(codeOf(await call('POST', `/v1/floor/indents/${INDENT}/approval`, FLOOR_ASK, {}, 'ind-self'))).toBe('forbidden');
   const approved = await ok(call('POST', `/v1/floor/indents/${INDENT}/approval`, FLOOR_MGR, {}, 'ind-approve'), 200);
+  expect(approved['indent']).toMatchObject({ documentNumber: (asked['indent'] as { documentNumber: string }).documentNumber });
   expect(approved['indent']).toMatchObject({ state: 'approved', approvedBy: FLOOR_MGR, totals: expect.objectContaining({ allocatedMinor: ASKED }) });
   const issue = await ok(call('POST', `/v1/floor/indents/${INDENT}/issues/is-1`, BACKSTORE, { lines: [{ productId: PRODUCT, batchId: BATCH, quantityMinor: ASKED, binId: BIN }] }, 'ind-issue-1'), 201);
   expect(issue).toMatchObject({ transferId: `${INDENT}:is-1`, lineCostsMinor: [COST] });

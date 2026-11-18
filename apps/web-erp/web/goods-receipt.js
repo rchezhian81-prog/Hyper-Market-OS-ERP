@@ -221,7 +221,8 @@ function receiptNode(r) {
       const item = document.createElement('li');
       item.dataset.lineId = l.lineId;
       item.dataset.state = l.state;
-      const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.stateLabel;
+      // OB-850: once gone back, the return's own number (RTS1/26-27/00001) beside its state.
+      const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.documentNumber ? `${l.stateLabel} · ${l.documentNumber}` : l.stateLabel;
       const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityLabel} · ${l.valueNotKnown ? t('valueNotKnown') : money(l.valueMinor, l.currency)}`;
       const who = document.createElement('span'); who.className = 'd-detail';
       who.textContent = `${t('decidedByLabel')} ${l.decidedBy}` + (l.returnedBy ? ` · ${t('returnedByLabel')} ${l.returnedBy}` : '');

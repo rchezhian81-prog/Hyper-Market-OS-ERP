@@ -19,6 +19,8 @@ export interface TransferViewer { readonly userId?: string; readonly permissions
 
 export interface TransferLineRecord { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number; readonly uom: string; readonly unitCost?: { readonly minor: number } }
 export interface TransferRecord {
+  /** OB-850: a transfer out's format-A number (`TRF1/26-27/00001`); absent before. */
+  readonly documentNumber?: string;
   readonly transferId: string; readonly fromLocationId: string; readonly toLocationId: string;
   readonly lines: readonly TransferLineRecord[];
   readonly state: 'proposed' | 'in_transit' | 'received' | string;

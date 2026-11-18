@@ -5779,6 +5779,9 @@
           "via"
         ],
         "properties": {
+          "documentNumber": {
+            "type": "string"
+          },
           "returnedBy": {
             "type": "string"
           },
@@ -6689,6 +6692,9 @@
         ],
         "properties": {
           "lineId": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {

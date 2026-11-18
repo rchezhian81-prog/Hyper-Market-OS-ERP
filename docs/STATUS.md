@@ -26,7 +26,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Numbered in the same save as the document** (no gap, no duplicate; a cancelled one keeps its number): goods receipts `GRN1`, purchase orders `PO`, supplier payments `SPAY`, supplier advances `SADV`, supplier debit notes `SDN`, customer credit/debit notes `CCN`/`CDN`, business customer invoices `BINV`, write-offs from the write-off page `WOF1`.
   - Store setup shows **Document numbers**: each till's code, each range's last number, what is left this year, and the 90,000 warning.
   - Old documents keep their old numbers.
-- **Still to do:** stock count `CNT1`, transfer out `TRF1`, return to supplier `RTS1`, floor indent `IND1`, money received `RCT1`; and `WOF1` on the three other write-off paths (a count's held write-off, a damaged item found when the floor receives, a returned item written off).
+- **Also numbered now (OB-850, branch `claude/document-numbers-2`):** stock counts `CNT1`, transfers out `TRF1`, returns to supplier `RTS1`, floor indents `IND1`, money received `RCT1`, and each write-off of a batch its own `WOF1` (a count's held write-off, damage found when the floor receives, a returned item written off). Shown on Transfers, Count plans, Floor indents, Goods receipts (a return gone back), Business customers (a payment) and the write-off page.
+- **Waiting on the owner (tax):** the till's number given when payment starts; the temporary `1T01` range after a restore.
 - **Owner, in the store:** the CA confirms in writing that the new series start on the install day for the rest of 2026-27 (OB-845 A), and the temporary till range after a restore (OB-849).
 
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)

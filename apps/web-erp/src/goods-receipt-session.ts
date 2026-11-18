@@ -167,6 +167,8 @@ export interface GrnBillMatchPort {
 /** Batch 2 — one quarantined line disposed of as a return: waiting to go back to the supplier, or gone. */
 export interface GrnReturnLineView {
   readonly lineId: string;
+  /** OB-850: the return to the supplier's format-A number (`RTS1/26-27/00001`), once it has gone back. */
+  readonly documentNumber?: string;
   readonly productId: string;
   /** In the line's smallest steps (OB-31: grams for kg). */
   readonly quantityMinor: number;

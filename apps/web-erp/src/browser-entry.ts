@@ -1132,7 +1132,11 @@ function openWriteOffCapturePort(): WriteOffCapturePort {
           credentials: 'same-origin',
           body: JSON.stringify(writeOffRequestBody(body, approvalId)),
         });
-        if (res.status >= 200 && res.status < 300) return { result: 'recorded' };
+        if (res.status >= 200 && res.status < 300) {
+          // OB-850: the write-off's own number (WOF1/26-27/00001), made by head office in the same save.
+          const body = (await res.json().catch(() => ({}))) as { documentNumber?: unknown };
+          return { result: 'recorded', ...(typeof body.documentNumber === 'string' ? { documentNumber: body.documentNumber } : {}) };
+        }
         return { result: 'refused', ...(await refusalOf(res)) };
       } catch {
         return { result: 'lost_link' };
@@ -3196,7 +3200,7 @@ export async function fetchIndents(): Promise<IndentsData | null> {
       lostValueMinor: i['shortfallResolution'] === undefined ? null : ((i['shortfallResolution'] as Record<string, unknown>)['lines'] as Record<string, unknown>[] | undefined ?? []).reduce((s, l) => s + num(l['lostValueMinor']), 0),
     }));
     return {
-      indentId: String(r['indentId'] ?? ''), state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
+      indentId: String(r['indentId'] ?? ''), ...(typeof r['documentNumber'] === 'string' ? { documentNumber: r['documentNumber'] } : {}) /* OB-850 */, state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
       approvedBy: str(r['approvedBy']), fromLocationId: String(r['fromLocationId'] ?? ''), toLocationId: String(r['toLocationId'] ?? ''), reason: str(r['reason']),
       flags: strs(r['flags']), attention: strs(r['attention']), needsAttention: r['needsAttention'] === true, lines, issues,
     };
@@ -3412,6 +3416,7 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
       valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
       decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
       returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+      ...(typeof gone?.['documentNumber'] === 'string' ? { documentNumber: gone['documentNumber'] } : {}), // OB-850: RTS1/…
       ...(d['valueNotKnown'] === true || gone?.['valueNotKnown'] === true ? { valueNotKnown: true } : {}), // OB-509
       ...((): { dispatch?: GrnReturnDispatchView } => { const dispatch = dispatchOf(g, lineId); return dispatch === undefined ? {} : { dispatch }; })(),
     }];

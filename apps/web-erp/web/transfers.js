@@ -68,7 +68,8 @@ function ensureRegister() {
     rowData: (r) => ({ transfer: r.transfer.transferId, state: r.transfer.state }),
     empty: { title: both('empty'), detail: both('registerLede') },
     columns: [
-      { key: 'transfer', label: both('colTransfer'), value: (r) => r.transfer.transferId },
+      // OB-850: a transfer out's own number (TRF1/26-27/00001) when it has one; one from before keeps its id.
+      { key: 'transfer', label: both('colTransfer'), value: (r) => r.transfer.documentNumber || r.transfer.transferId },
       { key: 'route', label: both('colRoute'), value: (r) => session.rowView(lang, r).route },
       { key: 'lines', label: both('colLines'), sort: false, value: linesText },
       { key: 'state', label: both('colState'), filter: true, value: (r) => session.rowView(lang, r).stateWord,

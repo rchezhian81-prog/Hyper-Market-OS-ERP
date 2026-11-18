@@ -53,7 +53,7 @@ interface PosWindow {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
     /** The next receipt number, from the store computer (audit PF-04). */
-    nextReceipt(): Promise<string>;
+    nextReceipt(kind?: 'sale' | 'return'): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
     newSale(): void;

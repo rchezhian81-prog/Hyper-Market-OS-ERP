@@ -54,7 +54,7 @@ interface PosWindow {
     operator(): string | undefined;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
     /** The next receipt number, from the store computer (audit PF-04). */
-    nextReceipt(): Promise<string>;
+    nextReceipt(kind?: 'sale' | 'return'): Promise<string>;
     newSale(): void;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
     approveAtTill(r: { managerId: string; pin: string; kind: 'refund'; billRef: string; valueMinor: number; reason: string }): Promise<{ approved: boolean; approvalId?: string; laneMessage?: string }>;

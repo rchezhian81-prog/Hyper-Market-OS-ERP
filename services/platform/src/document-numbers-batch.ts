@@ -93,12 +93,17 @@ export async function appendWithDocumentNumbers(store: EventStore, tenantId: str
         ? { guard: guards[0]!, alsoGuards: guards.slice(1) }
         : { ...input.options, alsoGuards: [...(input.options.alsoGuards ?? []), ...guards] };
     try {
-      await store.appendBatch(tenantId, [...input.entries(issues.map((i) => i.number)), ...numberEntries], options);
+      // The issue records go FIRST, in number order: every save takes the numbers' rows in the same order, so two saves that
+      // reach for the same numbers wait for each other, never deadlock.
+      const ordered = [...numberEntries].sort((x, y) => (x.event.id < y.event.id ? -1 : x.event.id > y.event.id ? 1 : 0));
+      await store.appendBatch(tenantId, [...ordered, ...input.entries(issues.map((i) => i.number))], options);
       return issues.map((i) => i.number);
     } catch (e) {
       const ourKey = e instanceof ConcurrencyConflictError && keys.includes(e.key);
       const ourId = e instanceof EventIdClashError && numberEntries.some((n) => n.event.id === e.eventId);
-      if (attempt < RETRIES && (ourKey || ourId)) {
+      // PostgreSQL's own answer to a lock cycle (40P01): the transaction rolled back whole — take fresh numbers and try again.
+      const deadlock = typeof e === 'object' && e !== null && (e as { code?: unknown }).code === '40P01';
+      if (attempt < RETRIES && (ourKey || ourId || deadlock)) {
         if (attempt >= 3) await new Promise((r) => { setTimeout(r, Math.random() * Math.min(50, attempt * 2)); });
         continue;
       }

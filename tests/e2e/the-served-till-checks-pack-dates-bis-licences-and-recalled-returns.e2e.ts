@@ -168,7 +168,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till checks pack dates, BIS licences 
     const outcome = await page.evaluate(async (pin) => {
       const s = (globalThis as unknown as { posSession: {
         approveAtTill(r: Record<string, unknown>): Promise<{ approved: boolean; approvalId?: string; approvedBy?: string }>;
-        nextReceipt(): Promise<string>;
+        nextReceipt(kind?: 'sale' | 'return'): Promise<string>;
         noReceiptReturn(): { submit(d: Record<string, unknown>): Promise<{ kind: string }> } | null;
       } }).posSession;
       const a = await s.approveAtTill({ managerId: 'u-mgr', pin, kind: 'no_receipt_return', valueMinor: 64_000, reason: 'faulty' });
