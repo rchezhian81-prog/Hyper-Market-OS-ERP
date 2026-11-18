@@ -50,9 +50,14 @@ export function readReceiptPrefix(v: unknown): { readonly ok: true; readonly pre
   return { ok: true, prefix: p };
 }
 
-/** A bill number under a prefix: the prefix and the 6-digit counter. */
+/** OB-847 (format A): a till range's head — `1L01/26-27/` (11 characters) — under which the count is 5 digits. */
+export const FORMAT_A_HEAD = /^[1-9][LQRT]\d{2}\/\d{2}-\d{2}\/$/;
+/** OB-847: whether a prefix is a format-A range head (5-digit count) rather than an older prefix (6-digit count). */
+export const isFormatAHead = (prefix: string): boolean => FORMAT_A_HEAD.test(prefix);
+
+/** A bill number under a prefix: the prefix and the 6-digit counter — or, under a format-A head, the 5-digit count (OB-847). */
 export function receiptNumberFor(prefix: string, counter: number): string {
-  return `${prefix}${String(counter).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+  return `${prefix}${String(counter).padStart(isFormatAHead(prefix) ? 5 : RECEIPT_COUNTER_DIGITS, '0')}`;
 }
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -85,9 +90,12 @@ export function storeComputerDefaultPrefix(storeId: string, laneId: string, boxI
   return `ZZ${out}-`;
 }
 
-/** Whether a bill number was made under a store computer's fallback prefix (a till head office never issued one). */
+/**
+ * Whether a bill number was made under a store computer's fallback prefix (a till head office never issued one) — the old
+ * `ZZ……-` form, or (OB-847, format A) a TEMPORARY till range `1T01/26-27/00001` (a restore, or a till with no lane code).
+ */
 export function isStoreComputerDefaultReceipt(receiptNumber: unknown): boolean {
-  return typeof receiptNumber === 'string' && /^ZZ[A-Z2-7]{6}-\d{6}$/.test(receiptNumber);
+  return typeof receiptNumber === 'string' && (/^ZZ[A-Z2-7]{6}-\d{6}$/.test(receiptNumber) || /^[1-9]T\d{2}\/\d{2}-\d{2}\/\d{5}$/.test(receiptNumber));
 }
 
 // ── A2 (roadmap v2.1 addendum · CGST Rule 46(b)): the series is per FINANCIAL YEAR ───────────────────────────────────────
@@ -166,6 +174,10 @@ export function readPublishedSeries(s: PublishedSeriesLine): { readonly ok: true
  * the prefix is everything before the last six); undefined when it does not end in six digits.
  */
 export function splitReceiptNumber(receiptNumber: unknown): { readonly prefix: string; readonly counter: number } | undefined {
+  // OB-847 (format A): `1L01/26-27/00042` — the range's head `1L01/26-27/` and its 5-digit count. An old number always ends in
+  // SIX digits, so its last "/" (if any) is at least six characters from the end: the two forms never read alike.
+  const a = /^([A-Z0-9]{1,4}\/\d{2}-\d{2}\/)(\d{5})$/.exec(typeof receiptNumber === 'string' ? receiptNumber : '');
+  if (a !== null) return { prefix: a[1]!, counter: Number(a[2]) };
   if (typeof receiptNumber !== 'string' || receiptNumber.length <= RECEIPT_COUNTER_DIGITS || !/\d{6}$/.test(receiptNumber)) return undefined;
   return { prefix: receiptNumber.slice(0, -RECEIPT_COUNTER_DIGITS), counter: Number(receiptNumber.slice(-RECEIPT_COUNTER_DIGITS)) };
 }

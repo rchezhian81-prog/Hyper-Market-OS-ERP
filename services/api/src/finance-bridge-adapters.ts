@@ -8,6 +8,7 @@
 // from main.ts: `financeBridgeRoutes` (routes), `finBridgeJournalHooks` / `finBridgeEvidenceHooks` (spread into existing
 // route deps), `finBridgeCloseChecks` (one line in the close's book checks) and `finBridgeSweep` (the worker's pass).
 
+import { appendWithDocumentNumber } from '../../platform/src/document-number-issue';
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
@@ -284,6 +285,15 @@ export function supplierAdvanceAdapter(input: Base): SupplierAdvanceDeps {
     },
     ledgerBalance: async (t, account) => (await allJournals(store, t)).flatMap((j) => j.lines).filter((l) => l.accountCode === account).reduce((s, l) => s + l.debitMinor - l.creditMinor, 0),
     approvals: approvalRequestsAdapter(input),
+    // OB-847: the advance's number (SADV/26-27/00001) is taken in the SAME save as its journal — the event financeAdapter's
+    // appendJournal writes (same id and key), with the number in it.
+    appendNumberedAdvance: async (t, advanceId, build) => (await appendWithDocumentNumber(store, t, {
+      range: { kind: 'supplier_advance' }, documentRef: advanceId, at: now(),
+      entries: (n) => {
+        const e = build(n);
+        return [{ stream: STREAM.finance, event: makeEvent({ id: `je-${e.entryId}`, type: 'JournalPosted', occurredAt: now(), idempotencyKey: `je-${t}-${e.entryId}`, source: 'api/finance', payload: e }) }];
+      },
+    }))?.number,
   };
 }
 

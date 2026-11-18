@@ -46,7 +46,7 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, effectiveRoleCatalogue, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter, replenishmentParametersAdapter,
+  issuedReceiptSeries, bankedReceiptCounts, formatAPackSection, complianceAdapter, replenishmentParametersAdapter,
   foldSupplierRecords, // Fix batch 5 · D-033: the supplier's name beside each open delivery
 } from './adapters';
 import { parametersAt } from '../../inventory/src/replenishment-parameters'; // OB-630
@@ -78,6 +78,11 @@ export interface StorePackBuildInput {
   readonly rules?: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
   /** Verifier r18 OB85-2: where the bill-number high-water snapshot lives (production: `projection_snapshot`). Absent → per process. */
   readonly snapshots?: SnapshotStore;
+  /**
+   * OB-847: false only where a test proves the OLDER till numbering (a pack with no format-A section — as a pack file or a
+   * pack from before still is). Absent → format A, always (OB-845 A: from the day this is installed).
+   */
+  readonly tillFormatA?: boolean;
   /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
   readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }>;
   /**
@@ -463,7 +468,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       if (lane !== undefined) boxSeriesBankedThrough[lane] = count;
     }
   }
-  sections['receiptNumbering'] = { storesInBusiness, ...(Object.keys(boxSeriesBankedThrough).length === 0 ? {} : { boxSeriesBankedThrough }) };
+  // OB-847 · OB-845 A: format A from the version that brings it — this store's number, each till's lane code (given
+  // automatically) and every format-A range head office holds banked here, so the box numbers 1L01/26-27/00001 offline.
+  const formatA = input.tillFormatA === false ? undefined : await formatAPackSection(store, now, tenantId, storeId, banked);
+  sections['receiptNumbering'] = { storesInBusiness, ...(Object.keys(boxSeriesBankedThrough).length === 0 ? {} : { boxSeriesBankedThrough }), ...(formatA === undefined ? {} : { formatA }) };
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);

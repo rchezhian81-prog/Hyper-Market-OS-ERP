@@ -293,6 +293,7 @@ const WORDS = {
     managerPinTitle: 'Manager: your till PIN', managerPinHint: 'The manager keys their own six-digit till PIN. It is never shown, and approves this refund only.',
     approvalRefused: 'Not approved',
     refundDone: 'Refund recorded',
+    returnNumber: 'Return number',
     refundHeldRecall: '{n} item(s) are under RECALL. Do not put them back on the shelf — put them in the held (quarantine) bin.',
     refundHeldExpired: '{n} item(s) are from a batch past its date. Do not put them back on the shelf — put them in the held (quarantine) bin.',
     refundPending: 'Refund pending',
@@ -580,6 +581,7 @@ const WORDS = {
     managerPinTitle: 'மேலாளர்: உங்கள் கல்லா PIN', managerPinHint: 'மேலாளர் தனது ஆறு இலக்க கல்லா PIN-ஐ உள்ளிடுகிறார். அது ஒருபோதும் காட்டப்படாது; இந்த ஒரு திரும்பப் பணத்திற்கு மட்டுமே அனுமதி.',
     approvalRefused: 'அனுமதிக்கப்படவில்லை',
     refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
+    returnNumber: 'திருப்ப எண்',
     refundHeldRecall: '{n} பொருள்(கள்) திரும்பப்பெறுதலில் (RECALL) உள்ளன. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
     refundHeldExpired: '{n} பொருள்(கள்) காலாவதியான தொகுதியைச் சேர்ந்தவை. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
     refundPending: 'திரும்பப் பணம் நிலுவையில்',
@@ -1307,7 +1309,8 @@ function paintKeypad(decimal) {
 }
 paintKeypad(false);
 
-// The letters pad for a bill number keyed by hand (A–Z and the "-" a bill number carries), and the switch between it and the
+// The letters pad for a bill number keyed by hand (A–Z, and the "-" and "/" a bill number carries — OB-847: 1L01/26-27/00001),
+// and the switch between it and the
 // digits. Built once, the same full-size keys as the digits.
 // A staff ID's letters are lower case (logins are written so: cashier-01), a bill number's upper case.
 let letterpadLower = null;
@@ -1315,7 +1318,7 @@ function paintLetterpad(lower) {
   if (letterpadLower === lower) return;
   letterpadLower = lower;
   const letters = lower ? 'abcdefghijklmnopqrstuvwxyz' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  el('letterpad').replaceChildren(...[...letters, '-', '⌫'].map((key) => {
+  el('letterpad').replaceChildren(...[...letters, '-', ...(lower ? [] : ['/']), '⌫'].map((key) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = key;
@@ -2055,9 +2058,10 @@ async function askOldBill(title, hint) {
  * The next receipt number, from the store computer (audit PF-04). `null` when it gave none — the screen has then said
  * why in the box's own words (range spent, nobody signed in, it could not save or be reached) and no money is taken.
  */
-async function takeReceiptNumber() {
+async function takeReceiptNumber(kind) {
   try {
-    return await session.nextReceipt();
+    // OB-846 A: a return's number comes from the till's return range (1R01/…), a bill's from its bill range (1L01/…).
+    return await session.nextReceipt(kind === 'return' ? 'return' : undefined);
   } catch (e) {
     tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')), STOP);
     return null;
@@ -2805,7 +2809,8 @@ function askScanOrKey({ title, hint = '', letters = false, staffLetters = false 
         if (code.length >= 4) { closeSheet(null); finish(code); } // a scanner, not a person
         return;
       }
-      if (/^[A-Za-z0-9._-]$/.test(event.key)) buffer += event.key;
+      // OB-847: a format-A bill number has "/" in it (1L01/26-27/00001) — a scanner reading one sends it.
+      if (/^[A-Za-z0-9._/-]$/.test(event.key)) buffer += event.key;
     };
     window.addEventListener('keydown', onKey, true);
     // The keypad sheet is the manual fallback; whichever answers first wins.
@@ -2982,9 +2987,9 @@ async function startRefund() {
     if (approval === null) return;
   }
 
-  // 6. The refund's own document number, from this lane's gap-free range, and its operation identity
+  // 6. The refund's own document number, from this lane's gap-free RETURN range (OB-846 A), and its operation identity
   // (the idempotency key — a retry under the same id can never refund twice, RR-F03).
-  const number = await takeReceiptNumber();
+  const number = await takeReceiptNumber('return');
   if (number === null) return;
   const returnId = `RT-${number}`;
 
@@ -3108,8 +3113,8 @@ async function startExchange() {
     }
   }
 
-  // 6. Two documents from this lane's gap-free range: the return (the credit) and the replacement sale's receipt.
-  const number = await takeReceiptNumber();
+  // 6. Two documents from this lane's gap-free ranges: the return (the credit, from the return range) and the replacement sale's receipt.
+  const number = await takeReceiptNumber('return');
   if (number === null) return;
   const replacementReceipt = await takeReceiptNumber();
   if (replacementReceipt === null) return;
@@ -3230,8 +3235,8 @@ async function startNoReceiptReturn() {
   const approval = await managerApproves({ kind: 'no_receipt_return', valueMinor: refundMinor, hint: t('noReceiptManagerHint') });
   if (approval === null) return;
 
-  // 6. The document number from this lane's gap-free range, and the operation identity (idempotency key, RR-F03).
-  const number = await takeReceiptNumber();
+  // 6. The document number from this lane's gap-free RETURN range (OB-846 A), and the operation identity (idempotency key, RR-F03).
+  const number = await takeReceiptNumber('return');
   if (number === null) return;
   const returnId = `RT-${number}`;
 
@@ -3262,7 +3267,7 @@ async function startNoReceiptReturn() {
 const CARD_REFUND_REASONS = [{ code: 'refund_done_on_machine', en: 'Refund seen on the machine\'s slip', ta: 'இயந்திரச் சீட்டில் திரும்பப் பணம் பார்க்கப்பட்டது' }];
 async function afterRefund(outcome, refundTender, returnId) {
   if (!realTradingOn() || outcome.kind !== 'pending' || (refundTender !== 'card' && refundTender !== 'upi') || !session.recordCardRefundOnMachine) {
-    showRefundOutcome(outcome, refundTender);
+    showRefundOutcome(outcome, refundTender, typeof returnId === 'string' && returnId.startsWith('RT-') ? returnId.slice(3) : undefined);
     return;
   }
   const amount = inr(outcome.refundMinor);
@@ -3317,7 +3322,7 @@ async function cardListText() {
  * instruction that must not be missed; settled and pending get their own headings; anything else is
  * the plain "please read this".
  */
-function showRefundOutcome(outcome, refundTender) {
+function showRefundOutcome(outcome, refundTender, returnNumber) {
   const stop = outcome.kind === 'refused' || outcome.kind === 'uncertain'
     || outcome.kind === 'conflict' || outcome.kind === 'not_entitled';
   const title = outcome.kind === 'settled' ? t('refundDone')
@@ -3332,7 +3337,9 @@ function showRefundOutcome(outcome, refundTender) {
     ? [outcome.held.recall > 0 ? t('refundHeldRecall').replace('{n}', String(outcome.held.recall)) : null,
       outcome.held.expired > 0 ? t('refundHeldExpired').replace('{n}', String(outcome.held.expired)) : null].filter(Boolean)
     : [];
-  tell(title, [words, ...held].join('\n'), outcome.kind === 'settled' && held.length === 0 ? SUCCESS : STOP);
+  // OB-847: the return's own number (1R01/26-27/00001) — on the screen, as the bill's is.
+  const numbered = returnNumber && (outcome.kind === 'settled' || outcome.kind === 'pending') ? [`${t('returnNumber')}: ${returnNumber}`] : [];
+  tell(title, [...numbered, words, ...held].join('\n'), outcome.kind === 'settled' && held.length === 0 ? SUCCESS : STOP);
 }
 
 /**

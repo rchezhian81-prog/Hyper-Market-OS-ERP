@@ -240,6 +240,8 @@ export interface ExcessReturn {
 /** A committed goods receipt — the durable GRN record, carrying the checked outcome. */
 export interface GrnRecord {
   readonly grnId: string;
+  /** OB-847 (document numbers, format A): `GRN1/26-27/00001`, made automatically when the receipt is saved. Absent before. */
+  readonly documentNumber?: string;
   /** OB-164: the D-6 receiving checklist on file for this delivery when it was booked (a cold-chain receipt needs one). */
   readonly receivingChecklist?: ReceivingChecklistOnFile;
   /** OB-172: why a checklist carried in from the dock was not accepted (with the `receiving_checklist_not_accepted` flag). */
@@ -677,7 +679,8 @@ export interface GoodsReceiptDeps {
    * Record the GRN and its inbound movements as ONE atomic append (FND-01) — and, when `poReceipt` is given (SP-6 · F01),
    * the receipt's posting against the purchase order in the SAME append, idempotent on the receipt id.
    */
-  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting, orderGuard?: OrderGuard) => Promise<void> | void;
+  /** OB-847: answers the receipt's format-A number (`GRN1/26-27/00001`), taken in the same save. */
+  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting, orderGuard?: OrderGuard) => Promise<void | { readonly documentNumber?: string }> | void | { readonly documentNumber?: string };
   /**
    * SF-02 — the order's write-guard version, read BEFORE the order itself. Every receipt, cancellation and posting against
    * the order moves it, so a receipt decided on a remaining quantity that has since changed is refused, never doubled.
@@ -987,13 +990,14 @@ export async function commitAgainstOrder(
   const final = await withProcureChecks(deps, tenantId, record, opts.asnId);
   const guard = poReceipt !== undefined && order.poId !== null && order.expectedVersion !== undefined
     ? { poId: order.poId, expectedVersion: order.expectedVersion } : undefined;
+  let numbered: void | { readonly documentNumber?: string };
   try {
-    await deps.commit(tenantId, final, movements, key, poReceipt, guard);
+    numbered = await deps.commit(tenantId, final, movements, key, poReceipt, guard);
   } catch (e) {
     if (e instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${order.poId ?? ''}`);
     throw e;
   }
-  return final;
+  return numbered?.documentNumber === undefined ? final : { ...final, documentNumber: numbered.documentNumber };
 }
 
 /**

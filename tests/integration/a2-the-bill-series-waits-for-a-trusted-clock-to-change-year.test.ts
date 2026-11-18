@@ -48,7 +48,7 @@ describe.each(backings)('A2 — the year switch waits for a trusted clock — on
 
     const box = await startBox({
       tenantId: ho.tenantId, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }], cloud: { boxUser: 'u-box', storeId: STORE },
-      pack: { ...storePack(STORE), receiptSeries: sections['receiptSeries'], receiptNumbering: sections['receiptNumbering'] },
+      pack: { ...storePack(STORE), receiptSeries: sections['receiptSeries'], receiptNumbering: { ...(sections['receiptNumbering'] as object), formatA: undefined /* OB-847: proves the older numbering */ } },
     });
     boxes.push(box);
     const next = async (): Promise<string> => receiptNumberAt(box.edge.lane!.port, await signInAtLane(box.edge.lane!.port, 'u-lanecash'));

@@ -19,6 +19,8 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
+import { appendWithDocumentNumber, type NumberedSave } from '../../platform/src/document-number-issue';
+import { readDocumentNumber, TILL_LANE_MAX } from '../../../packages/numbering/src/document-numbers';
 import type { ReplenishmentParameterDeps, StoredParameters } from '../../inventory/src/replenishment-parameters';
 import { returnedValue as returnedValueOf } from '../../../packages/finance/src/day-book';
 import { latestStoreReports, nothingUnsentAtFor } from './report-producers';
@@ -29,7 +31,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
-import { splitReceiptNumber, RECEIPT_COUNTER_MAX, RECEIPT_COUNTER_DIGITS } from '../../../packages/contracts/src/receipt-number';
+import { splitReceiptNumber, receiptNumberFor, isFormatAHead, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
 import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -1731,6 +1733,53 @@ const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
  * clash since round 12; a raw 500 on PostgreSQL before), so the second fact was lost. With the id derived from the key,
  * the same fact again is the same id and key (a dedup) and a different fact is a different id.
  */
+/** The note, its AR movement, its posting fact and the customer index — ONE batch (a customer credit or debit note). */
+function customerNoteEntries(tenantId: string, note: CustomerNote, issuedBy: string, at: string): BatchEntry[] {
+  const credit = note.kind === 'credit_note';
+  const ar: RecordedReceivable = {
+    movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
+    deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
+  };
+  const postable: B2BPostable = {
+    sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
+    components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
+  };
+  return [
+    { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
+    { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+    { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+    receivableCustomerIndexEntry(tenantId, note.customerId, at),
+  ];
+}
+
+/**
+ * OB-847: the store a place belongs to, and its STORE NUMBER (1–9) — the last digit of a store-ranged prefix (`GRN1`). A
+ * store's number is its place in head office's register of branches, in the order they were first registered (OB-848,
+ * decided under OB-801): store 1 is the first branch ever registered, and a closed branch keeps its number (it is never
+ * given to another). The place is read the way every other store question is (`storeOfLocationResolver`: the org tree,
+ * a store's back-store setting). A place head office cannot put in any registered store numbers under store 1 (OB-848):
+ * the number is still unique — only its range is the first store's — and the record still names its own place.
+ */
+export async function storeNumberFor(store: EventStore, now: () => string, tenantId: string, placeId: string | null | undefined): Promise<{ readonly storeNumber: number; readonly storeId?: string }> {
+  const branches = (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch');
+  const storeId = placeId === null || placeId === undefined || placeId === '' ? undefined : (await storeOfLocationResolver({ store, now }, tenantId)).storeOf(placeId);
+  const index = storeId === undefined ? -1 : branches.findIndex((b) => b.nodeId === storeId);
+  if (index >= 9) {
+    throw new RangeError(`Store ${storeId ?? ''} is the ${index + 1}th store registered; document numbers carry one digit for the store, so stores 10 and above need the owner's decision. Nothing was saved.`);
+  }
+  if (index >= 0) return { storeNumber: index + 1, storeId: branches[index]!.nodeId };
+  return { storeNumber: 1, ...(branches[0] === undefined ? {} : { storeId: branches[0].nodeId }) };
+}
+
+/** OB-847: a numbered save's answer for the route — the number, and the 90,000 warning in words when it is due. */
+export function numberedWords(n: NumberedSave | null): { readonly documentNumber?: string; readonly numberWarning?: string } {
+  if (n === null) return {};
+  return {
+    documentNumber: n.number,
+    ...(n.warn ? { numberWarning: `Document numbers in this range are running out: ${n.remaining.toLocaleString('en-IN')} left this financial year. Tell the owner.` } : {}),
+  };
+}
+
 function keyedEventId(prefix: string, key: string): string {
   return `${prefix}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
 }
@@ -7304,22 +7353,28 @@ export function goodsReceiptAdapter(input: {
     },
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
     // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
+    // OB-847: the receipt's number (GRN1/26-27/00001 — the store's own range) is taken in the SAME save as the receipt.
     commit: async (tenantId, record, movements, key, poReceipt, orderGuard) => {
-      await input.store.appendBatch(tenantId, [
-        {
-          stream: grnStream,
-          event: makeEvent({
-            id: `grn-${record.grnId}-${key}`,
-            type: 'GoodsReceived',
-            occurredAt: input.now(),
-            idempotencyKey: `grn-${tenantId}-${record.grnId}`,
-            source: 'api/inventory',
-            payload: record,
-          }),
-        },
-        ...movements.map((m) => movementEvent(tenantId, m)),
-        ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ], orderGuard === undefined ? undefined : { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } });
+      const place = await storeNumberFor(input.store, input.now, tenantId, record.warehouseId);
+      return numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'goods_receipt', storeNumber: place.storeNumber, storeId: place.storeId }, documentRef: record.grnId, at: record.receivedAt,
+        ...(orderGuard === undefined ? {} : { options: { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } } }),
+        entries: (documentNumber) => [
+          {
+            stream: grnStream,
+            event: makeEvent({
+              id: `grn-${record.grnId}-${key}`,
+              type: 'GoodsReceived',
+              occurredAt: input.now(),
+              idempotencyKey: `grn-${tenantId}-${record.grnId}`,
+              source: 'api/inventory',
+              payload: documentNumber === '' ? record : { ...record, documentNumber },
+            }),
+          },
+          ...movements.map((m) => movementEvent(tenantId, m)),
+          ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
+        ],
+      }));
     },
     // SP-6 (M07-FR-03): the disposition and the movement an accept releases — one append; one disposition per line.
     commitDisposition: async (tenantId, record, movements, key) => {
@@ -7898,17 +7953,19 @@ export function purchaseOrdersAdapter(input: {
     // OB-32 "A": the supplier master's word on this supplier — active (approved), proposed (waiting), or unknown.
     supplierStatus: async (tenantId, supplierId) => (await foldSupplierRecords(input.store, tenantId)).get(supplierId)?.status,
 
-    propose: async (tenantId, po) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+    // OB-847: the order's number (PO/26-27/00001) is taken in the SAME save as the order — no gap, no duplicate.
+    propose: async (tenantId, po) => numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+      range: { kind: 'purchase_order' }, documentRef: po.poId, at: po.at,
+      entries: (documentNumber) => [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${po.poId}-proposed`,
         type: 'PurchaseOrderProposed',
         occurredAt: input.now(),
         // Keyed on the PO id alone: a re-sent proposal of the same PO collapses to one (never two POs).
         idempotencyKey: `po-${tenantId}-${po.poId}-proposed`,
         source: 'api/purchase',
-        payload: po,
-      }));
-    },
+        payload: documentNumber === '' ? po : { ...po, documentNumber },
+      }) }],
+    })),
 
     issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
       const event = makeEvent({
@@ -8999,16 +9056,34 @@ export function supplierMasterAdapter(input: {
       return [...currentAccount.entries()].map(([holderId, accountRef]) => ({ holderId, holderType: 'supplier' as const, accountRef }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
-    recordPayment: async (tenantId, payment) => {
-      await input.store.append(tenantId, SUPPLIER_PAYMENTS_STREAM, makeEvent({
+    // OB-847: the payment's number (SPAY/26-27/00001) is taken in the SAME save as the payment.
+    recordPayment: async (tenantId, payment) => numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+      range: { kind: 'supplier_payment' }, documentRef: payment.paymentId, at: payment.recordedAt,
+      entries: (documentNumber) => [{ stream: SUPPLIER_PAYMENTS_STREAM, event: makeEvent({
         id: `supplier-payment-${payment.paymentId}`,
         type: 'SupplierPaymentRecorded',
         occurredAt: payment.recordedAt,
         // One payment, one record — a retry never pays twice.
         idempotencyKey: `supplier-payment-${tenantId}-${payment.paymentId}`,
         source: 'api/purchase',
-        payload: payment,
-      }));
+        payload: documentNumber === '' ? payment : { ...payment, documentNumber },
+      }) }],
+    })),
+    // OB-847: a debit note's number (SDN/26-27/00001) is taken in the SAME save as its issue — never allocated apart.
+    recordNumberedDebitNoteIssue: async (tenantId, draft) => {
+      const build = (number: string): DebitNoteIssue => ({ ...draft, number, seq: readDocumentNumber(number)?.count ?? 0 });
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'supplier_debit_note' }, documentRef: `${draft.supplierId}/${draft.debitNoteRef}`, at: draft.issuedAt,
+        entries: (number) => [{ stream: DEBIT_NOTE_ISSUES_STREAM, event: makeEvent({
+          id: `dn-issue-${draft.debitNoteRef}`,
+          type: 'SupplierDebitNoteIssued',
+          occurredAt: draft.issuedAt,
+          idempotencyKey: `dn-issue-${tenantId}-${draft.supplierId}-${draft.debitNoteRef}`,
+          source: 'api/purchase',
+          payload: build(number),
+        }) }],
+      });
+      return build(saved?.number ?? '');
     },
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
     recordDebitNoteIssue: async (tenantId, issue) => {
@@ -9436,22 +9511,17 @@ export function financeNotesAdapter(input: {
     // ONE batch: the note, its movement on the customer's AR ledger (a credit note brings what is owed down, a debit note
     // up) and its fact for the books (posted by the accountant's B2B posting run through HIS rule, or visibly waiting).
     recordCustomerNote: async (tenantId, note, issuedBy) => {
+      await input.store.appendBatch(tenantId, customerNoteEntries(tenantId, note, issuedBy, input.now()));
+    },
+    // OB-847: a note's number (CCN/26-27/00001, CDN/26-27/00001) is taken in the SAME batch as the note, its AR movement
+    // and its posting fact — never drawn apart, so a refused or failed note leaves no gap.
+    recordNumberedCustomerNote: async (tenantId, draft, issuedBy) => {
       const at = input.now();
-      const credit = note.kind === 'credit_note';
-      const ar: RecordedReceivable = {
-        movementId: `${credit ? 'cn' : 'dn'}-${note.noteId}`, customerId: note.customerId, kind: credit ? 'credit_note' : 'invoice',
-        deltaMinor: credit ? -note.grossMinor : note.grossMinor, at, ref: note.number, on: note.issuedOn,
-      };
-      const postable: B2BPostable = {
-        sourceId: notePostableSourceId(note), kind: note.kind, customerId: note.customerId, documentDate: note.issuedOn,
-        components: { total: note.grossMinor, net: note.taxableMinor, tax: note.taxMinor }, ref: note.number,
-      };
-      await input.store.appendBatch(tenantId, [
-        { stream: STREAM.finance, event: makeEvent({ id: note.noteId, type: 'CreditNoteIssued', occurredAt: at, idempotencyKey: `creditnote-${tenantId}-${note.noteId}`, source: 'api/finance', payload: { ...note, issuedBy } }) },
-        { stream: forB2BCustomer(note.customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
-        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
-        receivableCustomerIndexEntry(tenantId, note.customerId, at),
-      ]);
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: draft.kind === 'credit_note' ? 'customer_credit_note' : 'customer_debit_note' }, documentRef: draft.noteId, at,
+        entries: (number) => customerNoteEntries(tenantId, { ...draft, number }, issuedBy, at),
+      });
+      return { ...draft, number: saved?.number ?? draft.number };
     },
 
     // Σ of what earlier CREDIT notes already took off this invoice, projected through the snapshot
@@ -15990,7 +16060,8 @@ async function finishStoreComputerReading(
     return refundTimes;
   };
   const unreceived = new Map<string, UnreceivedNumbers[]>();
-  const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+  // OB-847: 6 digits under an older prefix, 5 under a format-A head.
+  const numberOf = (prefix: string, n: number): string => receiptNumberFor(prefix, n);
   const heldKeys = async (keys: readonly string[]): Promise<ReadonlySet<string>> => (store.existingIdempotencyKeys !== undefined
     ? store.existingIdempotencyKeys(tenantId, keys)
     : new Set((await Promise.all(keys.map(async (k) => ((await store.findByIdempotencyKey(tenantId, k)) === undefined ? undefined : k)))).filter((k): k is string => k !== undefined)));
@@ -16085,6 +16156,51 @@ function storeComputerTimeOf(v: unknown): string | undefined {
   return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined;
 }
 
+/**
+ * OB-847 (document numbers, format A): each till lane's code at a store — `L01`… for a till, `Q01`… for a handheld queue
+ * till — given AUTOMATICALLY, never typed: in the order head office first knew the lane at this store (a till or handheld
+ * registered there, a lane a prefix was issued to, a lane its store computer registered), oldest first, ties by name. Every
+ * source is append-only and a retired device keeps its place, so a lane's code never changes and is never given to
+ * another lane (OB-848, decided under OB-801). At most 49 of each: 51…99 are kept for the +50 overflow ranges (OB-844 A).
+ */
+export async function tillLaneCodes(store: EventStore, tenantId: string, storeId: string): Promise<Readonly<Record<string, string>>> {
+  const seen: { lane: string; at: string; queue: boolean }[] = [];
+  for (const d of await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent')) {
+    if (d.kind !== 'registered' || d.branchId !== storeId) continue;
+    if (d.deviceKind === 'pos_lane') seen.push({ lane: d.deviceId, at: d.at, queue: false });
+    else if (d.deviceKind === 'handheld') seen.push({ lane: `device:${d.deviceId}`, at: d.at, queue: true });
+  }
+  for (const i of await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued')) {
+    if (i.storeId === storeId) seen.push({ lane: i.tillId, at: i.setAt, queue: i.tillId.startsWith('device:') });
+  }
+  for (const r of await lanePrefixRegistrationsOf(store, tenantId)) {
+    if (r.storeId !== storeId) continue;
+    for (const p of r.prefixes) {
+      const lane = /^R-(.+)-$/.exec(p)?.[1];
+      if (lane !== undefined) seen.push({ lane, at: r.at, queue: lane.startsWith('device:') });
+    }
+  }
+  seen.sort((a, b) => (a.at === b.at ? (a.lane < b.lane ? -1 : a.lane > b.lane ? 1 : 0) : a.at < b.at ? -1 : 1));
+  const out: Record<string, string> = {};
+  let tills = 0; let queues = 0;
+  for (const s of seen) {
+    if (out[s.lane] !== undefined) continue;
+    if (s.queue) { if (queues < TILL_LANE_MAX) { queues += 1; out[s.lane] = `Q${String(queues).padStart(2, '0')}`; } }
+    else if (tills < TILL_LANE_MAX) { tills += 1; out[s.lane] = `L${String(tills).padStart(2, '0')}`; }
+  }
+  return out;
+}
+
+/** OB-847: the store pack's `receiptNumbering.formatA` for one store — its number, its lanes' codes, its banked ranges. */
+export async function formatAPackSection(store: EventStore, now: () => string, tenantId: string, storeId: string, banked: ReadonlyMap<string, number>): Promise<{
+  readonly storeNumber: number; readonly laneCodes: Readonly<Record<string, string>>; readonly banked: Readonly<Record<string, number>>;
+}> {
+  const { storeNumber } = await storeNumberFor(store, now, tenantId, storeId);
+  const mine: Record<string, number> = {};
+  for (const [head, n] of banked) if (isFormatAHead(head) && head.startsWith(String(storeNumber))) mine[head] = n;
+  return { storeNumber, laneCodes: await tillLaneCodes(store, tenantId, storeId), banked: mine };
+}
+
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
@@ -16119,7 +16235,10 @@ export async function bankedReceiptCounts(
     // computers' REGISTERED lane prefixes) — also for a report kept before head office judged reports at arrival.
     const issued = await issuedPrefixStores(store, tenantId);
     const registeredHere = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId)).get(opts.storeId) ?? new Set<string>();
-    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (registeredHere.has(prefix) && !issued.has(prefix));
+    // OB-847: a format-A range head is this store's when it starts with this store's number (`1L01/26-27/` → store 1).
+    const storeDigit = String((await storeNumberFor(store, () => new Date().toISOString(), tenantId, opts.storeId)).storeNumber);
+    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (registeredHere.has(prefix) && !issued.has(prefix))
+      || (isFormatAHead(prefix) && prefix.startsWith(storeDigit));
     // Verifier r20 BOX-2: and only up to PLAUSIBLE_ISSUED_AHEAD above what sales and refunds bank — the same bound head
     // office judges a report by at arrival, so a report kept before that judging can never lock a till either.
     // The running maximum is exact while it is plausible; when it is not (an implausible report kept before judging), the

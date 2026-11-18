@@ -41,9 +41,14 @@ import { segregationRefusal, type SegregationPort } from './segregation-of-dutie
 import { shopClock, shopToday, type ShopCalendarOf } from '../../../packages/calendar/src/shop-clock';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
+/** OB-847: what a numbered save answers — the document's format-A number (absent on a record saved before it). */
+export interface Numbered { readonly documentNumber?: string; readonly numberWarning?: string }
+
 export interface StoredPurchaseOrder {
   readonly poId: string;
   readonly number: string;
+  /** OB-847 (document numbers, format A): `PO/26-27/00001`, made automatically when the order is saved. Absent on an order from before. */
+  readonly documentNumber?: string;
   readonly supplierId: string;
   /**
    * OB-37 "A" (owner, 10 Oct 2026): the store the order is delivered to — a location in head office's org hierarchy. Required
@@ -101,7 +106,7 @@ export interface BlanketReleaseHooks {
     | { readonly ok: true; readonly supplierId: string; readonly currency: CurrencyCode; readonly lines: readonly PurchaseOrderLineInput[]; readonly deliverToLocationId?: string; readonly guard: { readonly key: string; readonly expectedVersion: number } }
     | { readonly ok: false; readonly status: number; readonly code: string; readonly detail: string }>;
   /** Record the proposed release under the agreement's guard (else `ConcurrencyConflictError`). */
-  readonly propose: (tenantId: string, po: StoredPurchaseOrder, guard: { readonly key: string; readonly expectedVersion: number }) => Promise<void>;
+  readonly propose: (tenantId: string, po: StoredPurchaseOrder, guard: { readonly key: string; readonly expectedVersion: number }) => Promise<void | Numbered>;
   /** Issue the release under the agreement's guard and, when a budget governs it, the month's open-to-buy guard too. */
   readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string,
     guard: { readonly key: string; readonly expectedVersion: number }, budgetGuard?: { readonly key: string; readonly expectedVersion: number }) => Promise<void>;
@@ -148,7 +153,8 @@ export interface PurchaseOrderDeps {
   readonly masterLifecycle?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
-  readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
+  /** OB-847: answers the order's format-A number (`PO/26-27/00001`), taken in the same save. */
+  readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void | Numbered> | void | Numbered;
   /**
    * Seal a placed purchase order into the tamper-evident domain audit trail (M34-FR-01), attributed to
    * the acting buyer. Optional — the running system provides it; a bare deps stub may omit it. The actor
@@ -616,10 +622,11 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         };
         // WF-03 (round 8): the open-to-buy check rides on the order — never a refusal here; the approval escalates if over.
         const po: StoredPurchaseOrder = deps.openToBuy === undefined ? proposed : { ...proposed, budgetCheck: await checkOrderAgainstBudget(deps.openToBuy, ctx.tenantId, proposed) };
-        if (release === undefined) await deps.propose(ctx.tenantId, po, ctx.idempotencyKey ?? poId);
+        let numbered: void | Numbered;
+        if (release === undefined) numbered = await deps.propose(ctx.tenantId, po, ctx.idempotencyKey ?? poId);
         else {
           try {
-            await deps.blanket!.propose(ctx.tenantId, po, release.guard);
+            numbered = await deps.blanket!.propose(ctx.tenantId, po, release.guard);
           } catch (err) {
             if (err instanceof ConcurrencyConflictError) throw concurrentChange(`blanket agreement ${release.agreementId} (another release was raised or issued against it a moment ago)`);
             throw err;
@@ -644,7 +651,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         return {
           status: 201,
           body: {
-            order: po, openCommitment: null,
+            order: numbered?.documentNumber === undefined ? po : { ...po, documentNumber: numbered.documentNumber },
+            ...(numbered?.numberWarning === undefined ? {} : { numberWarning: numbered.numberWarning }),
+            openCommitment: null,
             ...(routedToOwner === undefined ? {} : { approval: { routedTo: 'owner', why: `This order is ${rupees(totalMinor)}; ${ctx.userId}'s purchase-order limit is ${authorityWords(raiser!)}. An order above the raiser's limit is the owner's to decide.` } }),
           },
         };

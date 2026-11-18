@@ -89,6 +89,27 @@ import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, readPublishedSeries, storeComputerDefaultPrefix, financialYearOf } from '../../../packages/contracts/src/receipt-number';
 import { DEFAULT_SHOP_CALENDAR } from '../../../packages/calendar/src/shop-clock';
+import { DOCUMENT_COUNT_MAX, DOCUMENT_COUNT_DIGITS, DOCUMENT_COUNT_WARN_AT, TILL_LANE_MAX, tillPrefix, tillOverflowPrefix, shortYear, rangeHead } from '../../../packages/numbering/src/document-numbers';
+
+// OB-847 · OB-844 A · OB-845 A · OB-846 A (owner, 18 Nov 2026, in writing) — DOCUMENT NUMBERS, FORMAT A, ON THE TILL.
+//
+// When head office's pack carries `receiptNumbering.formatA` (every pack from the version that brings format A — so the
+// new numbers start the day it is installed, OB-845 A), this register numbers each bill `1L01/26-27/00001` and each
+// return at the till `1R01/26-27/00001` — store digit, L (a till) or Q (a handheld queue till) and the lane's two-digit
+// code head office gave it, the financial year by the SHOP's date, and a 5-digit count that starts again on 1 April. Every
+// number is 16 characters. Everything above still holds — numbered on this box, offline, written to the disk and the
+// witness before the till hears it, a lost reply re-asked gets the same number, a void keeps its number — only the FORM
+// changes, and:
+//   • a RETURN is its own range (`R` + the lane's code: a different GST document, OB-846 A), and its number must have been
+//     given as a return;
+//   • OB-844 A: from count 90,000 the till and the manager's lane status say the range is running out; at 99,999 the lane
+//     moves to its next range BY ITSELF — the lane code + 50 (`1L01` → `1L51`, `1R01` → `1R51`). Lane codes 51…99 are
+//     never given to a till, so the overflow range can never be another till's;
+//   • a RESTORED box (OB-87) — or a till head office has given no lane code — numbers under a TEMPORARY range `1T01`,
+//     `1T02`, …: the lowest T code this box has never used, that head office has never banked, and that no other lane
+//     holds now — kept on this log (append-only) for that lane, so a restart stays on it. Its bills are flagged at head
+//     office exactly as the older store-coded fallback's were (`isStoreComputerDefaultReceipt`).
+// Old numbers (`R-<lane>-000123`, an issued prefix, `ZZ……-`) are never changed: their records keep them.
 
 // A2 (roadmap v2.1 addendum · CGST Rule 46(b)) — THE SERIES RESETS ON THE FINANCIAL-YEAR BOUNDARY. When head office issues a
 // till its prefix FOR a financial year (the pack's series line carries `financialYear`), this register numbers each bill
@@ -141,6 +162,8 @@ export type FallbackReason =
   | 'published_series_breaks_rule' | 'published_count_not_known'
   /** OB-87: this box's data folder was restored from a backup (or may have been) — a fresh prefix until head office answers. */
   | 'restored_from_backup'
+  /** OB-847: head office has given this till no lane code (L01…, Q01…) yet — a temporary range until it does. */
+  | 'till_code_not_issued'
   /** A2: the till's prefixes are per financial year, and head office has issued none for the year this bill is dated in. */
   | 'financial_year_series_not_issued';
 
@@ -148,7 +171,37 @@ export type FallbackReason =
 export type RestoreSign = 'witness_ahead_of_log' | 'witness_missing' | 'witness_of_another_box' | 'witness_unavailable';
 
 /** What the current pack says about the business, for a lane with no published range (OB-81). */
+/**
+ * OB-847: what head office's pack says for FORMAT A numbering at this store — present on every pack from the version that
+ * brings format A; absent → this register numbers exactly as before.
+ */
+export interface FormatAContext {
+  /** This store's number, 1–9 (the digit every prefix of this store starts with). */
+  readonly storeNumber: number;
+  /** Each till lane's code head office gave it: `L01`…`L49` (a till), `Q01`…`Q49` (a handheld queue till). */
+  readonly laneCodes: Readonly<Record<string, string>>;
+  /** Every format-A range head (`1L01/26-27/`) head office holds banked for this store, with its highest count. */
+  readonly banked: Readonly<Record<string, number>>;
+}
+
+/** OB-847: the pack's format-A section, read strictly — anything that does not read is null (the older numbering). */
+export function readFormatA(v: unknown): FormatAContext | null {
+  if (!isObj(v)) return null;
+  const store = v['storeNumber'];
+  if (typeof store !== 'number' || !Number.isSafeInteger(store) || store < 1 || store > 9) return null;
+  const laneCodes: Record<string, string> = {};
+  if (isObj(v['laneCodes'])) for (const [lane, code] of Object.entries(v['laneCodes'])) if (typeof code === 'string' && /^[LQ](0[1-9]|[1-4]\d)$/.test(code)) laneCodes[lane] = code;
+  const banked: Record<string, number> = {};
+  if (isObj(v['banked'])) for (const [head, n] of Object.entries(v['banked'])) if (/^[1-9][LQRT]\d{2}\/\d{2}-\d{2}\/$/.test(head) && typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && n <= DOCUMENT_COUNT_MAX) banked[head] = n;
+  return { storeNumber: store, laneCodes, banked };
+}
+
+/** OB-846 A: which range a till number is drawn from — a sale bill, or a return/refund at the till. */
+export type NumberKind = 'sale' | 'return';
+
 export interface ReceiptNumberingContext {
+  /** OB-847: format A, when head office's pack says it (absent or null → the older numbering). */
+  readonly formatA?: FormatAContext | null;
   /** This box's store, as head office named it in the pack (or the box's own setting). */
   readonly storeId: string | null;
   /** How many stores head office says the business has; null when the pack does not say. */
@@ -164,7 +217,7 @@ export interface ReceiptNumberingContext {
 export const BOX_SERIES_PAD = RECEIPT_COUNTER_DIGITS;
 export const BOX_SERIES_END = RECEIPT_COUNTER_MAX;
 
-export type IssueRefusal = 'no_lane' | 'request_key_missing' | 'receipt_numbers_used_up' | 'could_not_write_durably';
+export type IssueRefusal = 'no_lane' | 'request_key_missing' | 'receipt_numbers_used_up' | 'could_not_write_durably' | 'no_return_range';
 export type UseRefusal = 'receipt_number_missing' | 'receipt_number_not_issued' | 'receipt_number_already_used';
 
 export type IssueOutcome =
@@ -173,6 +226,8 @@ export type IssueOutcome =
     readonly source: SeriesSource; readonly laneMessage?: string; readonly fallbackBecause?: FallbackReason;
     /** A2: the financial year the number is in, when the till's series is year-scoped. */
     readonly financialYear?: string;
+    /** OB-847: the range it was drawn from — a sale bill or a return (format A only). */
+    readonly kind?: NumberKind;
   }
   | { readonly issued: false; readonly refusedBecause: IssueRefusal; readonly laneMessage: string };
 
@@ -236,10 +291,14 @@ interface Issued {
   readonly requestKey: string; readonly issuedTo: string; readonly at: string;
   /** A2: the financial year the number was given in (a year-scoped series only). */
   readonly financialYear?: string;
+  /** OB-847: the range it came from (format A); absent on a number from before — then it serves either. */
+  readonly numberKind?: NumberKind;
 }
 type LogRecord =
   | ({ readonly kind: 'issued' } & Issued)
-  | { readonly kind: 'used'; readonly receiptNumber: string; readonly laneId: string; readonly recordId: string; readonly at: string };
+  | { readonly kind: 'used'; readonly receiptNumber: string; readonly laneId: string; readonly recordId: string; readonly at: string }
+  /** OB-847: a temporary range (`1T01`) this box took for one lane's numbers — kept so a restart stays on it. */
+  | { readonly kind: 'temp_code'; readonly receiptNumber: string; readonly laneId: string; readonly key: string; readonly code: string; readonly at: string };
 /** The first line of the log: this box's own identity, made once on its disk (OB-85 — never shared with another box). */
 interface BoxRecord { readonly kind: 'box'; readonly boxIdentity: string; readonly at: string }
 /**
@@ -283,6 +342,13 @@ const countOrUndefined = (v: unknown, min: number): number | undefined =>
 
 /** A series as this register resolved it now: where it comes from, the count it must stay above, and why. */
 type Resolved = PackReceiptSeries & {
+  /** OB-847: a temporary range's code and the key it is held under (written to the log at its first number). */
+  readonly tempKey?: string;
+  readonly tempCode?: string;
+  /** OB-847: what a running-low answer says, when not the older words. */
+  readonly lowWords?: (remaining: number) => string;
+  /** OB-847: a range this lane cannot draw from at all (a handheld queue till takes no returns). */
+  readonly refuse?: { readonly because: IssueRefusal; readonly words: string };
   readonly source: SeriesSource;
   /** The count head office says is already banked under this prefix: the next number is above it. */
   readonly floor: number;
@@ -308,6 +374,8 @@ const fallbackWords = (because: FallbackReason, prefix: string, detail: string):
       return `Head office's prefix ${detail} for this till is in this store computer's setup, but head office has not said how far that prefix has been used and this store computer has never numbered under it (it may be a replacement), so to never repeat a bill number ${own} It moves to ${detail} once head office's setup arrives. Tell the manager.`;
     case 'financial_year_series_not_issued':
       return `Bill numbers start again every financial year, and head office has not issued this till its prefix for ${detail}, so ${own} Tell the manager to issue this till's prefix for ${detail}.`;
+    case 'till_code_not_issued':
+      return `Head office has not given this till its lane code (L01, L02, …) yet, so this store computer numbers its bills under a temporary range ${prefix} that has never been used, so they never clash with another bill. Tell the manager to register this till on the Tills & devices page.`;
     case 'restored_from_backup':
       return `This store computer's data was restored from a backup, or may have been (${detail}), so a bill number it gave after that backup could be given again. To never repeat one, this store computer numbers its bills under a brand-new store prefix ${prefix} that has never been used, so they never clash with another bill. It goes back to the till's own prefix, above the last bill head office holds, as soon as head office's latest setup arrives. Tell the manager.`;
   }
@@ -334,6 +402,8 @@ export class ReceiptNumbers {
   private readonly cursor = new Map<string, number>();
   /** number → the record that used it. */
   private readonly usedBy = new Map<string, string>();
+  /** OB-847: the temporary range (`1T01`) each lane holds, by `<box identity>|<lane>|<kind>`. */
+  private readonly tempCodes = new Map<string, string>();
   /** One issue at a time: two tabs asking at once are answered in turn, from the same cursor. */
   private queue: Promise<unknown> = Promise.resolve();
   readonly unreadableRecords: number;
@@ -433,7 +503,7 @@ export class ReceiptNumbers {
           continue;
         }
         if (isObj(r) && r['kind'] === 'restore_cleared') { hold = undefined; continue; }
-        if (isObj(r) && (r['kind'] === 'issued' || r['kind'] === 'used') && isStr(r['receiptNumber']) && isStr(r['laneId'])) restored.push(r as unknown as LogRecord);
+        if (isObj(r) && (r['kind'] === 'issued' || r['kind'] === 'used' || r['kind'] === 'temp_code') && isStr(r['receiptNumber']) && isStr(r['laneId'])) restored.push(r as unknown as LogRecord);
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
@@ -691,6 +761,7 @@ export class ReceiptNumbers {
   }
 
   private fold(r: LogRecord): void {
+    if (r.kind === 'temp_code') { if (!this.tempCodes.has(r.key)) this.tempCodes.set(r.key, r.code); return; }
     if (r.kind === 'issued') {
       if (this.issued.has(r.receiptNumber)) return;
       this.issued.set(r.receiptNumber, r);
@@ -703,8 +774,11 @@ export class ReceiptNumbers {
   }
 
   /** The rule (header, 1–3): the series this lane draws from NOW, from the current pack and this box's own disk. */
-  private seriesFor(laneId: string): Resolved {
+  private seriesFor(laneId: string, kind: NumberKind = 'sale'): Resolved {
     const ctx = this.deps.numbering();
+    // OB-847: format A — whenever head office's pack says it.
+    const fa = ctx.formatA;
+    if (fa !== undefined && fa !== null && Number.isSafeInteger(fa.storeNumber) && fa.storeNumber >= 1 && fa.storeNumber <= 9) return this.formatASeries(laneId, kind, fa);
     const fallback = (because: FallbackReason, detail = ''): Resolved => {
       const prefix = storeComputerDefaultPrefix(ctx.storeId ?? '', laneId, this.boxIdentity);
       return { laneId, prefix, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'store_default', floor: 0, fallbackBecause: because, words: fallbackWords(because, prefix, detail) };
@@ -750,6 +824,55 @@ export class ReceiptNumbers {
     return { laneId, prefix: own, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'this_box', floor: bankedOwn ?? 0, words: NOT_PUBLISHED };
   }
 
+  /** OB-847: the format-A range this lane draws from now (header): its own, its +50 overflow, or a temporary one. */
+  private formatASeries(laneId: string, kind: NumberKind, fa: FormatAContext): Resolved {
+    const fy = this.yearFor(laneId);
+    let yy: string;
+    try { yy = shortYear(fy); } catch { yy = shortYear(financialYearOf(this.deps.now(), this.shopZone()) ?? '2000-01'); }
+    const range = (code: string, extra: Partial<Resolved>): Resolved => {
+      const head = rangeHead(code, yy);
+      const banked = fa.banked[head];
+      return {
+        laneId, prefix: head, padTo: DOCUMENT_COUNT_DIGITS, rangeStart: 1, rangeEnd: DOCUMENT_COUNT_MAX,
+        // OB-844 A: running low from the 90,000th number (after it, 9,999 remain).
+        warnAtRemaining: DOCUMENT_COUNT_MAX - DOCUMENT_COUNT_WARN_AT,
+        source: 'published', floor: typeof banked === 'number' && Number.isSafeInteger(banked) && banked >= 0 ? Math.min(banked, DOCUMENT_COUNT_MAX) : 0, financialYear: fy, ...extra,
+      };
+    };
+    const temp = (because: FallbackReason, detail: string): Resolved => {
+      const key = `${this.boxIdentity}|${laneId}|${kind}`;
+      const code = this.tempCodes.get(key) ?? this.freeTempCode(fa);
+      return range(code, { source: 'store_default', fallbackBecause: because, words: fallbackWords(because, code, detail), tempKey: key, tempCode: code });
+    };
+    if (this.restoreHold !== undefined) return temp('restored_from_backup', RESTORE_SIGN_WORDS[this.restoreHold.because]);
+    const m = /^([LQ])(\d{2})$/.exec(fa.laneCodes[laneId] ?? '');
+    const lane = m === null ? 0 : Number(m[2]);
+    if (m === null || lane < 1 || lane > TILL_LANE_MAX) return temp('till_code_not_issued', '');
+    if (kind === 'return' && m[1] === 'Q') {
+      return range(tillPrefix(fa.storeNumber, 'Q', lane), { refuse: { because: 'no_return_range', words: 'A handheld queue till does not take returns. Nothing was numbered — take the return at a till.' } });
+    }
+    const base = tillPrefix(fa.storeNumber, kind === 'return' ? 'R' : (m[1] as 'L' | 'Q'), lane);
+    const over = tillOverflowPrefix(base);
+    const own = range(base, {
+      lowWords: (left) => `This till's ${kind === 'return' ? 'return' : 'bill'} numbers ${base}/${yy} have ${left.toLocaleString('en-IN')} left this financial year. At 99,999 it moves to its next range${over === undefined ? '' : ` (${over})`} by itself. Tell the manager.`,
+    });
+    // OB-844 A: a full range moves on to the +50 range by itself.
+    if (over === undefined || this.nextIn(laneId, own) <= own.rangeEnd) return own;
+    return range(over, { lowWords: (left) => `This till's overflow ${kind === 'return' ? 'return' : 'bill'} numbers ${over}/${yy} have ${left.toLocaleString('en-IN')} left this financial year. Tell the owner.` });
+  }
+
+  /** OB-847: the lowest temporary code (`1T01`…`1T99`) never used on this box, never banked by head office, held by no lane now. */
+  private freeTempCode(fa: FormatAContext): string {
+    const used = new Set<string>(this.tempCodes.values());
+    for (const k of this.cursor.keys()) used.add(k.slice(k.indexOf('|') + 1).split('/')[0] ?? '');
+    for (const head of Object.keys(fa.banked)) used.add(head.split('/')[0] ?? '');
+    for (let n = 1; n <= 99; n += 1) {
+      const code = tillPrefix(fa.storeNumber, 'T', n);
+      if (!used.has(code)) return code;
+    }
+    return tillPrefix(fa.storeNumber, 'T', 99);
+  }
+
   /** T1: the shop's zone the year is dated in — the pack's, else the shop default; a zone this runtime cannot read is the default. */
   private shopZone(): string {
     try {
@@ -788,35 +911,40 @@ export class ReceiptNumbers {
   }
 
   /** The next number for this lane, written to this box's disk before it is answered. */
-  issue(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string }): Promise<IssueOutcome> {
+  issue(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string; readonly kind?: NumberKind }): Promise<IssueOutcome> {
     const run = this.queue.then(() => this.issueNow(input));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async issueNow(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string }): Promise<IssueOutcome> {
+  private async issueNow(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string; readonly kind?: NumberKind }): Promise<IssueOutcome> {
     const laneId = input.laneId.trim();
     if (laneId === '') return { issued: false, refusedBecause: 'no_lane', laneMessage: 'This store computer has not been told which till it is. No number was given — tell the manager.' };
     if (!isStr(input.requestKey)) return { issued: false, refusedBecause: 'request_key_missing', laneMessage: 'The till did not say which bill the number is for. No number was given — try again.' };
-    const s = this.seriesFor(laneId);
+    const kind: NumberKind = input.kind === 'return' ? 'return' : 'sale';
+    const s = this.seriesFor(laneId, kind);
+    const fa = this.deps.numbering().formatA;
+    const formatA = fa !== undefined && fa !== null;
     const answer = (receiptNumber: string): IssueOutcome => {
       const remaining = this.remainingIn(laneId, s);
       const runningLow = remaining <= warnAt(s);
       const words = [
         ...(s.words === undefined ? [] : [s.words]),
-        ...(runningLow ? [`This till has ${remaining} receipt number(s) left in its range. Tell the manager to load a new range.`] : []),
+        ...(runningLow ? [s.lowWords?.(remaining) ?? `This till has ${remaining} receipt number(s) left in its range. Tell the manager to load a new range.`] : []),
       ];
       return {
         issued: true, receiptNumber, remaining, runningLow, source: s.source,
         ...(words.length === 0 ? {} : { laneMessage: words.join(' ') }),
         ...(s.fallbackBecause === undefined ? {} : { fallbackBecause: s.fallbackBecause }),
         ...(s.financialYear === undefined ? {} : { financialYear: s.financialYear }),
+        ...(formatA ? { kind } : {}),
       };
     };
     // A lost reply, re-asked: the same number, never a second one.
     const again = this.byRequest.get(`${laneId}|${input.requestKey}`);
     if (again !== undefined) return answer(again);
 
+    if (s.refuse !== undefined) return { issued: false, refusedBecause: s.refuse.because, laneMessage: s.refuse.words };
     let seq = this.nextIn(laneId, s);
     // Never a number this box already gave (a range head office re-drew over one it had used): skip past it.
     while (seq <= s.rangeEnd && this.issued.has(format(s, seq))) seq += 1;
@@ -826,8 +954,15 @@ export class ReceiptNumbers {
     const record: LogRecord = {
       kind: 'issued', laneId, seriesKey: keyOf(s), seq, receiptNumber: format(s, seq), requestKey: input.requestKey, issuedTo: input.issuedTo, at: this.deps.now(),
       ...(s.financialYear === undefined ? {} : { financialYear: s.financialYear }),
+      ...(formatA ? { numberKind: kind } : {}),
     };
     try {
+      // OB-847: a temporary range is taken for this lane on the log BEFORE its first number, so a restart stays on it.
+      if (s.tempKey !== undefined && s.tempCode !== undefined && !this.tempCodes.has(s.tempKey)) {
+        const taken: LogRecord = { kind: 'temp_code', receiptNumber: `temp:${s.tempCode}`, laneId, key: s.tempKey, code: s.tempCode, at: this.deps.now() };
+        await this.log.append(JSON.stringify(taken));
+        this.fold(taken);
+      }
       await this.log.append(JSON.stringify(record));
     } catch (e) {
       return { issued: false, refusedBecause: 'could_not_write_durably', laneMessage: `The store computer could not save the receipt number, so none was given. No money should be taken — ${e instanceof Error ? e.message : String(e)}` };
@@ -853,12 +988,16 @@ export class ReceiptNumbers {
    * Before a sale or refund reaches the disk: its number must be one this box issued to this lane, not used by a different
    * record. On `ok`, call `record()` once the record is on the disk to note the use.
    */
-  checkUse(input: { readonly laneId: string; readonly receiptNumber: unknown; readonly recordId: string }): UseCheck {
+  checkUse(input: { readonly laneId: string; readonly receiptNumber: unknown; readonly recordId: string; readonly kind?: NumberKind }): UseCheck {
     const n = input.receiptNumber;
     if (!isStr(n)) return { ok: false, refusedBecause: 'receipt_number_missing', laneMessage: 'This bill has no receipt number from this store computer. Nothing was saved — try again.' };
     const issued = this.issued.get(n);
     if (issued === undefined || issued.laneId !== input.laneId.trim()) {
       return { ok: false, refusedBecause: 'receipt_number_not_issued', laneMessage: `Receipt number ${n} was not given to this till by this store computer. Nothing was saved — try again for a new number.` };
+    }
+    // OB-846 A: a return's number comes from the return range, a bill's from the bill range — never the other's.
+    if (input.kind !== undefined && issued.numberKind !== undefined && issued.numberKind !== input.kind) {
+      return { ok: false, refusedBecause: 'receipt_number_not_issued', laneMessage: `Number ${n} was given for a ${issued.numberKind === 'return' ? 'return' : 'sale'}, not a ${input.kind === 'return' ? 'return' : 'sale'}. Nothing was saved — try again for a new number.` };
     }
     const by = this.usedBy.get(n);
     if (by !== undefined && by !== input.recordId) {
@@ -876,8 +1015,8 @@ export class ReceiptNumbers {
   }
 
   /** What this lane has issued, used and left — and every number issued that no record used (a visible gap). */
-  status(laneId: string): ReceiptNumberStatus {
-    const s = this.seriesFor(laneId);
+  status(laneId: string, kind: NumberKind = 'sale'): ReceiptNumberStatus {
+    const s = this.seriesFor(laneId, kind);
     const mine = [...this.issued.values()].filter((i) => i.laneId === laneId && i.seriesKey.split('|')[0] === s.prefix).sort((a, b) => a.seq - b.seq);
     const remaining = this.remainingIn(laneId, s);
     return {

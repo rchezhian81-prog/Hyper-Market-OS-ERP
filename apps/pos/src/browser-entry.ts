@@ -97,7 +97,7 @@ export interface ReceiptNumberAnswer {
   readonly laneMessage?: string;
 }
 /** Ask for the next number under a request key; the same key re-asked gets the same number. */
-export type ReceiptNumberPort = (requestKey: string) => Promise<ReceiptNumberAnswer>;
+export type ReceiptNumberPort = (requestKey: string, kind?: 'sale' | 'return') => Promise<ReceiptNumberAnswer>;
 
 /** The till could not get a receipt number from its store computer — no money may be taken. */
 export class ReceiptNumberRefusedError extends Error {
@@ -626,20 +626,21 @@ function newRequestKey(): string {
  * lost on the way back is asked again ONCE with the same request key, which the box answers with the same number.
  */
 export function laneReceiptNumbers(port: number = DEFAULT_LANE_PORT): ReceiptNumberPort {
-  const ask = async (requestKey: string): Promise<ReceiptNumberAnswer> => {
+  // OB-846 A: a return at the till draws from its own range (`kind: "return"` → 1R01/26-27/00001).
+  const ask = async (requestKey: string, kind?: 'sale' | 'return'): Promise<ReceiptNumberAnswer> => {
     const response = await fetch(`${laneBase(port)}/lane/receipt-numbers`, {
-      method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ requestKey }),
+      method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(kind === 'return' ? { requestKey, kind } : { requestKey }),
     });
     const front = FRONT_REFUSED[response.status];
     if (front !== undefined) return { issued: false, ...front };
     return await response.json() as ReceiptNumberAnswer;
   };
-  return async (requestKey) => {
+  return async (requestKey, kind) => {
     try {
-      return await ask(requestKey);
+      return await ask(requestKey, kind);
     } catch {
       try {
-        return await ask(requestKey);
+        return await ask(requestKey, kind);
       } catch {
         return { issued: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_NUMBER };
       }
@@ -1214,7 +1215,8 @@ export function bootPos(config?: {
    * so a reload or a second tab never repeats one. Rejects with `ReceiptNumberRefusedError` (the range is spent, nobody
    * is signed in, the box cannot save or cannot be reached) — the caller must then take no money.
    */
-  readonly nextReceipt: () => Promise<string>;
+  /** OB-846 A: `'return'` draws a return's number from the till's return range. */
+  readonly nextReceipt: (kind?: 'sale' | 'return') => Promise<string>;
   /** How many numbers the box said are left in this lane's range at the last answer; `undefined` before the first. */
   readonly receiptsRemaining: () => number | undefined;
   /** What the box said about the numbers at the last answer (running low, or no range published) — or `undefined`. */
@@ -1503,8 +1505,8 @@ export function bootPos(config?: {
   // timestamp. A refusal (range spent, nobody signed in, the box cannot save) means no money is taken.
   const receiptNumbers = config?.receiptNumbers ?? laneReceiptNumbers(config?.lanePort ?? DEFAULT_LANE_PORT);
   let lastNumberAnswer: ReceiptNumberAnswer | undefined;
-  const nextReceipt = async (): Promise<string> => {
-    const answer = await receiptNumbers(newRequestKey());
+  const nextReceipt = async (kind?: 'sale' | 'return'): Promise<string> => {
+    const answer = await receiptNumbers(newRequestKey(), kind);
     if (answer.issued !== true || typeof answer.receiptNumber !== 'string' || answer.receiptNumber === '') {
       throw new ReceiptNumberRefusedError(answer.refusedBecause ?? 'not_issued', answer.laneMessage ?? UNREACHABLE_NUMBER);
     }

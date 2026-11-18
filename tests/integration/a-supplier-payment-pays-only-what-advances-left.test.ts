@@ -49,7 +49,10 @@ describe.each(backings)('a supplier payment pays only what advances have not cov
       const approved = await approvedBody(h, T, P3.PAYER, P3.PAY_APPROVER, 'supplier_payment', `advance:${advanceId}`, body, { advanceId }, amountMinor);
       return call('POST', `/v1/finance/supplier-advances/${advanceId}`, P3.PAYER, approved, `adv-${advanceId}`);
     };
-    expect((await advance('adv-1', 50_000)()).status).toBe(201);
+    const adv1 = await advance('adv-1', 50_000)();
+    expect(adv1.status).toBe(201);
+    // OB-847: the advance carries its number, taken in the same save (SADV/26-27/00001 in this year).
+    expect(adv1.body).toMatchObject({ advance: { documentNumber: expect.stringMatching(/^SADV\/\d{2}-\d{2}\/00001$/) } });
     const apply = (advanceId: string, appId: string, body: Record<string, unknown>) => call('POST', `/v1/finance/supplier-advances/${advanceId}/applications/${appId}`, P3.MATCHER, body, `app-${appId}`);
     expect((await apply('adv-1', 'app-1', { amountMinor: 50_000, invoiceId: 'inv-a', appliedOn: TODAY })).status).toBe(201);
 
@@ -68,10 +71,14 @@ describe.each(backings)('a supplier payment pays only what advances have not cov
     const balance = await pay(h, 'pay-1', 30_000);
     expect(balance.status, JSON.stringify(balance.body)).toBe(201);
     expect(balance.body).toMatchObject({ owedMinor: 50_000, advancesAppliedMinor: 50_000, balanceToPayMinor: 0 });
+    // OB-847: the refused payment above took no number — the first payment saved is SPAY/…/00001.
+    expect(balance.body).toMatchObject({ payment: { documentNumber: expect.stringMatching(/^SPAY\/\d{2}-\d{2}\/00001$/) } });
     // ── And not one paisa more.
     expect(codeOf(await pay(h, 'pay-more', 1))).toBe('payment_exceeds_balance');
     // From the other side: a new advance cannot be set against a bill that is already paid.
-    expect((await advance('adv-2', 10_000)()).status).toBe(201);
+    const adv2 = await advance('adv-2', 10_000)();
+    expect(adv2.status).toBe(201);
+    expect(adv2.body).toMatchObject({ advance: { documentNumber: expect.stringMatching(/^SADV\/\d{2}-\d{2}\/00002$/) } });
     expect(codeOf(await apply('adv-2', 'app-2', { amountMinor: 10_000, invoiceId: 'inv-b', appliedOn: TODAY }))).toBe('more_than_is_owed');
     // A cashier cannot pay a supplier at all.
     expect((await h.request({ method: 'POST', path: '/v1/purchase/suppliers/sup-1/payments/pay-cash', userId: P3.CASHIER, tenantId: T, idempotencyKey: 'pay-cash', body: { amountMinor: 1, paidOn: TODAY, method: 'cash', reference: 'x' } })).status).toBe(403);
@@ -85,6 +92,8 @@ describe.each(backings)('a supplier payment pays only what advances have not cov
     const after = await pay(h2, 'pay-2', 20_000);
     expect(after.status, JSON.stringify(after.body)).toBe(201);
     expect(after.body).toMatchObject({ advancesAppliedMinor: 30_000, balanceToPayMinor: 0 });
+    // Four refusals in between took no number: the second payment saved is 00002, across a cold restart.
+    expect(after.body).toMatchObject({ payment: { documentNumber: expect.stringMatching(/^SPAY\/\d{2}-\d{2}\/00002$/) } });
     expect(codeOf(await pay(h2, 'pay-again', 1))).toBe('payment_exceeds_balance');
   }, 120_000);
 });

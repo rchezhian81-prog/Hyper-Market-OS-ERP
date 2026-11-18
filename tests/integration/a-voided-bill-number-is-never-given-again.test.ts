@@ -138,7 +138,7 @@ async function aVoidedNumberIsNeverGivenAgain(cloud: Cloud): Promise<void> {
 describe('a voided bill number is never given again (memory)', () => {
   it('the box reports what it gave; a replacement resumes above it', async () => {
     const tenant = randomUUID();
-    const h = apiHarness();
+    const h = apiHarness({ tillFormatA: false /* OB-847: proves the older numbering */ });
     await h.seedOwner(tenant, OWNER);
     const cloud: Cloud = {
       tenant, url: 'https://cloud.example.test',
@@ -169,7 +169,7 @@ describe.skipIf(DATABASE_URL === undefined)('the pack high-water on PostgreSQL',
   let real: RealCloud;
   let cloud: Cloud;
   beforeAll(async () => {
-    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY });
+    real = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: TEST_PACK_KEY, providers: { tillFormatA: false } });
     const send = async (method: HttpRequest['method'], path: string, token: string, body?: unknown, key?: string): Promise<Reply> => {
       const res = await fetch(`${real.baseUrl}${path}`, {
         method, headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(key === undefined ? {} : { 'idempotency-key': key }) },

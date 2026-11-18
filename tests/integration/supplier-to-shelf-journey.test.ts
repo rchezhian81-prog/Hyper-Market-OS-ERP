@@ -137,6 +137,8 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   expect(selfPo.status).toBeGreaterThanOrEqual(400);
   const issued = await ok(call('POST', `/v1/purchase/orders/${PO}/approval`, OWNER, { reason: 'within the month budget' }, 'po-approve'), 200);
   expect(issued['order']).toMatchObject({ status: 'issued', approvedBy: OWNER, requisitionedBy: BUYER });
+  // OB-847: the order carries its format-A number, made when it was saved and kept on approval.
+  expect(issued['order']).toMatchObject({ documentNumber: expect.stringMatching(/^PO\/\d{2}-\d{2}\/00001$/) });
   expect(await ok(call('GET', '/v1/purchase/commitments', OWNER), 200)).toMatchObject({ known: true, valueMinor: ORDERED * COST });
   row('2 order raised / issued', 'POST /v1/purchase/orders/:poId · …/approval', 'buyer proposes 100; buyer cannot issue; owner issues; commitment ₹3,000.00',
     `buyer self-issue ${selfPo.status}; issued by ${OWNER}; commitment ${ORDERED * COST}`);
@@ -161,6 +163,8 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
     poReceipt?: { receivedByProduct: Record<string, number> } | null;
   };
   expect(grn).toMatchObject({ availableMinor: GOOD, heldMinor: 0, receivedBy: RECEIVER });
+  // OB-847: the receipt's number is the store's own range (store 1), taken in the same save.
+  expect(grnBody['grn']).toMatchObject({ documentNumber: expect.stringMatching(/^GRN1\/\d{2}-\d{2}\/00001$/) });
   expect(grn.orderPosition?.[PRODUCT]).toMatchObject({ ordered: ORDERED, receivedBefore: 0, remaining: ORDERED });
   expect(grn.captured.lines.map((l) => [l.lineId, l.disposition, l.sellableMinor, l.quarantinedMinor]))
     .toEqual([['L1', 'sellable', GOOD, 0], ['L2', 'quarantine', 0, WARM], ['L3', 'quarantine', 0, UNREAD]]);

@@ -47,6 +47,8 @@ export interface SupplierAdvanceJournal extends JournalEntry {
     readonly invoiceId?: string;
     /** An application that undoes an earlier one (a compensating journal). Its amount is then taken OFF what was applied. */
     readonly reverses?: string;
+    /** OB-847 (document numbers, format A): a paid advance's `SADV/26-27/00001`, made when it is saved. Absent before. */
+    readonly documentNumber?: string;
   };
 }
 
@@ -68,6 +70,11 @@ export interface SupplierAdvanceDeps extends Pick<FinanceDeps, 'periodStates' | 
   /** The ledger's balance on an account over every journal (debit less credit). */
   readonly ledgerBalance: (tenantId: string, account: string) => Promise<number>;
   readonly approvals?: ApprovalPort;
+  /**
+   * OB-847: post an advance's journal WITH its format-A number (`SADV/26-27/00001`), taken in the same save. Answers the
+   * number. Absent → the journal is posted as before, with no number.
+   */
+  readonly appendNumberedAdvance?: (tenantId: string, advanceId: string, build: (documentNumber: string) => SupplierAdvanceJournal) => Promise<string | undefined>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -88,6 +95,8 @@ export interface AdvancePosition {
   readonly leftMinor: number;
   readonly paidOn: string;
   readonly approvedBy: string | null;
+  /** OB-847: its format-A number, when it has one (an advance from before keeps none). */
+  readonly documentNumber?: string;
   readonly applications: readonly { readonly applicationId: string; readonly invoiceId: string | null; readonly amountMinor: number; readonly on: string; readonly reverses: string | null }[];
 }
 
@@ -101,6 +110,7 @@ export function advancePositions(journals: readonly SupplierAdvanceJournal[]): r
       advanceId: p.supplierAdvance.advanceId, supplierId: p.supplierAdvance.supplierId, poId: p.supplierAdvance.poId ?? null,
       paidMinor: p.supplierAdvance.amountMinor, appliedMinor, leftMinor: p.supplierAdvance.amountMinor - appliedMinor,
       paidOn: p.supplierAdvance.on, approvedBy: p.supplierAdvance.approvedBy ?? null,
+      ...(p.supplierAdvance.documentNumber === undefined ? {} : { documentNumber: p.supplierAdvance.documentNumber }),
       applications: apps.map((a) => ({ applicationId: a.supplierAdvance.applicationId ?? '', invoiceId: a.supplierAdvance.invoiceId ?? null, amountMinor: a.supplierAdvance.amountMinor, on: a.supplierAdvance.on, reverses: a.supplierAdvance.reverses ?? null })),
     };
   });
@@ -142,6 +152,10 @@ export function supplierAdvanceRoutes(deps: SupplierAdvanceDeps): readonly Route
     };
     const gate = postJournal({ entry: journal, periodStates: states, nextOpenPeriod: period });
     if (!gate.ok) throw apiError(422, { code: gate.refusedBecause ?? 'journal_refused', whatHappened: gate.detail, wasItSaved: 'not_saved', nextSafeAction: 'Correct it and send again. Nothing was recorded.' });
+    if (tag.change === 'paid' && deps.appendNumberedAdvance !== undefined) {
+      const documentNumber = await deps.appendNumberedAdvance(tenantId, tag.advanceId, (n) => (n === '' ? journal : { ...journal, supplierAdvance: { ...journal.supplierAdvance, documentNumber: n } }));
+      return documentNumber === undefined ? journal : { ...journal, supplierAdvance: { ...journal.supplierAdvance, documentNumber } };
+    }
     await deps.appendJournal(tenantId, journal);
     return journal;
   };

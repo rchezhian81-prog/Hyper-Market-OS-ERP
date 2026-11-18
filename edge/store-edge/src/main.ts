@@ -94,7 +94,7 @@ import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials, deviceLaneOf, TILL_AUTHORITY, type SignInLogEntry } from './till-operators';
 import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
-import { ReceiptNumbers } from './receipt-numbers';
+import { ReceiptNumbers, readFormatA } from './receipt-numbers';
 import { HeldBills } from './held-bills';
 import { httpPhoneBaskets } from './phone-baskets';
 import { httpQuotations } from './quotations-at-lane'; // R7-C · OB-506
@@ -1733,6 +1733,8 @@ export async function startEdge(
       storesInBusiness: pack.receiptNumbering?.known === true && Number.isSafeInteger(pack.receiptNumbering.value.storesInBusiness) ? pack.receiptNumbering.value.storesInBusiness : null,
       // OB-85 · verifier r17: the R-<lane>- history head office banked for this store (a replaced box resumes above it).
       boxSeriesBankedThrough: pack.receiptNumbering?.known === true && pack.receiptNumbering.value.boxSeriesBankedThrough !== null && typeof pack.receiptNumbering.value.boxSeriesBankedThrough === 'object' ? pack.receiptNumbering.value.boxSeriesBankedThrough : null,
+      // OB-847: format A (`1L01/26-27/00001`) whenever head office's pack says it — from the version that brings it.
+      formatA: pack.receiptNumbering?.known === true ? readFormatA(pack.receiptNumbering.value.formatA) : null,
     }),
     committed: [
       ...(await readLog(log.path)).flatMap((r) => {
@@ -2009,7 +2011,7 @@ export async function startEdge(
       receiptNumbers: {
         issue: (i) => receiptNumbers.issue(i),
         checkUse: (i) => receiptNumbers.checkUse(i),
-        status: (laneId) => receiptNumbers.status(laneId),
+        status: (laneId, kind) => receiptNumbers.status(laneId, kind),
       },
     }),
     ...(tillApprovals === null ? {} : {

@@ -117,6 +117,11 @@ export interface CreditNoteDeps {
   readonly businessDocuments?: (tenantId: string, customerId: string) => Promise<readonly StoredB2BDocument[]> | readonly StoredB2BDocument[];
   /** Write the note, its AR movement and its fact for the books in ONE batch. Idempotent on the note id. */
   readonly recordCustomerNote?: (tenantId: string, note: CustomerNote, issuedBy: string) => Promise<void> | void;
+  /**
+   * OB-847: record a note WITH its format-A number (`CCN/26-27/00001`, `CDN/26-27/00001`), taken in the same save. Answers
+   * the note as saved. Absent → the older series (`allocateNumber` + `recordCustomerNote`).
+   */
+  readonly recordNumberedCustomerNote?: (tenantId: string, note: CustomerNote, issuedBy: string) => Promise<CustomerNote>;
   /** Draw the next gap-free number of a series. Called ONLY once the note would issue. */
   readonly allocateNumber?: (tenantId: string, series: string) => Promise<number> | number;
   /** The maker-checker engine (OB-290). Absent: no approval is ever found, so no credit note issues. */
@@ -298,11 +303,19 @@ export function creditNoteRoutes(deps: CreditNoteDeps): readonly Route[] {
         });
         const approvedBy = opened.decision.decidedBy;
         const spend = opened.spend;
-        const seq = await deps.allocateNumber(t, CUSTOMER_NOTE_SERIES[a.kind]);
-        const { note } = await workOut(ctx, a, formatNumber(CUSTOMER_NOTE_FORMAT[a.kind], seq));
-        await spend();
-        const issued: CustomerNote = { ...note, issuedBy: ctx.userId, approvedBy };
-        await deps.recordCustomerNote(t, issued, ctx.userId);
+        let issued: CustomerNote;
+        if (deps.recordNumberedCustomerNote !== undefined) {
+          // OB-847: the number is taken in the note's own save — nothing is drawn before, so nothing can be left unused.
+          const { note } = await workOut(ctx, a, '(probe)');
+          await spend();
+          issued = await deps.recordNumberedCustomerNote(t, { ...note, issuedBy: ctx.userId, approvedBy }, ctx.userId);
+        } else {
+          const seq = await deps.allocateNumber(t, CUSTOMER_NOTE_SERIES[a.kind]);
+          const { note } = await workOut(ctx, a, formatNumber(CUSTOMER_NOTE_FORMAT[a.kind], seq));
+          await spend();
+          issued = { ...note, issuedBy: ctx.userId, approvedBy };
+          await deps.recordCustomerNote(t, issued, ctx.userId);
+        }
         await deps.recordAudit?.(t, {
           actorId: ctx.userId, action: `finance.${a.kind}.issue`, objectType: 'b2b_customer', objectId: a.customerId, at: deps.now(),
           origin: { tenantId: t, branchId: ctx.branchId ?? null }, before: null,
