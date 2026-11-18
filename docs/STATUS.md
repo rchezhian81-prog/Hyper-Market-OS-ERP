@@ -18,6 +18,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Document numbers (OB-844–847) · 18 November 2026 · format A
+- **Owner decided (in writing):** "Document numbers, format A"; "OB-844 A, OB-845 A, OB-846 A". Small choices: OB-848 (decided under OB-801); the till's temporary range after a restore: OB-849 (CA to confirm).
+- **Done (on its branch `claude/document-numbers`):**
+  - Every number is `PREFIX/YY-YY/NNNNN`, at most 16 characters, made automatically, restarting each 1 April by the shop's date.
+  - **Till bills `1L01/26-27/00001`** and **till returns `1R01/26-27/00001`** — numbered on the store computer, offline; two tills never clash; at 99,999 a till moves to `1L51` by itself; a warning from 90,000; a restored store computer uses a fresh temporary range `1T01`. The number is on the till's screen and the printed bill.
+  - **Numbered in the same save as the document** (no gap, no duplicate; a cancelled one keeps its number): goods receipts `GRN1`, purchase orders `PO`, supplier payments `SPAY`, supplier advances `SADV`, supplier debit notes `SDN`, customer credit/debit notes `CCN`/`CDN`, business customer invoices `BINV`, write-offs from the write-off page `WOF1`.
+  - Store setup shows **Document numbers**: each till's code, each range's last number, what is left this year, and the 90,000 warning.
+  - Old documents keep their old numbers.
+- **Still to do:** stock count `CNT1`, transfer out `TRF1`, return to supplier `RTS1`, floor indent `IND1`, money received `RCT1`; and `WOF1` on the three other write-off paths (a count's held write-off, a damaged item found when the floor receives, a returned item written off).
+- **Owner, in the store:** the CA confirms in writing that the new series start on the install day for the rest of 2026-27 (OB-845 A), and the temporary till range after a restore (OB-849).
+
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.
 - **Done (on its PR):**

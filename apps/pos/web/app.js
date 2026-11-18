@@ -3267,7 +3267,9 @@ async function startNoReceiptReturn() {
 const CARD_REFUND_REASONS = [{ code: 'refund_done_on_machine', en: 'Refund seen on the machine\'s slip', ta: 'இயந்திரச் சீட்டில் திரும்பப் பணம் பார்க்கப்பட்டது' }];
 async function afterRefund(outcome, refundTender, returnId) {
   if (!realTradingOn() || outcome.kind !== 'pending' || (refundTender !== 'card' && refundTender !== 'upi') || !session.recordCardRefundOnMachine) {
-    showRefundOutcome(outcome, refundTender, typeof returnId === 'string' && returnId.startsWith('RT-') ? returnId.slice(3) : undefined);
+    // OB-847: the return's own number, said with the outcome (1R01/26-27/00001).
+    refundNumberShown = typeof returnId === 'string' && returnId.startsWith('RT-') ? returnId.slice(3) : undefined;
+    showRefundOutcome(outcome, refundTender);
     return;
   }
   const amount = inr(outcome.refundMinor);
@@ -3322,7 +3324,11 @@ async function cardListText() {
  * instruction that must not be missed; settled and pending get their own headings; anything else is
  * the plain "please read this".
  */
-function showRefundOutcome(outcome, refundTender, returnNumber) {
+/** OB-847: the number of the return whose outcome is shown next (set just before; used once). */
+let refundNumberShown;
+function showRefundOutcome(outcome, refundTender) {
+  const returnNumber = refundNumberShown;
+  refundNumberShown = undefined;
   const stop = outcome.kind === 'refused' || outcome.kind === 'uncertain'
     || outcome.kind === 'conflict' || outcome.kind === 'not_entitled';
   const title = outcome.kind === 'settled' ? t('refundDone')

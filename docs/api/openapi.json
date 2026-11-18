@@ -222243,18 +222243,15 @@
           {
             "type": "object",
             "required": [
-              "id",
               "lossType",
               "qtyRemoved",
               "valueMinor",
               "requiredApproval",
               "evidenceRef",
-              "alreadyRecorded"
+              "alreadyRecorded",
+              "id"
             ],
             "properties": {
-              "id": {
-                "type": "string"
-              },
               "lossType": {
                 "type": "string",
                 "enum": [
@@ -222293,6 +222290,12 @@
               },
               "alreadyRecorded": {
                 "type": "boolean"
+              },
+              "documentNumber": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -222300,17 +222303,14 @@
           {
             "type": "object",
             "required": [
-              "id",
               "lossType",
               "qtyRemoved",
               "valueMinor",
               "requiredApproval",
-              "evidenceRef"
+              "evidenceRef",
+              "id"
             ],
             "properties": {
-              "id": {
-                "type": "string"
-              },
               "lossType": {
                 "type": "string",
                 "enum": [
@@ -222346,6 +222346,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "documentNumber": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
               }
             },
             "additionalProperties": true
@@ -326135,6 +326141,9 @@
         ],
         "properties": {
           "id": {
+            "type": "string"
+          },
+          "documentNumber": {
             "type": "string"
           },
           "productId": {

@@ -50,7 +50,7 @@ describe.each(backings)('A8 — the B2B invoice carries IGST across States, CGST
     const kerala = await invoice('inv-kl', { fromOrderId: 'so1', deliveryStateCode: '32' });
     expect(kerala.status, JSON.stringify(kerala.body)).toBe(201);
     const k = kerala.body as { number: string; gst: Gst };
-    expect(k.number).toBe('INV-000001'); // the refused one drew no number
+    expect(k.number).toMatch(/^BINV\/\d{2}-\d{2}\/00001$/); // the refused one drew no number (OB-847: BINV/YY-YY/00001)
     expect(k.gst).toMatchObject({ placeOfSupply: 'inter_state', supplierStateCode: '33', deliveryStateCode: '32', basis: 'delivery_state', cgstMinor: 0, sgstMinor: 0, igstMinor: 5_000 + 7_200 });
 
     await orderAndDeliver(2);

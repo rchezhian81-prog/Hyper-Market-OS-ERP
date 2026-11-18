@@ -6044,6 +6044,17 @@ export function b2bDocumentsAdapter(input: {
         .filter((d) => d.kind === 'sales_order' && d.derivedFrom !== undefined)
         .map((d) => d.derivedFrom as string),
 
+    // OB-847: a business customer's tax invoice takes its number (BINV/26-27/00001) in the SAME save as the invoice.
+    recordNumberedTaxInvoice: async (tenantId, customerId, draft) => {
+      const saved = await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'business_invoice' }, documentRef: `${customerId}/${draft.documentId}`, at: input.now(),
+        entries: (number) => [{ stream: forB2BDocuments(customerId), event: makeEvent({
+          id: `b2b-doc-${customerId}-${draft.documentId}`, type: 'B2BDocumentIssued', occurredAt: input.now(),
+          idempotencyKey: `b2b-doc-${tenantId}-${customerId}-${draft.documentId}`, source: 'api/finance', payload: number === '' ? draft : { ...draft, number },
+        }) }],
+      });
+      return saved === null ? draft : { ...draft, number: saved.number };
+    },
     recordDocument: async (tenantId, customerId, doc) => {
       await input.store.append(tenantId, forB2BDocuments(customerId), makeEvent({
         id: `b2b-doc-${customerId}-${doc.documentId}`,
@@ -6860,8 +6871,12 @@ export function writeOffAdapter(input: {
         // WF-09 (round 8): a batch's write-off takes the stock off THAT batch.
         ...(rec.batchId === undefined ? {} : { batchId: rec.batchId }),
       });
-      const entry = writeOffCommittedEntry(tenantId, rec);
-      await input.store.append(tenantId, entry.stream, entry.event);
+      // OB-847: the write-off's number (WOF1/26-27/00001 — its store's range) in the SAME save as its record.
+      const place = await storeNumberFor(input.store, input.now, tenantId, rec.locationId);
+      return numberedWords(await appendWithDocumentNumber(input.store, tenantId, {
+        range: { kind: 'write_off', storeNumber: place.storeNumber, ...(place.storeId === undefined ? {} : { storeId: place.storeId }) }, documentRef: rec.id, at: rec.at,
+        entries: (documentNumber) => [writeOffCommittedEntry(tenantId, documentNumber === '' ? rec : { ...rec, documentNumber })],
+      }));
     },
     // SF-05: head office's own average unit cost of the stock at the location — the same read a transfer values by.
     unitCostAt: async (tenantId, locationId, productId) => {
