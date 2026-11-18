@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -57,7 +57,8 @@ function stand(): Promise<Stand> {
   let now = Date.parse('2026-10-05T09:00:00Z');
   let posts = 0;
   let held: (() => void)[] | null = null;
-  const handle = createDemoLoginHandler({ logins: () => FILE, idp: IDP, throttle: new FailureThrottle(), now: () => now, audit: () => {} });
+  // Batch 16: the page's own fonts from the shipped files, as main.ts serves them from beside its bundle.
+  const handle = createDemoLoginHandler({ logins: () => FILE, idp: IDP, throttle: new FailureThrottle(), now: () => now, audit: () => {}, font: (name) => readFileSync(join('packages/ui/web/fonts', name)) });
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => { chunks.push(c); });
@@ -75,7 +76,7 @@ function stand(): Promise<Stand> {
       const answer = (): void => {
         if (request.method === 'POST') posts += 1;
         const out = handle(request);
-        res.writeHead(out.status, out.headers).end(out.body);
+        res.writeHead(out.status, out.headers).end(out.bytes ?? out.body);
       };
       if (request.method === 'POST' && held !== null) held.push(answer); else answer();
     });
