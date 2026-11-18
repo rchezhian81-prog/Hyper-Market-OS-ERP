@@ -885,6 +885,8 @@ th[aria-sort="ascending"] > .sre-sort > .sre-sort-dir, th[aria-sort="descending"
 .sre-menu .branch { margin: 10px 0 0; border-width: 1px 0 0; border-radius: 0; background: transparent; padding: 14px 6px 6px; }
 .sre-menu .branch .mark { background: transparent; color: var(--on-rail); }
 .sre-menu .branch b { text-transform: uppercase; letter-spacing: .04em; font-size: 14.5px; }
+/* Batch 15: the store's town under its name — the rail's own ink, a step quieter than the name. */
+.sre-menu .branch small.town { color: var(--on-rail); font-weight: 600; }
 .sre-menu .branch + .person { margin-top: 0; border-top: 0; padding-top: 4px; }
 /* The header: the page's name large, the topline's tools at the right, the avatar a round pill. */
 body.sre-shell h1.who { font-size: clamp(21px, 1.6vw + 12px, 30px); font-weight: 800; line-height: 1.2; color: var(--ink); }

@@ -18,6 +18,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
+## Batch 15 (18 November 2026) · Today's last gaps, the town, supplier names (D-061–D-066 · OB-834, OB-835, OB-836)
+- **Owner asked:** fix the remaining gaps from the gap audit (items 1–6 of batch 15).
+- **Done (on branch `claude/batch-15`):**
+  - **Low stock** is a real figure: head office counts the items at or below their reorder level on its own stock and sends the list in the store pack. The card and its Needs attention row open the list. With no reorder level set it says "Not known — no reorder levels set yet" and links to the Reorder tab.
+  - **Purchase orders and Low stock compare with yesterday**: the store computer keeps an append-only daily record. With no earlier day it says so.
+  - **Recent activity** lists bills, deliveries booked in, approvals decided, write-offs and price changes, each with time, reference, status (word + icon) and amount.
+  - **The old dark strip is gone.** Sales today is on the Sales card (with its note); approvals, exceptions, not-yet-sent and tasks are on Store today, each one tap from its list.
+  - **Town / city**: an optional Store setup question, shown under the store's name at the foot of the menu; nothing when unset.
+  - **Supplier names, not codes**, on Receive, the handheld's door check-in (and its items by name) and twelve office pages; the code only when no name exists.
+- **Decided under OB-801 (evening list):** OB-834 (town on Store setup), OB-835 (what "yesterday" means), OB-836 (what Recent activity lists).
+- **Owner, in the store:** Store setup → type the town → it shows under SRE HYPER MARKET in the menu after the next store pack. Buying → Reorder → set reorder levels for the fast movers, so Low stock shows a number.
 ## Remote access (OB-840) (18 November 2026) · the owner sees Today, reports and approvals from outside the shop
 - **Owner decided (18 Nov, in writing):** "1A, 2A, 3A, 4A, 5A" — ADR-0035.
 - **Done (on branch `claude/remote-access-ob840`; its PR):**

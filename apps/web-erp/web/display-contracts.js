@@ -154,7 +154,7 @@ function paintOffice() {
         { key: 'approved', label: both('cApproved'), filter: true, value: (c) => both(c.approved ? 'approvedYes' : 'approvedNo') },
       ],
       drawer: {
-        title: (c) => `${c.contractId} · ${c.supplierId}`,
+        title: (c) => `${c.contractId} · ${supplierLabel(c.supplierId)}`,
         body: (c) => {
           const box = document.createElement('div');
           box.append(o.facts([
@@ -238,4 +238,10 @@ if (mayRead) void load();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* the page still opens; it is not kept for offline use */ });
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }

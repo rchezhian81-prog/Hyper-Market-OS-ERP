@@ -305,7 +305,7 @@ describe.skipIf(!existsSync(CHROMIUM))('W1: the office shell finds pages and sho
 
     it(`Today, Approvals, Reports and Month-end pass the same audit at ${name}, each as the role that uses it`, async () => {
       for (const [who, path, ready] of [
-        [PEOPLE.manager, '/manager/', '#tiles > *'],
+        [PEOPLE.manager, '/manager/', '#kpis > *'], // batch 15: the headline cards (the old strip is gone)
         [PEOPLE.owner, '/approvals', '#waiting li[data-request-id]'],
         [PEOPLE.manager, '/reporting/', '#reports-list .row'],
         [PEOPLE.accountant, '/finance-close', '#pay-list .sre-state[data-state="empty"]'],

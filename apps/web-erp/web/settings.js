@@ -12,6 +12,7 @@ const t = (k) => (api === null ? k : api.words(lang, k));
 /** Each setting's name in the reader's language, by its key (OB-699); head office's English label is the fallback. */
 const SETTING_WORDS = {
   en: {
+    storeTown: 'Town / city the store is in (empty = not set)', // batch 15
     tradingDayCutoff: 'Trading-day cut-off (HH:MM)', localeTimeZone: 'Store time zone (IANA name, e.g. Asia/Kolkata)', localeCurrency: 'Base currency (ISO 4217)', localeLanguages: 'Languages offered',
     taxDefaultBps: 'Default GST rate (basis points)', deliveryRadiusKm: 'Delivery serviceability radius (km)', catalogueBulkPublishThreshold: 'Products changed in one publish before it counts as bulk (needs a fresh second-factor sign-in)',
     posAgeRestrictedMinimumAge: 'Minimum age for age-restricted items (years)', posLicenceHoursEnabled: 'Restrict certain items to licensed selling hours', loyaltyPointsPer100Inr: 'Loyalty points earned per ₹100 spent (0 = loyalty off)',
@@ -21,6 +22,7 @@ const SETTING_WORDS = {
     receiptPaperFormat: 'Receipt paper size', invoiceB2cDynamicQrOn: 'Print the B2C dynamic QR on every bill (only required above ₹500 crore turnover)', invoiceB2cDynamicQrUpiId: 'The shop\'s UPI ID for the B2C dynamic QR (empty = not set)', invoiceB2cDynamicQrBankAccount: 'The bank account number that UPI ID pays into (empty = not set)', invoiceB2cDynamicQrIfsc: 'That bank account\'s IFSC (empty = not set)', deliveryTillFeeProduct: 'The product whose price is the till\'s delivery-fee line (empty = not set)',
   },
   ta: {
+    storeTown: 'கடை அமைந்துள்ள ஊர் / நகரம் (காலி = அமைக்கப்படவில்லை)', // batch 15
     tradingDayCutoff: 'வணிக நாள் முடியும் நேரம் (HH:MM)', localeTimeZone: 'கடையின் நேர மண்டலம் (IANA பெயர், எ.கா. Asia/Kolkata)', localeCurrency: 'அடிப்படை நாணயம் (ISO 4217)', localeLanguages: 'வழங்கப்படும் மொழிகள்',
     taxDefaultBps: 'இயல்பு GST விகிதம் (அடிப்படைப் புள்ளிகள்)', deliveryRadiusKm: 'விநியோகம் செய்யக்கூடிய தூரம் (கி.மீ.)', catalogueBulkPublishThreshold: 'ஒரு வெளியீட்டில் இத்தனை பொருட்கள் மாறினால் அது மொத்த மாற்றம் (புதிய இரண்டாம் படி உள்நுழைவு தேவை)',
     posAgeRestrictedMinimumAge: 'வயது வரம்புள்ள பொருட்களுக்கான குறைந்தபட்ச வயது (ஆண்டுகள்)', posLicenceHoursEnabled: 'சில பொருட்களை உரிம நேரத்தில் மட்டும் விற்க', loyaltyPointsPer100Inr: '₹100 செலவுக்கு கிடைக்கும் விசுவாசப் புள்ளிகள் (0 = விசுவாசத் திட்டம் இல்லை)',

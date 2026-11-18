@@ -251,7 +251,7 @@ describe.skipIf(!HAVE_BROWSER)('daily-work defects: the office pages say it in t
       try {
         await page.waitForFunction("!(document.getElementById('attention')?.textContent ?? '').includes('closed over or short today')", undefined, { timeout: 10_000 });
       } catch { throw new Error(`#attention still says ${JSON.stringify(await page.textContent('#attention'))}`); }
-      expect(await page.textContent('#tiles')).not.toContain('drawer(s) closed over or short today');
+      expect(await page.textContent('#ops')).not.toContain('drawer(s) closed over or short today'); // batch 15: the exceptions figure lives on Store today
     }, 120_000);
   });
 

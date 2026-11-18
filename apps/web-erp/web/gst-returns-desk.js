@@ -216,7 +216,7 @@ function paintRegister() {
   for (const p of purchases) {
     const inv = invoiceOf.get(p.purchaseId);
     const li = node('li', { 'data-purchase': p.purchaseId, 'data-decision': p.decision },
-      node('span', { class: 'word', text: `${p.supplyDate} · ${p.supplierId} · ${rupees(p.taxableMinor)} — ${p.description}` }),
+      node('span', { class: 'word', text: `${p.supplyDate} · ${supplierLabel(p.supplierId)} · ${rupees(p.taxableMinor)} — ${p.description}` }),
       node('span', { text: `${inv === undefined ? w('noSelfInvoice') : `${w('selfInvoice')} ${inv.number}${paid.has(inv.number) ? ` · ${w('deposited')}` : ''}`} — ${p.decisionDetail}` }));
     if (inv !== undefined && !paid.has(inv.number) && desk.session.may.payRcm) {
       const a = `rcm-ch-${p.purchaseId}`; const b = `rcm-on-${p.purchaseId}`;
@@ -308,7 +308,7 @@ function paintTds() {
   });
   if (tdsDraft.payees.length === 0) pays.append(node('li', { 'data-payee': 'none', w: 'noPayees' }));
   tdsDraft.payees.forEach((p, i) => {
-    const li = node('li', { 'data-payee': p.supplierId }, node('span', { class: 'word', text: `${p.supplierId} · ${w('applicable')}: ${w(p.tdsApplicable ? 'yes' : 'no')}${p.section ? ` · ${p.section}` : ''}${p.pan ? ` · PAN ${p.pan}` : ''}` }));
+    const li = node('li', { 'data-payee': p.supplierId }, node('span', { class: 'word', text: `${supplierLabel(p.supplierId)} · ${w('applicable')}: ${w(p.tdsApplicable ? 'yes' : 'no')}${p.section ? ` · ${p.section}` : ''}${p.pan ? ` · PAN ${p.pan}` : ''}` }));
     if (ca) { const b = node('button', { type: 'button', class: 'quiet', w: 'removePayee' }); b.addEventListener('click', () => { tdsDraft.payees.splice(i, 1); paintTds(); }); li.append(b); }
     pays.append(li);
   });
@@ -398,4 +398,10 @@ if (desk === null) {
 } else {
   buildG1(); buildTimeBar(); buildC9(); buildRcm(); buildTds();
   el('lang').addEventListener('click', () => { lang = document.documentElement.lang === 'ta' ? 'ta' : 'en'; reword(); });
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }

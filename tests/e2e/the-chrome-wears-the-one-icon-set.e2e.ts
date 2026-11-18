@@ -213,8 +213,8 @@ describe.skipIf(!HAVE_BROWSER)('the shared look in a real browser: the one icon 
     expect(await calm.page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--dur").trim()')).toBe('0ms');
     const usual = await open('apps/web-erp/web', 'index.html', { ...DESK, reducedMotion: 'no-preference' }, { sreNavigation: menuFor('dashboard') });
     expect(await usual.page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--dur").trim()')).toBe('160ms');
-    // the shared shapes on the Today page's figure tiles and workspace tiles come from the same set
-    expect(await usual.page.evaluate(`[...document.querySelectorAll('#tiles .tile svg')].every((s) => s.classList.contains('sre-icon'))`)).toBe(true);
+    // the shared shapes on the Today page's headline cards (batch 15: the old strip's tiles are gone) come from the same set
+    expect(await usual.page.evaluate(`document.querySelectorAll('#kpis .kpi svg').length > 0 && [...document.querySelectorAll('#kpis .kpi svg')].every((s) => s.classList.contains('sre-icon'))`)).toBe(true);
     expect(await usual.page.evaluate(ICON_OFFENDERS)).toEqual([]);
     expect(calm.errors).toEqual([]);
     expect(usual.errors).toEqual([]);

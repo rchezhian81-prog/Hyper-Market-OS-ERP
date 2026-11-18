@@ -143,7 +143,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     // RELOAD. Before SP-2a this offered "Clear the next approval (1)" again — the decision had died with the tab.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
-    await page.waitForSelector('#tiles .tile');
+    await page.waitForSelector('#kpis .kpi');
     expect(await page.locator('#next-approval').getAttribute('hidden')).not.toBeNull();
     await page.click('#tab-approvals');
     await page.waitForSelector('#approvals-empty:not([hidden])');
@@ -171,16 +171,16 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
 
     await page.reload({ waitUntil: 'load' });
     await ready(page);
-    await page.waitForSelector('#tiles .tile');
+    await page.waitForSelector('#kpis .kpi');
     expect(await page.locator('#next-approval').getAttribute('hidden')).not.toBeNull();
     expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).managerSession!.floor().heldHere)).toBe(1);
     await page.click('#tab-approvals');
     await page.waitForSelector('#saved-rows .row.saved[data-kind="decision"][data-id="a1"]');
     expect(['saved_here', 'retrying']).toContain(await stateOf(page, 'a1'));
-    // The home tile counts it as not yet sent, and says how many are only on this screen.
+    // The not-yet-sent figure (batch 15: on Store today) counts it, and says how many are only on this screen.
     await page.click('#tab-home');
-    await page.waitForSelector('#tiles .tile');
-    expect(await page.textContent('#tiles')).toContain('saved, going to head office when the line is up');
+    await page.waitForSelector('#kpis .kpi');
+    expect(await page.textContent('#ops [data-figure="unsent"]')).toContain('saved, going to head office when the line is up');
   });
 
   it('a delivery booked in and a blind count entered on the served screen → saved here → with the store computer (whole receipt; only what was counted) → reload → both still listed (SP-2b)', async () => {
@@ -233,7 +233,7 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     // RELOAD: both are still listed with their state, nothing is held here, and the box was sent nothing new.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
-    await page.waitForSelector('#tiles .tile');
+    await page.waitForSelector('#kpis .kpi');
     await page.click('#tab-approvals');
     await page.waitForSelector('#saved-rows .row.saved[data-kind="receipt"][data-state="handed_to_box"]');
     await page.waitForSelector('#saved-rows .row.saved[data-kind="count"][data-state="handed_to_box"]');

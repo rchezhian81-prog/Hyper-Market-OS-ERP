@@ -42,7 +42,8 @@ describe('U2: the store computer names who and where', () => {
     expect({ ...d.me, permissions: [...(d.me?.permissions ?? [])].sort() }).toEqual({ userId: 'u-mgr', name: 'Ravi Kumar', roleIds: ['store_manager'], permissions: ['inventory.count.plan', 'till.dayclose.read'] });
     // U7: the roles the pack's register holds, for the picker's role kind (several at once) — by name
     expect(d.roles).toEqual([{ id: 'cashier', name: 'Cashier' }, { id: 'store_manager', name: 'Store manager' }]);
-    expect(d.known).toEqual({ people: true, places: true, store: true, roles: true });
+    expect(d.known).toEqual({ people: true, places: true, store: true, roles: true, suppliers: false }); // batch 15: this pack sent no supplier names
+    expect(d.suppliers).toEqual([]);
   });
 
   it('a register the pack never held is an empty list said as such; a person the pack does not name is their id; nobody signed in is null', () => {
@@ -54,7 +55,7 @@ describe('U2: the store computer names who and where', () => {
     expect(directoryPayload(pack(), null).me).toBeNull();
     const bare = directoryPayload(emptyPack('never pulled'), null);
     expect(bare.store).toBeNull();
-    expect(bare.known).toEqual({ people: false, places: false, store: false, roles: false });
+    expect(bare.known).toEqual({ people: false, places: false, store: false, roles: false, suppliers: false });
     expect(bare.roles).toEqual([]);
     expect(bare.places).toEqual([]);
   });
