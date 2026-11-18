@@ -435,7 +435,8 @@ function figureBox(f) {
     // In the space where the number would have been, so it cannot be skimmed past. Never a zero,
     // never a blank — "Waste: ₹0" is a number somebody puts in a board pack.
     value.className = 'value none';
-    value.textContent = `${t('notAvailable')} — ${f.notAvailableBecause}`;
+    // A reason that already begins "Not known —" (D-057's margin) says it itself; it is not prefixed a second time.
+    value.textContent = /^Not known\b/.test(f.notAvailableBecause) ? f.notAvailableBecause : `${t('notAvailable')} — ${f.notAvailableBecause}`;
   } else {
     value.className = 'value';
     value.textContent = f.unit === 'minor_currency'
