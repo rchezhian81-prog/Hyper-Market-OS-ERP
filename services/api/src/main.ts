@@ -1367,6 +1367,7 @@ export function buildSurface(deps: {
         tillVouchers: { giftCardOfflineCapMinor: (tt) => settings.value(tt, SETTINGS.GIFT_CARD_OFFLINE_CAP_PAISE) }, // W3 · OB-673 · OB-677
         handoverToleranceConfirmation: handoverTolerancePackConfirmationOf({ store }), // OB-676: whether the owner confirmed the driver hand-over limit
         supplierClaimDisputes: claimDisputeCountsFor({ store, now, calendar: shopCalendar }), // U7 · OB-727: the disputed supplier claims on Today
+        storeTown: async (tt) => { const town = String(await settings.value(tt, SETTINGS.STORE_TOWN) ?? '').trim(); return town === '' ? undefined : town; }, // Batch 15
       }, t, storeId),
     }),
     // OB-847 · OB-844 A: every document-number range, its last number and the 90,000 warning; each till's lane code.

@@ -29,6 +29,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Also numbered now (OB-850, branch `claude/document-numbers-2`):** stock counts `CNT1`, transfers out `TRF1`, returns to supplier `RTS1`, floor indents `IND1`, money received `RCT1`, and each write-off of a batch its own `WOF1` (a count's held write-off, damage found when the floor receives, a returned item written off). Shown on Transfers, Count plans, Floor indents, Goods receipts (a return gone back), Business customers (a payment) and the write-off page.
 - **Waiting on the owner (tax):** the till's number given when payment starts; the temporary `1T01` range after a restore.
 - **Owner, in the store:** the CA confirms in writing that the new series start on the install day for the rest of 2026-27 (OB-845 A), and the temporary till range after a restore (OB-849).
+## Batch 15 (18 November 2026) · Today's last gaps, the town, supplier names (D-061–D-066 · OB-834, OB-835, OB-836)
+- **Owner asked:** fix the remaining gaps from the gap audit (items 1–6 of batch 15).
+- **Done (on branch `claude/batch-15`):**
+  - **Low stock** is a real figure: head office counts the items at or below their reorder level on its own stock and sends the list in the store pack. The card and its Needs attention row open the list. With no reorder level set it says "Not known — no reorder levels set yet" and links to the Reorder tab.
+  - **Purchase orders and Low stock compare with yesterday**: the store computer keeps an append-only daily record. With no earlier day it says so.
+  - **Recent activity** lists bills, deliveries booked in, approvals decided, write-offs and price changes, each with time, reference, status (word + icon) and amount.
+  - **The old dark strip is gone.** Sales today is on the Sales card (with its note); approvals, exceptions, not-yet-sent and tasks are on Store today, each one tap from its list.
+  - **Town / city**: an optional Store setup question, shown under the store's name at the foot of the menu; nothing when unset.
+  - **Supplier names, not codes**, on Receive, the handheld's door check-in (and its items by name) and twelve office pages; the code only when no name exists.
+- **Decided under OB-801 (evening list):** OB-834 (town on Store setup), OB-835 (what "yesterday" means), OB-836 (what Recent activity lists).
+- **Owner, in the store:** Store setup → type the town → it shows under SRE HYPER MARKET in the menu after the next store pack. Buying → Reorder → set reorder levels for the fast movers, so Low stock shows a number.
+## Remote access (OB-840) (18 November 2026) · the owner sees Today, reports and approvals from outside the shop
+- **Owner decided (18 Nov, in writing):** "1A, 2A, 3A, 4A, 5A" — ADR-0035.
+- **Done (on branch `claude/remote-access-ob840`; its PR):**
+  - **The relay server** (`infra/remote-access/`): Caddy with automatic TLS for his domain, the store's sign-in with the authenticator code required, a forwarding-only line end, the admin console never on the internet. One setup command makes its own secrets on the server; it refuses the demo server.
+  - **The store PC dials out** ("SRE Remote Link" service, OFF by default) to a new door on its own loopback (127.0.0.1:8095), never the shop network.
+  - **The door** lets only the owner in, only with the one-time code, and only to Today, Reports and Approvals. Approve/reject is recorded in his name plus "from outside the shop". Every remote request is logged on the store PC.
+  - **Today** says: Remote access connected / not connected since <time> / turned off.
+- **Owner must do (runbook `docs/runbooks/remote-access-for-the-owner.md`):** rent the server (DigitalOcean Bangalore or Lightsail Mumbai, 2 GB, about US$12/month — check the price), buy the domain and tell me its name, add the A record, run the setup on the server, install Google or Microsoft Authenticator, run `remote-access setup` at the store PC, check from his phone on mobile data.
+- **Answered (18 Nov, in writing):** OB-841 B (closing the shop or a branch, approval rules, high-impact settings and switches, and supplier bank-account changes are decided only in the shop) and OB-842 A (a price or catalogue approval may be given from outside).
+- **Not proven yet:** a real relay and the real store PC (only CI, a pretend Windows, and a local sshd run here).
+
+
+- **Batch 16 (18 Nov 2026):** the sign-in page now draws Plus Jakarta Sans and Anek Tamil from the store PC itself (`/fonts/`, only the seven allow-listed files, before sign-in), with the internet cut off; the hosted demo sign-in does the same from its own files. Closes batch 13's open sign-in-font item. The Keycloak theme stays on the system fonts until the owner asks. Small choices recorded as OB-837 – OB-839 (decided under OB-801).
 
 ## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.

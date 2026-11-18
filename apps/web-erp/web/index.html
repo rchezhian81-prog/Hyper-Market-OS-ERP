@@ -370,6 +370,9 @@
       .today-actions .sre-btn { border-radius: var(--radius-pill); padding: 0 22px; min-height: 48px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
       #view-home .primary.wide { margin-top: 0; width: auto; }
       .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+      /* Batch 15: the four cards share their rows (subgrid), so every big figure stands at one height whatever a label wraps to. */
+      .kpis { grid-auto-rows: auto; row-gap: 16px; }
+      .kpis > .kpi { grid-row: span 5; grid-template-rows: subgrid; row-gap: 10px; }
       .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; box-shadow: var(--shadow-sm); min-width: 0; }
       .kpi:first-child { border: 2px solid var(--gold); padding: 17px 19px; }
       .kpi .kpi-top { display: flex; align-items: center; gap: 12px; }
@@ -383,7 +386,7 @@
       .kpi .kpi-trend .by { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
       .kpi .kpi-trend[data-dir="up"] .arrow { background: var(--ok); }
       .kpi .kpi-trend[data-dir="up"] .by { color: var(--on-ok-surface); }
-      .kpi .kpi-trend[data-dir="down"] .arrow { background: var(--danger); }
+      .kpi .kpi-trend[data-dir="down"] .arrow { background: var(--danger-surface); } /* batch 15: white arrow on the surface red (6.5:1), not the signal red */
       .kpi .kpi-trend[data-dir="down"] .by { color: var(--danger-text); }
       .kpi .kpi-trend .vs { line-height: 1.35; }
       .kpi .kpi-why { margin: 0; font-size: 14px; color: var(--muted); }
@@ -418,6 +421,28 @@
       .recent td { padding: 10px 12px; border-top: 1px solid var(--line-soft); vertical-align: top; }
       .recent td.money, .recent th.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .recent .done { color: var(--on-ok-surface); font-weight: 600; }
+      /* Batch 15: the activity rows' kind and state (word + icon), the low-stock list, and the cards' notes and ways on. */
+      .recent td.what .sre-icon, .recent td.state .sre-icon { flex: none; }
+      .recent td.what { display: table-cell; }
+      .recent td.what > .sre-icon { float: left; margin: 2px 10px 0 0; color: var(--accent); }
+      .recent td.what > span { display: block; overflow: hidden; }
+      .recent td.state > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+      .recent td.state.done { color: var(--on-ok-surface); }
+      .recent td.state.pending { color: var(--on-warn-surface); }
+      .recent td.state.bad { color: var(--danger-text); }
+      .dash > #lowstock-card { grid-column: 1 / -1; }
+      #lowstock-card .lead { margin: 10px 0; color: var(--muted); font-size: 15px; }
+      .kpi .kpi-note { margin: 0; font-size: 14px; color: var(--muted); }
+      .kpi .kpi-link { justify-self: start; min-height: 44px; display: inline-flex; align-items: center; font-weight: 600; color: var(--accent); }
+      .kpi.opens { cursor: pointer; }
+      .kpi.opens:hover { background: var(--hover); }
+      /* Batch 15: more low stock is worse — its rise is red, its fall green (the word beside the arrow says the same). */
+      .kpi .kpi-trend.worse-up[data-dir="up"] .arrow { background: var(--danger-surface); }
+      .kpi .kpi-trend.worse-up[data-dir="up"] .by { color: var(--danger-text); }
+      .kpi .kpi-trend.worse-up[data-dir="down"] .arrow { background: var(--ok); }
+      .kpi .kpi-trend.worse-up[data-dir="down"] .by { color: var(--on-ok-surface); }
+      .ops .op.attention { box-shadow: inset 4px 0 0 var(--degraded); }
+      .ops .op.unknown { box-shadow: inset 4px 0 0 var(--error); }
       .recent-none { margin: 0; color: var(--muted); }
       .today-foot { margin: 0; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; color: var(--ink-2); font-size: 14px; padding: 4px 2px; }
       .today-foot span { display: inline-flex; align-items: center; gap: 8px; }
@@ -497,7 +522,8 @@
         <!-- Batch 12: the four headline cards — each against the previous day the store computer holds, by this time of day;
              "no previous day yet" where it holds none, "Not known" with the reason where it has no figure (P-08). -->
         <div class="kpis" id="kpis" aria-label="Today against the previous day"></div>
-        <div class="tiles" id="tiles"></div>
+        <!-- Batch 15: the old dark strip of day figures is gone — Sales today is on the Sales card; approvals, exceptions,
+             not-yet-sent and tasks are on "Store today" below, each one tap from its list. -->
       </section>
       <section id="view-home-dash" class="dash" aria-label="Today's cards">
         <section class="card" id="chart-card" aria-labelledby="chart-title">
@@ -507,6 +533,12 @@
           <div class="chart-host" id="sales-chart"></div>
         </section>
         <section class="card" id="attention-card" aria-labelledby="attention-title"><h3 id="attention-title">Needs attention</h3><ul class="attention" id="attention"></ul></section>
+        <!-- Batch 15: the low-stock list, opened from the Low stock card or its Needs attention row. -->
+        <section class="card" id="lowstock-card" aria-labelledby="lowstock-title" hidden>
+          <div class="card-head"><h3 id="lowstock-title" tabindex="-1">Low stock</h3><button type="button" class="sre-btn" id="lowstock-close">Close</button></div>
+          <p class="lead" id="lowstock-lead"></p>
+          <div class="recent-wrap" id="lowstock-rows"></div>
+        </section>
         <section class="card" id="recent-card" aria-labelledby="recent-title"><h3 id="recent-title">Recent activity</h3><div class="recent-wrap" id="recent"></div></section>
         <section class="card" id="lanes-card" aria-labelledby="lanes-title" hidden><h3 id="lanes-title">Lanes</h3><div class="lanes" id="lanes"></div></section>
         <section class="card" id="flow-card" aria-labelledby="flow-title"><h3 id="flow-title">Purchase to shelf</h3><ol class="flow" id="flow"></ol></section>

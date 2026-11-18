@@ -124365,6 +124365,10 @@
                 "usedBy": {
                   "type": "string"
                 },
+                "decidedVia": {
+                  "type": "string",
+                  "const": "remote"
+                },
                 "decidedBy": {
                   "type": "string"
                 },
@@ -124524,6 +124528,10 @@
                 },
                 "usedBy": {
                   "type": "string"
+                },
+                "decidedVia": {
+                  "type": "string",
+                  "const": "remote"
                 },
                 "decidedBy": {
                   "type": "string"
@@ -176408,6 +176416,10 @@
                 "type": "string"
               }
             ]
+          },
+          "via": {
+            "type": "string",
+            "const": "remote"
           }
         },
         "additionalProperties": true,
@@ -271117,6 +271129,10 @@
                 "type": "string"
               }
             ]
+          },
+          "via": {
+            "type": "string",
+            "const": "remote"
           }
         },
         "additionalProperties": true

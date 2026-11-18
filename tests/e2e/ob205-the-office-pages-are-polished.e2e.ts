@@ -203,9 +203,9 @@ const MEASURE = String.raw`(() => {
 interface Measure { overflow: string[]; small: string[]; chips: string[]; money: string[]; sticky: string[]; columns: string[]; pageScroll: boolean }
 
 const PAGES: readonly { readonly key: string; readonly file: string; readonly ready: string; readonly tab?: string }[] = [
-  { key: 'today', file: 'index.html', ready: '#tiles .tile' },
-  { key: 'approvals', file: 'index.html', ready: '#tiles .tile', tab: '#tab-approvals' },
-  { key: 'day close', file: 'index.html', ready: '#tiles .tile', tab: '#tab-close' },
+  { key: 'today', file: 'index.html', ready: '#kpis .kpi' }, // batch 15: the headline cards (the old strip is gone)
+  { key: 'approvals', file: 'index.html', ready: '#kpis .kpi', tab: '#tab-approvals' },
+  { key: 'day close', file: 'index.html', ready: '#kpis .kpi', tab: '#tab-close' },
   { key: 'goods receipt', file: 'goods-receipt.html', ready: '#rows li.row' },
   { key: 'counts', file: 'counts.html', ready: '#counts-grid tbody tr' }, // U5: the chrome's register
   { key: 'gst returns', file: 'gst-returns.html', ready: '#differences li' },
@@ -273,13 +273,14 @@ describe.skipIf(!HAVE_BROWSER)('OB-205 · the office pages, polished inside the 
     for (const width of WIDTHS) {
       const page = await open('index.html', width, []);
       try {
-        await page.waitForSelector('#tiles .tile');
+        await page.waitForSelector('#kpis .kpi');
         const bandShown = (): Promise<boolean> => page.evaluate('getComputedStyle(document.getElementById("view-home")).display !== "none"') as Promise<boolean>;
         expect(await bandShown(), `Today@${width}`).toBe(true);
-        // the band's figures line up: tiles on one row have their figures at one height (a tile that needs you once
-        // lost its padding to the list's `.attention` rule and sat higher than its neighbours)
-        const misaligned = await page.evaluate(`(() => { const rows = new Map(); for (const t of document.querySelectorAll('#tiles .tile')) {
-          const top = Math.round(t.getBoundingClientRect().top); const n = Math.round(t.querySelector('.n').getBoundingClientRect().top);
+        // the cards' figures line up: cards on one row have their figures at one height (a box that needs you once
+        // lost its padding to the list's `.attention` rule and sat higher than its neighbours) — batch 15: the headline
+        // cards and the Store today boxes that now carry the old strip's figures
+        const misaligned = await page.evaluate(`(() => { const rows = new Map(); for (const t of document.querySelectorAll('#kpis .kpi, #ops .op')) {
+          const top = Math.round(t.getBoundingClientRect().top); const n = Math.round(t.querySelector('.kpi-n, .n').getBoundingClientRect().top);
           rows.set(top, [...(rows.get(top) ?? []), n]); } return [...rows.values()].filter((ns) => new Set(ns).size > 1); })()`);
         expect(misaligned, `Today figures@${width}`).toEqual([]);
         await page.evaluate('document.getElementById("tab-approvals").click()');
@@ -344,7 +345,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-205 · the office pages, polished inside the 
     }
     const close = await open('index.html', 1280, []);
     try {
-      await close.waitForSelector('#tiles .tile');
+      await close.waitForSelector('#kpis .kpi');
       expect(await close.getAttribute('#close-pin', 'aria-describedby')).toBe('close-pin-hint');
       expect(await close.textContent('#close-pin-hint')).toMatch(/^Up to six digits\./);
       expect(await close.getAttribute('#check-close svg', 'data-icon')).toBe('list-checks');

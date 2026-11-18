@@ -1335,7 +1335,7 @@ function renderDsd() {
     const c = dsd.choices();
     const buttons = [
       ...c.orders.map((o) => ({ key: `po:${o.poId}`, text: `${o.number} · ${typeof o.supplierName === 'string' && o.supplierName !== '' ? o.supplierName : o.supplierId}`, choice: { poId: o.poId } })),
-      ...c.routes.map((r) => ({ key: `route:${r.routeId}`, text: `${dt('route')} ${r.routeId} · ${r.supplierId}`, choice: { routeId: r.routeId, supplierId: r.supplierId } })),
+      ...c.routes.map((r) => ({ key: `route:${r.routeId}`, text: `${dt('route')} ${r.routeId} · ${typeof r.supplierName === 'string' && r.supplierName !== '' ? r.supplierName : r.supplierId}`, choice: { routeId: r.routeId, supplierId: r.supplierId } })),
     ];
     el('dsd-choose-hint').textContent = buttons.length === 0 ? dt('nothingToChoose') : t('chooseDelivery');
     el('dsd-choices').replaceChildren(...buttons.map((b) => {
@@ -1351,12 +1351,12 @@ function renderDsd() {
     el('dsd-start').disabled = dsdChoice === null || dsdDriver === null;
     return;
   }
-  el('dsd-against').textContent = `${view.supplierId} · ${view.against}`;
+  el('dsd-against').textContent = `${typeof view.supplierName === 'string' && view.supplierName !== '' ? view.supplierName : view.supplierId} · ${view.against}`;
   el('dsd-lines').replaceChildren(...view.lines.map((l) => {
     const row = document.createElement('div');
     row.className = 'item';
     row.dataset.product = l.productId;
-    const what = document.createElement('span'); what.className = 'what'; what.textContent = l.productId;
+    const what = document.createElement('span'); what.className = 'what'; what.textContent = nameOf(l.productId); // batch 15: the item's name, not its code
     const qty = document.createElement('span'); qty.className = 'qty';
     qty.textContent = `${dt('expected')} ${l.expectedMinor} · ${dt('scanned')} ${l.scannedMinor} · ${dt('back')} ${l.handedBackMinor} · ${dt('kept')} ${l.keptMinor}`
       + (l.heldMinor > 0 ? ` · ${dt('held')} ${l.heldMinor}` : '');

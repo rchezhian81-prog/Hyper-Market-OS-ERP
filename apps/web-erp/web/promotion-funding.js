@@ -59,7 +59,7 @@ function paintRegister() {
   for (const l of reg.lines) {
     const li = document.createElement('li'); li.dataset.offer = l.promotionId; li.dataset.supplier = l.supplierId;
     if (l.findings.length > 0) li.className = 'attention';
-    li.append(text('strong', `${t('offer')} ${l.promotionId} · ${t('supplier')} ${l.supplierId} · ${api.rupees(l.perUnitMinor)} ${t('rate')} · ${l.capMinor === null ? t('noCap') : `${t('cap')} ${api.rupees(l.capMinor)}`}`));
+    li.append(text('strong', `${t('offer')} ${l.promotionId} · ${t('supplier')} ${supplierLabel(l.supplierId)} · ${api.rupees(l.perUnitMinor)} ${t('rate')} · ${l.capMinor === null ? t('noCap') : `${t('cap')} ${api.rupees(l.capMinor)}`}`));
     li.append(text('span', `${t('units')}: ${l.unitsSold} · ${t('earned')} ${api.rupees(l.earnedMinor)} · ${t('received')} ${api.rupees(l.receivedMinor)} · ${t('ledger')} ${api.rupees(l.ledgerMinor)} · ${t('outstanding')} ${api.rupees(l.outstandingMinor)}`, 'figures'));
     for (const f of l.findings) li.append(text('span', `⚠ ${t(`f_${f}`)}`, 'finding'));
     if (l.findings.length === 0) li.append(text('span', `✓ ${t('agrees')}`, 'meta'));
@@ -108,3 +108,9 @@ else {
 }
 
 if (api !== null) shopDate('c-on', { en: api.words('en', 'receivedOn'), ta: api.words('ta', 'receivedOn') }, { required: true });
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
+}

@@ -87,6 +87,7 @@ import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
+import { REMOTE_ACCESS_LOG, REMOTE_DOOR_HOST, readRemoteAccess, remoteLinkView } from './remote-door'; // OB-840 · ADR-0035
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { ensureDeviceTls, sayDeviceTlsEvent, socketAddressesFor, type DeviceTlsMaterial } from './device-tls'; // OB-422
 import type { HandheldSealSource } from './handheld-seal'; // OB-424
@@ -120,7 +121,7 @@ import { withDeciderSeal } from './decision-seal';
 import { withBoxHandheldBuild, queueBasketBuildReporter } from './handheld-build-check'; // OB-537 (R9-B)
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, pickerSubstitutionAnswers, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, posLanePayload, posReceiptTemplate, payloadFor, catalogueFreshness, pickerSubstitutionAnswers, todayFigures, lowStockFigure, dailyFiguresOf, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { checkStaffPurchase, packStaffPurchaseOf } from './staff-purchase-gate'; // OB-301
 import { judgeClientVersion, readPackVersionPolicy } from '../../../packages/platform-admin/src/client-version'; // OB-501 (R7-A)
@@ -163,6 +164,10 @@ import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, t
 import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
 import { ClockGuard, clockObservingFetch, readClockThresholds, type ClockCheck } from './clock-guard';
 import { boxLoginGate } from './box-login-gate'; // OB-429
+import { openTodayHistory, priceChangesBetween } from './today-history'; // Batch 15
+
+/** Batch 15: the device records Today's Recent activity lists — a delivery booked in (screen or handheld) and an approval decided. */
+const BOX_WORK_TYPES: ReadonlySet<string> = new Set(['ApprovalDecided', 'GoodsReceived', 'ReceivingCompleted']);
 import { activationHoldReport, type ActivationHoldReport } from './activation-hold';
 import type { BoxCapturedRun, BoxQualitySample } from './store-work';
 
@@ -643,6 +648,9 @@ export async function startEdge(
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     fileName: 'completions.log',
   });
+  // Batch 15: the box's own Today history — each day's open orders and low stock, and the price changes each catalogue brought.
+  const todayHistory = await openTodayHistory({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']) });
+  if (todayHistory.unreadable() > 0) say(`today history: ${todayHistory.unreadable()} record(s) could not be read whole — kept, not repaired.`);
   const completionsDeadLetterLog = await openFileLog({
     dataDir: settings['EDGE_DATA_DIR']!,
     capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
@@ -1076,6 +1084,14 @@ export async function startEdge(
   // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
   // the box acknowledged and cursored past weeks ago must still hear `duplicate`, never `accepted` twice (§31.1).
   const deviceEventKeys = new Set<string>();
+  // Batch 15: the deliveries booked in and approvals decided on this box's screens and handhelds — Today's Recent activity
+  // lists them, each saying whether head office has it yet (the outbox's pending keys). Read from the whole durable log.
+  const boxWorkHeld: { type: string; occurredAt: string; key: string; payload: Readonly<Record<string, unknown>> }[] = [];
+  const noteBoxWork = (event: { idempotencyKey?: unknown; type?: unknown; occurredAt?: unknown; payload?: unknown }): void => {
+    if (!BOX_WORK_TYPES.has(String(event.type)) || typeof event.idempotencyKey !== 'string' || typeof event.occurredAt !== 'string'
+      || event.payload === null || typeof event.payload !== 'object') return;
+    boxWorkHeld.push({ type: String(event.type), occurredAt: event.occurredAt, key: event.idempotencyKey, payload: event.payload as Record<string, unknown> });
+  };
   // OB-271 · audit A11: the card/UPI refunds done on the shop's own machine, as recorded here (the till's day list reads them).
   const cardRefundsOnMachine: Record<string, unknown>[] = [];
   for (const entry of await readLog(deviceEventsLog.path)) {
@@ -1085,6 +1101,7 @@ export async function startEdge(
       const key = event.idempotencyKey;
       if (typeof key === 'string' && key !== '') deviceEventKeys.add(key);
       if (event.type === 'TillActivityRecorded' && event.payload?.['kind'] === 'card_refund_on_machine') cardRefundsOnMachine.push(event.payload);
+      noteBoxWork(event);
     } catch { /* the pipeline already surfaced it as malformed */ }
   }
 
@@ -1159,6 +1176,7 @@ export async function startEdge(
         continue;
       }
       deviceEventsOutbox.enqueue(event);
+      noteBoxWork(event); // Batch 15
       acks.push({ key, status: 'accepted' });
     }
     // A handheld's batch names the device it came from (the device socket authenticated it): said in the log, so the
@@ -2236,6 +2254,7 @@ export async function startEdge(
         const outcome = await commitLocally({ saleId: sealed.idempotencyKey, record: JSON.stringify(sealed), log: deviceEventsLog });
         if (!outcome.committed) { deviceEventKeys.delete(sealed.idempotencyKey); return { queued: false, detail: outcome.detail }; }
         deviceEventsOutbox.enqueue(sealed);
+        noteBoxWork(sealed); // Batch 15
         return { queued: true };
       },
     },
@@ -2263,6 +2282,22 @@ export async function startEdge(
   // OB-392: the box's last send to head office, for the manager's lane cards — set once the drains exist (a box with no
   // head office configured has none, and its cards say the link is not known).
   const laneLinkRelay: { current: (() => { readonly lastSentAt: string | null }) | undefined } = { current: undefined };
+  // Batch 15: the box's work for Recent activity, each with whether head office has it yet.
+  const boxWorkNow = (): ScreenInput['boxWork'] => {
+    const pending = new Set(deviceEventsOutbox.pending().map((i) => i.key));
+    return boxWorkHeld.map((w) => ({ type: w.type, occurredAt: w.occurredAt, payload: w.payload, sent: !pending.has(w.key) }));
+  };
+  // Batch 15: today's open purchase orders and low-stock count go into the box's Today history — at most once a minute, and
+  // only a figure new today or changed (the history decides), so tomorrow's cards compare with today. Fire-and-forget: a
+  // failed write is said, never blocks a screen.
+  let lastFiguresObservedAt = 0;
+  const observeTodayFigures = (input: ScreenInput): void => {
+    const nowMs = Date.parse(input.now);
+    if (nowMs - lastFiguresObservedAt < 60_000) return;
+    lastFiguresObservedAt = nowMs;
+    void todayHistory.observe(input.tradingDay, dailyFiguresOf({ purchaseOrdersOpen: todayFigures(input)['purchaseOrdersOpen']!, lowStock: lowStockFigure(input.pack) }), input.now)
+      .catch((e: unknown) => say(`today's figures could not be written to this computer's history (${e instanceof Error ? e.message : String(e)}) — tomorrow's cards will say there is no earlier figure.`));
+  };
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -2275,12 +2310,14 @@ export async function startEdge(
     // screen shows (SYNC-01). Absent until the first pull (or restore) lands, which the badge states
     // honestly rather than hiding.
     const heldCatalogue = node.pack();
-    return {
+    const input: ScreenInput = {
       pack,
       sales: recordsNow.sales,
       returns: returnsNow,
       tillCloses: tillClosesNow, // D-2: the box's own shift closes, for the over/short desk
       checklistTicks: checklistTicksNow, // fix batch 3: the closing-checklist ticks made on this box
+      todayHistory: todayHistory.records(), // Batch 15: each day's open orders and low stock, and the price changes
+      boxWork: boxWorkNow(), // Batch 15: deliveries booked in and approvals decided here, and whether head office has them
       unreadableRecords: recordsNow.unreadable,
       outbox,
       unsentForTheClose: unsentItemsAcrossAllQueues, // D-060: the close's own list, every queue
@@ -2313,6 +2350,8 @@ export async function startEdge(
       zone: zoneNow(), // R1a · P-08: the machine's zone against the shop's
       activationHold: activationHoldNow(now), // OB-403 "A" · §31.1: what the 5-minute clock flag is holding
     };
+    observeTodayFigures(input);
+    return input;
   };
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
@@ -2433,8 +2472,41 @@ export async function startEdge(
         : issueTillCredential({ userId, pin, key: tillPinKey(settings['PACK_SIGNING_KEY']!), issuedAt, issuedBy: by }));
     },
   };
+  // OB-840 · ADR-0035 (owner's decision 18 Nov 2026, "1A … 5A"): the REMOTE door — where the encrypted line the store PC
+  // dials out to the owner's relay ends, on THIS PC's loopback only. OFF unless `store-computer remote-access setup` put
+  // EDGE_REMOTE_DOOR_PORT and the pins file in the till's settings; and only with the office PIN on and the office calls on
+  // this PC (the same path the store's own pages use), never with a head-office link or behind a forwarding front.
+  const remoteDoorPort = settings['EDGE_REMOTE_DOOR_PORT'];
+  const remoteAccessFile = settings['EDGE_REMOTE_ACCESS_FILE'];
+  const remoteDoorWhyNot = remoteDoorPort === undefined ? null
+    : screenPort === undefined ? 'this box serves no screens'
+      : officeGate === null ? 'the office PIN sign-in is not on'
+        : headOfficeLinkSetting.on ? 'the head-office sign-in link is on'
+          : settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? 'this box is behind a forwarding front'
+            : settings['BOX_PRIVILEGE_SEAL_KEY'] === undefined || privilegeApi === undefined ? 'the office calls on this PC are not set up (no privilege-seal key or office API)'
+              : remoteAccessFile === undefined ? 'EDGE_REMOTE_ACCESS_FILE is not set'
+                : !/^\d{1,5}$/.test(remoteDoorPort) ? 'EDGE_REMOTE_DOOR_PORT is not a port number' : null;
+  if (remoteDoorPort !== undefined && remoteDoorWhyNot !== null) say(`remote door NOT opened: ${remoteDoorWhyNot}. The till keeps selling; nobody can reach the office pages from outside.`);
+  const remoteLog = remoteDoorPort === undefined || remoteDoorWhyNot !== null ? null
+    : await openFileLog({ dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), fileName: REMOTE_ACCESS_LOG });
+  const remoteLinkStatusFile = settings['EDGE_REMOTE_LINK_STATUS_FILE'];
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(privilegeDeps === undefined ? {} : { privilege: privilegeDeps }),
+    ...(remoteLog === null ? {} : {
+      remoteDoor: {
+        port: Number(remoteDoorPort),
+        access: () => readRemoteAccess((() => { try { return readFileSync(remoteAccessFile!, 'utf8'); } catch { return undefined; } })(), tenantId),
+        record: async (entry: Record<string, unknown>) => { await remoteLog.append(JSON.stringify(entry)); },
+      },
+    }),
+    // OB-840 · P-08: Today says whether the remote link is connected, not connected since when, or turned off.
+    remoteLink: () => remoteLinkView({
+      doorOn: remoteLog !== null,
+      statusText: (() => { try { return remoteLinkStatusFile === undefined ? undefined : readFileSync(remoteLinkStatusFile, 'utf8'); } catch { return undefined; } })(),
+      nowMs: Date.now(),
+      // The shop's own wall clock (its zone from the signed pack), shown as "YYYY-MM-DD HH:MM".
+      shopTime: (iso) => packWallClock(snapshot().pack, iso).replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d).*$/, '$1 $2'),
+    }),
     about: () => aboutFacts,
     // CR-01 step 3d: the updater (a Windows task, SYSTEM) acts on the request; it leaves its mark and its latest word in the
     // status folder this service may read. No mark: the page says the updater is not set up on this PC.
@@ -2511,6 +2583,7 @@ export async function startEdge(
     // OB-263: the evening check's doors on the migration screen — only while the box is in the mirror pilot.
     eveningCheck: { box: eveningCheckBox, on: () => mirrorPilot().on },
   });
+  if (screens?.remotePort !== undefined) say(`remote door on ${REMOTE_DOOR_HOST}:${screens.remotePort} — loopback only; it answers only the owner's relay line, signed in with a one-time code (ADR-0035)`);
   if (screens !== null) {
     say(screens.host === SCREEN_HOST || screens.host === 'localhost'
       ? `screens on ${screens.host}:${screens.port} — loopback only, so nothing on the shop network can read the day's takings`
@@ -3015,8 +3088,17 @@ export async function startEdge(
   });
 
   const refreshPack = async (): Promise<PackPullOutcome> => {
+    const heldBefore = node.pack(); // Batch 15: what the tills charged before, so a price change is seen
     const outcome = await pullPack({ source: packSource, receiver: node, now: new Date().toISOString() });
     if (outcome.status === 'updated') {
+      const adopted = node.pack();
+      if (adopted !== undefined) {
+        const changes = priceChangesBetween(heldBefore?.snapshot.products, { version: adopted.snapshot.version, products: adopted.snapshot.products }, new Date().toISOString());
+        if (changes.length > 0) {
+          void todayHistory.notePriceChanges(changes)
+            .catch((e: unknown) => say(`${changes.length} price change(s) could not be written to this computer's history (${e instanceof Error ? e.message : String(e)}) — Today's Recent activity will not list them.`));
+        }
+      }
       // The lane moved to a newer, verified pack — persist it so the box does not lose it on a reboot.
       // A failed write is not a failed update: the pack is already live in memory and will be re-pulled.
       try {

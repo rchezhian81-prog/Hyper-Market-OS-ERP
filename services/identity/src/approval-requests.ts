@@ -520,6 +520,8 @@ export interface ApprovalDecision {
   readonly decidedAt: string;
   /** Approved only: after this it can no longer be used. */
   readonly expiresAt: string | null;
+  /** OB-840 · ADR-0035: 'remote' when the checker decided through the store PC's remote door. Absent in the store. */
+  readonly via?: 'remote';
 }
 
 /** A request, its decision once made, and the action that used it once it has been. */
@@ -673,7 +675,7 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
           const role = APPROVAL_KINDS[s.request.kind]?.decidedOnlyBy;
           return {
             ...s.request, status: statusOf(s, now),
-            ...(s.decision === undefined ? {} : { decidedBy: s.decision.decidedBy, decisionReason: s.decision.reason, decidedAt: s.decision.decidedAt, expiresAt: s.decision.expiresAt }),
+            ...(s.decision === undefined ? {} : { decidedBy: s.decision.decidedBy, decisionReason: s.decision.reason, decidedAt: s.decision.decidedAt, expiresAt: s.decision.expiresAt, ...(s.decision.via === undefined ? {} : { decidedVia: s.decision.via }) }),
             ...(s.usedBy === undefined ? {} : { usedBy: s.usedBy }),
             label: APPROVAL_KINDS[s.request.kind]?.label ?? s.request.kind,
             // OB-292: an approval that waited past its kind's time has gone to the owner — said on the row, never silent.
@@ -786,6 +788,8 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         const record: ApprovalDecision = {
           requestId, decision, decidedBy: ctx.userId, reason: b['reason'].trim().slice(0, 300), decidedAt,
           expiresAt: decision === 'approved' ? new Date(Date.parse(decidedAt) + spec.validForMinutes * 60_000).toISOString() : null,
+          // OB-840: recorded in the checker's own name, exactly as in the store, plus the mark that it came remotely.
+          ...(ctx.via === 'remote' ? { via: 'remote' as const } : {}),
         };
         let stands: ApprovalDecision | void;
         try {

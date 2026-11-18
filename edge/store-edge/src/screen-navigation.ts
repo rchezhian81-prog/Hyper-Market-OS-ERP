@@ -39,7 +39,8 @@ export interface NavigationPayload {
   /** The person's name and role as the pack's `people` section and role catalogue say them — null when the pack carries none (the rail then shows the id). */
   readonly person: { readonly name: string; readonly role: string | null } | null;
   /** The branch's name from the pack's policies — null when the pack carries none. */
-  readonly branch: { readonly name: string } | null;
+  /** The branch's name and — batch 15, when store setup holds one — its town or city, shown under the name. */
+  readonly branch: { readonly name: string; readonly town?: string } | null;
   /** Why `groups` is empty, when it is. Null when there is a list (which may still be empty for a user with no grants). */
   readonly why: 'no_user' | 'no_roles' | null;
   readonly groups: readonly NavigationGroup[];
@@ -87,8 +88,9 @@ export function personOf(userId: string | null, pack: StorePack): NavigationPayl
 /** The branch's name from the pack's policies, when the pack carries one. */
 export function branchOf(pack: StorePack): NavigationPayload['branch'] {
   if (!pack.policies.known) return null;
-  const name = (pack.policies.value as { branchName?: unknown }).branchName;
-  return typeof name === 'string' && name.trim() !== '' ? { name: name.trim() } : null;
+  const { branchName: name, branchTown: town } = pack.policies.value as { branchName?: unknown; branchTown?: unknown };
+  if (typeof name !== 'string' || name.trim() === '') return null;
+  return { name: name.trim(), ...(typeof town === 'string' && town.trim() !== '' ? { town: town.trim() } : {}) };
 }
 
 /**

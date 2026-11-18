@@ -1,0 +1,44 @@
+# The relay's tunnel end — OB-840 · ADR-0035. A guardrail (tests/guardrails/ob840-the-remote-relay-is-locked-down.test.ts)
+# pins every line that keeps it narrow. The store computer dials OUT to this; nothing dials into the shop.
+Port 2222
+ListenAddress 0.0.0.0
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+# Run as the unprivileged sre-link user (Dockerfile USER): no pid file to write under /run.
+PidFile none
+
+# Who: one user, one key. The key file holds only the store computer's PUBLIC key, approved by the owner on this server
+# (sre-relay approve-link), each line starting: restrict,port-forwarding,permitlisten="127.0.0.1:18095"
+AllowUsers sre-link
+AuthorizedKeysFile /etc/ssh/authorized/sre-link
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+UsePAM no
+StrictModes yes
+MaxAuthTries 3
+LoginGraceTime 20
+
+# What: the reverse forward to the store computer's remote door, on this container's loopback only — nothing else.
+AllowTcpForwarding remote
+GatewayPorts no
+PermitListen 127.0.0.1:18095
+PermitOpen none
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+X11Forwarding no
+PermitTunnel no
+PermitTTY no
+PermitUserRC no
+PermitUserEnvironment no
+# No shell, no command, no file copy: forwarding only.
+MaxSessions 0
+ForceCommand /sbin/nologin
+
+# A dead line is noticed and closed, so the store computer's next dial can take the port again.
+ClientAliveInterval 15
+ClientAliveCountMax 3
+TCPKeepAlive no
+LogLevel VERBOSE

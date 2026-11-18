@@ -39,7 +39,7 @@ let doc = null;
 function paintScheme(s) {
   const li = document.createElement('li'); li.dataset.scheme = s.schemeId;
   if (s.findings.length > 0) li.className = 'attention';
-  li.append(text('strong', `${t('scheme')} ${s.schemeId} · ${t('supplier')} ${s.supplierId} · ${t('rate')} ${(s.rateBp / 100).toFixed(2)}% · ${s.startsOn} – ${s.endsOn}`));
+  li.append(text('strong', `${t('scheme')} ${s.schemeId} · ${t('supplier')} ${supplierLabel(s.supplierId)} · ${t('rate')} ${(s.rateBp / 100).toFixed(2)}% · ${s.startsOn} – ${s.endsOn}`));
   li.append(text('span', `${t('earned')} ${rs(s.accruedMinor)} · ${t('received')} ${rs(s.receivedMinor)} · ${t('outstanding')} ${rs(s.outstandingMinor)} · ${t('claimed')} ${rs(s.openClaimedMinor)} · ${t('claimable')} ${rs(s.claimableMinor)}`, 'figures'));
   for (const f of s.findings) li.append(text('span', `⚠ ${t(`f_${f}`)}`, 'finding'));
   li.append(text('span', `${t('accrualsH')}: ${s.accruals.length === 0 ? t('noAccruals') : s.accruals.map((a) => `${a.periodFrom ?? '?'} – ${a.periodTo ?? '?'} ${rs(a.accruedMinor)}`).join(' · ')}`, 'meta'));
@@ -49,7 +49,7 @@ function paintScheme(s) {
 function paintClaim(c) {
   const li = document.createElement('li'); li.dataset.claim = c.claimId; li.dataset.state = c.state;
   if (c.overdue === true) li.className = 'attention';
-  li.append(text('strong', `${t('claim')} ${c.claimId} · ${t('scheme')} ${c.schemeId} · ${t('supplier')} ${c.supplierId} · ${t('amount')} ${rs(c.amountMinor)} · ${t(`st_${c.state}`)}`));
+  li.append(text('strong', `${t('claim')} ${c.claimId} · ${t('scheme')} ${c.schemeId} · ${t('supplier')} ${supplierLabel(c.supplierId)} · ${t('amount')} ${rs(c.amountMinor)} · ${t(`st_${c.state}`)}`));
   const when = c.sent === undefined ? '' : `${t('sentOn')} ${c.sent.sentOn} · ${t('dueOn')} ${c.dueOn ?? '—'} · `;
   li.append(text('span', `${when}${t('paid')} ${rs(c.matchedMinor)} · ${t('left')} ${rs(c.unansweredMinor)}`, 'figures'));
   if (c.overdue === true) li.append(text('span', `⚠ ${t('overdue')}`, 'finding overdue'));
@@ -91,8 +91,8 @@ function paintRegister() {
   if (reg.schemes.length === 0) $('scheme-rows').append(text('li', `○ ${t('none')}`));
   for (const s of reg.schemes) $('scheme-rows').append(paintScheme(s));
   // U2b (G5): the scheme and the claim are offered from the lists the page just read — the code stays typeable
-  $('scheme-list').replaceChildren(...reg.schemes.map((s) => Object.assign(document.createElement('option'), { value: s.schemeId, label: `${s.schemeId} · ${s.supplierId} · ${(s.rateBp / 100).toFixed(2)}%` })));
-  $('claim-list').replaceChildren(...reg.claims.map((c) => Object.assign(document.createElement('option'), { value: c.claimId, label: `${c.claimId} · ${c.schemeId} · ${c.supplierId}` })));
+  $('scheme-list').replaceChildren(...reg.schemes.map((s) => Object.assign(document.createElement('option'), { value: s.schemeId, label: `${s.schemeId} · ${supplierLabel(s.supplierId)} · ${(s.rateBp / 100).toFixed(2)}%` })));
+  $('claim-list').replaceChildren(...reg.claims.map((c) => Object.assign(document.createElement('option'), { value: c.claimId, label: `${c.claimId} · ${c.schemeId} · ${supplierLabel(c.supplierId)}` })));
   $('claims-h').textContent = t('claimsH');
   if (reg.claims.length === 0) $('claim-rows').append(text('li', `○ ${t('noClaims')}`));
   for (const c of reg.claims) $('claim-rows').append(paintClaim(c));
@@ -232,7 +232,7 @@ function paintBooks() {
   if (books.lines.length === 0) rows.append(text('li', `○ ${at('noSchemes')}`));
   for (const l of books.lines) {
     const li = document.createElement('li'); li.dataset.scheme = l.schemeId; if (!l.agrees) li.className = 'attention';
-    li.append(text('strong', `${at('colScheme')} ${l.schemeId} · ${l.supplierId}${l.approved ? '' : ` · ${at('notApproved')}`}`));
+    li.append(text('strong', `${at('colScheme')} ${l.schemeId} · ${supplierLabel(l.supplierId)}${l.approved ? '' : ` · ${at('notApproved')}`}`));
     li.append(text('span', `${at('colRegister')} ${rs(l.registerAccruedMinor)} · ${at('colLedger')} ${rs(l.ledgerAccruedMinor)} · ${at('colReceived')} ${rs(l.receivedMinor)} · ${at('colReceivable')} ${l.ledgerReceivableMinor === null ? at('notMapped') : rs(l.ledgerReceivableMinor)} · ${at('colToPost')} ${rs(l.toPostMinor)} · ${at('colAgrees')} ${l.agrees ? at('yes') : at('no')}`, 'figures'));
     rows.append(li);
   }
@@ -273,4 +273,10 @@ if (accr !== null && accr.session.may.named) {
       });
     }
   }
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }

@@ -7,6 +7,9 @@ import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { financialYearLabel } from '../../packages/numbering/src/document-numbers';
 
+/** The page's document, typed for the callbacks run in the browser (this project's type check has no DOM library). */
+type PageDoc = { document: { getElementById(id: string): { textContent: string | null } | null; body: { innerText: string; textContent: string | null } } };
+
 /**
  * **OB-850 — in a real Chromium: the Transfers and Count plans pages show each document's format-A number (`TRF1/YY-YY/…`,
  * `CNT1/YY-YY/…`), and a transfer or plan saved before keeps its old id.** Head office's answers are synthetic data shaped
@@ -71,13 +74,13 @@ describe.skipIf(!existsSync(CHROMIUM))('OB-850 — transfers and stock counts sh
     page.on('pageerror', (e) => errors.push(e.message));
 
     await page.goto(`${base}/transfers.html`, { waitUntil: 'load' });
-    await page.waitForFunction((n) => (document.getElementById('register')?.textContent ?? '').includes(n), `TRF1/${yy}/00001`, { timeout: 15_000 }).catch(async (e: unknown) => { throw new Error(`${String(e)} :: ${await page.evaluate(() => document.body.innerText.slice(0, 800))} :: ${errors.join(' / ')}`); });
+    await page.waitForFunction((n) => ((globalThis as unknown as PageDoc).document.getElementById('register')?.textContent ?? '').includes(n), `TRF1/${yy}/00001`, { timeout: 15_000 }).catch(async (e: unknown) => { throw new Error(`${String(e)} :: ${await page.evaluate(() => (globalThis as unknown as PageDoc).document.body.innerText.slice(0, 800))} :: ${errors.join(' / ')}`); });
     expect(await page.textContent('#register')).toContain('tr-old-7');
     if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, 'transfers-list.png'), fullPage: true });
 
     await page.goto(`${base}/count-plans.html`, { waitUntil: 'load' });
-    await page.waitForFunction((n) => document.body.innerText.includes(n), `CNT1/${yy}/00001`, { timeout: 15_000 });
-    expect(await page.evaluate(() => document.body.innerText)).toContain('plan-old-3');
+    await page.waitForFunction((n) => (globalThis as unknown as PageDoc).document.body.innerText.includes(n), `CNT1/${yy}/00001`, { timeout: 15_000 });
+    expect(await page.evaluate(() => (globalThis as unknown as PageDoc).document.body.innerText)).toContain('plan-old-3');
     if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, 'count-plans-list.png'), fullPage: true });
     expect(errors).toEqual([]);
   }, 120_000);

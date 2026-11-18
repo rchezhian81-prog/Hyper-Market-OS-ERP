@@ -84,6 +84,9 @@ var
   Code: Integer;
   NodeExe: String;
 begin
+  // OB-840: the owner's remote link (only there if he turned it on) runs this program's Node too; stopped first, started
+  // again by the setup step when it is set to start with Windows. Never installed here.
+  Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-RemoteLink /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Till /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-API /y', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\net.exe'), 'stop SRE-Database /y', '', SW_HIDE, ewWaitUntilTerminated, Code);

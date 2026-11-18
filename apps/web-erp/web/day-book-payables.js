@@ -20,14 +20,14 @@ function paint() {
   if (read === null) return;
   for (const s of read.reconciliation.suppliers ?? []) {
     const li = el('li', undefined, 'row'); li.dataset.supplier = s.supplierId; li.dataset.agrees = String(s.agrees);
-    li.append(el('strong', `${s.supplierId} — ${w('apRegister')} ${money(s.registerOwedMinor)} · ${w('apBooks')} ${money(s.ledgerOwedMinor)} — ${w(s.agrees ? 'apAgrees' : 'apDiffers')}`));
+    li.append(el('strong', `${supplierLabel(s.supplierId)} — ${w('apRegister')} ${money(s.registerOwedMinor)} · ${w('apBooks')} ${money(s.ledgerOwedMinor)} — ${w(s.agrees ? 'apAgrees' : 'apDiffers')}`));
     sups.append(li);
   }
   if (read.journals.length === 0) js.append(el('li', w('apJournalsNone'), 'muted'));
   for (const j of read.journals) {
     const li = el('li', undefined, 'row'); li.dataset.journal = j.entryId; li.dataset.kind = j.kind;
     const debit = j.lines.reduce((n, l) => n + l.debitMinor, 0);
-    li.append(el('strong', `${w(`kind_${j.kind}`)} · ${j.sourceId} · ${j.supplierId} · ${money(debit)}`));
+    li.append(el('strong', `${w(`kind_${j.kind}`)} · ${j.sourceId} · ${supplierLabel(j.supplierId)} · ${money(debit)}`));
     li.append(el('div', `${j.documentDate} · ${j.period} · ${j.postedBy}`, 'facts'));
     li.append(el('div', j.lines.map((l) => `${l.accountCode} ${l.debitMinor > 0 ? `${w('dr')} ${money(l.debitMinor)}` : `${w('cr')} ${money(l.creditMinor)}`}`).join(' · '), 'lines'));
     js.append(li);
@@ -60,4 +60,10 @@ if (pb !== null && pb.session.may.read) {
   });
   // The page's one language toggle (day-book.js flips it first); this section follows.
   $('lang').addEventListener('click', () => { lang = document.documentElement.lang === 'ta' ? 'ta' : 'en'; paintWords(); });
+}
+
+/** Batch 15: a supplier by NAME from the store computer's directory (its signed pack) — the code only when no name exists. */
+function supplierLabel(id) {
+  const hit = Array.isArray(window.sreDirectory?.suppliers) ? window.sreDirectory.suppliers.find((s) => s.id === id) : undefined;
+  return hit ? hit.name : id;
 }
