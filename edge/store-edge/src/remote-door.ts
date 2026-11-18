@@ -57,12 +57,16 @@ export const REMOTE_API: readonly { readonly method: 'GET' | 'POST'; readonly pa
 ]);
 
 /**
- * "5A": approvals that stay in the store — a person's access or role, a device. Their decision changes who may do what,
- * or which machine is trusted, which 5A keeps off the remote door ("no user/role/privilege screens, no device setup").
+ * "5A" and OB-841 B: approvals that stay in the store. 5A: a person's access or role, a device — they change who may do
+ * what, or which machine is trusted. OB-841 B: the shop's closure, approval rules, high-impact settings and switches, and
+ * a supplier's bank account. OB-842 A: a price or catalogue approval may be given remotely (it is not listed here).
  */
 export const REMOTE_DECIDE_REFUSED_KINDS: readonly string[] = Object.freeze([
   'access_change', 'role_permission_change', 'role_scope_change', 'department_scope_change', 'ca_role_grant',
   'emergency_access', 'security_reviewer', 'posh_committee_change', 'store_computer_replaced', 'floor_device_review',
+  // OB-841 B (owner, 18 Nov 2026): also kept in the store — closing the shop (or a branch for good), changing an approval
+  // rule, a high-impact setting or switch, and where a supplier is paid. The changes a thief with the owner's phone would want.
+  'tenant_closure', 'branch_transition', 'approval_rule_change', 'config_change', 'flag_change', 'supplier_bank_change',
 ]);
 
 /** A page's own files that may be served through the door (never another page's shell). */
@@ -212,7 +216,7 @@ export const REMOTE_WORDS: Readonly<Record<RemoteRefusal, Words>> = Object.freez
   second_factor_missing: { status: 401, en: 'Remote access needs the one-time code from your authenticator app, and this sign-in did not use it.', ta: 'தொலை அணுகலுக்கு அங்கீகாரச் செயலியின் ஒருமுறைக் குறியீடு தேவை; இந்த உள்நுழைவில் அது பயன்படுத்தப்படவில்லை.', next: 'Sign out, then sign in again and type the code from your authenticator app.', nextTa: 'வெளியேறி, மீண்டும் உள்நுழைந்து அங்கீகாரச் செயலியின் குறியீட்டை உள்ளிடவும்.' },
   not_allowed_remotely: { status: 403, en: 'Only the owner may use the store\'s office pages from outside the shop.', ta: 'கடைக்கு வெளியிலிருந்து அலுவலகப் பக்கங்களை உரிமையாளர் மட்டுமே பயன்படுத்தலாம்.', next: 'Use the office pages at the store computer, in the shop.', nextTa: 'கடையில் உள்ள கடைக் கணினியில் அலுவலகப் பக்கங்களைப் பயன்படுத்தவும்.' },
   not_reachable_remotely: { status: 403, en: 'This page is not reachable from outside the shop. From outside you can see Today, the reports and your approvals, and approve or reject.', ta: 'இந்தப் பக்கத்தைக் கடைக்கு வெளியிலிருந்து திறக்க முடியாது. வெளியிலிருந்து இன்று, அறிக்கைகள், உங்கள் அனுமதிகளைப் பார்க்கலாம்; அனுமதிக்கலாம் அல்லது மறுக்கலாம்.', next: 'Open Today, Reports or Approvals. Everything else is done at the store computer, in the shop.', nextTa: 'இன்று, அறிக்கைகள் அல்லது அனுமதிகளைத் திறக்கவும்.' },
-  decide_in_the_store: { status: 403, en: 'This approval changes a person\'s access or a device, and is decided at the store computer, in the shop.', ta: 'இந்த அனுமதி ஒருவரின் அணுகலை அல்லது ஒரு சாதனத்தை மாற்றுகிறது; இது கடையில் உள்ள கடைக் கணினியில் முடிவு செய்யப்படும்.', next: 'Decide it at the store computer when you are in the shop. It stays waiting for you.', nextTa: 'கடையில் இருக்கும்போது கடைக் கணினியில் முடிவு செய்யவும்.' },
+  decide_in_the_store: { status: 403, en: 'This approval is decided at the store computer, in the shop: it changes a person\'s access, a device, the shop\'s closure, an approval rule, a high-impact setting or where a supplier is paid.', ta: 'இந்த அனுமதி கடையில் உள்ள கடைக் கணினியில் மட்டுமே முடிவு செய்யப்படும்: இது ஒருவரின் அணுகல், ஒரு சாதனம், கடை மூடல், ஒப்புதல் விதி, முக்கிய அமைப்பு அல்லது சப்ளையருக்கு பணம் செல்லும் கணக்கை மாற்றுகிறது.', next: 'Decide it at the store computer when you are in the shop. It stays waiting for you.', nextTa: 'கடையில் இருக்கும்போது கடைக் கணினியில் முடிவு செய்யவும்.' },
   not_from_this_screen: { status: 403, en: 'Refused: this did not come from a page of your shop.', ta: 'மறுக்கப்பட்டது: இது உங்கள் கடையின் பக்கத்திலிருந்து வரவில்லை.', next: 'Use the page\'s own buttons.', nextTa: 'பக்கத்தின் சொந்தப் பொத்தான்களைப் பயன்படுத்தவும்.' },
   office_api_not_reachable: { status: 503, en: 'The store computer\'s office service did not answer.', ta: 'கடைக் கணினியின் அலுவலகச் சேவை பதிலளிக்கவில்லை.', next: 'Try again in a few minutes. If it goes on, check the store computer in the shop.', nextTa: 'சில நிமிடங்களில் மீண்டும் முயலவும்.' },
 });
