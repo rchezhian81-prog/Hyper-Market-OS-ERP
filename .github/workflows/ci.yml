@@ -848,6 +848,8 @@ jobs:
           docker run --rm -v "$PWD/infra/remote-access/nginx.remote.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t
           docker build -t sre-relay-tunnel:ci infra/remote-access/sshd
           mkdir -p /tmp/relay-keys && ssh-keygen -q -t ed25519 -N '' -f /tmp/relay-keys/ssh_host_ed25519_key
+          # The tunnel runs as sre-link (uid 10022), never root: its host key is that user's, as setup-relay.sh makes it.
+          sudo chown 10022 /tmp/relay-keys/ssh_host_ed25519_key
           docker run --rm -v /tmp/relay-keys/ssh_host_ed25519_key:/etc/ssh/keys/ssh_host_ed25519_key:ro sre-relay-tunnel:ci /usr/sbin/sshd -t -f /etc/ssh/sshd_config
           docker run --rm -v /tmp/relay-keys/ssh_host_ed25519_key:/etc/ssh/keys/ssh_host_ed25519_key:ro sre-relay-tunnel:ci /usr/sbin/sshd -T -f /etc/ssh/sshd_config -C user=sre-link,host=x,addr=203.0.113.1 > /tmp/relay-sshd.txt
           for want in 'permitlisten 127.0.0.1:18095' 'permitopen none' 'allowtcpforwarding remote' 'gatewayports no' 'maxsessions 0' 'permittty no' 'x11forwarding no' 'allowagentforwarding no' 'passwordauthentication no' 'authenticationmethods publickey'; do

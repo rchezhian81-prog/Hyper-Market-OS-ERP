@@ -43,6 +43,15 @@ describe('the relay\'s tunnel end (sshd) is forwarding-only, to one loopback por
     expect(sshd).not.toMatch(/^\s*(AllowTcpForwarding\s+(yes|all|local)|GatewayPorts\s+(yes|clientspecified)|PasswordAuthentication\s+yes|PermitRootLogin\s+yes)/m);
   });
 
+  it('runs as the one user it lets in, never as root (QG-03 DS002); its host key belongs to that user', () => {
+    const docker = read(...RELAY, 'sshd', 'Dockerfile');
+    const users = docker.split('\n').filter((x) => /^USER\s/.test(x.trim())).map((x) => x.trim());
+    expect(users).toEqual(['USER sre-link']);
+    expect(docker).toMatch(/adduser -D -u 10022 -s \/sbin\/nologin sre-link/);
+    expect(lines(sshd)).toContain('PidFile none');
+    expect(setup).toMatch(/chown 10022 "\$RELAY_HOME\/ssh\/ssh_host_ed25519_key"/);
+  });
+
   it('the approved key line is restricted to that one listen, and replaces any before it (one store computer)', () => {
     expect(cli).toMatch(/LISTEN_PORT=18095/);
     expect(cli).toContain(`printf 'restrict,port-forwarding,permitlisten="127.0.0.1:%s" %s sre-store-pc\\n' "$LISTEN_PORT" "$KEY" > "$RELAY_HOME/ssh/authorized/sre-link.new"`);

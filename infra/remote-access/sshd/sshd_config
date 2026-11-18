@@ -3,6 +3,8 @@
 Port 2222
 ListenAddress 0.0.0.0
 HostKey /etc/ssh/keys/ssh_host_ed25519_key
+# Run as the unprivileged sre-link user (Dockerfile USER): no pid file to write under /run.
+PidFile none
 
 # Who: one user, one key. The key file holds only the store computer's PUBLIC key, approved by the owner on this server
 # (sre-relay approve-link), each line starting: restrict,port-forwarding,permitlisten="127.0.0.1:18095"

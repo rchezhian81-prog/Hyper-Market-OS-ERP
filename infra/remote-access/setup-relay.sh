@@ -92,6 +92,8 @@ chmod 600 "$ENV_FILE"
 umask 022
 [ -f "$RELAY_HOME/ssh/ssh_host_ed25519_key" ] || ssh-keygen -q -t ed25519 -N '' -C sre-relay -f "$RELAY_HOME/ssh/ssh_host_ed25519_key"
 chmod 600 "$RELAY_HOME/ssh/ssh_host_ed25519_key"
+# The tunnel runs as sre-link (uid 10022), never root (QG-03): its host key must be readable by that user alone.
+chown 10022 "$RELAY_HOME/ssh/ssh_host_ed25519_key"
 touch "$RELAY_HOME/ssh/authorized/sre-link"
 chmod 644 "$RELAY_HOME/ssh/authorized/sre-link"
 
