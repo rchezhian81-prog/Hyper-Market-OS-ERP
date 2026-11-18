@@ -158,6 +158,42 @@ describe.skipIf(!HAVE_BROWSER)('fix batch 4b: names not codes, this store by def
     } finally { await close(); }
   }, 60_000);
 
+  it('D-026 (batch 14): the first price load is ONE grouped item with its count, not a flood of "due now"; a real change stays due', async () => {
+    const now = new Date().toISOString();
+    const base = { branchId: STORE.id, locationId: 'A1', sourceRef: 'r', raisedAt: now, dueAt: now, done: null, assignee: { to: 'store_manager', departmentId: null, because: 'no_department_owns_it' }, assignedToMe: true, storeManagers: ['u-mgr'], mayClose: true, replacedBy: null };
+    const first = ['Aavin milk 500 ml', 'Ponni rice 5 kg', 'Marie biscuits', 'Lifebuoy soap', 'Tata salt 1 kg'].map((name, i) => ({ ...base, taskId: `rl-f${i}`, productId: `p-${i}`, productName: name, priceMinor: 30_00 + i * 100, because: 'price_list_entry', firstLabel: true, dueNow: false }));
+    const change = { ...base, taskId: 'rl-c', productId: 'p-dal', productName: 'Toor dal 1 kg', priceMinor: 148_00, because: 'price_change', firstLabel: false, dueNow: true };
+    const tasks = [change, ...first];
+    const data = { userId: 'u-mgr', permissions: ['workforce.task.read', 'workforce.roster.manage', 'workforce.task.complete.own'] };
+    const srv = await serve('store-tasks.html', 'storeOpsData', data, (method, path) => {
+      if (method === 'GET' && path === '/v1/pricing/relabel-tasks') return { status: 200, body: { tasks, open: 6, firstLoad: { open: 5 }, dueNow: 1, asAt: now } };
+      if (method === 'GET' && path === '/v1/identity/me') return { status: 200, body: { userId: 'u-mgr', branchId: null, permissions: data.permissions } };
+      if (method === 'GET' && path === '/v1/hr/workforce/assigned-tasks') return { status: 200, body: { tasks: [] } };
+      return undefined;
+    });
+    const { page, errors, close } = await open(srv);
+    try {
+      await page.waitForSelector('#relabel-rows li.first-load', { timeout: 15_000 });
+      // The real change is its own row, due now; the five first labels are one item, with their count, not due now.
+      expect(await page.textContent('#relabel-rows > li[data-task="rl-c"] .head')).toBe('Toor dal 1 kg · New price ₹148.00⚠ due now');
+      expect(await page.$$('#relabel-rows > li[data-task^="rl-f"]')).toHaveLength(0);
+      expect(await page.getAttribute('#relabel-rows li.first-load', 'data-first-load')).toBe('5');
+      expect(await page.textContent('#relabel-rows li.first-load > .head')).toBe('First price load5 labels to check — not due now');
+      expect(await page.$$eval('#relabel-rows li.first-load li[data-task]', (els) => els.length)).toBe(5);
+      expect(await page.textContent('#relabel-rows li.first-load li[data-task="rl-f0"] .state')).toBe('first label — check it');
+      expect(((await page.textContent('#relabel-rows')) ?? '').split('⚠ due now').length - 1).toBe(1); // only the one real change
+      // Nothing is lost: open the group and each first label can still be closed with its photo.
+      await page.click('#relabel-rows li.first-load summary');
+      expect(await page.$$('#relabel-rows li.first-load li[data-task] form')).toHaveLength(5);
+      const dir = process.env['B14_SHOTS'];
+      if (dir !== undefined && dir !== '') await page.screenshot({ path: `${dir}/d026-store-tasks-first-price-load.png`, fullPage: true });
+      // Tamil: the group speaks Tamil too.
+      await page.click('#lang');
+      expect(await page.textContent('#relabel-rows li.first-load > .head')).toMatch(/^முதல் விலை ஏற்றம்5 சரிபார்க்க வேண்டிய லேபிள்கள்/);
+      expect(errors).toEqual([]);
+    } finally { await close(); }
+  }, 60_000);
+
   it('D-054: Send to the tills starts on this store, names a left-out item, and says the tills have it within 5 minutes', async () => {
     const data = { userId: 'u-owner', permissions: ['catalogue.pack.read', 'catalogue.pack.publish', 'price.change.propose'] };
     const srv = await serve('price-lists.html', 'priceListsData', data, (method, path) => {

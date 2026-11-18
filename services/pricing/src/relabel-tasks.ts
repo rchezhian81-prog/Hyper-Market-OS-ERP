@@ -98,6 +98,17 @@ export function replacedBy(task: RelabelTask, all: readonly RelabelTask[], nowIs
   return newest;
 }
 
+/**
+ * D-026 (owner, 18 Nov 2026, under OB-801): a FIRST label — a price-list entry that is the first price this system has
+ * ever set for the item at the store (no task for that item at that store was raised before it). The first price load
+ * enters every item's first price on the price list at once; those labels are already on the shelf from the old system, so
+ * they are a batch to CHECK, not a flood of "due now". A manager's "Change price" is always a change, and always due.
+ * Worked out from the recorded tasks alone: nothing is deleted, rewritten or added, and the tasks stay open until done.
+ */
+export function isFirstLabel(task: RelabelTask, all: readonly RelabelTask[]): boolean {
+  return task.because === 'price_list_entry' && !all.some((t) => t.branchId === task.branchId && t.productId === task.productId && t.raisedAt < task.raisedAt);
+}
+
 /** The tasks a new price raises at these stores (one per shelf place, or one "not on the plan"). */
 export async function relabelTasksFor(deps: Pick<RelabelTaskDeps, 'shelfPlaces' | 'now' | 'assigneeFor'>, tenantId: string, input: {
   readonly productId: string; readonly priceMinor: number; readonly storeIds: readonly string[]; readonly dueAt: string;
@@ -156,6 +167,7 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
       const managersHere = await managersAt(t.branchId);
       const mayClose = (t.assignee?.to === 'floor_champion' && t.assignee.employeeId === ctx.userId) || (managersHere ?? []).includes(ctx.userId);
       const doneHere = doneOf.get(t.taskId) ?? null;
+      const firstLabel = isFirstLabel(t, tasks);
       const newer = doneHere === null ? replacedBy(t, tasks, now) : undefined;
       const dateReached = Date.parse(t.dueAt) <= Date.parse(now);
       // OB-806 A: an open task in force is due only once the store's tills have the price (asked only where it matters).
@@ -165,13 +177,16 @@ export function relabelTaskRoutes(deps: RelabelTaskDeps): readonly Route[] {
         ...t, assignee: t.assignee ?? null, assignedToMe, mayClose: mayClose && newer === undefined,
         ...(storeManagers === null ? {} : { storeManagers }),
         ...(names.has(t.productId) ? { productName: names.get(t.productId)! } : {}),
-        done: doneHere, dueNow: dateReached && !waitingForTills, waitingForTills,
+        // D-026: a first label is in the one "first price load" batch — open, counted, never "due now" on its own.
+        firstLabel, done: doneHere, dueNow: dateReached && !waitingForTills && !firstLabel, waitingForTills,
         replacedBy: newer === undefined ? null : { taskId: newer.taskId, priceMinor: newer.priceMinor, dueAt: newer.dueAt },
       });
     }
     const settled = (r: { done: unknown; replacedBy: unknown }): boolean => r.done !== null || r.replacedBy !== null;
     rows.sort((a, b) => Number(settled(a)) - Number(settled(b)) || a.dueAt.localeCompare(b.dueAt) || a.taskId.localeCompare(b.taskId));
-    return { status: 200, body: { tasks: rows, open: rows.filter((r) => !settled(r)).length, asAt: now } };
+    // D-026: the first price load is ONE item with its count, not a flood of tasks "due now".
+    const firstLoadOpen = rows.filter((r) => !settled(r) && r.firstLabel).length;
+    return { status: 200, body: { tasks: rows, open: rows.filter((r) => !settled(r)).length, firstLoad: { open: firstLoadOpen }, dueNow: rows.filter((r) => !settled(r) && r.dueNow).length, asAt: now } };
   };
   return [
     {

@@ -22,6 +22,9 @@ export const RELABEL_COPY = {
     nobodyHolds: 'nobody holds the store manager role here (not set)',
     notYoursToClose: 'Closed by the person it is for, or the store manager.',
     replaced: 'Replaced — a newer price is in force:', replacedNoLabel: 'No label to print at this price.',
+    firstLoadH: 'First price load', firstLoadCount: 'labels to check — not due now',
+    firstLoadLead: 'These items got their first price in this system. Their labels are already on the shelf; check each one shows this price when you can.',
+    firstLabel: 'first label — check it', firstLoadShow: 'Show them',
   },
   ta: {
     relabelMineH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள் — என்னுடையவை', relabelH: 'மாற்ற வேண்டிய அலமாரி லேபிள்கள்', relabelLead: 'விலை மாறியது. புதிய லேபிளை வைத்து, படம் எடுத்து, லேபிளில் உள்ள விலையைத் தட்டச்சு செய்து, பணியை முடிக்கவும்.',
@@ -34,6 +37,9 @@ export const RELABEL_COPY = {
     nobodyHolds: 'இங்கு கடை மேலாளர் பணியில் யாரும் இல்லை (அமைக்கப்படவில்லை)',
     notYoursToClose: 'இதை ஒதுக்கப்பட்டவர் அல்லது கடை மேலாளர் மட்டுமே முடிக்கலாம்.',
     replaced: 'மாற்றப்பட்டது — புதிய விலை நடைமுறையில்:', replacedNoLabel: 'இந்த விலைக்கு லேபிள் அச்சிட வேண்டாம்.',
+    firstLoadH: 'முதல் விலை ஏற்றம்', firstLoadCount: 'சரிபார்க்க வேண்டிய லேபிள்கள் — இப்போது அவசரமில்லை',
+    firstLoadLead: 'இந்தப் பொருள்களுக்கு இந்த அமைப்பில் முதல் விலை அமைக்கப்பட்டது. அவற்றின் லேபிள்கள் ஏற்கனவே அலமாரியில் உள்ளன; நேரம் கிடைக்கும்போது ஒவ்வொன்றும் இந்த விலையைக் காட்டுகிறதா எனச் சரிபார்க்கவும்.',
+    firstLabel: 'முதல் லேபிள் — சரிபார்க்கவும்', firstLoadShow: 'அவற்றைக் காட்டு',
   },
 } as const;
 
@@ -70,6 +76,8 @@ export function paiseOf(raw: string): number | undefined {
 export interface RelabelRow {
   readonly taskId: string; readonly branchId: string; readonly productId: string; readonly locationId: string | null; readonly priceMinor: number; readonly dueAt: string;
   readonly because: 'price_change' | 'price_list_entry'; readonly dueNow: boolean;
+  /** D-026: the item's first price in this system at this store — part of the one "first price load" batch, never "due now". */
+  readonly firstLabel?: boolean;
   /** OB-806 A: the date is reached but the store's tills do not charge this price yet — the label waits for them. */
   readonly waitingForTills?: boolean;
   readonly done: { readonly doneBy: string; readonly doneAt: string; readonly shelfPriceMinor: number } | null;
@@ -86,9 +94,9 @@ export interface RelabelRow {
 }
 export interface RelabelSession {
   readonly may: { readonly read: boolean; readonly close: boolean; readonly readMine: boolean };
-  tasks(branchId?: string): Promise<Outcome<{ readonly tasks: readonly RelabelRow[]; readonly open: number }>>;
+  tasks(branchId?: string): Promise<Outcome<{ readonly tasks: readonly RelabelRow[]; readonly open: number; readonly firstLoad?: { readonly open: number } }>>;
   /** OB-358: the tasks that go to me (my department's floor champion, or the store manager) — the My tasks page. */
-  mine(): Promise<Outcome<{ readonly tasks: readonly RelabelRow[]; readonly open: number }>>;
+  mine(): Promise<Outcome<{ readonly tasks: readonly RelabelRow[]; readonly open: number; readonly firstLoad?: { readonly open: number } }>>;
   close(taskId: string, labelPrice: string, evidenceRef: string): Promise<Outcome<unknown, 'needFields'>>;
 }
 export function createRelabelSession(input: { readonly viewer: { readonly userId?: string; readonly permissions: readonly string[] } | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): RelabelSession {

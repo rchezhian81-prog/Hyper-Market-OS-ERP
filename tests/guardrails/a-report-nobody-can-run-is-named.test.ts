@@ -356,7 +356,8 @@ describe('a figure about today is about today', () => {
     // makes the department's money "not complete", never short.
     const report = REPORTS.find((r) => r.id === 'units_by_category')!;
     expect(report.answers).toMatch(/how many items/);
-    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units', 'takenMinor', 'items', 'weighed']);
+    // D-057 (batch 14): with the margin per department, or "Not known — N lines had no cost".
+    expect(report.columns?.map((c) => c.name)).toEqual(['department', 'units', 'takenMinor', 'items', 'weighed', 'marginMinor', 'marginPercent']);
     const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf("const salesByCategory: Record<string"), code(SCREEN_DATA).indexOf("payload['salesByCategory'] = salesByCategory;"));
     expect(builder).toMatch(/line\.lineTotalMinor/);
     expect(builder).not.toMatch(/unitPriceMinor|unitPrice\b/);

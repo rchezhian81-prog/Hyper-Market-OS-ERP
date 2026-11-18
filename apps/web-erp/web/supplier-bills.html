@@ -120,14 +120,19 @@
           <div class="row">
             <label for="adv-supplier"><span id="l-adv-supplier"></span><input id="adv-supplier" autocomplete="off" /></label>
             <label for="adv-amount"><span id="l-adv-amount"></span><input id="adv-amount" inputmode="decimal" autocomplete="off" /></label>
-            <label for="adv-on"><span id="l-adv-on"></span><input id="adv-on" type="date" /></label>
             <label for="adv-method"><span id="l-adv-method"></span><select id="adv-method"><option value="bank_transfer" id="adv-m-bank"></option><option value="cheque" id="adv-m-cheque"></option><option value="upi" id="adv-m-upi"></option><option value="cash" id="adv-m-cash"></option></select></label>
-            <label for="adv-ref"><span id="l-adv-ref"></span><input id="adv-ref" autocomplete="off" /></label>
             <label for="adv-po"><span id="l-adv-po"></span><input id="adv-po" autocomplete="off" /></label>
           </div>
           <button id="adv-ask" class="primary sre-btn sre-btn-primary" type="button">Ask for approval to pay</button>
           <p class="status" id="adv-ask-status" role="status" aria-live="polite"></p>
           <h3 id="adv-asks-h">Payments you asked for</h3>
+          <!-- OB-807 A (batch 14): the day it was paid and its reference are typed when the approved advance is recorded. -->
+          <h4 id="adv-record-h">Approved — record it when paid</h4>
+          <p class="muted" id="adv-record-lede"></p>
+          <div class="row">
+            <label for="adv-on"><span id="l-adv-on"></span><input id="adv-on" type="date" /></label>
+            <label for="adv-ref"><span id="l-adv-ref"></span><input id="adv-ref" autocomplete="off" /></label>
+          </div>
           <ul class="register" id="adv-asks"></ul>
         </div>
       </section>

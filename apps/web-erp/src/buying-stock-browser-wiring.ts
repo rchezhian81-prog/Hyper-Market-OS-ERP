@@ -12,6 +12,8 @@ import { ORDER_WARN_ABOVE_MINOR, orderNeedsSecondLook } from '../../../packages/
 import { createExpiredRegisterSession, expiredWords, expiredOutcomeWords, expiredRowView } from './expired-register-session';
 import { createRepeatOrdersSession, repeatWords, repeatOutcomeWords, planWords, occurrenceWords } from './repeat-orders-session';
 import { createSupplierAdvancesSession, advancesWords, advancesOutcomeWords, rupees as advanceRupees } from './supplier-advances-session';
+import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
+import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 import { createSupplierRecordsSession, supplierRecordsWords, supplierRecordsOutcomeWords, DOCUMENT_KINDS, REQUESTED_VIA } from './supplier-records-session';
 
 import { typedQuantityMinor, toDecimalString, normaliseUom } from '../../../packages/contracts/src/quantity';
@@ -71,7 +73,7 @@ export function wireBuyingAndStockScreens(win: Record<string, unknown>, viewerId
     win['supplierRecords'] = { session: createSupplierRecordsSession({ viewer: viewerIdentity(win['suppliersData']) }), words: supplierRecordsWords, outcomeWords: supplierRecordsOutcomeWords, kinds: DOCUMENT_KINDS, via: REQUESTED_VIA };
   }
   if (win['supplierBillsData'] !== undefined) {
-    win['supplierAdvances'] = { session: createSupplierAdvancesSession({ viewer: viewerIdentity(win['supplierBillsData']) }), words: advancesWords, outcomeWords: advancesOutcomeWords, rupees: advanceRupees };
+    win['supplierAdvances'] = { session: createSupplierAdvancesSession({ viewer: viewerIdentity(win['supplierBillsData']), today: () => shopDateIn(new Date().toISOString(), servedShopZone()) /* OB-807 A */ }), words: advancesWords, outcomeWords: advancesOutcomeWords, rupees: advanceRupees };
   }
   // M10-FR-01 (the re-audit's "read by no screen"): head office's expired register on the Expiry page's "Taken off sale" tab.
   if (win['expiryData'] !== undefined) {

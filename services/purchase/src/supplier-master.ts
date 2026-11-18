@@ -545,7 +545,7 @@ export function paymentTerms(body: unknown, pathIds: Readonly<Record<string, str
 
 /** Whether this approval was asked the older way (before OB-807 A), with the paid date and reference in it — then it is
  *  matched on them exactly, as it always was. An approval head office does not know is left to the ordinary refusal. */
-async function approvalCarriesDateAndReference(port: ApprovalPort | undefined, tenantId: string, approvalId: unknown): Promise<boolean> {
+export async function approvalCarriesDateAndReference(port: ApprovalPort | undefined, tenantId: string, approvalId: unknown): Promise<boolean> {
   if (port === undefined || typeof approvalId !== 'string' || approvalId.trim() === '') return false;
   const state = await Promise.resolve(port.approvalState(tenantId, approvalId.trim()));
   const details = state?.request.details ?? {};

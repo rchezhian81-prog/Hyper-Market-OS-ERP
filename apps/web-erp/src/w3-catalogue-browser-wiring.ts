@@ -10,7 +10,7 @@
 import { createPriceChecksSession, priceChecksWords, priceChecksOutcomeWords, CHECK_SURFACES } from './price-checks-session';
 import { createTobaccoWarningSession, tobaccoWarningWords, tobaccoWarningOutcomeWords } from './tobacco-warning-session';
 import { createRangeGapsSession, rangeGapsWords, rangeGapsOutcomeWords } from './range-gaps-session';
-import { createMarkdownSession, markdownWords, markdownOutcomeWords, priceChangeLink } from './markdown-session';
+import { clearanceItemWords, createMarkdownSession, markdownWords, markdownOutcomeWords, priceChangeLink } from './markdown-session';
 import { shopDateIn } from '../../../packages/calendar/src/shop-clock';
 import { servedShopZone } from '../../../packages/calendar/src/shop-day';
 
@@ -39,7 +39,7 @@ export function wireWave3Catalogue(win: Record<string, unknown>, viewerIdentity:
     const store = storeOf(win['expiryData']);
     win['markdowns'] = {
       session: createMarkdownSession({ viewer: viewerIdentity(win['expiryData']), ...(store === undefined ? {} : { storeId: store }) }),
-      words: markdownWords, outcomeWords: markdownOutcomeWords, rupees, link: priceChangeLink,
+      words: markdownWords, outcomeWords: markdownOutcomeWords, rupees, link: priceChangeLink, itemWords: clearanceItemWords, // D-025
     };
   }
   if (win['catalogueData'] !== undefined) {

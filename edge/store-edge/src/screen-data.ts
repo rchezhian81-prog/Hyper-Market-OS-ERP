@@ -57,6 +57,7 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tenderPartsOf, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
+import { departmentMargin, marginNotKnownWhy, type MarginLine } from '../../../packages/reporting/src/department-margin';
 import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy, PackFloorIndent } from './store-pack';
@@ -2281,8 +2282,13 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
   // money is what the bills took, never a list price. A line from an older till with no line money is counted, and the
   // department's money is then said to be incomplete rather than quietly short.
   const categoryOf = new Map(products.map((p) => [p.productId, p.categoryId] as const));
+  // D-057: the margin per department, worked out as head office's report does (`departmentMargin`): each line before GST
+  // (at the product's rate in this box's pack) less its goods at head office's average buying cost (the pack's
+  // `unitCostMinor`, OB-39 "B"). A department with any line that has no cost reads "Not known — N lines had no cost".
+  const taxOf = new Map(products.filter((p) => p.taxBps !== undefined).map((p) => [p.productId, p.taxBps!] as const));
+  const marginLinesOf: Record<string, MarginLine[]> = {};
   const unitsByCategory: Record<string, number> = {};
-  const salesByCategory: Record<string, { items: number; grams: number; takenMinor: number; linesWithNoMoney: number }> = {};
+  const salesByCategory: Record<string, { items: number; grams: number; takenMinor: number; linesWithNoMoney: number; marginMinor?: number; marginBps?: number; marginNotKnown?: string }> = {};
   let unitsWithNoCategory = 0;
   const NO_DEPT = '';
   for (const sale of today.sales) {
@@ -2296,9 +2302,22 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
       if (line.uom === 'kg' || line.uom === 'L') held.grams += line.quantityMinor; else held.items += line.uom === 'ea' || line.uom === undefined ? line.quantityMinor : 1;
       if (typeof line.lineTotalMinor === 'number' && Number.isSafeInteger(line.lineTotalMinor)) held.takenMinor += line.lineTotalMinor; else held.linesWithNoMoney += 1;
       salesByCategory[key] = held;
+      const unitCost = costOf.get(line.productId);
+      (marginLinesOf[key] ??= []).push({
+        grossMinor: typeof line.lineTotalMinor === 'number' && Number.isSafeInteger(line.lineTotalMinor) ? line.lineTotalMinor : undefined,
+        taxBps: taxOf.get(line.productId), costMinor: unitCost === undefined ? undefined : lineCostMinor(unitCost, line),
+      });
       if (category === undefined) { unitsWithNoCategory += units; continue; }
       unitsByCategory[category] = (unitsByCategory[category] ?? 0) + units;
     }
+  }
+  for (const [key, held] of Object.entries(salesByCategory)) {
+    // Every department here had at least one line, so it has its margin lines (both are filled in the same loop above).
+    const lines = marginLinesOf[key];
+    if (lines === undefined) continue;
+    const m = departmentMargin(lines);
+    const why = marginNotKnownWhy(m);
+    if (why === undefined) { held.marginMinor = m.marginMinor!; if (m.marginBps !== null) held.marginBps = m.marginBps; } else held.marginNotKnown = why;
   }
   payload['unitsByCategory'] = unitsByCategory;
   payload['salesByCategory'] = salesByCategory;

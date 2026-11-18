@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
+// Batch 14: a picture for the owner, only when B14_SHOTS names a folder (never committed).
+const shot = async (page: { screenshot(o: { path: string; fullPage: boolean }): Promise<unknown> }, name: string): Promise<void> => { const dir = process.env['B14_SHOTS']; if (dir !== undefined && dir !== '') await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true }); };
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -114,13 +116,14 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
     const payer = await open(P3.PAYER);
     const p = payer.page;
     await p.waitForSelector('#adv-pay:not([hidden])');
-    await p.fill('#adv-supplier', 'sup-1'); await p.fill('#adv-amount', '1000');
+    await p.fill('#adv-amount', '1000');
     await p.click('#adv-ask');
-    await says(p, '#adv-ask-status', /^Fill in the supplier, an amount in rupees/);
+    await says(p, '#adv-ask-status', /^Fill in the supplier, an amount in rupees and how it will be paid\.$/);
     expect(payer.writes).toEqual([]);
-    await p.fill('#adv-on', ddmm(TODAY)); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-ref', 'NEFT-ADV-1'); await p.fill('#adv-po', 'po-a');
+    // OB-807 A (batch 14): asked with the amount and how — the day and the UTR are typed when it is recorded.
+    await p.fill('#adv-supplier', 'sup-1'); await p.selectOption('#adv-method', 'bank_transfer'); await p.fill('#adv-po', 'po-a');
     await p.click('#adv-ask');
-    await says(p, '#adv-ask-status', /^Asked\. A different person who pays suppliers approves exactly this payment/);
+    await says(p, '#adv-ask-status', /^Asked\. A different person who pays suppliers approves this amount on the Approvals page; once it is paid, record it below with the day and the reference\.$/);
     await p.waitForSelector('#adv-asks li[data-status="waiting"]');
     expect(await p.locator('#adv-asks button[data-act="record"]').count(), 'nothing to record before a second person approves').toBe(0);
     await says(p, '#adv-list', /No advance has been paid\./);
@@ -132,6 +135,14 @@ describe.skipIf(!existsSync(CHROMIUM))('supplier advances on the Supplier bills 
 
     await p.click('#adv-show');
     await p.waitForSelector('#adv-asks li[data-status="approved"] button[data-act="record"]');
+    // OB-807 A: recording without the UTR is refused on the page, nothing sent.
+    await p.fill('#adv-ref', '');
+    await p.click('#adv-asks li[data-status="approved"] button[data-act="record"]');
+    await says(p, '#adv-asks li[data-status="approved"] .status', /^Type the day it was paid and its reference \(UTR, cheque or UPI number\) before recording it\.$/);
+    expect(payer.writes).toEqual(['POST /v1/approvals/requests']);
+    await p.fill('#adv-on', ddmm(TODAY)); await p.fill('#adv-ref', 'NEFT-ADV-1');
+    await p.locator('#adv-pay').scrollIntoViewIfNeeded();
+    await shot(p, 'ob807-advance-ask-with-amount-record-with-utr');
     // U1 · OB-698: the consequence-and-confirm sheet names the money and the supplier; Go back sends nothing; Confirm sends once.
     await askedThenConfirmed(p, () => p.click('#adv-asks li[data-status="approved"] button[data-act="record"]'), /Record ₹1,000\.00 paid to supplier sup-1 as an advance/, () => payer.writes.length);
     await says(p, '#adv-status', /^Recorded — one journal in the books, with who approved it\.$/);

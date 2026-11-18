@@ -46,7 +46,8 @@ describe('D-19 guardrail: no channel price is charged while its switch is off', 
   });
   it('the running system builds the catalogue pack and its preview through the same switches (D-19 → the pack)', () => {
     const main = readFileSync('services/api/src/main.ts', 'utf8');
-    expect(main).toContain('catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now })');
+    // D-021 (batch 14): the catalogue runs on its own clock (the API's own unless a test moves it) — the same switches.
+    expect(main).toContain('catalogueAdapter({ store, signer, now: catalogueNow, pricing: packPricingFor({ store, now })');
     expect(main).toContain('cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now })');
     const assemble = strip(readFileSync('services/catalogue/src/catalogue-preview.ts', 'utf8'));
     expect(assemble).toContain('deps.pricing === undefined ? stored : await deps.pricing.allowedEntries(opts.tenantId, stored)');

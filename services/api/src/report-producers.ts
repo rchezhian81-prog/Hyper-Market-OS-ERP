@@ -22,6 +22,7 @@ import type { IncomingSale } from '../../pos/src/sale-intake';
 import { figure, sourceFreshness, syncedThrough, type Figure, type SourceFreshness } from '../../reporting/src/index';
 import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, dayBookAdapter, independentEvidenceAdapter, payablesAdapter, averageBuyingCosts, type StoreSyncView } from './adapters';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { departmentMargin, marginNotKnownWhy, type MarginLine } from '../../../packages/reporting/src/department-margin';
 import type { HeldVersionsReport } from '../../platform/src/store-packs';
 import { returnedValue, refundLegs } from '../../../packages/finance/src/day-book';
 import { produceMore, PRODUCED_FROM_DOMAIN_REGISTERS } from './report-producers-more';
@@ -303,6 +304,12 @@ export function reportProducers(input: {
         const mk = at(asAt, neverSales, nothingUnsentAt);
         const master = new Map((await products.products(tenantId)).map((p) => [p.productId, p.primaryCategoryId] as const));
         const NONE = 'in no department';
+        // D-057: the margin per department — each line before GST less its goods at the average buying cost (OB-39), the
+        // same cost the profitability report uses. Costs are commercial: shown to a company-wide reader only, as profit is.
+        const withMargin = options.scope === 'all';
+        const costs = withMargin ? await averageBuyingCosts({ store: input.store, now: input.now }, tenantId) : undefined;
+        const rates = withMargin ? await dayBookAdapter({ store: input.store, now: input.now }).taxRates(tenantId) : new Map<string, number | undefined>();
+        const marginLines = new Map<string, MarginLine[]>();
         const by = new Map<string, { units: number; money: number; txns: SourceTransaction[] }>();
         let lineMoney = 0;
         for (const s of sales) {
@@ -316,6 +323,12 @@ export function reportProducers(input: {
             held.money += line.lineTotalMinor;
             held.txns.push({ ...saleTxn(s, line.lineTotalMinor, `bill ${s.receiptNumber} line ${i + 1} — ${line.productId}`), transactionId: `${s.saleId}#${i + 1}`, categoryId: key });
             by.set(key, held);
+            if (costs !== undefined) {
+              const unit = costs.costOf(line.productId, saleBranch(s));
+              const ml = marginLines.get(key) ?? [];
+              ml.push({ grossMinor: line.lineTotalMinor, taxBps: line.taxRateBps ?? rates.get(line.productId) ?? undefined, costMinor: unit === undefined ? undefined : valueAtUnitCost(line.quantityMinor, line.uom, unit) });
+              marginLines.set(key, ml);
+            }
             lineMoney += line.lineTotalMinor;
           }
         }
@@ -326,10 +339,16 @@ export function reportProducers(input: {
           figures: [
             ...ordered.map(([dept, t]) => mk(dept, t.units, 'count')),
             ...ordered.map(([dept, t]) => mk(`${dept} — taken`, t.money, 'minor_currency')),
+            // D-057: "<department> — margin" (before GST, at the average buying cost), or "Not known — N lines had no cost".
+            ...(withMargin ? ordered.map(([dept]) => { const m = departmentMargin(marginLines.get(dept) ?? []); return mk(`${dept} — margin`, m.marginMinor ?? undefined, 'minor_currency', marginNotKnownWhy(m)); }) : []),
             ...(billMoney === lineMoney || options.filters?.categoryId !== undefined ? [] : [mk('Taken but on no line', billMoney - lineMoney, 'minor_currency')]),
             ...withheldFigure(mk, withheld),
           ],
-          rows: ordered.map(([dept, t]) => ({ department: dept, units: String(t.units) })),
+          rows: ordered.map(([dept, t]): Record<string, string> => {
+            if (!withMargin) return { department: dept, units: String(t.units) };
+            const m = departmentMargin(marginLines.get(dept) ?? []);
+            return { department: dept, units: String(t.units), takenMinor: String(t.money), marginMinor: m.marginMinor === null ? (marginNotKnownWhy(m) ?? '') : String(m.marginMinor), marginPercent: m.marginBps === null ? '' : `${(m.marginBps / 100).toFixed(1)}%` };
+          }),
           drill: Object.fromEntries(ordered.map(([dept, t]) => [`${dept} — taken`, t.txns])),
         };
       }

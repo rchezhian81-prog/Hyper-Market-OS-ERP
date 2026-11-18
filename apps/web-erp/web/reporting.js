@@ -416,6 +416,8 @@ function renderReport(outcome) {
 const COLUMN_WORDS = {
   department: { en: 'Department', ta: 'துறை' }, takenMinor: { en: 'Taken', ta: 'வசூல்' }, items: { en: 'Items', ta: 'பொருட்கள்' },
   weighed: { en: 'Weighed', ta: 'எடை' }, units: { en: 'Items sold', ta: 'விற்ற பொருட்கள்' }, totalMinor: { en: 'Taken', ta: 'வசூல்' },
+  // D-057: the margin per department (before GST, at the average buying cost), and as a share of what it took before GST.
+  marginMinor: { en: 'Margin', ta: 'லாப வரம்பு' }, marginPercent: { en: 'Margin %', ta: 'லாப வரம்பு %' },
 };
 function columnLabel(k) { return COLUMN_WORDS[k]?.[lang] ?? COLUMN_WORDS[k]?.en ?? k; }
 
