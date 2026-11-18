@@ -13,7 +13,7 @@ import {
   type DemoLoginFile, type LoginRequest,
 } from '../../infra/pilot/demo-login/login';
 import {
-  COPY_KEYS, LOGIN_COPY, LOGIN_CSS, LOGIN_CSS_PATH, LOGIN_CSS_VERSION, LOGIN_JS, LOGIN_JS_PATH, LOGIN_JS_VERSION,
+  COPY_KEYS, LOGIN_COPY, LOGIN_CSS, LOGIN_PAGE_CSS, LOGIN_CSS_PATH, LOGIN_CSS_VERSION, LOGIN_JS, LOGIN_JS_PATH, LOGIN_JS_VERSION,
 } from '../../infra/pilot/demo-login/ui';
 
 const IDP = {
@@ -158,7 +158,7 @@ describe('demo sign-in — refusals', () => {
 
   it('serves a strict content-security policy — self only, nothing inline — and no-store', () => {
     const res = setup().handle({ method: 'GET', url: '/login/', body: '', headers: {} });
-    expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
@@ -208,13 +208,17 @@ describe('demo sign-in — the page in the owner\'s approved design (UX-3 · OB-
     expect(css.headers['content-type']).toBe('text/css; charset=utf-8');
     expect(css.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(css.headers['x-content-type-options']).toBe('nosniff');
-    expect(css.body).toBe(LOGIN_CSS);
+    expect(css.body).toBe(LOGIN_PAGE_CSS);
+    expect(LOGIN_PAGE_CSS.endsWith(LOGIN_CSS)).toBe(true);
     const js = GET(LOGIN_JS_PATH);
     expect(js.status).toBe(200);
     expect(js.headers['content-type']).toBe('text/javascript; charset=utf-8');
     expect(js.body).toBe(LOGIN_JS);
     expect(GET('/login/other.js').status).toBe(404);
-    // The fonts are the system's (with Tamil coverage) — the stylesheet names no font file and no font host.
+    // Batch 16: the faces are this service's own files (/login/fonts/), never a font host; the system fonts stay as stand-ins.
+    for (const m of LOGIN_PAGE_CSS.matchAll(/url\(([^)]*)\)/g)) expect(m[1]).toMatch(/^"\/login\/fonts\/[a-z-]+-\d{3}\.woff2"$/);
+    expect(LOGIN_PAGE_CSS).not.toMatch(/https?:/);
+    // LOGIN_CSS itself (copied into the Keycloak theme) names no font file at all.
     expect(LOGIN_CSS).not.toMatch(/@font-face|url\(/);
     expect(LOGIN_CSS).toContain('"Noto Sans Tamil"');
     // The design system's floor (§3.2): no fixed size under 12.5px anywhere (uppercase letter-spaced labels), the practice strip at 14px.

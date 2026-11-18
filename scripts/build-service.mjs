@@ -25,7 +25,7 @@
 //         into scripts/dist/ — they import the workspace TypeScript the same way the services do.
 
 import { build } from 'esbuild';
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -96,5 +96,9 @@ await build({
   legalComments: 'none',
   logLevel: 'info',
 });
+
+// Batch 16: the demo sign-in serves the page's own fonts from a folder beside its bundle (dist/fonts/, mounted read-only
+// with it), never the internet. The service hands out only the allow-listed names (packages/ui/src/sign-in-style.ts).
+if (name === 'demo-login') cpSync(join(ROOT, 'packages/ui/web/fonts'), join(dirname(OUTFILE), 'fonts'), { recursive: true });
 
 if (!QUIET) console.log(`${name} bundle written to ${service.outfile}`);

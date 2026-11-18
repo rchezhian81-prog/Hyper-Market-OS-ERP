@@ -1176,21 +1176,21 @@
       "type": "library",
       "name": "pg",
       "version": "8.22.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg@8.22.0"
     },
     {
       "type": "library",
       "name": "pg-cloudflare",
       "version": "1.4.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg-cloudflare@1.4.0"
     },
     {
       "type": "library",
       "name": "pg-connection-string",
       "version": "2.14.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg-connection-string@2.14.0"
     },
     {
@@ -1204,28 +1204,28 @@
       "type": "library",
       "name": "pg-pool",
       "version": "3.14.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg-pool@3.14.0"
     },
     {
       "type": "library",
       "name": "pg-protocol",
       "version": "1.15.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg-protocol@1.15.0"
     },
     {
       "type": "library",
       "name": "pg-types",
       "version": "2.2.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pg-types@2.2.0"
     },
     {
       "type": "library",
       "name": "pgpass",
       "version": "1.0.5",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/pgpass@1.0.5"
     },
     {
@@ -1351,7 +1351,7 @@
       "type": "library",
       "name": "split2",
       "version": "4.2.0",
-      "scope": "optional",
+      "scope": "required",
       "purl": "pkg:npm/split2@4.2.0"
     },
     {
