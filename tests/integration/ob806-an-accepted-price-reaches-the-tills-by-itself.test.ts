@@ -84,17 +84,19 @@ describe.each(useBackings())('OB-806 A — an accepted price reaches the tills b
     expect(priceOf(await pack(), 'p-salt')).toBe(1_100);
   });
 
-  it('a store price starting on a LATER day is saved but cannot go yet — said, and listed for the owner until a pack goes', async () => {
+  it('a store price starting on a LATER day is saved but cannot go yet — said, and listed for the owner until its own day (D-021)', async () => {
     const { req } = await shop();
     const later = await req('POST', '/v1/prices/list/p-salt/entries/e-later', 'u-owner', { scope: 'store', scopeRef: 'store-1', priceMinor: 2_200, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: '2099-01-01' });
     expect(later.status, JSON.stringify(later.body)).toBe(201);
     expect(later.body).toMatchObject({ tills: [{ storeId: 'store-1', sent: false, reason: 'starts_later' }] });
     const listed = await req('GET', '/v1/catalogue/pack/not-sent', 'u-owner', undefined, { storeId: 'store-1' });
     expect(listed.body).toMatchObject({ count: 1, notSent: [{ productId: 'p-salt', priceMinor: 2_200, reason: 'starts_later', by: 'u-owner' }] });
-    // A pack that goes for the store (here: the next accepted price) settles the list.
+    // D-021: a pack that goes for the store today (here: the next accepted price) cannot carry a price that starts later, so
+    // it does NOT settle it — it stays listed until its own day, when the store computer's ask sends it by itself
+    // (`d021-a-later-day-price-reaches-the-tills-on-its-day.test.ts`).
     const sent = await req('POST', '/v1/prices/changes', 'u-mgr', change('p-biscuit', 3_000, 3_500));
     expect(sent.body).toMatchObject({ tills: [{ sent: true }] });
-    expect((await req('GET', '/v1/catalogue/pack/not-sent', 'u-owner', undefined, { storeId: 'store-1' })).body).toMatchObject({ count: 0 });
+    expect((await req('GET', '/v1/catalogue/pack/not-sent', 'u-owner', undefined, { storeId: 'store-1' })).body).toMatchObject({ count: 1, notSent: [{ productId: 'p-salt', reason: 'starts_later', startsOn: '2099-01-01' }] });
   });
 
   it('a store price for today saved on Price lists is sent too — the same rule as Change price', async () => {

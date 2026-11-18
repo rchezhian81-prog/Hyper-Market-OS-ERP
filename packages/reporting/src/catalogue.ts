@@ -187,7 +187,9 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     nameTa: 'துறை வாரியாக என்ன விற்கிறது', answersTa: 'ஒவ்வொரு துறையும் இன்று எத்தனை பொருட்களை விற்றது',
     needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
     // D-057: the store computer adds what each department's lines took, its items, and the weight of what was weighed.
-    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }, { name: 'takenMinor', type: 'money_minor' }, { name: 'items', type: 'integer' }, { name: 'weighed', type: 'text' }]
+    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }, { name: 'takenMinor', type: 'money_minor' }, { name: 'items', type: 'integer' }, { name: 'weighed', type: 'text' },
+      // D-057 (batch 14): the margin per department before GST at the average buying cost — or "Not known — N lines had no cost".
+      { name: 'marginMinor', type: 'money_minor' }, { name: 'marginPercent', type: 'text' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',

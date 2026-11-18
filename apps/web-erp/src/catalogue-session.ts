@@ -184,13 +184,13 @@ const TILLS_COPY = {
   en: {
     sent: 'Saved — the tills will have it within {m} minutes.',
     notSent: 'Saved, but it has NOT reached the tills yet: {why} The tills keep charging the old price until it is sent — ask the owner to press “Send to the tills” on Price lists.',
-    startsLater: 'Saved. It starts on a later day, so it goes to the tills when the till pack is sent on or after that day.',
+    startsLater: 'Saved. It starts on a later day, and goes to the tills by itself on that day.',
     notSaid: 'Saved. It reaches the tills when the owner presses “Send to the tills” on Price lists.',
   },
   ta: {
     sent: 'சேமிக்கப்பட்டது — {m} நிமிடங்களுக்குள் பில் இயந்திரங்களுக்குச் சென்றுவிடும்.',
     notSent: 'சேமிக்கப்பட்டது, ஆனால் இன்னும் பில் இயந்திரங்களுக்குச் செல்லவில்லை: {why} அனுப்பும் வரை பழைய விலையே வசூலிக்கப்படும் — விலைப் பட்டியல்கள் பக்கத்தில் “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்த உரிமையாளரிடம் கேளுங்கள்.',
-    startsLater: 'சேமிக்கப்பட்டது. இது பின்னர் ஒரு நாளில் தொடங்குகிறது; அந்த நாளில் அல்லது அதற்குப் பிறகு பில் தொகுப்பு அனுப்பப்படும்போது பில் இயந்திரங்களுக்குச் செல்லும்.',
+    startsLater: 'சேமிக்கப்பட்டது. இது பின்னர் ஒரு நாளில் தொடங்குகிறது; அந்த நாளில் தானாகவே பில் இயந்திரங்களுக்குச் செல்லும்.',
     notSaid: 'சேமிக்கப்பட்டது. உரிமையாளர் விலைப் பட்டியல்கள் பக்கத்தில் “பில் இயந்திரங்களுக்கு அனுப்பு” அழுத்தும்போது பில் இயந்திரங்களுக்குச் செல்லும்.',
   },
 } as const;

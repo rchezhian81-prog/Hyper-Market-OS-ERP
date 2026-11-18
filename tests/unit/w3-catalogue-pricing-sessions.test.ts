@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createPriceChecksSession, PRICE_CHECKS_COPY, paiseOfTyped } from '../../apps/web-erp/src/price-checks-session';
-import { createMarkdownSession, MARKDOWN_COPY, priceChangeLink } from '../../apps/web-erp/src/markdown-session';
+import { clearanceItemWords, createMarkdownSession, MARKDOWN_COPY, priceChangeLink } from '../../apps/web-erp/src/markdown-session';
 import { createTobaccoWarningSession, TOBACCO_WARNING_COPY } from '../../apps/web-erp/src/tobacco-warning-session';
 import { createRangeGapsSession, RANGE_GAPS_COPY, bandEdgesOf } from '../../apps/web-erp/src/range-gaps-session';
 
@@ -125,9 +125,13 @@ describe('D06-FR-05: markdowns, clearance and the competitor rule', () => {
   });
 
   it('reads the clearance suggestions for the store', async () => {
-    const ho = fakeHeadOffice(() => ({ status: 200, body: { storeId: 'br-1', asOf: '2026-11-02', suggestions: [{ ...PROPOSAL, productId: 'p-cake', batchId: 'CK-9' }], notJudged: [{ productId: 'p-jam', batchId: null, onHandMinor: 4, because: 'no_sell_by_date_known' }], advisoryOnly: true } }));
+    const ho = fakeHeadOffice(() => ({ status: 200, body: { storeId: 'br-1', asOf: '2026-11-02', suggestions: [{ ...PROPOSAL, productId: 'p-cake', batchId: 'CK-9', productName: 'Plum cake 500g' }], notJudged: [{ productId: 'p-jam', batchId: null, onHandMinor: 4, because: 'no_sell_by_date_known' }], advisoryOnly: true } }));
     const out = await createMarkdownSession({ viewer: PROPOSER, storeId: 'br-1', fetch: ho.fetch }).clearance();
-    expect(out).toMatchObject({ result: 'ok', value: { suggestions: [expect.objectContaining({ productId: 'p-cake', batchId: 'CK-9', newPriceMinor: 3_750 })], notJudged: [{ productId: 'p-jam', batchId: null, onHandMinor: 4, because: 'no_sell_by_date_known' }] } });
+    expect(out).toMatchObject({ result: 'ok', value: { suggestions: [expect.objectContaining({ productId: 'p-cake', batchId: 'CK-9', newPriceMinor: 3_750, productName: 'Plum cake 500g' })], notJudged: [{ productId: 'p-jam', batchId: null, onHandMinor: 4, because: 'no_sell_by_date_known' }] } });
+    // D-025: the row is named by the item; the code only when head office holds no name.
+    if (out.result !== 'ok') throw new Error('not read');
+    expect(clearanceItemWords(out.value.suggestions[0]!)).toBe('Plum cake 500g · CK-9');
+    expect(clearanceItemWords(out.value.notJudged[0]!)).toBe('p-jam');
     expect(ho.sent).toEqual([{ method: 'GET', path: '/v1/pricing/clearance-markdowns?storeId=br-1', body: undefined }]);
   });
 

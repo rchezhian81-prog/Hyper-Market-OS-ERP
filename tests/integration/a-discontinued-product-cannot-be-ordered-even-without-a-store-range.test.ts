@@ -66,8 +66,9 @@ describe.each(backings)('D-16 lifecycle stops ordering and drives clearance sugg
     expect(sug.advisoryOnly).toBe(true);
     expect(sug.pricesChanged).toBe(false);
     // 30 on hand, nothing sold, 2 days to the sell-by → 25% off on the default ladder, 10,000 → 7,500 (a person approves).
-    expect(sug.suggestions).toEqual([expect.objectContaining({ productId: 'p-clr', batchId: 'B-1', reason: 'marked_down', markdownBps: 2500, newPriceMinor: 7_500, advisoryOnly: true, source: 'product_master' })]);
-    expect(sug.notJudged).toEqual([expect.objectContaining({ batchId: 'B-2', because: 'no_sell_by_date_known' })]);
+    // D-025: each row carries the item's name from the product master, so the Expiry page never shows only the code.
+    expect(sug.suggestions).toEqual([expect.objectContaining({ productId: 'p-clr', productName: 'Product p-clr', batchId: 'B-1', reason: 'marked_down', markdownBps: 2500, newPriceMinor: 7_500, advisoryOnly: true, source: 'product_master' })]);
+    expect(sug.notJudged).toEqual([expect.objectContaining({ batchId: 'B-2', productName: 'Product p-clr', because: 'no_sell_by_date_known' })]);
     // The shelf price is exactly what it was.
     const price = (await req('GET', '/v1/prices/list/p-clr/resolve', undefined, 'u-owner', { storeId: 'S-A', at: `${AS_OF}T12:00:00.000Z` })).body as Record<string, unknown>;
     expect(JSON.stringify(price)).toContain('10000');

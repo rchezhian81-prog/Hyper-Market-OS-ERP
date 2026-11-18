@@ -703,18 +703,24 @@ function renderAsks() {
   for (const q of advAsks) {
     const li = advNode('li', 'bill'); li.dataset.request = q.requestId; li.dataset.status = q.status;
     const d = q.details;
-    li.append(advNode('span', 'what', `${q.subjectRef.slice('advance:'.length)} · ${at('supplier')} ${d.supplierId} · ${adv.rupees(Number(d.amountMinor))} · ${at(`m_${d.method}`)} ${d.reference}`));
+    const paidWords = d.paidOn === undefined ? '' : ` · ${d.paidOn} · ${d.reference ?? ''}`; // an approval asked the older way
+    li.append(advNode('span', 'what', `${q.subjectRef.slice('advance:'.length)} · ${at('supplier')} ${d.supplierId} · ${adv.rupees(Number(d.amountMinor))} · ${at(`m_${d.method}`)}${paidWords}`));
     li.append(chipFor(q.status === 'approved' ? 'approved' : q.status === 'waiting' ? 'pending' : q.status, { en: adv === null ? q.status : adv.words('en', `st_${q.status}`), ta: adv === null ? q.status : adv.words('ta', `st_${q.status}`) }));
     if (q.status === 'approved') {
       const go = advNode('button', 'primary', at('record')); go.type = 'button'; go.dataset.act = 'record';
       const st = advNode('p', 'status');
       go.addEventListener('click', async () => {
+        // OB-807 A: the day it was paid and its reference, typed now that the money has gone (an older approval carries them).
+        const paid = { paidOn: dateOf('adv-on'), reference: $('adv-ref').value };
+        if (d.paidOn === undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(paid.paidOn) || paid.reference.trim() === '')) { st.className = 'status err'; st.textContent = at('needPaid'); return; }
+        if (d.paidOn === undefined && window.sreShopDay !== undefined && paid.paidOn > window.sreShopDay.today()) { st.className = 'status err'; st.textContent = at('paidInFuture'); return; }
+        const ref = d.reference ?? paid.reference.trim();
         // U1 · OB-698: the consequence-and-confirm sheet before money is recorded as paid — Go back sends nothing.
-        const sub = (l, key) => String(adv.words(l, key)).replace('{amount}', adv.rupees(Number(d.amountMinor))).replace('{supplier}', d.supplierId).replace('{method}', adv.words(l, `m_${d.method}`)).replace('{reference}', d.reference ?? '');
+        const sub = (l, key) => String(adv.words(l, key)).replace('{amount}', adv.rupees(Number(d.amountMinor))).replace('{supplier}', d.supplierId).replace('{method}', adv.words(l, `m_${d.method}`)).replace('{reference}', ref);
         const answer = await confirmFirst({ title: { en: sub('en', 'confirmTitle'), ta: sub('ta', 'confirmTitle') }, detail: { en: sub('en', 'confirmDetail'), ta: sub('ta', 'confirmDetail') }, authority: { en: sub('en', 'confirmAuthority'), ta: sub('ta', 'confirmAuthority') }, confirmLabel: { en: sub('en', 'confirmLabel'), ta: sub('ta', 'confirmLabel') }, tone: 'primary' });
         if (answer === 'unavailable') { st.className = 'status err'; st.textContent = at('confirmUnavailable'); return; }
         if (answer === null) return;
-        const out = await adv.session.record(q);
+        const out = await adv.session.record(q, paid);
         if (out.result === 'ok') { await showAdvances(); advSay($('adv-status'), out, 'recordedNow'); return; }
         advSay(st, out);
       });
@@ -735,7 +741,7 @@ async function showAdvances() {
 function paintAdvances() {
   for (const [id, k] of [['adv-h', 'h'], ['adv-lede', 'lead'], ['adv-show', 'show'], ['adv-ask-h', 'askH'], ['l-adv-supplier', 'supplier'], ['l-adv-amount', 'amountRs'], ['l-adv-on', 'paidOnL'],
     ['l-adv-method', 'method'], ['adv-m-bank', 'm_bank_transfer'], ['adv-m-cheque', 'm_cheque'], ['adv-m-upi', 'm_upi'], ['adv-m-cash', 'm_cash'], ['l-adv-ref', 'reference'], ['l-adv-po', 'poId'],
-    ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH']]) { const n = $(id); if (n) n.textContent = at(k); }
+    ['adv-ask', 'ask'], ['adv-asks-h', 'approvedH'], ['adv-record-h', 'recordH'], ['adv-record-lede', 'recordLede']]) { const n = $(id); if (n) n.textContent = at(k); }
   // D-024: an advance is usually paid today — the box starts on today; the calendar or typing changes it.
   { const box = $('adv-on'); if (box !== null && box.value === '' && window.sreShopDay !== undefined) box.value = window.sreShopDay.today(); }
   shopDate('adv-on', { en: adv === null ? 'Paid on' : adv.words('en', 'paidOnL'), ta: adv === null ? 'செலுத்திய நாள்' : adv.words('ta', 'paidOnL') });
@@ -748,7 +754,8 @@ if (adv !== null && adv.session.may.read) {
   if (adv.session.may.pay) {
     $('adv-pay').hidden = false;
     $('adv-ask').addEventListener('click', async () => {
-      const out = await adv.session.askToPay({ supplierId: $('adv-supplier').value, amountRupees: $('adv-amount').value, paidOn: dateOf('adv-on'), method: $('adv-method').value, reference: $('adv-ref').value, poId: $('adv-po').value });
+      // OB-807 A: asked with the amount and how; the day and the reference are typed when it is recorded.
+      const out = await adv.session.askToPay({ supplierId: $('adv-supplier').value, amountRupees: $('adv-amount').value, method: $('adv-method').value, poId: $('adv-po').value });
       advSay($('adv-ask-status'), out, 'askedNow');
       if (out.result === 'ok') await showAdvances();
     });

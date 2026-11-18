@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync } from 'node:fs';
+// Batch 14: a picture for the owner, only when B14_SHOTS names a folder (never committed).
+const shot = async (page: { screenshot(o: { path: string; fullPage: boolean }): Promise<unknown> }, name: string): Promise<void> => { const dir = process.env['B14_SHOTS']; if (dir !== undefined && dir !== '') await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true }); };
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
@@ -108,7 +110,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('a markdown
 
     // the clearance cake, advisory only
     await m.page.click('#cl-go');
-    await says(m.page, '#cl-list .row[data-product="p-cake"][data-batch="CK-9"]', /p-cake · CK-9.*off: ₹350\.00 →/);
+    // D-025: the row names the item, not its code
+    await says(m.page, '#cl-list .row[data-product="p-cake"][data-batch="CK-9"]', /^Plum cake 500g · CK-9.*off: ₹350\.00 →/);
+    await shot(m.page, 'd025-expiry-clearance-names');
     expect(await shelf('p-cake')).toBe(35_000);
     expect(m.errors).toEqual([]);
     await m.close();
