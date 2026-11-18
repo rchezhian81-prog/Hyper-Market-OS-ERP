@@ -53,6 +53,10 @@ import { ABOUT_PATH, aboutPage, type AboutFacts } from './about-page'; // CR-01 
 import { OWNER_ROLE, UPDATE_PATHS, openShiftsAnswer, requestUpdate, updatePage, type UpdateDeps, type UpdateProgressView } from './update-page'; // CR-01 step 3c/3d (OI-05)
 import { LICENCE_PATHS, LICENCE_POST_MAX_BYTES, licenceNotice, licencePage, requestLicenceLoad, withLicenceNotice, type LicenceDeps } from './licence-page'; // CR-01 step 5 (OI-10)
 import { PRIVILEGE_BODY_MAX_BYTES, PRIVILEGE_PATHS, officeUsersView, privilegeAct, privilegeDoorOf, type PrivilegeDeps } from './office-privilege'; // CR-01 step 4a/4b-1 (OI-06 · ADR-0033)
+import {
+  REMOTE_DECIDE_REFUSED_KINDS, REMOTE_DOOR_HOST, REMOTE_SCREENS, REMOTE_WORDS, allowedRemotely, remotePathOf, remotePersonOf, remoteRefusalJson, remoteRefusalPage,
+  type RemoteAccess, type RemoteLinkView, type RemotePerson, type RemoteRefusal,
+} from './remote-door'; // OB-840 · ADR-0035
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -194,6 +198,8 @@ export interface ScreenServer {
   readonly port: number;
   /** The address the socket is bound to (`SCREEN_HOST` unless a deployment named another). */
   readonly host: string;
+  /** OB-840 · ADR-0035: the remote door's port on this PC's loopback, when it is open. */
+  readonly remotePort?: number;
   stop(): Promise<void>;
 }
 
@@ -447,7 +453,7 @@ function sameOrigin(req: IncomingMessage): boolean {
   try { return new URL(origin).host === req.headers['host']; } catch { return false; }
 }
 
-export function startScreenServer(input: {
+export async function startScreenServer(input: {
   readonly port: number;
   /** The address to bind — `SCREEN_HOST` (loopback) unless a deployment names another (see `SCREEN_HOST`). */
   readonly host?: string;
@@ -545,6 +551,24 @@ export function startScreenServer(input: {
     readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
   };
+  /**
+   * OB-840 · ADR-0035 (owner's decision "1A … 5A"): the REMOTE door — a second listener on THIS PC's loopback only, where the
+   * encrypted line the store PC dials out to the relay ends. Every request must carry the relay's identity token (checked
+   * against the key pinned at setup, with the second factor), be from a person on the remote-allowed list, and ask for Today,
+   * the reports or the approvals (or their calls). It then runs exactly as in the store, as that person; each office call is
+   * sealed with the mark 'remote'. Needs the office PIN sign-in on and the office calls on this PC (`officeCalls`); refused
+   * at start otherwise. Absent: no remote door.
+   */
+  readonly remoteDoor?: {
+    readonly port: number;
+    /** The pins `remote-access setup` wrote — read per request, so a new setup applies without a restart. */
+    readonly access: () => { readonly ok: true; readonly access: RemoteAccess } | { readonly ok: false; readonly problem: string };
+    /** Append one record to the door's own append-only log (who, what, the answer). Never a token. */
+    readonly record: (entry: Record<string, unknown>) => Promise<void>;
+    readonly now?: () => number;
+  };
+  /** OB-840 · P-08: the remote link's state in plain words, for Today (`window.sreRemoteLink`). Absent: not said. */
+  readonly remoteLink?: () => RemoteLinkView;
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   let link: HeadOfficeLink | undefined;
@@ -793,44 +817,57 @@ export function startScreenServer(input: {
    * then runs the person's own permission, branch, entitlement and step-up checks. A lost API fails as a lost link (P-08).
    */
   const officeCallKeyBytes = input.officeCalls === undefined ? undefined : officeCallKey(input.officeCalls.privilegeKey);
-  const carryToOfficeApi = async (req: IncomingMessage, res: ServerResponse, oc: NonNullable<typeof input.officeCalls>, gate: OfficeGate): Promise<void> => {
+  /** One call to the office API on this PC, sealed for this person (and, through the remote door, marked 'remote'). */
+  const sealedOfficeCall = async (oc: NonNullable<typeof input.officeCalls>, who: { readonly userId: string; readonly signedInAt: number; readonly remote?: { readonly amr: readonly string[] } }, call: {
+    readonly method: string; readonly url: URL; readonly raw: string | null; readonly idem: string | undefined; readonly contentType: string | undefined;
+  }): Promise<Response> => {
+    const query: Record<string, string> = {};
+    call.url.searchParams.forEach((v, k) => { query[k] = v; });
+    const nowMs = (oc.now ?? Date.now)();
+    const seal = sealOfficeCall(officeCallKeyBytes!, {
+      tenantId: oc.tenantId, userId: who.userId, branchId: oc.branchId(),
+      request: { method: call.method, path: call.url.pathname, query, body: bodyAsTheApiReadsIt(call.raw), idempotencyKey: call.idem },
+      signedInAt: who.signedInAt, nowMs, ...(who.remote === undefined ? {} : { remote: who.remote }),
+    });
+    const headers: Record<string, string> = { authorization: `Bearer ${seal}`, accept: 'application/json' };
+    if (call.idem !== undefined) headers['idempotency-key'] = call.idem;
+    if (call.raw !== null && call.raw !== '') headers['content-type'] = call.contentType ?? 'application/json';
+    return (oc.fetch ?? globalThis.fetch)(`${oc.apiBase.replace(/\/+$/, '')}${call.url.pathname}${call.url.search}`, {
+      method: call.method, headers, ...(call.raw === null || call.raw === '' ? {} : { body: call.raw }), signal: AbortSignal.timeout(30_000),
+    });
+  };
+  const carryToOfficeApi = async (req: IncomingMessage, res: ServerResponse, oc: NonNullable<typeof input.officeCalls>, gate: OfficeGate | RemotePerson): Promise<void> => {
     const refuse = (status: number, code: HeadOfficeCallRefusal): void => { req.resume(); send(res, status, 'application/json; charset=utf-8', headOfficeCallRefusal(code)); };
     const method = (req.method ?? 'GET').toUpperCase();
     const write = method !== 'GET' && method !== 'HEAD';
     if (write && !sameOrigin(req)) { refuse(403, 'not_from_this_screen'); return; }
-    const pin = await gate.check(officeTokenOf(req.headers['cookie']));
-    if (!pin.ok) { refuse(401, 'office_sign_in_needed'); return; }
-    const roles = rolesAtThisStore(pin.userId, input.snapshot().pack);
+    // In the store: the person signed in by PIN. Through the remote door (OB-840): the person the relay's token named.
+    let who: { readonly userId: string; readonly signedInAt: number; readonly remote?: { readonly amr: readonly string[] } };
+    if ('check' in gate) {
+      const pin = await gate.check(officeTokenOf(req.headers['cookie']));
+      if (!pin.ok) { refuse(401, 'office_sign_in_needed'); return; }
+      who = { userId: pin.userId, signedInAt: Math.floor(Date.parse(pin.expiresAt) / 1000) - OFFICE_SESSION_MINUTES * 60 };
+    } else {
+      who = { userId: gate.userId, signedInAt: gate.signedInAt, remote: { amr: gate.amr } };
+    }
+    const roles = rolesAtThisStore(who.userId, input.snapshot().pack);
     if (roles === null || roles.length === 0) { refuse(403, 'not_at_this_store'); return; }
     const raw = write ? await readBody(req, HEAD_OFFICE_CALL_MAX_BYTES) : null;
     if (write && raw === null) { send(res, 413, 'application/json; charset=utf-8', headOfficeCallRefusal('too_large')); return; }
     if (!write) req.resume();
     let url: URL;
     try { url = new URL(req.url ?? '/', 'http://screen'); } catch { refuse(403, 'not_from_this_screen'); return; }
-    const query: Record<string, string> = {};
-    url.searchParams.forEach((v, k) => { query[k] = v; });
     const idem = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined;
-    const nowMs = (oc.now ?? Date.now)();
-    const seal = sealOfficeCall(officeCallKeyBytes!, {
-      tenantId: oc.tenantId, userId: pin.userId, branchId: oc.branchId(),
-      request: { method, path: url.pathname, query, body: bodyAsTheApiReadsIt(raw), idempotencyKey: idem },
-      signedInAt: Math.floor(Date.parse(pin.expiresAt) / 1000) - OFFICE_SESSION_MINUTES * 60, nowMs,
-    });
-    const headers: Record<string, string> = { authorization: `Bearer ${seal}`, accept: 'application/json' };
-    if (idem !== undefined) headers['idempotency-key'] = idem;
     const type = req.headers['content-type'];
-    if (raw !== null && raw !== '') headers['content-type'] = typeof type === 'string' ? type : 'application/json';
     let answer: Response;
     try {
-      answer = await (oc.fetch ?? globalThis.fetch)(`${oc.apiBase.replace(/\/+$/, '')}${url.pathname}${url.search}`, {
-        method, headers, ...(raw === null || raw === '' ? {} : { body: raw }), signal: AbortSignal.timeout(30_000),
-      });
+      answer = await sealedOfficeCall(oc, who, { method, url, raw, idem, contentType: typeof type === 'string' ? type : undefined });
     } catch {
       req.socket.destroy(); // P-08: the office API did not answer — the page says so in its own words, never a made-up answer
       return;
     }
     const bytes = Buffer.from(await answer.arrayBuffer());
-    for (const h of ['content-type', 'content-disposition', 'retry-after']) { const v = answer.headers.get(h); if (v !== null) res.setHeader(h, v); }
+    for (const h of ['content-type', 'content-disposition', 'retry-after', 'x-correlation-id']) { const v = answer.headers.get(h); if (v !== null) res.setHeader(h, v); }
     res.statusCode = answer.status;
     res.end(bytes);
   };
@@ -884,8 +921,11 @@ export function startScreenServer(input: {
     return '/manager/'; // no screen of theirs: the office home, whose own gate says which screens they may open
   };
 
-  const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  // OB-840: the person the remote door let through, for THIS request only (set by the remote listener, read below).
+  const remoteOf = new WeakMap<IncomingMessage, RemotePerson>();
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async () => {
+      const remote = remoteOf.get(req);
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
       const doorPath = (req.url ?? '/').split('?')[0];
       // OB-388: Sign out on a box with the head-office link also ends the person's head-office session here.
@@ -964,6 +1004,8 @@ export function startScreenServer(input: {
         return;
       }
       if (isHeadOfficeCall(doorPath)) {
+        // OB-840: through the remote door, the call is carried for the person the relay signed in, marked 'remote'.
+        if (remote !== undefined && input.officeCalls !== undefined) { await carryToOfficeApi(req, res, input.officeCalls, remote); return; }
         if (link === undefined) {
           if (input.officeCalls !== undefined && office !== undefined && input.trustForwardedUser !== true && input.headOffice === undefined) {
             await carryToOfficeApi(req, res, input.officeCalls, office);
@@ -1058,7 +1100,14 @@ export function startScreenServer(input: {
       // OB-259: on the store PC every screen but the till opens only for a person who typed their own PIN, holds an office
       // role here, and (for a screen in the menu) holds that screen's own permission. Then it runs AS that person.
       let officeUser: { readonly userId: string; readonly displayName: string; readonly expiresAt: string } | null = null;
-      if (office !== undefined && !OPEN_SCREENS.includes(route.screen)) {
+      if (remote !== undefined) {
+        // OB-840: through the remote door the person is the one the relay signed in — held to the same per-screen rule.
+        if (!mayOpenScreen(route.screen, permissionsOf(remote.userId, snap.pack))) {
+          page(res, 403, remoteRefusalPage('not_reachable_remotely'));
+          return;
+        }
+        officeUser = { userId: remote.userId, displayName: displayNameIn(snap.pack, remote.userId), expiresAt: remote.expiresAt };
+      } else if (office !== undefined && !OPEN_SCREENS.includes(route.screen)) {
         const session = await office.check(officeTokenOf(req.headers['cookie']));
         if (!session.ok) {
           page(res, 401, signInPage({ storeName: storeNameNow(), next: safeNext(req.url), problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
@@ -1075,7 +1124,7 @@ export function startScreenServer(input: {
       // with their own login and second step — the SAME person as the office PIN sign-in, when that is on. With nobody
       // signed in to head office the box sends them to the sign-in (which says plainly when head office cannot be reached).
       let headOfficeUser: string | null = null;
-      if (link !== undefined && isHeadOfficePage(route.screen)) {
+      if (remote === undefined && link !== undefined && isHeadOfficePage(route.screen)) {
         const ho = await link.sessionOf(req);
         if (ho === null) {
           res.writeHead(303, { location: `/login/?next=${encodeURIComponent(safeNext(req.url))}`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
@@ -1152,9 +1201,14 @@ export function startScreenServer(input: {
       // Every ERP page also gets its menu — the screens THIS viewer may open on THIS box, worked out per request
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
-      const navigation = APP_SHELL[route.screen].dir === 'web-erp'
+      const drawn = APP_SHELL[route.screen].dir === 'web-erp'
         ? withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload: payload ?? (signedIn === null ? null : { userId: signedIn }), screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']))
         : undefined;
+      // OB-840: through the remote door the menu offers only what the door lets through (Today, the reports, the approvals).
+      const navigation = drawn === undefined || remote === undefined ? drawn : {
+        ...drawn,
+        groups: drawn.groups.map((g) => ({ ...g, items: g.items.filter((i) => { const sc = screenOfPath(i.path.split('?')[0] ?? i.path); return sc !== null && (REMOTE_SCREENS as readonly string[]).includes(sc); }) })).filter((g) => g.items.length > 0),
+      };
       const served = injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
         {
@@ -1162,12 +1216,16 @@ export function startScreenServer(input: {
           ...(officeUser === null ? {} : signedInGlobals(officeUser)),
           // CR-01 step 4a (ADR-0033): on the store PC with the head-office link off, the office pages make a privilege change
           // through the box's own doors, the PIN typed again for each act.
-          ...(officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: PRIVILEGE_PATHS.people, view: PRIVILEGE_PATHS.view, accessChanges: PRIVILEGE_PATHS.accessChanges, decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: PRIVILEGE_PATHS.tillPins, rolePermissions: PRIVILEGE_PATHS.rolePermissions, roleDecide: '/office/privilege/role-permissions/{approvalId}/decide' } }),
+          ...(remote !== undefined || officeUser === null || input.privilege === undefined || input.headOffice !== undefined || APP_SHELL[route.screen].dir !== 'web-erp' ? {} : { sreOfficePrivilege: { grants: PRIVILEGE_PATHS.grants, approve: '/office/privilege/grants/{grantId}/approve', reject: '/office/privilege/grants/{grantId}/reject', people: PRIVILEGE_PATHS.people, view: PRIVILEGE_PATHS.view, accessChanges: PRIVILEGE_PATHS.accessChanges, decide: '/office/privilege/access-changes/{approvalId}/decide', tillPins: PRIVILEGE_PATHS.tillPins, rolePermissions: PRIVILEGE_PATHS.rolePermissions, roleDecide: '/office/privilege/role-permissions/{approvalId}/decide' } }),
           // OB-388: with no office PIN on this box, the head-office sign-in names who is looking — and draws the Sign out bar.
           ...(officeUser !== null || headOfficeUser === null ? {} : signedInGlobals({ userId: headOfficeUser, displayName: displayNameIn(snap.pack, headOfficeUser), expiresAt: '' })),
           // Round 4c: behind the authenticating front (the hosted copy) the box draws no Sign out bar — the front signed the
           // person in, so the page's own menu offers "Sign out" to the front's door (`/login/logout`, POST, same origin).
           ...(officeUser === null && headOfficeUser === null && signedIn !== null && input.trustForwardedUser === true ? { sreSignOut: { action: '/login/logout' } } : {}),
+          // OB-840: through the remote door the relay signed the person in, so Sign out goes to the relay's own door.
+          ...(remote === undefined ? {} : { sreSignOut: { action: '/login/logout' }, sreRemote: { on: true } }),
+          // OB-840 · P-08: the remote link's state in plain words, on Today.
+          ...(route.screen === 'manager' && input.remoteLink !== undefined ? { sreRemoteLink: input.remoteLink() } : {}),
           catalogueFreshness: catalogueFreshness(snap),
           // W3 · M36-FR-02 (OB-321): the shop's own name, logo and colours from the SIGNED pack this box holds — no network.
           ...((b) => (b === undefined ? {} : { sreBrand: b }))(screenBrand(snap)),
@@ -1193,11 +1251,12 @@ export function startScreenServer(input: {
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only
           // (a local preview) when it is absent.
-          ...(input.laneWriteBase === undefined ? {} : { laneWriteBase: input.laneWriteBase }),
+          // Never through the remote door: the day close is done in the shop (and the phone could not reach it anyway).
+          ...(input.laneWriteBase === undefined || remote !== undefined ? {} : { laneWriteBase: input.laneWriteBase }),
         },
       );
       // The Sign out bar goes on every office page, drawn by the box, just before the page's own end.
-      const barred = officeUser !== null || headOfficeUser !== null;
+      const barred = remote === undefined && (officeUser !== null || headOfficeUser !== null);
       // CR-01 step 5 (OI-10, P-03 · P-08): while the licence needs attention (ending soon, grace, none yet, reduced mode) every
       // office page and the owner's phone carry one notice at the top, naming it and linking the Licence screen. Never the
       // till or a customer-facing screen: a sale never reads the licence.
@@ -1205,10 +1264,82 @@ export function startScreenServer(input: {
       const noticed = withLicenceNotice(served, notice);
       send(res, 200, type, !barred ? noticed : noticed.includes('</body>') ? noticed.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${noticed}${SIGN_OUT_BAR}`);
     })();
+  };
+  const server: Server = createServer(handle);
+
+  // ── OB-840 · ADR-0035: the remote door ──────────────────────────────────────────────────────────────────────────
+  // Who (the relay's token, against the pinned key, second factor), may they (the remote-allowed list), what (Today, the
+  // reports, the approvals and their calls) — all decided HERE before anything is reached; then the ordinary handler runs
+  // as that person. Every request but a page's own files is kept on the door's append-only log.
+  const rd = input.remoteDoor;
+  if (rd !== undefined && (office === undefined || input.officeCalls === undefined || input.headOffice !== undefined || input.trustForwardedUser === true)) {
+    throw new Error('the remote door needs the office PIN sign-in on, the office calls on this PC, no head-office link and no forwarding front (ADR-0035)');
+  }
+  const remoteHandle = (req: IncomingMessage, res: ServerResponse): void => {
+    void (async () => {
+      const door = rd!;
+      const nowMs = (door.now ?? Date.now)();
+      const method = (req.method ?? 'GET').toUpperCase();
+      const path = (req.url ?? '/').split('?')[0] ?? '/';
+      const wantsJson = path.startsWith('/v1/') || /application\/json/.test(String(req.headers['accept'] ?? ''));
+      let userId: string | null = null;
+      const log = (status: number, extra: Record<string, unknown> = {}): void => {
+        void door.record({ at: new Date(nowMs).toISOString(), channel: 'remote', userId, method, path, status, ...extra }).catch(() => undefined);
+      };
+      const refuse = (code: RemoteRefusal): void => {
+        req.resume();
+        const w = REMOTE_WORDS[code];
+        if (wantsJson) send(res, w.status, 'application/json; charset=utf-8', remoteRefusalJson(code));
+        else send(res, w.status, 'text/html; charset=utf-8', remoteRefusalPage(code));
+        log(w.status, { refusedBecause: code });
+      };
+      const pins = door.access();
+      if (!pins.ok) { refuse('remote_access_not_set_up'); return; }
+      const who = remotePersonOf(req.headers['authorization'], pins.access, nowMs);
+      if (!who.ok) { refuse(who.refusedBecause); return; }
+      userId = who.person.userId;
+      const snap = input.snapshot();
+      if (!allowedRemotely(who.person.userId, pins.access.allowed, (u) => rolesAtThisStore(u, snap.pack))) { refuse('not_allowed_remotely'); return; }
+      const where = remotePathOf(method, req.url, (screen) => APP_SHELL[screen].file);
+      if (where.kind === 'refused') { refuse('not_reachable_remotely'); return; }
+      if (where.kind === 'redirect') {
+        req.resume();
+        res.writeHead(303, { location: where.to, 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        res.end();
+        return;
+      }
+      if (where.kind === 'api' && method !== 'GET' && !sameOrigin(req)) { refuse('not_from_this_screen'); return; }
+      // "5A": an approval that changes a person's access or a device stays in the store — read its kind first, as the person.
+      if (where.kind === 'api' && where.decide !== null) {
+        let kind: string | undefined;
+        try {
+          const inbox = await sealedOfficeCall(input.officeCalls!, { userId: who.person.userId, signedInAt: who.person.signedInAt, remote: { amr: who.person.amr } }, {
+            method: 'GET', url: new URL('/v1/approvals/requests', 'http://screen'), raw: null, idem: undefined, contentType: undefined,
+          });
+          const body = await inbox.json().catch(() => ({})) as { waitingForMe?: { requestId?: unknown; kind?: unknown }[]; mine?: { requestId?: unknown; kind?: unknown }[] };
+          kind = [...(body.waitingForMe ?? []), ...(body.mine ?? [])].find((r) => r?.requestId === where.decide)?.kind as string | undefined;
+        } catch { refuse('office_api_not_reachable'); return; }
+        if (kind !== undefined && REMOTE_DECIDE_REFUSED_KINDS.includes(kind)) { refuse('decide_in_the_store'); return; }
+      }
+      if (where.kind !== 'asset') res.on('finish', () => { const trace = res.getHeader('x-correlation-id'); log(res.statusCode, typeof trace === 'string' ? { traceId: trace } : {}); });
+      remoteOf.set(req, who.person);
+      handle(req, res);
+    })().catch(() => { if (!res.headersSent) send(res, 503, 'application/json; charset=utf-8', remoteRefusalJson('office_api_not_reachable')); });
+  };
+  const remoteServer: Server | null = rd === undefined ? null : createServer(remoteHandle);
+
+  // OB-840: the remote door listens on THIS PC's loopback only — never a configurable address, never the shop network.
+  const remotePort = remoteServer === null ? undefined : await new Promise<number>((resolve, reject) => {
+    remoteServer.once('error', reject);
+    remoteServer.listen(rd!.port, REMOTE_DOOR_HOST, () => {
+      const a = remoteServer.address();
+      resolve(typeof a === 'object' && a !== null ? a.port : rd!.port);
+    });
   });
+  const stopRemote = (): Promise<void> => new Promise((done) => { if (remoteServer === null) { done(); return; } remoteServer.close(() => { done(); }); remoteServer.closeAllConnections(); });
 
   return new Promise((resolve, reject) => {
-    server.on('error', reject);
+    server.on('error', (e) => { void stopRemote().then(() => { reject(e); }); });
     // Loopback unless a deployment names another address explicitly — see the note on SCREEN_HOST.
     server.listen(input.port, input.host ?? SCREEN_HOST, () => {
       const address = server.address();
@@ -1218,8 +1349,9 @@ export function startScreenServer(input: {
       resolve({
         port,
         host: input.host ?? SCREEN_HOST,
+        ...(remotePort === undefined ? {} : { remotePort }),
         // Stop accepting, then drop the connections still open (see the lane server's stop for why).
-        stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
+        stop: async () => { await stopRemote(); await new Promise<void>((done) => { server.close(() => { done(); }); server.closeAllConnections(); }); },
       });
     });
   });

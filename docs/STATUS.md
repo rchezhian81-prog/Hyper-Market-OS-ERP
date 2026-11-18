@@ -18,7 +18,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Owner, meanwhile:** pause the other conversations. Nothing else.
 - **Fixed on the way (15 Nov, decided under OB-801):** #933 gave the store manager `catalogue.change.propose` but not the owner, so the owner could no longer approve the store manager role (an approver must hold what is granted) — 4 integration test files went red on main. The owner now holds it too (as with `catalogue.merge.propose`); his own proposal is never his to approve.
 
-## Batch 13 (17 November 2026) · the emerald and gold look, confirmed (OB-728 / OB-831)
+## Remote access (OB-840) (18 November 2026) · the owner sees Today, reports and approvals from outside the shop
+- **Owner decided (18 Nov, in writing):** "1A, 2A, 3A, 4A, 5A" — ADR-0035.
+- **Done (on branch `claude/remote-access-ob840`; its PR):**
+  - **The relay server** (`infra/remote-access/`): Caddy with automatic TLS for his domain, the store's sign-in with the authenticator code required, a forwarding-only line end, the admin console never on the internet. One setup command makes its own secrets on the server; it refuses the demo server.
+  - **The store PC dials out** ("SRE Remote Link" service, OFF by default) to a new door on its own loopback (127.0.0.1:8095), never the shop network.
+  - **The door** lets only the owner in, only with the one-time code, and only to Today, Reports and Approvals. Approve/reject is recorded in his name plus "from outside the shop". Every remote request is logged on the store PC.
+  - **Today** says: Remote access connected / not connected since <time> / turned off.
+- **Owner must do (runbook `docs/runbooks/remote-access-for-the-owner.md`):** rent the server (DigitalOcean Bangalore or Lightsail Mumbai, 2 GB, about US$12/month — check the price), buy the domain and tell me its name, add the A record, run the setup on the server, install Google or Microsoft Authenticator, run `remote-access setup` at the store PC, check from his phone on mobile data.
+- **Open for the owner (security, batched):** which approval kinds beyond 5A's list stay in the store (tenant closure, approval rules, settings, feature switches, supplier bank change); whether approving a price change from outside is "approve" (allowed now) or "price publishing".
+- **Not proven yet:** a real relay and the real store PC (only CI, a pretend Windows, and a local sshd run here).
+
+
 - **Owner asked:** do the emerald and gold brief and deploy it. It is the same brief as OB-728, already built on 2 Nov.
 - **Done (on its PR):**
   - Checked token by token.

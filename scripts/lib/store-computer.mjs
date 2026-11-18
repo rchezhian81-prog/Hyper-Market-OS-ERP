@@ -58,6 +58,7 @@ import { checkUpdateCommand, updateKeyCommand } from './store-pc-update-check.mj
 import { applyUpdate } from './store-pc-updater.mjs';
 import { drillResult } from './store-pc-drill.mjs';
 import { licenceCommand } from './store-computer-licence.mjs';
+import { remoteAccessOff, remoteAccessOn, remoteAccessSetup, remoteAccessStatus } from './store-computer-remote.mjs'; // OB-840 · ADR-0035
 import {
   administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
 } from './store-computer-windows.mjs';
@@ -1356,6 +1357,10 @@ export const USAGE = [
   '                                           a role at the store: one person asks, a second approves',
   '  publish-catalogue --as <login> --store <code>',
   '                                           the signed price list for the store, to the till',
+  ' The owner\'s remote access (OB-840) — OFF until he turns it on:',
+  '  remote-access setup --host <your domain> --code <the link code your server showed>',
+  '                                           pin your relay server, make this PC\'s own key, pair, and turn the link on',
+  '  remote-access on | off | status          turn the remote link on or off, or say how it is',
 ];
 
 /** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
@@ -1499,6 +1504,7 @@ export function parseCommandLine(argv) {
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, remove: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
     cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, pgBin: undefined, serviceHost: undefined, lane: undefined, only: undefined, install: undefined, continue: undefined, load: undefined, request: false, setup: {}, problems: [],
+    sub: undefined, host: undefined, code: undefined,
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1540,8 +1546,11 @@ export function parseCommandLine(argv) {
     else if (a === '--only') out.only = value();
     else if (a === '--install') out.install = value();
     else if (a === '--continue') out.continue = value();
+    else if (a === '--host') out.host = value();
+    else if (a === '--code') out.code = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
+    else if (!a.startsWith('--') && out.command === 'remote-access' && out.sub === undefined) out.sub = a;
     else out.problems.push(`unknown option ${a}`);
   }
   return out;
@@ -1605,6 +1614,14 @@ export async function main(argv, given) {
     // What the Windows tasks run (never typed by the owner): the hourly backup and the sign-in start.
     case 'scheduled-backup': return scheduledBackup(deps);
     case 'start-at-sign-in': return startAtSignIn(deps);
+    // OB-840 · ADR-0035: the owner's remote access — off unless he turns it on here.
+    case 'remote-access':
+      if (cl.sub === 'setup') return remoteAccessSetup(deps, { host: cl.host, code: cl.code });
+      if (cl.sub === 'on') return remoteAccessOn(deps);
+      if (cl.sub === 'off') return remoteAccessOff(deps);
+      if (cl.sub === 'status' || cl.sub === undefined) return remoteAccessStatus(deps);
+      deps.say(`Not understood: remote-access ${cl.sub}. Use: remote-access setup --host <your domain> --code <link code> | on | off | status`);
+      return 2;
     default:
       deps.say(`Not understood: the command "${cl.command}"`);
       for (const l of USAGE) deps.say(l);
@@ -1706,6 +1723,8 @@ export function defaultDeps() {
     fetch: (url) => heldFetch(url, {}, 5_000),
     // CR-01 step 3b: GitHub, with headers; a redirect to another host drops the Authorization header (fetch's own rule).
     web: async (url, headers) => { const r = await heldFetch(url, { headers, redirect: 'follow' }, 30_000); return { status: r.status, text: () => r.text() }; },
+    // OB-840: the remote link's pairing request to the owner's relay (its PUBLIC key only). No redirect is followed.
+    postJson: async (url, body) => { const r = await heldFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body), redirect: 'error' }, 30_000); return { status: r.status }; },
     // CR-01 step 3d: the setup program (about 70 MB), written to a file only the updater's folder holds; up to 15 minutes.
     download: async (url, headers, file) => {
       const r = await heldFetch(url, { headers, redirect: 'follow' }, 15 * 60_000);

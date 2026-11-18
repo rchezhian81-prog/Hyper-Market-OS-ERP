@@ -837,6 +837,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: The owner's relay server's files are valid, and its tunnel end is locked down (OB-840 · ADR-0035)
+        # The relay is set up on the owner's own rented server, never here; but its compose file, its Caddyfile, its nginx
+        # front and its sshd are checked by the real programs on every change, so a broken file is found here, not there.
+        run: |
+          export RELAY_DOMAIN=relay.example.test RELAY_TLS_EMAIL=ci@example.test RELAY_TENANT_ID=t-ci RELAY_HOME=/tmp/relay
+          export RELAY_DB_PASSWORD=ci-placeholder-only KEYCLOAK_ADMIN_PASSWORD=ci-placeholder-only
+          docker compose -f infra/remote-access/docker-compose.yml config -q
+          docker run --rm -e RELAY_DOMAIN -e RELAY_TLS_EMAIL -v "$PWD/infra/remote-access/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          docker run --rm -v "$PWD/infra/remote-access/nginx.remote.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t
+          docker build -t sre-relay-tunnel:ci infra/remote-access/sshd
+          mkdir -p /tmp/relay-keys && ssh-keygen -q -t ed25519 -N '' -f /tmp/relay-keys/ssh_host_ed25519_key
+          docker run --rm -v /tmp/relay-keys/ssh_host_ed25519_key:/etc/ssh/keys/ssh_host_ed25519_key:ro sre-relay-tunnel:ci /usr/sbin/sshd -t -f /etc/ssh/sshd_config
+          docker run --rm -v /tmp/relay-keys/ssh_host_ed25519_key:/etc/ssh/keys/ssh_host_ed25519_key:ro sre-relay-tunnel:ci /usr/sbin/sshd -T -f /etc/ssh/sshd_config -C user=sre-link,host=x,addr=203.0.113.1 > /tmp/relay-sshd.txt
+          for want in 'permitlisten 127.0.0.1:18095' 'permitopen none' 'allowtcpforwarding remote' 'gatewayports no' 'maxsessions 0' 'permittty no' 'x11forwarding no' 'allowagentforwarding no' 'passwordauthentication no' 'authenticationmethods publickey'; do
+            grep -qx "$want" /tmp/relay-sshd.txt || { echo "::error::the relay's sshd is not locked down: missing '$want'"; exit 1; }
+          done
+
       - name: Build the API image
         run: docker build -f infra/docker/api.Dockerfile -t sre-api:ci .
 
