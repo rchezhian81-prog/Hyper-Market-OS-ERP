@@ -214,7 +214,7 @@ describe.skipIf(!HAVE_BROWSER)('W5 · concessions, buying and suppliers on the s
     await ready.waitFor({ timeout: 15_000 });
     // U7 · OB-698: recording a payment is money — the confirm sheet says the rupees and the supplier first; Go back sends nothing.
     await askedThenConfirmed(p.page, async () => { await ready.click(); }, /₹200\.00 paid to .*sup-1.* will be recorded/, sent);
-    await says(p.page, '#pay-status', /^Recorded\. Still owed to the supplier: ₹300\.00\.$/);
+    await says(p.page, '#pay-status', /^Recorded\. Still owed to the supplier: ₹300\.00\. SPAY\/\d\d-\d\d\/\d{5}$/);
     const account = (await shop.call('GET', '/v1/purchase/suppliers/sup-1', P3.PAYER)).body as { account: { totals: { owedMinor: number } } };
     expect(account.account.totals.owedMinor).toBe(30_000);
 
