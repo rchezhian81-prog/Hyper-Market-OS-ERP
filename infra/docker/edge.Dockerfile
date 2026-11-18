@@ -31,6 +31,7 @@ COPY packages ./packages
 COPY services ./services
 COPY edge ./edge
 COPY scripts ./scripts
+COPY apps ./apps
 RUN node scripts/build-service.mjs edge
 
 FROM node:22-alpine AS runtime
